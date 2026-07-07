@@ -1,0 +1,22 @@
+[project]
+name = "iterm-snapshot"
+version = "0.1.0"
+description = "Snapshot and restore iTerm2 windows, tabs, and panes."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "iterm2>=2.20",
+]
+
+[project.scripts]
+iterm-snapshot = "iterm_snapshot.snapshot:main"
+iterm-restore = "iterm_snapshot.restore:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
