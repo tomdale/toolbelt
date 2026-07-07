@@ -1,0 +1,25 @@
+{
+  "name": "agent-browser-plugin-allow-loopback",
+  "version": "0.1.0",
+  "description": "agent-browser launch mutator that allows Chrome localhost handoff flows by treating loopback addresses as public for Local Network Access.",
+  "type": "module",
+  "bin": {
+    "agent-browser-plugin-allow-loopback": "./src/cli.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "agent-browser",
+    "agent-browser-plugin",
+    "local-network-access",
+    "loopback",
+    "localhost"
+  ],
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@11.9.0"
+}
