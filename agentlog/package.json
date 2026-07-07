@@ -1,0 +1,32 @@
+{
+  "name": "agentlog",
+  "version": "0.1.0",
+  "description": "CLI for inspecting coding agent session history from Codex and Claude Code.",
+  "type": "module",
+  "bin": {
+    "agentlog": "./dist/src/cli.js"
+  },
+  "files": [
+    "dist/src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "pnpm build && node dist/src/cli.js",
+    "test": "pnpm build && node --test dist/test/*.test.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "codex",
+    "claude",
+    "cli",
+    "agents",
+    "history"
+  ],
+  "license": "MIT",
+  "packageManager": "pnpm@11.9.0",
+  "devDependencies": {
+    "@types/node": "^25.0.0",
+    "typescript": "^5.9.0"
+  }
+}
