@@ -1,0 +1,42 @@
+{
+  "name": "pi-claude-plugin-loader",
+  "version": "0.1.0",
+  "description": "Install and load Claude Code plugins (skills and commands) inside pi.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "claude",
+    "claude-code",
+    "plugins",
+    "skills"
+  ],
+  "bin": {
+    "pi-claude-plugin": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test test/*.test.mjs"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "packageManager": "pnpm@11.9.0",
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@types/node": "^25.0.0",
+    "typescript": "^5.9.0"
+  }
+}
