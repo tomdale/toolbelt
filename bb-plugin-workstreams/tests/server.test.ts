@@ -410,6 +410,27 @@ describe("active thread overview", () => {
     expect(calls).toContain('"order":"asc"');
     expect(calls).toContain('"limit":"100"');
   });
+  it("pages the complete request history instead of missing middle scope changes", async () => {
+    const h = setup(1);
+    const all = Array.from({ length: 220 }, (_, i) => ({
+      type: "client/turn/requested",
+      seq: (i + 1) * 10,
+      data: { input: [{ type: "text", text: `request ${i + 1}` }] },
+    }));
+    h.harness.sdk.stub("threads.events.list", async (args: any) => {
+      const after = Number(args.afterSeq ?? 0);
+      return all.filter((event) => event.seq > after).slice(0, 100);
+    });
+    await plugin(h.bb);
+    await run(h);
+    const prompt = JSON.stringify(h.harness.experimental_hostRpcCalls);
+    expect(prompt).toContain("#1100: request 110");
+    expect(prompt).toContain("#2200: request 220");
+    const pages = h.harness.inspection.sdk.callsTo("threads.events.list");
+    expect(pages).toHaveLength(3);
+    expect(JSON.stringify(pages)).toContain('"afterSeq":"1000"');
+    expect(JSON.stringify(pages)).toContain('"afterSeq":"2000"');
+  });
   it("keeps every thread visible when context is unavailable", async () => {
     const h = setup(2);
     h.harness.sdk.stub("threads.promptHistory", async () => {

@@ -24,6 +24,11 @@ export const actionSchema = z.discriminatedUnion("kind", [
     title: z.string(),
   }),
   z.object({
+    kind: z.literal("archive"),
+    threadId: z.string(),
+    reason: z.string().trim().min(1).max(180),
+  }),
+  z.object({
     kind: z.literal("section"),
     threadId: z.string(),
     section: z.string(),
@@ -53,6 +58,7 @@ export const logEntrySchema = z.object({
       /** Section Workstreams moved the thread into; differs if user moved it. */
       workstreamsSectionId: z.string().nullable().optional(),
       forkId: z.string().optional(),
+      archived: z.boolean().optional(),
     })
     .optional(),
   undone: z.boolean().default(false),
@@ -86,6 +92,14 @@ export function planOrganize(
       continue;
     const split =
       item.drift?.confidence === "high" && !alreadySplit.has(thread.id);
+    if (item.archiveReason && item.state === "done") {
+      actions.push({
+        kind: "archive",
+        threadId: thread.id,
+        reason: item.archiveReason,
+      });
+      continue;
+    }
     if (split)
       actions.push({
         kind: "split",
@@ -118,6 +132,8 @@ export function describe(action: Action, titles: Map<string, string>): string {
       return `Split “${name}”: new thread “${action.drift.mainlineTitle}” for ${action.drift.from}; original becomes “${action.drift.sideTitle}” and is compacted`;
     case "retitle":
       return `Rename “${name}” to “${action.title}”`;
+    case "archive":
+      return `Archive “${name}”: ${action.reason}`;
     case "section":
       return `Move “${name}” to section ${action.section}`;
     case "removeSection":

@@ -84,5 +84,19 @@
     "expected": ["Harbor"],
     "drift": null,
     "timeline": "#1: Set up the Harbor docs site with Next.js.\n#19: add a search box to the docs site\n#38: deploy a preview of the docs site\n#55: add the Harbor 3.2 release notes page to the docs site"
+  },
+  {
+    "id": "d-long-middle",
+    "title": "Vercel Agent audit and guidance",
+    "project": "tomdaleOS",
+    "repository": null,
+    "path": "/code/tomdaleOS",
+    "excerpts": "Initial request: report on Vercel Agent. Middle request: audit shared Agent configuration and guidance. Latest report: the audit is complete; Vercel Agent is no longer the active work.",
+    "expected": ["Agent configuration"],
+    "drift": {
+      "from": ["Vercel Agent"],
+      "splitSeq": 5295
+    },
+    "timeline": "#1: Report on Vercel Agent\n#493: Prepare the report for Slack\n#572: Compare Vercel Agent with other harnesses\n#3004: Set up agent-upload on Vercel\n#4000: Choose a shorter domain\n#5176: Commit agentfile.link work\n#5295: Start a separate Agent configuration task\n#5305: Audit all shared agent instructions and skills\n#5589: Review results of the audit"
   }
 ]

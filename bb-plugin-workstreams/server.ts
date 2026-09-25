@@ -262,25 +262,28 @@ export default async function plugin(bb: BbPluginApi) {
       let path: string | null = null;
       let timeline = "";
       try {
-        // First and latest 100 requests: long threads keep both the opening
-        // intent and the recent history where side quests usually start.
+        // Page every request: a side-quest switch can fall anywhere in a long
+        // thread, including the middle omitted by the former head/tail sample.
         const query = {
           threadId: thread.id,
           types: ["client/turn/requested"] as ["client/turn/requested"],
           limit: "100",
+          order: "asc" as const,
           signal,
         };
-        const [head, tail] = await Promise.all([
-          bb.sdk.threads.events.list({ ...query, order: "asc" }),
-          bb.sdk.threads.events.list({ ...query, order: "desc" }),
-        ]);
+        const all: Awaited<ReturnType<typeof bb.sdk.threads.events.list>> = [];
+        let afterSeq: string | undefined;
+        for (;;) {
+          const page = await bb.sdk.threads.events.list({
+            ...query,
+            ...(afterSeq ? { afterSeq } : {}),
+          });
+          all.push(...page);
+          if (page.length < 100) break;
+          afterSeq = String(page.at(-1)!.seq);
+        }
         const since = splitAt.get(thread.id) ?? 0;
-        const events = [
-          ...new Map(
-            [...head, ...tail.reverse()].map((e) => [e.seq, e]),
-          ).values(),
-        ]
-          .sort((a, b) => a.seq - b.seq)
+        const events = all
           // A split original is about the side quest from its split point on;
           // a split fork's seed note is Workstreams' own text, not a request.
           .filter((e) => (e.seq ?? since) >= since && !isSplitNote(e.data));
@@ -652,6 +655,17 @@ export default async function plugin(bb: BbPluginApi) {
       });
       return { detail: "", undo: before };
     }
+    if (action.kind === "archive") {
+      if (detail.status !== "idle" && detail.status !== "error")
+        throw new Error("Thread is running; archive it when it is idle.");
+      const children = await bb.sdk.threads.childSummary({
+        threadId: action.threadId,
+      });
+      if (children.nonDeletedChildCount > 0)
+        throw new Error("Thread has child threads; archive it manually.");
+      await bb.sdk.threads.archive({ threadId: action.threadId });
+      return { detail: action.reason, undo: { ...before, archived: true } };
+    }
     if (action.kind === "section") {
       const sectionId = await sections.ensure(action.section);
       await bb.sdk.threads.update({ threadId: action.threadId, sectionId });
@@ -761,6 +775,15 @@ export default async function plugin(bb: BbPluginApi) {
   /** Sections no active thread uses once threads are filed by workstream. */
   async function emptySections(): Promise<Action[]> {
     const used = new Set((await inventory()).map((t) => t.sectionId));
+    // Archived threads retain their section assignment so Undo can restore them
+    // without pointing at a section deleted during the same organize pass.
+    for (const entry of log)
+      if (
+        entry.action.kind === "archive" &&
+        entry.result === "done" &&
+        !entry.undone
+      )
+        used.add(entry.undo?.sectionId ?? null);
     return (await bb.sdk.threadSections.list())
       .filter((s) => !used.has(s.id))
       .map((s) => ({
@@ -834,6 +857,7 @@ export default async function plugin(bb: BbPluginApi) {
     const { threadId } = entry.action;
     if (entry.undo.forkId)
       await bb.sdk.threads.archive({ threadId: entry.undo.forkId });
+    if (entry.undo.archived) await bb.sdk.threads.unarchive({ threadId });
     if (entry.action.kind !== "section" && entry.undo.title !== undefined)
       await bb.sdk.threads.update({ threadId, title: entry.undo.title });
     if (entry.action.kind === "section") {

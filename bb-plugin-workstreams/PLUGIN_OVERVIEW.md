@@ -10,5 +10,6 @@ Distinctive generated banners mark product groups in the Workstreams page. Click
 any thread row to return to its conversation.
 
 No new task system, proposals, focus limits, or bookkeeping. Nothing runs until
-you ask. Organize splits side quests into their own threads, tidies titles, and
-files threads into workstream sections, with an undoable change log.
+you ask. Organize splits side quests into their own threads, archives only
+explicitly redundant completed threads, tidies titles, and files threads into
+workstream sections, with an undoable change log.

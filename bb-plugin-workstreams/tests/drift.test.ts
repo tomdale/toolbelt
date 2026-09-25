@@ -39,6 +39,12 @@ it("builds a seq-numbered request timeline without BB notices", () => {
     ]),
   ).toBe("#1: Explain caching\n#30: unrelated: build a viewer");
   expect(requestTimeline([ev(1, "only one")])).toBe("");
+  const long = requestTimeline(
+    Array.from({ length: 80 }, (_, i) => ev((i + 1) * 10, `request ${i + 1}`)),
+  );
+  expect(long).toContain("#400: request 40");
+  expect(long).toContain("#800: request 80");
+  expect(long.split("\n")).toHaveLength(80);
 });
 it("requires two agreeing checks for a high-confidence split", () => {
   const one = new Map([["a", drift(30, "high")]]);
@@ -75,6 +81,25 @@ it("skips single-request threads, rejects sub-product and first-request splits",
   expect([...result.keys()]).toEqual(["ok"]);
   expect(result.get("ok")?.confidence).toBe("high");
 });
+it("includes mid-thread scope changes in a long drift prompt", async () => {
+  const timeline = Array.from(
+    { length: 80 },
+    (_, i) => `#${(i + 1) * 10}: request ${i + 1}`,
+  ).join("\n");
+  let calls = 0;
+  const result = await detectDrift(
+    [thread("long", timeline)],
+    async (prompt) => {
+      calls++;
+      expect(prompt).toContain("#400: request 40");
+      const record = JSON.parse(prompt.slice(prompt.lastIndexOf("\n") + 1))[0];
+      return JSON.stringify({ items: [{ id: record.id, drift: null }] });
+    },
+  );
+  expect(calls).toBe(2);
+  expect(result.size).toBe(0);
+});
+
 it("treats malformed drift records as no drift but requires coverage", () => {
   expect(
     parseDrift('{"items":[{"id":"1","drift":{"from":1}}]}', ["1"]),

@@ -87,6 +87,33 @@ it("plans high-confidence splits, messy-title renames, and section moves", () =>
   expect(messyTitle("Explain…")).toBe(true);
 });
 
+it("archives only explicitly redundant completed threads", () => {
+  expect(
+    planOrganize(
+      [thread("done"), thread("in-progress")],
+      analysis([
+        {
+          threadId: "done",
+          state: "done",
+          archiveReason: "Duplicate; work continues in thread abc",
+        },
+        {
+          threadId: "in-progress",
+          state: "in_progress",
+          archiveReason: "Duplicate; work continues elsewhere",
+        },
+      ]),
+      new Set(),
+    ).filter((action) => action.kind === "archive"),
+  ).toEqual([
+    {
+      kind: "archive",
+      threadId: "done",
+      reason: "Duplicate; work continues in thread abc",
+    },
+  ]);
+});
+
 const fixtures: ReturnType<typeof createFakePluginHost>[] = [];
 afterEach(async () => {
   for (const h of fixtures.splice(0)) await h.harness.lifecycle.dispose();
@@ -123,6 +150,8 @@ function host() {
         update: async () => rows[0],
         compact: async () => ({ ok: true }),
         archive: async () => ({ ok: true }),
+        unarchive: async () => ({ ok: true }),
+        childSummary: async () => ({ nonDeletedChildCount: 0 }),
         fork: async () => ({ ...rows[0], id: "fork" }),
         events: {
           list: async () => [
@@ -200,6 +229,41 @@ it("splits a side quest, logs it, and undoes it", async () => {
   // A split already performed is not repeated by the next pass unless undone.
   await call("organize", null);
   expect(sdk.callsTo("threads.fork")).toHaveLength(2);
+});
+
+it("archives a redundant idle thread with undo", async () => {
+  const h = host();
+  await plugin(h.bb);
+  h.bb.storage
+    .database()
+    .prepare("INSERT INTO state VALUES (?,?)")
+    .run(
+      "thread-analysis",
+      JSON.stringify(
+        analysis([
+          {
+            threadId: "a",
+            state: "done",
+            archiveReason: "Duplicate; useful work continues in thread other",
+            updatedAt: h.rows[0].updatedAt,
+          },
+        ]),
+      ),
+    );
+  const live = await h.harness.lifecycle.reload(plugin);
+  fixtures.push(live);
+  await live.harness.behavior.callRpc("organize", null);
+  const sdk = live.harness.inspection.sdk;
+  expect(sdk.callsTo("threads.archive")).toEqual([[{ threadId: "a" }]]);
+  const view = (await live.harness.behavior.callRpc("snapshot", null)) as View;
+  const archived = view.log.find((e) => e.action.kind === "archive")!;
+  expect(archived).toMatchObject({
+    result: "done",
+    detail: "Duplicate; useful work continues in thread other",
+    undo: { archived: true },
+  });
+  await live.harness.behavior.callRpc("undo", { id: archived.id });
+  expect(sdk.callsTo("threads.unarchive")).toEqual([[{ threadId: "a" }]]);
 });
 
 it("only plans actions while replaying a fixture", async () => {

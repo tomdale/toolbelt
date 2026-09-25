@@ -14,5 +14,13 @@
     "allowImportingTsExtensions": true,
     "skipLibCheck": false
   },
-  "include": ["*.ts", "*.tsx", "components", "lib", "hooks", "tests"]
+  "include": [
+    "*.ts",
+    "*.tsx",
+    "components",
+    "lib",
+    "hooks",
+    "tests",
+    "pi-extension/*.ts"
+  ]
 }
