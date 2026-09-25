@@ -53,6 +53,10 @@ export const rpcContract = defineRpcContract({
   cancel: { input: z.null(), output: z.object({ ok: z.boolean() }) },
 });
 
+export const SPLIT_NOTE = "Workstreams split this thread";
+function isSplitNote(data: unknown): boolean {
+  return inputText((data as { input?: unknown }).input).startsWith(SPLIT_NOTE);
+}
 function absolute(path: string): string {
   if (!isAbsolute(path)) throw new Error("Use an absolute path.");
   return path;
@@ -171,6 +175,12 @@ export default async function plugin(bb: BbPluginApi) {
     }
     return [...new Map(threads.map((t) => [t.id, t])).values()];
   }
+  /** Split originals and their split seqs, from the change log. */
+  const splits = () =>
+    log.filter(
+      (e) => e.action.kind === "split" && e.result === "done" && !e.undone,
+    );
+  let splitAt = new Map<string, number>();
   /** Reads bounded, attributed conversation context for each thread. */
   async function collect(
     threads: Thread[],
@@ -178,6 +188,13 @@ export default async function plugin(bb: BbPluginApi) {
     signal: AbortSignal,
     onRead: () => void = () => {},
   ): Promise<Context[]> {
+    splitAt = new Map(
+      splits().map((e) => [
+        e.action.threadId,
+        e.action.kind === "split" ? e.action.drift.splitSeq : 0,
+      ]),
+    );
+    const forks = new Set(splits().map((e) => e.undo?.forkId));
     return mapConcurrent(threads, async (thread): Promise<Context> => {
       signal.throwIfAborted();
       let initial = "";
@@ -187,13 +204,28 @@ export default async function plugin(bb: BbPluginApi) {
       let path: string | null = null;
       let timeline = "";
       try {
-        const events = await bb.sdk.threads.events.list({
+        // First and latest 100 requests: long threads keep both the opening
+        // intent and the recent history where side quests usually start.
+        const query = {
           threadId: thread.id,
-          types: ["client/turn/requested"],
-          order: "asc",
+          types: ["client/turn/requested"] as ["client/turn/requested"],
           limit: "100",
           signal,
-        });
+        };
+        const [head, tail] = await Promise.all([
+          bb.sdk.threads.events.list({ ...query, order: "asc" }),
+          bb.sdk.threads.events.list({ ...query, order: "desc" }),
+        ]);
+        const since = splitAt.get(thread.id) ?? 0;
+        const events = [
+          ...new Map(
+            [...head, ...tail.reverse()].map((e) => [e.seq, e]),
+          ).values(),
+        ]
+          .sort((a, b) => a.seq - b.seq)
+          // A split original is about the side quest from its split point on;
+          // a split fork's seed note is Workstreams' own text, not a request.
+          .filter((e) => (e.seq ?? since) >= since && !isSplitNote(e.data));
         initial = initialRequest(events);
         timeline = requestTimeline(events);
       } catch {
@@ -203,11 +235,15 @@ export default async function plugin(bb: BbPluginApi) {
         );
       }
       try {
-        prompts = await bb.sdk.threads.promptHistory({
-          threadId: thread.id,
-          limit: "3",
-          signal,
-        });
+        prompts = (
+          await bb.sdk.threads.promptHistory({
+            threadId: thread.id,
+            limit: "4",
+            signal,
+          })
+        )
+          .filter((p) => !isSplitNote(p))
+          .slice(0, 3);
       } catch {
         warnings.push(`Could not read prompts for ${thread.title}.`);
       }
@@ -241,6 +277,8 @@ export default async function plugin(bb: BbPluginApi) {
         path,
         excerpts: contextExcerpt(initial, prompts, report),
         timeline,
+        // Already-split threads, on either side, are not re-checked for drift.
+        settled: splitAt.has(thread.id) || forks.has(thread.id),
       };
     });
   }
@@ -475,7 +513,7 @@ export default async function plugin(bb: BbPluginApi) {
               type: "text" as const,
               mentions: [],
               visibility: "agent-only" as const,
-              text: `Workstreams split this thread from ${action.threadId} at the point where it moved from ${drift.from} to ${drift.to}. This thread continues the ${drift.from} work; the ${drift.to} work continues in the original thread.`,
+              text: `${SPLIT_NOTE} from ${action.threadId} at the point where it moved from ${drift.from} to ${drift.to}. This thread continues the ${drift.from} work; the ${drift.to} work continues in the original thread.`,
             },
           ],
           pluginMetadata: { splitFrom: action.threadId },

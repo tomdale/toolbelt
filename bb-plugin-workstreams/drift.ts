@@ -57,7 +57,9 @@ export async function detectDrift(
   threads: Context[],
   complete: (prompt: string) => Promise<string>,
 ): Promise<Map<string, Drift>> {
-  const eligible = threads.filter((t) => t.timeline.includes("\n"));
+  const eligible = threads.filter(
+    (t) => !t.settled && t.timeline.includes("\n"),
+  );
   const size = Number(process.env.WORKSTREAMS_DRIFT_BATCH) || DRIFT_BATCH;
   const sample = async () => {
     const found = new Map<string, Drift>();

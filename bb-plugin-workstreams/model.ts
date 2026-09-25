@@ -45,6 +45,8 @@ export type Context = Thread & {
   path: string | null;
   /** One line per user request with its event seq; see requestTimeline. */
   timeline: string;
+  /** True for threads already split by Workstreams; skipped by drift detection. */
+  settled?: boolean;
 };
 /** Frozen thread contexts (e.g. from `bb workstreams export`); extra keys such as eval labels are ignored. */
 export const fixtureSchema = z.array(
