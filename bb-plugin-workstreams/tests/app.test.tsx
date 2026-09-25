@@ -81,6 +81,36 @@ it("shows all threads under BB projects before analysis without starting a run",
   expect(v.inspection.rpcCalls.some((c) => c.method === "analyze")).toBe(false);
   v.lifecycle.unmount();
 });
+it("shows singleton summaries and optional banner accents under Other groups", async () => {
+  const v = await mount({
+    ...initial,
+    analysis: {
+      at: 1,
+      warnings: [],
+      summaries: {
+        BB: {
+          about: "BB product",
+          status: "Needs your decision.",
+          motif: "layers",
+        },
+      },
+      items: [
+        {
+          threadId: "1",
+          group: "BB",
+          title: "Fix Slack replies",
+          recap: "Waiting for a user choice.",
+          updatedAt: 1,
+          refreshed: true,
+        },
+      ],
+    },
+    banners: { BB: "/banner.jpg" },
+  });
+  await v.findByText("BB product Needs your decision.");
+  expect(v.getByRole("presentation").getAttribute("src")).toBe("/banner.jpg");
+  v.lifecycle.unmount();
+});
 it("manual analysis regroups threads across repositories", async () => {
   const v = await mount();
   await v.findByText("Fix Slack replies");

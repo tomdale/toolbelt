@@ -96,6 +96,9 @@ export const analysisSchema = z.object({
       inputTokens: z.number(),
       outputTokens: z.number(),
       cost: z.number(),
+      summarySeconds: z.number().optional().default(0),
+      summaryCalls: z.number().optional().default(0),
+      summaryCost: z.number().optional().default(0),
     })
     .optional(),
 });

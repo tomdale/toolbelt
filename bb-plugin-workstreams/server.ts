@@ -22,8 +22,19 @@ import {
 } from "./model";
 import { redact } from "./redact";
 import { detectDrift } from "./drift";
-import { IMAGE_MODEL, bannerKey, bannerPrompt } from "./banner";
-import { parseSummaries, summaryInput, summaryPrompt } from "./summary";
+import {
+  IMAGE_MODEL,
+  bannerCacheSignature,
+  bannerKey,
+  bannerNeedsRegeneration,
+  bannerPrompt,
+} from "./banner";
+import {
+  parseSummaries,
+  summaryBatches,
+  summaryInput,
+  summaryPrompt,
+} from "./summary";
 import {
   describe,
   logEntrySchema,
@@ -336,10 +347,18 @@ export default async function plugin(bb: BbPluginApi) {
       inputTokens: 0,
       outputTokens: 0,
       cost: 0,
+      summarySeconds: 0,
+      summaryCalls: 0,
+      summaryCost: 0,
     };
-    const complete = async (prompt: string, hostId: string) => {
+    const complete = async (
+      prompt: string,
+      hostId: string,
+      kind: "classification" | "summary" = "classification",
+    ) => {
       signal.throwIfAborted();
       stats.calls++;
+      if (kind === "summary") stats.summaryCalls++;
       const { text, usage } = await inference.call(
         "complete",
         { prompt },
@@ -348,6 +367,7 @@ export default async function plugin(bb: BbPluginApi) {
       stats.inputTokens += usage.input;
       stats.outputTokens += usage.output;
       stats.cost += usage.cost;
+      if (kind === "summary") stats.summaryCost += usage.cost;
       return redact(text);
     };
     const threads = await inventory(signal);
@@ -453,13 +473,20 @@ export default async function plugin(bb: BbPluginApi) {
     };
     try {
       const input = summaryInput(next);
-      if (input.length)
-        next.summaries = Object.fromEntries(
-          parseSummaries(
-            await complete(summaryPrompt(input), host.id),
-            input.map((g) => g.name),
-          ),
+      if (input.length) {
+        const summaryStarted = Date.now();
+        const summaries = await mapConcurrent(
+          summaryBatches(input),
+          async (batch) =>
+            parseSummaries(
+              await complete(summaryPrompt(batch), host.id, "summary"),
+              batch.map((g) => g.name),
+            ),
         );
+        next.summaries = Object.fromEntries(summaries.flatMap((s) => [...s]));
+        stats.summarySeconds =
+          Math.round((Date.now() - summaryStarted) / 100) / 10;
+      }
     } catch {
       signal.throwIfAborted();
       stats.failedCalls++;
@@ -467,6 +494,7 @@ export default async function plugin(bb: BbPluginApi) {
     }
     stats.seconds = Math.round((Date.now() - started) / 100) / 10;
     stats.cost = Math.round(stats.cost * 10000) / 10000;
+    stats.summaryCost = Math.round(stats.summaryCost * 10000) / 10000;
     analysis = { ...next, stats };
     put(analysisKey(), analysis);
   }
@@ -776,9 +804,17 @@ export default async function plugin(bb: BbPluginApi) {
   });
   /** Generates banners for summarized groups that don't have one yet. */
   async function ensureBanners(hostId: string, signal: AbortSignal) {
-    const have = new Set(bannerRows().map((r) => r.key));
+    const cached = new Map(
+      (
+        db.prepare("SELECT key, motif FROM banners").all() as {
+          key: string;
+          motif: string;
+        }[]
+      ).map((row) => [row.key, row.motif]),
+    );
     const missing = Object.entries(analysis?.summaries ?? {}).filter(
-      ([name]) => !have.has(bannerKey(name)),
+      ([name, summary]) =>
+        bannerNeedsRegeneration(cached.get(bannerKey(name)), summary.motif),
     );
     await mapConcurrent(missing, async ([name, summary]) => {
       try {
@@ -792,7 +828,7 @@ export default async function plugin(bb: BbPluginApi) {
         ).run(
           bannerKey(name),
           name,
-          summary.motif,
+          bannerCacheSignature(summary.motif),
           image.mime,
           Buffer.from(image.data, "base64"),
           image.cost,

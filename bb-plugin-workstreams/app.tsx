@@ -55,11 +55,15 @@ const anchor = (name: string) =>
 function ListRow({
   row,
   group,
+  groupSummary,
+  groupBanner,
   open,
   split,
 }: {
   row: Row;
   group?: string;
+  groupSummary?: { about: string; status: string };
+  groupBanner?: string;
   open: () => void;
   /** Offered for detected side quests not yet split. */
   split?: () => void;
@@ -78,7 +82,19 @@ function ListRow({
           {state ? STATE_LABEL[state] : ""}
         </span>
         <span className="ws-line-body">
-          {group && <span className="ws-line-group">{group}</span>}
+          {group && (
+            <span className="ws-line-group-wrap">
+              <span className="ws-line-group">{group}</span>
+              {groupSummary && (
+                <span className="ws-single-summary">
+                  {groupSummary.about} {groupSummary.status}
+                </span>
+              )}
+              {groupBanner && (
+                <img className="ws-single-banner" src={groupBanner} alt="" />
+              )}
+            </span>
+          )}
           <strong>{title}</strong>
           {recap && <span className="ws-recap"> {recap}</span>}
           {runtime && (
@@ -202,7 +218,7 @@ function WorkstreamsPage() {
           rows.filter(
             (r) =>
               (!onlyYou || r.needsYou) &&
-              `${name} ${r.title} ${r.thread.title} ${r.thread.project} ${r.recap ?? ""}`
+              `${name} ${r.title} ${r.thread.title} ${r.thread.project} ${r.recap ?? ""} ${data?.analysis?.summaries[name]?.about ?? ""} ${data?.analysis?.summaries[name]?.status ?? ""}`
                 .toLowerCase()
                 .includes(q),
           ),
@@ -369,7 +385,7 @@ function WorkstreamsPage() {
                 </section>
               ))}
               {!!singles.length && (
-                <section aria-label="Other groups">
+                <section id={anchor(OTHER)} aria-label="Other groups">
                   <h2>
                     Other groups <span>{singles.length}</span>
                   </h2>
@@ -379,6 +395,8 @@ function WorkstreamsPage() {
                         key={row.thread.id}
                         row={row}
                         group={name}
+                        groupSummary={data.analysis?.summaries[name]}
+                        groupBanner={data.banners[name]}
                         open={() => navigate.toThread(row.thread.id)}
                         split={splitFor(row)}
                       />
@@ -439,6 +457,8 @@ function WorkstreamsPage() {
               Gateway from each thread’s requests and last response.
               {stats &&
                 ` Last run: ${stats.seconds}s, ${stats.calls} calls, ${(stats.inputTokens + stats.outputTokens).toLocaleString()} tokens, $${stats.cost.toFixed(3)}.`}
+              {!!stats?.summaryCalls &&
+                ` Summaries (included above): ${stats.summaryCalls} calls, ${stats.summarySeconds}s, $${stats.summaryCost.toFixed(4)}.`}
             </footer>
           </>
         )}

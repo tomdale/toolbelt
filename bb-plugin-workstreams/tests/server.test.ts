@@ -17,6 +17,13 @@ import {
   type Snapshot,
 } from "../model";
 import { inferenceArgs } from "../host";
+import { parseSummaries, summaryBatches } from "../summary";
+import { summaryInput } from "../summary";
+import {
+  bannerCacheSignature,
+  bannerKey,
+  bannerNeedsRegeneration,
+} from "../banner";
 
 const fixtures: ReturnType<typeof createFakePluginHost>[] = [];
 afterEach(async () => {
@@ -152,6 +159,55 @@ describe("active thread overview", () => {
     await plugin(h.bb);
     expect((await snapshot(h)).threads.map((t) => t.id)).toEqual(["0"]);
   });
+  it("rejects incomplete group summaries", () => {
+    expect(() => parseSummaries('{"groups":[]}', ["Missing"])).toThrow(
+      /every supplied group/,
+    );
+  });
+  it("regenerates a banner only when a group's motif changes", () => {
+    expect(bannerNeedsRegeneration(undefined, "new motif")).toBe(true);
+    expect(bannerNeedsRegeneration("v1:old motif", "new motif")).toBe(true);
+    expect(
+      bannerNeedsRegeneration(bannerCacheSignature("same motif"), "same motif"),
+    ).toBe(false);
+    expect(bannerNeedsRegeneration("v1:same motif", "same motif")).toBe(true);
+  });
+  it("batches summaries to bound prompt size", () => {
+    expect(
+      summaryBatches(Array.from({ length: 17 }, (_, i) => i)).map(
+        (b) => b.length,
+      ),
+    ).toEqual([8, 8, 1]);
+    expect(summaryBatches([])).toEqual([]);
+  });
+  it("summarizes singleton products as well as multi-thread groups", () => {
+    const input = summaryInput({
+      items: [
+        {
+          threadId: "1",
+          group: "BB",
+          title: "A",
+          recap: "Status",
+          state: "done",
+        },
+        {
+          threadId: "2",
+          group: "One-off",
+          title: "B",
+          recap: "Needs choice",
+          state: "needs_decision",
+        },
+        {
+          threadId: "3",
+          group: "Unclassified",
+          title: "C",
+          recap: "No context",
+          state: "done",
+        },
+      ],
+    } as any);
+    expect(input.map(({ name }) => name)).toEqual(["BB", "One-off"]);
+  });
   it("classifies in parallel, reconciles groups, persists results, and never spawns agents", async () => {
     const h = setup();
     await plugin(h.bb);
@@ -163,7 +219,7 @@ describe("active thread overview", () => {
       new Set(["Vercel Agent for Slack"]),
     );
     expect(h.peak()).toBe(3);
-    // Three classification batches and one workstream summary call.
+    // Three classification batches and one summary call.
     expect(
       h.harness.experimental_hostRpcCalls.filter(
         (c) => (c as { method?: string }).method !== "image",
@@ -172,6 +228,11 @@ describe("active thread overview", () => {
     expect(s.analysis?.summaries["Vercel Agent for Slack"]?.about).toBe(
       "About",
     );
+    expect(s.analysis?.stats).toMatchObject({
+      summaryCalls: 1,
+      summaryCost: 0,
+      summarySeconds: expect.any(Number),
+    });
     expect(h.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(0);
     const reloaded = await h.harness.lifecycle.reload(plugin);
     fixtures.push(reloaded);

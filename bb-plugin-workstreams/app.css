@@ -234,6 +234,44 @@ footer.ws-muted {
   padding: 0 5px;
   margin-right: 6px;
 }
+.ws-line-group-wrap {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 4px;
+  padding: 3px 6px;
+  margin: 0 0 4px;
+  border-bottom: 1px solid var(--border);
+}
+.ws-line-group-wrap .ws-line-group {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  color: var(--foreground);
+  font-weight: 600;
+}
+.ws-single-summary {
+  position: relative;
+  z-index: 1;
+  display: block;
+  max-width: 85%;
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.ws-single-banner {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: right center;
+  opacity: 0.24;
+  mask-image: linear-gradient(90deg, transparent, black);
+  -webkit-mask-image: linear-gradient(90deg, transparent, black);
+  pointer-events: none;
+}
 @media (max-width: 640px) {
   .ws-line {
     grid-template-columns: 1fr auto;

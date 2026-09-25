@@ -25,18 +25,21 @@ All your active threads, grouped by the project or product they concern. Open
   ready for review, blocked, in progress, or done. The first two count as “Needs
   you”. Runtime status appears only when it matters (running, error) and is
   never used as evidence of work state.
-- The screen is a one-line-per-thread list with the work state in a left column:
-  larger groups first, one-thread groups folded into “Other groups”,
-  Unclassified before them, done work dimmed. Group chips jump between groups; a
-  “Needs you” filter and search (`/`) cover inferred and original titles,
-  recaps, projects, and groups. Clicking a row opens the thread.
+- Every identified product gets a short “what it is” and cross-thread status
+  summary, including singleton products shown under “Other groups”. The screen
+  is a one-line-per-thread list with the work state in a left column: larger
+  groups first, one-thread groups folded into “Other groups”, Unclassified
+  before them, done work dimmed. Group chips jump between groups; a “Needs you”
+  filter and search (`/`) cover inferred and original titles, recaps, projects,
+  and groups. Clicking a row opens the thread.
 - Results appear together when analysis completes and survive reloads. Rows are
   marked “Not analyzed” (new), “Updated since analysis”, or “Not refreshed”. A
   failed batch is retried once; if it still fails, those threads keep their
   earlier result marked “Not refreshed” and the rest of the run is saved. If
   every batch fails, previous results are unchanged. A running analysis shows
   progress and can be cancelled. The footer reports the last run's time, calls,
-  tokens, and Gateway cost.
+  tokens, and Gateway cost. Summary generation is an additional parallelizable
+  analysis step; its calls, latency, and cost are reported separately.
 
 ## Inference
 
@@ -49,6 +52,16 @@ skills, prompt templates, context files, project approval, and session
 persistence disabled. Prompts go through stdin, not process arguments. Calls
 time out after two minutes. No BB worker threads are spawned. Plugin shutdown
 aborts in-flight host calls.
+
+Per-product summaries use that same model and selected analysis machine. Banner
+images use `openai/gpt-image-1-mini` at low quality through AI Gateway (about
+$0.0035 per image in the observed run). Images are cached in plugin SQLite by
+normalized group identity; a missing image or changed motif regenerates it. The
+motif prompt keeps a consistent muted, abstract style with the subject at right
+for page headers and narrow sidebar strips. Banners are stored as plugin data,
+not in the repository. The native BB thread-section SDK exposes only section
+`id`, `name`, and timestamps; it has no description field, so summaries remain
+Workstreams analysis data.
 
 With one connected machine, selection is automatic. With multiple machines, set
 **Analysis machine ID** in Workstreams settings to the machine with Pi and AI
