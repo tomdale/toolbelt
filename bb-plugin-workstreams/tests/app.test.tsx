@@ -31,6 +31,7 @@ const initial: View = {
   error: null,
   fixture: null,
   log: [],
+  banners: {},
   mode: "suggest",
   organizing: false,
 };
@@ -53,6 +54,7 @@ async function mount(data: View = initial) {
             analysis: {
               at: 1,
               warnings: [],
+              summaries: {},
               items: data.threads.map((t) => ({
                 threadId: t.id,
                 group: "Vercel Agent for Slack",
@@ -110,6 +112,7 @@ it("shows reframed titles without renaming threads and searches original titles"
     analysis: {
       at: 1,
       warnings: [],
+      summaries: {},
       items: [
         {
           threadId: "1",
@@ -175,6 +178,7 @@ it("offers one-click split for side quests and undo for logged changes", async (
     analysis: {
       at: 1,
       warnings: [],
+      summaries: {},
       items: [
         {
           threadId: "1",

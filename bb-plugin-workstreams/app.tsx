@@ -101,6 +101,33 @@ function ListRow({
   );
 }
 
+function GroupHeader({
+  name,
+  count,
+  summary,
+  banner,
+}: {
+  name: string;
+  count: number;
+  summary?: { about: string; status: string };
+  banner?: string;
+}) {
+  return (
+    <header className={`ws-group-head${banner ? " ws-has-banner" : ""}`}>
+      {banner && <img className="ws-banner" src={banner} alt="" />}
+      <h2>
+        {name} <span>{count}</span>
+      </h2>
+      {summary && (
+        <>
+          <p className="ws-about">{summary.about}</p>
+          <p className="ws-status-line">{summary.status}</p>
+        </>
+      )}
+    </header>
+  );
+}
+
 function WorkstreamsPage() {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
@@ -322,9 +349,12 @@ function WorkstreamsPage() {
             <div className="ws-list">
               {multi.map(([name, rows]) => (
                 <section key={name} id={anchor(name)} aria-label={name}>
-                  <h2>
-                    {name} <span>{rows.length}</span>
-                  </h2>
+                  <GroupHeader
+                    name={name}
+                    count={rows.length}
+                    summary={data.analysis?.summaries[name]}
+                    banner={data.banners[name]}
+                  />
                   <ul>
                     {rows.map((row) => (
                       <ListRow

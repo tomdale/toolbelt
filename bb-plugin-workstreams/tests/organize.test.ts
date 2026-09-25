@@ -35,6 +35,7 @@ const thread = (
 const analysis = (items: Partial<Analysis["items"][number]>[]): Analysis => ({
   at: 1,
   warnings: [],
+  summaries: {},
   items: items.map((i) => ({
     threadId: "a",
     group: "Lumen",

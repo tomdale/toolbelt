@@ -292,3 +292,46 @@ footer.ws-muted {
     margin-left: 8px;
   }
 }
+/* Group header: name, summary, and an optional generated banner behind it. */
+.ws-group-head {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  padding: 6px 8px 8px;
+  margin-bottom: 2px;
+  border-radius: 8px 8px 0 0;
+}
+.ws-list .ws-group-head h2 {
+  border: 0;
+  padding: 0;
+  font-size: 14px;
+  position: relative;
+}
+.ws-about,
+.ws-status-line {
+  position: relative;
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.ws-about {
+  color: var(--muted-foreground);
+}
+.ws-banner {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: right center;
+  /* Fade the image out under the text so any theme stays legible. */
+  mask-image: linear-gradient(to right, transparent 25%, black 75%);
+  -webkit-mask-image: linear-gradient(to right, transparent 25%, black 75%);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.ws-has-banner {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  min-height: 72px;
+}

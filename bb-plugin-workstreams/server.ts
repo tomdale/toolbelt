@@ -22,6 +22,8 @@ import {
 } from "./model";
 import { redact } from "./redact";
 import { detectDrift } from "./drift";
+import { IMAGE_MODEL, bannerKey, bannerPrompt } from "./banner";
+import { parseSummaries, summaryInput, summaryPrompt } from "./summary";
 import {
   describe,
   logEntrySchema,
@@ -39,6 +41,8 @@ import {
 
 const viewSchema = snapshotSchema.extend({
   log: z.array(logEntrySchema),
+  /** Banner image URL by group name, for groups that have one. */
+  banners: z.record(z.string(), z.string()),
   mode: z.enum(["auto", "suggest"]),
   organizing: z.boolean(),
 });
@@ -67,6 +71,7 @@ export default async function plugin(bb: BbPluginApi) {
   const db = bb.storage.database();
   bb.storage.migrate(db, [
     "CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS banners (key TEXT PRIMARY KEY, name TEXT NOT NULL, motif TEXT NOT NULL, mime TEXT NOT NULL, data BLOB NOT NULL, cost REAL NOT NULL, at INTEGER NOT NULL)",
   ]);
   const get = (key: string): unknown => {
     const row = db.prepare("SELECT value FROM state WHERE key = ?").get(key) as
@@ -102,6 +107,7 @@ export default async function plugin(bb: BbPluginApi) {
   let error: string | null = null;
   let pending = false;
   let run: AbortController | null = null;
+  let lastHost: string | null = null;
   const inference = bb.hosts.experimental_client({ contract: hostContract });
   const settings = bb.settings.define({
     organize: {
@@ -336,7 +342,7 @@ export default async function plugin(bb: BbPluginApi) {
     };
     const threads = await inventory(signal);
     if (!threads.length) {
-      analysis = { at: Date.now(), items: [], warnings: [] };
+      analysis = { at: Date.now(), items: [], warnings: [], summaries: {} };
       put(analysisKey(), analysis);
       return;
     }
@@ -353,6 +359,7 @@ export default async function plugin(bb: BbPluginApi) {
       throw new Error(
         "Choose a connected analysis machine in Workstreams settings. It needs Pi with AI Gateway configured.",
       );
+    lastHost = host.id;
     const warnings: string[] = [];
     let read = 0;
     advance("reading", 0, threads.length);
@@ -421,9 +428,7 @@ export default async function plugin(bb: BbPluginApi) {
         "Classification failed for every thread. Previous results are unchanged.",
       );
     const timestamps = new Map(threads.map((t) => [t.id, t.updatedAt]));
-    stats.seconds = Math.round((Date.now() - started) / 100) / 10;
-    stats.cost = Math.round(stats.cost * 10000) / 10000;
-    analysis = {
+    const next: Analysis = {
       at: Date.now(),
       items: [
         ...normalizeGroups(items).map((i) => ({
@@ -434,8 +439,25 @@ export default async function plugin(bb: BbPluginApi) {
         ...kept,
       ],
       warnings,
-      stats,
+      summaries: {},
     };
+    try {
+      const input = summaryInput(next);
+      if (input.length)
+        next.summaries = Object.fromEntries(
+          parseSummaries(
+            await complete(summaryPrompt(input), host.id),
+            input.map((g) => g.name),
+          ),
+        );
+    } catch {
+      signal.throwIfAborted();
+      stats.failedCalls++;
+      warnings.push("Could not summarize workstreams.");
+    }
+    stats.seconds = Math.round((Date.now() - started) / 100) / 10;
+    stats.cost = Math.round(stats.cost * 10000) / 10000;
+    analysis = { ...next, stats };
     put(analysisKey(), analysis);
   }
   const logKey = () => (fixture ? "fixture-organize-log" : "organize-log");
@@ -685,6 +707,66 @@ export default async function plugin(bb: BbPluginApi) {
     put(logKey(), log);
     notify();
   }
+  const BANNER_PATH = "/banner";
+  const bannerRows = () =>
+    db.prepare("SELECT key, at FROM banners").all() as {
+      key: string;
+      at: number;
+    }[];
+  function bannerUrls(): Record<string, string> {
+    const have = new Map(bannerRows().map((r) => [r.key, r.at]));
+    const urls: Record<string, string> = {};
+    for (const name of Object.keys(analysis?.summaries ?? {})) {
+      const at = have.get(bannerKey(name));
+      if (at)
+        urls[name] =
+          `/api/v1/plugins/${bb.pluginId}/http${BANNER_PATH}?key=${encodeURIComponent(bannerKey(name))}&v=${at}`;
+    }
+    return urls;
+  }
+  bb.http.route("GET", BANNER_PATH, (c) => {
+    const row = db
+      .prepare("SELECT mime, data FROM banners WHERE key = ?")
+      .get(c.req.query("key") ?? "") as
+      { mime: string; data: Buffer } | undefined;
+    if (!row) return c.notFound();
+    return new Response(new Uint8Array(row.data), {
+      headers: {
+        "content-type": row.mime,
+        "cache-control": "private, max-age=31536000, immutable",
+      },
+    });
+  });
+  /** Generates banners for summarized groups that don't have one yet. */
+  async function ensureBanners(hostId: string, signal: AbortSignal) {
+    const have = new Set(bannerRows().map((r) => r.key));
+    const missing = Object.entries(analysis?.summaries ?? {}).filter(
+      ([name]) => !have.has(bannerKey(name)),
+    );
+    await mapConcurrent(missing, async ([name, summary]) => {
+      try {
+        const image = await inference.call(
+          "image",
+          { prompt: bannerPrompt(name, summary.motif), model: IMAGE_MODEL },
+          { hostId, signal, timeoutMs: 120_000 },
+        );
+        db.prepare(
+          "INSERT OR REPLACE INTO banners (key, name, motif, mime, data, cost, at) VALUES (?,?,?,?,?,?,?)",
+        ).run(
+          bannerKey(name),
+          name,
+          summary.motif,
+          image.mime,
+          Buffer.from(image.data, "base64"),
+          image.cost,
+          Date.now(),
+        );
+        notify();
+      } catch {
+        signal.throwIfAborted();
+      }
+    });
+  }
   bb.background.service("thread-analysis", {
     async start(signal) {
       while (!signal.aborted) {
@@ -696,6 +778,7 @@ export default async function plugin(bb: BbPluginApi) {
           try {
             await analyze(AbortSignal.any([signal, run.signal]));
             if ((await settings.get()).organize === "auto") await organize();
+            if (lastHost) await ensureBanners(lastHost, signal);
           } catch (e) {
             error = run.signal.aborted
               ? "Analysis cancelled. Previous results are unchanged."
@@ -742,6 +825,7 @@ export default async function plugin(bb: BbPluginApi) {
     error,
     fixture: fixture ? basename(fixture.path) : null,
     log: log.slice(-100),
+    banners: bannerUrls(),
     mode: (await settings.get()).organize === "suggest" ? "suggest" : "auto",
     organizing,
   });

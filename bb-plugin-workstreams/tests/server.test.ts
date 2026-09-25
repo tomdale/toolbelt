@@ -82,6 +82,18 @@ function setup(count = 17, malformed = false, failTitle?: string) {
           return { text: "not JSON", usage: { input: 1, output: 1, cost: 0 } };
         const prompt = (input as { prompt: string }).prompt;
         const data = JSON.parse(prompt.slice(prompt.lastIndexOf("\n") + 1));
+        if (prompt.includes("For each workstream"))
+          return {
+            text: JSON.stringify({
+              groups: data.map((g: { name: string }) => ({
+                name: g.name,
+                about: "About",
+                status: "Status",
+                motif: "Motif",
+              })),
+            }),
+            usage: { input: 1, output: 1, cost: 0 },
+          };
         if (failTitle && data.some((t: any) => t.title === failTitle))
           throw new Error("gateway down");
         return {
@@ -151,7 +163,15 @@ describe("active thread overview", () => {
       new Set(["Vercel Agent for Slack"]),
     );
     expect(h.peak()).toBe(3);
-    expect(h.harness.experimental_hostRpcCalls).toHaveLength(3);
+    // Three classification batches and one workstream summary call.
+    expect(
+      h.harness.experimental_hostRpcCalls.filter(
+        (c) => (c as { method?: string }).method !== "image",
+      ),
+    ).toHaveLength(4);
+    expect(s.analysis?.summaries["Vercel Agent for Slack"]?.about).toBe(
+      "About",
+    );
     expect(h.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(0);
     const reloaded = await h.harness.lifecycle.reload(plugin);
     fixtures.push(reloaded);
@@ -193,7 +213,7 @@ describe("active thread overview", () => {
         null,
       )) as Snapshot;
       expect(s.error).toBeTruthy();
-      expect(s.analysis).toEqual(previous);
+      expect(s.analysis).toEqual({ ...previous, summaries: {} });
     } finally {
       service.controller.abort();
       await service.done;
@@ -209,6 +229,7 @@ describe("active thread overview", () => {
         at: 1,
         items: [{ threadId: "8", group: "Old", recap: "Before", updatedAt: 1 }],
         warnings: [],
+        summaries: {},
       }),
     );
     const replacement = await h.harness.lifecycle.reload(plugin);
@@ -229,7 +250,7 @@ describe("active thread overview", () => {
         group: "Old",
         refreshed: false,
       });
-      expect(s.analysis?.stats).toMatchObject({ calls: 3, failedCalls: 2 });
+      expect(s.analysis?.stats).toMatchObject({ calls: 4, failedCalls: 2 });
       expect(s.analysis?.warnings).toHaveLength(1);
     } finally {
       service.controller.abort();
@@ -486,6 +507,7 @@ describe("classification contracts", () => {
           },
         ],
         warnings: [],
+        summaries: {},
       },
       error: null,
       progress: null,

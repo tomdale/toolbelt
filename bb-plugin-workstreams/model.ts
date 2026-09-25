@@ -81,6 +81,13 @@ export const analysisSchema = z.object({
     }),
   ),
   warnings: z.array(z.string()),
+  /** Per-workstream summaries keyed by group name; see summary.ts. */
+  summaries: z
+    .record(
+      z.string(),
+      z.object({ about: z.string(), status: z.string(), motif: z.string() }),
+    )
+    .default({}),
   stats: z
     .object({
       seconds: z.number(),
