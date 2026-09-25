@@ -40,7 +40,10 @@ const models = process.argv.slice(2).length
   ? process.argv.slice(2)
   : ["openai/gpt-4.1-mini"];
 const runs = Number(env.EVAL_RUNS) || 1;
+// EVAL_SEED=1 seeds global group names; EVAL_SEED=thread offers each thread
+// its previous group (production behavior).
 const seed = env.EVAL_SEED === "1";
+const sticky = env.EVAL_SEED === "thread";
 const batchSize = Number(env.EVAL_BATCH) || BATCH_SIZE;
 const judgeModel = env.EVAL_JUDGE; // e.g. openai/gpt-4.1-mini; unset skips recap scoring
 const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -221,15 +224,27 @@ for (const model of models) {
         return text;
       };
       const items = (
-        await mapConcurrent(batches(contexts, batchSize), async (batch) => {
-          const [classified, drifts] = await Promise.all([
-            classifyBatch(batch, call, known),
-            detectDrift(batch, call),
-          ]);
-          return classified.map((i) =>
-            applyDrift({ ...i, drift: drifts.get(i.threadId) ?? null }),
-          );
-        })
+        await mapConcurrent(
+          batches(
+            sticky && previous
+              ? contexts.map((c) => ({
+                  ...c,
+                  previousGroup: previous.results.find((r) => r.id === c.id)
+                    ?.group,
+                }))
+              : contexts,
+            batchSize,
+          ),
+          async (batch) => {
+            const [classified, drifts] = await Promise.all([
+              classifyBatch(batch, call, known),
+              detectDrift(batch, call),
+            ]);
+            return classified.map((i) =>
+              applyDrift({ ...i, drift: drifts.get(i.threadId) ?? null }),
+            );
+          },
+        )
       ).flat();
       entry.results = normalizeGroups(items).map((item) => {
         const c = byId.get(item.threadId);

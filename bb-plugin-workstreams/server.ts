@@ -7,6 +7,7 @@ import {
   BATCH_SIZE,
   analysisSchema,
   snapshotSchema,
+  UNCLASSIFIED,
   fixtureSchema,
   classifyBatch,
   normalizeGroups,
@@ -195,6 +196,17 @@ export default async function plugin(bb: BbPluginApi) {
       ]),
     );
     const forks = new Set(splits().map((e) => e.undo?.forkId));
+    const pinned = new Map<string, string>();
+    for (const e of splits())
+      if (e.action.kind === "split") {
+        pinned.set(e.action.threadId, e.action.drift.to);
+        if (e.undo?.forkId) pinned.set(e.undo.forkId, e.action.drift.from);
+      }
+    const previous = new Map(
+      (analysis?.items ?? [])
+        .filter((i) => i.group !== UNCLASSIFIED)
+        .map((i) => [i.threadId, i.group]),
+    );
     return mapConcurrent(threads, async (thread): Promise<Context> => {
       signal.throwIfAborted();
       let initial = "";
@@ -277,8 +289,11 @@ export default async function plugin(bb: BbPluginApi) {
         path,
         excerpts: contextExcerpt(initial, prompts, report),
         timeline,
-        // Already-split threads, on either side, are not re-checked for drift.
+        // Already-split threads, on either side, are not re-checked for drift,
+        // and keep the groups the split gave them.
         settled: splitAt.has(thread.id) || forks.has(thread.id),
+        pinnedGroup: pinned.get(thread.id),
+        previousGroup: previous.get(thread.id),
       };
     });
   }

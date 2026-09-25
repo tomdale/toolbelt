@@ -47,6 +47,10 @@ export type Context = Thread & {
   timeline: string;
   /** True for threads already split by Workstreams; skipped by drift detection. */
   settled?: boolean;
+  /** Group from the previous analysis, offered to keep grouping stable. */
+  previousGroup?: string;
+  /** Group fixed by a split: side quest for the original, mainline for the fork. */
+  pinnedGroup?: string;
 };
 /** Frozen thread contexts (e.g. from `bb workstreams export`); extra keys such as eval labels are ignored. */
 export const fixtureSchema = z.array(
@@ -159,11 +163,14 @@ export function classificationPrompt(
   threads: Context[],
   known: string[] = [],
 ): string {
+  const sticky = threads.some((t) => t.previousGroup)
+    ? `\npreviousGroup is the group this thread had in the last analysis. Keep it exactly unless the context clearly shows the thread's substantive work belongs to a different product; don't move threads between groups over wording.`
+    : "";
   const seeded = known.length
     ? `\nGroup names already in use: ${JSON.stringify(known)}. Reuse one exactly when a thread concerns that same product; create a new name otherwise. Never force a thread into an unrelated existing group.`
     : "";
   return `${RULES}
-${GROUPING}${seeded}
+${GROUPING}${seeded}${sticky}
 For each thread, write:
 - title: a concrete, recognizable 3–8 word description of the CURRENT substantive task, at most 80 characters. If a later request changed scope, title the new scope, not the original title or opening request. Name the substantive deliverable (e.g. 'Inside Vercel documentation site'), not the latest procedural step (switching models, status checks, commits). Preserve the actual product's name in the title so it remains recognizable outside its group. No paths, URLs, or status boilerplate.
 - recap: under 120 characters (hard limit 180). Where the work stands now, from the LAST assistant report: the latest concrete result and what remains or what is being asked. Examples: 'Auth fix tested locally; needs an app restart to verify.' 'Loader can't proceed until the SDK can register skills.' 'Asked whether to update all repos or only agents.' Don't restate the title or the state. Skip implementation inventories and test-count lists. A proposal is not implemented work; distinguish planned, attempted, reported, and verified. Don't invent a blocker, next action, or completion. If context is missing, say so. Runtime idle/error is not evidence of task completion.
@@ -174,7 +181,7 @@ For each thread, write:
   in_progress: the agent is still working, or work continues without needing the user.
   done: finished with nothing left for the user, including answered questions and completed research.
 Output {"items":[{"threadId":"exact ID","group":"Project or product","title":"Short description of work","recap":"Where it stands","state":"done"}]}. Include every supplied thread exactly once. Use only the short record id supplied at the top level; IDs appearing within excerpts are unrelated. Include unclear and empty records as Unclassified rather than omitting them.
-${JSON.stringify(threads.map(({ id, title, repository, path, excerpts }) => ({ id, title, repository, path, excerpts })))}`;
+${JSON.stringify(threads.map(({ id, title, repository, path, excerpts, previousGroup }) => ({ id, title, repository, path, ...(previousGroup ? { previousGroup } : {}), excerpts })))}`;
 }
 export async function classifyBatch(
   threads: Context[],
@@ -189,10 +196,14 @@ export async function classifyBatch(
     await complete(classificationPrompt(records, known)),
     records.map((t) => t.id),
   );
-  return result.map((item) => ({
-    ...item,
-    threadId: threads[Number(item.threadId) - 1].id,
-  }));
+  return result.map((item) => {
+    const thread = threads[Number(item.threadId) - 1];
+    return {
+      ...item,
+      threadId: thread.id,
+      group: thread.pinnedGroup ?? item.group,
+    };
+  });
 }
 /**
  * Removes packaging descriptors the model tends to attach despite instructions
