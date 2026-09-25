@@ -311,7 +311,7 @@ describe("active thread overview", () => {
         group: "Old",
         refreshed: false,
       });
-      expect(s.analysis?.stats).toMatchObject({ calls: 4, failedCalls: 2 });
+      expect(s.analysis?.stats).toMatchObject({ calls: 5, failedCalls: 2 });
       expect(s.analysis?.warnings).toHaveLength(1);
     } finally {
       service.controller.abort();

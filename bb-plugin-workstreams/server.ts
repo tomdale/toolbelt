@@ -352,6 +352,22 @@ export default async function plugin(bb: BbPluginApi) {
       summaryCalls: 0,
       summaryCost: 0,
     };
+    // Drift checks are nested inside concurrent classification batches; cap
+    // all model calls together so the two independent checks don't flood the
+    // host/Gateway with dozens of simultaneous Pi processes.
+    let activeCalls = 0;
+    const waiters: (() => void)[] = [];
+    const withCallSlot = async <T>(fn: () => Promise<T>): Promise<T> => {
+      if (activeCalls >= 4)
+        await new Promise<void>((resolve) => waiters.push(resolve));
+      activeCalls++;
+      try {
+        return await fn();
+      } finally {
+        activeCalls--;
+        waiters.shift()?.();
+      }
+    };
     const complete = async (
       prompt: string,
       hostId: string,
@@ -360,10 +376,12 @@ export default async function plugin(bb: BbPluginApi) {
       signal.throwIfAborted();
       stats.calls++;
       if (kind === "summary") stats.summaryCalls++;
-      const { text, usage } = await inference.call(
-        "complete",
-        { prompt },
-        { hostId, signal, timeoutMs: 130_000 },
+      const { text, usage } = await withCallSlot(() =>
+        inference.call(
+          "complete",
+          { prompt },
+          { hostId, signal, timeoutMs: 130_000 },
+        ),
       );
       stats.inputTokens += usage.input;
       stats.outputTokens += usage.output;
@@ -476,15 +494,35 @@ export default async function plugin(bb: BbPluginApi) {
       const input = summaryInput(next);
       if (input.length) {
         const summaryStarted = Date.now();
+        // One group per call avoids truncated or incomplete multi-group JSON
+        // from the fast model and makes a single failure local to one summary.
         const summaries = await mapConcurrent(
-          summaryBatches(input),
-          async (batch) =>
-            parseSummaries(
-              await complete(summaryPrompt(batch), host.id, "summary"),
-              batch.map((g) => g.name),
-            ),
+          input.map((group) => [group]),
+          async (batch) => {
+            for (let attempt = 0; attempt < 2; attempt++) {
+              try {
+                return parseSummaries(
+                  await complete(summaryPrompt(batch), host.id, "summary"),
+                  batch.map((g) => g.name),
+                );
+              } catch {
+                signal.throwIfAborted();
+              }
+            }
+            // A bad summary response must not discard classifications or the
+            // summaries already saved for this group.
+            return new Map(
+              batch.flatMap(({ name }) =>
+                analysis?.summaries?.[name]
+                  ? [[name, analysis.summaries[name]] as const]
+                  : [],
+              ),
+            );
+          },
         );
         next.summaries = Object.fromEntries(summaries.flatMap((s) => [...s]));
+        if (next.summaries && Object.keys(next.summaries).length < input.length)
+          warnings.push("Some workstream summaries could not be refreshed.");
         stats.summarySeconds =
           Math.round((Date.now() - summaryStarted) / 100) / 10;
       }
