@@ -26,13 +26,13 @@ export function initialRequest(
   }
   return "";
 }
-const TIMELINE_ENTRIES = 30;
-const TIMELINE_CHARS = 160;
+const TIMELINE_CHARS = 600;
+const TIMELINE_CONTEXT_CHARS = 24_000;
 /**
  * One line per user request with its event seq, so the model can place a
  * drift split point that `threads.fork({ sourceSeqEnd })` can act on. BB's
- * own child-thread notices are omitted; long threads keep the first 5 and
- * the latest requests.
+ * own child-thread notices are omitted. Keep requests across the full thread;
+ * the drift prompt bounds total characters without dropping the middle.
  */
 export function requestTimeline(
   events: { type: string; seq?: number; data: unknown }[],
@@ -50,11 +50,14 @@ export function requestTimeline(
     );
   }
   if (lines.length < 2) return "";
-  const kept =
-    lines.length > TIMELINE_ENTRIES
-      ? [...lines.slice(0, 5), "[…]", ...lines.slice(-(TIMELINE_ENTRIES - 5))]
-      : lines;
-  return redact(kept.join("\n"));
+  const complete = redact(lines.join("\n"));
+  if (complete.length <= TIMELINE_CONTEXT_CHARS) return complete;
+  const budget = Math.floor(TIMELINE_CONTEXT_CHARS / (TIMELINE_CHARS + 24));
+  const stride = Math.ceil(lines.length / budget);
+  const sampled = lines.filter(
+    (_, index) => index % stride === 0 || index === lines.length - 1,
+  );
+  return redact(sampled.join("\n")).slice(0, TIMELINE_CONTEXT_CHARS);
 }
 export function contextExcerpt(
   initial: string,

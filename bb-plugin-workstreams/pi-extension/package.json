@@ -1,0 +1,13 @@
+{
+  "name": "@tomdale/workstreams-sidequest-prompt",
+  "private": true,
+  "type": "module",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

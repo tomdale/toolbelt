@@ -12,8 +12,9 @@ All your active threads, grouped by the project or product they concern. Open
   historical; later substantive scope changes take precedence. Excerpts are
   deduplicated and bounded (up to 2,400 initial-request characters, 1,500 per
   recent prompt, and 2,500 from the assistant report). It does not read files,
-  tool output, external history, GitHub, or Linear. A separate one-line-per-
-  request timeline (with event seqs) feeds side-quest detection.
+  tool output, external history, GitHub, or Linear. Side-quest detection gets a
+  chronological, seq-numbered timeline of all user requests; unusually huge
+  histories are evenly sampled within the prompt limit.
 - Up to four batches of eight threads are classified concurrently with their
   conversation context. Short request-local IDs are mapped back to BB thread IDs
   in code. Code strips packaging descriptors from group names (“Foo plugin”,
@@ -91,6 +92,9 @@ Drifted threads are grouped under the side quest.
   inside turns delivered from another thread, so the fork ends at the last
   forkable request before the split. Medium-confidence side quests get a
   one-click **Split** on their row instead.
+- Archives only explicitly redundant threads that are also marked done. Idle,
+  old, blocked, or merely completed threads are not archived. An archive is
+  skipped when the thread is running or has children.
 - Renames messy titles (raw prompts, URLs, truncation) to the inferred title.
 - Files every classified thread into a section named after its group, creating
   sections as needed.
@@ -98,8 +102,8 @@ Drifted threads are grouped under the side quest.
 With **After analysis** set to `auto` (the default), organize runs after each
 analysis; `suggest` only offers splits and the Organize button. Threads that
 changed since analysis are skipped. Every change is logged under “Changes made
-by Workstreams” with **Undo**: undo archives the fork and restores the title or
-section. Compaction cannot be undone.
+by Workstreams” with **Undo**: undo archives the fork, unarchives a redundant
+thread, and restores the title or section. Compaction cannot be undone.
 
 No task tracking, priorities, external collectors, or editable workstream
 database. Legacy workstream data is left untouched but is no longer used.
@@ -124,6 +128,9 @@ bb plugin reload workstreams
 - `drift.ts`: side-quest detection; `organize.ts`: organize planning and the
   change log.
 - `app.tsx` / `app.css`: grouped thread overview.
+- `pi-extension/`: optional in-thread request classifier for BB Pi threads; see
+  its README for installation and throwaway-thread testing. Not installed by
+  Workstreams.
 - `scripts/screenshot.sh`: replays a frozen context file and screenshots desktop
   and mobile widths.
 - `eval/`: opt-in paid model comparison with synthetic regression and holdout

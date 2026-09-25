@@ -441,7 +441,9 @@ function WorkstreamsPage() {
                           ? `Renamed to “${e.action.title}”`
                           : e.action.kind === "removeSection"
                             ? `Removed empty section ${e.action.section}`
-                            : `Moved to ${e.action.section}`}
+                            : e.action.kind === "archive"
+                              ? `Archived: ${e.action.reason}`
+                              : `Moved to ${e.action.section}`}
                       {e.detail && (
                         <span className="ws-muted"> — {e.detail}</span>
                       )}

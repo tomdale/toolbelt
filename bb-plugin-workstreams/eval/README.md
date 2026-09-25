@@ -189,9 +189,16 @@ human review.
   useful signal. Recap quality was also reviewed by hand.
 - `drift` in a case: an object marks a side quest (`from`, optional `splitSeq`),
   `null` a healthy thread. Reports detection, from/seq accuracy, false splits,
-  and unlabeled detections for review. `drift.json` holds seven synthetic cases
-  (three side quests, four healthy threads with scope evolution, procedural
-  requests, and manager messages).
+  and unlabeled detections for review. `drift.json` includes mid-thread pivots,
+  long histories, and healthy threads with scope evolution, procedural requests,
+  and manager messages. Across two GPT-4.1 mini runs after the full-history
+  change, the four labeled side quests scored 4/4 then 3/4 with exact
+  source/seq; both had 0/4 healthy splits and 0 unlabeled detections. The
+  long-middle synthetic case was high-confidence in at least one two-pass run.
+  The manually frozen 40-thread snapshot classified 39/40 strictly, with 0
+  Unclassified and 3 unrelated pair merges; it still missed Agent configuration
+  drift in the real long thread. That remains an explicit limitation, not hidden
+  by the synthetic result.
 
 The private reference is now 37 real threads (a live export with checkout paths
 and request timelines). The three formerly disputed threads are side quests,
