@@ -8,7 +8,6 @@ import {
   analysisSchema,
   snapshotSchema,
   fixtureSchema,
-  knownGroups,
   classifyBatch,
   normalizeGroups,
   mapConcurrent,
@@ -262,8 +261,9 @@ export default async function plugin(bb: BbPluginApi) {
     let classified = 0;
     advance("classifying", 0, threads.length);
     const prior = new Map(analysis?.items.map((i) => [i.threadId, i]));
-    // Seeding earlier names keeps product labels stable across runs and batches.
-    const seed = knownGroups(analysis);
+    // Seeding earlier names was evaluated (eval/README.md) and increased wrong
+    // merges without improving accuracy, so each run names groups afresh.
+    const seed: string[] = [];
     const kept: Analysis["items"] = [];
     const items = (
       await mapConcurrent(batches, async (batch) => {

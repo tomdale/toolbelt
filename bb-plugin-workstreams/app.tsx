@@ -7,7 +7,13 @@ import {
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "./server";
-import { groupThreads, type Row, type Snapshot } from "./model";
+import {
+  UNCLASSIFIED,
+  groupThreads,
+  type Row,
+  type Snapshot,
+  type WorkState,
+} from "./model";
 import { Button } from "./components/ui/button";
 import "./app.css";
 
@@ -16,6 +22,13 @@ const FRESHNESS: Record<Row["freshness"], string | null> = {
   changed: "Updated since analysis",
   failed: "Not refreshed",
   new: "Not analyzed",
+};
+const STATE_LABEL: Record<WorkState, string> = {
+  needs_decision: "Needs decision",
+  ready_for_review: "Ready for review",
+  blocked: "Blocked",
+  in_progress: "In progress",
+  done: "Done",
 };
 const RUNTIME: Record<string, string> = {
   active: "Running",
@@ -34,32 +47,44 @@ function when(ms: number): string {
     day: "numeric",
   });
 }
+const OTHER = "Other groups";
 const anchor = (name: string) =>
   `ws-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
-function ThreadRow({ row, open }: { row: Row; open: () => void }) {
-  const { thread, title, recap, needsYou, freshness } = row;
+function ListRow({
+  row,
+  group,
+  open,
+}: {
+  row: Row;
+  group?: string;
+  open: () => void;
+}) {
+  const { thread, title, recap, freshness, state } = row;
   const runtime = RUNTIME[thread.status];
   const tag = FRESHNESS[freshness];
   return (
     <li>
-      <button className="ws-row" title={thread.title} onClick={open}>
-        <span className="ws-row-top">
-          <strong>{title}</strong>
-          <span className="ws-when">{when(thread.updatedAt)}</span>
+      <button
+        className={`ws-line ws-line-${state ?? "none"}${row.needsYou ? " ws-line-you" : ""}`}
+        title={thread.title}
+        onClick={open}
+      >
+        <span className={`ws-line-state ws-state-${state ?? "none"}`}>
+          {state ? STATE_LABEL[state] : ""}
         </span>
-        {recap && <span className="ws-recap">{recap}</span>}
-        {(needsYou || runtime || tag) && (
-          <span className="ws-tags">
-            {needsYou && <span className="ws-tag ws-tag-you">Needs you</span>}
-            {runtime && (
-              <span className={`ws-tag ws-runtime-${thread.status}`}>
-                {runtime}
-              </span>
-            )}
-            {tag && <span className="ws-tag ws-tag-muted">{tag}</span>}
-          </span>
-        )}
+        <span className="ws-line-body">
+          {group && <span className="ws-line-group">{group}</span>}
+          <strong>{title}</strong>
+          {recap && <span className="ws-recap"> {recap}</span>}
+          {runtime && (
+            <span className={`ws-tag ws-runtime-${thread.status}`}>
+              {runtime}
+            </span>
+          )}
+          {tag && <span className="ws-tag ws-tag-muted">{tag}</span>}
+        </span>
+        <span className="ws-when">{when(thread.updatedAt)}</span>
       </button>
     </li>
   );
@@ -140,6 +165,13 @@ function WorkstreamsPage() {
     )
     .filter(([, rows]) => rows.length);
   const stats = data?.analysis?.stats;
+  // In the list, one-thread groups share a section so they don't each need a header.
+  const multi = groups.filter(
+    ([name, rows]) => rows.length > 1 || name === UNCLASSIFIED,
+  );
+  const singles = groups.filter(
+    ([name, rows]) => rows.length === 1 && name !== UNCLASSIFIED,
+  );
   return (
     <main className="ws-page">
       <div className="ws-wrap">
@@ -220,7 +252,10 @@ function WorkstreamsPage() {
                     Needs you <span>{needsYou}</span>
                   </button>
                 )}
-                {groups.map(([name, rows]) => (
+                {[
+                  ...multi.map(([name, rows]) => [name, rows.length] as const),
+                  ...(singles.length ? [[OTHER, singles.length] as const] : []),
+                ].map(([name, count]) => (
                   <button
                     key={name}
                     className="ws-chip"
@@ -230,7 +265,7 @@ function WorkstreamsPage() {
                         ?.scrollIntoView({ block: "start" })
                     }
                   >
-                    {name} <span>{rows.length}</span>
+                    {name} <span>{count}</span>
                   </button>
                 ))}
               </nav>
@@ -244,20 +279,15 @@ function WorkstreamsPage() {
             {!!data.threads.length && !groups.length && (
               <p className="ws-notice">No matching threads.</p>
             )}
-            <div className="ws-groups">
-              {groups.map(([name, rows]) => (
-                <section
-                  className="ws-group"
-                  key={name}
-                  id={anchor(name)}
-                  aria-label={name}
-                >
+            <div className="ws-list">
+              {multi.map(([name, rows]) => (
+                <section key={name} id={anchor(name)} aria-label={name}>
                   <h2>
                     {name} <span>{rows.length}</span>
                   </h2>
                   <ul>
                     {rows.map((row) => (
-                      <ThreadRow
+                      <ListRow
                         key={row.thread.id}
                         row={row}
                         open={() => navigate.toThread(row.thread.id)}
@@ -266,6 +296,23 @@ function WorkstreamsPage() {
                   </ul>
                 </section>
               ))}
+              {!!singles.length && (
+                <section aria-label="Other groups">
+                  <h2>
+                    Other groups <span>{singles.length}</span>
+                  </h2>
+                  <ul>
+                    {singles.map(([name, [row]]) => (
+                      <ListRow
+                        key={row.thread.id}
+                        row={row}
+                        group={name}
+                        open={() => navigate.toThread(row.thread.id)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              )}
             </div>
             {!!data.analysis?.warnings.length && (
               <details className="ws-warnings">

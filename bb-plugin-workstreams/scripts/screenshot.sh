@@ -8,7 +8,8 @@
 # eval/cases.json). Private fixtures and their screenshots belong in private
 # storage, never in this repository. --analyze runs a fresh paid analysis
 # first; otherwise the fixture's last saved analysis is shown. Replay is
-# turned off afterwards unless --keep is given.
+# turned off afterwards unless --keep is given. WORKSTREAMS_LAYOUT=list|cards
+# selects the layout.
 set -euo pipefail
 fixture=$1 out=$2
 shift 2
@@ -34,6 +35,10 @@ session=workstreams-shot-$$
 shoot() {
   agent-browser --session "$session" set viewport "$1" "$2" >/dev/null
   agent-browser --session "$session" open "$url" >/dev/null
+  if [[ -n ${WORKSTREAMS_LAYOUT:-} ]]; then
+    agent-browser --session "$session" eval "localStorage.setItem('workstreams:layout','$WORKSTREAMS_LAYOUT')" >/dev/null
+    agent-browser --session "$session" reload >/dev/null
+  fi
   sleep 4
   agent-browser --session "$session" screenshot "$out/$3.png" >/dev/null
   echo "$out/$3.png"

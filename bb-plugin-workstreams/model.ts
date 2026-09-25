@@ -194,13 +194,15 @@ export function normalizeGroups(items: Classification[]): Classification[] {
 }
 /** Distinct product names from an earlier analysis, used to seed naming. */
 export function knownGroups(analysis: Analysis | null): string[] {
-  return [
-    ...new Set(
-      (analysis?.items ?? [])
-        .map((i) => i.group)
-        .filter((g) => g !== UNCLASSIFIED),
-    ),
-  ].sort();
+  // Only names shared by two or more threads: a one-off label is too often a
+  // slug or mistake, and seeding it would perpetuate the error.
+  const counts = new Map<string, number>();
+  for (const { group } of analysis?.items ?? [])
+    if (group !== UNCLASSIFIED) counts.set(group, (counts.get(group) ?? 0) + 1);
+  return [...counts]
+    .filter(([, n]) => n > 1)
+    .map(([g]) => g)
+    .sort();
 }
 export function excerpt(text: string, limit: number): string {
   if (text.length <= limit) return text;
@@ -212,9 +214,12 @@ export type Row = {
   title: string;
   recap: string | null;
   needsYou: boolean;
+  state: WorkState | null;
   /** "changed": thread updated since analysis; "failed": last run could not refresh it. */
   freshness: "current" | "changed" | "failed" | "new";
 };
+const rank = (state: WorkState | null) =>
+  state ? STATES.indexOf(state) : STATES.length;
 export const UNCLASSIFIED = "Unclassified";
 /**
  * Groups by analyzed product (or BB project before analysis). Larger groups
@@ -234,6 +239,7 @@ export function groupThreads(snapshot: Snapshot): [string, Row[]][] {
       title: item?.title ?? thread.title,
       recap: item?.recap ?? null,
       needsYou: !!item?.needsYou,
+      state: item?.state ?? null,
       freshness: !item
         ? "new"
         : !item.refreshed
@@ -247,7 +253,7 @@ export function groupThreads(snapshot: Snapshot): [string, Row[]][] {
   for (const rows of groups.values())
     rows.sort(
       (a, b) =>
-        Number(b.needsYou) - Number(a.needsYou) ||
+        rank(a.state) - rank(b.state) ||
         b.thread.updatedAt - a.thread.updatedAt,
     );
   return [...groups].sort(

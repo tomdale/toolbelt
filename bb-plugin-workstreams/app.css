@@ -83,7 +83,7 @@
   background: var(--accent);
 }
 .ws-chip span,
-.ws-group h2 span {
+.ws-list h2 span {
   color: var(--muted-foreground);
   font-weight: 400;
 }
@@ -94,63 +94,10 @@
 .ws-chip-you[aria-pressed="true"] span {
   color: inherit;
 }
-/* Masonry columns keep single-thread groups from taking a full row each. */
-.ws-groups {
-  columns: 380px;
-  column-gap: 16px;
-}
-.ws-group {
-  break-inside: avoid;
-  margin-bottom: 16px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  padding: 10px 6px 6px;
-  scroll-margin-top: 16px;
-}
-.ws-group h2 {
-  font-size: 13px;
-  font-weight: 600;
-  margin: 0 8px 4px;
-  display: flex;
-  gap: 8px;
-}
-.ws-group ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.ws-row {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  width: 100%;
-  text-align: left;
-  padding: 7px 8px;
-  border-radius: 6px;
-  background: transparent;
-  border: 0;
-  color: inherit;
-  cursor: pointer;
-}
-.ws-row:hover {
-  background: var(--accent);
-}
-.ws-row:focus-visible,
 .ws-chip:focus-visible,
 .ws-search:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 1px;
-}
-.ws-row-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-.ws-row strong {
-  font-size: 13px;
-  font-weight: 550;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
 }
 .ws-when {
   font-size: 11px;
@@ -164,18 +111,20 @@
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
-.ws-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 2px;
-}
 .ws-tag {
   font-size: 10px;
   line-height: 1.5;
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 0 5px;
+}
+.ws-state-needs_decision,
+.ws-state-ready_for_review {
+  border-color: var(--foreground);
+  font-weight: 600;
+}
+.ws-state-done {
+  color: var(--muted-foreground);
 }
 .ws-tag-you {
   border-color: var(--foreground);
@@ -213,5 +162,96 @@ footer.ws-muted {
   .ws-search {
     flex: 1;
     width: auto;
+  }
+}
+
+/* List layout: one line per thread, state in a scannable left column. */
+.ws-list section {
+  margin-bottom: 14px;
+  scroll-margin-top: 16px;
+}
+.ws-list h2 {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+.ws-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ws-line {
+  display: grid;
+  grid-template-columns: 116px 1fr auto;
+  gap: 12px;
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.ws-line:hover {
+  background: var(--accent);
+}
+.ws-line:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.ws-line-state {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.ws-line-done {
+  opacity: 0.6;
+}
+.ws-line-you .ws-line-state {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.ws-line-body strong {
+  font-weight: 550;
+  margin-right: 6px;
+}
+.ws-line-body .ws-tag {
+  margin-left: 6px;
+}
+.ws-line-group {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-right: 6px;
+}
+@media (max-width: 640px) {
+  .ws-line {
+    grid-template-columns: 1fr auto;
+    gap: 2px 8px;
+  }
+  .ws-line-state {
+    grid-column: 1 / -1;
+  }
+  .ws-line-state:empty {
+    display: none;
+  }
+  .ws-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 0 -12px 14px;
+    padding: 0 12px;
+  }
+  .ws-chip {
+    white-space: nowrap;
   }
 }

@@ -10,6 +10,7 @@ import {
   mapConcurrent,
   BATCH_SIZE,
   UNCLASSIFIED,
+  knownGroups,
 } from "../model.ts";
 import { parsePiJson, piArgs } from "../pi.ts";
 import { judgePrompt, parseJudgment } from "./judge.ts";
@@ -168,13 +169,9 @@ for (const model of models) {
     const usage = { calls: 0, tokens: 0, cost: 0 };
     const known =
       seed && previous
-        ? [
-            ...new Set(
-              previous.results
-                .map((r) => r.group)
-                .filter((g) => g !== UNCLASSIFIED),
-            ),
-          ].sort()
+        ? knownGroups({
+            items: previous.results.map((r) => ({ group: r.group })),
+          })
         : [];
     const entry = { run, seededWith: known.length };
     try {

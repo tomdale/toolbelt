@@ -64,7 +64,9 @@ async function mount(data: Snapshot = initial) {
 it("shows all threads under BB projects before analysis without starting a run", async () => {
   const v = await mount();
   await v.findByText("Fix Slack replies");
-  expect(v.getByRole("heading", { name: "agents 1" })).toBeTruthy();
+  // One-thread groups share a section and show their group on the row.
+  expect(v.getByRole("heading", { name: "Other groups 2" })).toBeTruthy();
+  expect(v.getByText("agents")).toBeTruthy();
   expect(v.getByText("Update API auth")).toBeTruthy();
   expect(v.inspection.rpcCalls.some((c) => c.method === "analyze")).toBe(false);
   v.lifecycle.unmount();
