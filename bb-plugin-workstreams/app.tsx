@@ -183,6 +183,11 @@ function WorkstreamsPage() {
             </Button>
           </div>
         </header>
+        {data?.fixture && (
+          <p className="ws-notice">
+            Replaying frozen snapshot {data.fixture}, not live threads.
+          </p>
+        )}
         {(error || data?.error) && (
           <div role="alert" className="ws-notice ws-error">
             {error || data?.error}

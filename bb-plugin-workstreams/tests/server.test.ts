@@ -85,7 +85,7 @@ function setup(count = 17, malformed = false, failTitle?: string) {
                   ? "vercel-agent-for-slack"
                   : "Vercel Agent for Slack",
               recap: `Implement feature ${t.id}`,
-              needsYou: false,
+              state: "done",
             })),
           }),
           usage: { input: 100, output: 10, cost: 0.001 },
@@ -286,11 +286,11 @@ describe("classification contracts", () => {
       group: "BB",
       title: "Build the plugin",
       recap: "Build the plugin",
-      needsYou: false,
+      state: "done",
     };
     expect(
       parseClassifications(JSON.stringify({ items: [item] }), ["1"]),
-    ).toEqual([item]);
+    ).toEqual([{ ...item, needsYou: false }]);
     for (const items of [[], [item, item], [{ ...item, threadId: "other" }]])
       expect(() =>
         parseClassifications(JSON.stringify({ items }), ["1"]),
@@ -332,14 +332,14 @@ describe("classification contracts", () => {
             group: "BB",
             title: "Second thread",
             recap: "Pending",
-            needsYou: true,
+            state: "needs_decision",
           },
           {
             threadId: "1",
             group: "Workstreams",
             title: "First thread",
             recap: "Ready",
-            needsYou: false,
+            state: "done",
           },
         ],
       });
@@ -409,24 +409,24 @@ describe("classification contracts", () => {
     expect(result.endsWith("Blocked on SDK")).toBe(true);
     expect(result.length).toBeLessThanOrEqual(100);
   });
-  it("rejects missing display titles and overlong recaps in new model output", () => {
+  it("rejects missing display titles and clips overlong recaps", () => {
     const item = {
       threadId: "1",
       group: "BB",
       recap: "Waiting",
-      needsYou: false,
+      state: "done",
     };
     expect(() =>
       parseClassifications(JSON.stringify({ items: [item] }), ["1"]),
     ).toThrow();
-    expect(() =>
-      parseClassifications(
-        JSON.stringify({
-          items: [{ ...item, title: "Fix BB", recap: "x".repeat(181) }],
-        }),
-        ["1"],
-      ),
-    ).toThrow();
+    const [clipped] = parseClassifications(
+      JSON.stringify({
+        items: [{ ...item, title: "Fix BB", recap: "word ".repeat(60) }],
+      }),
+      ["1"],
+    );
+    expect(clipped.recap.length).toBeLessThanOrEqual(180);
+    expect(clipped.recap.endsWith("…")).toBe(true);
   });
   it("bounds concurrency and retains input order", async () => {
     let active = 0,
@@ -476,6 +476,7 @@ describe("classification contracts", () => {
       },
       error: null,
       progress: null,
+      fixture: null,
     };
     const groups = new Map(groupThreads(s));
     expect(groups.get("Product")?.[0].freshness).toBe("changed");

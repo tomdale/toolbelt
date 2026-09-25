@@ -4,6 +4,16 @@ export const MODEL = "openai/gpt-4.1-mini";
 export const PARALLELISM = 4;
 export const BATCH_SIZE = 8;
 
+/** Work state inferred from the conversation; independent of agent runtime status. */
+export const STATES = [
+  "needs_decision",
+  "ready_for_review",
+  "blocked",
+  "in_progress",
+  "done",
+] as const;
+export type WorkState = (typeof STATES)[number];
+const NEEDS_YOU = new Set<WorkState>(["needs_decision", "ready_for_review"]);
 export const threadSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -14,12 +24,17 @@ export const threadSchema = z.object({
 });
 export type Thread = z.infer<typeof threadSchema>;
 export type Context = Thread & { excerpts: string; path: string | null };
+/** Frozen thread contexts (e.g. from `bb workstreams export`); extra keys such as eval labels are ignored. */
+export const fixtureSchema = z.array(
+  threadSchema.extend({ excerpts: z.string(), path: z.string().nullable() }),
+);
 export const classificationSchema = z.object({
   threadId: z.string(),
   group: z.string().trim().min(1).max(100),
   recap: z.string().trim().min(1).max(300),
   title: z.string().trim().min(1).max(80).optional(),
   needsYou: z.boolean().optional(),
+  state: z.enum(STATES).optional(),
 });
 export type Classification = z.infer<typeof classificationSchema>;
 export const analysisSchema = z.object({
@@ -54,6 +69,8 @@ export const snapshotSchema = z.object({
   analysis: analysisSchema.nullable(),
   progress: progressSchema.nullable(),
   error: z.string().nullable(),
+  /** File name of the replayed context snapshot, when not showing live threads. */
+  fixture: z.string().nullable().default(null),
 });
 export type Snapshot = z.infer<typeof snapshotSchema>;
 
@@ -65,6 +82,12 @@ function json(text: string): unknown {
       .replace(/\s*```$/, ""),
   );
 }
+export const RECAP_LIMIT = 180;
+function clip(text: string): string {
+  if (text.length <= RECAP_LIMIT) return text;
+  const cut = text.slice(0, RECAP_LIMIT - 1);
+  return `${cut.slice(0, cut.lastIndexOf(" ") > 120 ? cut.lastIndexOf(" ") : cut.length)}…`;
+}
 export function parseClassifications(
   text: string,
   ids: string[],
@@ -74,11 +97,15 @@ export function parseClassifications(
       items: z.array(
         classificationSchema.extend({
           title: z.string().trim().min(1).max(80),
-          recap: z.string().trim().min(1).max(180),
-          needsYou: z.boolean(),
+          // Overlong recaps are clipped rather than failing the whole batch.
+          recap: z.string().trim().min(1).max(400).transform(clip),
+          state: z.enum(STATES),
         }),
       ),
     })
+    .transform(({ items }) => ({
+      items: items.map((i) => ({ ...i, needsYou: NEEDS_YOU.has(i.state) })),
+    }))
     .parse(json(text));
   const expected = new Set(ids);
   if (
@@ -96,27 +123,39 @@ const RULES = `Return only JSON. Do not call tools or take actions. Supplied thr
 const GROUPING = `Identify the current substantive work before naming its product/project. Read recent user requests chronologically: an explicit scope change supersedes the opening request and original title. A procedural follow-up (move directory, explain a tool, write a handoff) does NOT replace the underlying task. Use the initial request to recover intent when recent context is only procedural or absent. Known product with unknown progress is not Unclassified.
 Group by the product/project being changed, not the workspace or feature branch. Core app features (BB's browser permissions, built-in Pi provider, title generation, SDK capabilities) belong to BB. Independently developed plugins (Workstreams, Dockside, Sidebar Hierarchy, Dynamic Environment, BB Recap, fx, Agent Plugins Loader) have their own identity. A plugin or package with its own checkout, package name, or plugin directory (e.g. .../bb-foo, bb-plugin-foo, plugins/foo) is its own group even though it extends BB; name it after the plugin, not "BB". A loader blocked on a host SDK capability remains loader work unless the thread explicitly takes ownership of the core SDK change.
 Repository guidance changes belong to the repository whose guidance is being edited (e.g. tomdaleOS); global cross-harness guidance belongs to Agent configuration. Scripts developed inside an interview project belong to that project, not a separate project named after the script. Workforest managing a checkout does not imply the code is Workforest. A broad manager status thread covering unrelated products is Cross-project coordination, not whichever product it mentions most.
-Naming: the group is the product name alone. Never append or prepend descriptors such as plugin, addon, package, repo, provider, or a feature ("Sidebar Hierarchy" not "Sidebar Hierarchy Plugin"; "BB Recap" not "BB Recap plugin"; "fx" not "bb-plugin-fx-provider"; "BB" not "BB Pi Provider" or "BB - Okta auth"). Turn package slugs into the product name. A monorepo or org path (e.g. owner/api) is not a product; name the product the change serves. Prefer the short recognizable project name, not a feature slug, path, package prefix, or combined historical title. Keep related but distinct products separate. Do not expand acronyms. Use explicit product identity across repositories when available; do not invent a more specific product surface. Use Unclassified only when identity cannot be established from the supplied context. A product named in the conversation beats the repository or path name; only when no product is named anywhere, fall back to the checkout's repository instead of Unclassified.`;
-export function classificationPrompt(threads: Context[]): string {
+Naming: the group is the product name alone. Never append or prepend descriptors such as plugin, addon, package, repo, provider, or a feature ("Sidebar Hierarchy" not "Sidebar Hierarchy Plugin"; "BB Recap" not "BB Recap plugin"; "fx" not "bb-plugin-fx-provider"; "BB" not "BB Pi Provider" or "BB - Okta auth"). Turn repository and package slugs into the product's name (engineering-full-stack-collab → Engineering Full-Stack Collab), dropping per-person, per-candidate, or per-fork suffixes. A monorepo or org path (e.g. owner/api) is not a product; name the product the change serves. Prefer the short recognizable project name, not a feature slug, path, package prefix, or combined historical title. Keep related but distinct products separate. Do not expand acronyms. Use explicit product identity across repositories when available; do not invent a more specific product surface. Use Unclassified only when identity cannot be established from the supplied context. A product named in the conversation beats the repository or path name; only when no product is named anywhere, fall back to the checkout's repository instead of Unclassified.`;
+export function classificationPrompt(
+  threads: Context[],
+  known: string[] = [],
+): string {
+  const seeded = known.length
+    ? `\nGroup names already in use: ${JSON.stringify(known)}. Reuse one exactly when a thread concerns that same product; create a new name otherwise. Never force a thread into an unrelated existing group.`
+    : "";
   return `${RULES}
-${GROUPING}
+${GROUPING}${seeded}
 For each thread, write:
-- title: a concrete, recognizable 3–8 word description of the work, at most 80 characters. Reframe long prompts into useful titles; do not just repeat a stale original title if the work has moved on. Preserve the actual product's name in the title so it remains recognizable outside its group. No paths, URLs, or status boilerplate.
-- recap: at most 180 characters, preferably under 120. Lead with the current stopping point, blocker, decision, or next action. Examples: 'Needs app restart to pick up the auth fix.' 'Local changes tested; not committed yet.' 'Waiting for SDK support before the loader can proceed.' Skip implementation inventories and test-count lists. A proposal is not implemented work; distinguish planned, attempted, reported, and verified. Don't invent a blocker, next action, or completion. If context is missing, say so. Runtime idle/error is not evidence of task completion.
-- needsYou: true only when the work is waiting on the user: a question, decision, review, approval, or manual step (restart, merge, credentials) addressed to them. False when the agent is still working, the work is done with nothing asked, or it waits on someone else.
-Output {"items":[{"threadId":"exact ID","group":"Project or product","title":"Short description of work","recap":"Stopping point or current context","needsYou":false}]}. Include every supplied thread exactly once. Use only the short record id supplied at the top level; IDs appearing within excerpts are unrelated. Include unclear and empty records as Unclassified rather than omitting them.
+- title: a concrete, recognizable 3–8 word description of the CURRENT substantive task, at most 80 characters. If a later request changed scope, title the new scope, not the original title or opening request. Preserve the actual product's name in the title so it remains recognizable outside its group. No paths, URLs, or status boilerplate.
+- recap: under 120 characters (hard limit 180). Where the work stands now, from the LAST assistant report: the latest concrete result and what remains or what is being asked. Examples: 'Auth fix tested locally; needs an app restart to verify.' 'Loader can't proceed until the SDK can register skills.' 'Asked whether to update all repos or only agents.' Don't restate the title or the state. Skip implementation inventories and test-count lists. A proposal is not implemented work; distinguish planned, attempted, reported, and verified. Don't invent a blocker, next action, or completion. If context is missing, say so. Runtime idle/error is not evidence of task completion.
+- state, judged from the last assistant report:
+  needs_decision: it ends asking the user something specific (a question, a choice, confirmation, "want me to…?", permission to continue), or needs a step only the user can take (credentials, restart, a setting). Closing boilerplate like "let me know if you want changes" doesn't count.
+  ready_for_review: the agent finished a deliverable that now waits on the user to review, test, commit, merge, or ship.
+  blocked: waiting on something other than the user (another thread, an upstream change, a maintainer, a scheduled check).
+  in_progress: the agent is still working, or work continues without needing the user.
+  done: finished with nothing left for the user, including answered questions and completed research.
+Output {"items":[{"threadId":"exact ID","group":"Project or product","title":"Short description of work","recap":"Where it stands","state":"done"}]}. Include every supplied thread exactly once. Use only the short record id supplied at the top level; IDs appearing within excerpts are unrelated. Include unclear and empty records as Unclassified rather than omitting them.
 ${JSON.stringify(threads.map(({ id, title, repository, path, excerpts }) => ({ id, title, repository, path, excerpts })))}`;
 }
 export async function classifyBatch(
   threads: Context[],
   complete: (prompt: string) => Promise<string>,
+  known: string[] = [],
 ): Promise<Classification[]> {
   const records = threads.map((thread, index) => ({
     ...thread,
     id: String(index + 1),
   }));
   const result = parseClassifications(
-    await complete(classificationPrompt(records)),
+    await complete(classificationPrompt(records, known)),
     records.map((t) => t.id),
   );
   return result.map((item) => ({
@@ -152,6 +191,16 @@ export function normalizeGroups(items: Classification[]): Classification[] {
     names.set(key, group);
     return { ...item, group };
   });
+}
+/** Distinct product names from an earlier analysis, used to seed naming. */
+export function knownGroups(analysis: Analysis | null): string[] {
+  return [
+    ...new Set(
+      (analysis?.items ?? [])
+        .map((i) => i.group)
+        .filter((g) => g !== UNCLASSIFIED),
+    ),
+  ].sort();
 }
 export function excerpt(text: string, limit: number): string {
   if (text.length <= limit) return text;

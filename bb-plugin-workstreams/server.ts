@@ -1,3 +1,5 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { basename, isAbsolute } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
@@ -5,6 +7,8 @@ import {
   BATCH_SIZE,
   analysisSchema,
   snapshotSchema,
+  fixtureSchema,
+  knownGroups,
   classifyBatch,
   normalizeGroups,
   mapConcurrent,
@@ -24,6 +28,11 @@ export const rpcContract = defineRpcContract({
   cancel: { input: z.null(), output: z.object({ ok: z.boolean() }) },
 });
 
+function absolute(path: string): string {
+  if (!isAbsolute(path)) throw new Error("Use an absolute path.");
+  return path;
+}
+
 export default async function plugin(bb: BbPluginApi) {
   const db = bb.storage.database();
   bb.storage.migrate(db, [
@@ -40,9 +49,25 @@ export default async function plugin(bb: BbPluginApi) {
         "INSERT INTO state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
       )
       .run(key, JSON.stringify(value));
-  let analysis: Analysis | null = analysisSchema
-    .nullable()
-    .parse(get("thread-analysis"));
+  // Fixture mode replays a frozen context snapshot (for evaluation and
+  // screenshots) and keeps its results apart from live analysis.
+  let fixture: { path: string; contexts: Context[] } | null = null;
+  const analysisKey = () => (fixture ? "fixture-analysis" : "thread-analysis");
+  const loadFixture = async (path: string | null) => {
+    fixture = path
+      ? {
+          path,
+          contexts: fixtureSchema.parse(
+            JSON.parse(await readFile(path, "utf8")),
+          ),
+        }
+      : null;
+    put("fixture", path);
+    analysis = analysisSchema.nullable().parse(get(analysisKey()));
+    error = null;
+    notify();
+  };
+  let analysis: Analysis | null = null;
   let progress: Snapshot["progress"] = null;
   let error: string | null = null;
   let pending = false;
@@ -56,6 +81,13 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
   const notify = () => bb.realtime.publish("changed", {});
+  try {
+    const saved = get("fixture");
+    if (typeof saved === "string") await loadFixture(saved);
+  } catch {
+    put("fixture", null);
+  }
+  analysis ??= analysisSchema.nullable().parse(get(analysisKey()));
   const advance = (
     stage: NonNullable<Snapshot["progress"]>["stage"],
     completed: number,
@@ -65,6 +97,10 @@ export default async function plugin(bb: BbPluginApi) {
     notify();
   };
   async function inventory(signal?: AbortSignal): Promise<Thread[]> {
+    if (fixture)
+      return fixture.contexts.map(
+        ({ excerpts: _e, path: _p, ...thread }) => thread,
+      );
     const projects = await bb.sdk.projects.list({ includePersonal: true });
     const byId = new Map(projects.map((p) => [p.id, p]));
     const threads: Thread[] = [];
@@ -99,6 +135,77 @@ export default async function plugin(bb: BbPluginApi) {
     }
     return [...new Map(threads.map((t) => [t.id, t])).values()];
   }
+  /** Reads bounded, attributed conversation context for each thread. */
+  async function collect(
+    threads: Thread[],
+    warnings: string[],
+    signal: AbortSignal,
+    onRead: () => void = () => {},
+  ): Promise<Context[]> {
+    return mapConcurrent(threads, async (thread): Promise<Context> => {
+      signal.throwIfAborted();
+      let initial = "";
+      let prompts: Awaited<ReturnType<typeof bb.sdk.threads.promptHistory>> =
+        [];
+      let report: string | null = null;
+      let path: string | null = null;
+      try {
+        initial = initialRequest(
+          await bb.sdk.threads.events.list({
+            threadId: thread.id,
+            types: ["client/turn/requested"],
+            order: "asc",
+            limit: "3",
+            signal,
+          }),
+        );
+      } catch {
+        signal.throwIfAborted();
+        warnings.push(
+          `Could not read the initial request for ${thread.title}.`,
+        );
+      }
+      try {
+        prompts = await bb.sdk.threads.promptHistory({
+          threadId: thread.id,
+          limit: "3",
+          signal,
+        });
+      } catch {
+        warnings.push(`Could not read prompts for ${thread.title}.`);
+      }
+      try {
+        const { output } = await bb.sdk.threads.output({
+          threadId: thread.id,
+          signal,
+        });
+        report = output;
+      } catch {
+        warnings.push(`Could not read the last response for ${thread.title}.`);
+      }
+      try {
+        const detail = await bb.sdk.threads.get({
+          threadId: thread.id,
+          signal,
+        });
+        if (detail.environmentId)
+          path = (
+            await bb.sdk.environments.get({
+              environmentId: detail.environmentId,
+            })
+          ).path;
+      } catch {
+        /* Conversation context remains usable without a checkout path. */
+      }
+      onRead();
+      return {
+        ...thread,
+        title: redact(thread.title),
+        path,
+        excerpts: contextExcerpt(initial, prompts, report),
+      };
+    });
+  }
   async function analyze(signal: AbortSignal) {
     const started = Date.now();
     const stats = {
@@ -125,7 +232,7 @@ export default async function plugin(bb: BbPluginApi) {
     const threads = await inventory(signal);
     if (!threads.length) {
       analysis = { at: Date.now(), items: [], warnings: [] };
-      put("thread-analysis", analysis);
+      put(analysisKey(), analysis);
       return;
     }
     const connected = (await bb.sdk.hosts.list()).filter(
@@ -144,80 +251,19 @@ export default async function plugin(bb: BbPluginApi) {
     const warnings: string[] = [];
     let read = 0;
     advance("reading", 0, threads.length);
-    const contexts = await mapConcurrent(
-      threads,
-      async (thread): Promise<Context> => {
-        signal.throwIfAborted();
-        let initial = "";
-        let prompts: Awaited<ReturnType<typeof bb.sdk.threads.promptHistory>> =
-          [];
-        let report: string | null = null;
-        let path: string | null = null;
-        try {
-          initial = initialRequest(
-            await bb.sdk.threads.events.list({
-              threadId: thread.id,
-              types: ["client/turn/requested"],
-              order: "asc",
-              limit: "3",
-              signal,
-            }),
-          );
-        } catch {
-          signal.throwIfAborted();
-          warnings.push(
-            `Could not read the initial request for ${thread.title}.`,
-          );
-        }
-        try {
-          prompts = await bb.sdk.threads.promptHistory({
-            threadId: thread.id,
-            limit: "3",
-            signal,
-          });
-        } catch {
-          warnings.push(`Could not read prompts for ${thread.title}.`);
-        }
-        try {
-          const { output } = await bb.sdk.threads.output({
-            threadId: thread.id,
-            signal,
-          });
-          report = output;
-        } catch {
-          warnings.push(
-            `Could not read the last response for ${thread.title}.`,
-          );
-        }
-        try {
-          const detail = await bb.sdk.threads.get({
-            threadId: thread.id,
-            signal,
-          });
-          if (detail.environmentId)
-            path = (
-              await bb.sdk.environments.get({
-                environmentId: detail.environmentId,
-              })
-            ).path;
-        } catch {
-          /* Conversation context remains usable without a checkout path. */
-        }
-        advance("reading", ++read, threads.length);
-        return {
-          ...thread,
-          title: redact(thread.title),
-          path,
-          excerpts: contextExcerpt(initial, prompts, report),
-        };
-      },
-    );
+    const contexts = fixture
+      ? fixture.contexts.filter((c) => threads.some((t) => t.id === c.id))
+      : await collect(threads, warnings, signal, () =>
+          advance("reading", ++read, threads.length),
+        );
     const batches: Context[][] = [];
     for (let i = 0; i < contexts.length; i += BATCH_SIZE)
       batches.push(contexts.slice(i, i + BATCH_SIZE));
     let classified = 0;
     advance("classifying", 0, threads.length);
     const prior = new Map(analysis?.items.map((i) => [i.threadId, i]));
+    // Seeding earlier names keeps product labels stable across runs and batches.
+    const seed = knownGroups(analysis);
     const kept: Analysis["items"] = [];
     const items = (
       await mapConcurrent(batches, async (batch) => {
@@ -225,8 +271,10 @@ export default async function plugin(bb: BbPluginApi) {
         // One retry absorbs occasional output-contract slips; then keep prior results.
         for (let attempt = 0; attempt < 2 && !result.length; attempt++) {
           try {
-            result = await classifyBatch(batch, (prompt) =>
-              complete(prompt, host.id),
+            result = await classifyBatch(
+              batch,
+              (prompt) => complete(prompt, host.id),
+              seed,
             );
           } catch {
             signal.throwIfAborted();
@@ -268,7 +316,7 @@ export default async function plugin(bb: BbPluginApi) {
       warnings,
       stats,
     };
-    put("thread-analysis", analysis);
+    put(analysisKey(), analysis);
   }
   bb.background.service("thread-analysis", {
     async start(signal) {
@@ -324,6 +372,7 @@ export default async function plugin(bb: BbPluginApi) {
     analysis,
     progress,
     error,
+    fixture: fixture ? basename(fixture.path) : null,
   });
   bb.rpc.register(rpcContract, {
     snapshot,
@@ -362,6 +411,18 @@ export default async function plugin(bb: BbPluginApi) {
         summary: "Cancel a running analysis",
         usage: "bb workstreams cancel",
       },
+      {
+        name: "export",
+        summary:
+          "Write live thread context to a private JSON file for fixture replay",
+        usage: "bb workstreams export /absolute/private/path.json",
+      },
+      {
+        name: "fixture",
+        summary:
+          "Replay a frozen context file instead of live threads, or turn replay off",
+        usage: "bb workstreams fixture /absolute/path.json | off",
+      },
     ],
     async run(argv) {
       try {
@@ -371,9 +432,33 @@ export default async function plugin(bb: BbPluginApi) {
           return { exitCode: 0, stdout: JSON.stringify(start()) };
         if (argv[0] === "cancel")
           return { exitCode: 0, stdout: JSON.stringify(cancel()) };
+        if (argv[0] === "fixture" && argv[1]) {
+          if (progress) throw new Error("An analysis is running.");
+          await loadFixture(argv[1] === "off" ? null : absolute(argv[1]));
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({ fixture: fixture?.path ?? null }),
+          };
+        }
+        if (argv[0] === "export" && argv[1]) {
+          if (fixture) throw new Error("Turn fixture replay off first.");
+          const warnings: string[] = [];
+          const controller = new AbortController();
+          const contexts = await collect(
+            await inventory(),
+            warnings,
+            controller.signal,
+          );
+          await writeFile(absolute(argv[1]), JSON.stringify(contexts, null, 1));
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({ threads: contexts.length, warnings }),
+          };
+        }
         return {
           exitCode: 1,
-          stderr: "Usage: bb workstreams list | analyze | cancel",
+          stderr:
+            "Usage: bb workstreams list | analyze | cancel | export <path> | fixture <path|off>",
         };
       } catch (e) {
         return {

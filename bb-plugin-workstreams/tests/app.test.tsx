@@ -27,6 +27,7 @@ const initial: Snapshot = {
   analysis: null,
   progress: null,
   error: null,
+  fixture: null,
 };
 async function mount(data: Snapshot = initial) {
   const app = await loadPluginApp(() => import("../app"));
