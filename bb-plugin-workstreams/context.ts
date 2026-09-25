@@ -26,6 +26,36 @@ export function initialRequest(
   }
   return "";
 }
+const TIMELINE_ENTRIES = 30;
+const TIMELINE_CHARS = 160;
+/**
+ * One line per user request with its event seq, so the model can place a
+ * drift split point that `threads.fork({ sourceSeqEnd })` can act on. BB's
+ * own child-thread notices are omitted; long threads keep the first 5 and
+ * the latest requests.
+ */
+export function requestTimeline(
+  events: { type: string; seq?: number; data: unknown }[],
+): string {
+  const lines: string[] = [];
+  for (const event of events) {
+    if (event.type !== "client/turn/requested" || event.seq === undefined)
+      continue;
+    const parsed = z.object({ input: z.unknown() }).safeParse(event.data);
+    const text = parsed.success ? inputText(parsed.data.input) : "";
+    if (!text || text.startsWith("[bb system]")) continue;
+    const flat = text.replace(/\s+/g, " ");
+    lines.push(
+      `#${event.seq}: ${flat.length > TIMELINE_CHARS ? `${flat.slice(0, TIMELINE_CHARS - 1)}…` : flat}`,
+    );
+  }
+  if (lines.length < 2) return "";
+  const kept =
+    lines.length > TIMELINE_ENTRIES
+      ? [...lines.slice(0, 5), "[…]", ...lines.slice(-(TIMELINE_ENTRIES - 5))]
+      : lines;
+  return redact(kept.join("\n"));
+}
 export function contextExcerpt(
   initial: string,
   recent: { createdAt: number; input: unknown }[],

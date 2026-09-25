@@ -1,0 +1,88 @@
+[
+  {
+    "id": "d1",
+    "title": "Explain Lumen build caching",
+    "project": "lumen",
+    "repository": "https://github.com/example/lumen.git",
+    "path": "/code/lumen",
+    "excerpts": "Initial user request (historical intent; later explicit scope changes take precedence):\nExplain how Lumen's build cache decides when to invalidate.\n\nRecent user request:\nunrelated, but can you make me a tiny markdown viewer web page with light and dark themes?\n\nRecent user request:\nadd a sepia theme to the viewer\n\nRecent user request:\nmake the viewer's font size adjustable\n\nLast assistant report (unverified; may describe procedure rather than the work):\nAdded adjustable font size to the markdown viewer; themes are light, dark and sepia.",
+    "expected": ["Markdown viewer"],
+    "drift": {
+      "from": ["Lumen"],
+      "splitSeq": 30
+    },
+    "timeline": "#1: Explain how Lumen's build cache decides when to invalidate.\n#14: what about remote cache hits?\n#30: unrelated, but can you make me a tiny markdown viewer web page with light and dark themes?\n#52: add a sepia theme to the viewer\n#77: make the viewer's font size adjustable"
+  },
+  {
+    "id": "d2",
+    "title": "Harbor release notes",
+    "project": "harbor",
+    "repository": "https://github.com/example/harbor.git",
+    "path": "/code/harbor",
+    "excerpts": "Initial user request (historical intent; later explicit scope changes take precedence):\nDraft the Harbor 3.2 release notes from merged PRs.\n\nRecent user request:\nseparately: my dotfiles zsh prompt is slow, can you profile it?\n\nRecent user request:\ntry removing the git status segment from the prompt\n\nRecent user request:\nnow lazy-load nvm in .zshrc\n\nLast assistant report (unverified; may describe procedure rather than the work):\nPrompt startup went from 900ms to 120ms after lazy-loading nvm; changes are in ~/.zshrc, not committed.",
+    "expected": ["dotfiles", "Shell config", "zsh config"],
+    "drift": {
+      "from": ["Harbor"],
+      "splitSeq": 41
+    },
+    "timeline": "#1: Draft the Harbor 3.2 release notes from merged PRs.\n#20: shorten the security section\n#41: separately: my dotfiles zsh prompt is slow, can you profile it?\n#63: try removing the git status segment from the prompt\n#80: now lazy-load nvm in .zshrc"
+  },
+  {
+    "id": "d3",
+    "title": "Beacon on-call dashboard",
+    "project": "beacon",
+    "repository": "https://github.com/example/beacon.git",
+    "path": "/code/beacon",
+    "excerpts": "Initial user request (historical intent; later explicit scope changes take precedence):\nAdd an on-call rotation widget to the Beacon dashboard.\n\nRecent user request:\nthe widget should show next week too\n\nRecent user request:\nswitching gears: review PR #812 in the Quarry repo for the ingestion rewrite\n\nRecent user request:\nleave the review comments on Quarry PR #812\n\nLast assistant report (unverified; may describe procedure rather than the work):\nPosted 6 review comments on Quarry PR #812; main concern is unbounded retries in the ingestion worker.",
+    "expected": ["Quarry"],
+    "drift": {
+      "from": ["Beacon"],
+      "splitSeq": 58
+    },
+    "timeline": "#1: Add an on-call rotation widget to the Beacon dashboard.\n#33: the widget should show next week too\n#58: switching gears: review PR #812 in the Quarry repo for the ingestion rewrite\n#71: leave the review comments on Quarry PR #812"
+  },
+  {
+    "id": "h1",
+    "title": "Beacon alert routing",
+    "project": "beacon",
+    "repository": "https://github.com/example/beacon.git",
+    "path": "/code/beacon",
+    "excerpts": "Initial user request (historical intent; later explicit scope changes take precedence):\nFix Beacon alert routing for escalations.\n\nRecent user request:\nnow update the Beacon routing docs\n\nRecent user request:\ncommit and push this\n\nRecent user request:\nmove the checkout to the worktree directory\n\nLast assistant report (unverified; may describe procedure rather than the work):\nCommitted and pushed alert routing fix, tests, and docs.",
+    "expected": ["Beacon"],
+    "drift": null,
+    "timeline": "#1: Fix Beacon alert routing for escalations.\n#22: also add tests for the escalation path\n#40: now update the Beacon routing docs\n#61: commit and push this\n#75: move the checkout to the worktree directory"
+  },
+  {
+    "id": "h2",
+    "title": "Lumen CLI flags",
+    "project": "lumen",
+    "repository": "https://github.com/example/lumen.git",
+    "path": "/code/lumen",
+    "excerpts": "Initial user request (historical intent; later explicit scope changes take precedence):\nAdd a --json flag to the Lumen CLI.\n\nRecent user request:\nwhile you're in there, add --quiet as well\n\nRecent user request:\nrefactor the flag parser into its own module\n\nRecent user request:\nwrite a handoff doc for the next agent\n\nLast assistant report (unverified; may describe procedure rather than the work):\nFlag parser moved to src/flags.ts with --json and --quiet; handoff written.",
+    "expected": ["Lumen"],
+    "drift": null,
+    "timeline": "#1: Add a --json flag to the Lumen CLI.\n#18: how does the CLI parse flags today?\n#35: while you're in there, add --quiet as well\n#50: refactor the flag parser into its own module\n#66: write a handoff doc for the next agent"
+  },
+  {
+    "id": "h3",
+    "title": "Quarry ingestion rewrite",
+    "project": "quarry",
+    "repository": "https://github.com/example/quarry.git",
+    "path": "/code/quarry",
+    "excerpts": "Initial user request (historical intent; later explicit scope changes take precedence):\nRewrite Quarry's ingestion worker to stream batches.\n\nRecent user request:\n[bb message from thread:thr_manager] Continue the Quarry ingestion rewrite; reviewers asked for bounded retries.\n\nRecent user request:\nadd bounded retries with jitter\n\nRecent user request:\nexplain what the backpressure tool does\n\nLast assistant report (unverified; may describe procedure rather than the work):\nBounded retries added; explained backpressure utility; ready for review.",
+    "expected": ["Quarry"],
+    "drift": null,
+    "timeline": "#1: Rewrite Quarry's ingestion worker to stream batches.\n#25: [bb message from thread:thr_manager] Continue the Quarry ingestion rewrite; reviewers asked for bounded retries.\n#44: add bounded retries with jitter\n#60: explain what the backpressure tool does"
+  },
+  {
+    "id": "h4",
+    "title": "Harbor docs site",
+    "project": "harbor",
+    "repository": "https://github.com/example/harbor.git",
+    "path": "/code/harbor-docs",
+    "excerpts": "Initial user request (historical intent; later explicit scope changes take precedence):\nSet up the Harbor docs site with Next.js.\n\nRecent user request:\nadd a search box to the docs site\n\nRecent user request:\ndeploy a preview of the docs site\n\nRecent user request:\nadd the Harbor 3.2 release notes page to the docs site\n\nLast assistant report (unverified; may describe procedure rather than the work):\nPreview deployed with search and a 3.2 release notes page.",
+    "expected": ["Harbor"],
+    "drift": null,
+    "timeline": "#1: Set up the Harbor docs site with Next.js.\n#19: add a search box to the docs site\n#38: deploy a preview of the docs site\n#55: add the Harbor 3.2 release notes page to the docs site"
+  }
+]

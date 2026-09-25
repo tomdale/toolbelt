@@ -10,16 +10,19 @@ import {
   fixtureSchema,
   classifyBatch,
   normalizeGroups,
+  applyDrift,
   mapConcurrent,
   type Analysis,
   type Classification,
+  type Drift,
   type Snapshot,
   type Thread,
   type Context,
 } from "./model";
 import { redact } from "./redact";
+import { detectDrift } from "./drift";
 import { hostContract } from "./host-contract";
-import { contextExcerpt, initialRequest } from "./context";
+import { contextExcerpt, initialRequest, requestTimeline } from "./context";
 
 export const rpcContract = defineRpcContract({
   snapshot: { input: z.null(), output: snapshotSchema },
@@ -148,16 +151,17 @@ export default async function plugin(bb: BbPluginApi) {
         [];
       let report: string | null = null;
       let path: string | null = null;
+      let timeline = "";
       try {
-        initial = initialRequest(
-          await bb.sdk.threads.events.list({
-            threadId: thread.id,
-            types: ["client/turn/requested"],
-            order: "asc",
-            limit: "3",
-            signal,
-          }),
-        );
+        const events = await bb.sdk.threads.events.list({
+          threadId: thread.id,
+          types: ["client/turn/requested"],
+          order: "asc",
+          limit: "100",
+          signal,
+        });
+        initial = initialRequest(events);
+        timeline = requestTimeline(events);
       } catch {
         signal.throwIfAborted();
         warnings.push(
@@ -202,6 +206,7 @@ export default async function plugin(bb: BbPluginApi) {
         title: redact(thread.title),
         path,
         excerpts: contextExcerpt(initial, prompts, report),
+        timeline,
       };
     });
   }
@@ -267,6 +272,17 @@ export default async function plugin(bb: BbPluginApi) {
     const kept: Analysis["items"] = [];
     const items = (
       await mapConcurrent(batches, async (batch) => {
+        // Drift detection is a separate small call per batch, run alongside.
+        const drifts = detectDrift(batch, (prompt) =>
+          complete(prompt, host.id),
+        ).catch(() => {
+          signal.throwIfAborted();
+          stats.failedCalls++;
+          warnings.push(
+            `Could not check ${batch.length} threads for side quests.`,
+          );
+          return new Map<string, Drift>();
+        });
         let result: Classification[] = [];
         // One retry absorbs occasional output-contract slips; then keep prior results.
         for (let attempt = 0; attempt < 2 && !result.length; attempt++) {
@@ -290,9 +306,12 @@ export default async function plugin(bb: BbPluginApi) {
             if (old) kept.push({ ...old, refreshed: false });
           }
         }
+        const found = await drifts;
         classified += batch.length;
         advance("classifying", classified, threads.length);
-        return result;
+        return result.map((item) =>
+          applyDrift({ ...item, drift: found.get(item.threadId) ?? null }),
+        );
       })
     ).flat();
     signal.throwIfAborted();

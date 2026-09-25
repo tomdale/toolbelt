@@ -14,6 +14,20 @@ export const STATES = [
 ] as const;
 export type WorkState = (typeof STATES)[number];
 const NEEDS_YOU = new Set<WorkState>(["needs_decision", "ready_for_review"]);
+/**
+ * A side quest: the thread began as mainline work on one product (`from`)
+ * and moved to another (`to`) at user request `splitSeq`. Splitting forks
+ * the mainline before that request.
+ */
+export const driftSchema = z.object({
+  from: z.string().trim().min(1).max(100),
+  to: z.string().trim().min(1).max(100),
+  /** Title for the forked mainline thread. */
+  mainlineTitle: z.string().trim().min(1).max(80),
+  splitSeq: z.number().int().positive(),
+  confidence: z.enum(["high", "medium", "low"]),
+});
+export type Drift = z.infer<typeof driftSchema>;
 export const threadSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -23,10 +37,19 @@ export const threadSchema = z.object({
   updatedAt: z.number(),
 });
 export type Thread = z.infer<typeof threadSchema>;
-export type Context = Thread & { excerpts: string; path: string | null };
+export type Context = Thread & {
+  excerpts: string;
+  path: string | null;
+  /** One line per user request with its event seq; see requestTimeline. */
+  timeline: string;
+};
 /** Frozen thread contexts (e.g. from `bb workstreams export`); extra keys such as eval labels are ignored. */
 export const fixtureSchema = z.array(
-  threadSchema.extend({ excerpts: z.string(), path: z.string().nullable() }),
+  threadSchema.extend({
+    excerpts: z.string(),
+    path: z.string().nullable(),
+    timeline: z.string().default(""),
+  }),
 );
 export const classificationSchema = z.object({
   threadId: z.string(),
@@ -35,6 +58,7 @@ export const classificationSchema = z.object({
   title: z.string().trim().min(1).max(80).optional(),
   needsYou: z.boolean().optional(),
   state: z.enum(STATES).optional(),
+  drift: driftSchema.nullable().optional(),
 });
 export type Classification = z.infer<typeof classificationSchema>;
 export const analysisSchema = z.object({
@@ -99,7 +123,8 @@ export function parseClassifications(
           title: z.string().trim().min(1).max(80),
           // Overlong recaps are clipped rather than failing the whole batch.
           recap: z.string().trim().min(1).max(400).transform(clip),
-          state: z.enum(STATES),
+          // An unknown state shouldn't discard the whole batch.
+          state: z.enum(STATES).catch("in_progress"),
         }),
       ),
     })
@@ -203,6 +228,26 @@ export function knownGroups(analysis: Analysis | null): string[] {
     .filter(([, n]) => n > 1)
     .map(([g]) => g)
     .sort();
+}
+const key = (name: string) =>
+  name
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s_-]+/g, " ")
+    .trim();
+/**
+ * A drifted thread's current work is the side quest. The classifier tends to
+ * keep grouping such threads under the mainline (or Unclassified for
+ * unnamed side projects), so the drift pass's name wins in those cases.
+ */
+export function applyDrift(item: Classification): Classification {
+  const d = item.drift;
+  if (!d || d.confidence === "low") return item;
+  const g = key(item.group);
+  // "v0 Dev Environment Provisioning" still names the v0 mainline.
+  return key(d.from).startsWith(g) || item.group === UNCLASSIFIED
+    ? { ...item, group: d.to }
+    : item;
 }
 export function excerpt(text: string, limit: number): string {
   if (text.length <= limit) return text;

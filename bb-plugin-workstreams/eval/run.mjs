@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import {
   classifyBatch,
   normalizeGroups,
+  applyDrift,
   mapConcurrent,
   BATCH_SIZE,
   UNCLASSIFIED,
@@ -14,6 +15,7 @@ import {
 } from "../model.ts";
 import { parsePiJson, piArgs } from "../pi.ts";
 import { judgePrompt, parseJudgment } from "./judge.ts";
+import { detectDrift } from "../drift.ts";
 
 const env = process.env;
 const fixture = env.EVAL_CASES ?? "cases.json";
@@ -47,6 +49,7 @@ const contexts = cases.map(({ expected, ...c }) => ({
   updatedAt: 1,
   path: null,
   repository: null,
+  timeline: "",
   ...c,
 }));
 const byId = new Map(cases.map((c) => [c.id, c]));
@@ -104,7 +107,42 @@ function score(results) {
   const expectedNames = new Set(
     results.flatMap((r) => r.expected.map(normalize)),
   );
+  // Drift is scored only where a case declares it: an object is a side quest,
+  // null is a healthy thread. Other detections are listed for manual review.
+  const labeled = results.filter((r) => r.expectedDrift !== undefined);
+  const drifted = labeled.filter((r) => r.expectedDrift);
+  const healthy = labeled.filter((r) => r.expectedDrift === null);
+  const drift = labeled.length
+    ? {
+        detected: `${drifted.filter((r) => r.drift).length}/${drifted.length}`,
+        fromCorrect: drifted.filter(
+          (r) =>
+            r.drift &&
+            r.expectedDrift.from.some((n) =>
+              normalize(r.drift.from).startsWith(normalize(n)),
+            ),
+        ).length,
+        seqCorrect: drifted.filter(
+          (r) =>
+            r.drift &&
+            (r.expectedDrift.splitSeq === undefined ||
+              r.drift.splitSeq === r.expectedDrift.splitSeq),
+        ).length,
+        highConfidence: drifted.filter((r) => r.drift?.confidence === "high")
+          .length,
+        // Detections on threads not labeled either way, by confidence.
+        unlabeledHigh: results.filter(
+          (r) =>
+            r.expectedDrift === undefined && r.drift?.confidence === "high",
+        ).length,
+        falseSplits: `${healthy.filter((r) => r.drift && r.drift.confidence !== "low").length}/${healthy.length}`,
+        unlabeledDetections: results.filter(
+          (r) => r.expectedDrift === undefined && r.drift,
+        ).length,
+      }
+    : undefined;
   return {
+    drift,
     correct: results.filter((r) => r.correct).length,
     pairs,
     groups: new Set(results.map((r) => normalize(r.group))).size,
@@ -175,20 +213,23 @@ for (const model of models) {
         : [];
     const entry = { run, seededWith: known.length };
     try {
+      const call = async (prompt) => {
+        usage.calls++;
+        const { text, usage: u } = await complete(model, prompt);
+        usage.tokens += u.input + u.output;
+        usage.cost += u.cost;
+        return text;
+      };
       const items = (
-        await mapConcurrent(batches(contexts, batchSize), (batch) =>
-          classifyBatch(
-            batch,
-            async (prompt) => {
-              usage.calls++;
-              const { text, usage: u } = await complete(model, prompt);
-              usage.tokens += u.input + u.output;
-              usage.cost += u.cost;
-              return text;
-            },
-            known,
-          ),
-        )
+        await mapConcurrent(batches(contexts, batchSize), async (batch) => {
+          const [classified, drifts] = await Promise.all([
+            classifyBatch(batch, call, known),
+            detectDrift(batch, call),
+          ]);
+          return classified.map((i) =>
+            applyDrift({ ...i, drift: drifts.get(i.threadId) ?? null }),
+          );
+        })
       ).flat();
       entry.results = normalizeGroups(items).map((item) => {
         const c = byId.get(item.threadId);
@@ -203,6 +244,8 @@ for (const model of models) {
           recap: item.recap,
           needsYou: item.needsYou,
           state: item.state,
+          drift: item.drift ?? null,
+          expectedDrift: c.drift,
         };
       });
       Object.assign(entry, score(entry.results));

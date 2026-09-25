@@ -257,7 +257,7 @@ describe("active thread overview", () => {
       h.harness.inspection.sdk.callsTo("threads.events.list"),
     );
     expect(calls).toContain('"order":"asc"');
-    expect(calls).toContain('"limit":"3"');
+    expect(calls).toContain('"limit":"100"');
   });
   it("keeps every thread visible when context is unavailable", async () => {
     const h = setup(2);
@@ -321,6 +321,7 @@ describe("classification contracts", () => {
       updatedAt: 1,
       status: "idle",
       excerpts: "",
+      timeline: "",
     }));
     const result = await classifyBatch(contexts, async (prompt) => {
       const data = JSON.parse(prompt.slice(prompt.lastIndexOf("\n") + 1));
