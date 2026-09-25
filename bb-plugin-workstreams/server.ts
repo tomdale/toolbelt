@@ -207,6 +207,20 @@ export default async function plugin(bb: BbPluginApi) {
         .filter((i) => i.group !== UNCLASSIFIED)
         .map((i) => [i.threadId, i.group]),
     );
+    // A thread the user moved to another section in BB's sidebar keeps that
+    // section as its group: moving a thread is how groups are corrected.
+    const assigned = new Map<string, string>();
+    for (const e of log)
+      if (e.action.kind === "section" && e.result === "done" && !e.undone)
+        assigned.set(e.action.threadId, e.action.section);
+    const names = new Map(
+      (await bb.sdk.threadSections.list()).map((s) => [s.id, s.name]),
+    );
+    for (const t of threads) {
+      const section = t.sectionId ? names.get(t.sectionId) : undefined;
+      if (section && assigned.has(t.id) && assigned.get(t.id) !== section)
+        pinned.set(t.id, section);
+    }
     return mapConcurrent(threads, async (thread): Promise<Context> => {
       signal.throwIfAborted();
       let initial = "";

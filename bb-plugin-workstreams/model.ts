@@ -201,7 +201,13 @@ export async function classifyBatch(
     return {
       ...item,
       threadId: thread.id,
-      group: thread.pinnedGroup ?? item.group,
+      // A pin like "v0 Dev Environment Provisioning" defers to the
+      // classifier's shorter product name when it names the same thing.
+      group:
+        thread.pinnedGroup &&
+        !thread.pinnedGroup.toLowerCase().startsWith(item.group.toLowerCase())
+          ? thread.pinnedGroup
+          : item.group,
     };
   });
 }
