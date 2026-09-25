@@ -218,6 +218,7 @@ export function WorkstreamsThreadList({
   }, [refresh]);
   const { collapsed, toggle } = useCollapsed();
   const [menu, setMenu] = useState<Menu | null>(null);
+  const [showAllNeedsYou, setShowAllNeedsYou] = useState(false);
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
@@ -274,7 +275,27 @@ export function WorkstreamsThreadList({
             <span className="wss-count">{model.needsYou.length}</span>
           </button>
           {!collapsed.has("__needs") && (
-            <ul>{model.needsYou.map((r) => renderRow(r, true))}</ul>
+            <>
+              <ul>{model.needsYou.map((r) => renderRow(r, true))}</ul>
+              {model.needsYouRemaining > 0 && (
+                <button
+                  type="button"
+                  className="wss-more"
+                  onClick={() => setShowAllNeedsYou(!showAllNeedsYou)}
+                >
+                  {showAllNeedsYou
+                    ? "Show fewer"
+                    : `Show all ${model.needsYouRemaining} more`}
+                </button>
+              )}
+              {showAllNeedsYou && model.needsYouRemaining > 0 && (
+                <ul>
+                  {/* The collapsed band is capped; this links to the extra
+                      decisions in their own groups instead of duplicating rows. */}
+                  {model.allNeedsYou.slice(6).map((r) => renderRow(r, true))}
+                </ul>
+              )}
+            </>
           )}
         </section>
       )}

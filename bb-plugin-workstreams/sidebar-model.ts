@@ -35,6 +35,8 @@ export type SidebarModel = {
   groups: SidebarGroup[];
   /** One-thread groups, folded together; each row keeps its group name. */
   other: (SidebarRow & { group: string })[];
+  needsYouRemaining: number;
+  allNeedsYou: (SidebarRow & { group: string })[];
 };
 
 const RUNNING = new Set(["starting", "active", "stopping"]);
@@ -120,13 +122,27 @@ export function buildSidebar(
   ]
     .filter(waiting)
     .map((r) => ({ ...r, depth: 0 }))
-    .sort((a, b) => b.thread.updatedAt - a.thread.updatedAt);
-  return { needsYou, groups, other };
+    .sort(
+      (a, b) =>
+        urgency(a) - urgency(b) ||
+        Number(b.thread.hasPendingInteraction) -
+          Number(a.thread.hasPendingInteraction) ||
+        b.thread.updatedAt - a.thread.updatedAt,
+    );
+  return {
+    needsYou: needsYou.slice(0, 6),
+    needsYouRemaining: Math.max(0, needsYou.length - 6),
+    allNeedsYou: needsYou,
+    groups,
+    other,
+  };
 }
 
 /** What only the user can unblock now; the Needs-you band and group badges. */
 const waiting = (r: SidebarRow) =>
   r.thread.hasPendingInteraction || r.state === "needs_decision";
+const urgency = (r: SidebarRow) =>
+  r.thread.hasPendingInteraction ? 0 : r.thread.status === "active" ? 1 : 2;
 const latest = (rows: SidebarRow[]) =>
   Math.max(...rows.map((r) => r.thread.updatedAt));
 

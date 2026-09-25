@@ -49,6 +49,9 @@ export const logEntrySchema = z.object({
     .object({
       title: z.string().nullable().optional(),
       sectionId: z.string().nullable().optional(),
+      sectionName: z.string().nullable().optional(),
+      /** Section Workstreams moved the thread into; differs if user moved it. */
+      workstreamsSectionId: z.string().nullable().optional(),
       forkId: z.string().optional(),
     })
     .optional(),

@@ -69,4 +69,6 @@ it("groups by analysis, nests children, folds singletons, and bands decisions", 
   // Ready-for-review stays in its group; decisions and pending input band.
   expect(model.needsYou.map((r) => r.thread.id).sort()).toEqual(["b", "e"]);
   expect(model.needsYou.every((r) => r.depth === 0)).toBe(true);
+  expect(model.needsYouRemaining).toBe(0);
+  expect(model.needsYouRemaining).toBe(0);
 });

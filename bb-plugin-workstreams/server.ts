@@ -232,8 +232,10 @@ export default async function plugin(bb: BbPluginApi) {
     );
     for (const t of threads) {
       const section = t.sectionId ? names.get(t.sectionId) : undefined;
-      if (section && assigned.has(t.id) && assigned.get(t.id) !== section)
-        pinned.set(t.id, section);
+      // A section name is the user's visible grouping choice. Renaming a
+      // section or moving a thread into one is an explicit correction; use it
+      // as this thread's pinned workstream on future classifications.
+      if (section) pinned.set(t.id, section);
     }
     return mapConcurrent(threads, async (thread): Promise<Context> => {
       signal.throwIfAborted();
@@ -490,6 +492,7 @@ export default async function plugin(bb: BbPluginApi) {
     const names = new Map(sections.map((s) => [s.id, s.name]));
     return {
       names,
+      list: async () => names,
       async ensure(name: string) {
         const existing = byName.get(name.toLowerCase());
         if (existing) return existing;
@@ -530,7 +533,13 @@ export default async function plugin(bb: BbPluginApi) {
     const detail = await bb.sdk.threads.get({ threadId: action.threadId });
     if (detail.archivedAt !== null || detail.deletedAt !== null)
       throw new Error("Thread is archived or deleted.");
-    const before = { title: detail.title, sectionId: detail.sectionId };
+    const before = {
+      title: detail.title,
+      sectionId: detail.sectionId,
+      sectionName: detail.sectionId
+        ? ((await sections.list()).get(detail.sectionId) ?? null)
+        : null,
+    };
     if (action.kind === "retitle") {
       await bb.sdk.threads.update({
         threadId: action.threadId,
@@ -664,6 +673,13 @@ export default async function plugin(bb: BbPluginApi) {
       const sectionNames = fixture
         ? new Map<string, string>()
         : (await sectionIds()).names;
+      const namesById = new Map(
+        (await bb.sdk.threadSections.list()).map((s) => [s.id, s.name]),
+      );
+      const renamedByWorkstreams = new Map<string, string>();
+      for (const e of log)
+        if (e.action.kind === "section" && e.result === "done" && !e.undone)
+          renamedByWorkstreams.set(e.action.threadId, e.action.section);
       const split = new Set(
         log
           .filter(
@@ -672,18 +688,27 @@ export default async function plugin(bb: BbPluginApi) {
           )
           .map((e) => e.action.threadId),
       );
-      await perform(
-        planOrganize(
-          threads.map((t) => ({
-            ...t,
-            sectionName: t.sectionId
-              ? (sectionNames.get(t.sectionId) ?? null)
-              : null,
-          })),
-          analysis,
-          split,
-        ),
-      );
+      const actions = planOrganize(
+        threads.map((t) => ({
+          ...t,
+          sectionName: t.sectionId
+            ? (sectionNames.get(t.sectionId) ?? null)
+            : null,
+        })),
+        analysis,
+        split,
+      ).filter((action) => {
+        if (action.kind !== "section") return true;
+        const assigned = renamedByWorkstreams.get(action.threadId);
+        const actual = threads.find((t) => t.id === action.threadId)?.sectionId;
+        const oldName = actual ? namesById.get(actual) : undefined;
+        // A single-thread group must still follow an explicit Workstreams
+        // correction (e.g. "v0 Dev Environment Provisioning" → "v0").
+        // Respect a later manual section move. Do not move the thread away
+        // from the last section Workstreams assigned on the next run.
+        return !assigned || oldName === assigned || assigned === action.section;
+      });
+      await perform(actions);
       if (!fixture) await perform(await emptySections());
     } finally {
       organizing = false;
@@ -706,11 +731,15 @@ export default async function plugin(bb: BbPluginApi) {
       await bb.sdk.threads.archive({ threadId: entry.undo.forkId });
     if (entry.action.kind !== "section" && entry.undo.title !== undefined)
       await bb.sdk.threads.update({ threadId, title: entry.undo.title });
-    if (entry.action.kind === "section")
-      await bb.sdk.threads.update({
-        threadId,
-        sectionId: entry.undo.sectionId ?? null,
-      });
+    if (entry.action.kind === "section") {
+      let sectionId = entry.undo.sectionId ?? null;
+      const exists = sectionId
+        ? (await bb.sdk.threadSections.list()).some((s) => s.id === sectionId)
+        : false;
+      if (!exists && entry.undo.sectionName)
+        sectionId = await (await sectionIds()).ensure(entry.undo.sectionName);
+      await bb.sdk.threads.update({ threadId, sectionId });
+    }
     entry.undone = true;
     put(logKey(), log);
     notify();
