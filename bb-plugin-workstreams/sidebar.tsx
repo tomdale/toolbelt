@@ -272,7 +272,9 @@ export function WorkstreamsThreadList({
               {collapsed.has("__needs") ? "▸" : "▾"}
             </span>
             <span className="wss-name">Needs you</span>
-            <span className="wss-count">{model.needsYou.length}</span>
+            <span className="wss-count">
+              {model.needsYou.length + model.needsYouRemaining}
+            </span>
           </button>
           {!collapsed.has("__needs") && (
             <>

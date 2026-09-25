@@ -248,3 +248,41 @@ it("only plans actions while replaying a fixture", async () => {
     0,
   );
 });
+
+it("undoes a section move after its original section was deleted", async () => {
+  const h = host();
+  await plugin(h.bb);
+  const db = h.bb.storage.database();
+  db.prepare("INSERT INTO state VALUES (?,?)").run(
+    "thread-analysis",
+    JSON.stringify(analysis([{ threadId: "a", group: "Markdown viewer" }])),
+  );
+  db.prepare("INSERT INTO state VALUES (?,?)").run(
+    "organize-log",
+    JSON.stringify([
+      {
+        id: "move-1",
+        at: 1,
+        action: { kind: "section", threadId: "a", section: "Markdown viewer" },
+        result: "done",
+        detail: "",
+        undo: {
+          title: "Explain Lumen caching",
+          sectionId: "deleted-section",
+          sectionName: "Lumen",
+        },
+        undone: false,
+      },
+    ]),
+  );
+  const replay = await h.harness.lifecycle.reload(plugin);
+  fixtures.push(replay);
+  await replay.harness.behavior.callRpc("undo", { id: "move-1" });
+  const updates = replay.harness.inspection.sdk.callsTo("threads.update");
+  expect(updates.at(-1)).toMatchObject([
+    { threadId: "a", sectionId: "sec_Lumen" },
+  ]);
+  expect(
+    replay.harness.inspection.sdk.callsTo("threadSections.create"),
+  ).toEqual([[{ name: "Lumen" }]]);
+});
