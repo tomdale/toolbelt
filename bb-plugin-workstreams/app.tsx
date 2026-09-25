@@ -375,7 +375,9 @@ function WorkstreamsPage() {
                         ? `Split side quest ${e.action.drift.from} → ${e.action.drift.to}`
                         : e.action.kind === "retitle"
                           ? `Renamed to “${e.action.title}”`
-                          : `Moved to ${e.action.section}`}
+                          : e.action.kind === "removeSection"
+                            ? `Removed empty section ${e.action.section}`
+                            : `Moved to ${e.action.section}`}
                       {e.detail && (
                         <span className="ws-muted"> — {e.detail}</span>
                       )}

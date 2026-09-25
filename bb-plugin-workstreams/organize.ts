@@ -28,6 +28,13 @@ export const actionSchema = z.discriminatedUnion("kind", [
     threadId: z.string(),
     section: z.string(),
   }),
+  /** Deletes a section no active thread uses; threadId is empty. */
+  z.object({
+    kind: z.literal("removeSection"),
+    threadId: z.literal(""),
+    section: z.string(),
+    sectionId: z.string(),
+  }),
 ]);
 export type Action = z.infer<typeof actionSchema>;
 
@@ -110,5 +117,7 @@ export function describe(action: Action, titles: Map<string, string>): string {
       return `Rename “${name}” to “${action.title}”`;
     case "section":
       return `Move “${name}” to section ${action.section}`;
+    case "removeSection":
+      return `Remove empty section ${action.section}`;
   }
 }

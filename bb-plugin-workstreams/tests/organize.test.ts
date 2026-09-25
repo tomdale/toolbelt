@@ -107,7 +107,8 @@ function host() {
         ],
       },
       threadSections: {
-        list: async () => [],
+        delete: async () => ({ id: "sec_old", name: "Old" }),
+        list: async () => [{ id: "sec_old", name: "Old" }],
         create: async ({ name }: { name: string }) => ({
           id: `sec_${name}`,
           name,
@@ -178,6 +179,8 @@ it("splits a side quest, logs it, and undoes it", async () => {
     "Markdown viewer themes",
   );
   expect(sdk.callsTo("threads.compact")).toHaveLength(1);
+  // Hand-made sections left without active threads are removed.
+  expect(sdk.callsTo("threadSections.delete")).toEqual([[{ id: "sec_old" }]]);
   const view = (await call("snapshot", null)) as View;
   const split = view.log.find((e) => e.action.kind === "split")!;
   expect(split).toMatchObject({

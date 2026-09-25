@@ -424,6 +424,10 @@ export default async function plugin(bb: BbPluginApi) {
     action: Action,
     sections: Awaited<ReturnType<typeof sectionIds>>,
   ): Promise<Pick<LogEntry, "detail" | "undo">> {
+    if (action.kind === "removeSection") {
+      await bb.sdk.threadSections.delete({ id: action.sectionId });
+      return { detail: "", undo: {} };
+    }
     const detail = await bb.sdk.threads.get({ threadId: action.threadId });
     if (detail.archivedAt !== null || detail.deletedAt !== null)
       throw new Error("Thread is archived or deleted.");
@@ -541,6 +545,18 @@ export default async function plugin(bb: BbPluginApi) {
     }
     notify();
   }
+  /** Sections no active thread uses once threads are filed by workstream. */
+  async function emptySections(): Promise<Action[]> {
+    const used = new Set((await inventory()).map((t) => t.sectionId));
+    return (await bb.sdk.threadSections.list())
+      .filter((s) => !used.has(s.id))
+      .map((s) => ({
+        kind: "removeSection" as const,
+        threadId: "" as const,
+        section: s.name,
+        sectionId: s.id,
+      }));
+  }
   async function organize() {
     organizing = true;
     notify();
@@ -569,6 +585,7 @@ export default async function plugin(bb: BbPluginApi) {
           split,
         ),
       );
+      if (!fixture) await perform(await emptySections());
     } finally {
       organizing = false;
       notify();
@@ -578,6 +595,13 @@ export default async function plugin(bb: BbPluginApi) {
     const entry = log.find((e) => e.id === id);
     if (!entry || entry.undone || entry.result !== "done" || !entry.undo)
       throw new Error("Nothing to undo for this entry.");
+    if (entry.action.kind === "removeSection") {
+      await bb.sdk.threadSections.create({ name: entry.action.section });
+      entry.undone = true;
+      put(logKey(), log);
+      notify();
+      return;
+    }
     const { threadId } = entry.action;
     if (entry.undo.forkId)
       await bb.sdk.threads.archive({ threadId: entry.undo.forkId });
