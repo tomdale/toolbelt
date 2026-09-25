@@ -1,0 +1,217 @@
+.ws-page {
+  height: 100%;
+  overflow: auto;
+  background: var(--background);
+  color: var(--foreground);
+  scroll-behavior: smooth;
+}
+.ws-wrap {
+  max-width: 1440px;
+  margin: auto;
+  padding: 24px 28px 48px;
+}
+.ws-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.ws-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  margin: 0 0 2px;
+}
+.ws-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ws-muted {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  line-height: 1.6;
+  margin: 0;
+}
+.ws-search {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--background);
+  padding: 7px 10px;
+  color: var(--foreground);
+  width: 220px;
+  max-width: 100%;
+  font-size: 13px;
+}
+.ws-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+.ws-error {
+  color: var(--destructive);
+}
+.ws-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.ws-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--foreground);
+  background: transparent;
+  text-decoration: none;
+  cursor: pointer;
+}
+.ws-chip:hover {
+  background: var(--accent);
+}
+.ws-chip span,
+.ws-group h2 span {
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+.ws-chip-you[aria-pressed="true"] {
+  background: var(--foreground);
+  color: var(--background);
+}
+.ws-chip-you[aria-pressed="true"] span {
+  color: inherit;
+}
+/* Masonry columns keep single-thread groups from taking a full row each. */
+.ws-groups {
+  columns: 380px;
+  column-gap: 16px;
+}
+.ws-group {
+  break-inside: avoid;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 6px 6px;
+  scroll-margin-top: 16px;
+}
+.ws-group h2 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 8px 4px;
+  display: flex;
+  gap: 8px;
+}
+.ws-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ws-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+}
+.ws-row:hover {
+  background: var(--accent);
+}
+.ws-row:focus-visible,
+.ws-chip:focus-visible,
+.ws-search:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.ws-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ws-row strong {
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.ws-when {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  padding-top: 1px;
+}
+.ws-recap {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.ws-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.ws-tag {
+  font-size: 10px;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 5px;
+}
+.ws-tag-you {
+  border-color: var(--foreground);
+  font-weight: 600;
+}
+.ws-tag-muted {
+  color: var(--muted-foreground);
+  border-style: dashed;
+}
+.ws-runtime-active,
+.ws-runtime-starting {
+  background: var(--accent);
+}
+.ws-runtime-error,
+.ws-runtime-failed {
+  color: var(--destructive);
+}
+.ws-warnings {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin: 8px 0 16px;
+}
+footer.ws-muted {
+  margin-top: 12px;
+  font-size: 11px;
+}
+@media (max-width: 640px) {
+  .ws-wrap {
+    padding: 16px 12px 32px;
+  }
+  .ws-actions,
+  .ws-search {
+    width: 100%;
+  }
+  .ws-search {
+    flex: 1;
+    width: auto;
+  }
+}
