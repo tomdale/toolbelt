@@ -6,7 +6,7 @@ import {
   useRealtimeConnectionState,
   useRpc,
 } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "./server";
+import type { rpcContract, View } from "./server";
 import {
   UNCLASSIFIED,
   groupThreads,
@@ -55,10 +55,13 @@ function ListRow({
   row,
   group,
   open,
+  split,
 }: {
   row: Row;
   group?: string;
   open: () => void;
+  /** Offered for detected side quests not yet split. */
+  split?: () => void;
 }) {
   const { thread, title, recap, freshness, state } = row;
   const runtime = RUNTIME[thread.status];
@@ -86,6 +89,14 @@ function ListRow({
         </span>
         <span className="ws-when">{when(thread.updatedAt)}</span>
       </button>
+      {split && row.drift && (
+        <p className="ws-drift">
+          Side quest: started as {row.drift.from} work, moved to {row.drift.to}.
+          <button onClick={split}>
+            Split into “{row.drift.mainlineTitle}” + “{row.drift.sideTitle}”
+          </button>
+        </p>
+      )}
     </li>
   );
 }
@@ -93,7 +104,7 @@ function ListRow({
 function WorkstreamsPage() {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
-  const [data, setData] = useState<Snapshot | null>(null);
+  const [data, setData] = useState<View | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
@@ -131,11 +142,17 @@ function WorkstreamsPage() {
       window.removeEventListener("keydown", onKey);
     };
   }, [refresh, connection]);
-  const call = async (method: "analyze" | "cancel") => {
+  const call = async (
+    method: "analyze" | "cancel" | "organize" | "split" | "undo",
+    input: unknown = null,
+  ) => {
     setBusy(true);
     setError("");
     try {
-      await rpc.call(method);
+      await (rpc.call as (m: string, i: unknown) => Promise<unknown>)(
+        method,
+        input,
+      );
       await refresh();
     } catch (e) {
       setError(String(e));
@@ -165,6 +182,20 @@ function WorkstreamsPage() {
     )
     .filter(([, rows]) => rows.length);
   const stats = data?.analysis?.stats;
+  const splitDone = new Set(
+    (data?.log ?? [])
+      .filter(
+        (e) => e.action.kind === "split" && e.result === "done" && !e.undone,
+      )
+      .map((e) => e.action.threadId),
+  );
+  const splitFor = (row: Row) =>
+    row.drift &&
+    row.drift.confidence !== "low" &&
+    !splitDone.has(row.thread.id) &&
+    row.freshness === "current"
+      ? () => void call("split", { threadId: row.thread.id })
+      : undefined;
   // In the list, one-thread groups share a section so they don't each need a header.
   const multi = groups.filter(
     ([name, rows]) => rows.length > 1 || name === UNCLASSIFIED,
@@ -205,6 +236,15 @@ function WorkstreamsPage() {
                 Cancel
               </Button>
             ) : null}
+            {data?.analysis && (
+              <Button
+                variant="outline"
+                disabled={busy || !!data.progress || data.organizing}
+                onClick={() => void call("organize")}
+              >
+                {data.organizing ? "Organizing…" : "Organize"}
+              </Button>
+            )}
             <Button
               disabled={
                 !data || busy || !!data.progress || !data.threads.length
@@ -291,6 +331,7 @@ function WorkstreamsPage() {
                         key={row.thread.id}
                         row={row}
                         open={() => navigate.toThread(row.thread.id)}
+                        split={splitFor(row)}
                       />
                     ))}
                   </ul>
@@ -308,12 +349,46 @@ function WorkstreamsPage() {
                         row={row}
                         group={name}
                         open={() => navigate.toThread(row.thread.id)}
+                        split={splitFor(row)}
                       />
                     ))}
                   </ul>
                 </section>
               )}
             </div>
+            {!!data.log.length && (
+              <details className="ws-log">
+                <summary>
+                  Changes made by Workstreams ({data.log.length})
+                  {data.mode === "auto"
+                    ? " · organizes after each analysis"
+                    : " · suggest only"}
+                </summary>
+                <ul>
+                  {[...data.log].reverse().map((e) => (
+                    <li key={e.id} className={e.undone ? "ws-undone" : ""}>
+                      <span className="ws-muted">
+                        {new Date(e.at).toLocaleString()} ·{" "}
+                        {e.result === "planned" ? "planned" : e.result}
+                      </span>{" "}
+                      {e.action.kind === "split"
+                        ? `Split side quest ${e.action.drift.from} → ${e.action.drift.to}`
+                        : e.action.kind === "retitle"
+                          ? `Renamed to “${e.action.title}”`
+                          : `Moved to ${e.action.section}`}
+                      {e.detail && (
+                        <span className="ws-muted"> — {e.detail}</span>
+                      )}
+                      {e.result === "done" && !e.undone && e.undo && (
+                        <button onClick={() => void call("undo", { id: e.id })}>
+                          Undo
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
             {!!data.analysis?.warnings.length && (
               <details className="ws-warnings">
                 <summary>
@@ -328,8 +403,7 @@ function WorkstreamsPage() {
             )}
             <footer className="ws-muted">
               Groups, titles, and recaps are inferred by GPT-4.1 mini via AI
-              Gateway from each thread’s requests and last response. Threads are
-              never changed.
+              Gateway from each thread’s requests and last response.
               {stats &&
                 ` Last run: ${stats.seconds}s, ${stats.calls} calls, ${(stats.inputTokens + stats.outputTokens).toLocaleString()} tokens, $${stats.cost.toFixed(3)}.`}
             </footer>

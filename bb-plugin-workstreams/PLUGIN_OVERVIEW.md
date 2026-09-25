@@ -9,4 +9,5 @@ project/product groups with short thread recaps. Click any card to return to its
 conversation.
 
 No new task system, proposals, focus limits, or bookkeeping. Nothing runs until
-you ask, and your underlying threads are never changed.
+you ask. Organize splits side quests into their own threads, tidies titles, and
+files threads into workstream sections, with an undoable change log.

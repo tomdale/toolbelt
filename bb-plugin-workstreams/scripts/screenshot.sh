@@ -7,17 +7,19 @@
 # FIXTURE is an absolute path (e.g. from `bb workstreams export`, or
 # eval/cases.json). Private fixtures and their screenshots belong in private
 # storage, never in this repository. --analyze runs a fresh paid analysis
-# first; otherwise the fixture's last saved analysis is shown. Replay is
+# first; otherwise the fixture's last saved analysis is shown. --organize adds
+# an organize pass, which only plans (never changes threads) during replay. Replay is
 # turned off afterwards unless --keep is given. WORKSTREAMS_LAYOUT=list|cards
 # selects the layout.
 set -euo pipefail
 fixture=$1 out=$2
 shift 2
-analyze=0 keep=0
+analyze=0 keep=0 organize=0
 for arg in "$@"; do
   case $arg in
     --analyze) analyze=1 ;;
     --keep) keep=1 ;;
+    --organize) organize=1 ;;
   esac
 done
 url=${WORKSTREAMS_URL:-http://127.0.0.1:38886/plugins/workstreams/home}
@@ -30,6 +32,9 @@ if [[ $analyze == 1 ]]; then
     sleep 1
   done
   bb workstreams list | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const d=JSON.parse(s);console.log(JSON.stringify({error:d.error,stats:d.analysis?.stats}))})'
+fi
+if [[ $organize == 1 ]]; then
+  bb workstreams organize >/dev/null
 fi
 session=workstreams-shot-$$
 shoot() {

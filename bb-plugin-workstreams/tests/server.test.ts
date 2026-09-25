@@ -44,6 +44,13 @@ function setup(count = 17, malformed = false, failTitle?: string) {
     pluginId: "workstreams",
     sdk: {
       projects: { list: async () => [project] },
+      threadSections: {
+        list: async () => [],
+        create: async ({ name }: { name: string }) => ({
+          id: `sec_${name}`,
+          name,
+        }),
+      },
       hosts: {
         list: async () => [
           makeHostResponse({ id: "host", status: "connected" }),
@@ -61,6 +68,8 @@ function setup(count = 17, malformed = false, failTitle?: string) {
         promptHistory: async () => [],
         output: async () => ({ output: "Working on Vercel Agent for Slack." }),
         get: async ({ threadId }: { threadId: string }) =>
+          rows.find((t) => t.id === threadId)!,
+        update: async ({ threadId }: { threadId: string }) =>
           rows.find((t) => t.id === threadId)!,
       },
     },
@@ -319,6 +328,7 @@ describe("classification contracts", () => {
       repository: null,
       path: null,
       updatedAt: 1,
+      sectionId: null,
       status: "idle",
       excerpts: "",
       timeline: "",
@@ -452,6 +462,7 @@ describe("classification contracts", () => {
           repository: null,
           status: "idle",
           updatedAt: 2,
+          sectionId: null,
         },
         {
           id: "2",
@@ -460,6 +471,7 @@ describe("classification contracts", () => {
           repository: null,
           status: "idle",
           updatedAt: 2,
+          sectionId: null,
         },
       ],
       analysis: {

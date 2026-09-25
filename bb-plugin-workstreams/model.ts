@@ -24,6 +24,8 @@ export const driftSchema = z.object({
   to: z.string().trim().min(1).max(100),
   /** Title for the forked mainline thread. */
   mainlineTitle: z.string().trim().min(1).max(80),
+  /** New title for the original thread, which keeps the side quest. */
+  sideTitle: z.string().trim().min(1).max(80),
   splitSeq: z.number().int().positive(),
   confidence: z.enum(["high", "medium", "low"]),
 });
@@ -35,6 +37,7 @@ export const threadSchema = z.object({
   repository: z.string().nullable(),
   status: z.string(),
   updatedAt: z.number(),
+  sectionId: z.string().nullable().default(null),
 });
 export type Thread = z.infer<typeof threadSchema>;
 export type Context = Thread & {
@@ -58,7 +61,8 @@ export const classificationSchema = z.object({
   title: z.string().trim().min(1).max(80).optional(),
   needsYou: z.boolean().optional(),
   state: z.enum(STATES).optional(),
-  drift: driftSchema.nullable().optional(),
+  // Records saved before a schema change are read as no drift.
+  drift: driftSchema.nullable().optional().catch(null),
 });
 export type Classification = z.infer<typeof classificationSchema>;
 export const analysisSchema = z.object({
@@ -159,7 +163,7 @@ export function classificationPrompt(
   return `${RULES}
 ${GROUPING}${seeded}
 For each thread, write:
-- title: a concrete, recognizable 3–8 word description of the CURRENT substantive task, at most 80 characters. If a later request changed scope, title the new scope, not the original title or opening request. Preserve the actual product's name in the title so it remains recognizable outside its group. No paths, URLs, or status boilerplate.
+- title: a concrete, recognizable 3–8 word description of the CURRENT substantive task, at most 80 characters. If a later request changed scope, title the new scope, not the original title or opening request. Name the substantive deliverable (e.g. 'Inside Vercel documentation site'), not the latest procedural step (switching models, status checks, commits). Preserve the actual product's name in the title so it remains recognizable outside its group. No paths, URLs, or status boilerplate.
 - recap: under 120 characters (hard limit 180). Where the work stands now, from the LAST assistant report: the latest concrete result and what remains or what is being asked. Examples: 'Auth fix tested locally; needs an app restart to verify.' 'Loader can't proceed until the SDK can register skills.' 'Asked whether to update all repos or only agents.' Don't restate the title or the state. Skip implementation inventories and test-count lists. A proposal is not implemented work; distinguish planned, attempted, reported, and verified. Don't invent a blocker, next action, or completion. If context is missing, say so. Runtime idle/error is not evidence of task completion.
 - state, judged from the last assistant report:
   needs_decision: it ends asking the user something specific (a question, a choice, confirmation, "want me to…?", permission to continue), or needs a step only the user can take (credentials, restart, a setting). Closing boilerplate like "let me know if you want changes" doesn't count.
@@ -260,6 +264,7 @@ export type Row = {
   recap: string | null;
   needsYou: boolean;
   state: WorkState | null;
+  drift: Drift | null;
   /** "changed": thread updated since analysis; "failed": last run could not refresh it. */
   freshness: "current" | "changed" | "failed" | "new";
 };
@@ -285,6 +290,7 @@ export function groupThreads(snapshot: Snapshot): [string, Row[]][] {
       recap: item?.recap ?? null,
       needsYou: !!item?.needsYou,
       state: item?.state ?? null,
+      drift: item?.drift ?? null,
       freshness: !item
         ? "new"
         : !item.refreshed

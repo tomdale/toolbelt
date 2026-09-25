@@ -7,6 +7,7 @@ const drift = (splitSeq: number, confidence: "high" | "medium" | "low") => ({
   from: "Lumen",
   to: "Markdown viewer",
   mainlineTitle: "Lumen build caching",
+  sideTitle: "Markdown viewer themes",
   splitSeq,
   confidence,
 });
@@ -17,6 +18,7 @@ const thread = (id: string, timeline: string): Context => ({
   repository: null,
   status: "idle",
   updatedAt: 1,
+  sectionId: null,
   path: null,
   excerpts: "",
   timeline,

@@ -21,11 +21,34 @@ import {
 } from "./model";
 import { redact } from "./redact";
 import { detectDrift } from "./drift";
+import {
+  describe,
+  logEntrySchema,
+  planOrganize,
+  type Action,
+  type LogEntry,
+} from "./organize";
 import { hostContract } from "./host-contract";
-import { contextExcerpt, initialRequest, requestTimeline } from "./context";
+import {
+  contextExcerpt,
+  initialRequest,
+  inputText,
+  requestTimeline,
+} from "./context";
 
+const viewSchema = snapshotSchema.extend({
+  log: z.array(logEntrySchema),
+  mode: z.enum(["auto", "suggest"]),
+  organizing: z.boolean(),
+});
+export type View = z.infer<typeof viewSchema>;
+const threadInput = z.object({ threadId: z.string() });
+const ok = z.object({ ok: z.boolean() });
 export const rpcContract = defineRpcContract({
-  snapshot: { input: z.null(), output: snapshotSchema },
+  snapshot: { input: z.null(), output: viewSchema },
+  organize: { input: z.null(), output: ok },
+  split: { input: threadInput, output: ok },
+  undo: { input: z.object({ id: z.string() }), output: ok },
   analyze: { input: z.null(), output: z.object({ ok: z.boolean() }) },
   cancel: { input: z.null(), output: z.object({ ok: z.boolean() }) },
 });
@@ -65,7 +88,7 @@ export default async function plugin(bb: BbPluginApi) {
         }
       : null;
     put("fixture", path);
-    analysis = analysisSchema.nullable().parse(get(analysisKey()));
+    analysis = analysisSchema.nullable().catch(null).parse(get(analysisKey()));
     error = null;
     notify();
   };
@@ -76,6 +99,14 @@ export default async function plugin(bb: BbPluginApi) {
   let run: AbortController | null = null;
   const inference = bb.hosts.experimental_client({ contract: hostContract });
   const settings = bb.settings.define({
+    organize: {
+      type: "select",
+      label: "After analysis: organize threads automatically, or only suggest",
+      description:
+        "Auto splits high-confidence side quests, renames messy titles, and files threads into workstream sections. Every change is logged and can be undone.",
+      options: ["auto", "suggest"],
+      default: "auto",
+    },
     hostId: {
       type: "string",
       label: "Analysis machine ID (blank uses the only connected machine)",
@@ -89,7 +120,7 @@ export default async function plugin(bb: BbPluginApi) {
   } catch {
     put("fixture", null);
   }
-  analysis ??= analysisSchema.nullable().parse(get(analysisKey()));
+  analysis ??= analysisSchema.nullable().catch(null).parse(get(analysisKey()));
   const advance = (
     stage: NonNullable<Snapshot["progress"]>["stage"],
     completed: number,
@@ -130,6 +161,7 @@ export default async function plugin(bb: BbPluginApi) {
           project: project?.name ?? "Unknown project",
           repository: project?.gitRemoteUrl ?? null,
           status: t.runtime.displayStatus,
+          sectionId: t.sectionId,
           updatedAt: t.updatedAt,
         });
       }
@@ -337,6 +369,229 @@ export default async function plugin(bb: BbPluginApi) {
     };
     put(analysisKey(), analysis);
   }
+  const logKey = () => (fixture ? "fixture-organize-log" : "organize-log");
+  let log: LogEntry[] = z
+    .array(logEntrySchema)
+    .catch([])
+    .parse(get(logKey()) ?? []);
+  let organizing = false;
+  const record = (entry: Omit<LogEntry, "id" | "at" | "undone">) => {
+    log.push({
+      ...entry,
+      id: crypto.randomUUID(),
+      at: Date.now(),
+      undone: false,
+    });
+    log = log.slice(-500);
+    put(logKey(), log);
+  };
+  async function sectionIds() {
+    const sections = await bb.sdk.threadSections.list();
+    const byName = new Map(sections.map((s) => [s.name.toLowerCase(), s.id]));
+    const names = new Map(sections.map((s) => [s.id, s.name]));
+    return {
+      names,
+      async ensure(name: string) {
+        const existing = byName.get(name.toLowerCase());
+        if (existing) return existing;
+        const created = await bb.sdk.threadSections.create({ name });
+        byName.set(name.toLowerCase(), created.id);
+        names.set(created.id, created.name);
+        return created.id;
+      },
+    };
+  }
+  /** Seqs of real user requests before the split point, latest first. */
+  async function mainlineSeqs(threadId: string, splitSeq: number) {
+    const events = await bb.sdk.threads.events.list({
+      threadId,
+      types: ["client/turn/requested"],
+      beforeSeq: String(splitSeq),
+      order: "desc",
+      limit: "20",
+    });
+    const seqs = events
+      .filter((e) => {
+        const text = inputText((e.data as { input?: unknown }).input);
+        return text && !text.startsWith("[bb system]");
+      })
+      .map((e) => e.seq);
+    if (!seqs.length)
+      throw new Error("No mainline request precedes the split.");
+    return seqs;
+  }
+  async function execute(
+    action: Action,
+    sections: Awaited<ReturnType<typeof sectionIds>>,
+  ): Promise<Pick<LogEntry, "detail" | "undo">> {
+    const detail = await bb.sdk.threads.get({ threadId: action.threadId });
+    if (detail.archivedAt !== null || detail.deletedAt !== null)
+      throw new Error("Thread is archived or deleted.");
+    const before = { title: detail.title, sectionId: detail.sectionId };
+    if (action.kind === "retitle") {
+      await bb.sdk.threads.update({
+        threadId: action.threadId,
+        title: action.title,
+      });
+      return { detail: "", undo: before };
+    }
+    if (action.kind === "section") {
+      const sectionId = await sections.ensure(action.section);
+      await bb.sdk.threads.update({ threadId: action.threadId, sectionId });
+      return { detail: "", undo: before };
+    }
+    if (detail.status !== "idle" && detail.status !== "error")
+      throw new Error("Thread is running; split it when it is idle.");
+    const { drift } = action;
+    // BB refuses to fork inside turns recorded under another thread's provider
+    // session (e.g. delivered manager messages); fall back to earlier turns.
+    let fork: Awaited<ReturnType<typeof bb.sdk.threads.fork>> | null = null;
+    let lastError: unknown;
+    let forkedAt = 0;
+    for (const sourceSeqEnd of (
+      await mainlineSeqs(action.threadId, drift.splitSeq)
+    ).slice(0, 5)) {
+      try {
+        fork = await bb.sdk.threads.fork({
+          sourceThreadId: action.threadId,
+          sourceSeqEnd,
+          title: drift.mainlineTitle,
+          ...(detail.environmentId
+            ? {
+                environment: {
+                  type: "reuse" as const,
+                  environmentId: detail.environmentId,
+                },
+              }
+            : {}),
+          agentContextSeed: [
+            {
+              type: "text" as const,
+              mentions: [],
+              visibility: "agent-only" as const,
+              text: `Workstreams split this thread from ${action.threadId} at the point where it moved from ${drift.from} to ${drift.to}. This thread continues the ${drift.from} work; the ${drift.to} work continues in the original thread.`,
+            },
+          ],
+          pluginMetadata: { splitFrom: action.threadId },
+        });
+        forkedAt = sourceSeqEnd;
+        break;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    if (!fork) throw lastError;
+    await bb.sdk.threads.update({
+      threadId: fork.id,
+      sectionId: await sections.ensure(drift.from),
+    });
+    await bb.sdk.threads.update({
+      threadId: action.threadId,
+      title: drift.sideTitle,
+    });
+    let compacted = "compacted";
+    try {
+      await bb.sdk.threads.compact({ threadId: action.threadId });
+    } catch {
+      compacted = "not compacted";
+    }
+    return {
+      detail: `New thread ${fork.id} (mainline through #${forkedAt}); original ${compacted}.`,
+      undo: { ...before, forkId: fork.id },
+    };
+  }
+  /** Applies actions one at a time; failures are logged and don't stop the pass. */
+  async function perform(actions: Action[]) {
+    if (fixture) {
+      const titles = new Map(fixture.contexts.map((c) => [c.id, c.title]));
+      for (const action of actions)
+        record({ action, result: "planned", detail: describe(action, titles) });
+      notify();
+      return;
+    }
+    const sections = await sectionIds();
+    for (const action of actions) {
+      try {
+        record({
+          action,
+          result: "done",
+          ...(await execute(action, sections)),
+        });
+      } catch (e) {
+        record({
+          action,
+          result: "failed",
+          detail: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+    // The plugin's own edits aren't new work; keep acted-on threads current.
+    const fresh = new Map((await inventory()).map((t) => [t.id, t.updatedAt]));
+    if (analysis) {
+      analysis = {
+        ...analysis,
+        items: analysis.items.map((i) =>
+          actions.some((a) => a.threadId === i.threadId) &&
+          fresh.has(i.threadId)
+            ? { ...i, updatedAt: fresh.get(i.threadId)! }
+            : i,
+        ),
+      };
+      put(analysisKey(), analysis);
+    }
+    notify();
+  }
+  async function organize() {
+    organizing = true;
+    notify();
+    try {
+      const threads = await inventory();
+      const sectionNames = fixture
+        ? new Map<string, string>()
+        : (await sectionIds()).names;
+      const split = new Set(
+        log
+          .filter(
+            (e) =>
+              e.action.kind === "split" && e.result !== "failed" && !e.undone,
+          )
+          .map((e) => e.action.threadId),
+      );
+      await perform(
+        planOrganize(
+          threads.map((t) => ({
+            ...t,
+            sectionName: t.sectionId
+              ? (sectionNames.get(t.sectionId) ?? null)
+              : null,
+          })),
+          analysis,
+          split,
+        ),
+      );
+    } finally {
+      organizing = false;
+      notify();
+    }
+  }
+  async function undo(id: string) {
+    const entry = log.find((e) => e.id === id);
+    if (!entry || entry.undone || entry.result !== "done" || !entry.undo)
+      throw new Error("Nothing to undo for this entry.");
+    const { threadId } = entry.action;
+    if (entry.undo.forkId)
+      await bb.sdk.threads.archive({ threadId: entry.undo.forkId });
+    if (entry.action.kind !== "section" && entry.undo.title !== undefined)
+      await bb.sdk.threads.update({ threadId, title: entry.undo.title });
+    if (entry.action.kind === "section")
+      await bb.sdk.threads.update({
+        threadId,
+        sectionId: entry.undo.sectionId ?? null,
+      });
+    entry.undone = true;
+    put(logKey(), log);
+    notify();
+  }
   bb.background.service("thread-analysis", {
     async start(signal) {
       while (!signal.aborted) {
@@ -347,6 +602,7 @@ export default async function plugin(bb: BbPluginApi) {
           signal.addEventListener("abort", onStop);
           try {
             await analyze(AbortSignal.any([signal, run.signal]));
+            if ((await settings.get()).organize === "auto") await organize();
           } catch (e) {
             error = run.signal.aborted
               ? "Analysis cancelled. Previous results are unchanged."
@@ -386,16 +642,40 @@ export default async function plugin(bb: BbPluginApi) {
     run?.abort();
     return { ok: true };
   };
-  const snapshot = async (): Promise<Snapshot> => ({
+  const snapshot = async (): Promise<View> => ({
     threads: await inventory(),
     analysis,
     progress,
     error,
     fixture: fixture ? basename(fixture.path) : null,
+    log: log.slice(-100),
+    mode: (await settings.get()).organize === "suggest" ? "suggest" : "auto",
+    organizing,
   });
   bb.rpc.register(rpcContract, {
     snapshot,
     analyze: async () => start(),
+    organize: async () => {
+      if (progress || organizing) throw new Error("Busy; try again shortly.");
+      await organize();
+      return { ok: true };
+    },
+    split: async ({ threadId }) => {
+      const item = analysis?.items.find((i) => i.threadId === threadId);
+      if (!item?.drift) throw new Error("No side quest found for this thread.");
+      await perform([
+        {
+          kind: "split",
+          threadId,
+          drift: item.drift,
+        },
+      ]);
+      return { ok: true };
+    },
+    undo: async ({ id }) => {
+      await undo(id);
+      return { ok: true };
+    },
     cancel: async () => cancel(),
   });
   for (const event of [
@@ -431,6 +711,12 @@ export default async function plugin(bb: BbPluginApi) {
         usage: "bb workstreams cancel",
       },
       {
+        name: "organize",
+        summary:
+          "Split side quests, rename messy titles, and file threads into workstream sections (planned only during fixture replay)",
+        usage: "bb workstreams organize",
+      },
+      {
         name: "export",
         summary:
           "Write live thread context to a private JSON file for fixture replay",
@@ -451,6 +737,15 @@ export default async function plugin(bb: BbPluginApi) {
           return { exitCode: 0, stdout: JSON.stringify(start()) };
         if (argv[0] === "cancel")
           return { exitCode: 0, stdout: JSON.stringify(cancel()) };
+        if (argv[0] === "organize") {
+          if (progress || organizing)
+            throw new Error("Busy; try again shortly.");
+          await organize();
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify(log.slice(-50)),
+          };
+        }
         if (argv[0] === "fixture" && argv[1]) {
           if (progress) throw new Error("An analysis is running.");
           await loadFixture(argv[1] === "off" ? null : absolute(argv[1]));
@@ -477,7 +772,7 @@ export default async function plugin(bb: BbPluginApi) {
         return {
           exitCode: 1,
           stderr:
-            "Usage: bb workstreams list | analyze | cancel | export <path> | fixture <path|off>",
+            "Usage: bb workstreams list | analyze | cancel | organize | export <path> | fixture <path|off>",
         };
       } catch (e) {
         return {

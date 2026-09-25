@@ -171,3 +171,50 @@ left Unclassified; and disputed reference boundaries (Agent configuration,
 agentfile.link vs v0). “Needs you” was spot-checked on one run: plausible but
 conservative (under-flags some blocked threads). Recap accuracy still needs
 human review.
+
+## Harness: replay, screenshots, judged recaps, drift
+
+`bb workstreams export` freezes live thread context to a private file;
+`bb workstreams fixture` replays it in the real UI, and
+`scripts/screenshot.sh FIXTURE OUT [--analyze] [--organize]` renders desktop
+(1440 px) and mobile (390 px) screenshots. The runner also accepts:
+
+- `EVAL_RUNS=N EVAL_SEED=1`: sequential runs, each seeded with the previous
+  run's multi-thread group names; reports `stableWithPrevious`.
+- `EVAL_JUDGE=model`: a blind rubric judge. It first writes its own account of
+  each thread's state from the excerpts, then scores title+recap for _what_
+  (0–2) and _stop_ (0–2), flags title drift, and independently decides whether
+  the thread needs the user. The judge (`openai/gpt-4.1`, eval only) proved
+  lenient on recap scores (nearly always 2); its needs-you judgment is the
+  useful signal. Recap quality was also reviewed by hand.
+- `drift` in a case: an object marks a side quest (`from`, optional `splitSeq`),
+  `null` a healthy thread. Reports detection, from/seq accuracy, false splits,
+  and unlabeled detections for review. `drift.json` holds seven synthetic cases
+  (three side quests, four healthy threads with scope evolution, procedural
+  requests, and manager messages).
+
+The private reference is now 37 real threads (a live export with checkout paths
+and request timelines). The three formerly disputed threads are side quests,
+labeled by their latest substantive request.
+
+| Iteration (GPT-4.1 mini, 37 threads)                    | Labels / 37 | Related pairs / 52 | Wrong merges / 614 | Needs-you recall (judge) |
+| ------------------------------------------------------- | ----------- | ------------------ | ------------------ | ------------------------ |
+| Shipped v1 prompt (3 runs)                              | 15–16       | 16–32              | 51–88              | 4/13–5/10                |
+| + state field, stricter recap/title rules               | 21–23       | 37–45              | 26–60              | 8/11–15/16               |
+| + slug humanizing, timeline, drift pass (final, 2 runs) | 22–27       | 37–47              | 23–28              | 10/11–11/13              |
+
+Seeding previous names (4-run chains) raised stability to 31–37/37 threads but
+increased wrong merges (41–69), mostly by growing Unclassified; it stays
+eval-only. A `needs_you` rule that flagged every stopped thread reached 95%
+recall but flagged 21–33 of 37 threads; splitting it into _needs decision_ and
+_ready for review_ kept recall while flagging 15–17.
+
+Drift, same runs: synthetic 3/3 detected with exact split seqs and 0/4 false
+splits. Real: the Dockside and Markdown-viewer side quests are found with the
+exact split seq in most runs, at high confidence in at least one of them per
+run; the agent-configuration side quest is not detected (its switch falls in the
+elided middle of a very long timeline). Folding drift into the classification
+prompt detected 0/3 real side quests; a dedicated per-thread pass fixed that.
+Batches of four raised false detections (a manager-directed scope change in the
+Workstreams thread); one thread per call, checked twice, removed them. Cost for
+a 37-thread analysis including drift: about $0.035 and 8–15 s.
