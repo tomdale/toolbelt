@@ -16,6 +16,7 @@ import {
 } from "./model";
 import { Button } from "./components/ui/button";
 import "./app.css";
+import { WorkstreamsThreadList } from "./sidebar";
 
 const FRESHNESS: Record<Row["freshness"], string | null> = {
   current: null,
@@ -446,6 +447,13 @@ function WorkstreamsPage() {
   );
 }
 export default definePluginApp((app) => {
+  app.slots.experimental_threadList({
+    id: "sidebar",
+    title: "Workstreams",
+    description:
+      "Threads grouped by workstream, with work state, a Needs-you band, and collapsible groups.",
+    component: WorkstreamsThreadList,
+  });
   app.slots.navPanel({
     id: "home",
     title: "Workstreams",

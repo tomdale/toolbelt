@@ -51,6 +51,14 @@ const threadInput = z.object({ threadId: z.string() });
 const ok = z.object({ ok: z.boolean() });
 export const rpcContract = defineRpcContract({
   snapshot: { input: z.null(), output: viewSchema },
+  /** Analysis only, for the sidebar, which reads threads from BB's live view. */
+  sidebar: {
+    input: z.null(),
+    output: z.object({
+      analysis: analysisSchema.nullable(),
+      banners: z.record(z.string(), z.string()),
+    }),
+  },
   organize: { input: z.null(), output: ok },
   split: { input: threadInput, output: ok },
   undo: { input: z.object({ id: z.string() }), output: ok },
@@ -313,7 +321,7 @@ export default async function plugin(bb: BbPluginApi) {
         // and keep the groups the split gave them.
         settled: splitAt.has(thread.id) || forks.has(thread.id),
         pinnedGroup: pinned.get(thread.id),
-        previousGroup: previous.get(thread.id),
+        previousGroup: freshRun ? undefined : previous.get(thread.id),
       };
     });
   }
@@ -800,8 +808,11 @@ export default async function plugin(bb: BbPluginApi) {
       }
     },
   });
-  const start = () => {
+  /** fresh: ignore previous groups this run, to let corrected rules regroup. */
+  let freshRun = false;
+  const start = (options: { fresh?: boolean } = {}) => {
     if (progress) throw new Error("An analysis is already running.");
+    freshRun = !!options.fresh;
     pending = true;
     error = null;
     advance("reading", 0, 0);
@@ -832,6 +843,10 @@ export default async function plugin(bb: BbPluginApi) {
   bb.rpc.register(rpcContract, {
     snapshot,
     analyze: async () => start(),
+    sidebar: async () => ({
+      analysis: fixture ? null : analysis,
+      banners: fixture ? {} : bannerUrls(),
+    }),
     organize: async () => {
       if (progress || organizing) throw new Error("Busy; try again shortly.");
       await organize();
@@ -880,7 +895,7 @@ export default async function plugin(bb: BbPluginApi) {
       {
         name: "analyze",
         summary: "Start parallel AI Gateway classification",
-        usage: "bb workstreams analyze",
+        usage: "bb workstreams analyze [--fresh]",
       },
       {
         name: "cancel",
@@ -911,7 +926,10 @@ export default async function plugin(bb: BbPluginApi) {
         if (argv[0] === "list")
           return { exitCode: 0, stdout: JSON.stringify(await snapshot()) };
         if (argv[0] === "analyze")
-          return { exitCode: 0, stdout: JSON.stringify(start()) };
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify(start({ fresh: argv[1] === "--fresh" })),
+          };
         if (argv[0] === "cancel")
           return { exitCode: 0, stdout: JSON.stringify(cancel()) };
         if (argv[0] === "organize") {
