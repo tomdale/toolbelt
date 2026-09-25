@@ -99,7 +99,7 @@ function setup(count = 17, malformed = false, failTitle?: string) {
                 motif: "Motif",
               })),
             }),
-            usage: { input: 1, output: 1, cost: 0 },
+            usage: { input: 1, output: 1, cost: 0.002 },
           };
         if (failTitle && data.some((t: any) => t.title === failTitle))
           throw new Error("gateway down");
@@ -230,7 +230,7 @@ describe("active thread overview", () => {
     );
     expect(s.analysis?.stats).toMatchObject({
       summaryCalls: 1,
-      summaryCost: 0,
+      summaryCost: 0.002,
       summarySeconds: expect.any(Number),
     });
     expect(h.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(0);
@@ -578,5 +578,17 @@ describe("classification contracts", () => {
     expect(groups.get("Product")?.[0].freshness).toBe("changed");
     expect(groups.get("Personal")?.[0].freshness).toBe("new");
     expect(groups.get("Personal")?.[0].recap).toBeNull();
+  });
+});
+
+describe("summary cost accounting", () => {
+  it("charges summary calls to both total cost and summary cost", async () => {
+    const h = setup(9);
+    await plugin(h.bb);
+    await run(h);
+    const a = (await snapshot(h)).analysis!;
+    expect(a.stats?.summaryCalls).toBe(1);
+    expect(a.stats?.summaryCost).toBeGreaterThan(0);
+    expect(a.stats?.cost).toBeGreaterThan(a.stats?.summaryCost ?? 0);
   });
 });

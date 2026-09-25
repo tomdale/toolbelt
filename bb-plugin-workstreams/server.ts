@@ -26,6 +26,7 @@ import {
   IMAGE_MODEL,
   bannerCacheSignature,
   bannerKey,
+  bannerMotif,
   bannerNeedsRegeneration,
   bannerPrompt,
 } from "./banner";
@@ -814,7 +815,10 @@ export default async function plugin(bb: BbPluginApi) {
     );
     const missing = Object.entries(analysis?.summaries ?? {}).filter(
       ([name, summary]) =>
-        bannerNeedsRegeneration(cached.get(bannerKey(name)), summary.motif),
+        bannerNeedsRegeneration(
+          cached.get(bannerKey(name)),
+          bannerMotif(name, summary.motif),
+        ),
     );
     await mapConcurrent(missing, async ([name, summary]) => {
       try {
@@ -828,7 +832,7 @@ export default async function plugin(bb: BbPluginApi) {
         ).run(
           bannerKey(name),
           name,
-          bannerCacheSignature(summary.motif),
+          bannerCacheSignature(bannerMotif(name, summary.motif)),
           image.mime,
           Buffer.from(image.data, "base64"),
           image.cost,
