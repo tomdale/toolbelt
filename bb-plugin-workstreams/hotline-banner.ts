@@ -77,7 +77,7 @@ export function hotlineBannerSvg(
   const titleSize = name.length > 24 ? 6.4 : name.length > 15 ? 7.6 : 9.5;
   const left = `<defs>
     <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff"/><stop offset=".34" stop-color="${palette.light}"/><stop offset=".48" stop-color="#fff"/><stop offset=".58" stop-color="${palette.mid}"/><stop offset="1" stop-color="${palette.light}"/></linearGradient>
-    <linearGradient id="titleback" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#06070b" stop-opacity=".04"/><stop offset=".22" stop-color="#06070b" stop-opacity=".14"/><stop offset=".78" stop-color="#06070b" stop-opacity=".24"/><stop offset="1" stop-color="#06070b" stop-opacity=".06"/></linearGradient>
+    <linearGradient id="titleback" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#05060a" stop-opacity=".68"/><stop offset=".18" stop-color="#05060a" stop-opacity=".42"/><stop offset=".78" stop-color="#05060a" stop-opacity=".44"/><stop offset="1" stop-color="#05060a" stop-opacity=".74"/></linearGradient>
     <filter id="shadow" x="-.15" y="-.4" width="1.3" height="1.8"><feGaussianBlur in="SourceAlpha" stdDeviation=".45"/><feOffset dy=".55"/><feComponentTransfer><feFuncA type="linear" slope=".9"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
     <pattern id="scan" width="1" height="2" patternUnits="userSpaceOnUse"><path d="M0 1.5H1" stroke="#000" stroke-opacity=".14" stroke-width=".35"/></pattern>
   </defs>`;

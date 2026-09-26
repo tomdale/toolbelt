@@ -9,7 +9,7 @@ import {
 
 it("curates distinctive Hotline art motifs per product", () => {
   expect(bannerMotif("Vercel Agent", "some generic suggestion")).toBe(
-    "orange rocket plume over a night sky",
+    "bold orange paper rocket over midnight blue enamel",
   );
   expect(bannerMotif("New Product", "paper kite in a coastal wind")).toBe(
     "paper kite in a coastal wind",
@@ -17,12 +17,14 @@ it("curates distinctive Hotline art motifs per product", () => {
 });
 it("uses the 1998 Hotline art-strip prompt and bumps the cache version", () => {
   const prompt = bannerPrompt("Workstreams", "ignored suggestion");
-  expect(prompt).toContain("232x18-pixel server banner");
-  expect(prompt).toContain("1998 Macintosh shareware aesthetic");
-  expect(prompt).toContain("copper thread and red pencil over black paper");
-  expect(bannerCacheSignature("motif")).toMatch(/^hotline-ik0n-v5:/);
-  expect(bannerNeedsRegeneration("hotline-ik0n-v4:motif", "motif")).toBe(true);
-  expect(bannerNeedsRegeneration("hotline-ik0n-v5:motif", "motif")).toBe(false);
+  expect(prompt).toContain("widest horizontal strip option available");
+  expect(prompt).toContain("Late 90s handmade Mac shareware");
+  expect(prompt).toContain(
+    "one quill writing a copper thread with an ink spark",
+  );
+  expect(bannerCacheSignature("motif")).toMatch(/^hotline-ik0n-v7:/);
+  expect(bannerNeedsRegeneration("hotline-ik0n-v6:motif", "motif")).toBe(true);
+  expect(bannerNeedsRegeneration("hotline-ik0n-v7:motif", "motif")).toBe(false);
 });
 
 test("composites a crisp Hotline strip with code-rendered name and product glyph", () => {
