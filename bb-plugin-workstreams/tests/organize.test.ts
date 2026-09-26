@@ -30,10 +30,12 @@ const thread = (
   status: "idle",
   updatedAt: 1,
   sectionId: null,
+  hasPendingInteraction: false,
   sectionName,
 });
 const analysis = (items: Partial<Analysis["items"][number]>[]): Analysis => ({
   at: 1,
+  needsYouCount: 0,
   warnings: [],
   summaries: {},
   items: items.map((i) => ({
@@ -263,6 +265,7 @@ it("undoes a section move after its original section was deleted", async () => {
       {
         id: "move-1",
         at: 1,
+        needsYouCount: 0,
         action: { kind: "section", threadId: "a", section: "Markdown viewer" },
         result: "done",
         detail: "",

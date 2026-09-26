@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import { buildSidebar, type SidebarThread } from "../sidebar-model";
+import {
+  buildSidebar,
+  isImmediateAsk,
+  type SidebarThread,
+} from "../sidebar-model";
 import type { Analysis } from "../model";
 
 const t = (id: string, extra: Partial<SidebarThread> = {}): SidebarThread => ({
@@ -28,8 +32,9 @@ const item = (threadId: string, group: string, state: string) => ({
 it("groups by analysis, nests children, folds singletons, and bands decisions", () => {
   const analysis = {
     at: 1,
+    needsYouCount: 2,
     warnings: [],
-    summaries: { BB: { about: "a", status: "s", motif: "m" } },
+    summaries: { BB: { about: "a", status: "s", motif: "m", needsYou: 1 } },
     items: [
       item("a", "BB", "done"),
       item("b", "BB", "needs_decision"),
@@ -68,7 +73,15 @@ it("groups by analysis, nests children, folds singletons, and bands decisions", 
   ]);
   // Ready-for-review stays in its group; decisions and pending input band.
   expect(model.needsYou.map((r) => r.thread.id).sort()).toEqual(["b", "e"]);
+  expect(model.totalNeedsYou).toBe(2);
   expect(model.needsYou.every((r) => r.depth === 0)).toBe(true);
   expect(model.needsYouRemaining).toBe(0);
-  expect(model.needsYouRemaining).toBe(0);
+  const reviewReady = model.groups
+    .flatMap((group) => group.rows)
+    .find((row) => row.thread.id === "c")!;
+  expect(isImmediateAsk(reviewReady)).toBe(false);
+  const decision = model.groups
+    .flatMap((group) => group.rows)
+    .find((row) => row.thread.id === "b")!;
+  expect(isImmediateAsk(decision)).toBe(true);
 });

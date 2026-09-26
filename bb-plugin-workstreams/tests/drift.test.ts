@@ -19,6 +19,7 @@ const thread = (id: string, timeline: string): Context => ({
   status: "idle",
   updatedAt: 1,
   sectionId: null,
+  hasPendingInteraction: false,
   path: null,
   excerpts: "",
   timeline,

@@ -64,7 +64,9 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 18px;
+  margin-bottom: 10px;
+  max-height: 46px;
+  overflow: hidden;
 }
 .ws-chip {
   display: inline-flex;
@@ -118,10 +120,25 @@
   border-radius: 4px;
   padding: 0 5px;
 }
-.ws-state-needs_decision,
+.ws-state-needs_decision {
+  color: #c58b28;
+  border-color: transparent;
+  font-weight: 400;
+}
 .ws-state-ready_for_review {
-  border-color: var(--foreground);
-  font-weight: 600;
+  color: #648fbe;
+  border-color: transparent;
+  font-weight: 400;
+}
+.ws-state-blocked {
+  color: var(--destructive);
+  border-color: transparent;
+  font-weight: 400;
+}
+.ws-state-in_progress {
+  color: var(--foreground);
+  border-color: transparent;
+  font-weight: 400;
 }
 .ws-state-done {
   color: var(--muted-foreground);
@@ -209,8 +226,16 @@ footer.ws-muted {
 }
 .ws-line-state {
   font-size: 11px;
+  font-weight: 400;
   color: var(--muted-foreground);
   white-space: nowrap;
+}
+.ws-line-state.ws-state-needs_decision {
+  color: #c58b28;
+  font-weight: 450;
+}
+.ws-line-state.ws-state-ready_for_review {
+  color: #648fbe;
 }
 .ws-line-done {
   opacity: 0.6;
@@ -286,7 +311,8 @@ footer.ws-muted {
   .ws-nav {
     flex-wrap: nowrap;
     overflow-x: auto;
-    margin: 0 -12px 14px;
+    max-height: 34px;
+    margin: 0 -12px 8px;
     padding: 0 12px;
   }
   .ws-chip {
@@ -330,14 +356,14 @@ footer.ws-muted {
     margin-left: 8px;
   }
 }
-/* Group header: name, summary, and an optional generated banner behind it. */
+/* Hotline strip becomes the identity-bearing group header. */
 .ws-group-head {
   position: relative;
   overflow: hidden;
   border-bottom: 1px solid var(--border);
-  padding: 6px 8px 8px;
+  padding: 4px 8px 7px;
   margin-bottom: 2px;
-  border-radius: 8px 8px 0 0;
+  border-radius: 4px 4px 0 0;
 }
 .ws-list .ws-group-head h2 {
   border: 0;
@@ -361,11 +387,8 @@ footer.ws-muted {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: right center;
-  /* Fade the image out under the text so any theme stays legible. */
-  mask-image: linear-gradient(to right, transparent 25%, black 75%);
-  -webkit-mask-image: linear-gradient(to right, transparent 25%, black 75%);
-  opacity: 0.55;
+  image-rendering: pixelated;
+  object-position: center;
   pointer-events: none;
 }
 .ws-has-banner {

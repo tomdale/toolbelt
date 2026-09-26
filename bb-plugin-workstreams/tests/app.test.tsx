@@ -15,6 +15,7 @@ const initial: View = {
       status: "idle",
       updatedAt: 1,
       sectionId: null,
+      hasPendingInteraction: false,
     },
     {
       id: "2",
@@ -24,6 +25,7 @@ const initial: View = {
       status: "active",
       updatedAt: 1,
       sectionId: null,
+      hasPendingInteraction: false,
     },
   ],
   analysis: null,
@@ -53,6 +55,7 @@ async function mount(data: View = initial) {
             ...data,
             analysis: {
               at: 1,
+              needsYouCount: 0,
               warnings: [],
               summaries: {},
               items: data.threads.map((t) => ({
@@ -86,11 +89,13 @@ it("shows singleton summaries and optional banner accents under Other groups", a
     ...initial,
     analysis: {
       at: 1,
+      needsYouCount: 0,
       warnings: [],
       summaries: {
         BB: {
-          about: "BB product",
-          status: "Needs your decision.",
+          about: "BB agent-orchestration IDE.",
+          status: "1 need decision; TTS playback unverified.",
+          needsYou: 1,
           motif: "layers",
         },
       },
@@ -107,7 +112,9 @@ it("shows singleton summaries and optional banner accents under Other groups", a
     },
     banners: { BB: "/banner.jpg" },
   });
-  await v.findByText("BB product Needs your decision.");
+  await v.findByText(
+    "BB agent-orchestration IDE. 1 need decision · 1 need decision; TTS playback unverified.",
+  );
   expect(v.getByRole("presentation").getAttribute("src")).toBe("/banner.jpg");
   v.lifecycle.unmount();
 });
@@ -120,8 +127,8 @@ it("manual analysis regroups threads across repositories", async () => {
   expect(v.getByText("Recap 2")).toBeTruthy();
   expect(v.getByText("Running")).toBeTruthy();
   expect(v.queryByText("idle")).toBeNull();
-  fireEvent.click(v.getByRole("button", { name: /Needs you/, pressed: false }));
-  expect(v.queryByText("Recap 1")).toBeNull();
+  expect(v.queryByText(/Needs decision/)).toBeNull();
+  expect(v.getByText("Recap 1")).toBeTruthy();
   expect(v.getByText("Recap 2")).toBeTruthy();
   v.lifecycle.unmount();
 });
@@ -141,6 +148,7 @@ it("shows reframed titles without renaming threads and searches original titles"
     ...initial,
     analysis: {
       at: 1,
+      needsYouCount: 0,
       warnings: [],
       summaries: {},
       items: [
@@ -207,6 +215,7 @@ it("offers one-click split for side quests and undo for logged changes", async (
     ...initial,
     analysis: {
       at: 1,
+      needsYouCount: 0,
       warnings: [],
       summaries: {},
       items: [
