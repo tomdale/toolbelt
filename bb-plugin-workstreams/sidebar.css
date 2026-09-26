@@ -45,16 +45,28 @@
   background: var(--accent);
 }
 .wss-banner {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: right center;
-  opacity: 0.35;
-  mask-image: linear-gradient(to right, transparent 30%, black 90%);
-  -webkit-mask-image: linear-gradient(to right, transparent 30%, black 90%);
+  position: relative;
+  display: block;
+  width: 232px;
+  max-width: 100%;
+  height: 18px;
+  image-rendering: pixelated;
+  object-fit: fill;
+  flex: 0 1 auto;
+  margin-left: 2px;
+  border: 1px solid var(--wss-accent);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.28),
+    0 1px 2px #000;
   pointer-events: none;
+}
+.wss-head {
+  min-height: 24px;
+  padding-block: 2px;
+}
+.wss-name {
+  text-transform: none;
+  letter-spacing: 0.01em;
 }
 .wss-caret {
   position: relative;
@@ -249,4 +261,13 @@
   .wss-row button {
     min-height: 36px;
   }
+}
+/* BB marks navigation hover-action rows with an enter/fade animation. The
+   plugin sidebar is commonly captured during its zero-opacity first frame,
+   leaving built-in links below the custom list looking ghosted. Keep the host
+   navigation labels visible; the action buttons themselves retain the host's
+   hover-only visibility behavior. */
+.bb-sidebar-hover-actions-row {
+  animation: none !important;
+  opacity: 1 !important;
 }

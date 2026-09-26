@@ -1,5 +1,8 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { basename, isAbsolute } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
+import { execFile } from "node:child_process";
+import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
@@ -22,12 +25,12 @@ import {
 } from "./model";
 import { redact } from "./redact";
 import { detectDrift } from "./drift";
+import { cropGeometry, hotlineBannerSvg } from "./hotline-banner";
 import {
   IMAGE_MODEL,
-  bannerCacheSignature,
   bannerKey,
   bannerMotif,
-  bannerNeedsRegeneration,
+  hotlineBannerSignature,
   bannerPrompt,
 } from "./banner";
 import {
@@ -195,6 +198,7 @@ export default async function plugin(bb: BbPluginApi) {
           repository: project?.gitRemoteUrl ?? null,
           status: t.runtime.displayStatus,
           sectionId: t.sectionId,
+          hasPendingInteraction: t.hasPendingInteraction,
           updatedAt: t.updatedAt,
         });
       }
@@ -391,7 +395,13 @@ export default async function plugin(bb: BbPluginApi) {
     };
     const threads = await inventory(signal);
     if (!threads.length) {
-      analysis = { at: Date.now(), items: [], warnings: [], summaries: {} };
+      analysis = {
+        at: Date.now(),
+        needsYouCount: 0,
+        items: [],
+        warnings: [],
+        summaries: {},
+      };
       put(analysisKey(), analysis);
       return;
     }
@@ -479,9 +489,17 @@ export default async function plugin(bb: BbPluginApi) {
     const timestamps = new Map(threads.map((t) => [t.id, t.updatedAt]));
     const next: Analysis = {
       at: Date.now(),
+      needsYouCount: items.filter(
+        (i) =>
+          i.state === "needs_decision" ||
+          !!threads.find((t) => t.id === i.threadId)?.hasPendingInteraction,
+      ).length,
       items: [
         ...normalizeGroups(items).map((i) => ({
           ...i,
+          needsYou:
+            i.state === "needs_decision" ||
+            !!threads.find((t) => t.id === i.threadId)?.hasPendingInteraction,
           updatedAt: timestamps.get(i.threadId)!,
           refreshed: true,
         })),
@@ -491,7 +509,15 @@ export default async function plugin(bb: BbPluginApi) {
       summaries: {},
     };
     try {
-      const input = summaryInput(next);
+      const input = summaryInput({
+        items: next.items.map((i) => ({
+          ...i,
+          needsYou:
+            !!i.needsYou ||
+            i.state === "needs_decision" ||
+            !!threads.find((t) => t.id === i.threadId)?.hasPendingInteraction,
+        })),
+      });
       if (input.length) {
         const summaryStarted = Date.now();
         // One group per call avoids truncated or incomplete multi-group JSON
@@ -501,10 +527,22 @@ export default async function plugin(bb: BbPluginApi) {
           async (batch) => {
             for (let attempt = 0; attempt < 2; attempt++) {
               try {
-                return parseSummaries(
+                const summaries = parseSummaries(
                   await complete(summaryPrompt(batch), host.id, "summary"),
                   batch.map((g) => g.name),
                 );
+                for (const group of batch) {
+                  const summary = summaries.get(group.name);
+                  const exactNeedsYou = group.threads.filter(
+                    (t) => t.needsYou,
+                  ).length;
+                  if (summary && summary.needsYou !== exactNeedsYou)
+                    summaries.set(group.name, {
+                      ...summary,
+                      needsYou: exactNeedsYou,
+                    });
+                }
+                return summaries;
               } catch {
                 signal.throwIfAborted();
               }
@@ -834,6 +872,13 @@ export default async function plugin(bb: BbPluginApi) {
       .get(c.req.query("key") ?? "") as
       { mime: string; data: Buffer } | undefined;
     if (!row) return c.notFound();
+    if (row.mime === "image/svg+xml")
+      return new Response(new Uint8Array(row.data), {
+        headers: {
+          "content-type": row.mime,
+          "cache-control": "private, max-age=31536000, immutable",
+        },
+      });
     return new Response(new Uint8Array(row.data), {
       headers: {
         "content-type": row.mime,
@@ -842,6 +887,68 @@ export default async function plugin(bb: BbPluginApi) {
     });
   });
   /** Generates banners for summarized groups that don't have one yet. */
+  /** Crop a centered wide slice at native aspect; never stretch a square image. */
+  async function cropHotlineArt(
+    input: Buffer,
+  ): Promise<{ data: Buffer; mime: string }> {
+    const dir = await mkdtemp(join(tmpdir(), "workstreams-hotline-"));
+    const source = join(dir, "source.png");
+    const cropped = join(dir, "crop.png");
+    try {
+      await writeFile(source, input);
+      await promisify(execFile)("sips", [
+        "-s",
+        "format",
+        "png",
+        source,
+        "--out",
+        source + ".png",
+      ]);
+      const png = source + ".png";
+      const { stdout } = await promisify(execFile)("sips", [
+        "-g",
+        "pixelWidth",
+        "-g",
+        "pixelHeight",
+        png,
+      ]);
+      const width = Number(/pixelWidth: (\d+)/.exec(stdout)?.[1]);
+      const height = Number(/pixelHeight: (\d+)/.exec(stdout)?.[1]);
+      if (!width || !height)
+        throw new Error("Could not read generated image dimensions.");
+      // Crop the source to 232:18 at native scale: preserve the whole image
+      // width when it is already banner-shaped; never stretch X and Y apart.
+      const geometry = cropGeometry(width, height);
+      await promisify(execFile)("sips", [
+        "--cropToHeightWidth",
+        String(geometry.height),
+        String(geometry.width),
+        "--cropOffset",
+        String(geometry.top),
+        String(geometry.left),
+        png,
+        "--out",
+        cropped,
+      ]);
+      await promisify(execFile)("sips", [
+        "-s",
+        "format",
+        "jpeg",
+        "-s",
+        "formatOptions",
+        "82",
+        cropped,
+        "--out",
+        join(dir, "crop.jpg"),
+      ]);
+      return {
+        data: await readFile(join(dir, "crop.jpg")),
+        mime: "image/jpeg",
+      };
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
   async function ensureBanners(hostId: string, signal: AbortSignal) {
     const cached = new Map(
       (
@@ -853,32 +960,45 @@ export default async function plugin(bb: BbPluginApi) {
     );
     const missing = Object.entries(analysis?.summaries ?? {}).filter(
       ([name, summary]) =>
-        bannerNeedsRegeneration(
-          cached.get(bannerKey(name)),
-          bannerMotif(name, summary.motif),
-        ),
+        cached.get(bannerKey(name)) !==
+        hotlineBannerSignature(name, bannerMotif(name, summary.motif)),
     );
+    if (missing.length)
+      bb.log.info(
+        `Generating ${missing.length} Hotline banners: ${missing.map(([name]) => name).join(", ")}`,
+      );
     await mapConcurrent(missing, async ([name, summary]) => {
       try {
         const image = await inference.call(
           "image",
-          { prompt: bannerPrompt(name, summary.motif), model: IMAGE_MODEL },
+          {
+            prompt: bannerPrompt(name, summary.motif),
+            model: IMAGE_MODEL,
+          },
           { hostId, signal, timeoutMs: 120_000 },
+        );
+        const art = await cropHotlineArt(Buffer.from(image.data, "base64"));
+        const svg = Buffer.from(
+          hotlineBannerSvg(name, art.mime, art.data.toString("base64")),
+          "utf8",
         );
         db.prepare(
           "INSERT OR REPLACE INTO banners (key, name, motif, mime, data, cost, at) VALUES (?,?,?,?,?,?,?)",
         ).run(
           bannerKey(name),
           name,
-          bannerCacheSignature(bannerMotif(name, summary.motif)),
-          image.mime,
-          Buffer.from(image.data, "base64"),
+          hotlineBannerSignature(name, bannerMotif(name, summary.motif)),
+          "image/svg+xml",
+          svg,
           image.cost,
           Date.now(),
         );
         notify();
-      } catch {
+      } catch (error) {
         signal.throwIfAborted();
+        bb.log.warn(
+          `Could not generate Hotline banner for ${name}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     });
   }

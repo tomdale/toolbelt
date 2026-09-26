@@ -13,7 +13,9 @@ export const STATES = [
   "done",
 ] as const;
 export type WorkState = (typeof STATES)[number];
-const NEEDS_YOU = new Set<WorkState>(["needs_decision", "ready_for_review"]);
+// Shared meaning for the Workstreams summary/page count: an explicit
+// needs-decision classification or a live BB pending interaction.
+const NEEDS_YOU = new Set<WorkState>(["needs_decision"]);
 /**
  * A side quest: the thread began as mainline work on one product (`from`)
  * and moved to another (`to`) at user request `splitSeq`. Splitting forks
@@ -38,6 +40,8 @@ export const threadSchema = z.object({
   status: z.string(),
   updatedAt: z.number(),
   sectionId: z.string().nullable().default(null),
+  /** BB has a live approval/question for the user on this thread. */
+  hasPendingInteraction: z.boolean().default(false),
 });
 export type Thread = z.infer<typeof threadSchema>;
 export type Context = Thread & {
@@ -73,6 +77,8 @@ export const classificationSchema = z.object({
 export type Classification = z.infer<typeof classificationSchema>;
 export const analysisSchema = z.object({
   at: z.number(),
+  /** Deduplicated immediate asks, shared by page and sidebar Needs decision counts. */
+  needsYouCount: z.number().int().nonnegative().default(0),
   items: z.array(
     classificationSchema.extend({
       updatedAt: z.number(),
@@ -85,7 +91,12 @@ export const analysisSchema = z.object({
   summaries: z
     .record(
       z.string(),
-      z.object({ about: z.string(), status: z.string(), motif: z.string() }),
+      z.object({
+        about: z.string(),
+        status: z.string(),
+        motif: z.string(),
+        needsYou: z.number().int().nonnegative().default(0),
+      }),
     )
     .default({}),
   stats: z
@@ -145,11 +156,16 @@ export function parseClassifications(
           recap: z.string().trim().min(1).max(400).transform(clip),
           // An unknown state shouldn't discard the whole batch.
           state: z.enum(STATES).catch("in_progress"),
+          /** Predicted immediate ask; live pending interactions are ORed in by the host. */
+          needsYou: z.boolean().optional().default(false),
         }),
       ),
     })
     .transform(({ items }) => ({
-      items: items.map((i) => ({ ...i, needsYou: NEEDS_YOU.has(i.state) })),
+      items: items.map((i) => ({
+        ...i,
+        needsYou: NEEDS_YOU.has(i.state) || i.needsYou,
+      })),
     }))
     .parse(json(text));
   const expected = new Set(ids);
@@ -317,7 +333,7 @@ export function groupThreads(snapshot: Snapshot): [string, Row[]][] {
       thread,
       title: item?.title ?? thread.title,
       recap: item?.recap ?? null,
-      needsYou: !!item?.needsYou,
+      needsYou: !!item?.needsYou || thread.hasPendingInteraction,
       state: item?.state ?? null,
       drift: item?.drift ?? null,
       freshness: !item

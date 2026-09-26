@@ -89,13 +89,14 @@ function setup(count = 17, malformed = false, failTitle?: string) {
           return { text: "not JSON", usage: { input: 1, output: 1, cost: 0 } };
         const prompt = (input as { prompt: string }).prompt;
         const data = JSON.parse(prompt.slice(prompt.lastIndexOf("\n") + 1));
-        if (prompt.includes("For each workstream"))
+        if (prompt.includes("about: at most 90 characters"))
           return {
             text: JSON.stringify({
-              groups: data.map((g: { name: string }) => ({
+              groups: data.map((g: any) => ({
                 name: g.name,
                 about: "About",
-                status: "Status",
+                status: `${g.threads.filter((t: any) => t.needsYou).length} need decision${g.threads.filter((t: any) => t.needsYou).length === 1 ? "" : "s"}`,
+                needsYou: g.threads.filter((t: any) => t.needsYou).length,
                 motif: "Motif",
               })),
             }),
@@ -114,6 +115,7 @@ function setup(count = 17, malformed = false, failTitle?: string) {
                   : "Vercel Agent for Slack",
               recap: `Implement feature ${t.id}`,
               state: "done",
+              needsYou: false,
             })),
           }),
           usage: { input: 100, output: 10, cost: 0.001 },
@@ -164,6 +166,52 @@ describe("active thread overview", () => {
       /every supplied group/,
     );
   });
+  it("keeps each summary grounded in its named group's identity", () => {
+    const parsed = parseSummaries(
+      JSON.stringify({
+        groups: [
+          {
+            name: "BB",
+            about:
+              "BB is the agent-orchestration IDE for threads and providers.",
+            status: "1 need decision: choose a provider.",
+            needsYou: 1,
+            motif: "agent threads",
+          },
+          {
+            name: "Workstreams",
+            about: "Plugin grouping active BB threads by product.",
+            status: "0 need decisions; grouping improvements in progress.",
+            needsYou: 0,
+            motif: "thread spools",
+          },
+        ],
+      }),
+      ["BB", "Workstreams"],
+    );
+    expect(parsed.get("BB")?.about).toMatch(/agent-orchestration IDE/i);
+    expect(parsed.get("BB")?.about).not.toMatch(/groups active threads/i);
+    expect(parsed.get("BB")?.needsYou).toBe(1);
+    expect(parsed.get("Workstreams")?.about).toMatch(
+      /grouping active BB threads/i,
+    );
+    expect(() =>
+      parseSummaries(
+        JSON.stringify({
+          groups: [
+            {
+              name: "BB",
+              about: "Workstreams plugin groups active threads by product.",
+              status: "0 need decisions.",
+              needsYou: 0,
+              motif: "a thread",
+            },
+          ],
+        }),
+        ["BB"],
+      ),
+    ).toThrow(/does not match group identity/);
+  });
   it("regenerates a banner only when a group's motif changes", () => {
     expect(bannerNeedsRegeneration(undefined, "new motif")).toBe(true);
     expect(bannerNeedsRegeneration("v1:old motif", "new motif")).toBe(true);
@@ -189,6 +237,7 @@ describe("active thread overview", () => {
           title: "A",
           recap: "Status",
           state: "done",
+          needsYou: false,
         },
         {
           threadId: "2",
@@ -196,6 +245,7 @@ describe("active thread overview", () => {
           title: "B",
           recap: "Needs choice",
           state: "needs_decision",
+          needsYou: true,
         },
         {
           threadId: "3",
@@ -203,6 +253,7 @@ describe("active thread overview", () => {
           title: "C",
           recap: "No context",
           state: "done",
+          needsYou: false,
         },
       ],
     } as any);
@@ -227,6 +278,10 @@ describe("active thread overview", () => {
     ).toHaveLength(4);
     expect(s.analysis?.summaries["Vercel Agent for Slack"]?.about).toBe(
       "About",
+    );
+    expect(s.analysis?.summaries["Vercel Agent for Slack"]?.needsYou).toBe(0);
+    expect(s.analysis?.summaries["Vercel Agent for Slack"]?.status).toContain(
+      "0 need decisions",
     );
     expect(s.analysis?.stats).toMatchObject({
       summaryCalls: 1,
@@ -274,7 +329,11 @@ describe("active thread overview", () => {
         null,
       )) as Snapshot;
       expect(s.error).toBeTruthy();
-      expect(s.analysis).toEqual({ ...previous, summaries: {} });
+      expect(s.analysis).toEqual({
+        ...previous,
+        needsYouCount: 0,
+        summaries: {},
+      });
     } finally {
       service.controller.abort();
       await service.done;
@@ -288,6 +347,7 @@ describe("active thread overview", () => {
       "thread-analysis",
       JSON.stringify({
         at: 1,
+        needsYouCount: 0,
         items: [{ threadId: "8", group: "Old", recap: "Before", updatedAt: 1 }],
         warnings: [],
         summaries: {},
@@ -411,6 +471,7 @@ describe("classification contracts", () => {
       path: null,
       updatedAt: 1,
       sectionId: null,
+      hasPendingInteraction: false,
       status: "idle",
       excerpts: "",
       timeline: "",
@@ -545,6 +606,7 @@ describe("classification contracts", () => {
           status: "idle",
           updatedAt: 2,
           sectionId: null,
+          hasPendingInteraction: false,
         },
         {
           id: "2",
@@ -554,10 +616,12 @@ describe("classification contracts", () => {
           status: "idle",
           updatedAt: 2,
           sectionId: null,
+          hasPendingInteraction: false,
         },
       ],
       analysis: {
         at: 1,
+        needsYouCount: 0,
         items: [
           {
             threadId: "1",

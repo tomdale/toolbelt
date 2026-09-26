@@ -18,6 +18,8 @@ export type SidebarRow = {
   state: WorkState | null;
   /** Waiting on the user: inferred work state, or the agent is blocked on an approval/question now. */
   needsYou: boolean;
+  /** One of the immediate asks shown in the Workstreams page band. */
+  immediateAsk: boolean;
   running: boolean;
   /** Analysis predates the thread's latest activity, or it was never analyzed. */
   stale: boolean;
@@ -28,7 +30,7 @@ export type SidebarGroup = {
   name: string;
   rows: SidebarRow[];
   needsYou: number;
-  summary: { about: string; status: string } | null;
+  summary: { about: string; status: string; needsYou?: number } | null;
 };
 export type SidebarModel = {
   needsYou: (SidebarRow & { group: string })[];
@@ -36,6 +38,7 @@ export type SidebarModel = {
   /** One-thread groups, folded together; each row keeps its group name. */
   other: (SidebarRow & { group: string })[];
   needsYouRemaining: number;
+  totalNeedsYou: number;
   allNeedsYou: (SidebarRow & { group: string })[];
 };
 
@@ -76,6 +79,8 @@ export function buildSidebar(
       thread,
       state,
       needsYou: thread.hasPendingInteraction || !!item?.needsYou,
+      immediateAsk:
+        thread.hasPendingInteraction || item?.state === "needs_decision",
       running: RUNNING.has(thread.status),
       stale: !item || item.updatedAt < thread.updatedAt,
       recap: item?.recap ?? null,
@@ -101,7 +106,7 @@ export function buildSidebar(
     groups.push({
       name,
       rows: ordered,
-      needsYou: ordered.filter(waiting).length,
+      needsYou: ordered.filter(immediateAsk).length,
       summary: analysis?.summaries?.[name] ?? null,
     });
   }
@@ -120,7 +125,7 @@ export function buildSidebar(
     ...groups.flatMap((g) => g.rows.map((r) => ({ ...r, group: g.name }))),
     ...other,
   ]
-    .filter(waiting)
+    .filter(immediateAsk)
     .map((r) => ({ ...r, depth: 0 }))
     .sort(
       (a, b) =>
@@ -132,6 +137,7 @@ export function buildSidebar(
   return {
     needsYou: needsYou.slice(0, 6),
     needsYouRemaining: Math.max(0, needsYou.length - 6),
+    totalNeedsYou: analysis?.needsYouCount ?? needsYou.length,
     allNeedsYou: needsYou,
     groups,
     other,
@@ -139,8 +145,11 @@ export function buildSidebar(
 }
 
 /** What only the user can unblock now; the Needs-you band and group badges. */
-const waiting = (r: SidebarRow) =>
-  r.thread.hasPendingInteraction || r.state === "needs_decision";
+export const isImmediateAsk = (r: SidebarRow) =>
+  r.needsYou &&
+  (r.thread.hasPendingInteraction || r.state === "needs_decision");
+export const immediateAsk = isImmediateAsk;
+const waiting = (r: SidebarRow) => r.needsYou;
 const urgency = (r: SidebarRow) =>
   r.thread.hasPendingInteraction ? 0 : r.thread.status === "active" ? 1 : 2;
 const latest = (rows: SidebarRow[]) =>

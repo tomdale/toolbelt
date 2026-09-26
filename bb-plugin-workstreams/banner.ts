@@ -5,7 +5,9 @@
  * series consistent while each motif stays distinct.
  */
 export const IMAGE_MODEL = "openai/gpt-image-1-mini";
-const BANNER_STYLE_VERSION = "v4";
+/** Source image for composition is kept separate from code-rendered title/icon. */
+export const HOTLINE_ART_PROMPT_VERSION = "hotline-art-v1";
+const BANNER_STYLE_VERSION = "hotline-ik0n-v3";
 const ACCENTS = [
   "muted teal",
   "warm amber",
@@ -18,6 +20,10 @@ const ACCENTS = [
 ];
 export function bannerCacheSignature(motif: string): string {
   return `${BANNER_STYLE_VERSION}:${motif}`;
+}
+/** The final banner also contains the exact, code-rendered product name. */
+export function hotlineBannerSignature(group: string, motif: string): string {
+  return `${BANNER_STYLE_VERSION}:${motif}:${bannerKey(group)}`;
 }
 export function bannerNeedsRegeneration(
   cachedSignature: string | undefined,
@@ -36,10 +42,10 @@ export function bannerKey(group: string): string {
 const MOTIFS: Record<string, string> = {
   bb: "one amber thread branching into three distinct paths",
   tomdaleos: "open field notebook with a small brass compass",
-  workstreams: "one red thread weaving through layered paper tabs",
+  workstreams: "copper thread and red pencil over black paper",
   "engineering-full-stack-collab":
     "two wooden bridges meeting over a narrow stream",
-  "vercel-agent": "small launch plume lifting a folded paper plane",
+  "vercel-agent": "orange rocket plume over a night sky",
   dockside: "single moored sailboat with a curved rope",
   "cross-project-coordination": "compass needle over three offset map contours",
   "bb-recap": "rolled paper scroll with one folded corner",
@@ -51,20 +57,14 @@ const MOTIFS: Record<string, string> = {
   v0: "folded paper prototype with one sharp crease",
   "markdown-viewer": "open blank book with one ribbon bookmark",
 };
-const TOO_GENERIC =
-  /\b(?:circuit|node|gear|card|panel|window|screen|ui|dashboard|snippet|flowchart|text|line)s?\b/i;
-/** Prefer physical, product-specific motifs over UI-shaped model suggestions. */
+/** Product-specific creative direction for handmade late-90s Hotline strips. */
 export function bannerMotif(group: string, suggested: string): string {
-  const curated = MOTIFS[bannerKey(group)];
-  if (curated) return curated;
-  return TOO_GENERIC.test(suggested)
-    ? `abstract folded paper shapes inspired by ${group}`
-    : suggested;
+  return MOTIFS[bannerKey(group)] ?? suggested;
 }
 export function bannerPrompt(group: string, suggested: string): string {
   const motif = bannerMotif(group, suggested);
   let hash = 0;
   for (const c of bannerKey(group)) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
   const accent = ACCENTS[hash % ACCENTS.length];
-  return `Create a restrained, wide horizontal illustration in a consistent series. Background: uniform near-black charcoal (#17191c), edge to edge. Never use a white, cream, pale, bright, or sky background. Flat matte cut-paper shapes, subtle grain, muted ${accent} accent, very low contrast. One simple physical object only, recognizable at 300x58 crop, placed at the far right; left 70 percent stays empty charcoal. No interface, UI, windows, panels, cards, screens, charts, diagrams, symbols, glyphs, pseudo-text, strokes that resemble writing, repeated list-like objects, circuits, nodes, gears, gradients, horizon, or clouds. Motif: ${motif}.`;
+  return `Generate ART TEXTURE ONLY for a classic Hotline Connect ik0n, 232x18-pixel server banner. Handmade 1998 Macintosh shareware aesthetic: vivid brushed chrome, neon, marble, woodgrain, flag colors, or photo-fragment textures; loud saturated ${accent}, hard gradients, bevels and dithering. This is a very short horizontal strip, NOT a poster. Put one recognizable product motif into a narrow horizontal band through the EXACT CENTER of the image: all identifying artwork should lie within the middle 12 percent of image height so a center-slice crop retains it. Let color/texture bleed across the full width, with some brighter texture at both ends. Motif: ${motif}. No text, letters, words, typography, logos, panels, cards, UI, or white empty sky. Artwork may be busy and high contrast; exact name text and left icon will be composited in code.`;
 }

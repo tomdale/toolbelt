@@ -7,6 +7,7 @@ import {
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import type { rpcContract, View } from "./server";
+import { isImmediateAsk } from "./sidebar-model";
 import {
   UNCLASSIFIED,
   groupThreads,
@@ -25,11 +26,18 @@ const FRESHNESS: Record<Row["freshness"], string | null> = {
   new: "Not analyzed",
 };
 const STATE_LABEL: Record<WorkState, string> = {
-  needs_decision: "Needs decision",
-  ready_for_review: "Ready for review",
-  blocked: "Blocked",
-  in_progress: "In progress",
-  done: "Done",
+  needs_decision: "? Needs decision",
+  ready_for_review: "✓ Ready for review",
+  blocked: "■ Blocked",
+  in_progress: "● In progress",
+  done: "○ Done",
+};
+const STATE_GLYPH: Record<WorkState, string> = {
+  needs_decision: "?",
+  ready_for_review: "✓",
+  blocked: "■",
+  in_progress: "●",
+  done: "○",
 };
 const RUNTIME: Record<string, string> = {
   active: "Running",
@@ -62,7 +70,7 @@ function ListRow({
 }: {
   row: Row;
   group?: string;
-  groupSummary?: { about: string; status: string };
+  groupSummary?: { about: string; status: string; needsYou?: number };
   groupBanner?: string;
   open: () => void;
   /** Offered for detected side quests not yet split. */
@@ -78,8 +86,12 @@ function ListRow({
         title={thread.title}
         onClick={open}
       >
-        <span className={`ws-line-state ws-state-${state ?? "none"}`}>
-          {state ? STATE_LABEL[state] : ""}
+        <span
+          className={`ws-line-state ws-state-${state ?? "none"}`}
+          aria-label={state ? STATE_LABEL[state] : "Not analyzed"}
+          title={state ? STATE_LABEL[state] : "Not analyzed"}
+        >
+          {state ? STATE_GLYPH[state] : "·"}
         </span>
         <span className="ws-line-body">
           {group && (
@@ -87,7 +99,11 @@ function ListRow({
               <span className="ws-line-group">{group}</span>
               {groupSummary && (
                 <span className="ws-single-summary">
-                  {groupSummary.about} {groupSummary.status}
+                  {groupSummary.about}{" "}
+                  {groupSummary.needsYou
+                    ? `${groupSummary.needsYou} need decision${groupSummary.needsYou === 1 ? "" : "s"} · `
+                    : ""}
+                  {groupSummary.status}
                 </span>
               )}
               {groupBanner && (
@@ -126,7 +142,7 @@ function GroupHeader({
 }: {
   name: string;
   count: number;
-  summary?: { about: string; status: string };
+  summary?: { about: string; status: string; needsYou?: number };
   banner?: string;
 }) {
   return (
@@ -138,7 +154,12 @@ function GroupHeader({
       {summary && (
         <>
           <p className="ws-about">{summary.about}</p>
-          <p className="ws-status-line">{summary.status}</p>
+          <p className="ws-status-line">
+            {summary.needsYou
+              ? `${summary.needsYou} need decision${summary.needsYou === 1 ? "" : "s"} · `
+              : ""}
+            {summary.status}
+          </p>
         </>
       )}
     </header>
@@ -205,10 +226,8 @@ function WorkstreamsPage() {
     }
   };
   const all = data ? groupThreads(data) : [];
-  const needsYou = all.reduce(
-    (n, [, rows]) => n + rows.filter((r) => r.needsYou).length,
-    0,
-  );
+  // Page and sidebar use the same host-adjusted immediate-ask count.
+  const needsYou = data?.analysis?.needsYouCount ?? 0;
   const q = query.trim().toLowerCase();
   const groups = all
     .map(
@@ -328,13 +347,9 @@ function WorkstreamsPage() {
             {(all.length > 1 || needsYou > 0) && (
               <nav className="ws-nav" aria-label="Groups">
                 {needsYou > 0 && (
-                  <button
-                    className="ws-chip ws-chip-you"
-                    aria-pressed={onlyYou}
-                    onClick={() => setOnlyYou(!onlyYou)}
-                  >
-                    Needs you <span>{needsYou}</span>
-                  </button>
+                  <span className="ws-chip ws-chip-you">
+                    Needs decision <span>{needsYou}</span>
+                  </span>
                 )}
                 {[
                   ...multi.map(([name, rows]) => [name, rows.length] as const),
@@ -469,7 +484,7 @@ function WorkstreamsPage() {
 export default definePluginApp((app) => {
   app.slots.experimental_threadList({
     id: "sidebar",
-    title: "Workstreams",
+    title: "Workstreams threads",
     description:
       "Threads grouped by workstream, with work state, a Needs-you band, and collapsible groups.",
     component: WorkstreamsThreadList,

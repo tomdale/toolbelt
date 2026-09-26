@@ -160,13 +160,16 @@ function Group({
         onClick={toggle}
         title={
           group.summary
-            ? `${group.summary.about}\n${group.summary.status}`
+            ? `${group.summary.about}\n${group.summary.needsYou ? `${group.summary.needsYou} need decision(s). ` : ""}${group.summary.status}`
             : undefined
         }
       >
-        {banner && <img className="wss-banner" src={banner} alt="" />}
         <span className="wss-caret">{collapsed ? "▸" : "▾"}</span>
-        <span className="wss-name">{group.name}</span>
+        {banner ? (
+          <img className="wss-banner" src={banner} alt={group.name} />
+        ) : (
+          <span className="wss-name">{group.name}</span>
+        )}
         {group.needsYou > 0 && (
           <span className="wss-badge">{group.needsYou}</span>
         )}
@@ -174,6 +177,14 @@ function Group({
       </button>
       {!collapsed && (
         <>
+          {group.summary && (
+            <p className="wss-summary">
+              {group.summary.needsYou
+                ? `${group.summary.needsYou} need decision${group.summary.needsYou === 1 ? "" : "s"} · `
+                : ""}
+              {group.summary.status}
+            </p>
+          )}
           <ul>{open.map(renderRow)}</ul>
           {done.length > 0 && (
             <>
@@ -205,6 +216,12 @@ export function WorkstreamsThreadList({
     analysis: Analysis | null;
     banners: Record<string, string>;
   }>({ analysis: null, banners: {} });
+  const immediateCount = new Set([
+    ...threads.filter((t) => t.hasPendingInteraction).map((t) => t.id),
+    ...(data.analysis?.items
+      .filter((i) => i.state === "needs_decision")
+      .map((i) => i.threadId) ?? []),
+  ]).size;
   const refresh = useCallback(async () => {
     try {
       setData(await rpc.call("sidebar"));
@@ -272,9 +289,7 @@ export function WorkstreamsThreadList({
               {collapsed.has("__needs") ? "▸" : "▾"}
             </span>
             <span className="wss-name">Needs you</span>
-            <span className="wss-count">
-              {model.needsYou.length + model.needsYouRemaining}
-            </span>
+            <span className="wss-count">{immediateCount}</span>
           </button>
           {!collapsed.has("__needs") && (
             <>
@@ -316,10 +331,7 @@ export function WorkstreamsThreadList({
           group={{
             name: "Other",
             rows: model.other,
-            needsYou: model.other.filter(
-              (r) =>
-                r.thread.hasPendingInteraction || r.state === "needs_decision",
-            ).length,
+            needsYou: model.other.filter((r) => r.immediateAsk).length,
             summary: null,
           }}
           collapsed={collapsed.has("__other")}
