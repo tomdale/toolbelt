@@ -7,7 +7,7 @@
 export const IMAGE_MODEL = "openai/gpt-image-1-mini";
 /** Source image for composition is kept separate from code-rendered title/icon. */
 export const HOTLINE_ART_PROMPT_VERSION = "hotline-art-v1";
-const BANNER_STYLE_VERSION = "hotline-ik0n-v5";
+const BANNER_STYLE_VERSION = "hotline-ik0n-v7";
 const ACCENTS = [
   "muted teal",
   "warm amber",
@@ -40,22 +40,21 @@ export function bannerKey(group: string): string {
     .replace(/^-|-$/g, "");
 }
 const MOTIFS: Record<string, string> = {
-  bb: "one amber thread branching into three distinct paths",
-  tomdaleos: "open field notebook with a small brass compass",
-  workstreams: "copper thread and red pencil over black paper",
+  bb: "golden BB monogram built from interlocking beveled ovals on chrome",
+  tomdaleos: "compass rose beside a tiny diskette on blue enamel",
+  workstreams: "one quill writing a copper thread with an ink spark",
   "engineering-full-stack-collab":
-    "two wooden bridges meeting over a narrow stream",
-  "vercel-agent": "orange rocket plume over a night sky",
-  dockside: "single moored sailboat with a curved rope",
-  "cross-project-coordination": "compass needle over three offset map contours",
-  "bb-recap": "rolled paper scroll with one folded corner",
-  "sidebar-hierarchy": "three nested cut-paper archways",
-  "bb-agent-plugins-loader":
-    "open wooden crate with one thread passing through",
-  fx: "single radar ring with one sweeping arc",
-  workforest: "quiet forest canopy with a shaft of dawn light",
-  v0: "folded paper prototype with one sharp crease",
-  "markdown-viewer": "open blank book with one ribbon bookmark",
+    "two steel bridges meeting over electric blue water",
+  "vercel-agent": "bold orange paper rocket over midnight blue enamel",
+  dockside: "chrome boat cleat with one taut coral rope on sea glass",
+  "cross-project-coordination": "brass compass rose over folded emerald maps",
+  "bb-recap": "small red wax seal on parchment and chrome",
+  "sidebar-hierarchy": "three nested chrome chevrons over dark teal enamel",
+  "bb-agent-plugins-loader": "violet key sliding into a chrome toolbox latch",
+  fx: "single red radar sweep across brushed aluminum",
+  workforest: "emerald leaf silhouette on black and lime marble",
+  v0: "bright orange folded paper prototype on violet enamel",
+  "markdown-viewer": "cream open-book silhouette on cobalt chrome",
 };
 /** Product-specific creative direction for handmade late-90s Hotline strips. */
 export function bannerMotif(group: string, suggested: string): string {
@@ -66,5 +65,5 @@ export function bannerPrompt(group: string, suggested: string): string {
   let hash = 0;
   for (const c of bannerKey(group)) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
   const accent = ACCENTS[hash % ACCENTS.length];
-  return `Generate ART TEXTURE ONLY for a classic Hotline Connect ik0n, 232x18-pixel server banner. Handmade 1998 Macintosh shareware aesthetic: vivid brushed chrome, neon, marble, woodgrain, flag colors, or photo-fragment textures; loud saturated ${accent}, hard gradients, bevels and dithering. This is a very short horizontal strip, NOT a poster. Put one recognizable product motif into a narrow horizontal band through the EXACT CENTER of the image: all identifying artwork should lie within the middle 12 percent of image height so a center-slice crop retains it. Let color/texture bleed across the full width, with some brighter texture at both ends. Motif: ${motif}. No text, letters, words, typography, logos, panels, cards, UI, or white empty sky. Artwork may be busy and high contrast; exact name text and left icon will be composited in code.`;
+  return `Make a classic 1998 Macintosh Hotline Connect ik0n server banner. IMPORTANT: image output aspect ratio must be the widest horizontal strip option available, ideally 3:1 or wider. Do not create a square or portrait poster. We will center-crop further in code without stretching. Art only: absolutely no words, lettering, typography, fake text, logos, or interface panels. Late 90s handmade Mac shareware: rich ${accent} brushed chrome, marble, neon, metal flake or photo fragments, bevels and light dithering. One recognizable physical emblem inspired by this product: ${motif}. Keep image detailed and colorful across its entire width; code overlays title and icon.`;
 }
