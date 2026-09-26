@@ -7,7 +7,7 @@
 export const IMAGE_MODEL = "openai/gpt-image-1-mini";
 /** Source image for composition is kept separate from code-rendered title/icon. */
 export const HOTLINE_ART_PROMPT_VERSION = "hotline-art-v1";
-const BANNER_STYLE_VERSION = "hotline-ik0n-v3";
+const BANNER_STYLE_VERSION = "hotline-ik0n-v4";
 const ACCENTS = [
   "muted teal",
   "warm amber",

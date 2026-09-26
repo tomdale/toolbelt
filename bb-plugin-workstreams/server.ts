@@ -977,6 +977,9 @@ export default async function plugin(bb: BbPluginApi) {
           },
           { hostId, signal, timeoutMs: 120_000 },
         );
+        // Use the actual ratio returned by the provider instead of assuming a
+        // square source: the crop helper preserves the center band at native
+        // scale. The source aspect is stored here only for cost/QA review.
         const art = await cropHotlineArt(Buffer.from(image.data, "base64"));
         const svg = Buffer.from(
           hotlineBannerSvg(name, art.mime, art.data.toString("base64")),
