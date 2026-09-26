@@ -166,7 +166,10 @@ function Group({
       >
         <span className="wss-caret">{collapsed ? "▸" : "▾"}</span>
         {banner ? (
-          <img className="wss-banner" src={banner} alt={group.name} />
+          <>
+            <img className="wss-banner" src={banner} alt="" />
+            <span className="wss-banner-name">{group.name}</span>
+          </>
         ) : (
           <span className="wss-name">{group.name}</span>
         )}
@@ -207,6 +210,7 @@ function Group({
 export function WorkstreamsThreadList({
   activeThreadId,
   onNavigate,
+  isCompactViewport,
 }: PluginThreadListProps) {
   const rpc = useRpc<typeof rpcContract>();
   const actions = experimental_useSidebarThreadActions();
@@ -234,6 +238,7 @@ export function WorkstreamsThreadList({
     void refresh();
   }, [refresh]);
   const { collapsed, toggle } = useCollapsed();
+  const needsBandCollapsed = isCompactViewport || collapsed.has("__needs");
   const [menu, setMenu] = useState<Menu | null>(null);
   const [showAllNeedsYou, setShowAllNeedsYou] = useState(false);
   useEffect(() => {
@@ -282,16 +287,14 @@ export function WorkstreamsThreadList({
           <button
             type="button"
             className="wss-head wss-needs-head"
-            aria-expanded={!collapsed.has("__needs")}
+            aria-expanded={!needsBandCollapsed}
             onClick={() => toggle("__needs")}
           >
-            <span className="wss-caret">
-              {collapsed.has("__needs") ? "▸" : "▾"}
-            </span>
+            <span className="wss-caret">{needsBandCollapsed ? "▸" : "▾"}</span>
             <span className="wss-name">Needs you</span>
             <span className="wss-count">{immediateCount}</span>
           </button>
-          {!collapsed.has("__needs") && (
+          {!needsBandCollapsed && (
             <>
               <ul>{model.needsYou.map((r) => renderRow(r, true))}</ul>
               {model.needsYouRemaining > 0 && (
