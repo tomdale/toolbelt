@@ -9,11 +9,11 @@ const PALETTE = [
   { dark: "#17151b", light: "#fff0c2", mid: "#897452" },
 ] as const;
 const ICONS: Record<string, string> = {
-  bb: '<rect x="5" y="5" width="10" height="8" rx="1"/><path d="M5 7h10M8 15h4M10 13v2"/>',
+  bb: '<rect x="4.5" y="5" width="11" height="8.5" rx="1"/><path d="M4.5 7.5h11M8 15h4M10 13.5V15"/>',
   workstreams:
     '<path d="M5 6c3-3 6 3 10 0M5 9c3-3 6 3 10 0M5 12c3-3 6 3 10 0"/>',
   dockside: '<path d="M10 4v8m-4-2a4 4 0 0 0 8 0M7 14l3-2 3 2M8 5l2-1 2 1"/>',
-  "vercel-agent": '<path d="m4 14 6-11 7 11H4Z"/>',
+  "vercel-agent": '<path d="m3.5 14 6.5-11 6.5 11h-13Z"/>',
   "engineering-full-stack-collab":
     '<path d="M4 13a6 6 0 0 1 12 0M4 13h12M6 13v2m8-2v2"/>',
   tomdaleos:
@@ -76,19 +76,20 @@ export function hotlineBannerSvg(
   const title = escape(name.toUpperCase());
   const titleSize = name.length > 24 ? 6.4 : name.length > 15 ? 7.6 : 9.5;
   const left = `<defs>
-    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff"/><stop offset=".45" stop-color="${palette.light}"/><stop offset=".52" stop-color="${palette.mid}"/><stop offset="1" stop-color="#fff"/></linearGradient>
-    <linearGradient id="band" x1="0" y1="0" x2="1" y2="0"><stop stop-color="${palette.dark}" stop-opacity=".08"/><stop offset=".3" stop-color="${palette.dark}" stop-opacity=".32"/><stop offset="1" stop-color="${palette.dark}" stop-opacity=".12"/></linearGradient>
-    <filter id="shadow" x="-.2" y="-.5" width="1.5" height="2"><feGaussianBlur in="SourceAlpha" stdDeviation="1.1"/><feOffset dy="1.2"/><feComponentTransfer><feFuncA type="linear" slope=".95"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff"/><stop offset=".34" stop-color="${palette.light}"/><stop offset=".48" stop-color="#fff"/><stop offset=".58" stop-color="${palette.mid}"/><stop offset="1" stop-color="${palette.light}"/></linearGradient>
+    <linearGradient id="titleback" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#06070b" stop-opacity=".04"/><stop offset=".22" stop-color="#06070b" stop-opacity=".14"/><stop offset=".78" stop-color="#06070b" stop-opacity=".24"/><stop offset="1" stop-color="#06070b" stop-opacity=".06"/></linearGradient>
+    <filter id="shadow" x="-.15" y="-.4" width="1.3" height="1.8"><feGaussianBlur in="SourceAlpha" stdDeviation=".45"/><feOffset dy=".55"/><feComponentTransfer><feFuncA type="linear" slope=".9"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <pattern id="scan" width="1" height="2" patternUnits="userSpaceOnUse"><path d="M0 1.5H1" stroke="#000" stroke-opacity=".14" stroke-width=".35"/></pattern>
   </defs>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="696" height="54" viewBox="0 0 232 18" role="img" aria-label="${escape(name)}">
   ${left}
   <image href="data:${artMime};base64,${artBase64}" x="0" y="0" width="232" height="18" preserveAspectRatio="xMidYMid slice"/>
-  <rect width="232" height="18" fill="url(#band)"/>
-  <rect x="0" y="0" width="232" height="18" fill="#111" fill-opacity=".18"/>
-  <rect x="0" y="0" width="17" height="18" fill="#05060a" fill-opacity=".72"/>
-  <rect x="20" y="0" width="212" height="18" fill="url(#band)" fill-opacity=".62"/>
-  <path d="M0 1H232" stroke="#fff" stroke-opacity=".55"/><path d="M0 17H232" stroke="#000" stroke-opacity=".8"/>
-  <g transform="translate(1 0)" fill="none" stroke="url(#chrome)" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)">${glyph}</g>
-  <text x="230" y="13" text-anchor="end" font-family="Chicago, Geneva, Monaco, monospace" font-size="${titleSize}" font-weight="900" letter-spacing=".05" fill="url(#chrome)" stroke="#09090d" stroke-width=".35" paint-order="stroke" filter="url(#shadow)">${title}</text>
+  <rect width="232" height="18" fill="#090b10" fill-opacity=".12"/>
+  <rect x="0" y="0" width="19" height="18" fill="#07080c" fill-opacity=".72"/>
+  <rect x="19" y="0" width="213" height="18" fill="url(#titleback)"/>
+  <rect width="232" height="18" fill="url(#scan)"/>
+  <path d="M0 .6H232" stroke="#fff" stroke-opacity=".75" stroke-width=".6"/><path d="M0 17.4H232" stroke="#000" stroke-opacity=".9" stroke-width=".6"/>
+  <g transform="translate(0 0)" fill="none" stroke="url(#chrome)" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)">${glyph}</g>
+  <text x="229" y="13.1" text-anchor="end" font-family="Monaco, Menlo, monospace" font-size="${titleSize}" font-weight="900" letter-spacing=".05" fill="#fff" stroke="#100b15" stroke-width=".8" paint-order="stroke" filter="url(#shadow)">${title}</text>
 </svg>`;
 }
