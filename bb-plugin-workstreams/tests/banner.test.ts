@@ -20,9 +20,9 @@ it("uses the 1998 Hotline art-strip prompt and bumps the cache version", () => {
   expect(prompt).toContain("232x18-pixel server banner");
   expect(prompt).toContain("1998 Macintosh shareware aesthetic");
   expect(prompt).toContain("copper thread and red pencil over black paper");
-  expect(bannerCacheSignature("motif")).toMatch(/^hotline-ik0n-v4:/);
-  expect(bannerNeedsRegeneration("hotline-ik0n-v3:motif", "motif")).toBe(true);
-  expect(bannerNeedsRegeneration("hotline-ik0n-v4:motif", "motif")).toBe(false);
+  expect(bannerCacheSignature("motif")).toMatch(/^hotline-ik0n-v5:/);
+  expect(bannerNeedsRegeneration("hotline-ik0n-v4:motif", "motif")).toBe(true);
+  expect(bannerNeedsRegeneration("hotline-ik0n-v5:motif", "motif")).toBe(false);
 });
 
 test("composites a crisp Hotline strip with code-rendered name and product glyph", () => {
