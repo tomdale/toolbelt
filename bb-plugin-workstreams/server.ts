@@ -73,8 +73,7 @@ export const rpcContract = defineRpcContract({
       analysis: analysisSchema.nullable(),
       banners: z.record(z.string(), z.string()),
       hierarchy: z.object({
-        dispatchIds: z.array(z.string()),
-        roles: z.record(z.string(), z.enum(["dispatch", "manager", "worker"])),
+        roles: z.record(z.string(), z.enum(["manager", "worker"])),
         managers: z.record(z.string(), z.string()),
       }),
       owners: z.record(
@@ -1130,37 +1129,16 @@ export default async function plugin(bb: BbPluginApi) {
           analysis: null,
           banners: {},
           owners: {},
-          hierarchy: { dispatchIds: [], roles: {}, managers: {} },
+          hierarchy: { roles: {}, managers: {} },
         };
       const active = await inventory();
-      const sections = await bb.sdk.threadSections.list();
-      const dispatchSection = sections.find(
-        (section) => section.name === "Dispatch",
-      );
-      const sectionDispatch = active.filter(
-        (thread) =>
-          !thread.parentThreadId && thread.sectionId === dispatchSection?.id,
-      );
-      const dispatchRows = active.filter(
-        (t) =>
-          !t.parentThreadId &&
-          ((t.environmentPath ?? "")
-            .replace(/\\/g, "/")
-            .replace(/\/$/, "")
-            .toLowerCase() === "/users/tomdale/code/tomdaleos" ||
-            (dispatchSection && t.sectionId === dispatchSection.id)),
-      );
-      for (const thread of sectionDispatch)
-        if (!dispatchRows.some((row) => row.id === thread.id))
-          dispatchRows.push(thread);
-      const dispatchIds = new Set(dispatchRows.map((t) => t.id));
-      const byId = new Map(active.map((t) => [t.id, t]));
       const owners: Record<string, { viaWorkers: string[] }> = {};
       const managerReports = new Map<string, { at: number; text: string }[]>();
-      if (dispatchRows.length) {
-        const managers = active.filter(
-          (t) => t.parentThreadId && dispatchIds.has(t.parentThreadId),
-        );
+      const byId = new Map(active.map((t) => [t.id, t]));
+      const managers = active.filter((t) =>
+        /\s*[—–-]\s*manager$/i.test(t.title),
+      );
+      if (managers.length) {
         for (const manager of managers) {
           const events = await bb.sdk.threads.events.list({
             threadId: manager.id,
@@ -1223,21 +1201,13 @@ export default async function plugin(bb: BbPluginApi) {
             owners[manager.id].viaWorkers.push(worker.title);
         }
       }
-      const managers = active.filter(
-        (t) => t.parentThreadId && dispatchIds.has(t.parentThreadId),
-      );
       const hierarchy = {
-        dispatchIds: dispatchRows.map((t) => t.id),
         roles: Object.fromEntries(
           active.map((t) => [
             t.id,
-            dispatchRows.some((p) => p.id === t.id)
-              ? "dispatch"
-              : managers.some((m) => m.id === t.id)
-                ? "manager"
-                : "worker",
+            managers.some((m) => m.id === t.id) ? "manager" : "worker",
           ]),
-        ) as Record<string, "dispatch" | "manager" | "worker">,
+        ) as Record<string, "manager" | "worker">,
         managers: Object.fromEntries(
           active.flatMap((thread) => {
             let cursor = thread;

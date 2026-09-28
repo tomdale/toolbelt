@@ -15,7 +15,7 @@ export type SidebarThread = {
   updatedAt: number;
   latestAttentionAt: number;
 };
-export type SidebarRole = "dispatch" | "manager" | "worker";
+export type SidebarRole = "manager" | "worker";
 export type SidebarRow = {
   thread: SidebarThread;
   role: SidebarRole;
@@ -40,12 +40,10 @@ export type SidebarGroup = {
   summary: { about: string; status: string; needsYou?: number } | null;
 };
 export type HierarchyData = {
-  dispatchIds: string[];
   roles: Record<string, SidebarRole>;
   managers: Record<string, string>;
 };
 export type SidebarModel = {
-  dispatch: SidebarRow[];
   recent: (SidebarRow & { group: string })[];
   needsYou: (SidebarRow & { group: string })[];
   groups: SidebarGroup[];
@@ -63,64 +61,44 @@ const ORDER: (WorkState | null)[] = [
   null,
   "done",
 ];
-const normalizePath = (path: string | null | undefined) =>
-  (path ?? "").replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
+const latest = (rows: SidebarRow[]) =>
+  Math.max(0, ...rows.map((row) => row.thread.latestAttentionAt));
+const rank = (row: SidebarRow) => (row.running ? -1 : ORDER.indexOf(row.state));
+const urgency = (row: SidebarRow) =>
+  row.thread.hasPendingInteraction ? 0 : row.thread.status === "active" ? 1 : 2;
 
-/** A parentless thread at the tomdaleOS checkout is Dispatch; its child is a manager. */
-export function deriveSidebarHierarchy(
-  threads: readonly SidebarThread[],
-  tomdaleOSPath = "/Users/tomdale/Code/tomdaleOS",
-): {
-  dispatch: SidebarThread[];
+/** Managers are explicit; product grouping is independent of the checkout's root thread. */
+export function deriveSidebarHierarchy(threads: readonly SidebarThread[]): {
   roles: Map<string, SidebarRole>;
   managerFor: Map<string, SidebarThread>;
 } {
-  const dispatch = threads.filter(
-    (thread) =>
-      !thread.parentThreadId &&
-      normalizePath(thread.environmentPath) === normalizePath(tomdaleOSPath),
-  );
-  const dispatchIds = new Set(dispatch.map((thread) => thread.id));
   const byId = new Map(threads.map((thread) => [thread.id, thread]));
   const roles = new Map<string, SidebarRole>();
-  for (const thread of threads) {
-    const parent = thread.parentThreadId
-      ? byId.get(thread.parentThreadId)
-      : undefined;
+  for (const thread of threads)
     roles.set(
       thread.id,
-      dispatchIds.has(thread.id)
-        ? "dispatch"
-        : parent && dispatchIds.has(parent.id)
-          ? "manager"
-          : "worker",
+      /\s*[—–-]\s*manager$/i.test(thread.displayTitle) ? "manager" : "worker",
     );
-  }
   const managerFor = new Map<string, SidebarThread>();
   for (const thread of threads) {
-    let current = thread;
-    const seen = new Set<string>();
-    while (current.parentThreadId && !seen.has(current.id)) {
-      seen.add(current.id);
-      const parent = byId.get(current.parentThreadId);
+    let parentId = thread.parentThreadId;
+    const seen = new Set([thread.id]);
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = byId.get(parentId);
       if (!parent) break;
       if (roles.get(parent.id) === "manager") {
         managerFor.set(thread.id, parent);
         break;
       }
-      current = parent;
+      parentId = parent.parentThreadId;
     }
   }
-  return { dispatch, roles, managerFor };
+  return { roles, managerFor };
 }
 
 export const isImmediateAsk = (row: SidebarRow) => row.immediateAsk;
 export const immediateAsk = isImmediateAsk;
-const rank = (row: SidebarRow) => (row.running ? -1 : ORDER.indexOf(row.state));
-const urgency = (row: SidebarRow) =>
-  row.thread.hasPendingInteraction ? 0 : row.thread.status === "active" ? 1 : 2;
-const latest = (rows: SidebarRow[]) =>
-  Math.max(0, ...rows.map((row) => row.thread.latestAttentionAt));
 
 function makeRow(
   thread: SidebarThread,
@@ -146,7 +124,7 @@ function makeRow(
   };
 }
 
-/** Renders a worker's inferred question on its manager after the report arrives. */
+/** Renders a worker's inferred question on its reporting manager after the report arrives. */
 export function routeQuestionOwners(
   rows: Map<string, SidebarRow>,
   workerToManager: ReadonlyMap<string, string>,
@@ -176,57 +154,18 @@ export function buildSidebar(
   projectNames: ReadonlyMap<string, string>,
   viaWorkers: ReadonlyMap<string, string[]> = new Map(),
   hierarchy?: HierarchyData,
-  dispatchSectionIds: ReadonlySet<string> = new Set(),
 ): SidebarModel {
   const derived = deriveSidebarHierarchy(threads);
   const byId = new Map(threads.map((thread) => [thread.id, thread]));
-  const sectionDispatch = threads.filter(
-    (thread) =>
-      !thread.parentThreadId && dispatchSectionIds.has(thread.sectionId ?? ""),
-  );
-  const dispatchById = new Map(
-    [
-      ...derived.dispatch,
-      ...sectionDispatch,
-      ...(hierarchy?.dispatchIds ?? [])
-        .map((id) => byId.get(id))
-        .filter((t): t is SidebarThread => !!t),
-    ].map((thread) => [thread.id, thread]),
-  );
-  const dispatchThreads = [...dispatchById.values()];
-  const dispatchIds = new Set(dispatchById.keys());
   const roleMap = new Map(derived.roles);
   for (const [id, role] of Object.entries(hierarchy?.roles ?? {}))
     roleMap.set(id, role);
-  for (const thread of dispatchThreads) roleMap.set(thread.id, "dispatch");
   const managerFor = new Map(derived.managerFor);
   for (const [worker, manager] of Object.entries(hierarchy?.managers ?? {})) {
     const managerThread = byId.get(manager);
     if (managerThread) managerFor.set(worker, managerThread);
   }
   const items = new Map(analysis?.items.map((item) => [item.threadId, item]));
-  const dispatchRoots = dispatchThreads
-    .map((thread) => makeRow(thread, "dispatch", null, items.get(thread.id)))
-    .sort((a, b) => b.thread.latestAttentionAt - a.thread.latestAttentionAt);
-  const dispatchChildren = new Map<string, SidebarThread[]>();
-  for (const thread of threads) {
-    if (!thread.parentThreadId || dispatchIds.has(thread.id)) continue;
-    dispatchChildren.set(thread.parentThreadId, [
-      ...(dispatchChildren.get(thread.parentThreadId) ?? []),
-      thread,
-    ]);
-  }
-  const dispatchFamilyIds = new Set(dispatchIds);
-  const pendingFamily = [...dispatchIds];
-  while (pendingFamily.length > 0) {
-    const parentId = pendingFamily.pop()!;
-    for (const child of dispatchChildren.get(parentId) ?? []) {
-      if (dispatchFamilyIds.has(child.id)) continue;
-      dispatchFamilyIds.add(child.id);
-      pendingFamily.push(child.id);
-    }
-  }
-
   const managerThreads = threads.filter(
     (thread) => roleMap.get(thread.id) === "manager",
   );
@@ -248,11 +187,11 @@ export function buildSidebar(
         : base,
     );
   }
+
   const groupsById = new Map<string, SidebarRow[]>();
   const rows = new Map<string, SidebarRow>();
   for (const thread of threads) {
     const role = roleMap.get(thread.id) ?? "worker";
-    if (dispatchIds.has(thread.id) || role === "dispatch") continue;
     const item = items.get(thread.id);
     const manager =
       role === "manager" ? thread : (managerFor.get(thread.id) ?? null);
@@ -273,9 +212,8 @@ export function buildSidebar(
     }
   }
   for (const manager of managerThreads) {
-    if (dispatchIds.has(manager.parentThreadId ?? "")) continue;
-    const groupId = groupByManager.get(manager.id)!;
-    if (!groupsById.has(groupId)) groupsById.set(groupId, []);
+    const id = groupByManager.get(manager.id)!;
+    if (!groupsById.has(id)) groupsById.set(id, []);
   }
   routeQuestionOwners(
     rows,
@@ -283,43 +221,14 @@ export function buildSidebar(
     viaWorkers,
   );
 
-  const dispatch: SidebarRow[] = [...dispatchRoots];
-  const dispatchWarnings = new Set<string>();
-  const renderedDispatchIds = new Set(dispatch.map((row) => row.thread.id));
-  for (const root of dispatchRoots) {
-    for (const thread of dispatchChildren.get(root.thread.id) ?? []) {
-      if (renderedDispatchIds.has(thread.id)) {
-        dispatchWarnings.add(thread.id);
-        continue;
-      }
-      renderedDispatchIds.add(thread.id);
-      const role = roleMap.get(thread.id) ?? "worker";
-      const row =
-        rows.get(thread.id) ??
-        makeRow(thread, role, null, items.get(thread.id));
-      rows.set(thread.id, row);
-      dispatch.push({ ...row, depth: 1 });
-    }
-  }
-
   const groups: SidebarGroup[] = [];
   const warnings: string[] = [];
-  if (dispatchWarnings.size > 0)
-    warnings.push(
-      `Cyclic Dispatch hierarchy detected (${[...dispatchWarnings].join(", ")}); duplicate links were omitted.`,
-    );
   for (const [id, members] of groupsById) {
     const name = labelByGroup.get(id)!;
     const managerThread = managerThreads.find(
       (thread) => groupByManager.get(thread.id) === id,
     );
-    const managerRow = managerThread
-      ? (rows.get(managerThread.id) ?? null)
-      : null;
-    const manager =
-      managerRow && !dispatchIds.has(managerRow.thread.parentThreadId ?? "")
-        ? managerRow
-        : null;
+    const manager = managerThread ? (rows.get(managerThread.id) ?? null) : null;
     const membersById = new Map(members.map((row) => [row.thread.id, row]));
     const children = new Map<string, SidebarRow[]>();
     const roots: SidebarRow[] = [];
@@ -355,9 +264,9 @@ export function buildSidebar(
         if (membersById.has(managerId) && managerId !== row.thread.id)
           parentId = managerId;
       }
-      if (parentId && membersById.has(parentId)) {
+      if (parentId && membersById.has(parentId))
         children.set(parentId, [...(children.get(parentId) ?? []), row]);
-      } else roots.push(row);
+      else roots.push(row);
       if (row.thread.parentThreadId && !byId.has(row.thread.parentThreadId))
         malformed.add(row.thread.id);
     }
@@ -367,7 +276,7 @@ export function buildSidebar(
       const pending: { row: SidebarRow; depth: number }[] = [
         { row: root, depth: 0 },
       ];
-      while (pending.length > 0) {
+      while (pending.length) {
         const current = pending.pop()!;
         if (visited.has(current.row.thread.id)) continue;
         visited.add(current.row.thread.id);
@@ -382,13 +291,10 @@ export function buildSidebar(
     };
     roots.sort(
       (a, b) =>
-        Number(b.role === "manager") - Number(a.role === "manager") ||
         rank(a) - rank(b) ||
         b.thread.latestAttentionAt - a.thread.latestAttentionAt,
     );
     roots.forEach(visit);
-    // Broken parent links and cycles have no root; render each remaining row
-    // once as a root rather than silently losing that component.
     const detached = members
       .filter((row) => !visited.has(row.thread.id))
       .sort(
@@ -397,21 +303,19 @@ export function buildSidebar(
           b.thread.latestAttentionAt - a.thread.latestAttentionAt ||
           a.thread.id.localeCompare(b.thread.id),
       );
-    if (malformed.size > 0 || detached.length > 0)
+    if (malformed.size || detached.length)
       warnings.push(
         `${new Set([...malformed, ...detached.map((row) => row.thread.id)]).size} thread(s) in “${name}” had missing parents or cyclic hierarchy; shown with a flat fallback where needed.`,
       );
     detached.forEach(visit);
-    const workerRows = ordered.filter((row) => row.role !== "manager");
     groups.push({
       id,
       name,
       manager,
       unmanaged: !id.startsWith("manager:"),
-      rows: workerRows,
-      needsYou: [...(manager ? [manager] : []), ...workerRows].filter(
-        immediateAsk,
-      ).length,
+      rows: ordered,
+      needsYou: [...(manager ? [manager] : []), ...ordered].filter(immediateAsk)
+        .length,
       summary: analysis?.summaries?.[name] ?? null,
     });
   }
@@ -423,13 +327,10 @@ export function buildSidebar(
       latest([...(a.manager ? [a.manager] : []), ...a.rows]) -
         latest([...(b.manager ? [b.manager] : []), ...b.rows]),
   );
-  const allRows = [
-    ...dispatch.map((row) => ({ ...row, group: "Dispatch" })),
-    ...groups.flatMap((group) => [
-      ...(group.manager ? [{ ...group.manager, group: group.name }] : []),
-      ...group.rows.map((row) => ({ ...row, group: group.name })),
-    ]),
-  ];
+  const allRows = groups.flatMap((group) => [
+    ...(group.manager ? [{ ...group.manager, group: group.name }] : []),
+    ...group.rows.map((row) => ({ ...row, group: group.name })),
+  ]);
   const recent = allRows
     .filter((row) => row.thread.status !== "error")
     .sort(
@@ -448,7 +349,6 @@ export function buildSidebar(
         b.thread.latestAttentionAt - a.thread.latestAttentionAt,
     );
   return {
-    dispatch,
     recent,
     needsYou,
     groups,

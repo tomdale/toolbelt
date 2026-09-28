@@ -1,22 +1,18 @@
 # Workstreams
 
-A context-switching view of all your active BB threads. Threads are grouped by
-the natural project or product they concern, even across repositories.
-Parentless threads in the tomdaleOS checkout form Dispatch; direct children are
-project managers. Dispatch lists those managers, while each manager's separate
-product group lists its workers without duplicating the manager. The sidebar
-keeps every active non-archived thread from BB's hook visible (including hidden
-helper threads), with a live Recent strip and owner-based Needs you routing.
+A context-switching view of active BB threads. Workstreams groups threads by
+product or project, and can use an explicitly titled `— manager` thread as the
+heading for that product group. Descendants nest under their parent. Threads
+without a manager use their inferred product, assigned BB section, or project as
+a grouping fallback. No special role is inferred from a thread's checkout path
+or top-level position.
 
-Open Workstreams in the sidebar. **Analyze threads** runs parallel,
-non-reasoning GPT-4.1 mini calls through Pi's AI Gateway connection and displays
-project/product groups with short thread recaps and a glanceable group summary.
-Product groups include a concise status summary. Click any thread row to return
-to its conversation.
+The sidebar includes active hidden helper threads and excludes archived threads.
+It shows a live Recent strip and routes each Needs-you item to one owner. The
+Workstreams page adds thread recaps and concise group summaries.
 
-No new task system, proposals, focus limits, or bookkeeping. Nothing runs until
-you ask. Organize splits side quests into their own threads, archives only
-explicitly redundant completed threads, tidies titles, and files threads into
-workstream sections, repairs worker parentage when analysis identifies the right
-manager, and files Dispatch threads into a dedicated section without reparenting
-them. Changes are logged and undoable.
+Analysis uses parallel, non-reasoning GPT-4.1 mini calls through Pi's existing
+AI Gateway connection. Organize can split detected side quests, archive only
+explicitly redundant completed threads, tidy titles, file threads into native BB
+sections, and repair worker parentage when analysis identifies the right
+manager. Changes are logged and undoable except for compaction.

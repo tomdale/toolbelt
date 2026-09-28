@@ -91,21 +91,8 @@ export function planOrganize(
   alreadySplit: Set<string>,
 ): Action[] {
   const items = new Map(analysis?.items.map((i) => [i.threadId, i]));
-  const byId = new Map(threads.map((thread) => [thread.id, thread]));
-  const isDispatch = (thread: Thread) =>
-    !thread.parentThreadId &&
-    (thread.environmentPath ?? "")
-      .replace(/\\/g, "/")
-      .replace(/\/$/, "")
-      .toLowerCase() === "/users/tomdale/code/tomdaleos";
-  const dispatchIds = new Set(
-    threads.filter(isDispatch).map((thread) => thread.id),
-  );
-  const managers = threads.filter(
-    (thread) =>
-      thread.parentThreadId &&
-      dispatchIds.has(thread.parentThreadId) &&
-      /\s*[—–-]\s*manager$/i.test(thread.title),
+  const managers = threads.filter((thread) =>
+    /\s*[—–-]\s*manager$/i.test(thread.title),
   );
   const managerGroup = (manager: Thread) =>
     manager.title
@@ -120,40 +107,18 @@ export function planOrganize(
   const actions: Action[] = [];
   for (const thread of threads) {
     const item = items.get(thread.id);
-    // Dispatch owns cross-project intake and is never reparented or split.
-    if (dispatchIds.has(thread.id)) continue;
-    const hierarchyParent = thread.parentThreadId
-      ? byId.get(thread.parentThreadId)
-      : undefined;
-    const group = items.get(thread.id)?.group;
+    const group = item?.group;
     if (
-      hierarchyParent &&
-      dispatchIds.has(hierarchyParent.id) &&
-      !managers.some((manager) => manager.id === thread.id) &&
       item?.refreshed &&
       item.updatedAt === thread.updatedAt &&
-      item.group.toLowerCase() !== "unclassified"
-    ) {
-      const manager = group
-        ? managers.find((candidate) => matchesManager(group, candidate))
-        : undefined;
-      if (manager)
-        actions.push({
-          kind: "parent",
-          threadId: thread.id,
-          parentThreadId: manager.id,
-        });
-    } else if (
-      hierarchyParent &&
-      managers.some((manager) => manager.id === hierarchyParent.id) &&
-      item?.refreshed &&
-      item.updatedAt === thread.updatedAt &&
-      item.group.toLowerCase() !== "unclassified"
+      item.group.toLowerCase() !== "unclassified" &&
+      thread.parentThreadId &&
+      managers.some((manager) => manager.id === thread.parentThreadId)
     ) {
       const correctManager = group
         ? managers.find((candidate) => matchesManager(group, candidate))
         : undefined;
-      if (correctManager && correctManager.id !== hierarchyParent.id)
+      if (correctManager && correctManager.id !== thread.parentThreadId)
         actions.push({
           kind: "parent",
           threadId: thread.id,

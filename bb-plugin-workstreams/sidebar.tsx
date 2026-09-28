@@ -151,7 +151,7 @@ function Group({
   const open = group.rows;
   return (
     <section
-      className={`wss-group${group.name === "Dispatch" ? " wss-dispatch" : ""}`}
+      className="wss-group"
       style={{ "--wss-accent": accent(group.name) } as React.CSSProperties}
     >
       <button
@@ -211,15 +211,14 @@ export function WorkstreamsThreadList({
     banners: Record<string, string>;
     owners: Record<string, { viaWorkers: string[] }>;
     hierarchy: {
-      dispatchIds: string[];
-      roles: Record<string, "dispatch" | "manager" | "worker">;
+      roles: Record<string, "manager" | "worker">;
       managers: Record<string, string>;
     };
   }>({
     analysis: null,
     banners: {},
     owners: {},
-    hierarchy: { dispatchIds: [], roles: {}, managers: {} },
+    hierarchy: { roles: {}, managers: {} },
   });
   const refresh = useCallback(async () => {
     try {
@@ -263,11 +262,6 @@ export function WorkstreamsThreadList({
           Object.entries(data.owners).map(([id, o]) => [id, o.viaWorkers]),
         ),
         data.hierarchy,
-        new Set(
-          sections
-            .filter((section) => section.name === "Dispatch")
-            .map((section) => section.id),
-        ),
       ),
     [threads, sections, projects, data.analysis, data.hierarchy, data.owners],
   );
@@ -297,22 +291,6 @@ export function WorkstreamsThreadList({
           {warning}
         </p>
       ))}
-      {model.dispatch.length > 0 && (
-        <Group
-          group={{
-            id: "dispatch",
-            name: "Dispatch",
-            manager: null,
-            unmanaged: false,
-            rows: model.dispatch,
-            needsYou: model.dispatch.filter((row) => row.immediateAsk).length,
-            summary: null,
-          }}
-          collapsed={collapsed.has("__dispatch")}
-          toggle={() => toggle("__dispatch")}
-          renderRow={(row) => renderRow(row)}
-        />
-      )}
       {model.needsYou.length > 0 && (
         <section className="wss-needs">
           <button
