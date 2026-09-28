@@ -1,15 +1,17 @@
 # Workstreams
 
-A context-switching view of active BB threads. Workstreams groups threads by
-product or project, and can use an explicitly titled `— manager` thread as the
-heading for that product group. Descendants nest under their parent. Threads
-without a manager use their inferred product, assigned BB section, or project as
-a grouping fallback. No special role is inferred from a thread's checkout path
-or top-level position.
+A context-switching view of active BB threads. Workstreams builds the complete
+parent/child tree first, then groups each tree by its root thread's native BB
+section assignment. A child's own section never splits it from its parent,
+matching BB's built-in custom-section behavior. For unsectioned roots,
+Workstreams uses an explicitly titled `— manager` thread, inferred product, or
+project as a fallback for the entire subtree. No role is inferred from checkout
+path or top-level position.
 
-The sidebar includes active hidden helper threads and excludes archived threads.
-It shows a live Recent strip and routes each Needs-you item to one owner. The
-Workstreams page adds thread recaps and concise group summaries.
+The sidebar includes all active non-archived rows, including helper threads BB
+marks hidden; BB's own sidebar hides those. It shows a live Recent strip and
+routes each Needs-you item to one owner. The Workstreams page adds recaps and
+concise group summaries.
 
 Analysis uses parallel, non-reasoning GPT-4.1 mini calls through Pi's existing
 AI Gateway connection. Organize can split detected side quests, archive only
