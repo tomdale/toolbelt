@@ -3,16 +3,18 @@
 All your active threads, grouped by the project or product they concern. Open
 **Workstreams** in the sidebar (`/plugins/workstreams/home`).
 
-- Every active thread from BB's sidebar hook appears, including idle and hidden
-  helper threads. Archived threads are not requested. The list is uncapped and
-  not limited to recent activity. **Recent** is a separate, live five-thread
-  window without an overflow control. Only collapsing a whole sidebar band or
-  group hides its rows, and collapse state persists.
-- A thread titled with the explicit `— manager` suffix heads its product group;
-  its descendants remain nested beneath it. This grouping is based on the
-  manager thread itself, not the checkout's root thread or any special intake
-  role. Threads without a manager use their inferred product, native section, or
-  BB project as a fallback.
+- Every active non-archived thread from BB's sidebar hook appears, including
+  idle and hidden helper threads. BB's built-in sidebar hides helper threads
+  marked hidden; Workstreams intentionally shows them to satisfy the all-active-
+  threads view. Archived threads are not requested. The list is uncapped and not
+  limited to recent activity. **Recent** is a separate, live five-thread window
+  without an overflow control. Only collapsing a whole sidebar band or group
+  hides its rows, and collapse state persists.
+- Workstreams first builds the complete parent/child tree, then groups each tree
+  by the root thread's native BB section assignment. A descendant's own section
+  does not split it from its parent, matching BB's built-in custom-section
+  behavior. Unsectioned roots use an explicit manager title (`— manager`), the
+  inferred product, or BB project as fallback; the whole subtree stays together.
 - **Needs you** shows all active owner rows without an overflow limit. Live BB
   approvals remain on their worker; an inferred worker question moves to its
   manager only after a later manager report. Done rows stay visible and dimmed

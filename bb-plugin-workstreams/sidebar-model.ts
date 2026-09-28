@@ -67,7 +67,7 @@ const rank = (row: SidebarRow) => (row.running ? -1 : ORDER.indexOf(row.state));
 const urgency = (row: SidebarRow) =>
   row.thread.hasPendingInteraction ? 0 : row.thread.status === "active" ? 1 : 2;
 
-/** Managers are explicit; product grouping is independent of the checkout's root thread. */
+/** Explicit manager titles identify product leads without relying on root-thread conventions. */
 export function deriveSidebarHierarchy(threads: readonly SidebarThread[]): {
   roles: Map<string, SidebarRole>;
   managerFor: Map<string, SidebarThread>;
@@ -161,59 +161,17 @@ export function buildSidebar(
   for (const [id, role] of Object.entries(hierarchy?.roles ?? {}))
     roleMap.set(id, role);
   const managerFor = new Map(derived.managerFor);
-  for (const [worker, manager] of Object.entries(hierarchy?.managers ?? {})) {
-    const managerThread = byId.get(manager);
-    if (managerThread) managerFor.set(worker, managerThread);
+  for (const [worker, managerId] of Object.entries(hierarchy?.managers ?? {})) {
+    const manager = byId.get(managerId);
+    if (manager) managerFor.set(worker, manager);
   }
   const items = new Map(analysis?.items.map((item) => [item.threadId, item]));
-  const managerThreads = threads.filter(
-    (thread) => roleMap.get(thread.id) === "manager",
-  );
-  const groupByManager = new Map<string, string>();
-  const labelByGroup = new Map<string, string>();
-  const managerLabelCounts = new Map<string, number>();
-  for (const manager of managerThreads) {
-    const base = manager.displayTitle.replace(/\s*[—–-]\s*manager$/i, "");
-    managerLabelCounts.set(base, (managerLabelCounts.get(base) ?? 0) + 1);
-  }
-  for (const manager of managerThreads) {
-    const base = manager.displayTitle.replace(/\s*[—–-]\s*manager$/i, "");
-    const id = `manager:${manager.id}`;
-    groupByManager.set(manager.id, id);
-    labelByGroup.set(
-      id,
-      (managerLabelCounts.get(base) ?? 0) > 1
-        ? `${base} · ${manager.id.slice(-6)}`
-        : base,
-    );
-  }
-
-  const groupsById = new Map<string, SidebarRow[]>();
   const rows = new Map<string, SidebarRow>();
   for (const thread of threads) {
     const role = roleMap.get(thread.id) ?? "worker";
-    const item = items.get(thread.id);
     const manager =
       role === "manager" ? thread : (managerFor.get(thread.id) ?? null);
-    const groupId =
-      role === "manager"
-        ? groupByManager.get(thread.id)!
-        : manager
-          ? groupByManager.get(manager.id)!
-          : `unmanaged:${item?.group ?? (thread.sectionId ? sectionNames.get(thread.sectionId) : undefined) ?? projectNames.get(thread.projectId) ?? "Unmanaged"}`;
-    if (!labelByGroup.has(groupId))
-      labelByGroup.set(groupId, groupId.slice("unmanaged:".length));
-    const row = makeRow(thread, role, manager, item);
-    rows.set(thread.id, row);
-    if (role !== "manager") {
-      const groupRows = groupsById.get(groupId) ?? [];
-      groupRows.push(row);
-      groupsById.set(groupId, groupRows);
-    }
-  }
-  for (const manager of managerThreads) {
-    const id = groupByManager.get(manager.id)!;
-    if (!groupsById.has(id)) groupsById.set(id, []);
+    rows.set(thread.id, makeRow(thread, role, manager, items.get(thread.id)));
   }
   routeQuestionOwners(
     rows,
@@ -221,102 +179,135 @@ export function buildSidebar(
     viaWorkers,
   );
 
-  const groups: SidebarGroup[] = [];
+  // Match BB's custom sidebar: form parent/child trees first, then bucket each
+  // entire tree by its root's native section. Descendants never split away from
+  // a parent because their own sectionId differs.
+  const children = new Map<string, SidebarThread[]>();
+  const roots: SidebarThread[] = [];
+  for (const thread of threads) {
+    const parent = thread.parentThreadId
+      ? byId.get(thread.parentThreadId)
+      : null;
+    if (parent)
+      children.set(parent.id, [...(children.get(parent.id) ?? []), thread]);
+    else roots.push(thread);
+  }
   const warnings: string[] = [];
-  for (const [id, members] of groupsById) {
-    const name = labelByGroup.get(id)!;
-    const managerThread = managerThreads.find(
-      (thread) => groupByManager.get(thread.id) === id,
+  const orphanIds = threads
+    .filter(
+      (thread) => thread.parentThreadId && !byId.has(thread.parentThreadId),
+    )
+    .map((thread) => thread.id);
+  if (orphanIds.length)
+    warnings.push(
+      `${orphanIds.length} thread(s) had missing parents; shown as roots in their own groups.`,
     );
-    const manager = managerThread ? (rows.get(managerThread.id) ?? null) : null;
-    const membersById = new Map(members.map((row) => [row.thread.id, row]));
-    const children = new Map<string, SidebarRow[]>();
-    const roots: SidebarRow[] = [];
-    const malformed = new Set<string>();
-    for (const row of members) {
-      let ancestorId = row.thread.parentThreadId;
-      const ancestry = new Set([row.thread.id]);
-      while (ancestorId) {
-        if (ancestry.has(ancestorId)) {
-          malformed.add(row.thread.id);
-          break;
-        }
-        ancestry.add(ancestorId);
-        const ancestor = byId.get(ancestorId);
-        if (!ancestor) {
-          malformed.add(row.thread.id);
-          break;
-        }
-        ancestorId = ancestor.parentThreadId;
-      }
-      let parentId = row.thread.parentThreadId;
-      const seen = new Set([row.thread.id]);
-      while (parentId && !membersById.has(parentId)) {
-        if (seen.has(parentId)) {
-          parentId = null;
-          break;
-        }
-        seen.add(parentId);
-        parentId = byId.get(parentId)?.parentThreadId ?? null;
-      }
-      if (!parentId && managerFor.has(row.thread.id)) {
-        const managerId = managerFor.get(row.thread.id)!.id;
-        if (membersById.has(managerId) && managerId !== row.thread.id)
-          parentId = managerId;
-      }
-      if (parentId && membersById.has(parentId))
-        children.set(parentId, [...(children.get(parentId) ?? []), row]);
-      else roots.push(row);
-      if (row.thread.parentThreadId && !byId.has(row.thread.parentThreadId))
-        malformed.add(row.thread.id);
+  const visited = new Set<string>();
+  const groupBuckets = new Map<
+    string,
+    { name: string; rows: SidebarRow[]; roots: SidebarThread[] }
+  >();
+  const managerNames = new Map<string, number>();
+  for (const thread of threads) {
+    if (roleMap.get(thread.id) !== "manager") continue;
+    const name = thread.displayTitle.replace(/\s*[—–-]\s*manager$/i, "");
+    managerNames.set(name, (managerNames.get(name) ?? 0) + 1);
+  }
+  const groupForRoot = (root: SidebarThread) => {
+    if (root.sectionId) {
+      return {
+        id: `section:${root.sectionId}`,
+        name: sectionNames.get(root.sectionId) ?? "Section",
+      };
     }
-    const ordered: SidebarRow[] = [];
-    const visited = new Set<string>();
-    const visit = (root: SidebarRow) => {
-      const pending: { row: SidebarRow; depth: number }[] = [
-        { row: root, depth: 0 },
-      ];
-      while (pending.length) {
-        const current = pending.pop()!;
-        if (visited.has(current.row.thread.id)) continue;
-        visited.add(current.row.thread.id);
-        ordered.push({ ...current.row, depth: current.depth });
-        const descendants = children.get(current.row.thread.id) ?? [];
-        for (let i = descendants.length - 1; i >= 0; i--)
-          pending.push({
-            row: descendants[i],
-            depth: Math.min(2, current.depth + 1),
-          });
+    if (roleMap.get(root.id) === "manager") {
+      const base = root.displayTitle.replace(/\s*[—–-]\s*manager$/i, "");
+      const name =
+        (managerNames.get(base) ?? 0) > 1
+          ? `${base} · ${root.id.slice(-6)}`
+          : base;
+      return { id: `manager:${root.id}`, name };
+    }
+    const item = items.get(root.id);
+    const name =
+      item?.group ?? projectNames.get(root.projectId) ?? "Unclassified";
+    return { id: `product:${name.toLowerCase()}`, name };
+  };
+  const rootOrder = (a: SidebarThread, b: SidebarThread) =>
+    rank(rows.get(a.id)!) - rank(rows.get(b.id)!) ||
+    b.latestAttentionAt - a.latestAttentionAt ||
+    a.id.localeCompare(b.id);
+  roots.sort(rootOrder);
+  const orderedRoots: SidebarThread[] = [];
+  const collectTree = (root: SidebarThread) => {
+    const collected: SidebarRow[] = [];
+    const pending: { thread: SidebarThread; depth: number }[] = [
+      { thread: root, depth: 0 },
+    ];
+    const localVisited = new Set<string>();
+    while (pending.length) {
+      const current = pending.pop()!;
+      if (localVisited.has(current.thread.id) || visited.has(current.thread.id))
+        continue;
+      localVisited.add(current.thread.id);
+      visited.add(current.thread.id);
+      const row = rows.get(current.thread.id);
+      if (row) {
+        row.depth = current.depth;
+        collected.push(row);
       }
-    };
-    roots.sort(
-      (a, b) =>
-        rank(a) - rank(b) ||
-        b.thread.latestAttentionAt - a.thread.latestAttentionAt,
+      const descendants = children.get(current.thread.id) ?? [];
+      for (let i = descendants.length - 1; i >= 0; i--)
+        pending.push({
+          thread: descendants[i],
+          depth: Math.min(2, current.depth + 1),
+        });
+    }
+    if (collected.length) {
+      orderedRoots.push(root);
+      const group = groupForRoot(root);
+      const bucket = groupBuckets.get(group.id) ?? {
+        name: group.name,
+        rows: [],
+        roots: [],
+      };
+      bucket.rows.push(...collected);
+      bucket.roots.push(root);
+      groupBuckets.set(group.id, bucket);
+    }
+  };
+  for (const root of roots) collectTree(root);
+  // Cycles have no root. Break each remaining component at a stable id and
+  // render it once, preserving the component as one subtree.
+  const detached = threads
+    .filter((thread) => !visited.has(thread.id))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  if (detached.length)
+    warnings.push(
+      `${detached.length} thread(s) were in a cyclic hierarchy; shown using a deterministic fallback.`,
     );
-    roots.forEach(visit);
-    const detached = members
-      .filter((row) => !visited.has(row.thread.id))
-      .sort(
-        (a, b) =>
-          rank(a) - rank(b) ||
-          b.thread.latestAttentionAt - a.thread.latestAttentionAt ||
-          a.thread.id.localeCompare(b.thread.id),
-      );
-    if (malformed.size || detached.length)
-      warnings.push(
-        `${new Set([...malformed, ...detached.map((row) => row.thread.id)]).size} thread(s) in “${name}” had missing parents or cyclic hierarchy; shown with a flat fallback where needed.`,
-      );
-    detached.forEach(visit);
+  for (const root of detached) if (!visited.has(root.id)) collectTree(root);
+
+  const groups: SidebarGroup[] = [];
+  for (const [id, bucket] of groupBuckets) {
+    const managerRoots = bucket.roots.filter(
+      (root) => roleMap.get(root.id) === "manager",
+    );
+    const manager =
+      managerRoots.length === 1 ? (rows.get(managerRoots[0].id) ?? null) : null;
+    const groupRows = manager
+      ? bucket.rows.filter((row) => row.thread.id !== manager.thread.id)
+      : bucket.rows;
     groups.push({
       id,
-      name,
+      name: bucket.name,
       manager,
-      unmanaged: !id.startsWith("manager:"),
-      rows: ordered,
-      needsYou: [...(manager ? [manager] : []), ...ordered].filter(immediateAsk)
-        .length,
-      summary: analysis?.summaries?.[name] ?? null,
+      unmanaged: !managerRoots.length,
+      rows: groupRows,
+      needsYou: [...(manager ? [manager] : []), ...groupRows].filter(
+        immediateAsk,
+      ).length,
+      summary: analysis?.summaries?.[bucket.name] ?? null,
     });
   }
   groups.sort(
@@ -327,10 +318,19 @@ export function buildSidebar(
       latest([...(a.manager ? [a.manager] : []), ...a.rows]) -
         latest([...(b.manager ? [b.manager] : []), ...b.rows]),
   );
-  const allRows = groups.flatMap((group) => [
-    ...(group.manager ? [{ ...group.manager, group: group.name }] : []),
-    ...group.rows.map((row) => ({ ...row, group: group.name })),
-  ]);
+  // Include all rows exactly once in live cross-group bands.
+  const allRows = [...rows.values()].map((row) => {
+    const root = orderedRoots.find((candidate) => {
+      let current: SidebarThread | undefined = byId.get(row.thread.id);
+      const seen = new Set<string>();
+      while (current?.parentThreadId && !seen.has(current.id)) {
+        seen.add(current.id);
+        current = byId.get(current.parentThreadId);
+      }
+      return current?.id === candidate.id;
+    });
+    return { ...row, group: root ? groupForRoot(root).name : "Unclassified" };
+  });
   const recent = allRows
     .filter((row) => row.thread.status !== "error")
     .sort(

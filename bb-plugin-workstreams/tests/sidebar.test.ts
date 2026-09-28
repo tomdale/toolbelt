@@ -130,6 +130,53 @@ it("keeps every active thread exactly once under its manager or project group", 
   expect(group.rows.map((row) => row.thread.id)).toContain("hidden-child");
   expect(group.rows.map((row) => row.thread.id)).toContain("cross-group");
   expect(model.warnings).toHaveLength(1);
+  // The different analysis group is subordinate to the manager's native root section.
+  expect(model.groups.some((group) => group.name === "Different group")).toBe(
+    false,
+  );
+});
+
+it("keeps parent and child together in the root's native section", () => {
+  const model = buildSidebar(
+    [
+      t("parent", { sectionId: "work" }),
+      t("child", { parentThreadId: "parent", sectionId: "ignored" }),
+    ],
+    null,
+    new Map([
+      ["work", "Work"],
+      ["ignored", "Ignored"],
+    ]),
+    new Map([["p", "Project"]]),
+  );
+  expect(model.groups.map((group) => group.name)).toContain("Work");
+  expect(model.groups.map((group) => group.name)).not.toContain("Ignored");
+  expect(
+    model.groups
+      .find((group) => group.name === "Work")
+      ?.rows.map((row) => [row.thread.id, row.depth]),
+  ).toEqual([
+    ["parent", 0],
+    ["child", 1],
+  ]);
+});
+
+it("keeps a sectioned child beneath an unsectioned root", () => {
+  const model = buildSidebar(
+    [t("parent"), t("child", { parentThreadId: "parent", sectionId: "work" })],
+    null,
+    new Map([["work", "Work"]]),
+    new Map([["p", "Project"]]),
+  );
+  expect(model.groups.map((group) => group.name)).not.toContain("Work");
+  expect(
+    model.groups
+      .find((group) => group.name === "Project")
+      ?.rows.map((row) => [row.thread.id, row.depth]),
+  ).toEqual([
+    ["parent", 0],
+    ["child", 1],
+  ]);
 });
 
 it("breaks cyclic parentage deterministically and retains every row", () => {
@@ -237,7 +284,7 @@ it("groups by analysis, nests children, and bands decisions", () => {
   expect(
     model.groups.find((group) => group.name === "Dockside")?.rows[0].thread.id,
   ).toBe("d");
-  expect(model.recent.slice(0, 2).map((r) => r.thread.id)).toEqual(["b", "c"]);
+  expect(model.recent.slice(0, 2).map((r) => r.thread.id)).toEqual(["a", "b"]);
   // Ready-for-review stays in its group; decisions and pending input band.
   expect(model.needsYou.map((r) => r.thread.id).sort()).toEqual(["b", "e"]);
   expect(model.totalNeedsYou).toBe(2);
