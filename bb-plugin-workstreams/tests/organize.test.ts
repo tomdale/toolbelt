@@ -49,6 +49,23 @@ const analysis = (items: Partial<Analysis["items"][number]>[]): Analysis => ({
   })),
 });
 
+it("plans a fresh high-confidence drift even after the thread changes since analysis", () => {
+  expect(
+    planOrganize(
+      [thread("a")],
+      analysis([
+        {
+          threadId: "a",
+          group: "Markdown viewer",
+          updatedAt: 0,
+          drift: drift("high"),
+        },
+      ]),
+      new Set(),
+    ),
+  ).toEqual([{ kind: "split", threadId: "a", drift: drift("high") }]);
+});
+
 it("plans high-confidence splits, messy-title renames, and section moves", () => {
   const actions = planOrganize(
     [

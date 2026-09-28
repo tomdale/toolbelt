@@ -14,6 +14,7 @@ it("includes project fallback evidence in classification prompts", () => {
       status: "idle",
       updatedAt: 1,
       sectionId: null,
+      hasPendingInteraction: false,
     },
   ]);
   expect(prompt).toContain('"project":"Agent Toolkit"');

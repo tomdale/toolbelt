@@ -8,11 +8,12 @@ confirmation, and BB fork.
 
 ## Install for a throwaway test
 
-From the toolbelt checkout, run:
-
-```sh
-pi install ./bb-plugin-workstreams/pi-extension
-```
+The prototype is a local Pi package already installed into this user's Pi
+settings. It applies only to Pi provider sessions with a BB_THREAD_ID. Enable or
+disable the resource in Pi with `pi config` (packages list); remove it with
+`pi remove ../../Code/Repos/toolbelt/bb-workstreams/bb-plugin-workstreams/pi-extension`.
+This does not affect Claude/Codex threads or other Pi sessions that do not
+expose BB_THREAD_ID. Do not use a global extension file for this behavior.
 
 If Pi rejects the directory package form, install the entry point as a local
 extension in Pi config or add its path explicitly with

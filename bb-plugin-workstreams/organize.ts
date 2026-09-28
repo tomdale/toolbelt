@@ -88,8 +88,18 @@ export function planOrganize(
   const actions: Action[] = [];
   for (const thread of threads) {
     const item = items.get(thread.id);
-    if (!item || !item.refreshed || item.updatedAt !== thread.updatedAt)
+    if (!item || !item.refreshed || item.updatedAt !== thread.updatedAt) {
+      // A newly detected, agreed high-confidence split is itself permission
+      // to retitle/file the side-quest original even if it ran since analysis.
+      // The split executor still independently refuses to fork a live thread.
+      if (
+        item?.refreshed &&
+        item.drift?.confidence === "high" &&
+        !alreadySplit.has(thread.id)
+      )
+        actions.push({ kind: "split", threadId: thread.id, drift: item.drift });
       continue;
+    }
     const split =
       item.drift?.confidence === "high" && !alreadySplit.has(thread.id);
     if (item.archiveReason && item.state === "done") {
