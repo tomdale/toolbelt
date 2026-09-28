@@ -39,11 +39,25 @@ export const threadSchema = z.object({
   repository: z.string().nullable(),
   status: z.string(),
   updatedAt: z.number(),
+  /** Last user/agent attention in BB, independent of agent run status. */
+  latestAttentionAt: z.number().default(0),
   sectionId: z.string().nullable().default(null),
+  parentThreadId: z.string().nullable().optional(),
+  environmentPath: z.string().nullable().optional(),
   /** BB has a live approval/question for the user on this thread. */
   hasPendingInteraction: z.boolean().default(false),
 });
 export type Thread = z.infer<typeof threadSchema>;
+const TOMDALE_OS_PATH = "/users/tomdale/code/tomdaleos";
+export function excludeDispatchThreads(threads: readonly Thread[]): Thread[] {
+  return threads.filter((thread) => {
+    const path = (thread.environmentPath ?? "")
+      .replace(/\\/g, "/")
+      .replace(/\/$/, "")
+      .toLowerCase();
+    return thread.parentThreadId !== null || path !== TOMDALE_OS_PATH;
+  });
+}
 export type Context = Thread & {
   excerpts: string;
   path: string | null;

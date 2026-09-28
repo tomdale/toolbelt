@@ -126,6 +126,9 @@ function Row({
             </span>
           )}
           <ThreadTitle threadId={row.thread.id} />
+          {row.viaWorkers.length > 0 && (
+            <span className="wss-via">via {row.viaWorkers.join(", ")}</span>
+          )}
         </span>
       </button>
     </li>
@@ -145,12 +148,10 @@ function Group({
   toggle: () => void;
   renderRow: (row: SidebarRow) => React.ReactNode;
 }) {
-  const [showDone, setShowDone] = useState(false);
-  const open = group.rows.filter((r) => r.state !== "done" || r.running);
-  const done = group.rows.filter((r) => r.state === "done" && !r.running);
+  const open = group.rows;
   return (
     <section
-      className="wss-group"
+      className={`wss-group${group.name === "Dispatch" ? " wss-dispatch" : ""}`}
       style={{ "--wss-accent": accent(group.name) } as React.CSSProperties}
     >
       <button
@@ -180,6 +181,8 @@ function Group({
       </button>
       {!collapsed && (
         <>
+          {group.unmanaged && <p className="wss-unmanaged">Unmanaged</p>}
+          {group.manager && renderRow({ ...group.manager, depth: 0 })}
           {group.summary && (
             <p className="wss-summary">
               {group.summary.needsYou
@@ -189,18 +192,6 @@ function Group({
             </p>
           )}
           <ul>{open.map(renderRow)}</ul>
-          {done.length > 0 && (
-            <>
-              <button
-                type="button"
-                className="wss-more"
-                onClick={() => setShowDone(!showDone)}
-              >
-                {showDone ? "Hide" : "Show"} {done.length} done
-              </button>
-              {showDone && <ul>{done.map(renderRow)}</ul>}
-            </>
-          )}
         </>
       )}
     </section>
@@ -210,22 +201,26 @@ function Group({
 export function WorkstreamsThreadList({
   activeThreadId,
   onNavigate,
-  isCompactViewport,
 }: PluginThreadListProps) {
   const rpc = useRpc<typeof rpcContract>();
   const actions = experimental_useSidebarThreadActions();
   const { threads, sections, projects, status } =
-    experimental_useSidebarThreads();
+    experimental_useSidebarThreads({ experimental_lifecycles: ["active"] });
   const [data, setData] = useState<{
     analysis: Analysis | null;
     banners: Record<string, string>;
-  }>({ analysis: null, banners: {} });
-  const immediateCount = new Set([
-    ...threads.filter((t) => t.hasPendingInteraction).map((t) => t.id),
-    ...(data.analysis?.items
-      .filter((i) => i.state === "needs_decision")
-      .map((i) => i.threadId) ?? []),
-  ]).size;
+    owners: Record<string, { viaWorkers: string[] }>;
+    hierarchy: {
+      dispatchIds: string[];
+      roles: Record<string, "dispatch" | "manager" | "worker">;
+      managers: Record<string, string>;
+    };
+  }>({
+    analysis: null,
+    banners: {},
+    owners: {},
+    hierarchy: { dispatchIds: [], roles: {}, managers: {} },
+  });
   const refresh = useCallback(async () => {
     try {
       setData(await rpc.call("sidebar"));
@@ -238,9 +233,8 @@ export function WorkstreamsThreadList({
     void refresh();
   }, [refresh]);
   const { collapsed, toggle } = useCollapsed();
-  const needsBandCollapsed = isCompactViewport || collapsed.has("__needs");
+  const needsBandCollapsed = collapsed.has("__needs");
   const [menu, setMenu] = useState<Menu | null>(null);
-  const [showAllNeedsYou, setShowAllNeedsYou] = useState(false);
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
@@ -254,12 +248,28 @@ export function WorkstreamsThreadList({
   const model = useMemo(
     () =>
       buildSidebar(
-        threads,
+        threads
+          .filter((thread) => !thread.isArchived)
+          .map((thread) => ({
+            ...thread,
+            parentThreadId: thread.parentThreadId ?? null,
+            environmentPath: thread.environment?.path ?? null,
+            isHidden: thread.isHidden,
+          })),
         data.analysis,
         new Map(sections.map((s) => [s.id, s.name])),
         new Map(projects.map((p) => [p.id, p.name])),
+        new Map(
+          Object.entries(data.owners).map(([id, o]) => [id, o.viaWorkers]),
+        ),
+        data.hierarchy,
+        new Set(
+          sections
+            .filter((section) => section.name === "Dispatch")
+            .map((section) => section.id),
+        ),
       ),
-    [threads, sections, projects, data.analysis],
+    [threads, sections, projects, data.analysis, data.hierarchy, data.owners],
   );
   const open = (threadId: string, split: boolean) => {
     actions.open(threadId, { split });
@@ -282,6 +292,27 @@ export function WorkstreamsThreadList({
     return <p className="wss-empty">Loading threads…</p>;
   return (
     <div className="wss">
+      {model.warnings.map((warning) => (
+        <p className="wss-warning" role="status" key={warning}>
+          {warning}
+        </p>
+      ))}
+      {model.dispatch.length > 0 && (
+        <Group
+          group={{
+            id: "dispatch",
+            name: "Dispatch",
+            manager: null,
+            unmanaged: false,
+            rows: model.dispatch,
+            needsYou: model.dispatch.filter((row) => row.immediateAsk).length,
+            summary: null,
+          }}
+          collapsed={collapsed.has("__dispatch")}
+          toggle={() => toggle("__dispatch")}
+          renderRow={(row) => renderRow(row)}
+        />
+      )}
       {model.needsYou.length > 0 && (
         <section className="wss-needs">
           <button
@@ -292,36 +323,23 @@ export function WorkstreamsThreadList({
           >
             <span className="wss-caret">{needsBandCollapsed ? "▸" : "▾"}</span>
             <span className="wss-name">Needs you</span>
-            <span className="wss-count">{immediateCount}</span>
+            <span className="wss-count">{model.needsYou.length}</span>
           </button>
           {!needsBandCollapsed && (
-            <>
-              <ul>{model.needsYou.map((r) => renderRow(r, true))}</ul>
-              {model.needsYouRemaining > 0 && (
-                <button
-                  type="button"
-                  className="wss-more"
-                  onClick={() => setShowAllNeedsYou(!showAllNeedsYou)}
-                >
-                  {showAllNeedsYou
-                    ? "Show fewer"
-                    : `Show all ${model.needsYouRemaining} more`}
-                </button>
-              )}
-              {showAllNeedsYou && model.needsYouRemaining > 0 && (
-                <ul>
-                  {/* The collapsed band is capped; this links to the extra
-                      decisions in their own groups instead of duplicating rows. */}
-                  {model.allNeedsYou.slice(6).map((r) => renderRow(r, true))}
-                </ul>
-              )}
-            </>
+            <ul>{model.needsYou.map((r) => renderRow(r, true))}</ul>
           )}
         </section>
       )}
+      <section className="wss-recent">
+        <div className="wss-head wss-recent-head">
+          <span className="wss-name">Recent</span>
+          <span className="wss-count">{model.recent.length}</span>
+        </div>
+        <ul>{model.recent.map((row) => renderRow(row, true))}</ul>
+      </section>
       {model.groups.map((g) => (
         <Group
-          key={g.name}
+          key={g.id}
           group={g}
           banner={data.banners[g.name]}
           collapsed={collapsed.has(g.name)}
@@ -332,7 +350,10 @@ export function WorkstreamsThreadList({
       {model.other.length > 0 && (
         <Group
           group={{
+            id: "other",
             name: "Other",
+            manager: null,
+            unmanaged: true,
             rows: model.other,
             needsYou: model.other.filter((r) => r.immediateAsk).length,
             summary: null,

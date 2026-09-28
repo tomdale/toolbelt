@@ -27,7 +27,10 @@ export function initialRequest(
   return "";
 }
 const TIMELINE_CHARS = 600;
-const TIMELINE_CONTEXT_CHARS = 24_000;
+// The full history is paged from BB, but short prompts make identity pivots
+// disappear among routine status/approval chatter. Keep semantic anchors at
+// the start, end, and low-density points between them.
+const TIMELINE_CONTEXT_CHARS = 48_000;
 /**
  * One line per user request with its event seq, so the model can place a
  * drift split point that `threads.fork({ sourceSeqEnd })` can act on. BB's
@@ -52,11 +55,27 @@ export function requestTimeline(
   if (lines.length < 2) return "";
   const complete = redact(lines.join("\n"));
   if (complete.length <= TIMELINE_CONTEXT_CHARS) return complete;
-  const budget = Math.floor(TIMELINE_CONTEXT_CHARS / (TIMELINE_CHARS + 24));
-  const stride = Math.ceil(lines.length / budget);
-  const sampled = lines.filter(
-    (_, index) => index % stride === 0 || index === lines.length - 1,
-  );
+  // Segment the conversation at sparse intervals, while preserving the first
+  // requests, the latest requests, and representative requests across *all*
+  // intermediate intervals. Simple global stride sampling can alias into a
+  // narrow temporal window when user messages cluster irregularly.
+  const target = Math.floor(TIMELINE_CONTEXT_CHARS / (TIMELINE_CHARS + 24));
+  const anchors = new Set<number>();
+  const fixed = Math.min(5, lines.length);
+  for (let i = 0; i < fixed; i++) anchors.add(i);
+  for (let i = Math.max(fixed, lines.length - 8); i < lines.length; i++)
+    anchors.add(i);
+  const slots = Math.max(1, target - anchors.size);
+  for (let bucket = 0; bucket < slots; bucket++) {
+    const start =
+      fixed + Math.floor((bucket * (lines.length - fixed - 8)) / slots);
+    const end =
+      fixed + Math.floor(((bucket + 1) * (lines.length - fixed - 8)) / slots);
+    if (end > start) anchors.add(Math.floor((start + end - 1) / 2));
+  }
+  const sampled = [...anchors]
+    .sort((a, b) => a - b)
+    .map((index) => lines[index]);
   return redact(sampled.join("\n")).slice(0, TIMELINE_CONTEXT_CHARS);
 }
 export function contextExcerpt(

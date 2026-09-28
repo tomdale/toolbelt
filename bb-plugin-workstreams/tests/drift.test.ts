@@ -18,6 +18,7 @@ const thread = (id: string, timeline: string): Context => ({
   repository: null,
   status: "idle",
   updatedAt: 1,
+  latestAttentionAt: 1,
   sectionId: null,
   hasPendingInteraction: false,
   path: null,

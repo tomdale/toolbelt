@@ -72,6 +72,15 @@ export const rpcContract = defineRpcContract({
     output: z.object({
       analysis: analysisSchema.nullable(),
       banners: z.record(z.string(), z.string()),
+      hierarchy: z.object({
+        dispatchIds: z.array(z.string()),
+        roles: z.record(z.string(), z.enum(["dispatch", "manager", "worker"])),
+        managers: z.record(z.string(), z.string()),
+      }),
+      owners: z.record(
+        z.string(),
+        z.object({ viaWorkers: z.array(z.string()) }),
+      ),
     }),
   },
   organize: { input: z.null(), output: ok },
@@ -198,8 +207,11 @@ export default async function plugin(bb: BbPluginApi) {
           repository: project?.gitRemoteUrl ?? null,
           status: t.runtime.displayStatus,
           sectionId: t.sectionId,
+          parentThreadId: t.parentThreadId ?? null,
+          environmentPath: t.environmentPath ?? null,
           hasPendingInteraction: t.hasPendingInteraction,
           updatedAt: t.updatedAt,
+          latestAttentionAt: t.latestAttentionAt,
         });
       }
       if (page.length < 100) break;
@@ -644,6 +656,7 @@ export default async function plugin(bb: BbPluginApi) {
     const before = {
       title: detail.title,
       sectionId: detail.sectionId,
+      parentThreadId: detail.parentThreadId,
       sectionName: detail.sectionId
         ? ((await sections.list()).get(detail.sectionId) ?? null)
         : null,
@@ -670,6 +683,14 @@ export default async function plugin(bb: BbPluginApi) {
       const sectionId = await sections.ensure(action.section);
       await bb.sdk.threads.update({ threadId: action.threadId, sectionId });
       return { detail: "", undo: before };
+    }
+    if (action.kind === "parent") {
+      await bb.sdk.threads.update({
+        threadId: action.threadId,
+        parentThreadId: action.parentThreadId ?? undefined,
+        ...(action.parentThreadId ? {} : { clearParentThread: true }),
+      });
+      return { detail: "Parentage updated.", undo: before };
     }
     if (detail.status !== "idle" && detail.status !== "error")
       throw new Error("Thread is running; split it when it is idle.");
@@ -858,16 +879,22 @@ export default async function plugin(bb: BbPluginApi) {
     if (entry.undo.forkId)
       await bb.sdk.threads.archive({ threadId: entry.undo.forkId });
     if (entry.undo.archived) await bb.sdk.threads.unarchive({ threadId });
-    if (entry.action.kind !== "section" && entry.undo.title !== undefined)
+    if (entry.undo.title !== undefined)
       await bb.sdk.threads.update({ threadId, title: entry.undo.title });
-    if (entry.action.kind === "section") {
+    if (entry.action.kind === "section" || entry.action.kind === "parent") {
       let sectionId = entry.undo.sectionId ?? null;
       const exists = sectionId
         ? (await bb.sdk.threadSections.list()).some((s) => s.id === sectionId)
         : false;
       if (!exists && entry.undo.sectionName)
         sectionId = await (await sectionIds()).ensure(entry.undo.sectionName);
-      await bb.sdk.threads.update({ threadId, sectionId });
+      await bb.sdk.threads.update({
+        threadId,
+        ...(entry.action.kind === "section" ? { sectionId } : {}),
+        ...(entry.undo.parentThreadId
+          ? { parentThreadId: entry.undo.parentThreadId }
+          : { clearParentThread: true }),
+      });
     }
     entry.undone = true;
     put(logKey(), log);
@@ -1097,10 +1124,139 @@ export default async function plugin(bb: BbPluginApi) {
   bb.rpc.register(rpcContract, {
     snapshot,
     analyze: async () => start(),
-    sidebar: async () => ({
-      analysis: fixture ? null : analysis,
-      banners: fixture ? {} : bannerUrls(),
-    }),
+    sidebar: async () => {
+      if (fixture)
+        return {
+          analysis: null,
+          banners: {},
+          owners: {},
+          hierarchy: { dispatchIds: [], roles: {}, managers: {} },
+        };
+      const active = await inventory();
+      const sections = await bb.sdk.threadSections.list();
+      const dispatchSection = sections.find(
+        (section) => section.name === "Dispatch",
+      );
+      const sectionDispatch = active.filter(
+        (thread) =>
+          !thread.parentThreadId && thread.sectionId === dispatchSection?.id,
+      );
+      const dispatchRows = active.filter(
+        (t) =>
+          !t.parentThreadId &&
+          ((t.environmentPath ?? "")
+            .replace(/\\/g, "/")
+            .replace(/\/$/, "")
+            .toLowerCase() === "/users/tomdale/code/tomdaleos" ||
+            (dispatchSection && t.sectionId === dispatchSection.id)),
+      );
+      for (const thread of sectionDispatch)
+        if (!dispatchRows.some((row) => row.id === thread.id))
+          dispatchRows.push(thread);
+      const dispatchIds = new Set(dispatchRows.map((t) => t.id));
+      const byId = new Map(active.map((t) => [t.id, t]));
+      const owners: Record<string, { viaWorkers: string[] }> = {};
+      const managerReports = new Map<string, { at: number; text: string }[]>();
+      if (dispatchRows.length) {
+        const managers = active.filter(
+          (t) => t.parentThreadId && dispatchIds.has(t.parentThreadId),
+        );
+        for (const manager of managers) {
+          const events = await bb.sdk.threads.events.list({
+            threadId: manager.id,
+            types: ["client/turn/requested"],
+            order: "desc",
+            limit: "5",
+          });
+          managerReports.set(
+            manager.id,
+            events
+              .map((e) => ({
+                at: e.createdAt,
+                text: inputText((e.data as { input?: unknown }).input),
+              }))
+              .filter((e) => e.text),
+          );
+          owners[manager.id] = { viaWorkers: [] };
+        }
+        for (const worker of active) {
+          let cursor = worker;
+          let manager: Thread | undefined;
+          while (cursor.parentThreadId) {
+            const parent = byId.get(cursor.parentThreadId);
+            if (!parent) break;
+            if (managers.some((m) => m.id === parent.id)) {
+              manager = parent;
+              break;
+            }
+            cursor = parent;
+          }
+          if (!manager) continue;
+          const [workerEvents, completions] = await Promise.all([
+            bb.sdk.threads.events.list({
+              threadId: worker.id,
+              types: ["client/turn/requested"],
+              order: "desc",
+              limit: "1",
+            }),
+            bb.sdk.threads.events.list({
+              threadId: worker.id,
+              types: ["turn/completed"],
+              order: "desc",
+              limit: "1",
+            }),
+          ]);
+          const completedAt = completions[0]?.createdAt ?? 0;
+          const requestedAt = workerEvents[0]?.createdAt ?? 0;
+          const report = (managerReports.get(manager.id) ?? []).find(
+            (event) => event.at > Math.max(completedAt, requestedAt),
+          );
+          const text = report?.text.toLowerCase() ?? "";
+          const title = worker.title.toLowerCase();
+          const referred =
+            report &&
+            text.includes(title.slice(0, 18)) &&
+            /\\b(ask|talk|work with|coordinate|continue in|go to)\\b/.test(
+              text,
+            );
+          if (report && !referred && !worker.hasPendingInteraction)
+            owners[manager.id].viaWorkers.push(worker.title);
+        }
+      }
+      const managers = active.filter(
+        (t) => t.parentThreadId && dispatchIds.has(t.parentThreadId),
+      );
+      const hierarchy = {
+        dispatchIds: dispatchRows.map((t) => t.id),
+        roles: Object.fromEntries(
+          active.map((t) => [
+            t.id,
+            dispatchRows.some((p) => p.id === t.id)
+              ? "dispatch"
+              : managers.some((m) => m.id === t.id)
+                ? "manager"
+                : "worker",
+          ]),
+        ) as Record<string, "dispatch" | "manager" | "worker">,
+        managers: Object.fromEntries(
+          active.flatMap((thread) => {
+            let cursor = thread;
+            const seen = new Set<string>();
+            while (cursor.parentThreadId && !seen.has(cursor.id)) {
+              seen.add(cursor.id);
+              const parent = byId.get(cursor.parentThreadId);
+              if (!parent) return [];
+              if (managers.some((manager) => manager.id === parent.id)) {
+                return thread.id === parent.id ? [] : [[thread.id, parent.id]];
+              }
+              cursor = parent;
+            }
+            return [];
+          }),
+        ),
+      };
+      return { analysis, banners: bannerUrls(), owners, hierarchy };
+    },
     organize: async () => {
       if (progress || organizing) throw new Error("Busy; try again shortly.");
       await organize();

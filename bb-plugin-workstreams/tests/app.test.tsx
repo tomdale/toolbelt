@@ -14,6 +14,7 @@ const initial: View = {
       repository: null,
       status: "idle",
       updatedAt: 1,
+      latestAttentionAt: 1,
       sectionId: null,
       hasPendingInteraction: false,
     },
@@ -24,6 +25,7 @@ const initial: View = {
       repository: null,
       status: "active",
       updatedAt: 1,
+      latestAttentionAt: 1,
       sectionId: null,
       hasPendingInteraction: false,
     },
@@ -84,7 +86,7 @@ it("shows all threads under BB projects before analysis without starting a run",
   expect(v.inspection.rpcCalls.some((c) => c.method === "analyze")).toBe(false);
   v.lifecycle.unmount();
 });
-it("shows singleton summaries and optional banner accents under Other groups", async () => {
+it("shows singleton summaries under Other groups", async () => {
   const v = await mount({
     ...initial,
     analysis: {
@@ -115,7 +117,6 @@ it("shows singleton summaries and optional banner accents under Other groups", a
   await v.findByText(
     "BB agent-orchestration IDE. 1 need decision · 1 need decision; TTS playback unverified.",
   );
-  expect(v.getByRole("presentation").getAttribute("src")).toBe("/banner.jpg");
   v.lifecycle.unmount();
 });
 it("manual analysis regroups threads across repositories", async () => {

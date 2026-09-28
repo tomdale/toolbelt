@@ -7,9 +7,9 @@ import {
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import type { rpcContract, View } from "./server";
-import { isImmediateAsk } from "./sidebar-model";
 import {
   UNCLASSIFIED,
+  excludeDispatchThreads,
   groupThreads,
   type Row,
   type Snapshot,
@@ -64,14 +64,12 @@ function ListRow({
   row,
   group,
   groupSummary,
-  groupBanner,
   open,
   split,
 }: {
   row: Row;
   group?: string;
   groupSummary?: { about: string; status: string; needsYou?: number };
-  groupBanner?: string;
   open: () => void;
   /** Offered for detected side quests not yet split. */
   split?: () => void;
@@ -106,9 +104,6 @@ function ListRow({
                   {groupSummary.status}
                 </span>
               )}
-              {groupBanner && (
-                <img className="ws-single-banner" src={groupBanner} alt="" />
-              )}
             </span>
           )}
           <strong>{title}</strong>
@@ -138,16 +133,13 @@ function GroupHeader({
   name,
   count,
   summary,
-  banner,
 }: {
   name: string;
   count: number;
   summary?: { about: string; status: string; needsYou?: number };
-  banner?: string;
 }) {
   return (
-    <header className={`ws-group-head${banner ? " ws-has-banner" : ""}`}>
-      {banner && <img className="ws-banner" src={banner} alt="" />}
+    <header className="ws-group-head">
       <h2>
         {name} <span>{count}</span>
       </h2>
@@ -225,7 +217,8 @@ function WorkstreamsPage() {
       setBusy(false);
     }
   };
-  const all = data ? groupThreads(data) : [];
+  const displayThreads = data ? excludeDispatchThreads(data.threads) : [];
+  const all = data ? groupThreads({ ...data, threads: displayThreads }) : [];
   // Page and sidebar use the same host-adjusted immediate-ask count.
   const needsYou = data?.analysis?.needsYouCount ?? 0;
   const q = query.trim().toLowerCase();
@@ -274,7 +267,7 @@ function WorkstreamsPage() {
             <h1>Workstreams</h1>
             {data && (
               <p className="ws-muted">
-                {data.threads.length} active threads · {all.length} groups ·{" "}
+                {displayThreads.length} active threads · {all.length} groups ·{" "}
                 {data.analysis
                   ? `analyzed ${when(data.analysis.at)} ${new Date(data.analysis.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
                   : "grouped by BB project until analyzed"}
@@ -369,13 +362,12 @@ function WorkstreamsPage() {
                 ))}
               </nav>
             )}
-            {!data.threads.length && (
+            {!displayThreads.length && (
               <p className="ws-notice">
-                No active threads. Archived and hidden threads don’t appear
-                here.
+                No active threads. Archived threads don’t appear here.
               </p>
             )}
-            {!!data.threads.length && !groups.length && (
+            {!!displayThreads.length && !groups.length && (
               <p className="ws-notice">No matching threads.</p>
             )}
             <div className="ws-list">
@@ -385,7 +377,6 @@ function WorkstreamsPage() {
                     name={name}
                     count={rows.length}
                     summary={data.analysis?.summaries[name]}
-                    banner={data.banners[name]}
                   />
                   <ul>
                     {rows.map((row) => (
@@ -411,7 +402,6 @@ function WorkstreamsPage() {
                         row={row}
                         group={name}
                         groupSummary={data.analysis?.summaries[name]}
-                        groupBanner={data.banners[name]}
                         open={() => navigate.toThread(row.thread.id)}
                         split={splitFor(row)}
                       />
@@ -443,7 +433,11 @@ function WorkstreamsPage() {
                             ? `Removed empty section ${e.action.section}`
                             : e.action.kind === "archive"
                               ? `Archived: ${e.action.reason}`
-                              : `Moved to ${e.action.section}`}
+                              : e.action.kind === "parent"
+                                ? "Fixed thread parentage"
+                                : e.action.kind === "section"
+                                  ? `Moved to ${e.action.section}`
+                                  : `Updated thread parentage`}
                       {e.detail && (
                         <span className="ws-muted"> — {e.detail}</span>
                       )}
