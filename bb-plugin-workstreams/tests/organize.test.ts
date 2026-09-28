@@ -107,32 +107,23 @@ it("plans high-confidence splits, messy-title renames, and section moves", () =>
   expect(messyTitle("Explain…")).toBe(true);
 });
 
-it("repairs worker parentage under existing managers but leaves Dispatch roots alone", () => {
-  const dispatch = {
-    ...thread("dispatch", "Dispatch"),
-    environmentPath: "/Users/tomdale/Code/tomdaleOS",
-  };
-  const manager = {
-    ...thread("manager", "Vercel Agent — manager"),
-    parentThreadId: "dispatch",
-  };
+it("repairs worker parentage beneath an explicitly titled manager", () => {
+  const manager = thread("manager", "Vercel Agent — manager");
   const worker = {
     ...thread("worker", "Alert investigation"),
-    parentThreadId: "dispatch",
+    parentThreadId: "manager",
   };
+  const other = thread("other", "Standalone tomdaleOS thread");
   const actions = planOrganize(
-    [dispatch, manager, worker],
+    [manager, worker, other],
     analysis([
-      { threadId: "dispatch", group: "Dispatch" },
       { threadId: "manager", group: "Vercel Agent" },
       { threadId: "worker", group: "Vercel Agent: alerts" },
+      { threadId: "other", group: "tomdaleOS" },
     ]),
     new Set(),
   );
-  expect(actions.filter((action) => action.kind === "parent")).toEqual([
-    { kind: "parent", threadId: "worker", parentThreadId: "manager" },
-  ]);
-  expect(actions.some((action) => action.threadId === "dispatch")).toBe(false);
+  expect(actions.filter((action) => action.kind === "parent")).toEqual([]);
 });
 
 it("archives only explicitly redundant completed threads", () => {

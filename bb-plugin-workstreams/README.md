@@ -8,14 +8,11 @@ All your active threads, grouped by the project or product they concern. Open
   not limited to recent activity. **Recent** is a separate, live five-thread
   window without an overflow control. Only collapsing a whole sidebar band or
   group hides its rows, and collapse state persists.
-- In the tomdaleOS checkout, every parentless thread is a **Dispatch** thread;
-  its direct children are managers. Dispatch lists those managers; each
-  manager's separate product group lists its workers without duplicating the
-  manager. Unmanaged groups are identified explicitly. Missing parents and
-  cycles fall back to visible flat rows with a warning. Dispatch threads are
-  excluded from automatic organization, and parentage repairs are logged and
-  undoable. Organize files Dispatch threads into a dedicated Dispatch section
-  without changing their parentage.
+- A thread titled with the explicit `— manager` suffix heads its product group;
+  its descendants remain nested beneath it. This grouping is based on the
+  manager thread itself, not the checkout's root thread or any special intake
+  role. Threads without a manager use their inferred product, native section, or
+  BB project as a fallback.
 - **Needs you** shows all active owner rows without an overflow limit. Live BB
   approvals remain on their worker; an inferred worker question moves to its
   manager only after a later manager report. Done rows stay visible and dimmed

@@ -31,87 +31,61 @@ const item = (threadId: string, group: string, state: string) => ({
   refreshed: true,
 });
 
-it("derives Dispatch, manager, and worker roles from parentage and checkout", () => {
+it("derives manager groups independently of top-level thread location", () => {
   const threads = [
-    t("dispatch", { environmentPath: "/Users/tomdale/Code/tomdaleOS" }),
-    t("manager", { parentThreadId: "dispatch" }),
+    t("manager", { displayTitle: "Project — manager" }),
     t("worker", { parentThreadId: "manager" }),
     t("deep-worker", { parentThreadId: "worker" }),
-    t("unrelated-root", { environmentPath: "/tmp/other" }),
+    t("unrelated-root", { environmentPath: "/Users/tomdale/Code/tomdaleOS" }),
   ];
   const hierarchy = deriveSidebarHierarchy(threads);
-  expect(hierarchy.dispatch.map((thread) => thread.id)).toEqual(["dispatch"]);
   expect(hierarchy.roles.get("manager")).toBe("manager");
-  expect(hierarchy.roles.get("worker")).toBe("worker");
   expect(hierarchy.managerFor.get("deep-worker")?.id).toBe("manager");
   expect(hierarchy.roles.get("unrelated-root")).toBe("worker");
 });
 
-it("routes an answered worker question to its reporting manager only", () => {
-  const analysis = {
-    at: 10,
-    needsYouCount: 1,
-    warnings: [],
-    summaries: {},
-    items: [
-      item("manager", "manager", "in_progress"),
-      item("worker", "Team", "needs_decision"),
-    ],
-  } as Analysis;
+it("routes worker questions to the manager without depending on a root-thread role", () => {
   const model = buildSidebar(
     [
-      t("dispatch", { environmentPath: "/Users/tomdale/Code/tomdaleOS" }),
-      t("manager", { parentThreadId: "dispatch" }),
+      t("manager", { displayTitle: "Project — manager" }),
       t("worker", { parentThreadId: "manager" }),
       t("live-approval", {
         parentThreadId: "manager",
         hasPendingInteraction: true,
       }),
     ],
-    analysis,
+    {
+      at: 10,
+      needsYouCount: 1,
+      warnings: [],
+      summaries: {},
+      items: [
+        item("manager", "Project", "in_progress"),
+        item("worker", "Project", "needs_decision"),
+      ],
+    } as Analysis,
     new Map(),
     new Map([["p", "Project"]]),
     new Map([["manager", ["worker"]]]),
-    {
-      dispatchIds: ["dispatch"],
-      roles: {
-        dispatch: "dispatch",
-        manager: "manager",
-        worker: "worker",
-        "live-approval": "worker",
-      },
-      managers: { worker: "manager", "live-approval": "manager" },
-    },
   );
   expect(model.needsYou.map((row) => row.thread.id)).toContain("live-approval");
   expect(model.needsYou.map((row) => row.thread.id)).not.toContain("worker");
-  expect(
-    model.needsYou.find((row) => row.thread.id === "manager")?.immediateAsk,
-  ).toBe(true);
-  expect(model.groups).toHaveLength(1);
-  expect(model.groups[0].manager).toBeNull();
-  expect(model.groups[0].rows.map((row) => row.thread.id)).toEqual([
+  const group = model.groups.find(
+    (entry) => entry.manager?.thread.id === "manager",
+  )!;
+  expect(group.manager?.immediateAsk).toBe(true);
+  expect(group.rows.map((row) => row.thread.id)).toEqual([
     "worker",
     "live-approval",
   ]);
-  expect(model.dispatch.map((row) => row.thread.id)).toEqual([
-    "dispatch",
-    "manager",
-  ]);
 });
 
-it("keeps every active hook-visible thread once across Dispatch, manager groups, and cross-group parentage", () => {
+it("keeps every active thread exactly once under its manager or project group", () => {
   const threads = [
-    t("dispatch", { environmentPath: "/Users/tomdale/Code/tomdaleOS" }),
-    t("manager", {
-      parentThreadId: "dispatch",
-      displayTitle: "Alpha — manager",
-    }),
+    t("manager", { displayTitle: "Alpha — manager" }),
     t("worker", { parentThreadId: "manager" }),
     t("deep", { parentThreadId: "worker" }),
-    // Its own analyzed group differs, but the worker still belongs to its manager.
     t("cross-group", { parentThreadId: "manager" }),
-    // These rows model hidden active SDK entries; archived entries are not passed.
     t("hidden-child", { parentThreadId: "manager", isHidden: true }),
     t("orphan-child", { parentThreadId: "missing-parent" }),
   ];
@@ -128,17 +102,14 @@ it("keeps every active hook-visible thread once across Dispatch, manager groups,
     new Map([["p", "Project"]]),
     new Map(),
     {
-      dispatchIds: ["dispatch"],
-      roles: Object.fromEntries(
-        threads.map((thread) => [
-          thread.id,
-          thread.id === "dispatch"
-            ? "dispatch"
-            : thread.id === "manager"
-              ? "manager"
-              : "worker",
-        ]),
-      ) as Record<string, "dispatch" | "manager" | "worker">,
+      roles: {
+        manager: "manager",
+        worker: "worker",
+        deep: "worker",
+        "cross-group": "worker",
+        "hidden-child": "worker",
+        "orphan-child": "worker",
+      },
       managers: {
         worker: "manager",
         deep: "manager",
@@ -147,73 +118,18 @@ it("keeps every active hook-visible thread once across Dispatch, manager groups,
       },
     },
   );
-  const visibleIds = [
-    ...model.dispatch.map((row) => row.thread.id),
-    ...model.groups.flatMap((group) => [
-      ...(group.manager ? [group.manager.thread.id] : []),
-      ...group.rows.map((row) => row.thread.id),
-    ]),
-  ];
-  expect(visibleIds.sort()).toEqual(threads.map((thread) => thread.id).sort());
-  expect(new Set(visibleIds).size).toBe(threads.length);
-  expect(model.dispatch.map((row) => [row.thread.id, row.depth])).toEqual([
-    ["dispatch", 0],
-    ["manager", 1],
+  const visible = model.groups.flatMap((group) => [
+    ...(group.manager ? [group.manager.thread.id] : []),
+    ...group.rows.map((row) => row.thread.id),
   ]);
-  expect(
-    model.groups.flatMap((group) => group.rows.map((row) => row.thread.id)),
-  ).toContain("hidden-child");
-  expect(model.groups.some((group) => group.name === "Different group")).toBe(
-    false,
-  );
+  expect(visible.sort()).toEqual(threads.map((thread) => thread.id).sort());
+  expect(new Set(visible).size).toBe(threads.length);
+  const group = model.groups.find(
+    (entry) => entry.manager?.thread.id === "manager",
+  )!;
+  expect(group.rows.map((row) => row.thread.id)).toContain("hidden-child");
+  expect(group.rows.map((row) => row.thread.id)).toContain("cross-group");
   expect(model.warnings).toHaveLength(1);
-  expect(
-    model.groups.flatMap((group) => group.rows).map((row) => row.thread.id),
-  ).toContain("orphan-child");
-});
-
-it("renders Dispatch children once while manager groups contain only their workers", () => {
-  const model = buildSidebar(
-    [
-      t("dispatch", { environmentPath: "/Users/tomdale/Code/tomdaleOS" }),
-      t("manager-a", {
-        parentThreadId: "dispatch",
-        displayTitle: "Alpha — manager",
-      }),
-      t("manager-b", {
-        parentThreadId: "dispatch",
-        displayTitle: "Beta — manager",
-      }),
-      t("worker-a", { parentThreadId: "manager-a" }),
-      t("worker-b", { parentThreadId: "manager-b" }),
-    ],
-    null,
-    new Map(),
-    new Map([["p", "Project"]]),
-  );
-  expect(model.dispatch.map((row) => [row.thread.id, row.depth])).toEqual([
-    ["dispatch", 0],
-    ["manager-a", 1],
-    ["manager-b", 1],
-  ]);
-  expect(
-    model.groups.flatMap((group) => group.rows.map((row) => row.thread.id)),
-  ).toEqual(["worker-a", "worker-b"]);
-  const allIds = [
-    ...model.dispatch.map((row) => row.thread.id),
-    ...model.groups.flatMap((group) => [
-      ...(group.manager ? [group.manager.thread.id] : []),
-      ...group.rows.map((row) => row.thread.id),
-    ]),
-  ];
-  expect(allIds.sort()).toEqual([
-    "dispatch",
-    "manager-a",
-    "manager-b",
-    "worker-a",
-    "worker-b",
-  ]);
-  expect(new Set(allIds).size).toBe(allIds.length);
 });
 
 it("breaks cyclic parentage deterministically and retains every row", () => {
@@ -240,15 +156,8 @@ it("breaks cyclic parentage deterministically and retains every row", () => {
 it("keeps identically named managers in distinct groups", () => {
   const model = buildSidebar(
     [
-      t("manager-a", {
-        parentThreadId: "dispatch",
-        displayTitle: "Same — manager",
-      }),
-      t("manager-b", {
-        parentThreadId: "dispatch",
-        displayTitle: "Same — manager",
-      }),
-      t("dispatch", { environmentPath: "/Users/tomdale/Code/tomdaleOS" }),
+      t("manager-a", { displayTitle: "Same — manager" }),
+      t("manager-b", { displayTitle: "Same — manager" }),
       t("worker-a", { parentThreadId: "manager-a" }),
       t("worker-b", { parentThreadId: "manager-b" }),
     ],
@@ -263,11 +172,6 @@ it("keeps identically named managers in distinct groups", () => {
     "manager:manager-a",
     "manager:manager-b",
   ]);
-  expect(model.dispatch.map((row) => row.thread.id)).toEqual([
-    "dispatch",
-    "manager-a",
-    "manager-b",
-  ]);
 });
 
 it("keeps standalone manager rows as group headers", () => {
@@ -281,7 +185,6 @@ it("keeps standalone manager rows as group headers", () => {
     new Map([["p", "Project"]]),
     new Map(),
     {
-      dispatchIds: [],
       roles: { manager: "manager", worker: "worker" },
       managers: { worker: "manager" },
     },
