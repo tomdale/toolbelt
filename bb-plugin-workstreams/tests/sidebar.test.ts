@@ -24,7 +24,7 @@ const item = (threadId: string, group: string, state: string) => ({
   group,
   recap: "r",
   state: state as never,
-  needsYou: state === "needs_decision" || state === "ready_for_review",
+  needsYou: state === "needs_decision",
   updatedAt: 1,
   refreshed: true,
 });
