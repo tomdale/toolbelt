@@ -3,9 +3,24 @@
 All your active threads, grouped by the project or product they concern. Open
 **Workstreams** in the sidebar (`/plugins/workstreams/home`).
 
-- Every visible, non-archived thread appears, including idle threads. The list
-  is paginated, not limited to recent activity.
-- Before analysis, threads are grouped by their BB project.
+- Every active thread from BB's sidebar hook appears, including idle and hidden
+  helper threads. Archived threads are not requested. The list is uncapped and
+  not limited to recent activity. **Recent** is a separate, live five-thread
+  window without an overflow control. Only collapsing a whole sidebar band or
+  group hides its rows, and collapse state persists.
+- In the tomdaleOS checkout, every parentless thread is a **Dispatch** thread;
+  its direct children are managers. Dispatch lists those managers; each
+  manager's separate product group lists its workers without duplicating the
+  manager. Unmanaged groups are identified explicitly. Missing parents and
+  cycles fall back to visible flat rows with a warning. Dispatch threads are
+  excluded from automatic organization, and parentage repairs are logged and
+  undoable. Organize files Dispatch threads into a dedicated Dispatch section
+  without changing their parentage.
+- **Needs you** shows all active owner rows without an overflow limit. Live BB
+  approvals remain on their worker; an inferred worker question moves to its
+  manager only after a later manager report. Done rows stay visible and dimmed
+  in their groups; only whole section headers collapse them.
+- Before analysis, unrelated threads are grouped by their BB project.
 - **Analyze threads** reads each thread's title, project/repository, checkout
   path, initial text request from BB's event log, last three prompts in
   chronological order, and last assistant response. Initial intent is explicitly
@@ -23,15 +38,17 @@ All your active threads, grouped by the project or product they concern. Open
   merges labels.
 - Each thread gets a short inferred title, a recap of where it stands (at most
   180 characters; longer ones are clipped), and a work state: needs decision,
-  ready for review, blocked, in progress, or done. The first two count as “Needs
-  you”. Runtime status appears only when it matters (running, error) and is
-  never used as evidence of work state.
+  ready for review, blocked, in progress, or done. Decisions and live pending
+  approvals appear in Needs you on their owner; reported worker questions move
+  to the manager with a “via worker” label. Stale inferred decisions clear after
+  the user messages a thread. Runtime status appears only when it matters
+  (running, error) and is never used as evidence of work state.
 - Every identified product gets a short “what it is” and cross-thread status
-  summary, including singleton products shown under “Other groups”. The screen
-  is a one-line-per-thread list with the work state in a left column: larger
-  groups first, one-thread groups folded into “Other groups”, Unclassified
-  before them, done work dimmed. Group chips jump between groups; a “Needs you”
-  filter and search (`/`) cover inferred and original titles, recaps, projects,
+  summary. Project managers headline their groups; all other non-archived
+  threads stay visible, including singletons and done work (dimmed). Product
+  banners are omitted from the page to avoid clipping; group summaries remain.
+  Recent is a live five-thread strip. Group chips appear in Needs you and
+  Recent; search (`/`) covers inferred and original titles, recaps, projects,
   and groups. Clicking a row opens the thread.
 - Results appear together when analysis completes and survive reloads. Rows are
   marked “Not analyzed” (new), “Updated since analysis”, or “Not refreshed”. A

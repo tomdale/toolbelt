@@ -29,7 +29,10 @@ const thread = (
   repository: null,
   status: "idle",
   updatedAt: 1,
+  latestAttentionAt: 1,
   sectionId: null,
+  parentThreadId: null,
+  environmentPath: null,
   hasPendingInteraction: false,
   sectionName,
 });
@@ -104,6 +107,34 @@ it("plans high-confidence splits, messy-title renames, and section moves", () =>
   expect(messyTitle("Explain…")).toBe(true);
 });
 
+it("repairs worker parentage under existing managers but leaves Dispatch roots alone", () => {
+  const dispatch = {
+    ...thread("dispatch", "Dispatch"),
+    environmentPath: "/Users/tomdale/Code/tomdaleOS",
+  };
+  const manager = {
+    ...thread("manager", "Vercel Agent — manager"),
+    parentThreadId: "dispatch",
+  };
+  const worker = {
+    ...thread("worker", "Alert investigation"),
+    parentThreadId: "dispatch",
+  };
+  const actions = planOrganize(
+    [dispatch, manager, worker],
+    analysis([
+      { threadId: "dispatch", group: "Dispatch" },
+      { threadId: "manager", group: "Vercel Agent" },
+      { threadId: "worker", group: "Vercel Agent: alerts" },
+    ]),
+    new Set(),
+  );
+  expect(actions.filter((action) => action.kind === "parent")).toEqual([
+    { kind: "parent", threadId: "worker", parentThreadId: "manager" },
+  ]);
+  expect(actions.some((action) => action.threadId === "dispatch")).toBe(false);
+});
+
 it("archives only explicitly redundant completed threads", () => {
   expect(
     planOrganize(
@@ -152,6 +183,9 @@ function host() {
         list: async () => [
           { id: "p", name: "P", kind: "personal", gitRemoteUrl: null },
         ],
+      },
+      environments: {
+        get: async () => ({ id: "env", path: null }),
       },
       threadSections: {
         delete: async () => ({ id: "sec_old", name: "Old" }),

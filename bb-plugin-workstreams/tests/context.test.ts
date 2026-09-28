@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { contextExcerpt, initialRequest } from "../context";
+import { contextExcerpt, initialRequest, requestTimeline } from "../context";
 const input = (text: string) => [{ type: "text", text }];
 it("recovers the initial request independently of empty prompt history", () => {
   const initial = initialRequest([
@@ -52,4 +52,27 @@ it("skips missing text and unrelated events", () => {
       { type: "client/turn/requested", data: { input: input("Real request") } },
     ]),
   ).toBe("Real request");
+});
+
+it("keeps temporal coverage across clustered long thread histories", () => {
+  const events = Array.from({ length: 180 }, (_, index) => ({
+    type: "client/turn/requested",
+    seq: (index + 1) * 100,
+    data: {
+      input: [
+        {
+          type: "text",
+          text:
+            index === 88
+              ? "Side quest: audit Agent configuration, not Vercel Agent."
+              : `status check ${index}`,
+        },
+      ],
+    },
+  }));
+  const timeline = requestTimeline(events);
+  expect(timeline).toContain("#8900: Side quest: audit Agent configuration");
+  expect(timeline).toContain("#100: status check 0");
+  expect(timeline).toContain("#18000: status check 179");
+  expect(timeline.length).toBeLessThanOrEqual(48_000);
 });

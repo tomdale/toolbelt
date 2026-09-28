@@ -187,6 +187,23 @@ footer.ws-muted {
   margin-bottom: 14px;
   scroll-margin-top: 16px;
 }
+.ws-group-head {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 18px;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--border);
+}
+.ws-group-head .ws-banner {
+  display: none;
+}
+.ws-group-head h2,
+.ws-group-head .ws-about,
+.ws-group-head .ws-status-line {
+  position: relative;
+  z-index: 1;
+}
 .ws-list h2 {
   font-size: 12px;
   font-weight: 600;
@@ -284,18 +301,6 @@ footer.ws-muted {
   color: var(--muted-foreground);
   font-size: 11px;
   line-height: 1.35;
-}
-.ws-single-banner {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: right center;
-  opacity: 0.24;
-  mask-image: linear-gradient(90deg, transparent, black);
-  -webkit-mask-image: linear-gradient(90deg, transparent, black);
-  pointer-events: none;
 }
 @media (max-width: 640px) {
   .ws-line {
