@@ -261,9 +261,10 @@ Plugin SQLite, keyed by `sectionId`. The name mirrors BB.
 **One-time bootstrap** (also available as `bb workstreams rebuild`). Target:
 under 2 minutes, including review.
 
-1. **Deterministic intake.** Read threads, sections, and the forest. v1's change
-   log identifies the filings v1 made automatically; those count as `auto` and
-   are re-evaluated. Every other filing counts as `user`.
+1. **Deterministic intake.** Read threads and sections, and build the
+   parent/child thread trees. v1's change log identifies the filings v1 made
+   automatically; those count as `auto` and are re-evaluated. Every other filing
+   counts as `user`.
 2. **Map proposal.** One model call proposes merges, renames, retirements,
    descriptions, and project associations.
 3. **Review.** Tom reviews the map on one screen.
@@ -428,7 +429,7 @@ v1 tables are left untouched until cutover and are not read after bootstrap.
 
 ```
 bb-plugin-workstreams/
-  src/domain/    tree · project (forest → groups and bands) · attention · rank · evolution · schemas   ← pure; most tests live here
+  src/domain/    tree · project (thread trees → groups and bands) · attention · rank · evolution · schemas   ← pure; most tests live here
   src/server/    index · map · journal · reconciler · analyzer (idle queue) · router · evolution-runner · inference/{host,pi,prompts} · rpc · cli · agents (configure instructions)
   src/app/       index · useWorkstreams (live hook + one state RPC + realtime) · sidebar/* · page/* · header/* (pill + floating banner) · composer/* (routing banner)
   tests/         domain (real exported snapshots) · server (mock SDK) · app (renderSlot)
@@ -441,7 +442,7 @@ bb-plugin-workstreams/
 
 - the isolated Pi inference runner (`host.ts` / `pi.ts`);
 - bounded context and redaction (`context.ts`);
-- the forest algorithm (exact-once, orphans, cycles);
+- the thread-tree builder (exact-once, orphans, cycles);
 - the eval harness, export and fixture replay, the 32-thread reference set, and
   `eval/delegation.json`.
 
@@ -480,7 +481,7 @@ bb-plugin-workstreams/
 | Phase | Scope                                                                                                                                | Gate                                                            |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
 | 0     | Freeze v1 (`organize = suggest`, workers idle), worktree, spikes, this spec                                                          | Tom signs off                                                   |
-| 1     | Deterministic core: forest and projection, sidebar, Unsorted, reconciler, page skeleton, parent link, journal                        | Exact-once tests on a real export. Screenshots. No model calls. |
+| 1     | Deterministic core: thread trees and projection, sidebar, Unsorted, reconciler, page skeleton, parent link, journal                  | Exact-once tests on a real export. Screenshots. No model calls. |
 | 2     | Analysis: idle queue, recap/state/subject, Needs you, eval harness                                                                   | Analysis within about 10 s of idle. Passes the eval.            |
 | 3     | Bootstrap and evolution: map proposal, review, assignment, evolution engine, floating banner, Activity log                           | Live state organized in under 2 minutes. Undo works.            |
 | 4     | Intake: router, native-composer banner, ＋ New, CLI `new`                                                                            | Routing eval on replayed real prompts                           |
