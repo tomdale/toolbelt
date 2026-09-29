@@ -83,6 +83,7 @@ const moveSchema = z.object({
   toName: z.string(),
   reason: z.string(),
   accepted: z.boolean(),
+  confidence: z.enum(["high", "medium", "low"]).optional(),
 });
 
 const bootstrapSchema = z
