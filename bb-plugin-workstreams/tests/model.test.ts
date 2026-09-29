@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { isManagerTitle, managerName } from "../manager";
 import {
   classificationPrompt,
   normalizeAnalysis,
@@ -6,6 +7,16 @@ import {
   threadSchema,
   type Snapshot,
 } from "../model";
+
+it("recognizes manager titles with descriptive suffixes", () => {
+  expect(
+    managerName("pi-desktop — manager (awaiting architecture decisions)"),
+  ).toBe("pi-desktop");
+  expect(
+    isManagerTitle("pi-desktop — manager (awaiting architecture decisions)"),
+  ).toBe(true);
+  expect(isManagerTitle("Build manager dashboard")).toBe(false);
+});
 
 it("includes project fallback evidence in classification prompts", () => {
   const prompt = classificationPrompt([

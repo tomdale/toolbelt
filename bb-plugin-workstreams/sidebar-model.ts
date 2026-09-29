@@ -1,4 +1,5 @@
 import type { Analysis, WorkState } from "./model.ts";
+import { isManagerTitle, managerName } from "./manager";
 import { projectThreadTrees } from "./tree-groups.ts";
 
 export type SidebarThread = {
@@ -78,7 +79,7 @@ export function deriveSidebarHierarchy(threads: readonly SidebarThread[]): {
   for (const thread of threads)
     roles.set(
       thread.id,
-      /\s*[—–-]\s*manager$/i.test(thread.displayTitle) ? "manager" : "worker",
+      isManagerTitle(thread.displayTitle) ? "manager" : "worker",
     );
   const managerFor = new Map<string, SidebarThread>();
   for (const thread of threads) {
@@ -205,6 +206,7 @@ export function buildSidebar(
     );
     const manager =
       managerRoots.length === 1 ? (rows.get(managerRoots[0].id) ?? null) : null;
+    const hasManager = managerRoots.length > 0;
     const groupRows = manager
       ? bucketRows.filter((row) => row.thread.id !== manager.thread.id)
       : bucketRows;
@@ -212,7 +214,7 @@ export function buildSidebar(
       id,
       name: bucket.name,
       manager,
-      unmanaged: !managerRoots.length,
+      unmanaged: !hasManager,
       rows: groupRows,
       needsYou: [...(manager ? [manager] : []), ...groupRows].filter(
         immediateAsk,
