@@ -127,6 +127,43 @@ thread, and restores the title or section. Compaction cannot be undone.
 No task tracking, priorities, external collectors, or editable workstream
 database. Legacy workstream data is left untouched but is no longer used.
 
+## Grouping diagnostics
+
+`bb workstreams diagnose [--thread <id>] [--group <name>] [--titles]` is
+read-only and explains why each thread is in its group:
+
+- `grouping`: the displayed group, the root thread it inherits from, and which
+  root property named it (`section`, `manager`, `product`, `project` fallback,
+  or `unclassified`), alongside the thread's own classification. Per-group
+  counts and `findings` flag patterns: `project-fallback`,
+  `classified-as-project` (label equals the BB project name),
+  `subtree-inheritance` (a descendant classified elsewhere),
+  `section-overrides-manager-title`, and `classification-differs-from-section`.
+- `plan`: what Organize would do now, with a reason code for every skipped
+  thread (`not-refreshed`, `already-in-section`, `later-manual-move`, …).
+  Nothing is performed.
+- `classifier` / `organize`: the latest recorded trace, when diagnostics were
+  enabled for that run; `classifierIsCurrent` is false when it predates the
+  saved analysis.
+
+Recording is opt-in: `bb workstreams analyze --diagnose` for one run, or the
+**Record grouping diagnostics** setting for every run. A trace follows each
+thread through its classifier input structure (BB project, repository and
+checkout directory names, excerpt size and sources, previous/pinned group and
+pin source), the model's group, code rewrites in order (`pin`, `drift`, `clean`,
+`merge`), rejected batch attempts by category, and the final outcome
+(`classified`, `kept-prior`, `dropped`). Diagnosed runs also ask the model for
+`basis`, its claimed decisive evidence; it is unverified and has been observed
+to be wrong, so compare the structural `equalsProject` flag. The organize trace
+records planned action kinds, skip reasons, and outcomes. A one-line count
+summary goes to the plugin log.
+
+Diagnostics store only IDs, project/section/group labels, directory names,
+counts, and reason codes; never prompts, excerpts, timelines, recaps, model
+titles, or archive reasons. `--titles` adds redacted thread titles to the report
+output, read live and not stored. The `diagnostics` RPC returns the same report
+without titles.
+
 ## Development
 
 ```sh
@@ -144,8 +181,9 @@ bb plugin reload workstreams
   grouping.
 - `host.ts` / `pi.ts`: isolated, tool-free Pi inference via AI Gateway and its
   JSON output parsing (shared with the eval runner).
-- `drift.ts`: side-quest detection; `organize.ts`: organize planning and the
-  change log.
+- `drift.ts`: side-quest detection; `organize.ts`: organize planning, skip
+  reasons, and the change log; `diagnostics.ts`: opt-in grouping traces and the
+  read-only grouping explanation.
 - `app.tsx` / `app.css`: grouped thread overview.
 - `pi-extension/`: optional in-thread request classifier for BB Pi threads; see
   its README for installation and throwaway-thread testing. Not installed by
@@ -156,7 +194,8 @@ bb plugin reload workstreams
   cases; see [evaluation instructions and results](eval/README.md).
 
 CLI: `bb workstreams list` shows the inventory, latest results, and change log;
-`analyze`, `cancel`, and `organize` match the buttons.
+`analyze`, `cancel`, and `organize` match the buttons; `diagnose` explains
+grouping (see above).
 
 For iteration, `bb workstreams export /abs/private.json` freezes live thread
 context, and `bb workstreams fixture /abs/private.json` replays such a file (or

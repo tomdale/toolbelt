@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { managerName } from "./manager";
+import { managerName } from "./manager.ts";
 import {
   UNCLASSIFIED,
   driftSchema,
@@ -82,6 +82,33 @@ export function messyTitle(title: string): boolean {
 }
 
 /**
+ * Why the planner did or did not act on a thread. Codes are stable identifiers
+ * for diagnostics; they carry no thread content.
+ */
+export const ORGANIZE_NOTES = [
+  "not-analyzed",
+  "not-refreshed",
+  "changed-since-analysis",
+  "unclassified",
+  "already-in-section",
+  "later-manual-move",
+  "archive-supersedes",
+  "already-split",
+  "split-medium-confidence",
+  "parent-matches-manager",
+] as const;
+export type OrganizeNote = (typeof ORGANIZE_NOTES)[number];
+export type OrganizeDecision = {
+  threadId: string;
+  /** Classified group the plan acted on, if any. */
+  group: string | null;
+  /** Native section the thread is in when planning. */
+  sectionName: string | null;
+  planned: Action["kind"][];
+  notes: OrganizeNote[];
+};
+
+/**
  * Plans the organize pass. Only high-confidence splits are planned; medium
  * ones are offered on the row instead. Threads that changed since analysis
  * are skipped so actions never rest on stale conclusions.
@@ -91,6 +118,15 @@ export function planOrganize(
   analysis: Analysis | null,
   alreadySplit: Set<string>,
 ): Action[] {
+  return explainOrganize(threads, analysis, alreadySplit).actions;
+}
+
+/** {@link planOrganize} with a per-thread account of each decision. */
+export function explainOrganize(
+  threads: (Thread & { sectionName: string | null })[],
+  analysis: Analysis | null,
+  alreadySplit: Set<string>,
+): { actions: Action[]; decisions: OrganizeDecision[] } {
   const items = new Map(analysis?.items.map((i) => [i.threadId, i]));
   const managers = threads.filter((thread) => managerName(thread.title));
   const managerGroup = (manager: Thread) =>
@@ -101,9 +137,22 @@ export function planOrganize(
     return normalized === name || normalized.startsWith(`${name}:`);
   };
   const actions: Action[] = [];
+  const decisions: OrganizeDecision[] = [];
   for (const thread of threads) {
     const item = items.get(thread.id);
     const group = item?.group;
+    const decision: OrganizeDecision = {
+      threadId: thread.id,
+      group: group ?? null,
+      sectionName: thread.sectionName,
+      planned: [],
+      notes: [],
+    };
+    decisions.push(decision);
+    const plan = (action: Action) => {
+      actions.push(action);
+      decision.planned.push(action.kind);
+    };
     if (
       item?.refreshed &&
       item.updatedAt === thread.updatedAt &&
@@ -115,26 +164,42 @@ export function planOrganize(
         ? managers.find((candidate) => matchesManager(group, candidate))
         : undefined;
       if (correctManager && correctManager.id !== thread.parentThreadId)
-        actions.push({
+        plan({
           kind: "parent",
           threadId: thread.id,
           parentThreadId: correctManager.id,
         });
+      else if (correctManager) decision.notes.push("parent-matches-manager");
     }
-    if (!item || !item.refreshed || item.updatedAt !== thread.updatedAt)
+    if (!item) {
+      decision.notes.push("not-analyzed");
       continue;
+    }
+    if (!item.refreshed) {
+      decision.notes.push("not-refreshed");
+      continue;
+    }
+    if (item.updatedAt !== thread.updatedAt) {
+      decision.notes.push("changed-since-analysis");
+      continue;
+    }
     const split =
       item.drift?.confidence === "high" && !alreadySplit.has(thread.id);
+    if (item.drift?.confidence === "high" && alreadySplit.has(thread.id))
+      decision.notes.push("already-split");
+    if (item.drift?.confidence === "medium")
+      decision.notes.push("split-medium-confidence");
     if (item.archiveReason && item.state === "done") {
-      actions.push({
+      plan({
         kind: "archive",
         threadId: thread.id,
         reason: item.archiveReason,
       });
+      decision.notes.push("archive-supersedes");
       continue;
     }
     if (split)
-      actions.push({
+      plan({
         kind: "split",
         threadId: thread.id,
         drift: item.drift!,
@@ -144,18 +209,86 @@ export function planOrganize(
       item.title !== thread.title &&
       messyTitle(thread.title)
     )
-      actions.push({ kind: "retitle", threadId: thread.id, title: item.title });
-    if (
-      item.group !== UNCLASSIFIED &&
-      item.group.toLowerCase() !== thread.sectionName?.toLowerCase()
-    )
-      actions.push({
+      plan({ kind: "retitle", threadId: thread.id, title: item.title });
+    if (item.group === UNCLASSIFIED) decision.notes.push("unclassified");
+    else if (item.group.toLowerCase() === thread.sectionName?.toLowerCase())
+      decision.notes.push("already-in-section");
+    else
+      plan({
         kind: "section",
         threadId: thread.id,
         section: item.group,
       });
   }
-  return actions;
+  return { actions, decisions };
+}
+
+/**
+ * Drops section moves that would undo a user's later manual move: once a
+ * thread leaves the last section Workstreams assigned it, Workstreams only
+ * files it again if its group now names that same assigned section. A
+ * single-thread group must still follow an explicit Workstreams correction
+ * (e.g. "v0 Dev Environment Provisioning" → "v0").
+ */
+export function respectManualSectionMoves(
+  actions: Action[],
+  threads: Pick<Thread, "id" | "sectionId">[],
+  log: LogEntry[],
+  sectionNamesById: ReadonlyMap<string, string>,
+): { actions: Action[]; dropped: Set<string> } {
+  const assignedByWorkstreams = new Map<string, string>();
+  for (const e of log)
+    if (e.action.kind === "section" && e.result === "done" && !e.undone)
+      assignedByWorkstreams.set(e.action.threadId, e.action.section);
+  const dropped = new Set<string>();
+  const kept = actions.filter((action) => {
+    if (action.kind !== "section") return true;
+    const assigned = assignedByWorkstreams.get(action.threadId);
+    const actual = threads.find((t) => t.id === action.threadId)?.sectionId;
+    const current = actual ? sectionNamesById.get(actual) : undefined;
+    const keep =
+      !assigned || current === assigned || assigned === action.section;
+    if (!keep) dropped.add(action.threadId);
+    return keep;
+  });
+  return { actions: kept, dropped };
+}
+
+/** The organize run's complete plan: planner output after manual-move protection. */
+export function planOrganizeRun(
+  threads: (Thread & { sectionName: string | null })[],
+  analysis: Analysis | null,
+  alreadySplit: Set<string>,
+  log: LogEntry[],
+  sectionNamesById: ReadonlyMap<string, string>,
+): { actions: Action[]; decisions: OrganizeDecision[] } {
+  const planned = explainOrganize(threads, analysis, alreadySplit);
+  const { actions, dropped } = respectManualSectionMoves(
+    planned.actions,
+    threads,
+    log,
+    sectionNamesById,
+  );
+  for (const decision of planned.decisions)
+    if (dropped.has(decision.threadId)) {
+      decision.planned = decision.planned.filter((kind) => kind !== "section");
+      decision.notes.push("later-manual-move");
+    }
+  return { actions, decisions: planned.decisions };
+}
+
+/** Threads Workstreams split, including partial splits that left a fork. */
+export function splitThreadIds(log: LogEntry[]): Set<string> {
+  return new Set(
+    log
+      .filter(
+        (e) =>
+          e.action.kind === "split" &&
+          !e.undone &&
+          (e.result === "done" || !!e.undo?.forkId),
+      )
+      .map((e) => e.action.threadId),
+  );
 }
 
 export function describe(action: Action, titles: Map<string, string>): string {
