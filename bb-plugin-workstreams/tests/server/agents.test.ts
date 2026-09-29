@@ -142,7 +142,7 @@ describe("bb workstreams handoff", () => {
     );
     expect(out).toMatchObject({ outcome: "new-thread", workstream: "Alpha" });
     const [spawn] = w.spawned;
-    expect(spawn!.prompt).toMatch(/^Handed off from @thread:caller:/);
+    expect(spawn!.prompt).toMatch(/^Handed off from @thread:caller\. /);
     expect(spawn!.pluginMetadata).toMatchObject({
       spawnedFrom: "caller",
       filedBy: "handoff",

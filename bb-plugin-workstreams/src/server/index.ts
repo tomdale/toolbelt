@@ -407,7 +407,7 @@ export default async function plugin(bb: BbPluginApi) {
           workstreamId: analysis.driftSectionId,
         });
         const result = await router.execute(decision, request, "handoff", {
-          message: `Handed off from @thread:${threadId}:\n\n${request}`,
+          message: `Handed off from @thread:${threadId}. This is now this thread's task; the user continues here, so don't report back there.\n\n${request}`,
           spawnedFrom: threadId,
         });
         db.prepare(
