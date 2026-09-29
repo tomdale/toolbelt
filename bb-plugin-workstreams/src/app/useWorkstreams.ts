@@ -12,15 +12,19 @@ import {
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../server/contract.ts";
-import type { Placement, WorkstreamRecord } from "../server/service.ts";
+import type { Placement } from "../server/service.ts";
+import type { MapRecord } from "../server/map.ts";
+import type { ProposalView } from "../server/evolution.ts";
 import { projectWorkstreams, type Projection } from "../domain/project.ts";
 import { isCurrent, needsYou } from "../domain/analysis.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
 
 export type ServerState = {
-  workstreams: Record<string, WorkstreamRecord>;
+  workstreams: Record<string, MapRecord>;
   placements: Record<string, Placement>;
   analysis: Record<string, StoredAnalysis>;
+  proposals: ProposalView[];
+  bootstrapped: boolean;
   lastReconciledAt: number | null;
 };
 
@@ -28,8 +32,42 @@ const EMPTY: ServerState = {
   workstreams: {},
   placements: {},
   analysis: {},
+  proposals: [],
+  bootstrapped: false,
   lastReconciledAt: null,
 };
+
+/**
+ * The plugin's own state, refetched whenever the server publishes a change.
+ * The sidebar, the page, and each thread header's banner share this shape.
+ */
+export function useServerState() {
+  const rpc = useRpc<RpcContract>();
+  const [server, setServer] = useState<ServerState>(EMPTY);
+  const refresh = useCallback(async () => {
+    try {
+      setServer({ ...EMPTY, ...(await rpc.call("state", null)) });
+    } catch {
+      // Everything still renders from live BB data without plugin state.
+    }
+  }, [rpc]);
+  useRealtime("changed", refresh);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+  return { rpc, server, refresh };
+}
+
+/** Pending or just-applied proposals that involve each thread. */
+export function proposalsByThread(
+  proposals: readonly ProposalView[],
+): Map<string, ProposalView> {
+  const out = new Map<string, ProposalView>();
+  for (const proposal of proposals)
+    for (const id of proposal.threadIds)
+      if (!out.has(id) || proposal.status === "pending") out.set(id, proposal);
+  return out;
+}
 
 /** What a row shows from analysis: nothing, a pending marker, or the result. */
 export type WorkView =
@@ -59,24 +97,11 @@ export function useNow(intervalMs = 60_000): number {
 }
 
 export function useWorkstreams() {
-  const rpc = useRpc<RpcContract>();
   const { status, threads, sections, projects } =
     experimental_useSidebarThreads();
   const settings = useSettings();
   const now = useNow();
-  const [server, setServer] = useState<ServerState>(EMPTY);
-
-  const refresh = useCallback(async () => {
-    try {
-      setServer(await rpc.call("state", null));
-    } catch {
-      // The list still works from live BB data without plugin state.
-    }
-  }, [rpc]);
-  useRealtime("changed", refresh);
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const { rpc, server, refresh } = useServerState();
 
   const { analysis } = server;
   const projection: Projection<PluginSidebarThread> = useMemo(
@@ -96,6 +121,7 @@ export function useWorkstreams() {
     server,
     work: (thread: PluginSidebarThread) =>
       workView(thread, analysis[thread.id]),
+    proposalOf: proposalsByThread(server.proposals),
     now,
     rpc,
     refresh,

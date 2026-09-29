@@ -16,6 +16,8 @@ import {
 import { relativeAge } from "../domain/presentation.ts";
 import { isCurrent, needsYou } from "../domain/analysis.ts";
 import type { Analyzer, StoredAnalysis } from "./analyzer.ts";
+import type { Bootstrap, BootstrapState } from "./bootstrap.ts";
+import type { WorkstreamMap } from "./map.ts";
 import {
   listActiveThreads,
   listSections,
@@ -79,6 +81,8 @@ export function registerCli(
   service: WorkstreamService,
   journal: Journal,
   analyzer: Analyzer,
+  bootstrap: Bootstrap,
+  map: WorkstreamMap,
 ): void {
   const load = async () => {
     const [threads, sections] = await Promise.all([
@@ -343,6 +347,121 @@ export function registerCli(
                 ? JSON.stringify({ queued, lastError: analyzer.lastError })
                 : message,
             };
+          },
+        }),
+        edit: cliCommand({
+          summary:
+            "Edit a workstream's description or aliases; your description always wins over a generated one",
+          positionals: [
+            {
+              name: "workstream",
+              description: "Workstream name or section id",
+              required: true,
+            },
+          ],
+          options: {
+            description: {
+              type: "string",
+              description: "One line: what work belongs here (empty clears it)",
+            },
+            alias: {
+              type: "string",
+              repeatable: true,
+              split: ",",
+              description:
+                "Other names for this workstream (replaces the list; repeat or comma-separate)",
+            },
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          constraints: [
+            { kind: "at-least-one", options: ["description", "alias"] },
+          ],
+          async run({ positionals, options }) {
+            const section = resolveWorkstream(
+              await listSections(bb.sdk),
+              positionals.workstream,
+            );
+            if (!section)
+              throw new PluginCliError(
+                `No workstream named "${positionals.workstream}".`,
+                {
+                  code: "workstream_not_found",
+                  hint: "Run `bb workstreams list` to see workstream names and ids.",
+                },
+              );
+            map.edit(section.id, {
+              description: options.description,
+              aliases: options.alias.length ? options.alias : undefined,
+            });
+            journal.add({
+              action: "edit-workstream",
+              source: "user",
+              rationale: `Edited ${section.name}`,
+              threads: [],
+              workstreams: [{ id: section.id, name: section.name }],
+              undo: null,
+            });
+            const record = map.get(section.id);
+            return {
+              exitCode: 0,
+              stdout: options.json
+                ? JSON.stringify(record, null, 2)
+                : `${section.name}: ${record?.description ?? "(no description)"}${record?.aliases.length ? `\nAlso called: ${record.aliases.join(", ")}` : ""}`,
+            };
+          },
+        }),
+        rebuild: cliCommand({
+          summary:
+            "Organize every thread once: propose the workstream map, file threads, and preview the result",
+          options: {
+            apply: {
+              type: "boolean",
+              description:
+                "Apply the previewed changes as one undoable batch (default: preview only)",
+            },
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ options }) {
+            const fail = (state: BootstrapState | null) => {
+              throw new PluginCliError(state?.error ?? "Organizing failed.", {
+                code: "organize_failed",
+              });
+            };
+            let state = await bootstrap.start().catch(fail);
+            if (state.status !== "review") fail(state);
+            state = await bootstrap
+              .assign(state.changes.map((c) => ({ id: c.id, accepted: true })))
+              .catch(fail);
+            if (state.status !== "preview") fail(state);
+            if (options.apply) {
+              state = await bootstrap.apply().catch(fail);
+              if (state.status !== "applied") fail(state);
+            }
+            if (options.json)
+              return { exitCode: 0, stdout: JSON.stringify(state, null, 2) };
+            const p = state.preview!;
+            const moves = p.moves.filter((m) => m.accepted);
+            const lines = [
+              `${options.apply ? "Applied" : "Preview"}: ${plural(moves.length, "move")}, ${plural(p.creates.length, "new workstream")}, ${plural(p.renames.length, "rename")} (${(state.seconds.intake + state.seconds.map + state.seconds.assign + state.seconds.apply).toFixed(1)}s)`,
+              ...state.changes.map(
+                (c) =>
+                  `  map: ${c.kind} ${"workstream" in c ? c.workstream : ""}${"name" in c ? ` → ${c.name}` : ""}${"into" in c ? ` → ${c.into}` : ""}`,
+              ),
+              ...p.moves.map(
+                (m) =>
+                  `  ${m.accepted ? "✓" : "·"} ${clip(m.title)}: ${m.fromName} → ${m.toName} (${m.reason})`,
+              ),
+              ...(p.unsure.length
+                ? [`  unsure: ${p.unsure.map((u) => clip(u.title)).join("; ")}`]
+                : []),
+              ...(options.apply
+                ? []
+                : [
+                    "",
+                    "Review and apply on the Workstreams page, or rerun with --apply.",
+                  ]),
+            ];
+            return { exitCode: 0, stdout: lines.join("\n") };
           },
         }),
         undo: cliCommand({

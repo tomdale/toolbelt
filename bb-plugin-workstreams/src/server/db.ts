@@ -53,6 +53,28 @@ const MIGRATIONS = [
     at INTEGER NOT NULL,
     result TEXT NOT NULL
   )`,
+  "ALTER TABLE ws_workstream ADD COLUMN aliases TEXT NOT NULL DEFAULT '[]'",
+  "ALTER TABLE ws_workstream ADD COLUMN subjects TEXT NOT NULL DEFAULT '[]'",
+  "ALTER TABLE ws_workstream ADD COLUMN projects TEXT NOT NULL DEFAULT '[]'",
+  "ALTER TABLE ws_workstream ADD COLUMN evidence TEXT NOT NULL DEFAULT '{}'",
+  `CREATE TABLE ws_proposal (
+    id TEXT PRIMARY KEY,
+    key TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    source_section_id TEXT NOT NULL,
+    target_section_id TEXT,
+    new_name TEXT,
+    thread_ids TEXT NOT NULL,
+    evidence_count INTEGER NOT NULL,
+    entry_id TEXT,
+    acknowledged INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  "CREATE INDEX ws_proposal_status ON ws_proposal (status, updated_at DESC)",
+  "CREATE TABLE ws_snooze (key TEXT PRIMARY KEY, evidence_count INTEGER NOT NULL, at INTEGER NOT NULL)",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

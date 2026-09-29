@@ -36,6 +36,7 @@ export function Row({
   now,
   context,
   work,
+  proposal,
   onNavigate,
 }: {
   thread: PluginSidebarThread;
@@ -45,6 +46,8 @@ export function Row({
   /** Shown instead of the age in overlay bands: the row's workstream name. */
   context?: string;
   work?: WorkView;
+  /** Banner text of a proposal that involves this thread. */
+  proposal?: string;
   onNavigate: () => void;
 }) {
   const state =
@@ -110,6 +113,9 @@ export function Row({
         <ThreadTitle threadId={thread.id} />
       </span>
       <span className="pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70">
+        {proposal ? (
+          <span className="ws-proposal-dot" role="img" aria-label={proposal} />
+        ) : null}
         {state?.glyph && work?.kind === "current" ? (
           <span
             className={`ws-work ws-work-${work.analysis.state}`}

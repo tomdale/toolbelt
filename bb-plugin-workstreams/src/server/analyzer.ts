@@ -123,6 +123,19 @@ export class Analyzer {
     return out;
   }
 
+  /** Subjects for any threads, archived ones included (evolution evidence). */
+  subjectsOf(threadIds: readonly string[]): Map<string, string | null> {
+    const out = new Map<string, string | null>();
+    const read = this.deps.db.prepare(
+      "SELECT result FROM ws_analysis WHERE thread_id = ?",
+    );
+    for (const id of threadIds) {
+      const row = read.get(id) as { result: string } | undefined;
+      out.set(id, row ? (readResult(row.result)?.subject ?? null) : null);
+    }
+    return out;
+  }
+
   get(threadId: string): StoredAnalysis | undefined {
     const row = this.deps.db
       .prepare("SELECT result FROM ws_analysis WHERE thread_id = ?")

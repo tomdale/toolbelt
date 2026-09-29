@@ -60,5 +60,7 @@ export const emptyState = () => ({
   workstreams: {},
   placements: {},
   analysis: {},
+  proposals: [],
+  bootstrapped: true,
   lastReconciledAt: null,
 });

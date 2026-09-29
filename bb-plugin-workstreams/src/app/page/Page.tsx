@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useBbNavigate,
+  type PluginNavPanelProps,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
@@ -14,12 +15,30 @@ import { WORK_STATE, relativeAge } from "../../domain/presentation.ts";
 import { StatusMark } from "../sidebar/StatusMark.tsx";
 import { useWorkstreams, type WorkView } from "../useWorkstreams.ts";
 import { Activity } from "./Activity.tsx";
+import { MapTab } from "./MapTab.tsx";
 
-type Tab = "overview" | "activity";
+type Tab = "overview" | "map" | "activity";
+const TAB_LABEL: Record<Tab, string> = {
+  overview: "Overview",
+  map: "Map",
+  activity: "Activity",
+};
 
-export function WorkstreamsPage() {
+/** `subPath` deep links: `map`, `activity`, or `activity/<proposal id>`. */
+function tabOf(subPath: string): { tab: Tab; focus: string | null } {
+  const [head, rest] = subPath.split("/");
+  if (head === "map") return { tab: "map", focus: null };
+  if (head === "activity") return { tab: "activity", focus: rest || null };
+  return { tab: "overview", focus: null };
+}
+
+export function WorkstreamsPage({
+  subPath = "",
+}: Partial<PluginNavPanelProps>) {
   const ws = useWorkstreams();
-  const [tab, setTab] = useState<Tab>("overview");
+  const linked = tabOf(subPath);
+  const [tab, setTab] = useState<Tab>(linked.tab);
+  useEffect(() => setTab(tabOf(subPath).tab), [subPath]);
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -71,7 +90,7 @@ export function WorkstreamsPage() {
             </p>
           </div>
           <div role="tablist" className="flex gap-1 text-sm">
-            {(["overview", "activity"] as const).map((id) => (
+            {(["overview", "map", "activity"] as const).map((id) => (
               <button
                 key={id}
                 role="tab"
@@ -85,7 +104,7 @@ export function WorkstreamsPage() {
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                {id === "overview" ? "Overview" : "Activity"}
+                {TAB_LABEL[id]}
               </button>
             ))}
           </div>
@@ -102,6 +121,19 @@ export function WorkstreamsPage() {
         </header>
         {tab === "overview" ? (
           <div className="mt-5 flex flex-col gap-6">
+            {!ws.server.bootstrapped && ws.status === "ready" ? (
+              <button
+                type="button"
+                onClick={() => setTab("map")}
+                className="rounded-lg border border-border px-3 py-2 text-left text-sm hover:bg-state-hover"
+              >
+                <span className="font-medium">Organize your workstreams</span>
+                <span className="block text-xs text-muted-foreground">
+                  One reviewed pass files your threads; Workstreams keeps them
+                  current after that.
+                </span>
+              </button>
+            ) : null}
             {ranked.map((group) => (
               <WorkstreamCard
                 key={group.id}
@@ -136,8 +168,19 @@ export function WorkstreamsPage() {
               <span>Italic: updating after new activity</span>
             </p>
           </div>
+        ) : tab === "map" ? (
+          <MapTab
+            rpc={ws.rpc}
+            records={Object.values(ws.server.workstreams)}
+            bootstrapped={ws.server.bootstrapped}
+          />
         ) : (
-          <Activity rpc={ws.rpc} />
+          <Activity
+            rpc={ws.rpc}
+            proposals={ws.server.proposals}
+            focus={linked.tab === "activity" ? linked.focus : null}
+            sections={ws.sections}
+          />
         )}
       </div>
     </div>

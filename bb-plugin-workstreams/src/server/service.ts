@@ -17,7 +17,15 @@ import {
   sectionIsEmpty,
   type InventoryThread,
 } from "./inventory.ts";
-import type { JournalEntry, Journal, Source } from "./journal.ts";
+import type { JournalEntry, Journal, Source, UndoStep } from "./journal.ts";
+
+/** Changes applied together; `to` and description keys may name a create. */
+export type BatchPlan = {
+  creates: { key: string; name: string; description?: string | null }[];
+  renames: { sectionId: string; name: string }[];
+  moves: { threadId: string; from: string | null; to: string | null }[];
+  descriptions?: [string, string][];
+};
 
 type Sdk = BbPluginApi["sdk"];
 
@@ -223,6 +231,7 @@ export class WorkstreamService {
   /**
    * Reverses a journaled change where BB state still matches what the change
    * left behind. Parts that were changed again since are skipped and reported.
+   * A batch is undone as a whole, in reverse order.
    */
   undo(entryId: string): Promise<JournalEntry> {
     return this.serial(async () => {
@@ -231,57 +240,16 @@ export class WorkstreamService {
         throw new UserError("That change is no longer in the log.");
       if (original.status === "undone") throw new UserError("Already undone.");
       if (!original.undo) throw new UserError("This change can't be undone.");
-      const sdk = this.sdk();
-      const plan = original.undo;
+      const steps =
+        original.undo.kind === "batch"
+          ? [...original.undo.steps].reverse()
+          : [original.undo];
       let skipped = 0;
       let done = 0;
-      if (plan.kind === "move") {
-        for (const move of plan.moves) {
-          const thread = await sdk.threads.get({ threadId: move.threadId });
-          if (
-            (thread.sectionId ?? null) !== move.to ||
-            thread.archivedAt !== null
-          ) {
-            skipped++;
-            continue;
-          }
-          await sdk.threads.update({
-            threadId: move.threadId,
-            sectionId: move.from,
-          });
-          this.place(move.threadId, move.from, "user", null);
-          this.seeThread(
-            move.threadId,
-            move.from,
-            thread.parentThreadId ?? null,
-          );
-          done++;
-        }
-      } else if (plan.kind === "delete-section") {
-        if (!(await sectionIsEmpty(sdk, plan.sectionId)))
-          throw new UserError(
-            "The workstream still has threads (including archived ones). Move them first.",
-          );
-        await sdk.threadSections.delete({ id: plan.sectionId });
-        this.db
-          .prepare("DELETE FROM ws_workstream WHERE section_id = ?")
-          .run(plan.sectionId);
-        this.db
-          .prepare("DELETE FROM ws_seen_section WHERE section_id = ?")
-          .run(plan.sectionId);
-        done++;
-      } else {
-        const sections = await listSections(sdk);
-        const current = sections.find((s) => s.id === plan.sectionId);
-        if (!current || current.name !== plan.to) skipped++;
-        else {
-          await sdk.threadSections.update({
-            id: plan.sectionId,
-            name: plan.from,
-          });
-          this.seeSection(plan.sectionId, plan.from);
-          done++;
-        }
+      for (const step of steps) {
+        const result = await this.undoStep(step);
+        if (result === "done") done++;
+        else skipped++;
       }
       if (done === 0)
         throw new UserError("Nothing to undo: everything changed again since.");
@@ -302,6 +270,191 @@ export class WorkstreamService {
       this.journal.markUndone(original.id, entry.id);
       this.onChange();
       return entry;
+    });
+  }
+
+  private async undoStep(step: UndoStep): Promise<"done" | "skipped"> {
+    const sdk = this.sdk();
+    if (step.kind === "move") {
+      let any = false;
+      for (const move of step.moves) {
+        const thread = await sdk.threads
+          .get({ threadId: move.threadId })
+          .catch(() => null);
+        if (
+          !thread ||
+          (thread.sectionId ?? null) !== move.to ||
+          thread.archivedAt !== null
+        )
+          continue;
+        await sdk.threads.update({
+          threadId: move.threadId,
+          sectionId: move.from,
+        });
+        this.place(move.threadId, move.from, "user", null);
+        this.seeThread(move.threadId, move.from, thread.parentThreadId ?? null);
+        any = true;
+      }
+      return any ? "done" : "skipped";
+    }
+    if (step.kind === "delete-section") {
+      if (!(await sectionIsEmpty(sdk, step.sectionId))) {
+        if (!step.inBatch)
+          throw new UserError(
+            "The workstream still has threads (including archived ones). Move them first.",
+          );
+        return "skipped";
+      }
+      await sdk.threadSections.delete({ id: step.sectionId });
+      this.db
+        .prepare("DELETE FROM ws_workstream WHERE section_id = ?")
+        .run(step.sectionId);
+      this.db
+        .prepare("DELETE FROM ws_seen_section WHERE section_id = ?")
+        .run(step.sectionId);
+      return "done";
+    }
+    const sections = await listSections(sdk);
+    const current = sections.find((s) => s.id === step.sectionId);
+    if (!current || current.name !== step.to) return "skipped";
+    await sdk.threadSections.update({ id: step.sectionId, name: step.from });
+    this.seeSection(step.sectionId, step.from);
+    return "done";
+  }
+
+  /**
+   * Applies several changes as one journaled, undoable batch (bootstrap and
+   * accepted proposals). Each move is checked against the section the plan
+   * expected first; threads that changed since are skipped and reported.
+   */
+  applyBatch(
+    plan: BatchPlan,
+    source: Source,
+    rationale: string,
+    options: { action?: "batch" | "proposal"; into?: string | null } = {},
+  ): Promise<{
+    entry: JournalEntry | null;
+    skipped: string[];
+    created: Map<string, string>;
+  }> {
+    return this.serial(async () => {
+      const sdk = this.sdk();
+      const sections = await listSections(sdk);
+      const byName = new Map(sections.map((s) => [s.name.toLowerCase(), s]));
+      const names = new Map(sections.map((s) => [s.id, s.name]));
+      const steps: UndoStep[] = [];
+      const created = new Map<string, string>();
+      const touched = new Map<string, string>();
+      const at = this.now();
+      for (const create of plan.creates) {
+        const clean = normalizeName(create.name);
+        const existing = byName.get(clean.toLowerCase());
+        if (existing) {
+          created.set(create.key, existing.id);
+          continue;
+        }
+        const section = await sdk.threadSections.create({ name: clean });
+        this.db
+          .prepare(
+            `INSERT INTO ws_workstream (section_id, description, description_source, created_by, created_at, updated_at)
+             VALUES (?, ?, 'generated', 'workstreams', ?, ?) ON CONFLICT(section_id) DO NOTHING`,
+          )
+          .run(section.id, create.description ?? null, at, at);
+        this.seeSection(section.id, section.name);
+        names.set(section.id, section.name);
+        byName.set(section.name.toLowerCase(), section);
+        created.set(create.key, section.id);
+        touched.set(section.id, section.name);
+        steps.push({
+          kind: "delete-section",
+          sectionId: section.id,
+          inBatch: true,
+        });
+      }
+      for (const rename of plan.renames) {
+        const clean = normalizeName(rename.name);
+        const current = names.get(rename.sectionId);
+        if (!current || current === clean) continue;
+        if (byName.has(clean.toLowerCase())) continue;
+        await sdk.threadSections.update({ id: rename.sectionId, name: clean });
+        this.seeSection(rename.sectionId, clean);
+        byName.delete(current.toLowerCase());
+        byName.set(clean.toLowerCase(), { id: rename.sectionId, name: clean });
+        names.set(rename.sectionId, clean);
+        touched.set(rename.sectionId, clean);
+        steps.push({
+          kind: "rename-section",
+          sectionId: rename.sectionId,
+          from: current,
+          to: clean,
+        });
+      }
+      for (const [sectionId, description] of plan.descriptions ?? []) {
+        const id = created.get(sectionId) ?? sectionId;
+        this.db
+          .prepare(
+            `UPDATE ws_workstream SET description = ?, updated_at = ?
+             WHERE section_id = ? AND description_source = 'generated'`,
+          )
+          .run(description, at, id);
+      }
+      const moves: {
+        threadId: string;
+        from: string | null;
+        to: string | null;
+      }[] = [];
+      const skipped: string[] = [];
+      const threads: { id: string; name: string }[] = [];
+      for (const move of plan.moves) {
+        const to = move.to === null ? null : (created.get(move.to) ?? move.to);
+        const thread = await sdk.threads
+          .get({ threadId: move.threadId })
+          .catch(() => null);
+        if (
+          !thread ||
+          thread.archivedAt !== null ||
+          (thread.sectionId ?? null) !== move.from ||
+          (to !== null && !names.has(to)) ||
+          (thread.parentThreadId &&
+            (await this.isVisibleActive(thread.parentThreadId)))
+        ) {
+          skipped.push(move.threadId);
+          continue;
+        }
+        if ((thread.sectionId ?? null) === to) continue;
+        await sdk.threads.update({ threadId: move.threadId, sectionId: to });
+        this.seeThread(move.threadId, to, thread.parentThreadId ?? null);
+        moves.push({ threadId: move.threadId, from: move.from, to });
+        threads.push({ id: move.threadId, name: displayTitle(thread) });
+        if (move.from) touched.set(move.from, names.get(move.from) ?? "");
+        if (to) touched.set(to, names.get(to) ?? "");
+      }
+      if (moves.length) steps.push({ kind: "move", moves });
+      if (steps.length === 0) return { entry: null, skipped, created };
+      const fields = {
+        status: skipped.length ? ("partial" as const) : ("applied" as const),
+        rationale,
+        threads,
+        workstreams: [...touched].map(([id, name]) => ({ id, name })),
+        undo: { kind: "batch" as const, steps },
+        detail: skipped.length
+          ? `${skipped.length} thread(s) changed since and were left alone.`
+          : null,
+      };
+      let entry: JournalEntry;
+      if (options.into && this.journal.get(options.into)) {
+        this.journal.update(options.into, fields);
+        entry = this.journal.get(options.into)!;
+      } else
+        entry = this.journal.add({
+          action: options.action ?? "batch",
+          source,
+          ...fields,
+        });
+      for (const move of moves)
+        this.place(move.threadId, move.to, source, entry.id);
+      this.onChange();
+      return { entry, skipped, created };
     });
   }
 
