@@ -6,6 +6,9 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { registerCli } from "./cli.ts";
 import { Analyzer } from "./analyzer.ts";
+import { Bootstrap } from "./bootstrap.ts";
+import { Evolution } from "./evolution.ts";
+import { WorkstreamMap } from "./map.ts";
 import { rpcContract } from "./contract.ts";
 import { hostContract } from "./inference/contract.ts";
 import { openDatabase } from "./db.ts";
@@ -22,6 +25,12 @@ const RECONCILE_DEBOUNCE_MS = 1_500;
  * the default. Add one only after it passes.
  */
 export const MODELS = ["google/gemini-3.1-flash-lite"] as const;
+/** Stronger fast models for the one-time assignment (SPEC D7). */
+export const ORGANIZE_MODELS = [
+  "openai/gpt-6-sol-fast",
+  "google/gemini-3.1-flash-lite",
+] as const;
+const EVOLVE_DEBOUNCE_MS = 15_000;
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
@@ -54,6 +63,30 @@ export default async function plugin(bb: BbPluginApi) {
         "The machine whose Pi runs analysis. Blank uses the only connected machine.",
       default: "",
     },
+    organizeModel: {
+      type: "select",
+      label: "Organizing model",
+      description:
+        "Proposes the workstream map and files threads when you organize, once.",
+      options: [...ORGANIZE_MODELS],
+      default: ORGANIZE_MODELS[0],
+    },
+    evolution: {
+      type: "select",
+      label: "Workstream changes",
+      description:
+        "When threads show a workstream should split, merge, or move: apply the change with an Undo banner, or ask first.",
+      options: ["auto", "ask"],
+      default: "auto",
+    },
+    sensitivity: {
+      type: "select",
+      label: "Change sensitivity",
+      description:
+        "How much shared work proposes a new workstream: responsive (2 threads), balanced (3), or conservative (4).",
+      options: ["responsive", "balanced", "conservative"],
+      default: "responsive",
+    },
   });
 
   const db = openDatabase(bb);
@@ -78,21 +111,64 @@ export default async function plugin(bb: BbPluginApi) {
       );
     return host.id;
   };
+  const complete = async (prompt: string, model: string) =>
+    inference.call(
+      "complete",
+      { prompt, model },
+      { hostId: await analysisHost(), timeoutMs: 95_000 },
+    );
+  let evolveSoon = () => {};
   const analyzer = new Analyzer({
     sdk: () => bb.sdk,
     db,
     model: async () => (await settings.get()).model,
-    complete: async (prompt, model) =>
-      inference.call(
-        "complete",
-        { prompt, model },
-        { hostId: await analysisHost(), timeoutMs: 95_000 },
-      ),
-    onChange: notify,
+    complete,
+    onChange: () => {
+      notify();
+      evolveSoon();
+    },
     log: (message) => bb.log.warn(message),
     info: (message) => bb.log.info(message),
   });
   bb.onDispose(() => analyzer.dispose());
+  const map = new WorkstreamMap(db);
+  const bootstrap = new Bootstrap({
+    db,
+    service,
+    analyzer,
+    map,
+    complete,
+    model: async () => (await settings.get()).organizeModel,
+    onChange: notify,
+  });
+  const evolution = new Evolution({
+    sdk: () => bb.sdk,
+    db,
+    service,
+    journal,
+    map,
+    analyzer,
+    bootstrap,
+    complete,
+    model: async () => (await settings.get()).model,
+    settings: async () => {
+      const values = await settings.get();
+      return { evolution: values.evolution, sensitivity: values.sensitivity };
+    },
+    onChange: notify,
+    log: (message) => bb.log.warn(message),
+  });
+  let evolveTimer: ReturnType<typeof setTimeout> | null = null;
+  evolveSoon = () => {
+    if (evolveTimer) return;
+    evolveTimer = setTimeout(() => {
+      evolveTimer = null;
+      void evolution.tick();
+    }, EVOLVE_DEBOUNCE_MS);
+  };
+  bb.onDispose(() => {
+    if (evolveTimer) clearTimeout(evolveTimer);
+  });
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   const reconcileSoon = (delay = RECONCILE_DEBOUNCE_MS) => {
@@ -101,7 +177,10 @@ export default async function plugin(bb: BbPluginApi) {
       timer = null;
       service
         .reconcile()
-        .then(() => analyzer.catchUp(service.threads()))
+        .then(() => {
+          analyzer.catchUp(service.threads());
+          return evolution.tick();
+        })
         .catch((error: unknown) =>
           bb.log.warn(`Reconcile failed: ${String(error)}`),
         );
@@ -144,7 +223,55 @@ export default async function plugin(bb: BbPluginApi) {
   };
 
   bb.rpc.register(rpcContract, {
-    state: async () => ({ ...service.state(), analysis: analyzer.all() }),
+    state: async () => ({
+      ...service.state(),
+      workstreams: Object.fromEntries(map.list().map((r) => [r.sectionId, r])),
+      analysis: analyzer.all(),
+      proposals: evolution.proposals(),
+      bootstrapped: bootstrap.isDone(),
+    }),
+    editWorkstream: ({ sectionId, description, aliases }) =>
+      userFacing(async () => {
+        const record = map.get(sectionId);
+        if (!record) throw new UserError("That workstream no longer exists.");
+        map.edit(sectionId, { description, aliases });
+        journal.add({
+          action: "edit-workstream",
+          source: "user",
+          rationale: `Edited ${record.name}'s ${description !== undefined ? "description" : "aliases"}`,
+          threads: [],
+          workstreams: [{ id: sectionId, name: record.name }],
+          undo: null,
+        });
+        notify();
+        return { ok: true as const };
+      }),
+    proposal: ({ id, action }) =>
+      userFacing(async () => {
+        if (action === "accept") await evolution.accept(id);
+        else if (action === "dismiss") evolution.dismiss(id);
+        else evolution.acknowledge(id);
+        return { ok: true as const };
+      }),
+    bootstrap: (input) =>
+      userFacing(async () => {
+        // Model steps take seconds; they report progress over realtime.
+        const settle = (work: Promise<unknown>) =>
+          Promise.race([
+            work.catch((error: unknown) =>
+              bb.log.warn(`Organizing failed: ${String(error)}`),
+            ),
+            new Promise((resolve) => setTimeout(resolve, 300)),
+          ]);
+        if (input.action === "start") await settle(bootstrap.start());
+        else if (input.action === "assign")
+          await settle(bootstrap.assign(input.decisions));
+        else if (input.action === "apply")
+          await settle(bootstrap.apply(input.overrides));
+        else if (input.action === "skip") bootstrap.skip();
+        else if (input.action === "cancel") bootstrap.cancel();
+        return { state: bootstrap.state(), bootstrapped: bootstrap.isDone() };
+      }),
     journal: async (input) => ({
       entries: journal.list({
         limit: input?.limit,
@@ -168,8 +295,12 @@ export default async function plugin(bb: BbPluginApi) {
       })),
     undo: ({ entryId }) =>
       userFacing(async () => ({ entry: await service.undo(entryId) })),
-    refresh: async () => ({ changed: await service.reconcile() }),
+    refresh: async () => {
+      const changed = await service.reconcile();
+      await evolution.tick();
+      return { changed };
+    },
   });
 
-  registerCli(bb, service, journal, analyzer);
+  registerCli(bb, service, journal, analyzer, bootstrap, map);
 }

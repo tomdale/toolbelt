@@ -23,12 +23,24 @@ export const actionSchema = z.enum([
   "rename-workstream",
   "delete-workstream",
   "undo",
+  /** Several changes applied and undone together (bootstrap, proposals). */
+  "batch",
+  /** A workstream proposal waiting for a decision (SPEC §9). */
+  "proposal",
+  "edit-workstream",
 ]);
 export type Action = z.infer<typeof actionSchema>;
 
-export const statusSchema = z.enum(["applied", "partial", "undone", "failed"]);
+export const statusSchema = z.enum([
+  "applied",
+  "partial",
+  "undone",
+  "failed",
+  "pending",
+  "dismissed",
+]);
 
-const undoSchema = z.discriminatedUnion("kind", [
+const stepSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("move"),
     moves: z.array(
@@ -39,13 +51,28 @@ const undoSchema = z.discriminatedUnion("kind", [
       }),
     ),
   }),
-  z.object({ kind: z.literal("delete-section"), sectionId: z.string() }),
+  z.object({
+    kind: z.literal("delete-section"),
+    sectionId: z.string(),
+    /**
+     * Set inside a batch: an undo that finds the section still in use skips
+     * it instead of failing the whole batch.
+     */
+    inBatch: z.boolean().optional(),
+  }),
   z.object({
     kind: z.literal("rename-section"),
     sectionId: z.string(),
     from: z.string(),
     to: z.string(),
   }),
+]);
+export type UndoStep = z.infer<typeof stepSchema>;
+
+const undoSchema = z.union([
+  stepSchema,
+  /** Undone in reverse order as one change. */
+  z.object({ kind: z.literal("batch"), steps: z.array(stepSchema) }),
 ]);
 export type UndoPlan = z.infer<typeof undoSchema>;
 
@@ -176,6 +203,37 @@ export class Journal {
         limit,
       }) as Row[];
     return rows.map(fromRow);
+  }
+
+  /** Updates a pending proposal once it is applied, dismissed, or expired. */
+  update(
+    id: string,
+    patch: Partial<
+      Pick<
+        JournalEntry,
+        "status" | "rationale" | "detail" | "undo" | "threads" | "workstreams"
+      >
+    >,
+  ): void {
+    const current = this.get(id);
+    if (!current) return;
+    const next = { ...current, ...patch };
+    this.db
+      .prepare(
+        `UPDATE ws_journal SET status = @status, rationale = @rationale, detail = @detail,
+           undo = @undo, subject = @subject WHERE id = @id`,
+      )
+      .run({
+        id,
+        status: next.status,
+        rationale: clip(next.rationale),
+        detail: next.detail,
+        undo: next.undo ? JSON.stringify(next.undo) : null,
+        subject: JSON.stringify({
+          threads: next.threads,
+          workstreams: next.workstreams,
+        }),
+      });
   }
 
   markUndone(id: string, undoneBy: string): void {

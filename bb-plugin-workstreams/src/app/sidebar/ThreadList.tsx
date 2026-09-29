@@ -99,6 +99,7 @@ export function WorkstreamsThreadList({
           now={now}
           context={band ? bandContext(row) : undefined}
           work={ws.work(row.thread)}
+          proposal={ws.proposalOf.get(row.thread.id)?.text}
           onNavigate={onNavigate}
         />
       </li>

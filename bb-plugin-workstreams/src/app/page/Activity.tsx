@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { useBbNavigate, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
+import {
+  useBbNavigate,
+  useRealtime,
+  useRpc,
+  type PluginSidebarSection,
+} from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
 import type { RpcContract } from "../../server/contract.ts";
+import type { ProposalView } from "../../server/evolution.ts";
 import type { JournalEntry } from "../../server/journal.ts";
 
 const ACTION_LABEL: Record<JournalEntry["action"], string> = {
@@ -10,6 +16,9 @@ const ACTION_LABEL: Record<JournalEntry["action"], string> = {
   "rename-workstream": "Rename",
   "delete-workstream": "Delete",
   undo: "Undo",
+  batch: "Reorganize",
+  proposal: "Proposal",
+  "edit-workstream": "Edit",
 };
 
 const SOURCE_LABEL: Record<JournalEntry["source"], string> = {
@@ -35,14 +44,30 @@ function day(at: number): string {
   });
 }
 
-/** The Activity log: every change Workstreams made or observed (SPEC §11.5). */
+/**
+ * The Activity log: every change Workstreams made or observed, and every
+ * proposal (SPEC §11.5), with filters by workstream, action, and needs-review.
+ */
 export function Activity({
   rpc,
+  proposals = [],
+  focus = null,
+  sections = [],
 }: {
   rpc: ReturnType<typeof useRpc<RpcContract>>;
+  proposals?: readonly ProposalView[];
+  /** A proposal id to review first (deep link from a banner). */
+  focus?: string | null;
+  sections?: readonly PluginSidebarSection[];
 }) {
   const navigate = useBbNavigate();
   const [external, setExternal] = useState(false);
+  const [workstream, setWorkstream] = useState("");
+  const [action, setAction] = useState("");
+  const [needsReview, setNeedsReview] = useState(focus !== null);
+  const proposalOf = new Map(
+    proposals.filter((p) => p.entryId).map((p) => [p.entryId!, p]),
+  );
   const [entries, setEntries] = useState<JournalEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(async () => {
@@ -68,8 +93,24 @@ export function Activity({
     }
   };
 
+  const decide = async (id: string, verdict: "accept" | "dismiss") => {
+    setError(null);
+    try {
+      await rpc.call("proposal", { id, action: verdict });
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const shown = (entries ?? []).filter(
+    (entry) =>
+      (!workstream || entry.workstreams.some((w) => w.id === workstream)) &&
+      (!action || entry.action === action) &&
+      (!needsReview || entry.status === "pending"),
+  );
   const days: { label: string; entries: JournalEntry[] }[] = [];
-  for (const entry of entries ?? []) {
+  for (const entry of shown) {
     const label = day(entry.at);
     const last = days[days.length - 1];
     if (last?.label === label) last.entries.push(entry);
@@ -78,14 +119,50 @@ export function Activity({
 
   return (
     <div className="mt-5">
-      <label className="flex items-center gap-2 text-xs text-muted-foreground">
-        <input
-          type="checkbox"
-          checked={external}
-          onChange={(event) => setExternal(event.target.checked)}
-        />
-        Include changes made outside Workstreams
-      </label>
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <select
+          aria-label="Filter by workstream"
+          value={workstream}
+          onChange={(event) => setWorkstream(event.target.value)}
+          className="h-7 rounded-md border border-input bg-transparent px-1"
+        >
+          <option value="">All workstreams</option>
+          {sections.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Filter by action"
+          value={action}
+          onChange={(event) => setAction(event.target.value)}
+          className="h-7 rounded-md border border-input bg-transparent px-1"
+        >
+          <option value="">All actions</option>
+          {Object.entries(ACTION_LABEL).map(([key, label]) => (
+            <option key={key} value={key}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <label className="flex items-center gap-1.5">
+          <input
+            type="checkbox"
+            checked={needsReview}
+            onChange={(event) => setNeedsReview(event.target.checked)}
+          />
+          Needs review
+        </label>
+        <label className="flex items-center gap-1.5">
+          <input
+            type="checkbox"
+            checked={external}
+            onChange={(event) => setExternal(event.target.checked)}
+          />
+          Include changes made outside Workstreams
+        </label>
+      </div>
       {error ? (
         <p role="alert" className="mt-3 text-xs text-destructive">
           {error}
@@ -105,7 +182,11 @@ export function Activity({
                 key={entry.id}
                 className={cn(
                   "flex items-baseline gap-3 py-1.5 text-sm",
-                  entry.status === "undone" && "opacity-60",
+                  (entry.status === "undone" || entry.status === "dismissed") &&
+                    "opacity-60",
+                  focus !== null &&
+                    proposalOf.get(entry.id)?.id === focus &&
+                    "rounded-md bg-state-hover",
                 )}
               >
                 <time
@@ -142,8 +223,33 @@ export function Activity({
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {SOURCE_LABEL[entry.source]}
                 </span>
-                <span className="w-14 shrink-0 text-right text-xs">
-                  {entry.status === "undone" ? (
+                <span className="w-24 shrink-0 text-right text-xs">
+                  {entry.status === "pending" && proposalOf.get(entry.id) ? (
+                    <span className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void decide(proposalOf.get(entry.id)!.id, "accept")
+                        }
+                        className="text-primary hover:underline"
+                      >
+                        {proposalOf.get(entry.id)!.accept}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void decide(proposalOf.get(entry.id)!.id, "dismiss")
+                        }
+                        className="text-muted-foreground hover:underline"
+                      >
+                        Not now
+                      </button>
+                    </span>
+                  ) : entry.status === "pending" ? (
+                    <span className="text-muted-foreground">pending</span>
+                  ) : entry.status === "dismissed" ? (
+                    <span className="text-muted-foreground">dismissed</span>
+                  ) : entry.status === "undone" ? (
                     <span className="text-muted-foreground">undone</span>
                   ) : entry.undo ? (
                     <button
