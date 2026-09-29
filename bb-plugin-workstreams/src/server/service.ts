@@ -15,6 +15,7 @@ import {
   listActiveThreads,
   listSections,
   sectionIsEmpty,
+  type InventoryThread,
 } from "./inventory.ts";
 import type { JournalEntry, Journal, Source } from "./journal.ts";
 
@@ -40,6 +41,7 @@ const NAME_MAX = 80;
 export class WorkstreamService {
   private queue: Promise<unknown> = Promise.resolve();
   private lastReconciledAt: number | null = null;
+  private lastThreads: InventoryThread[] = [];
 
   constructor(
     private readonly sdk: () => Sdk,
@@ -459,9 +461,25 @@ export class WorkstreamService {
       });
       tx();
       this.lastReconciledAt = at;
+      this.lastThreads = threads;
       if (changed) this.onChange();
       return changed;
     });
+  }
+
+  /** Visible, non-archived threads as of the last reconcile. */
+  threads(): readonly InventoryThread[] {
+    return this.lastThreads;
+  }
+
+  /** Drops per-thread records once BB has deleted the thread. */
+  forget(threadId: string): void {
+    this.db
+      .prepare("DELETE FROM ws_placement WHERE thread_id = ?")
+      .run(threadId);
+    this.db
+      .prepare("DELETE FROM ws_seen_thread WHERE thread_id = ?")
+      .run(threadId);
   }
 
   private async isVisibleActive(threadId: string): Promise<boolean> {

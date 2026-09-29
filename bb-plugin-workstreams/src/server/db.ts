@@ -47,6 +47,12 @@ const MIGRATIONS = [
   )`,
   "CREATE TABLE ws_seen_section (section_id TEXT PRIMARY KEY, name TEXT NOT NULL)",
   "CREATE TABLE ws_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+  `CREATE TABLE ws_analysis (
+    thread_id TEXT PRIMARY KEY,
+    revision INTEGER NOT NULL,
+    at INTEGER NOT NULL,
+    result TEXT NOT NULL
+  )`,
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

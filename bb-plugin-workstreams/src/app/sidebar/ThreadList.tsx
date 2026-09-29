@@ -77,6 +77,11 @@ export function WorkstreamsThreadList({
       },
     });
 
+  const bandContext = (row: RowModel<PluginSidebarThread>) => {
+    const via = projection.needsYouVia.get(row.thread.id);
+    if (via?.length) return `via ${via[0]!.displayTitle}`;
+    return row.workstreamId ? nameOf.get(row.workstreamId) : "Unsorted";
+  };
   const renderRow = (row: RowModel<PluginSidebarThread>, band?: boolean) => (
     <RowMenu
       key={row.thread.id}
@@ -92,13 +97,8 @@ export function WorkstreamsThreadList({
           depth={band ? 0 : row.depth}
           active={row.thread.id === activeThreadId}
           now={now}
-          context={
-            band
-              ? row.workstreamId
-                ? nameOf.get(row.workstreamId)
-                : "Unsorted"
-              : undefined
-          }
+          context={band ? bandContext(row) : undefined}
+          work={ws.work(row.thread)}
           onNavigate={onNavigate}
         />
       </li>

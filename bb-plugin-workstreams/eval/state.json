@@ -1,0 +1,79 @@
+[
+  {
+    "id": "ask-choice",
+    "title": "Add SSO",
+    "excerpts": "User: Add SSO to the Quarry app. Assistant: I found two incompatible auth approaches. Should I use OIDC or SAML? No code has been changed yet.",
+    "expected": ["Quarry"],
+    "expectedState": "needs_decision"
+  },
+  {
+    "id": "ask-permission",
+    "title": "Clean up stale branches",
+    "excerpts": "User: Find stale branches in the Lumen repo. Assistant: Found 14 branches with no commits in 90 days. Want me to delete them from origin?",
+    "expected": ["Lumen"],
+    "expectedState": "needs_decision"
+  },
+  {
+    "id": "ask-credential",
+    "title": "Connect staging database",
+    "excerpts": "User: Hook the Quarry staging database up to the admin panel. Assistant: The connection code is in place, but I can't reach staging without a database password. Please add QUARRY_STAGING_DB_URL to the environment, then I'll run the migration.",
+    "expected": ["Quarry"],
+    "expectedState": "needs_decision"
+  },
+  {
+    "id": "review-pr",
+    "title": "Fix cache invalidation",
+    "excerpts": "User: Fix Lumen's stale build cache. Assistant: Fixed invalidation on config changes, added a regression test, and opened PR #412. Everything passes; it's ready for your review.",
+    "expected": ["Lumen"],
+    "expectedState": "review"
+  },
+  {
+    "id": "review-try",
+    "title": "Dark mode for the docs site",
+    "excerpts": "User: Add dark mode to the Quarry docs site. Assistant: Dark mode is implemented behind the theme toggle and the preview is running at localhost:4000. Take a look and tell me what to adjust. Let me know if you want any other changes.",
+    "expected": ["Quarry"],
+    "expectedState": "review"
+  },
+  {
+    "id": "blocked-upstream",
+    "title": "Register skills at runtime",
+    "excerpts": "User: Make the Lumen plugin loader register skills at runtime. Assistant: The loader can't do this until the host SDK exposes a skill registration API. I filed an upstream issue and will resume once it lands.",
+    "expected": ["Lumen"],
+    "expectedState": "blocked"
+  },
+  {
+    "id": "blocked-ci",
+    "title": "Update release pipeline",
+    "excerpts": "User: Move Quarry's release pipeline to the new runners. Assistant: The workflow is updated and pushed. CI is queued behind the runner pool migration the infra team is doing today; I'm waiting on that before I can verify.",
+    "expected": ["Quarry"],
+    "expectedState": "blocked"
+  },
+  {
+    "id": "progress",
+    "title": "Port parser to Rust",
+    "excerpts": "User: Port the Lumen config parser to Rust. Assistant: Ported the tokenizer and half of the grammar. Next I'm doing the include directives, then the test suite.",
+    "expected": ["Lumen"],
+    "expectedState": "in_progress"
+  },
+  {
+    "id": "done-answer",
+    "title": "How does the cache key work?",
+    "excerpts": "User: How does Lumen compute its cache key? Assistant: It hashes the resolved config, the lockfile, and every input file's contents; environment variables only count if listed in cacheEnv. That's the whole key.",
+    "expected": ["Lumen"],
+    "expectedState": "done"
+  },
+  {
+    "id": "done-status",
+    "title": "Coordinate project work",
+    "excerpts": "User: Give a status-only summary of active work across Lumen and Quarry. This is a status request, not a request to implement anything. Assistant: Summarized progress and blockers for both; no further work requested.",
+    "expected": ["Unclassified", "Cross-project coordination"],
+    "expectedState": "done"
+  },
+  {
+    "id": "done-merged",
+    "title": "Bump dependencies",
+    "excerpts": "User: Bump Quarry's dependencies and merge if CI passes. Assistant: Bumped 23 packages, CI passed, and I merged the PR to main. Nothing else is pending.",
+    "expected": ["Quarry"],
+    "expectedState": "done"
+  }
+]

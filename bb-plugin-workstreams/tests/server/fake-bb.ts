@@ -4,6 +4,7 @@
  */
 import {
   createFakePluginHost,
+  makeHostResponse,
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../src/server/index.ts";
@@ -16,8 +17,32 @@ type Section = {
   updatedAt: number;
 };
 
-export async function fakeWorld() {
+export type FakeCompletion = (call: {
+  prompt: string;
+  model: string;
+}) => string | Promise<string>;
+
+const DEFAULT_ANSWER = JSON.stringify({
+  recap: "Fixed the bug; tests pass.",
+  state: "review",
+  needsYou: null,
+  subject: "Alpha",
+  drift: null,
+});
+
+export async function fakeWorld(
+  options: {
+    complete?: FakeCompletion;
+    settings?: Record<string, string>;
+  } = {},
+) {
   const threads = new Map<string, Thread>();
+  /** Per-thread conversation served by promptHistory/events/output. */
+  const conversations = new Map<
+    string,
+    { requests: string[]; output: string | null }
+  >();
+  const completions: { prompt: string; model: string }[] = [];
   const sections: Section[] = [];
   let nextSection = 1;
   const addThread = (id: string, overrides: Partial<Thread> = {}) => {
@@ -43,10 +68,42 @@ export async function fakeWorld() {
   const missing = (id: string) =>
     Object.assign(new Error(`Thread ${id} not found`), { status: 404 });
 
+  const text = (value: string) => [{ type: "text", text: value }];
   const host = createFakePluginHost({
     pluginId: "workstreams",
+    settings: options.settings,
+    experimental_callHostRpc: async (call) => {
+      const input = call.input as { prompt: string; model: string };
+      completions.push(input);
+      const answer = await (options.complete?.(input) ?? DEFAULT_ANSWER);
+      return { text: answer, usage: { input: 100, output: 20, cost: 0.0001 } };
+    },
     sdk: {
+      hosts: {
+        list: async () => [
+          makeHostResponse({ id: "host_1", status: "connected" } as never),
+        ],
+      },
       threads: {
+        promptHistory: async ({ threadId }: { threadId: string }) =>
+          [...(conversations.get(threadId)?.requests ?? [])]
+            .reverse()
+            .map((value, i) => ({
+              id: `p${i}`,
+              createdAt: i,
+              input: text(value),
+            })),
+        output: async ({ threadId }: { threadId: string }) => ({
+          output: conversations.get(threadId)?.output ?? null,
+        }),
+        events: {
+          list: async ({ threadId }: { threadId: string }) =>
+            (conversations.get(threadId)?.requests ?? []).map((value, i) => ({
+              seq: i + 1,
+              type: "client/turn/requested",
+              data: { input: text(value) },
+            })),
+        },
         list: async (args: {
           archived?: boolean;
           includeHidden?: boolean;
@@ -103,7 +160,22 @@ export async function fakeWorld() {
     } as never,
   });
   await plugin(host.bb);
-  // Let the initial (seeding) reconcile run before tests act.
+  // Let the load-time reconcile and analysis catch-up run on the empty world
+  // before tests act, then seed explicitly.
+  await new Promise((resolve) => setTimeout(resolve, 5));
   await host.harness.behavior.callRpc("refresh", null);
-  return { ...host, threads, sections, addThread, addSection };
+  const converse = (
+    id: string,
+    requests: string[],
+    output: string | null = "Done.",
+  ) => conversations.set(id, { requests, output });
+  return {
+    ...host,
+    threads,
+    sections,
+    addThread,
+    addSection,
+    converse,
+    completions,
+  };
 }

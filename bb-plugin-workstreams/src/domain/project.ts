@@ -51,6 +51,12 @@ export type Projection<T extends WorkstreamThread> = {
   /** Workstreams with no visible threads, or none active within the window. */
   readonly dormant: readonly Group<T>[];
   readonly rowOf: ReadonlyMap<string, Row<T>>;
+  /**
+   * Children whose question folded into their parent's newer one, keyed by
+   * parent id. Folded children stay in their group but leave the Needs you
+   * band and counts, so one decision isn't counted twice.
+   */
+  readonly needsYouVia: ReadonlyMap<string, readonly T[]>;
 };
 
 export const UNSORTED_ID = "unsorted";
@@ -121,6 +127,26 @@ export function projectWorkstreams<T extends WorkstreamThread>(
     rowsBySection.set(key, rows);
   }
 
+  // A child's question folds into its parent when the parent's own
+  // needs-you turn is at least as recent (SPEC §10: timestamps only).
+  const needsYouVia = new Map<string, T[]>();
+  const folded = new Set<string>();
+  for (const row of rowOf.values()) {
+    if (!row.needsYou || !row.thread.parentThreadId) continue;
+    const parent = rowOf.get(row.thread.parentThreadId);
+    if (
+      !parent?.needsYou ||
+      parent.thread.latestAttentionAt < row.thread.latestAttentionAt
+    )
+      continue;
+    folded.add(row.thread.id);
+    needsYouVia.set(parent.thread.id, [
+      ...(needsYouVia.get(parent.thread.id) ?? []),
+      row.thread,
+    ]);
+  }
+  const counts = (row: Row<T>) => row.needsYou && !folded.has(row.thread.id);
+
   const group = (id: string, name: string): Group<T> => {
     const rows = rowsBySection.get(id) ?? [];
     return {
@@ -128,7 +154,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
       name,
       rows,
       total: rows.length,
-      needsYou: rows.filter((row) => row.needsYou).length,
+      needsYou: rows.filter(counts).length,
       lastActiveAt: Math.max(
         0,
         ...rows.map((row) => row.thread.latestAttentionAt),
@@ -149,7 +175,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
     b.thread.latestAttentionAt - a.thread.latestAttentionAt ||
     a.thread.id.localeCompare(b.thread.id);
   const all = [...rowOf.values()];
-  const needsYouRows = all.filter((row) => row.needsYou).sort(byAttention);
+  const needsYouRows = all.filter(counts).sort(byAttention);
   const recent = all
     .filter((row) => !row.needsYou)
     .sort(byAttention)
@@ -162,6 +188,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
     unsorted: group(UNSORTED_ID, "Unsorted"),
     dormant,
     rowOf,
+    needsYouVia,
   };
 }
 
