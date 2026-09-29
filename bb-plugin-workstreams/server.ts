@@ -57,6 +57,7 @@ import {
 } from "./context";
 
 const viewSchema = snapshotSchema.extend({
+  sections: z.record(z.string(), z.string()).default({}),
   log: z.array(logEntrySchema),
   /** Banner image URL by group name, for groups that have one. */
   banners: z.record(z.string(), z.string()),
@@ -1196,6 +1197,11 @@ export default async function plugin(bb: BbPluginApi) {
   };
   const snapshot = async (): Promise<View> => ({
     threads: await inventory(),
+    sections: fixture
+      ? {}
+      : Object.fromEntries(
+          (await bb.sdk.threadSections.list()).map((s) => [s.id, s.name]),
+        ),
     analysis,
     progress,
     error,

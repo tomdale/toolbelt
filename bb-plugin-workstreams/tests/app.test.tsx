@@ -31,6 +31,7 @@ const initial: View = {
     },
   ],
   analysis: null,
+  sections: {},
   progress: null,
   error: null,
   fixture: null,
@@ -119,6 +120,65 @@ it("shows singleton summaries under Other groups", async () => {
   );
   v.lifecycle.unmount();
 });
+it("searches and filters rows within root-owned groups without moving children", async () => {
+  const v = await mount({
+    ...initial,
+    sections: { native: "Native", other: "Other" },
+    threads: [
+      {
+        ...initial.threads[0],
+        id: "parent",
+        title: "Parent",
+        sectionId: "native",
+      },
+      {
+        ...initial.threads[1],
+        id: "child",
+        title: "Child",
+        sectionId: "other",
+        parentThreadId: "parent",
+        hasPendingInteraction: true,
+      },
+    ],
+    analysis: {
+      at: 1,
+      needsYouCount: 1,
+      warnings: [],
+      summaries: {},
+      items: [
+        {
+          threadId: "parent",
+          group: "Alpha",
+          recap: "Root recap",
+          updatedAt: 1,
+          refreshed: true,
+        },
+        {
+          threadId: "child",
+          group: "Beta",
+          recap: "Child recap",
+          updatedAt: 1,
+          refreshed: true,
+        },
+      ],
+    },
+  });
+  await v.findByRole("heading", { name: "Native 2" });
+  expect(v.queryByRole("heading", { name: /Other|Beta/ })).toBeNull();
+  fireEvent.change(v.getByRole("textbox", { name: "Search threads" }), {
+    target: { value: "Child recap" },
+  });
+  expect(v.getByText("Child")).toBeTruthy();
+  expect(v.queryByText("Parent")).toBeNull();
+  expect(v.getByRole("heading", { name: "Other groups 1" })).toBeTruthy();
+  fireEvent.change(v.getByRole("textbox", { name: "Search threads" }), {
+    target: { value: "" },
+  });
+  expect(v.getByRole("button", { name: "Native 2" })).toBeTruthy();
+  expect(v.getByText("Child")).toBeTruthy();
+  v.lifecycle.unmount();
+});
+
 it("manual analysis regroups threads across repositories", async () => {
   const v = await mount();
   await v.findByText("Fix Slack replies");
