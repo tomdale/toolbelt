@@ -120,6 +120,51 @@ export const analysisSchema = z.object({
     .optional(),
 });
 export type Analysis = z.infer<typeof analysisSchema>;
+const DISPATCH_LABEL = /\bdispatch(?:es|ed|ing)?\b/i;
+/** Keep historical thread text, but prevent stale derived labels from resurfacing in current views. */
+export function cleanDerivedAnalysis(
+  analysis: Analysis | null,
+): Analysis | null {
+  if (!analysis) return null;
+  return {
+    ...analysis,
+    items: analysis.items.map((item) => {
+      const group = DISPATCH_LABEL.test(item.group) ? UNCLASSIFIED : item.group;
+      const staleText =
+        DISPATCH_LABEL.test(item.title ?? "") ||
+        DISPATCH_LABEL.test(item.recap) ||
+        (item.drift &&
+          (DISPATCH_LABEL.test(item.drift.from) ||
+            DISPATCH_LABEL.test(item.drift.to) ||
+            DISPATCH_LABEL.test(item.drift.mainlineTitle) ||
+            DISPATCH_LABEL.test(item.drift.sideTitle))) ||
+        group !== item.group;
+      return {
+        ...item,
+        group,
+        ...(staleText
+          ? {
+              title: undefined,
+              recap: "Review the latest thread activity for current status.",
+              drift: null,
+            }
+          : {}),
+      };
+    }),
+    summaries: Object.fromEntries(
+      Object.entries(analysis.summaries).filter(
+        ([name, summary]) =>
+          !DISPATCH_LABEL.test(name) &&
+          !DISPATCH_LABEL.test(summary.about) &&
+          !DISPATCH_LABEL.test(summary.status) &&
+          !DISPATCH_LABEL.test(summary.motif),
+      ),
+    ),
+    warnings: analysis.warnings.filter(
+      (warning) => !DISPATCH_LABEL.test(warning),
+    ),
+  };
+}
 export const progressSchema = z.object({
   stage: z.enum(["reading", "classifying"]),
   completed: z.number(),
