@@ -5,6 +5,7 @@
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { registerCli } from "./cli.ts";
+import { refreshShapes, registerAgentInstructions } from "./agents.ts";
 import { Analyzer } from "./analyzer.ts";
 import { Bootstrap } from "./bootstrap.ts";
 import { Evolution } from "./evolution.ts";
@@ -139,6 +140,7 @@ export default async function plugin(bb: BbPluginApi) {
     info: (message) => bb.log.info(message),
   });
   bb.onDispose(() => analyzer.dispose());
+  registerAgentInstructions(bb, db);
   const map = new WorkstreamMap(db);
   const bootstrap = new Bootstrap({
     db,
@@ -259,6 +261,11 @@ export default async function plugin(bb: BbPluginApi) {
         .reconcile()
         .then(() => {
           analyzer.catchUp(service.threads());
+          void refreshShapes(bb.sdk, db, async (hostId, path) =>
+            inference.call("probe", { path }, { hostId, timeoutMs: 15_000 }),
+          ).catch((error: unknown) =>
+            bb.log.warn(`Project shape check failed: ${String(error)}`),
+          );
           return evolution.tick();
         })
         .catch((error: unknown) =>
@@ -283,6 +290,15 @@ export default async function plugin(bb: BbPluginApi) {
       notify();
       reconcileSoon();
     });
+  bb.events.on("thread.created", ({ thread }) => {
+    if (thread.visibility !== "hidden" && thread.archivedAt === null)
+      service.seeThread(
+        thread.id,
+        thread.sectionId ?? null,
+        thread.parentThreadId ?? null,
+        thread.title ?? thread.titleFallback ?? undefined,
+      );
+  });
   bb.events.on("thread.deleted", ({ thread }) => {
     analyzer.forget(thread.id);
     service.forget(thread.id);
@@ -325,6 +341,13 @@ export default async function plugin(bb: BbPluginApi) {
       workstreams: Object.fromEntries(map.list().map((r) => [r.sectionId, r])),
       analysis: analyzer.all(),
       proposals: evolution.proposals(),
+      driftDismissed: Object.fromEntries(
+        (
+          db
+            .prepare("SELECT thread_id, target FROM ws_drift_dismissed")
+            .all() as { thread_id: string; target: string }[]
+        ).map((r) => [r.thread_id, r.target]),
+      ),
       bootstrapped: bootstrap.isDone(),
     }),
     editWorkstream: ({ sectionId, description, aliases }) =>
@@ -342,6 +365,57 @@ export default async function plugin(bb: BbPluginApi) {
         });
         notify();
         return { ok: true as const };
+      }),
+    drift: ({ threadId, action }) =>
+      userFacing(async () => {
+        const analysis = analyzer.get(threadId);
+        const drift = analysis?.drift;
+        if (!analysis || !drift)
+          throw new UserError("This thread has no drift flag right now.");
+        const target = analysis.driftSectionId ?? drift.newName ?? "";
+        if (action === "dismiss") {
+          db.prepare(
+            `INSERT INTO ws_drift_dismissed (thread_id, target, at) VALUES (?, ?, ?)
+             ON CONFLICT(thread_id) DO UPDATE SET target = excluded.target, at = excluded.at`,
+          ).run(threadId, target, Date.now());
+          notify();
+          return { threadId: null };
+        }
+        if (action === "move") {
+          const sectionId =
+            analysis.driftSectionId ??
+            (drift.newName
+              ? (await service.createWorkstream(drift.newName, "user"))
+                  .sectionId
+              : null);
+          if (!sectionId) throw new UserError("No workstream to move to.");
+          await service.move(threadId, sectionId, "user");
+          return { threadId };
+        }
+        // Hand off: the thread's latest request goes where the drift points.
+        const [latest] = await bb.sdk.threads.promptHistory({
+          threadId,
+          limit: "1",
+        });
+        const request = (latest?.input ?? [])
+          .map((part) => ("text" in part ? String(part.text ?? "") : ""))
+          .join("\n")
+          .trim();
+        if (!request) throw new UserError("There's no request to hand off.");
+        const decision = await router.route(request, {
+          exclude: threadId,
+          workstreamId: analysis.driftSectionId,
+        });
+        const result = await router.execute(decision, request, "handoff", {
+          message: `Handed off from @thread:${threadId}:\n\n${request}`,
+          spawnedFrom: threadId,
+        });
+        db.prepare(
+          `INSERT INTO ws_drift_dismissed (thread_id, target, at) VALUES (?, ?, ?)
+           ON CONFLICT(thread_id) DO UPDATE SET target = excluded.target, at = excluded.at`,
+        ).run(threadId, target, Date.now());
+        notify();
+        return { threadId: result.threadId };
       }),
     proposal: ({ id, action }) =>
       userFacing(async () => {

@@ -470,6 +470,73 @@ export function registerCli(
             };
           },
         }),
+        handoff: cliCommand({
+          summary:
+            "Hand an out-of-scope request to where it belongs: a new thread, a new workstream, or (when sure) an existing thread",
+          options: {
+            request: {
+              type: "string",
+              stdin: true,
+              required: true,
+              description:
+                "The user's request, verbatim. Prefer --request-stdin with a quoted heredoc",
+            },
+            note: {
+              type: "string",
+              description: "Context for the receiving thread (one line)",
+            },
+            "dry-run": {
+              type: "boolean",
+              description: "Print the route without acting",
+            },
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ options }, ctx) {
+            const caller = ctx.threadId;
+            if (!caller)
+              throw new PluginCliError(
+                "Run handoff from inside a BB thread (BB_THREAD_ID is not set).",
+                { code: "no_caller" },
+              );
+            const request = options.request.trim();
+            if (!request)
+              throw new PluginCliError("The request is empty.", {
+                code: "empty_request",
+              });
+            if (!options["dry-run"])
+              takeHandoffSlot(caller, await turnOf(bb, caller));
+            const decision = await router
+              .route(request, { exclude: caller })
+              .catch(fail);
+            const note = options.note
+              ? ` (${options.note.replace(/\s+/g, " ").slice(0, 200)})`
+              : "";
+            // Plugin-sent messages show as the user's (SPEC §5), so the
+            // receiving thread is told where this came from.
+            const message = `Handed off from @thread:${caller}${note}:\n\n${request}`;
+            const acted = await actOn(
+              router,
+              decision,
+              request,
+              options["dry-run"],
+              "handoff",
+              { message, spawnedFrom: caller },
+            );
+            if (acted.threadId === caller)
+              throw new PluginCliError(
+                "A handoff can't go back to its own thread.",
+                {
+                  code: "handoff_to_self",
+                },
+              );
+            return {
+              exitCode: acted.outcome === "unsure" ? 3 : 0,
+              stdout: options.json
+                ? JSON.stringify(acted)
+                : describeOutcome(acted, options["dry-run"]),
+            };
+          },
+        }),
         rebuild: cliCommand({
           summary:
             "Organize every thread once: propose the workstream map, file threads, and preview the result",
@@ -572,7 +639,10 @@ export async function actOn(
   let final = decision;
   if (decision.outcome === "continue" && decision.confidence !== "high")
     final = await router.route(prompt, {
-      exclude: decision.threadId,
+      exclude: [
+        decision.threadId,
+        ...(options.spawnedFrom ? [options.spawnedFrom] : []),
+      ],
     });
   if (final.outcome === "continue" && final.confidence !== "high")
     final = { ...final, outcome: "unsure", candidates: [] } as RouteDecision;
@@ -634,4 +704,29 @@ export function describeOutcome(acted: Acted, dryRun = false): string {
   return `${verb} ${acted.outcome === "continue" ? (acted.link ?? "") : (acted.workstream ?? "")}${
     acted.link && acted.outcome !== "continue" ? `: ${acted.link}` : ""
   }\n${acted.reason}`;
+}
+
+const HANDOFFS_PER_TURN = 3;
+const handoffs = new Map<string, { turn: number; count: number }>();
+
+/** The caller's current turn, as far as BB records it. */
+async function turnOf(bb: BbPluginApi, threadId: string): Promise<number> {
+  try {
+    const thread = await bb.sdk.threads.get({ threadId });
+    return thread.latestAttentionAt ?? thread.updatedAt;
+  } catch {
+    return 0;
+  }
+}
+
+/** At most three handoffs per turn per calling thread (SPEC §5). */
+function takeHandoffSlot(caller: string, turn: number): void {
+  const current = handoffs.get(caller);
+  const count = current && current.turn === turn ? current.count : 0;
+  if (count >= HANDOFFS_PER_TURN)
+    throw new PluginCliError(
+      `This thread already handed off ${HANDOFFS_PER_TURN} requests this turn. Ask the user before handing off more.`,
+      { code: "handoff_limit" },
+    );
+  handoffs.set(caller, { turn, count: count + 1 });
 }
