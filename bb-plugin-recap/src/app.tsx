@@ -372,7 +372,6 @@ function RecapSummary({ summary }: { summary: string }) {
     return <Markdown content={summary} className="pr-6 text-sm leading-6 text-inherit" />;
   }
   const hasLedger = ledger.done.length > 0 || ledger.open.length > 0;
-  const needsYou = ledger.lead?.kind === "needs-you";
   return (
     <div>
       {ledger.goal ? (
@@ -385,31 +384,41 @@ function RecapSummary({ summary }: { summary: string }) {
           hasLedger ? "sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""
         }`}
       >
-        <section>
-          {ledger.lead ? (
-            <>
-              <h3
-                className={`${RECAP_LABEL_CLASS} ${
-                  needsYou ? "!text-amber-700 dark:!text-amber-300/90" : ""
-                }`}
-              >
-                {ledger.lead.label}
-              </h3>
-              <p
-                className={`${RECAP_BODY_CLASS} text-sky-950/90 dark:text-sky-100/90 ${
-                  needsYou ? "font-medium" : ""
-                }`}
-              >
-                {ledger.lead.text}
+        <div className="space-y-2.5">
+          {ledger.needsYou ? (
+            <section>
+              <h3 className={`${RECAP_LABEL_CLASS} !text-amber-700 dark:!text-amber-300/90`}>Needs you</h3>
+              <p className={`${RECAP_BODY_CLASS} font-medium text-sky-950/90 dark:text-sky-100/90`}>
+                {ledger.needsYou}
               </p>
-            </>
+            </section>
+          ) : null}
+          {ledger.latest.length > 0 ? (
+            <section>
+              <h3 className={RECAP_LABEL_CLASS}>Latest</h3>
+              {ledger.latest.length === 1 ? (
+                <p className={`${RECAP_BODY_CLASS} text-sky-950/90 dark:text-sky-100/90`}>{ledger.latest[0]}</p>
+              ) : (
+                <ul className="space-y-1">
+                  {ledger.latest.map((item, index) => (
+                    <li
+                      key={index}
+                      className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${RECAP_BODY_CLASS} text-sky-950/90 dark:text-sky-100/90`}
+                    >
+                      <span aria-hidden="true" className="ml-[4px] mt-[8px] h-1 w-1 rounded-full bg-current opacity-60" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           ) : null}
           {ledger.notes.map((note, index) => (
-            <p key={index} className={`mt-1.5 ${RECAP_BODY_CLASS} opacity-70`}>
+            <p key={index} className={`${RECAP_BODY_CLASS} opacity-70`}>
               {note}
             </p>
           ))}
-        </section>
+        </div>
         {hasLedger ? (
           <div className="space-y-2.5 border-sky-900/10 sm:border-l sm:pl-6 dark:border-sky-200/10">
             <LedgerList items={ledger.open} label="Open" />
