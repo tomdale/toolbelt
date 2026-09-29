@@ -194,3 +194,25 @@ describe("bootstrap", () => {
     expect(w.threads.get("loose")?.sectionId).toBeNull();
   });
 });
+
+describe("cutover", () => {
+  it("removes v1 data only after organizing, and only with --yes", async () => {
+    const { w } = await organized();
+    expect(
+      (await w.harness.behavior.runCli(["cutover", "--yes"])).exitCode,
+    ).not.toBe(0);
+    await w.harness.behavior.callRpc("bootstrap", { action: "skip" });
+    const preview = await w.harness.behavior.runCli(["cutover"]);
+    expect(preview.stdout).toContain("Would remove v1 data: 1 state rows");
+    await w.harness.behavior.runCli(["cutover", "--yes"]);
+    const tables = w.bb.storage
+      .database()
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('state', 'banners')",
+      )
+      .all();
+    expect(tables).toEqual([]);
+    // Everything else keeps working.
+    expect((await w.harness.behavior.runCli(["list"])).exitCode).toBe(0);
+  });
+});
