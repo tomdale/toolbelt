@@ -1,70 +1,75 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from "vitest";
-import { cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import { sidebarThread } from "./fixtures.ts";
 
 afterEach(cleanup);
+
+const family = () => [
+  sidebarThread("parent", { title: "Parent work" }),
+  sidebarThread("child", { title: "Child work", parentThreadId: "parent" }),
+];
 
 async function mount({
   enabled = false,
   compact = false,
-  lookup = () =>
-    ({ id: "parent", title: "Parent work" }) as {
-      id: string;
-      title: string;
-    } | null,
+  threads = family(),
 }: {
   enabled?: boolean;
   compact?: boolean;
-  lookup?: () => { id: string; title: string } | null | Promise<never>;
+  threads?: PluginSidebarThread[];
 } = {}) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   return renderSlot(
     app.threadHeaderActions[0]!,
-    { threadId: "child", projectId: "project", isCompactViewport: compact },
+    { threadId: "child", projectId: "proj_1", isCompactViewport: compact },
     {
       settings: enabled ? { showParentThreadLink: true } : {},
-      rpc: { parentLink: lookup },
+      sidebarThreads: { threads },
     },
   );
 }
 
-it("stays hidden and silent when the setting is off", async () => {
+it("stays hidden when the setting is off", async () => {
   const slot = await mount();
   expect(slot.queryByRole("button")).toBeNull();
-  expect(slot.inspection.rpcCalls).toHaveLength(0);
   slot.lifecycle.unmount();
 });
 
-it("links to the parent thread", async () => {
+it("shows the parent's title and disc and opens the parent", async () => {
   const slot = await mount({ enabled: true });
   const button = await slot.findByRole("button", {
-    name: "Go to parent thread: Parent work",
+    name: "Back to parent: Parent work",
   });
+  expect(button.textContent).toContain("‹");
+  expect(button.textContent).toContain("Parent work");
+  expect(button.querySelector(".ws-parent-link-disc")).not.toBeNull();
   fireEvent.click(button);
-  expect(slot.inspection.navigateCalls).toEqual([
-    { method: "toThread", threadId: "parent" },
+  expect(slot.inspection.sidebarActionCalls).toEqual([
+    { method: "open", threadId: "parent" },
   ]);
   slot.lifecycle.unmount();
 });
 
-it("hides for roots and failed lookups", async () => {
-  for (const lookup of [
-    () => null,
-    () => Promise.reject(new Error("offline")),
+it("hides for roots and for parents outside the live thread set", async () => {
+  for (const threads of [
+    [sidebarThread("child", { title: "Child work" })],
+    [sidebarThread("child", { parentThreadId: "missing" })],
   ]) {
-    const slot = await mount({ enabled: true, lookup });
-    await waitFor(() => expect(slot.inspection.rpcCalls).toHaveLength(1));
+    const slot = await mount({ enabled: true, threads });
     expect(slot.queryByRole("button")).toBeNull();
     slot.lifecycle.unmount();
   }
 });
 
-it("collapses to an icon on compact viewports", async () => {
+it("drops the title on compact viewports but keeps the accessible name", async () => {
   const slot = await mount({ enabled: true, compact: true });
   const button = await slot.findByRole("button", {
-    name: "Go to parent thread: Parent work",
+    name: "Back to parent: Parent work",
   });
-  expect(button.textContent).toBe("↖");
+  expect(button.textContent).toBe("‹");
+  expect(button.querySelector(".ws-parent-link-disc")).not.toBeNull();
   slot.lifecycle.unmount();
 });

@@ -7,7 +7,6 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { registerCli } from "./cli.ts";
 import { rpcContract } from "./contract.ts";
 import { openDatabase } from "./db.ts";
-import { displayTitle } from "./inventory.ts";
 import { Journal } from "./journal.ts";
 import { UserError, WorkstreamService } from "./service.ts";
 
@@ -104,18 +103,6 @@ export default async function plugin(bb: BbPluginApi) {
     undo: ({ entryId }) =>
       userFacing(async () => ({ entry: await service.undo(entryId) })),
     refresh: async () => ({ changed: await service.reconcile() }),
-    parentLink: async ({ threadId }) => {
-      try {
-        const thread = await bb.sdk.threads.get({ threadId });
-        if (!thread.parentThreadId) return null;
-        const parent = await bb.sdk.threads.get({
-          threadId: thread.parentThreadId,
-        });
-        return { id: parent.id, title: displayTitle(parent) };
-      } catch {
-        return null;
-      }
-    },
   });
 
   registerCli(bb, service, journal);

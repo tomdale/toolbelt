@@ -1,13 +1,23 @@
-import { useEffect, useState } from "react";
 import {
-  useBbNavigate,
-  useRpc,
+  experimental_useSidebarThreadActions,
+  experimental_useSidebarThreads,
   useSettings,
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
-import type { RpcContract } from "../../server/contract.ts";
 
-/** Optional link from a child thread's header to its parent. */
+/** Stable per-thread hue, so a parent's disc keeps its color everywhere. */
+function threadHue(id: string): number {
+  let hash = 0;
+  for (const character of id)
+    hash = (hash * 31 + character.charCodeAt(0)) % 360;
+  return hash;
+}
+
+/**
+ * Optional Dockside-style chip in a child thread's header that opens its
+ * parent. It reads the live sidebar thread set, so it hides for roots and for
+ * parents that are archived or hidden.
+ */
 export function ParentThreadLink({
   threadId,
   isCompactViewport,
@@ -16,41 +26,36 @@ export function ParentThreadLink({
   const enabled =
     (values as Record<string, unknown> | undefined)?.showParentThreadLink ===
     true;
-  const rpc = useRpc<RpcContract>();
-  const navigate = useBbNavigate();
-  const [result, setResult] = useState<{
-    threadId: string;
-    parent: { id: string; title: string } | null;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!enabled) return;
-    setResult(null);
-    let active = true;
-    rpc.call("parentLink", { threadId }).then(
-      (parent) => active && setResult({ threadId, parent }),
-      () => active && setResult({ threadId, parent: null }),
-    );
-    return () => {
-      active = false;
-    };
-  }, [enabled, rpc, threadId]);
-
-  const parent =
-    enabled && result?.threadId === threadId ? result.parent : null;
+  const { threads } = experimental_useSidebarThreads({
+    experimental_lifecycles: ["active"],
+  });
+  const actions = experimental_useSidebarThreadActions();
+  if (!enabled) return null;
+  const thread = threads.find((candidate) => candidate.id === threadId);
+  const parent = thread?.parentThreadId
+    ? threads.find((candidate) => candidate.id === thread.parentThreadId)
+    : undefined;
   if (!parent) return null;
-  const label = `Go to parent thread: ${parent.title}`;
+
+  const title = parent.displayTitle;
   return (
     <button
       type="button"
-      aria-label={label}
-      title={label}
-      onClick={() => navigate.toThread(parent.id)}
-      className="inline-flex h-7 max-w-56 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-state-hover hover:text-foreground"
+      aria-label={`Back to parent: ${title}`}
+      title={title}
+      onClick={() => actions.open(parent.id)}
+      className={`ws-parent-link${isCompactViewport ? " ws-parent-link-compact" : ""}`}
     >
-      <span aria-hidden="true">↖</span>
+      <span className="ws-parent-link-chevron" aria-hidden="true">
+        ‹
+      </span>
+      <span
+        className="ws-parent-link-disc"
+        aria-hidden="true"
+        style={{ backgroundColor: `oklch(0.72 0.13 ${threadHue(parent.id)})` }}
+      />
       {isCompactViewport ? null : (
-        <span className="truncate">{parent.title}</span>
+        <span className="ws-parent-link-title">{title}</span>
       )}
     </button>
   );
