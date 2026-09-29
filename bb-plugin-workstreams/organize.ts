@@ -33,12 +33,12 @@ export const actionSchema = z.discriminatedUnion("kind", [
     threadId: z.string(),
     section: z.string(),
   }),
-  /** Deletes a section no active thread uses; threadId is empty. */
   z.object({
     kind: z.literal("parent"),
     threadId: z.string(),
     parentThreadId: z.string().nullable(),
   }),
+  /** Historical log entries; organizing no longer plans native section removal. */
   z.object({
     kind: z.literal("removeSection"),
     threadId: z.literal(""),

@@ -253,8 +253,7 @@ it("splits a side quest, logs it, and undoes it", async () => {
     "Markdown viewer themes",
   );
   expect(sdk.callsTo("threads.compact")).toHaveLength(1);
-  // Hand-made sections left without active threads are removed.
-  expect(sdk.callsTo("threadSections.delete")).toEqual([[{ id: "sec_old" }]]);
+  expect(sdk.callsTo("threadSections.delete")).toHaveLength(0);
   const view = (await call("snapshot", null)) as View;
   const split = view.log.find((e) => e.action.kind === "split")!;
   expect(split).toMatchObject({
@@ -272,6 +271,59 @@ it("splits a side quest, logs it, and undoes it", async () => {
   await call("organize", null);
   expect(sdk.callsTo("threads.fork")).toHaveLength(2);
 });
+
+it.each([
+  ["manual empty", null],
+  ["archived-only", { archivedAt: 123 }],
+  ["hidden-only", { visibility: "hidden" }],
+] as const)(
+  "preserves a %s native section during organize",
+  async (_label, state) => {
+    const h = host();
+    if (state)
+      h.rows.push(
+        Object.assign(
+          makeThreadResponse({
+            id: "other",
+            projectId: "p",
+            title: "Other work",
+            environmentId: "env",
+            status: "idle",
+          }),
+          { sectionId: "sec_old", ...state },
+        ),
+      );
+    await plugin(h.bb);
+    h.bb.storage
+      .database()
+      .prepare("INSERT INTO state VALUES (?,?)")
+      .run(
+        "thread-analysis",
+        JSON.stringify(
+          analysis([
+            {
+              threadId: "a",
+              group: "Markdown viewer",
+              updatedAt: h.rows[0].updatedAt,
+            },
+          ]),
+        ),
+      );
+    const live = await h.harness.lifecycle.reload(plugin);
+    fixtures.push(live);
+    await live.harness.behavior.callRpc("organize", null);
+    const sdk = live.harness.inspection.sdk;
+    expect(sdk.callsTo("threads.update")).toContainEqual([
+      { threadId: "a", sectionId: "sec_Markdown viewer" },
+    ]);
+    expect(sdk.callsTo("threadSections.delete")).toHaveLength(0);
+    const view = (await live.harness.behavior.callRpc(
+      "snapshot",
+      null,
+    )) as View;
+    expect(view.log.map((entry) => entry.action.kind)).toEqual(["section"]);
+  },
+);
 
 it("archives a redundant idle thread with undo", async () => {
   const h = host();
