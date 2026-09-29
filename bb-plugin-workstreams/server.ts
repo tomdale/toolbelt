@@ -17,6 +17,8 @@ import {
   normalizeGroups,
   applyDrift,
   mapConcurrent,
+  MODEL,
+  groupKey,
   type Analysis,
   type Classification,
   type Drift,
@@ -43,10 +45,25 @@ import {
 import {
   describe,
   logEntrySchema,
-  planOrganize,
+  planOrganizeRun,
+  splitThreadIds,
   type Action,
   type LogEntry,
 } from "./organize";
+import {
+  analysisDiagnosticsSchema,
+  attemptError,
+  diagnosticsSummary,
+  explainGrouping,
+  filterReport,
+  normalizationSteps,
+  organizeDiagnostics,
+  organizeDiagnosticsSchema,
+  traceInput,
+  type AnalysisDiagnostics,
+  type ClassifierTrace,
+  type OrganizeDiagnostics,
+} from "./diagnostics";
 import { hostContract } from "./host-contract";
 import { isManagerTitle, managerName } from "./manager";
 import { buildSidebar } from "./sidebar-model";
@@ -102,6 +119,17 @@ export const rpcContract = defineRpcContract({
   split: { input: threadInput, output: ok },
   undo: { input: z.object({ id: z.string() }), output: ok },
   analyze: { input: z.null(), output: z.object({ ok: z.boolean() }) },
+  /** Read-only grouping diagnostics; see diagnostics.ts for what they contain. */
+  diagnostics: {
+    input: z
+      .object({
+        threadId: z.string().min(1).optional(),
+        group: z.string().min(1).max(200).optional(),
+      })
+      .strict()
+      .nullable(),
+    output: z.unknown(),
+  },
   cancel: { input: z.null(), output: z.object({ ok: z.boolean() }) },
 });
 
@@ -180,6 +208,13 @@ export default async function plugin(bb: BbPluginApi) {
       type: "string",
       label: "Analysis machine ID (blank uses the only connected machine)",
       default: "",
+    },
+    diagnostics: {
+      type: "boolean",
+      label: "Record grouping diagnostics on every analysis",
+      description:
+        "Keeps the latest run's classifier and organize decisions (thread IDs, project and group names, evidence categories, and reason codes; no conversation text) for `bb workstreams diagnose`. Diagnosed runs also ask the model to name its decisive evidence.",
+      default: false,
     },
     showParentThreadLink: {
       type: "boolean",
@@ -276,11 +311,21 @@ export default async function plugin(bb: BbPluginApi) {
       ]),
     );
     const forks = new Set(splits().map((e) => e.undo?.forkId));
-    const pinned = new Map<string, string>();
+    const pinned = new Map<
+      string,
+      { group: string; source: "split" | "section" }
+    >();
     for (const e of splits())
       if (e.action.kind === "split") {
-        pinned.set(e.action.threadId, e.action.drift.to);
-        if (e.undo?.forkId) pinned.set(e.undo.forkId, e.action.drift.from);
+        pinned.set(e.action.threadId, {
+          group: e.action.drift.to,
+          source: "split",
+        });
+        if (e.undo?.forkId)
+          pinned.set(e.undo.forkId, {
+            group: e.action.drift.from,
+            source: "split",
+          });
       }
     const previous = new Map(
       (analysis?.items ?? [])
@@ -295,7 +340,7 @@ export default async function plugin(bb: BbPluginApi) {
       // successful Workstreams assignment. A --fresh run drops the previous
       // analysis but must still respect genuinely manual sidebar moves.
       const manual = manualSectionGroup(t.sectionId, names, log, t.id);
-      if (manual) pinned.set(t.id, manual);
+      if (manual) pinned.set(t.id, { group: manual, source: "section" });
     }
     return mapConcurrent(threads, async (thread): Promise<Context> => {
       signal.throwIfAborted();
@@ -385,12 +430,13 @@ export default async function plugin(bb: BbPluginApi) {
         // Already-split threads, on either side, are not re-checked for drift,
         // and keep the groups the split gave them.
         settled: splitAt.has(thread.id) || forks.has(thread.id),
-        pinnedGroup: pinned.get(thread.id),
+        pinnedGroup: pinned.get(thread.id)?.group,
+        pinSource: pinned.get(thread.id)?.source,
         previousGroup: freshRun ? undefined : previous.get(thread.id),
       };
     });
   }
-  async function analyze(signal: AbortSignal) {
+  async function analyze(signal: AbortSignal, diagnose = false) {
     const started = Date.now();
     const stats = {
       seconds: 0,
@@ -479,19 +525,47 @@ export default async function plugin(bb: BbPluginApi) {
       batches.push(contexts.slice(i, i + BATCH_SIZE));
     let classified = 0;
     advance("classifying", 0, threads.length);
+    // Diagnostics trace each thread through the model and every code rewrite.
+    const traces = new Map<string, ClassifierTrace>();
+    const batchTraces: AnalysisDiagnostics["batches"] = [];
+    if (diagnose)
+      batches.forEach((batch, b) => {
+        batchTraces.push({
+          batch: b,
+          threads: batch.length,
+          attempts: [],
+          driftCheckFailed: false,
+        });
+        batch.forEach((context, i) =>
+          traces.set(context.id, {
+            threadId: context.id,
+            batch: b,
+            recordId: String(i + 1),
+            input: traceInput(context),
+            model: null,
+            steps: [],
+            drift: null,
+            outcome: "dropped",
+            reason: null,
+            finalGroup: null,
+          }),
+        );
+      });
     const prior = new Map(analysis?.items.map((i) => [i.threadId, i]));
     // Seeding earlier names was evaluated (eval/README.md) and increased wrong
     // merges without improving accuracy, so each run names groups afresh.
     const seed: string[] = [];
     const kept: Analysis["items"] = [];
     const items = (
-      await mapConcurrent(batches, async (batch) => {
+      await mapConcurrent(batches, async (batch, b) => {
+        const batchTrace = batchTraces[b];
         // Drift detection is a separate small call per batch, run alongside.
         const drifts = detectDrift(batch, (prompt) =>
           complete(prompt, host.id),
         ).catch(() => {
           signal.throwIfAborted();
           stats.failedCalls++;
+          if (batchTrace) batchTrace.driftCheckFailed = true;
           warnings.push(
             `Could not check ${batch.length} threads for side quests.`,
           );
@@ -505,10 +579,31 @@ export default async function plugin(bb: BbPluginApi) {
               batch,
               (prompt) => complete(prompt, host.id),
               seed,
+              diagnose
+                ? {
+                    basis: true,
+                    onRaw: (raw) => {
+                      const trace = traces.get(raw.threadId)!;
+                      const context = batch.find((c) => c.id === raw.threadId);
+                      trace.model = {
+                        group: raw.group,
+                        basis: raw.basis ?? null,
+                        equalsProject:
+                          groupKey(raw.group) === groupKey(trace.input.project),
+                        state: raw.state ?? null,
+                        titleChanged:
+                          !!raw.title && raw.title !== context?.title,
+                        archiveProposed: !!raw.archiveReason,
+                      };
+                    },
+                  }
+                : {},
             );
-          } catch {
+            batchTrace?.attempts.push({ ok: true, error: null });
+          } catch (e) {
             signal.throwIfAborted();
             stats.failedCalls++;
+            batchTrace?.attempts.push({ ok: false, error: attemptError(e) });
           }
         }
         if (!result.length) {
@@ -518,14 +613,43 @@ export default async function plugin(bb: BbPluginApi) {
           for (const t of batch) {
             const old = prior.get(t.id);
             if (old) kept.push({ ...old, refreshed: false });
+            const trace = traces.get(t.id);
+            if (trace) {
+              trace.outcome = old ? "kept-prior" : "dropped";
+              trace.reason = "batch-failed";
+              trace.finalGroup = old?.group ?? null;
+            }
           }
         }
         const found = await drifts;
         classified += batch.length;
         advance("classifying", classified, threads.length);
-        return result.map((item) =>
-          applyDrift({ ...item, drift: found.get(item.threadId) ?? null }),
-        );
+        return result.map((item) => {
+          const drift = found.get(item.threadId) ?? null;
+          const drifted = applyDrift({ ...item, drift });
+          const trace = traces.get(item.threadId);
+          if (trace) {
+            if (trace.model && trace.model.group !== item.group)
+              trace.steps.push({
+                stage: "pin",
+                from: trace.model.group,
+                to: item.group,
+              });
+            if (drifted.group !== item.group)
+              trace.steps.push({
+                stage: "drift",
+                from: item.group,
+                to: drifted.group,
+              });
+            trace.drift = drift && {
+              from: drift.from,
+              to: drift.to,
+              confidence: drift.confidence,
+              splitSeq: drift.splitSeq,
+            };
+          }
+          return drifted;
+        });
       })
     ).flat();
     signal.throwIfAborted();
@@ -534,6 +658,14 @@ export default async function plugin(bb: BbPluginApi) {
         "Classification failed for every thread. Previous results are unchanged.",
       );
     const timestamps = new Map(threads.map((t) => [t.id, t.updatedAt]));
+    const normalized = normalizeGroups(items);
+    normalized.forEach((item, i) => {
+      const trace = traces.get(item.threadId);
+      if (!trace) return;
+      trace.steps.push(...normalizationSteps(items[i].group, item.group));
+      trace.outcome = "classified";
+      trace.finalGroup = item.group;
+    });
     let next: Analysis = {
       at: Date.now(),
       needsYouCount: items.filter(
@@ -542,7 +674,7 @@ export default async function plugin(bb: BbPluginApi) {
           !!threads.find((t) => t.id === i.threadId)?.hasPendingInteraction,
       ).length,
       items: [
-        ...normalizeGroups(items).map((i) => ({
+        ...normalized.map((i) => ({
           ...i,
           needsYou:
             i.state === "needs_decision" ||
@@ -643,6 +775,12 @@ export default async function plugin(bb: BbPluginApi) {
         else {
           const old = prior.get(item.threadId);
           if (old) current.push({ ...old, refreshed: false });
+          const trace = traces.get(item.threadId);
+          if (trace?.outcome === "classified") {
+            trace.outcome = old ? "kept-prior" : "dropped";
+            trace.reason = "changed-during-analysis";
+            trace.finalGroup = old?.group ?? null;
+          }
           warnings.push(
             `Thread ${item.threadId} changed during analysis; not refreshed.`,
           );
@@ -666,7 +804,23 @@ export default async function plugin(bb: BbPluginApi) {
     stats.summaryCost = Math.round(stats.summaryCost * 10000) / 10000;
     analysis = normalizeAnalysis({ ...next, stats });
     put(analysisKey(), analysis);
+    if (diagnose) {
+      const diagnostics: AnalysisDiagnostics = analysisDiagnosticsSchema.parse({
+        at: analysis!.at,
+        model: MODEL,
+        fresh: freshRun,
+        basisRequested: true,
+        batches: batchTraces,
+        threads: [...traces.values()],
+      });
+      put(diagnosticsKey(), diagnostics);
+      bb.log.info(diagnosticsSummary(diagnostics));
+    }
   }
+  const diagnosticsKey = () =>
+    fixture ? "fixture-analysis-diagnostics" : "analysis-diagnostics";
+  const organizeDiagnosticsKey = () =>
+    fixture ? "fixture-organize-diagnostics" : "organize-diagnostics";
   const logKey = () => (fixture ? "fixture-organize-log" : "organize-log");
   let log: LogEntry[] = z
     .array(logEntrySchema)
@@ -1024,59 +1178,43 @@ export default async function plugin(bb: BbPluginApi) {
     notify();
     return outcomes;
   }
+  /** Plans organize against current threads without changing anything. */
+  async function planCurrent(signal?: AbortSignal) {
+    const threads = await inventory(signal);
+    const sectionNames = fixture
+      ? new Map<string, string>()
+      : (await sectionIds(signal)).names;
+    const namesById = new Map(
+      (await bb.sdk.threadSections.list()).map((s) => [s.id, s.name]),
+    );
+    const plan = planOrganizeRun(
+      threads.map((t) => ({
+        ...t,
+        sectionName: t.sectionId
+          ? (sectionNames.get(t.sectionId) ?? null)
+          : null,
+      })),
+      analysis,
+      splitThreadIds(log),
+      log,
+      namesById,
+    );
+    return { threads, ...plan };
+  }
   async function organize(
     signal?: AbortSignal,
     result?: { done: number; failed: number },
+    diagnose = false,
   ) {
     signal?.throwIfAborted();
     organizing = true;
     notify();
     try {
-      const threads = await inventory(signal);
-      const sectionNames = fixture
-        ? new Map<string, string>()
-        : (await sectionIds(signal)).names;
-      const namesById = new Map(
-        (await bb.sdk.threadSections.list()).map((s) => [s.id, s.name]),
-      );
-      const renamedByWorkstreams = new Map<string, string>();
-      for (const e of log)
-        if (e.action.kind === "section" && e.result === "done" && !e.undone)
-          renamedByWorkstreams.set(e.action.threadId, e.action.section);
-      const split = new Set(
-        log
-          .filter(
-            (e) =>
-              e.action.kind === "split" &&
-              !e.undone &&
-              (e.result === "done" || !!e.undo?.forkId),
-          )
-          .map((e) => e.action.threadId),
-      );
-      const actions = planOrganize(
-        threads.map((t) => ({
-          ...t,
-          sectionName: t.sectionId
-            ? (sectionNames.get(t.sectionId) ?? null)
-            : null,
-        })),
-        analysis,
-        split,
-      ).filter((action) => {
-        if (action.kind !== "section") return true;
-        const assigned = renamedByWorkstreams.get(action.threadId);
-        const actual = threads.find((t) => t.id === action.threadId)?.sectionId;
-        const oldName = actual ? namesById.get(actual) : undefined;
-        // A single-thread group must still follow an explicit Workstreams
-        // correction (e.g. "v0 Dev Environment Provisioning" → "v0").
-        // Respect a later manual section move. Do not move the thread away
-        // from the last section Workstreams assigned on the next run.
-        return !assigned || oldName === assigned || assigned === action.section;
-      });
+      const { threads, actions, decisions } = await planCurrent(signal);
       signal?.throwIfAborted();
       if (progress?.stage === "organizing")
         advance("organizing", 0, actions.length);
-      await perform(
+      const outcomes = await perform(
         actions,
         "auto",
         new Map(threads.map((thread) => [thread.id, thread.updatedAt])),
@@ -1086,6 +1224,11 @@ export default async function plugin(bb: BbPluginApi) {
           ? (completed) => advance("organizing", completed, actions.length)
           : undefined,
       );
+      if (diagnose)
+        put(
+          organizeDiagnosticsKey(),
+          organizeDiagnostics(Date.now(), decisions, outcomes),
+        );
     } finally {
       organizing = false;
       notify();
@@ -1306,12 +1449,13 @@ export default async function plugin(bb: BbPluginApi) {
           let analyzed = false;
           const organizeResult = { done: 0, failed: 0 };
           try {
-            await analyze(runSignal);
+            const diagnose = diagnoseRun || (await settings.get()).diagnostics;
+            await analyze(runSignal, diagnose);
             analyzed = true;
             runSignal.throwIfAborted();
             if ((await settings.get()).organize === "auto") {
               advance("organizing", 0, 0);
-              await organize(runSignal, organizeResult);
+              await organize(runSignal, organizeResult, diagnose);
             }
             runSignal.throwIfAborted();
             if (lastHost) {
@@ -1344,9 +1488,12 @@ export default async function plugin(bb: BbPluginApi) {
   });
   /** fresh: ignore previous groups this run, to let corrected rules regroup. */
   let freshRun = false;
-  const start = (options: { fresh?: boolean } = {}) => {
+  /** diagnose: record diagnostics for this run regardless of the setting. */
+  let diagnoseRun = false;
+  const start = (options: { fresh?: boolean; diagnose?: boolean } = {}) => {
     if (progress) throw new Error("An analysis is already running.");
     freshRun = !!options.fresh;
+    diagnoseRun = !!options.diagnose;
     pending = true;
     error = null;
     advance("preparing", 0, 0);
@@ -1363,6 +1510,49 @@ export default async function plugin(bb: BbPluginApi) {
     run?.abort();
     return { ok: true };
   };
+  /**
+   * Read-only grouping diagnostics: the display projection with provenance,
+   * the organize plan current threads would get now, and the latest recorded
+   * classifier and organize traces. Thread titles only on explicit request.
+   */
+  async function diagnosticsReport(
+    options: { threadId?: string; group?: string; titles?: boolean } = {},
+  ) {
+    const { threads, actions, decisions } = await planCurrent();
+    // Match the page: fixture replay has no native section names.
+    const sectionNames = fixture
+      ? new Map<string, string>()
+      : new Map(
+          (await bb.sdk.threadSections.list()).map((s) => [s.id, s.name]),
+        );
+    const classifier = analysisDiagnosticsSchema
+      .nullable()
+      .catch(null)
+      .parse(get(diagnosticsKey()));
+    const organizeRun: OrganizeDiagnostics | null = organizeDiagnosticsSchema
+      .nullable()
+      .catch(null)
+      .parse(get(organizeDiagnosticsKey()));
+    const plannedKinds: Record<string, number> = {};
+    for (const action of actions)
+      plannedKinds[action.kind] = (plannedKinds[action.kind] ?? 0) + 1;
+    return filterReport(
+      {
+        fixture: fixture ? basename(fixture.path) : null,
+        analysisAt: analysis?.at ?? null,
+        /** False when the classifier trace is from an earlier analysis. */
+        classifierIsCurrent: classifier ? classifier.at === analysis?.at : null,
+        grouping: explainGrouping(threads, analysis, sectionNames, {
+          titles: options.titles,
+        }),
+        /** What Organize would do now; nothing is performed. */
+        plan: { actions: plannedKinds, decisions },
+        classifier,
+        organize: organizeRun,
+      },
+      options,
+    );
+  }
   const snapshot = async (): Promise<View> => ({
     threads: await inventory(),
     sections: fixture
@@ -1514,6 +1704,7 @@ export default async function plugin(bb: BbPluginApi) {
       }
     },
     analyze: async () => start(),
+    diagnostics: async (input) => diagnosticsReport(input ?? {}),
     sidebar: async () => {
       if (fixture)
         return {
@@ -1630,7 +1821,7 @@ export default async function plugin(bb: BbPluginApi) {
     },
     organize: async () => {
       if (progress || organizing) throw new Error("Busy; try again shortly.");
-      await organize();
+      await organize(undefined, undefined, (await settings.get()).diagnostics);
       return { ok: true };
     },
     split: async ({ threadId }) => {
@@ -1677,7 +1868,14 @@ export default async function plugin(bb: BbPluginApi) {
       {
         name: "analyze",
         summary: "Start parallel AI Gateway classification",
-        usage: "bb workstreams analyze [--fresh]",
+        usage: "bb workstreams analyze [--fresh] [--diagnose]",
+      },
+      {
+        name: "diagnose",
+        summary:
+          "Explain grouping, the current organize plan, and the latest recorded classifier trace (read-only)",
+        usage:
+          "bb workstreams diagnose [--thread <id>] [--group <name>] [--titles]",
       },
       {
         name: "cancel",
@@ -1710,14 +1908,43 @@ export default async function plugin(bb: BbPluginApi) {
         if (argv[0] === "analyze")
           return {
             exitCode: 0,
-            stdout: JSON.stringify(start({ fresh: argv[1] === "--fresh" })),
+            stdout: JSON.stringify(
+              start({
+                fresh: argv.includes("--fresh"),
+                diagnose: argv.includes("--diagnose"),
+              }),
+            ),
           };
+        if (argv[0] === "diagnose") {
+          const value = (flag: string) => {
+            const i = argv.indexOf(flag);
+            if (i < 0) return undefined;
+            const v = argv[i + 1];
+            if (!v || v.startsWith("--"))
+              throw new Error(`${flag} needs a value.`);
+            return v;
+          };
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify(
+              await diagnosticsReport({
+                threadId: value("--thread"),
+                group: value("--group"),
+                titles: argv.includes("--titles"),
+              }),
+            ),
+          };
+        }
         if (argv[0] === "cancel")
           return { exitCode: 0, stdout: JSON.stringify(cancel()) };
         if (argv[0] === "organize") {
           if (progress || organizing)
             throw new Error("Busy; try again shortly.");
-          await organize();
+          await organize(
+            undefined,
+            undefined,
+            (await settings.get()).diagnostics,
+          );
           return {
             exitCode: 0,
             stdout: JSON.stringify(log.slice(-50)),
@@ -1749,7 +1976,7 @@ export default async function plugin(bb: BbPluginApi) {
         return {
           exitCode: 1,
           stderr:
-            "Usage: bb workstreams list | analyze | cancel | organize | export <path> | fixture <path|off>",
+            "Usage: bb workstreams list | analyze [--fresh] [--diagnose] | diagnose [--thread <id>] [--group <name>] [--titles] | cancel | organize | export <path> | fixture <path|off>",
         };
       } catch (e) {
         return {

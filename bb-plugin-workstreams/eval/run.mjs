@@ -46,6 +46,8 @@ const seed = env.EVAL_SEED === "1";
 const sticky = env.EVAL_SEED === "thread";
 const batchSize = Number(env.EVAL_BATCH) || BATCH_SIZE;
 const judgeModel = env.EVAL_JUDGE; // e.g. openai/gpt-4.1-mini; unset skips recap scoring
+// EVAL_BASIS=1 uses the diagnostic prompt that asks for each group's decisive evidence.
+const basis = env.EVAL_BASIS === "1";
 const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 const contexts = cases.map(({ expected, ...c }) => ({
   status: "idle",
@@ -223,6 +225,7 @@ for (const model of models) {
         usage.cost += u.cost;
         return text;
       };
+      const bases = new Map();
       const items = (
         await mapConcurrent(
           batches(
@@ -237,7 +240,10 @@ for (const model of models) {
           ),
           async (batch) => {
             const [classified, drifts] = await Promise.all([
-              classifyBatch(batch, call, known),
+              classifyBatch(batch, call, known, {
+                basis,
+                onRaw: (raw) => bases.set(raw.threadId, raw.basis ?? null),
+              }),
               detectDrift(batch, call),
             ]);
             return classified.map((i) =>
@@ -261,6 +267,7 @@ for (const model of models) {
           state: item.state,
           drift: item.drift ?? null,
           expectedDrift: c.drift,
+          ...(basis ? { basis: bases.get(item.threadId) } : {}),
         };
       });
       Object.assign(entry, score(entry.results));
@@ -292,7 +299,10 @@ for (const model of models) {
           : {
               misses: results
                 ?.filter((r) => !r.correct)
-                .map((r) => `${r.id}: ${r.group}`),
+                .map(
+                  (r) =>
+                    `${r.id}: ${r.group}${r.basis !== undefined ? ` (basis: ${r.basis})` : ""}`,
+                ),
             }),
       }),
     );
