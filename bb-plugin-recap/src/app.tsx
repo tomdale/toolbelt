@@ -198,10 +198,10 @@ function RecapComposerBannerContent({
 
   if (mode === RECAP_DISPLAY_MODES.none && !requestedRecap) {
     return (
-      <div className="mx-auto mb-3 flex w-full min-w-0 max-w-4xl">
+      <div className="mx-auto mb-3 flex w-full min-w-0 max-w-4xl justify-center">
         <button
           type="button"
-          className="cursor-pointer rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-60"
+          className="cursor-pointer rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60"
           disabled={generating}
           onClick={() => void runJustInTimeRecap()}
         >
