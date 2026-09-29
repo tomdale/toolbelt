@@ -167,13 +167,37 @@ function useThreadRecap(threadId: string) {
   return { recap, generating, generate };
 }
 
+/** Quiet period after a turn ends before the inline Generate Recap action appears. */
+const THREAD_SETTLE_MS = 1_500;
+
+/**
+ * True once the composer has been idle for THREAD_SETTLE_MS. It drops to false
+ * as soon as a turn is submitted or running, so brief idle gaps between agent
+ * steps do not flash the action. A thread that is already idle on mount counts
+ * as settled immediately.
+ */
+function useThreadSettled(): boolean {
+  const { run } = useComposerView();
+  const busy = run.isRunning || run.isSubmitting;
+  const [settled, setSettled] = useState(!busy);
+  useEffect(() => {
+    if (busy) {
+      setSettled(false);
+      return;
+    }
+    const timer = setTimeout(() => setSettled(true), THREAD_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [busy]);
+  return settled && !busy;
+}
+
 const RECAP_BANNER_CLASS =
   "relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-800/70 dark:bg-sky-950/60 dark:text-sky-200";
 
 /**
  * Read-only inline recap showing only the latest recap text. In None mode,
- * the inline action starts a just-in-time recap, and errors surface as
- * notifications. Dismissal is keyed by recap id and held in
+ * the inline action appears only while the thread is settled and starts a
+ * just-in-time recap; errors surface as notifications. Dismissal is keyed by recap id and held in
  * component state, so a newer recap reappears.
  */
 function RecapComposerBannerContent({
@@ -186,6 +210,13 @@ function RecapComposerBannerContent({
   const { recap, generating, generate } = useThreadRecap(threadId);
   const [dismissedRecapId, setDismissedRecapId] = useState<string | null>(null);
   const [requestedRecap, setRequestedRecap] = useState(false);
+  const settled = useThreadSettled();
+
+  // A new turn invalidates the requested recap, so return to the inline action
+  // for the next settled point instead of leaving an empty slot.
+  useEffect(() => {
+    if (!settled && !generating) setRequestedRecap(false);
+  }, [generating, settled]);
 
   const runJustInTimeRecap = useCallback(async () => {
     setRequestedRecap(true);
@@ -197,6 +228,7 @@ function RecapComposerBannerContent({
   }, [generate]);
 
   if (mode === RECAP_DISPLAY_MODES.none && !requestedRecap) {
+    if (!settled) return null;
     return (
       <div className="mx-auto mb-3 flex w-full min-w-0 max-w-4xl justify-center">
         <button
