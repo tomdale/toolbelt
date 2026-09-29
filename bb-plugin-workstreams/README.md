@@ -3,18 +3,13 @@
 All your active threads, grouped by the project or product they concern. Open
 **Workstreams** in the sidebar (`/plugins/workstreams/home`).
 
-- The Workstreams page and analysis page through BB's thread-list SDK with
-  `archived: false` and `includeHidden: true`. They include active idle and
-  hidden helper threads, including plugin workers, once each; archived and
-  deleted threads are excluded. The full list is not limited to recent activity.
-  The replacement sidebar instead reads `experimental_useSidebarThreads()`,
-  which supplies the host's visible sidebar rows only: hidden helpers cannot
-  appear there. Its **Recent** strip is a separate live five-thread window
-  without an overflow control. Collapsing a sidebar band or group hides its
-  rows, and collapse state persists. To show hidden helpers in the sidebar, BB
-  must expose them through that hook (with a visibility field or equivalent) and
-  provide host actions for those rows; the server list cannot populate the hook
-  or make its actions accept missing IDs.
+- Every active non-archived thread from BB's sidebar hook appears, including
+  idle and hidden helper threads. BB's built-in sidebar hides helper threads
+  marked hidden; Workstreams intentionally shows them to satisfy the all-active-
+  threads view. Archived threads are not requested. The list is uncapped and not
+  limited to recent activity. **Recent** is a separate, live five-thread window
+  without an overflow control. Only collapsing a whole sidebar band or group
+  hides its rows, and collapse state persists.
 - Workstreams first builds the complete parent/child tree, then groups each tree
   by the root thread's native BB section assignment. A descendant's own section
   does not split it from its parent, matching BB's built-in custom-section
