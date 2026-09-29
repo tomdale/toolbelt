@@ -19,6 +19,7 @@ import {
   normalizeRecapSettings,
   recapSettingsFormPatch,
   RECAP_DISPLAY_MODES,
+  automaticRecapsEnabled,
   RECAP_WORKER_PERMISSION_MODE,
   shouldRetryAutomaticRecap,
   SQL_CLEANUP_RECAPS,
@@ -559,6 +560,8 @@ export default async function plugin(bb: BbPluginApi) {
     signal?: AbortSignal,
   ): Promise<GenerationResult> => {
     if (signal?.aborted) return result("aborted");
+    if (automatic && !automaticRecapsEnabled(config))
+      return result("automatic_disabled");
     const thread = (await bb.sdk.threads.get({
       threadId,
       signal,
@@ -620,6 +623,9 @@ export default async function plugin(bb: BbPluginApi) {
       threadId,
     );
     if (latestTurns !== turns) return result("stale", latestTurns);
+    // Settings may have switched to None while the worker ran.
+    if (automatic && !automaticRecapsEnabled(config))
+      return result("automatic_disabled", turns);
     if (automatic && hasRecapForTurns(threadId, turns)) {
       return { ...result("already_exists", turns), generated: true };
     }
@@ -702,7 +708,7 @@ export default async function plugin(bb: BbPluginApi) {
     clearTimer(state);
     state.idleThread = thread;
     if (!retry) state.autoRetryCount = 0;
-    if (!config.auto || thread.status !== "idle") return;
+    if (!automaticRecapsEnabled(config) || thread.status !== "idle") return;
     const epoch = state.epoch;
     state.timer = setTimeout(
       () => {

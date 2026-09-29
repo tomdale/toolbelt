@@ -23,6 +23,18 @@ export function parseDisplayMode(raw: string): RecapDisplayMode {
   return RECAP_DISPLAY_MODES.recap;
 }
 
+/**
+ * Automatic recaps run only when enabled and the composer displays them.
+ * With display set to None, recaps are generated just in time on request, so
+ * background generation would spend model calls on summaries nobody sees.
+ */
+export function automaticRecapsEnabled(settings: {
+  auto: boolean;
+  displayMode: RecapDisplayMode;
+}): boolean {
+  return settings.auto && settings.displayMode !== RECAP_DISPLAY_MODES.none;
+}
+
 export function shouldShowRecapBanner(
   scopeKind: string,
   isInlineMessageEditor: boolean,
@@ -438,6 +450,7 @@ export function recapSettingsFormPatch(
 export const MAX_AUTOMATIC_RECAP_RETRIES = 3;
 
 const NON_RETRYABLE_AUTOMATIC_REASONS = new Set([
+  "automatic_disabled",
   "not_enough_turns",
   "no_conversation",
   "stale",
