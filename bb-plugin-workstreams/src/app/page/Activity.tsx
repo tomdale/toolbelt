@@ -109,7 +109,7 @@ export function Activity({
                 )}
               >
                 <time
-                  className="w-12 shrink-0 text-xs tabular-nums text-muted-foreground"
+                  className="w-16 shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground"
                   dateTime={new Date(entry.at).toISOString()}
                   title={new Date(entry.at).toLocaleString()}
                 >

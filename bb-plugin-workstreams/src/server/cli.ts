@@ -47,8 +47,18 @@ function groupJson(group: Group<InventoryThread>, now: number) {
   };
 }
 
+const plural = (count: number, noun: string) =>
+  `${count} ${noun}${count === 1 ? "" : "s"}`;
+
+/** `YYYY-MM-DD HH:MM` in the server's local time zone. */
+function localMinute(at: number): string {
+  const d = new Date(at);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function entryLine(entry: JournalEntry): string {
-  const when = new Date(entry.at).toISOString().replace("T", " ").slice(0, 16);
+  const when = localMinute(entry.at);
   const status = entry.status === "applied" ? "" : ` [${entry.status}]`;
   return `${when}  ${entry.action.padEnd(17)} ${entry.source.padEnd(8)} ${entry.rationale}${status}  (${entry.id})`;
 }
@@ -102,7 +112,7 @@ export function registerCli(
                 ),
               };
             const line = (g: ReturnType<typeof groupJson>) =>
-              `${g.name.padEnd(36)} ${String(g.threads).padStart(3)} threads${g.needsYou ? ` · ${g.needsYou} need you` : ""}${g.lastActive ? ` · ${g.lastActive}` : ""}  (${g.id})`;
+              `${g.name.padEnd(36)} ${plural(g.threads, "thread").padStart(11)}${g.needsYou ? ` · ${g.needsYou} need you` : ""}${g.lastActive ? ` · ${g.lastActive}` : ""}  (${g.id})`;
             const lines = [
               ...active.map(line),
               line(unsorted),
@@ -170,9 +180,10 @@ export function registerCli(
             );
             return {
               exitCode: 0,
-              stdout: [`${group.name} — ${group.total} threads`, ...lines].join(
-                "\n",
-              ),
+              stdout: [
+                `${group.name} — ${plural(group.total, "thread")}`,
+                ...lines,
+              ].join("\n"),
             };
           },
         }),
