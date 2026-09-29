@@ -15,10 +15,18 @@ export type IntakeState = {
   workstreamName: string | null;
   pickedProjectId: string | null;
   choice: { threadId: string } | null;
+  /** Whether the host's project, environment, and permission row is shown. */
+  settings: boolean;
 };
+
+let sessions = 0;
 
 /** One composer owns one session; project changes may remount its banner. */
 export class Intake {
+  /** Lets the banner's select reference the dialog's stable live region. */
+  readonly statusId = `ws-intake-status-${++sessions}`;
+  /** The banner control to refocus after the host remounts the banner. */
+  focused: "workstream" | "settings" | null = null;
   private state: IntakeState;
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -44,6 +52,7 @@ export class Intake {
       workstreamName,
       pickedProjectId: null,
       choice: null,
+      settings: false,
     };
   }
 
@@ -77,6 +86,11 @@ export class Intake {
   }
   retry() {
     this.schedule(this.state.text);
+  }
+  /** Once the user has seen the placement row, their project picks count. */
+  toggleSettings() {
+    this.customizePlacement = true;
+    this.set({ settings: !this.state.settings });
   }
 
   observe(text: string, projectId: string | null) {
