@@ -2,38 +2,12 @@ export const DEFAULT_RECAP_PROMPT = `You are an internal recap worker.
 
 Return exactly one plain-text sentence of about 25–40 words, with no heading, bullets, markdown, or extra explanation. Use the language of the user's messages. Lead with "You asked …" for questions or reviews, or "We <past-tense verb> …" for implemented changes. Mention concrete files, symbols, flags, endpoints, decisions, or remaining work when present. Never invent progress. Do not call tools. If almost nothing happened, say "You had just begun this session."`;
 
-export const RECAP_DISPLAY_MODES = {
-  recap: "Recap",
-  none: "None",
-} as const;
-
-export type RecapDisplayMode =
-  (typeof RECAP_DISPLAY_MODES)[keyof typeof RECAP_DISPLAY_MODES];
-
-export const RECAP_DISPLAY_MODE_OPTIONS: RecapDisplayMode[] = [
-  RECAP_DISPLAY_MODES.recap,
-  RECAP_DISPLAY_MODES.none,
-];
-
-export function parseDisplayMode(raw: string): RecapDisplayMode {
-  if (RECAP_DISPLAY_MODE_OPTIONS.includes(raw as RecapDisplayMode))
-    return raw as RecapDisplayMode;
-  if (raw === "On demand" || raw === "on-demand") return RECAP_DISPLAY_MODES.none;
-  // Older compact and card preferences both map to the single recap display.
-  return RECAP_DISPLAY_MODES.recap;
-}
-
 /**
- * Automatic recaps run only when enabled and the composer displays them.
- * With display set to None, recaps are generated just in time on request, so
- * background generation would spend model calls on summaries nobody sees.
+ * Legacy display preferences that meant "only show recaps I request". Stored
+ * settings from before the display option was folded into Automatic recaps
+ * keep that behavior by loading with automatic recaps off.
  */
-export function automaticRecapsEnabled(settings: {
-  auto: boolean;
-  displayMode: RecapDisplayMode;
-}): boolean {
-  return settings.auto && settings.displayMode !== RECAP_DISPLAY_MODES.none;
-}
+const LEGACY_ON_REQUEST_DISPLAY_MODES = new Set(["None", "On demand", "on-demand"]);
 
 export function shouldShowRecapBanner(
   scopeKind: string,
@@ -381,17 +355,20 @@ export function clampConcurrentGenerations(value: number): number {
 export const DEFAULT_AFTER_SECONDS = 30;
 export const DEFAULT_MIN_TURNS = 3;
 
-export type RecapSettingsSnapshot = RecapFormSnapshot & {
-  displayMode: RecapDisplayMode;
-};
+export type RecapSettingsSnapshot = RecapFormSnapshot;
 
 export function normalizeRecapSettings(value: unknown): RecapSettingsSnapshot {
   const stored =
     value && typeof value === "object" && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : {};
+  const legacyOnRequest =
+    typeof stored.displayMode === "string" &&
+    LEGACY_ON_REQUEST_DISPLAY_MODES.has(stored.displayMode);
   return {
-    auto: typeof stored.auto === "boolean" ? stored.auto : true,
+    auto:
+      !legacyOnRequest &&
+      (typeof stored.auto === "boolean" ? stored.auto : true),
     autoCleanup:
       typeof stored.autoCleanup === "boolean" ? stored.autoCleanup : true,
     afterSeconds: parseBoundedInteger(
@@ -419,9 +396,6 @@ export function normalizeRecapSettings(value: unknown): RecapSettingsSnapshot {
       DEFAULT_CONCURRENT_GENERATIONS,
       MIN_CONCURRENT_GENERATIONS,
       MAX_CONCURRENT_GENERATIONS,
-    ),
-    displayMode: parseDisplayMode(
-      typeof stored.displayMode === "string" ? stored.displayMode : "",
     ),
     prompt: normalizeRecapPrompt(stored.prompt),
   };

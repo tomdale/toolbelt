@@ -21,14 +21,11 @@ import {
   MIN_CONCURRENT_GENERATIONS,
   normalizeRecapSettings,
   parseClampedInteger,
-  RECAP_DISPLAY_MODE_OPTIONS,
-  RECAP_DISPLAY_MODES,
   recapFormIsDirty,
   settingsFormStatus,
   settingsFormStatusLabel,
   shouldShowRecapBanner,
 } from "./recap";
-import type { RecapDisplayMode } from "./recap";
 import type { ModelSelection, Recap, RecapSettings, rpcContract } from "./server";
 
 const RECAP_CHANGED = "recap-changed";
@@ -195,17 +192,20 @@ const RECAP_BANNER_CLASS =
   "relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-800/70 dark:bg-sky-950/60 dark:text-sky-200";
 
 /**
- * Read-only inline recap showing only the latest recap text. In None mode,
- * the inline action appears only while the thread is settled and starts a
- * just-in-time recap; errors surface as notifications. Dismissal is keyed by recap id and held in
- * component state, so a newer recap reappears.
+ * Inline recap above the composer. With automatic recaps on, it shows the
+ * latest recap. With them off, it shows an inline Generate Recap action once
+ * the thread has settled, a progress placeholder while that just-in-time
+ * recap generates, and then the recap itself; automatic recaps left over from
+ * before the setting changed stay hidden. Errors surface as notifications.
+ * Dismissal is keyed by recap id and held in component state, so a newer
+ * recap reappears.
  */
 function RecapComposerBannerContent({
   threadId,
-  mode,
+  automatic,
 }: {
   threadId: string;
-  mode: RecapDisplayMode;
+  automatic: boolean;
 }) {
   const { recap, generating, generate } = useThreadRecap(threadId);
   const [dismissedRecapId, setDismissedRecapId] = useState<string | null>(null);
@@ -227,23 +227,9 @@ function RecapComposerBannerContent({
     }
   }, [generate]);
 
-  if (mode === RECAP_DISPLAY_MODES.none && !requestedRecap) {
-    if (!settled) return null;
-    return (
-      <div className="mx-auto mb-3 flex w-full min-w-0 max-w-4xl justify-center">
-        <button
-          type="button"
-          className="cursor-pointer rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60"
-          disabled={generating}
-          onClick={() => void runJustInTimeRecap()}
-        >
-          {generating ? "Generating recap…" : "Generate Recap"}
-        </button>
-      </div>
-    );
-  }
+  const onRequest = !automatic;
 
-  if (mode === RECAP_DISPLAY_MODES.none && requestedRecap && generating) {
+  if (onRequest && requestedRecap && generating) {
     // Occupies the recap's slot at a similar size so the finished recap
     // replaces it in place instead of popping in below an empty gap.
     return (
@@ -268,19 +254,39 @@ function RecapComposerBannerContent({
     );
   }
 
-  if (!recap || recap.id === dismissedRecapId) return null;
-  if (mode === RECAP_DISPLAY_MODES.none && recap.automatic && !requestedRecap) return null;
+  const visibleRecap =
+    recap &&
+    recap.id !== dismissedRecapId &&
+    (!onRequest || !recap.automatic || requestedRecap)
+      ? recap
+      : null;
+
+  if (!visibleRecap) {
+    if (!onRequest || !settled) return null;
+    return (
+      <div className="mx-auto mb-3 flex w-full min-w-0 max-w-4xl justify-center">
+        <button
+          type="button"
+          className="cursor-pointer rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60"
+          disabled={generating}
+          onClick={() => void runJustInTimeRecap()}
+        >
+          {generating ? "Generating recap…" : "Generate Recap"}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className={`${RECAP_BANNER_CLASS} px-3.5 py-2.5`} role="region" aria-label="Latest recap">
-      <Markdown content={recap.summary} className="text-sm leading-6 text-inherit" />
+      <Markdown content={visibleRecap.summary} className="text-sm leading-6 text-inherit" />
       <button
         type="button"
         className="absolute right-1.5 top-1.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-sky-900/50 transition-colors hover:bg-sky-900/10 hover:text-sky-900/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:text-sky-200/50 dark:hover:bg-sky-200/10 dark:hover:text-sky-200/80"
         aria-label="Dismiss recap"
         title="Dismiss recap"
         onClick={() => {
-          setDismissedRecapId(recap.id);
+          setDismissedRecapId(visibleRecap.id);
           setRequestedRecap(false);
         }}
       >
@@ -308,46 +314,12 @@ function RecapComposerBanner() {
   const showBanner = shouldShowRecapBanner(scope.kind, isInlineMessageEditor);
   const content =
     !isLoading && settings && showBanner
-      ? <RecapComposerBannerContent threadId={scope.threadId} mode={settings.displayMode} />
+      ? <RecapComposerBannerContent threadId={scope.threadId} automatic={settings.auto} />
       : null;
   return (
     <div ref={bannerRef} className="contents">
       {content}
     </div>
-  );
-}
-
-function DisplayModeOption({
-  mode,
-  selected,
-  disabled,
-  onSelect,
-}: {
-  mode: RecapDisplayMode;
-  selected: boolean;
-  disabled: boolean;
-  onSelect: (mode: RecapDisplayMode) => void;
-}) {
-  const description = mode === RECAP_DISPLAY_MODES.recap
-    ? "Show the latest recap above the composer."
-    : "Keep recaps hidden until you request one.";
-
-  return (
-    <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${selected ? "border-foreground bg-accent/30" : "border-border hover:bg-accent/20"}`}>
-      <input
-        type="radio"
-        name="recap-display-mode"
-        value={mode}
-        checked={selected}
-        disabled={disabled}
-        onChange={() => onSelect(mode)}
-        className="mt-0.5 accent-foreground"
-      />
-      <span>
-        <span className="block text-sm font-medium text-foreground">{mode}</span>
-        <span className="block text-xs text-muted-foreground">{description}</span>
-      </span>
-    </label>
   );
 }
 
@@ -427,8 +399,6 @@ function SettingsSectionBody() {
   const [localDraft, setLocalDraft] = useState<RecapSettings | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [displayModeSaving, setDisplayModeSaving] = useState(false);
-  const [displayModeError, setDisplayModeError] = useState<string | null>(null);
   const rpcRef = useRef(rpc);
   rpcRef.current = rpc;
 
@@ -454,9 +424,7 @@ function SettingsSectionBody() {
   }, [loadModel]);
   useRealtime(RECAP_CHANGED, onModelSettingsSignal);
 
-  const draft = settings
-    ? { ...(localDraft ?? settings), displayMode: settings.displayMode }
-    : null;
+  const draft = settings ? (localDraft ?? settings) : null;
   const settingsDirty = localDraft !== null && settings !== null && recapFormIsDirty(localDraft, settings);
 
   const onModelChange = useCallback((next: ExperimentalProviderModelPickerValue) => {
@@ -489,23 +457,6 @@ function SettingsSectionBody() {
     setSettingsError(null);
   }, [settings]);
 
-  const onDisplayModeSelect = useCallback((displayMode: RecapDisplayMode) => {
-    if (settings?.displayMode === displayMode || displayModeSaving) return;
-    const previous = settings?.displayMode;
-    setDisplayModeError(null);
-    setDisplayModeSaving(true);
-    void rpc.call("recap_display_mode_set", { displayMode })
-      .then((saved) => {
-        setLoadedSettings((current) => current ? { ...current, displayMode: saved.displayMode } : current);
-      })
-      .catch((cause) => {
-        if (previous) {
-          setLoadedSettings((current) => current ? { ...current, displayMode: previous } : current);
-        }
-        setDisplayModeError(cause instanceof Error ? cause.message : String(cause));
-      })
-      .finally(() => setDisplayModeSaving(false));
-  }, [displayModeSaving, rpc, setLoadedSettings, settings?.displayMode]);
 
   const pickerValue = pickerValueFromSelection(selection);
 
@@ -562,9 +513,9 @@ function SettingsSectionBody() {
             <div>
               <p className="font-medium text-foreground">Automatic recaps</p>
               <p className="text-xs text-muted-foreground">
-                {draft.displayMode === RECAP_DISPLAY_MODES.none
-                  ? "Paused while composer display is None; recaps generate only when you request one."
-                  : "Generate a recap after the thread has been idle."}
+                {draft.auto
+                  ? "Show a recap above the composer after the thread has been idle."
+                  : "Off: a Generate Recap button appears above the composer instead."}
               </p>
             </div>
             <input
@@ -689,29 +640,6 @@ function SettingsSectionBody() {
             </button>
           </div>
         </form>
-        <div className="space-y-3 border-t border-border pt-4">
-          <div>
-            <p className="font-medium text-foreground">Show in composer</p>
-            <p className="text-xs text-muted-foreground">
-              Choose whether Recap appears automatically or only when requested. This saves immediately.
-            </p>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {RECAP_DISPLAY_MODE_OPTIONS.map((mode) => (
-              <DisplayModeOption
-                key={mode}
-                mode={mode}
-                selected={draft.displayMode === mode}
-                disabled={displayModeSaving}
-                onSelect={onDisplayModeSelect}
-              />
-            ))}
-          </div>
-          <p role="status" className="text-xs text-muted-foreground">
-            {displayModeSaving ? "Saving display preference…" : "Display preference saves immediately."}
-          </p>
-          {displayModeError ? <p role="alert" className="text-sm text-destructive">{displayModeError}</p> : null}
-        </div>
         </>
       )}
     </div>
@@ -761,7 +689,7 @@ export default definePluginApp((app) => {
   app.slots.settingsSection({
     id: "settings",
     title: "Recap behavior",
-    description: "Choose the model, automatic behavior, cleanup, and composer display.",
+    description: "Choose the model, automatic behavior, and cleanup.",
     component: SettingsSection,
   });
   app.slots.experimental_threadHeaderAction({

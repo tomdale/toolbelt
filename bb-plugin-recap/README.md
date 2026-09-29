@@ -27,7 +27,7 @@ Generate one when you need it, or let Recap refresh it after a thread goes idle.
 <br>
 
 > [!NOTE]
-> These are real BB captures populated with fictional Northstar launch-planning data. They show the previous display UI; updated captures of the current **Recap** and **None** options are pending.
+> These are real BB captures populated with fictional Northstar launch-planning data. They show the previous display UI; updated captures of the current recap and **Generate Recap** button are pending.
 
 ## The problem
 
@@ -67,9 +67,9 @@ When new turns arrive, the next recap uses the previous recap plus those new tur
 </td>
 <td valign="top">
 
-### 🪟 Choose when to show recaps
+### 🪟 Automatic or on request
 
-Choose **Recap** to show the latest summary above the composer, or **None** to keep it hidden until you click **Generate Recap** inline in the chat. Dismiss a recap to hide it until a newer one arrives.
+With **Automatic recaps** on, the latest summary appears above the composer. Turn it off and a **Generate Recap** button appears there instead once the thread settles. Dismiss a recap to hide it until a newer one arrives.
 
 </td>
 </tr>
@@ -116,11 +116,11 @@ bb plugin install path:$PWD --yes
 | --- | --- |
 | **Thread header** | Generate a recap; progress shows on the button and errors appear as a notification. |
 | **Command palette** | Choose **Recap: generate for this thread**. |
-| **Composer** | Read or dismiss the latest recap; choose **None** to generate one on demand with the inline **Generate Recap** button. |
-| **Plugin settings** | In **Recap behavior**, choose a model and configure automatic generation, cleanup, prompt, and whether the composer shows **Recap** or **None**. |
+| **Composer** | Read or dismiss the latest recap; with automatic recaps off, click the inline **Generate Recap** button. |
+| **Plugin settings** | In **Recap behavior**, choose a model and configure automatic generation, cleanup, and prompt. |
 | **CLI** | Generate, show, or list recaps with `bb recap`. |
 
-Automatic generation and cleanup are on by default, and composer display defaults to **Recap**. In **None** mode, the inline **Generate Recap** button appears once a turn has ended and the thread has settled; it creates a just-in-time recap and is replaced by the resulting summary. Automatic generation is paused while display is **None**. The idle delay defaults to 30 seconds, the minimum is 3 user turns, and up to 2 recap workers may run at once. You can set the delay from 0–86,400 seconds, the minimum from 1–100 turns, and concurrency from 1–5 workers. The prompt accepts up to 8,000 characters; recap text is limited to 1,200 characters.
+Automatic generation and cleanup are on by default. With automatic recaps off, the inline **Generate Recap** button appears once a turn has ended and the thread has settled; it creates a just-in-time recap and is replaced by the resulting summary. The idle delay defaults to 30 seconds, the minimum is 3 user turns, and up to 2 recap workers may run at once. You can set the delay from 0–86,400 seconds, the minimum from 1–100 turns, and concurrency from 1–5 workers. The prompt accepts up to 8,000 characters; recap text is limited to 1,200 characters.
 
 ## How it works
 
@@ -139,7 +139,7 @@ flowchart TD
 - **Bounded input.** Recap reads up to 120,000 transcript characters and limits generated text to 1,200 characters.
 - **Incremental refresh.** When a thread has new turns, Recap sends the earlier summary plus the new turns. The worker is archived and stopped after each attempt.
 - **Separate storage.** Recaps live in Recap's namespaced SQLite database. A new thread turn hides the earlier recap until a fresh one is generated.
-- **Automatic runs.** Recap listens for visible threads going idle, waits for the configured delay and turn minimum, and retries transient failures up to three times. Automatic runs are skipped while composer display is **None**.
+- **Automatic runs.** Recap listens for visible threads going idle, waits for the configured delay and turn minimum, and retries transient failures up to three times.
 
 ## Safe by default
 
