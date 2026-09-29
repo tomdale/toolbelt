@@ -90,6 +90,7 @@ export default async function plugin(bb: BbPluginApi) {
       ),
     onChange: notify,
     log: (message) => bb.log.warn(message),
+    info: (message) => bb.log.info(message),
   });
   bb.onDispose(() => analyzer.dispose());
 

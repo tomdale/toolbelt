@@ -89,6 +89,7 @@ export class Analyzer {
       model: () => Promise<string>;
       onChange: () => void;
       log: (message: string) => void;
+      info?: (message: string) => void;
       now?: () => number;
     },
   ) {}
@@ -253,11 +254,16 @@ export class Analyzer {
       const previous = this.get(threadId);
       if (!force && previous && previous.revision >= revision) return previous;
 
+      const started = this.now();
       const input = await this.input(thread);
       const model = await this.deps.model();
+      const asked = this.now();
       const { text } = await this.deps.complete(
         analysisPrompt(input.prompt),
         model,
+      );
+      this.deps.info?.(
+        `Analyzed ${threadId}: context ${asked - started} ms, model ${this.now() - asked} ms`,
       );
       const output = parseAnalysis(text, input.prompt);
       const driftSectionId =
