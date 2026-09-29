@@ -595,6 +595,43 @@ export default async function plugin(bb: BbPluginApi) {
       stats.failedCalls++;
       warnings.push("Could not summarize workstreams.");
     }
+    // Inference may outlive the inventory snapshot. Preserve the prior result
+    // for any thread that changed while the model was working.
+    if (!fixture) {
+      const current: Analysis["items"] = [];
+      for (const item of next.items) {
+        signal.throwIfAborted();
+        let unchanged = false;
+        try {
+          const detail = await bb.sdk.threads.get({ threadId: item.threadId });
+          unchanged =
+            detail.updatedAt === timestamps.get(item.threadId) &&
+            detail.archivedAt === null &&
+            detail.deletedAt === null;
+        } catch {
+          signal.throwIfAborted();
+        }
+        if (unchanged) current.push(item);
+        else {
+          const old = prior.get(item.threadId);
+          if (old) current.push({ ...old, refreshed: false });
+          warnings.push(
+            `Thread ${item.threadId} changed during analysis; not refreshed.`,
+          );
+        }
+      }
+      next.items = current;
+      next.needsYouCount = current.filter((item) => item.needsYou).length;
+      const freshGroups = new Set(
+        current.filter((item) => item.refreshed).map((item) => item.group),
+      );
+      const staleGroups = new Set(
+        current.filter((item) => !item.refreshed).map((item) => item.group),
+      );
+      for (const group of staleGroups) delete next.summaries[group];
+      for (const group of Object.keys(next.summaries))
+        if (!freshGroups.has(group)) delete next.summaries[group];
+    }
     stats.seconds = Math.round((Date.now() - started) / 100) / 10;
     stats.cost = Math.round(stats.cost * 10000) / 10000;
     stats.summaryCost = Math.round(stats.summaryCost * 10000) / 10000;
@@ -671,7 +708,11 @@ export default async function plugin(bb: BbPluginApi) {
       throw new Error("Thread is archived or deleted.");
     const recheck = async () => {
       const current = await bb.sdk.threads.get({ threadId: action.threadId });
-      if (current.archivedAt !== null || current.deletedAt !== null || current.updatedAt !== expectedAt)
+      if (
+        current.archivedAt !== null ||
+        current.deletedAt !== null ||
+        current.updatedAt !== expectedAt
+      )
         throw new Error("Thread changed since action planning.");
     };
     if (detail.updatedAt !== expectedAt)

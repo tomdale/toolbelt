@@ -657,6 +657,67 @@ describe("active thread overview", () => {
       await service.done;
     }
   });
+  it("retains prior analysis without stamping a thread edited during inference", async () => {
+    let infer: (() => void) | undefined;
+    const h = setup(2, false, undefined, () => infer?.());
+    const initial = h.rows[0].updatedAt;
+    await plugin(h.bb);
+    h.bb.storage
+      .database()
+      .prepare("INSERT INTO state VALUES (?,?)")
+      .run(
+        "thread-analysis",
+        JSON.stringify({
+          at: 1,
+          items: [
+            {
+              threadId: "0",
+              group: "Earlier",
+              recap: "Prior work",
+              updatedAt: initial,
+            },
+          ],
+          warnings: [],
+        }),
+      );
+    const live = await h.harness.lifecycle.reload(plugin);
+    fixtures.push(live);
+    infer = () => {
+      h.rows[0].updatedAt = initial + 1;
+    };
+    await live.harness.behavior.callRpc("analyze", null);
+    const service = live.harness.behavior.runService("thread-analysis");
+    try {
+      await expect
+        .poll(
+          async () =>
+            (
+              (await live.harness.behavior.callRpc(
+                "snapshot",
+                null,
+              )) as Snapshot
+            ).progress,
+        )
+        .toBeNull();
+      const result = (await live.harness.behavior.callRpc(
+        "snapshot",
+        null,
+      )) as Snapshot;
+      expect(
+        result.analysis?.items.find((item) => item.threadId === "0"),
+      ).toMatchObject({
+        group: "Earlier",
+        updatedAt: initial,
+        refreshed: false,
+      });
+      expect(result.analysis?.warnings).toContain(
+        "Thread 0 changed during analysis; not refreshed.",
+      );
+    } finally {
+      service.controller.abort();
+      await service.done;
+    }
+  });
   it("cancels a queued analysis without changing results", async () => {
     const h = setup(2);
     await plugin(h.bb);
