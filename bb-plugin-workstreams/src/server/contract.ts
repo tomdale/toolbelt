@@ -61,10 +61,6 @@ export const rpcContract = defineRpcContract({
     output: z.object({ entry: entrySchema }),
   },
   refresh: { input: z.null(), output: z.object({ changed: z.boolean() }) },
-  parentLink: {
-    input: z.object({ threadId: z.string().min(1) }),
-    output: z.object({ id: z.string(), title: z.string() }).nullable(),
-  },
 });
 
 export type RpcContract = typeof rpcContract;

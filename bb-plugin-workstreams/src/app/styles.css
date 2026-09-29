@@ -70,3 +70,47 @@
 .ws-pr-attention {
   color: var(--warning-text, #e0a84f);
 }
+
+/* Parent chip in a child thread's header (matches Dockside's). */
+.ws-parent-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ws-parent-link:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.ws-parent-link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.ws-parent-link-compact {
+  padding-inline: 6px;
+}
+.ws-parent-link-chevron {
+  flex: 0 0 auto;
+  font-size: 19px;
+  line-height: 1;
+}
+.ws-parent-link-disc {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 1px solid var(--background);
+  border-radius: 50%;
+}
+.ws-parent-link-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
