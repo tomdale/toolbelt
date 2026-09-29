@@ -53,6 +53,7 @@ import {
   initialRequest,
   inputText,
   requestTimeline,
+  manualSectionGroup,
 } from "./context";
 
 const viewSchema = snapshotSchema.extend({
@@ -255,21 +256,15 @@ export default async function plugin(bb: BbPluginApi) {
         .filter((i) => i.group !== UNCLASSIFIED)
         .map((i) => [i.threadId, i.group]),
     );
-    // A thread the user moved to another section in BB's sidebar keeps that
-    // section as its group: moving a thread is how groups are corrected.
-    const assigned = new Map<string, string>();
-    for (const e of log)
-      if (e.action.kind === "section" && e.result === "done" && !e.undone)
-        assigned.set(e.action.threadId, e.action.section);
     const names = new Map(
       (await bb.sdk.threadSections.list()).map((s) => [s.id, s.name]),
     );
     for (const t of threads) {
-      const section = t.sectionId ? names.get(t.sectionId) : undefined;
-      // A section name is the user's visible grouping choice. Renaming a
-      // section or moving a thread into one is an explicit correction; use it
-      // as this thread's pinned workstream on future classifications.
-      if (section) pinned.set(t.id, section);
+      // A native section is a correction only when it differs from the last
+      // successful Workstreams assignment. A --fresh run drops the previous
+      // analysis but must still respect genuinely manual sidebar moves.
+      const manual = manualSectionGroup(t.sectionId, names, log, t.id);
+      if (manual) pinned.set(t.id, manual);
     }
     return mapConcurrent(threads, async (thread): Promise<Context> => {
       signal.throwIfAborted();
@@ -693,7 +688,10 @@ export default async function plugin(bb: BbPluginApi) {
     if (action.kind === "section") {
       const sectionId = await sections.ensure(action.section);
       await bb.sdk.threads.update({ threadId: action.threadId, sectionId });
-      return { detail: "", undo: before };
+      return {
+        detail: "",
+        undo: { ...before, workstreamsSectionId: sectionId },
+      };
     }
     if (action.kind === "parent") {
       await bb.sdk.threads.update({

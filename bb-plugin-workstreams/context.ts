@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { excerpt } from "./model.ts";
+import type { LogEntry } from "./organize.ts";
 import { redact } from "./redact.ts";
 
 const inputSchema = z.array(
@@ -25,6 +26,36 @@ export function initialRequest(
     if (text) return text;
   }
   return "";
+}
+/** Only sections not attributable to Workstreams are manual grouping corrections. */
+export function manualSectionGroup(
+  sectionId: string | null,
+  names: Map<string, string>,
+  log: LogEntry[],
+  threadId: string,
+): string | undefined {
+  const name = sectionId ? names.get(sectionId) : undefined;
+  if (!name) return undefined;
+  const assignment = [...log]
+    .reverse()
+    .find(
+      (entry) =>
+        entry.action.kind === "section" &&
+        entry.action.threadId === threadId &&
+        entry.result === "done" &&
+        !entry.undone,
+    );
+  if (assignment?.action.kind === "section") {
+    // Older log entries have no destination ID. Matching their recorded name
+    // avoids turning an existing automatic assignment into a permanent pin.
+    const autoId = assignment.undo?.workstreamsSectionId;
+    if (
+      name.toLowerCase() === assignment.action.section.toLowerCase() &&
+      (!autoId || sectionId === autoId)
+    )
+      return undefined;
+  }
+  return name;
 }
 const TIMELINE_CHARS = 600;
 // The full history is paged from BB, but short prompts make identity pivots

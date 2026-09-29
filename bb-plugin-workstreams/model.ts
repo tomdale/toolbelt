@@ -57,7 +57,7 @@ export type Context = Thread & {
   settled?: boolean;
   /** Group from the previous analysis, offered to keep grouping stable. */
   previousGroup?: string;
-  /** Group fixed by a split: side quest for the original, mainline for the fork. */
+  /** Group fixed by a split or by a native section not assigned by Workstreams. */
   pinnedGroup?: string;
 };
 /** Frozen thread contexts (e.g. from `bb workstreams export`); extra keys such as eval labels are ignored. */
