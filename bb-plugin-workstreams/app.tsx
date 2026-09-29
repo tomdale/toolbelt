@@ -9,7 +9,7 @@ import {
 import type { rpcContract, View } from "./server";
 import {
   UNCLASSIFIED,
-  groupThreads,
+  groupThreadTrees,
   type Row,
   type Snapshot,
   type WorkState,
@@ -56,8 +56,8 @@ function when(ms: number): string {
   });
 }
 const OTHER = "Other groups";
-const anchor = (name: string) =>
-  `ws-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+const anchor = (id: string) =>
+  `ws-${id.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
 function ListRow({
   row,
@@ -217,13 +217,15 @@ function WorkstreamsPage() {
     }
   };
   const displayThreads = data?.threads ?? [];
-  const all = data ? groupThreads(data) : [];
+  const all = data
+    ? groupThreadTrees(data, new Map(Object.entries(data.sections ?? {})))
+    : [];
   // Page and sidebar use the same host-adjusted immediate-ask count.
   const needsYou = data?.analysis?.needsYouCount ?? 0;
   const q = query.trim().toLowerCase();
   const groups = all
     .map(
-      ([name, rows]) =>
+      ([name, rows, id]) =>
         [
           name,
           rows.filter(
@@ -233,6 +235,7 @@ function WorkstreamsPage() {
                 .toLowerCase()
                 .includes(q),
           ),
+          id,
         ] as const,
     )
     .filter(([, rows]) => rows.length);
@@ -344,15 +347,19 @@ function WorkstreamsPage() {
                   </span>
                 )}
                 {[
-                  ...multi.map(([name, rows]) => [name, rows.length] as const),
-                  ...(singles.length ? [[OTHER, singles.length] as const] : []),
-                ].map(([name, count]) => (
+                  ...multi.map(
+                    ([name, rows, id]) => [name, rows.length, id] as const,
+                  ),
+                  ...(singles.length
+                    ? [[OTHER, singles.length, OTHER] as const]
+                    : []),
+                ].map(([name, count, id]) => (
                   <button
-                    key={name}
+                    key={id}
                     className="ws-chip"
                     onClick={() =>
                       document
-                        .getElementById(anchor(name))
+                        .getElementById(anchor(id))
                         ?.scrollIntoView({ block: "start" })
                     }
                   >
@@ -370,8 +377,8 @@ function WorkstreamsPage() {
               <p className="ws-notice">No matching threads.</p>
             )}
             <div className="ws-list">
-              {multi.map(([name, rows]) => (
-                <section key={name} id={anchor(name)} aria-label={name}>
+              {multi.map(([name, rows, id]) => (
+                <section key={id} id={anchor(id)} aria-label={name}>
                   <GroupHeader
                     name={name}
                     count={rows.length}

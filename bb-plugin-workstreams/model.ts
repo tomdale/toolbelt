@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { projectThreadTrees } from "./tree-groups.ts";
 
 export const MODEL = "openai/gpt-4.1-mini";
 export const PARALLELISM = 4;
@@ -336,20 +337,28 @@ export type Row = {
 const rank = (state: WorkState | null) =>
   state ? STATES.indexOf(state) : STATES.length;
 export const UNCLASSIFIED = "Unclassified";
-/**
- * Groups by analyzed product (or BB project before analysis). Larger groups
- * come first so singletons don't dominate; Unclassified is always last.
- */
-export function groupThreads(snapshot: Snapshot): [string, Row[]][] {
+/** Group complete trees by the same root ownership as the sidebar. */
+export function groupThreads(
+  snapshot: Snapshot,
+  sectionNames: ReadonlyMap<string, string> = new Map(),
+): [string, Row[]][] {
+  return groupThreadTrees(snapshot, sectionNames).map(([name, rows]) => [
+    name,
+    rows,
+  ]);
+}
+
+export function groupThreadTrees(
+  snapshot: Snapshot,
+  sectionNames: ReadonlyMap<string, string> = new Map(),
+): [string, Row[], string][] {
   const classifications = new Map(
     snapshot.analysis?.items.map((i) => [i.threadId, i]),
   );
-  const groups = new Map<string, Row[]>();
+  const rows = new Map<string, Row>();
   for (const thread of snapshot.threads) {
     const item = classifications.get(thread.id);
-    const name = item?.group ?? thread.project;
-    const rows = groups.get(name) ?? [];
-    rows.push({
+    rows.set(thread.id, {
       thread,
       title: item?.title ?? thread.title,
       recap: item?.recap ?? null,
@@ -364,20 +373,47 @@ export function groupThreads(snapshot: Snapshot): [string, Row[]][] {
             ? "changed"
             : "current",
     });
-    groups.set(name, rows);
   }
-  for (const rows of groups.values())
-    rows.sort(
-      (a, b) =>
-        rank(a.state) - rank(b.state) ||
-        b.thread.updatedAt - a.thread.updatedAt,
-    );
-  return [...groups].sort(
-    ([a, ra], [b, rb]) =>
-      Number(a === UNCLASSIFIED) - Number(b === UNCLASSIFIED) ||
-      rb.length - ra.length ||
-      a.localeCompare(b),
+  const roots = snapshot.threads.map((thread) => ({
+    ...thread,
+    displayTitle: thread.title,
+    projectId: thread.project,
+  }));
+  const projection = projectThreadTrees(
+    roots,
+    new Map(
+      roots.map(
+        (thread) =>
+          [
+            thread.id,
+            /\s*[—–-]\s*manager$/i.test(thread.title) ? "manager" : "worker",
+          ] as const,
+      ),
+    ),
+    new Map(
+      snapshot.analysis?.items.map((item) => [item.threadId, item.group]),
+    ),
+    sectionNames,
+    new Map(roots.map((thread) => [thread.project, thread.project])),
+    (a, b) =>
+      rank(rows.get(a.id)!.state) - rank(rows.get(b.id)!.state) ||
+      rows.get(b.id)!.thread.latestAttentionAt -
+        rows.get(a.id)!.thread.latestAttentionAt ||
+      a.id.localeCompare(b.id),
   );
+  return projection.groups
+    .map((group): [string, Row[], string] => [
+      group.name,
+      group.rows.map(({ thread }) => rows.get(thread.id)!),
+      group.id,
+    ])
+    .sort(
+      ([a, ra, idA], [b, rb, idB]) =>
+        Number(a === UNCLASSIFIED) - Number(b === UNCLASSIFIED) ||
+        rb.length - ra.length ||
+        a.localeCompare(b) ||
+        idA.localeCompare(idB),
+    );
 }
 export async function mapConcurrent<T, R>(
   items: T[],
