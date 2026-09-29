@@ -139,16 +139,13 @@ export function cleanDerivedAnalysis(
             DISPATCH_LABEL.test(item.drift.mainlineTitle) ||
             DISPATCH_LABEL.test(item.drift.sideTitle))) ||
         group !== item.group;
+      if (!staleText) return { ...item, group };
+      const { title: _staleTitle, ...current } = item;
       return {
-        ...item,
+        ...current,
         group,
-        ...(staleText
-          ? {
-              title: undefined,
-              recap: "Review the latest thread activity for current status.",
-              drift: null,
-            }
-          : {}),
+        recap: "Review the latest thread activity for current status.",
+        drift: null,
       };
     }),
     summaries: Object.fromEntries(

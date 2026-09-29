@@ -78,7 +78,7 @@ it("clears stale Dispatch wording from derived analysis without changing history
     group: "Unclassified",
     recap: "Review the latest thread activity for current status.",
   });
-  expect(analysis?.items[0].title).toBeUndefined();
+  expect("title" in (analysis?.items[0] ?? {})).toBe(false);
   expect(analysis?.items[1].recap).toBe("Updated the plugin UI.");
   expect(Object.keys(analysis?.summaries ?? {})).toEqual(["BB"]);
   expect(analysis?.warnings).toEqual([]);
