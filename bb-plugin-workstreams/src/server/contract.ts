@@ -1,5 +1,6 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { WORK_STATES } from "../domain/analysis.ts";
 import { entrySchema, sourceSchema } from "./journal.ts";
 
 const placementSchema = z.object({
@@ -7,6 +8,24 @@ const placementSchema = z.object({
   source: sourceSchema,
   at: z.number(),
   entryId: z.string().nullable(),
+});
+
+const analysisSchema = z.object({
+  recap: z.string(),
+  state: z.enum(WORK_STATES),
+  needsYou: z.string().nullable(),
+  subject: z.string().nullable(),
+  drift: z
+    .object({
+      workstream: z.string().nullable(),
+      newName: z.string().nullable(),
+      confidence: z.enum(["high", "medium", "low"]),
+    })
+    .nullable(),
+  driftSectionId: z.string().nullable(),
+  revision: z.number(),
+  at: z.number(),
+  model: z.string(),
 });
 
 const recordSchema = z.object({
@@ -22,6 +41,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({
       workstreams: z.record(z.string(), recordSchema),
       placements: z.record(z.string(), placementSchema),
+      analysis: z.record(z.string(), analysisSchema),
       lastReconciledAt: z.number().nullable(),
     }),
   },

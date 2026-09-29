@@ -14,18 +14,38 @@ import {
 import type { RpcContract } from "../server/contract.ts";
 import type { Placement, WorkstreamRecord } from "../server/service.ts";
 import { projectWorkstreams, type Projection } from "../domain/project.ts";
+import { isCurrent, needsYou } from "../domain/analysis.ts";
+import type { StoredAnalysis } from "../server/analyzer.ts";
 
 export type ServerState = {
   workstreams: Record<string, WorkstreamRecord>;
   placements: Record<string, Placement>;
+  analysis: Record<string, StoredAnalysis>;
   lastReconciledAt: number | null;
 };
 
 const EMPTY: ServerState = {
   workstreams: {},
   placements: {},
+  analysis: {},
   lastReconciledAt: null,
 };
+
+/** What a row shows from analysis: nothing, a pending marker, or the result. */
+export type WorkView =
+  | { kind: "none" }
+  | { kind: "pending"; previous: StoredAnalysis }
+  | { kind: "current"; analysis: StoredAnalysis };
+
+export function workView(
+  thread: PluginSidebarThread,
+  analysis: StoredAnalysis | undefined,
+): WorkView {
+  if (!analysis) return { kind: "none" };
+  return isCurrent(analysis, thread)
+    ? { kind: "current", analysis }
+    : { kind: "pending", previous: analysis };
+}
 
 /** Re-renders once a minute so ages and dormancy stay current. */
 export function useNow(intervalMs = 60_000): number {
@@ -57,9 +77,14 @@ export function useWorkstreams() {
     void refresh();
   }, [refresh]);
 
+  const { analysis } = server;
   const projection: Projection<PluginSidebarThread> = useMemo(
-    () => projectWorkstreams(threads, sections, { now }),
-    [threads, sections, now],
+    () =>
+      projectWorkstreams(threads, sections, {
+        now,
+        needsYou: (thread) => needsYou(thread, analysis[thread.id]),
+      }),
+    [threads, sections, now, analysis],
   );
   const values = (settings.values ?? {}) as Record<string, unknown>;
   return {
@@ -68,6 +93,8 @@ export function useWorkstreams() {
     sections,
     projects,
     server,
+    work: (thread: PluginSidebarThread) =>
+      workView(thread, analysis[thread.id]),
     now,
     rpc,
     refresh,

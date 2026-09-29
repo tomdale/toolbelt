@@ -14,6 +14,8 @@ import {
   type Section,
 } from "../domain/project.ts";
 import { relativeAge } from "../domain/presentation.ts";
+import { isCurrent, needsYou } from "../domain/analysis.ts";
+import type { Analyzer, StoredAnalysis } from "./analyzer.ts";
 import {
   listActiveThreads,
   listSections,
@@ -63,10 +65,20 @@ function entryLine(entry: JournalEntry): string {
   return `${when}  ${entry.action.padEnd(17)} ${entry.source.padEnd(8)} ${entry.rationale}${status}  (${entry.id})`;
 }
 
+function analysisLine(
+  thread: InventoryThread,
+  analysis: StoredAnalysis | undefined,
+): string {
+  if (!analysis) return "not analyzed yet";
+  const where = `${analysis.state.replace("_", " ")} — ${analysis.recap}`;
+  return isCurrent(analysis, thread) ? where : `pending (was: ${where})`;
+}
+
 export function registerCli(
   bb: BbPluginApi,
   service: WorkstreamService,
   journal: Journal,
+  analyzer: Analyzer,
 ): void {
   const load = async () => {
     const [threads, sections] = await Promise.all([
@@ -74,10 +86,16 @@ export function registerCli(
       listSections(bb.sdk),
     ]);
     const now = Date.now();
+    const analysis = analyzer.all();
     return {
       now,
       sections,
-      projection: projectWorkstreams(threads, sections, { now }),
+      threads,
+      analysis,
+      projection: projectWorkstreams(threads, sections, {
+        now,
+        needsYou: (thread) => needsYou(thread, analysis[thread.id]),
+      }),
     };
   };
   const fail = (error: unknown): never => {
@@ -135,7 +153,7 @@ export function registerCli(
           ],
           options: { json: { type: "boolean", description: "Print JSON" } },
           async run({ positionals, options }) {
-            const { now, sections, projection } = await load();
+            const { now, sections, projection, analysis } = await load();
             const arg = positionals.workstream;
             const group =
               arg.toLowerCase() === "unsorted"
@@ -168,16 +186,21 @@ export function registerCli(
                       status: r.thread.status,
                       needsYou: r.needsYou,
                       lastActive: relativeAge(r.thread.latestAttentionAt, now),
+                      analysis: analysis[r.thread.id] ?? null,
+                      current: isCurrent(analysis[r.thread.id], r.thread),
                     })),
                   },
                   null,
                   2,
                 ),
               };
-            const lines = rows.map(
-              (r) =>
-                `${"  ".repeat(Math.min(r.depth, 4))}${r.needsYou ? "? " : ""}${clip(r.thread.title)}  · ${relativeAge(r.thread.latestAttentionAt, now)}  (${r.thread.id})`,
-            );
+            const lines = rows.flatMap((r) => {
+              const indent = "  ".repeat(Math.min(r.depth, 4));
+              return [
+                `${indent}${r.needsYou ? "? " : ""}${clip(r.thread.title)}  · ${relativeAge(r.thread.latestAttentionAt, now)}  (${r.thread.id})`,
+                `${indent}    ${analysisLine(r.thread, analysis[r.thread.id])}`,
+              ];
+            });
             return {
               exitCode: 0,
               stdout: [
@@ -264,6 +287,61 @@ export function registerCli(
                 : entries.length
                   ? entries.map(entryLine).join("\n")
                   : "No activity.",
+            };
+          },
+        }),
+        analyze: cliCommand({
+          summary:
+            "Analyze one thread now, or queue every thread whose latest turn isn't analyzed yet",
+          positionals: [
+            {
+              name: "thread",
+              description: "Thread id; omit to catch up on all threads",
+            },
+          ],
+          options: { json: { type: "boolean", description: "Print JSON" } },
+          async run({ positionals, options }) {
+            if (positionals.thread) {
+              const started = Date.now();
+              const result = await analyzer
+                .analyzeNow(positionals.thread)
+                .catch((error: unknown) => {
+                  throw new PluginCliError(
+                    error instanceof Error ? error.message : String(error),
+                    { code: "analysis_failed" },
+                  );
+                });
+              if (!result)
+                throw new PluginCliError(
+                  "That thread is archived or hidden, so it isn't analyzed.",
+                  { code: "not_analyzable" },
+                );
+              const seconds = ((Date.now() - started) / 1000).toFixed(1);
+              return {
+                exitCode: 0,
+                stdout: options.json
+                  ? JSON.stringify({ ...result, seconds }, null, 2)
+                  : [
+                      `${result.state.replace("_", " ")} · ${result.subject ?? "no subject"} · ${seconds}s · ${result.model}`,
+                      result.recap,
+                      ...(result.needsYou
+                        ? [`Needs you: ${result.needsYou}`]
+                        : []),
+                      ...(result.drift
+                        ? [
+                            `Drift (${result.drift.confidence}): ${result.drift.workstream ?? result.drift.newName}`,
+                          ]
+                        : []),
+                    ].join("\n"),
+              };
+            }
+            const queued = analyzer.catchUp(await listActiveThreads(bb.sdk));
+            const message = `Queued ${plural(queued, "thread")} for analysis.${analyzer.lastError ? ` Last error: ${analyzer.lastError}` : ""}`;
+            return {
+              exitCode: 0,
+              stdout: options.json
+                ? JSON.stringify({ queued, lastError: analyzer.lastError })
+                : message,
             };
           },
         }),

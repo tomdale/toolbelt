@@ -50,6 +50,22 @@
   }
 }
 
+/* Work state from analysis (see WORK_STATE). */
+.ws-work {
+  font-size: 10px;
+  line-height: 1;
+}
+.ws-work-needs_decision {
+  color: var(--warning-text, #e0a84f);
+}
+.ws-work-review {
+  color: var(--primary, #3e63dd);
+}
+.ws-work-blocked,
+.ws-work-done {
+  color: var(--muted-foreground);
+}
+
 /* Pull request number, tinted by state. */
 .ws-pr {
   font-family: var(--font-mono, ui-monospace, monospace);

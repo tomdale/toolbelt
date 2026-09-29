@@ -51,7 +51,22 @@ async function mount() {
         projects: [],
       },
       rpc: {
-        state: () => emptyState(),
+        state: () => ({
+          ...emptyState(),
+          analysis: {
+            a1: {
+              recap: "Tests pass; waiting on review.",
+              state: "review",
+              needsYou: null,
+              subject: "Alpha",
+              drift: null,
+              driftSectionId: null,
+              revision: now,
+              at: now,
+              model: "m",
+            },
+          },
+        }),
         journal: () => ({ entries: [entry] }),
         undo: () => ({ entry: { ...entry, id: "e2", action: "undo" } }),
       },
@@ -102,5 +117,17 @@ it("shows the activity log with undo", async () => {
       entryId: "e1",
     }),
   );
+  slot.lifecycle.unmount();
+});
+
+it("shows where each thread stopped", async () => {
+  const slot = await mount();
+  const alpha = slot.getByRole("region", { name: "Alpha" });
+  expect(
+    await within(alpha).findByText("Tests pass; waiting on review."),
+  ).toBeTruthy();
+  expect(
+    within(alpha).getByRole("img", { name: "Ready for your review" }),
+  ).toBeTruthy();
   slot.lifecycle.unmount();
 });

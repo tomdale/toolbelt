@@ -10,9 +10,9 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
 import { rankGroups, type Group } from "../../domain/project.ts";
-import { relativeAge } from "../../domain/presentation.ts";
+import { WORK_STATE, relativeAge } from "../../domain/presentation.ts";
 import { StatusMark } from "../sidebar/StatusMark.tsx";
-import { useWorkstreams } from "../useWorkstreams.ts";
+import { useWorkstreams, type WorkView } from "../useWorkstreams.ts";
 import { Activity } from "./Activity.tsx";
 
 type Tab = "overview" | "activity";
@@ -48,11 +48,13 @@ export function WorkstreamsPage() {
         rows: g.name.toLowerCase().includes(q)
           ? g.rows
           : g.rows.filter((r) =>
-              r.thread.displayTitle.toLowerCase().includes(q),
+              `${r.thread.displayTitle} ${ws.server.analysis[r.thread.id]?.recap ?? ""}`
+                .toLowerCase()
+                .includes(q),
             ),
       }))
       .filter((g) => g.rows.length > 0);
-  }, [projection, query]);
+  }, [projection, query, ws.server.analysis]);
 
   const threadCount = projection.rowOf.size;
   const needs = projection.needsYou.length;
@@ -108,6 +110,8 @@ export function WorkstreamsPage() {
                   ws.server.workstreams[group.id]?.description ?? null
                 }
                 now={ws.now}
+                work={ws.work}
+                via={projection.needsYouVia}
               />
             ))}
             {ranked.length === 0 ? (
@@ -120,6 +124,17 @@ export function WorkstreamsPage() {
                 Dormant: {projection.dormant.map((g) => g.name).join(", ")}
               </p>
             ) : null}
+            <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+              {Object.entries(WORK_STATE)
+                .filter(([, v]) => v.glyph)
+                .map(([key, v]) => (
+                  <span key={key}>
+                    <span className={`ws-work ws-work-${key}`}>{v.glyph}</span>{" "}
+                    {v.label}
+                  </span>
+                ))}
+              <span>Italic: updating after new activity</span>
+            </p>
           </div>
         ) : (
           <Activity rpc={ws.rpc} />
@@ -133,10 +148,14 @@ function WorkstreamCard({
   group,
   description,
   now,
+  work,
+  via,
 }: {
   group: Group<PluginSidebarThread>;
   description: string | null;
   now: number;
+  work: (thread: PluginSidebarThread) => WorkView;
+  via: ReadonlyMap<string, readonly PluginSidebarThread[]>;
 }) {
   const navigate = useBbNavigate();
   // Needs-you roots first, then the projection's order (pinned, then recent).
@@ -168,36 +187,74 @@ function WorkstreamCard({
         <p className="mt-1 text-xs text-muted-foreground">{description}</p>
       ) : null}
       <ul className="mt-1">
-        {roots.map((row) => (
-          <li key={row.thread.id}>
-            <button
-              type="button"
-              onClick={() => navigate.toThread(row.thread.id)}
-              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm hover:bg-state-hover"
-            >
-              <StatusMark
-                indicator={row.thread.indicator}
-                label={row.thread.indicatorLabel}
-              />
-              <span
-                className={cn(
-                  "min-w-0 flex-1 truncate",
-                  row.thread.isUnread ? "font-medium" : "text-foreground/90",
-                )}
+        {roots.map((row) => {
+          const view = work(row.thread);
+          const analysis =
+            view.kind === "current"
+              ? view.analysis
+              : view.kind === "pending"
+                ? view.previous
+                : null;
+          const state =
+            view.kind === "current" ? WORK_STATE[view.analysis.state] : null;
+          const folded = via.get(row.thread.id);
+          return (
+            <li key={row.thread.id}>
+              <button
+                type="button"
+                onClick={() => navigate.toThread(row.thread.id)}
+                className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm hover:bg-state-hover"
               >
-                {row.thread.displayTitle}
-              </span>
-              {childCount.get(row.thread.id) ? (
-                <span className="text-xs text-muted-foreground">
-                  +{childCount.get(row.thread.id)} delegated
+                <StatusMark
+                  indicator={row.thread.indicator}
+                  label={row.thread.indicatorLabel}
+                />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span
+                    className={cn(
+                      "truncate",
+                      row.thread.isUnread
+                        ? "font-medium"
+                        : "text-foreground/90",
+                    )}
+                  >
+                    {state?.glyph && view.kind === "current" ? (
+                      <span
+                        className={`ws-work ws-work-${view.analysis.state} mr-1.5`}
+                        role="img"
+                        aria-label={state.label}
+                        title={state.label}
+                      >
+                        {state.glyph}
+                      </span>
+                    ) : null}
+                    {row.thread.displayTitle}
+                  </span>
+                  {analysis ? (
+                    <span
+                      className={cn(
+                        "truncate text-xs text-muted-foreground",
+                        view.kind === "pending" && "italic opacity-70",
+                      )}
+                    >
+                      {view.kind === "current" && analysis.needsYou
+                        ? `${analysis.needsYou}${folded?.length ? ` (via ${folded[0]!.displayTitle})` : ""}`
+                        : analysis.recap}
+                    </span>
+                  ) : null}
                 </span>
-              ) : null}
-              <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
-                {relativeAge(row.thread.latestAttentionAt, now)}
-              </span>
-            </button>
-          </li>
-        ))}
+                {childCount.get(row.thread.id) ? (
+                  <span className="text-xs text-muted-foreground">
+                    +{childCount.get(row.thread.id)} delegated
+                  </span>
+                ) : null}
+                <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
+                  {relativeAge(row.thread.latestAttentionAt, now)}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

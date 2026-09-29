@@ -25,7 +25,11 @@ async function mount(
     sidebarThread("loose", { title: "Loose task" }),
     sidebarThread("hidden", { isHidden: true, title: "Hidden helper" }),
   ],
-  options: { settings?: Record<string, boolean>; onNavigate?: () => void } = {},
+  options: {
+    settings?: Record<string, boolean>;
+    onNavigate?: () => void;
+    analysis?: Record<string, unknown>;
+  } = {},
 ) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   const list = app.threadLists[0]!;
@@ -42,7 +46,7 @@ async function mount(
       sidebarThreads: { status: "ready", threads, sections, projects: [] },
       settings: options.settings ?? {},
       rpc: {
-        state: () => emptyState(),
+        state: () => ({ ...emptyState(), analysis: options.analysis ?? {} }),
         moveThread: () => ({ entry: null }),
       },
     },
@@ -178,6 +182,41 @@ describe("thread list", () => {
       name: "Moves with its parent",
     });
     expect(item.getAttribute("aria-disabled")).toBe("true");
+    slot.lifecycle.unmount();
+  });
+
+  it("lists a current needs-decision result in Needs you, but not a stale one", async () => {
+    const at = Date.now();
+    const result = (revision: number) => ({
+      recap: "Asked whether to ship.",
+      state: "needs_decision",
+      needsYou: "Ship it?",
+      subject: null,
+      drift: null,
+      driftSectionId: null,
+      revision,
+      at,
+      model: "m",
+    });
+    const slot = await mount(
+      [
+        sidebarThread("fresh", { title: "Fresh ask", latestAttentionAt: 100 }),
+        sidebarThread("stale", { title: "Stale ask", latestAttentionAt: 200 }),
+      ],
+      { analysis: { fresh: result(100), stale: result(150) } },
+    );
+    const band = await slot.findByRole("region", { name: "Needs you" });
+    expect(
+      within(band)
+        .getAllByRole("link")
+        .map((a) => a.getAttribute("aria-label")),
+    ).toEqual(["Fresh ask"]);
+    expect(
+      within(slot.getByRole("region", { name: "Unsorted" })).getAllByRole(
+        "img",
+        { name: "Needs your decision" },
+      ),
+    ).toHaveLength(1);
     slot.lifecycle.unmount();
   });
 });

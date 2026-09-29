@@ -214,3 +214,42 @@ describe.skipIf(!snapshotPath)("real snapshot", () => {
     expect([...rendered].sort()).toEqual(expected);
   });
 });
+
+describe("needs-you folding", () => {
+  const ask = new Set(["parent", "child", "late"]);
+  const project = (parentAt: number) =>
+    projectWorkstreams(
+      [
+        thread("parent", { sectionId: "sec_a", latestAttentionAt: parentAt }),
+        thread("child", {
+          parentThreadId: "parent",
+          latestAttentionAt: now - 10,
+        }),
+        thread("late", {
+          parentThreadId: "parent",
+          latestAttentionAt: now + 10,
+        }),
+      ],
+      sections,
+      { now, needsYou: (t) => ask.has(t.id) },
+    );
+
+  it("folds an older child question into its parent's newer one", () => {
+    const p = project(now);
+    expect(p.needsYou.map((r) => r.thread.id)).toEqual(["late", "parent"]);
+    expect(p.needsYouVia.get("parent")?.map((t) => t.id)).toEqual(["child"]);
+    expect(p.groups[0]?.needsYou).toBe(2);
+    // Folded rows still appear exactly once in their group.
+    expect(rowIds(p.groups[0]!)).toEqual(["parent", "child", "late"]);
+  });
+
+  it("keeps a child's question that is newer than the parent's", () => {
+    const p = project(now - 20);
+    expect(p.needsYou.map((r) => r.thread.id)).toEqual([
+      "late",
+      "child",
+      "parent",
+    ]);
+    expect(p.needsYouVia.size).toBe(0);
+  });
+});
