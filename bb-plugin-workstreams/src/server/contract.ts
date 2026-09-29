@@ -155,6 +155,7 @@ export const routeSchema = z.discriminatedUnion("outcome", [
     threadId: z.string(),
     threadTitle: z.string(),
     workstream: z.string().nullable(),
+    sectionId: z.string().nullable(),
   }),
   z.object({
     ...routeBase,

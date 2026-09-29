@@ -47,6 +47,8 @@ export type RouteDecision =
       threadId: string;
       threadTitle: string;
       workstream: string | null;
+      /** The target thread's workstream; callers that can't continue fall back to it. */
+      sectionId: string | null;
     })
   | (Base & {
       outcome: "new-thread";
@@ -143,6 +145,7 @@ export class Router {
           workstream: target.sectionId
             ? (nameOf.get(target.sectionId) ?? null)
             : null,
+          sectionId: target.sectionId,
           confidence: "high",
           reason: "The request mentions this thread.",
           subject: null,
@@ -217,6 +220,27 @@ export class Router {
         workstream: target.sectionId
           ? (nameOf.get(target.sectionId) ?? null)
           : null,
+        sectionId: target.sectionId,
+      };
+    } else if (
+      raw.outcome === "new-workstream" &&
+      records.some((r) => r.name.toLowerCase() === raw.name.toLowerCase())
+    ) {
+      // A workstream with that name exists but wasn't offered (no threads
+      // yet): start the thread there rather than creating a duplicate.
+      const record = records.find(
+        (r) => r.name.toLowerCase() === raw.name.toLowerCase(),
+      )!;
+      decision = {
+        ...base,
+        outcome: "new-thread",
+        sectionId: record.sectionId,
+        workstream: record.name,
+        title: raw.title,
+        confidence: raw.confidence,
+        reason: raw.reason,
+        subject: raw.subject,
+        placement: await this.placement(record.sectionId, raw.code, picked),
       };
     } else if (raw.outcome === "new-thread") {
       const sectionId = idOf.get(raw.workstream)!;
@@ -264,16 +288,32 @@ export class Router {
   /** A remembered decision, by id or by the prompt it was made for. */
   recall(options: {
     id?: string | null;
-    prompt?: string | null;
+    prompt: string;
   }): RouteDecision | null {
     this.prune();
-    if (options.id) return this.decisions.get(options.id)?.decision ?? null;
-    if (!options.prompt) return null;
     const key = hash(options.prompt);
+    // A decision only covers the exact text it was made for.
+    if (options.id) {
+      const found = this.decisions.get(options.id);
+      return found && !found.used && hash(found.prompt) === key
+        ? found.decision
+        : null;
+    }
     const match = [...this.decisions.values()]
       .filter((d) => !d.used && hash(d.prompt) === key)
       .sort((a, b) => b.at - a.at)[0];
     return match?.decision ?? null;
+  }
+
+  /** A remembered decision by id, for callers that pass their own prompt. */
+  byId(id: string): RouteDecision | null {
+    this.prune();
+    return this.decisions.get(id)?.decision ?? null;
+  }
+
+  /** Stops a decision from filing anything later (dry runs, superseded routes). */
+  forget(id: string): void {
+    this.decisions.delete(id);
   }
 
   /**
@@ -384,7 +424,9 @@ export class Router {
         .find((t) => t.id === decision.threadId);
       sectionId = target?.sectionId ?? null;
     }
-    if (sectionId) await this.deps.service.move(threadId, sectionId, "router");
+    // Only if it is still unfiled: a filing the user made meanwhile wins.
+    if (sectionId)
+      await this.deps.service.fileIfUnsorted(threadId, sectionId, "router");
   }
 
   /**

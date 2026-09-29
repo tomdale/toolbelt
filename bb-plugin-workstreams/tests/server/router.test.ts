@@ -240,6 +240,7 @@ describe("native composer", () => {
         thread: composed,
         input: { text: prompt },
         parentThreadId: null,
+        origin: "app",
       }),
     );
     expect(decision).toEqual({ action: "proceed" });
@@ -251,6 +252,7 @@ describe("native composer", () => {
       makeMessageDispatchHookContext({
         thread: other,
         input: { text: "something else entirely" },
+        origin: "app",
       }),
     );
     await new Promise((r) => setTimeout(r, 20));
@@ -273,5 +275,79 @@ describe("bb workstreams new", () => {
     expect(result.stdout).toContain("@thread:a1");
     expect(w.spawned).toHaveLength(0);
     expect(w.sent).toHaveLength(0);
+  });
+});
+
+describe("composer filing guards", () => {
+  const answer = {
+    outcome: "new-thread",
+    workstream: "Alpha",
+    title: "Fix tabs",
+    code: true,
+    confidence: "high",
+    reason: "Alpha parser work",
+  };
+  const prompt = "Fix the parser in Alpha so it handles tabs";
+
+  it("ignores follow-ups and a decision made for different text", async () => {
+    const { w } = await setup(answer);
+    const decision = await route(w, prompt);
+    const hook = w.harness.registrations.hooks["message.dispatch"]!;
+    const followUp = w.addThread("followup", { createdAt: Date.now() });
+    await hook(
+      makeMessageDispatchHookContext({
+        thread: followUp,
+        input: { text: prompt },
+        origin: null,
+      }),
+    );
+    const edited = w.addThread("edited", { createdAt: Date.now() });
+    await hook(
+      makeMessageDispatchHookContext({
+        thread: edited,
+        input: { text: `${prompt}, and spaces too` },
+        origin: "app",
+        experimental_submission: {
+          pluginId: "workstreams",
+          data: { routeId: decision.id },
+        },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(w.threads.get("followup")?.sectionId).toBeNull();
+    expect(w.threads.get("edited")?.sectionId).toBeNull();
+  });
+
+  it("never files a thread the user filed first", async () => {
+    const { w } = await setup(answer);
+    const beta = w.addSection("Beta");
+    await route(w, prompt);
+    const composed = w.addThread("composed", { createdAt: Date.now() });
+    const hook = w.harness.registrations.hooks["message.dispatch"]!;
+    const context = makeMessageDispatchHookContext({
+      thread: composed,
+      input: { text: prompt },
+      origin: "app",
+    });
+    // The user files it before the hook's filing runs.
+    w.threads.set("composed", { ...composed, sectionId: beta.id });
+    await hook(context);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(w.threads.get("composed")?.sectionId).toBe(beta.id);
+  });
+
+  it("forgets dry-run routes, so they file nothing later", async () => {
+    const { w } = await setup(answer);
+    await w.harness.behavior.runCli(["new", prompt, "--dry-run"]);
+    const composed = w.addThread("composed", { createdAt: Date.now() });
+    await w.harness.registrations.hooks["message.dispatch"]!(
+      makeMessageDispatchHookContext({
+        thread: composed,
+        input: { text: prompt },
+        origin: "app",
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(w.threads.get("composed")?.sectionId).toBeNull();
   });
 });

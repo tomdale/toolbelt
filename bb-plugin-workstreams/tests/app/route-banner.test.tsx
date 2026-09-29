@@ -100,3 +100,71 @@ it("sends a continue to its thread and clears the draft", async () => {
   expect(slot.inspection.composer.selections).toEqual([]);
   slot.lifecycle.unmount();
 });
+
+it("presets the environment even when the project already matches", async () => {
+  const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
+  const banner = app.composerCustomizations.find((c) => c.id === "router")!
+    .banners![0]!;
+  const slot = renderSlot(
+    banner,
+    {},
+    {
+      composer: {
+        text: PROMPT,
+        scope: { kind: "new-thread", projectId: "proj_alpha" },
+      },
+      rpc: { route: () => newThread },
+    },
+  );
+  await waitFor(
+    () =>
+      expect(slot.inspection.composer.selections).toEqual([
+        { projectId: "proj_alpha", environment: CHECKOUT },
+      ]),
+    { timeout: 2000 },
+  );
+  slot.lifecycle.unmount();
+});
+
+it("disables actions while the draft differs from what was routed", async () => {
+  const slot = await mount(newThread);
+  const start = await slot.findByRole(
+    "button",
+    { name: "Start ⏎" },
+    { timeout: 2000 },
+  );
+  expect((start as HTMLButtonElement).disabled).toBe(false);
+  await slot.behavior.setComposerText(`${PROMPT} and spaces`);
+  expect(
+    (slot.getByRole("button", { name: "Start ⏎" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  slot.lifecycle.unmount();
+});
+
+it("routes again with the user's project when they override the preset", async () => {
+  const slot = await mount(newThread);
+  await waitFor(
+    () => expect(slot.inspection.composer.selections).toHaveLength(1),
+    {
+      timeout: 2000,
+    },
+  );
+  await slot.behavior.setComposerScope({
+    kind: "new-thread",
+    projectId: "proj_alpha",
+  });
+  await slot.behavior.setComposerScope({
+    kind: "new-thread",
+    projectId: "proj_mine",
+  });
+  await waitFor(
+    () =>
+      expect(
+        slot.inspection.rpcCalls.filter((c) => c.method === "route").at(-1)
+          ?.input,
+      ).toMatchObject({ pickedProjectId: "proj_mine" }),
+    { timeout: 2000 },
+  );
+  slot.lifecycle.unmount();
+});
