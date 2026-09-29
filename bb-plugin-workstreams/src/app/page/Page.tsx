@@ -16,6 +16,7 @@ import { StatusMark } from "../sidebar/StatusMark.tsx";
 import { useWorkstreams, type WorkView } from "../useWorkstreams.ts";
 import { Activity } from "./Activity.tsx";
 import { MapTab } from "./MapTab.tsx";
+import { NewWorkDialog } from "../composer/NewWork.tsx";
 
 type Tab = "overview" | "map" | "activity";
 const TAB_LABEL: Record<Tab, string> = {
@@ -38,6 +39,7 @@ export function WorkstreamsPage({
   const ws = useWorkstreams();
   const linked = tabOf(subPath);
   const [tab, setTab] = useState<Tab>(linked.tab);
+  const [newWork, setNewWork] = useState(false);
   useEffect(() => setTab(tabOf(subPath).tab), [subPath]);
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
@@ -89,6 +91,14 @@ export function WorkstreamsPage({
               {needs ? ` · ${needs} need${needs === 1 ? "s" : ""} you` : ""}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setNewWork(true)}
+            className="rounded-md border border-border px-2.5 py-1 text-sm hover:bg-state-hover"
+          >
+            ＋ New
+          </button>
+          <NewWorkDialog open={newWork} onClose={() => setNewWork(false)} />
           <div role="tablist" className="flex gap-1 text-sm">
             {(["overview", "map", "activity"] as const).map((id) => (
               <button

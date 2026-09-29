@@ -28,6 +28,8 @@ export const actionSchema = z.enum([
   /** A workstream proposal waiting for a decision (SPEC §9). */
   "proposal",
   "edit-workstream",
+  /** New work placed by the router or a handoff (SPEC §6). */
+  "route",
 ]);
 export type Action = z.infer<typeof actionSchema>;
 

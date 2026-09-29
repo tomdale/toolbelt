@@ -19,6 +19,7 @@ const ACTION_LABEL: Record<JournalEntry["action"], string> = {
   batch: "Reorganize",
   proposal: "Proposal",
   "edit-workstream": "Edit",
+  route: "New work",
 };
 
 const SOURCE_LABEL: Record<JournalEntry["source"], string> = {
