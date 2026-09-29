@@ -9,7 +9,7 @@ import { z } from "zod";
 import {
   BATCH_SIZE,
   analysisSchema,
-  cleanDerivedAnalysis,
+  normalizeAnalysis,
   snapshotSchema,
   UNCLASSIFIED,
   fixtureSchema,
@@ -130,7 +130,7 @@ export default async function plugin(bb: BbPluginApi) {
         }
       : null;
     put("fixture", path);
-    analysis = cleanDerivedAnalysis(
+    analysis = normalizeAnalysis(
       analysisSchema.nullable().catch(null).parse(get(analysisKey())),
     );
     if (analysis) put(analysisKey(), analysis);
@@ -166,7 +166,7 @@ export default async function plugin(bb: BbPluginApi) {
   } catch {
     put("fixture", null);
   }
-  analysis ??= cleanDerivedAnalysis(
+  analysis ??= normalizeAnalysis(
     analysisSchema.nullable().catch(null).parse(get(analysisKey())),
   );
   if (analysis) put(analysisKey(), analysis);
@@ -529,7 +529,7 @@ export default async function plugin(bb: BbPluginApi) {
       warnings,
       summaries: {},
     };
-    next = cleanDerivedAnalysis(next)!;
+    next = normalizeAnalysis(next)!;
     try {
       const input = summaryInput({
         items: next.items.map((i) => ({
@@ -594,7 +594,7 @@ export default async function plugin(bb: BbPluginApi) {
     stats.seconds = Math.round((Date.now() - started) / 100) / 10;
     stats.cost = Math.round(stats.cost * 10000) / 10000;
     stats.summaryCost = Math.round(stats.summaryCost * 10000) / 10000;
-    analysis = cleanDerivedAnalysis({ ...next, stats });
+    analysis = normalizeAnalysis({ ...next, stats });
     put(analysisKey(), analysis);
   }
   const logKey = () => (fixture ? "fixture-organize-log" : "organize-log");
