@@ -1,0 +1,146 @@
+[
+  {
+    "id": "recap",
+    "title": "Debug recap generation",
+    "project": "Home",
+    "repository": null,
+    "path": "/code/bb-recap",
+    "excerpts": "User: Fix the standalone BB Recap plugin. Its hidden Pi worker fails because permissionMode is unsupported. Assistant: Found the mismatch; no fix applied yet.",
+    "expected": ["Recap", "BB Recap"]
+  },
+  {
+    "id": "okta",
+    "title": "Implement Okta local network auth",
+    "project": "Home",
+    "repository": "https://github.com/example/bb.git",
+    "path": "/code/bb/okta-local-network",
+    "excerpts": "User: In BB itself, fix Okta sign-in through the embedded browser on local networks. Assistant: Switched to feature branch; implementation has not started.",
+    "expected": ["BB"]
+  },
+  {
+    "id": "ws1",
+    "title": "Review plugin implementation",
+    "project": "Personal",
+    "repository": null,
+    "path": "/code/plugins/bb-plugin-workstreams",
+    "excerpts": "User: Rebuild Workstreams as an overview of BB threads grouped by product. Assistant: Thread cards implemented; grouping quality needs improvement.",
+    "expected": ["Workstreams"]
+  },
+  {
+    "id": "ws2",
+    "title": "Workstreams: manage work across directories",
+    "project": "Home",
+    "repository": null,
+    "path": "/code/plugins/bb-plugin-workstreams",
+    "excerpts": "User: The Workstreams plugin page has stale content. Assistant: Investigating why saved analysis is not appearing on its cards.",
+    "expected": ["Workstreams"]
+  },
+  {
+    "id": "sdk",
+    "title": "Map Vercel product implementation",
+    "project": "Home",
+    "repository": "https://github.com/example/bb.git",
+    "path": "/code/bb/plugin-loader",
+    "excerpts": "User: We are no longer mapping Vercel. Add runtime skill registration to the BB Plugin SDK to unblock its zero-copy plugin loader. Assistant: Loader work is blocked on this BB SDK addition.",
+    "expected": ["BB"]
+  },
+  {
+    "id": "pi",
+    "title": "Expand Pi dynamic skill discovery",
+    "project": "Home",
+    "repository": "https://github.com/example/bb.git",
+    "path": "/code/bb/pi-resources",
+    "excerpts": "User: Extend the built-in Pi provider in BB to support dynamic resource discovery. Assistant: BB provider change is ready for testing.",
+    "expected": ["BB"]
+  },
+  {
+    "id": "transcripts",
+    "title": "Collect AI transcripts",
+    "project": "Home",
+    "repository": "https://github.com/example/agentlog.git",
+    "path": "/code/workforest/tasks/transcripts/agentlog",
+    "excerpts": "User: Implement transcript import for the agentlog CLI in a Workforest checkout. Workforest is just managing the checkout, not the target project. Assistant: agentlog import tests pass; changes are not committed.",
+    "expected": ["agentlog"]
+  },
+  {
+    "id": "forest",
+    "title": "Integrate activity summaries into BB",
+    "project": "Home",
+    "repository": "https://github.com/example/workforest.git",
+    "path": "/code/workforest",
+    "excerpts": "User: Add cached activity summaries to Workforest so the BB UI can consume them. Modify Workforest, not BB. Assistant: Cache implementation is planned, not built.",
+    "expected": ["Workforest"]
+  },
+  {
+    "id": "slack1",
+    "title": "Review automation PRs",
+    "project": "api",
+    "repository": "https://github.com/example/api.git",
+    "path": "/code/api/review",
+    "excerpts": "User: Review automation runs for Vercel Agent for Slack. Its backend lives in this API repository. Assistant: Invalid DynamoDB fixture blocks approval.",
+    "expected": ["Vercel Agent for Slack"]
+  },
+  {
+    "id": "slack2",
+    "title": "Fix Slack reply routing",
+    "project": "agent-sdk",
+    "repository": "https://github.com/example/agent-sdk.git",
+    "path": "/code/agent-sdk",
+    "excerpts": "User: Fix reply routing in the SDK for Vercel Agent for Slack. Same product as the automation backend. Assistant: Fix tested locally; waiting for review.",
+    "expected": ["Vercel Agent for Slack"]
+  },
+  {
+    "id": "v0",
+    "title": "Improve preview rendering",
+    "project": "v0",
+    "repository": "https://github.com/example/v0.git",
+    "path": "/code/v0",
+    "excerpts": "User: Improve the v0 product's preview renderer. This is not Vercel Agent for Slack. Assistant: Waiting for design approval.",
+    "expected": ["v0", "Vercel v0"]
+  },
+  {
+    "id": "dock1",
+    "title": "Fork Dockside",
+    "project": "Home",
+    "repository": null,
+    "path": "/code/plugins/dockside",
+    "excerpts": "User: Fork the independently installed Dockside sidebar plugin. Assistant: Fork installed; sidebar selection conflict remains.",
+    "expected": ["Dockside"]
+  },
+  {
+    "id": "dock2",
+    "title": "Agent manager home base",
+    "project": "Personal",
+    "repository": null,
+    "path": "/code/plugins/dockside",
+    "excerpts": "User: Continue work on our Dockside fork, adding agent badges. Workstreams may integrate later but isn't being changed here. Assistant: Waiting on sidebar selection fix.",
+    "expected": ["Dockside"]
+  },
+  {
+    "id": "empty",
+    "title": "test",
+    "project": "Personal",
+    "repository": null,
+    "path": null,
+    "excerpts": "",
+    "expected": ["Unclassified"]
+  },
+  {
+    "id": "viewer",
+    "title": "Explain v0 provisioning",
+    "project": "v0",
+    "repository": "https://github.com/example/agent-upload-viewer.git",
+    "path": "/code/agent-upload-viewer",
+    "excerpts": "User: Change of topic: improve the standalone agent-upload-viewer app, served at agentfile.link. It is not the v0 product. Assistant: Markdown theme switcher is implemented locally.",
+    "expected": ["agent-upload-viewer", "Agent Upload Viewer", "agentfile.link"]
+  },
+  {
+    "id": "instructions",
+    "title": "Update repository guidance",
+    "project": "Home",
+    "repository": "https://github.com/example/home.git",
+    "path": "/code/home",
+    "excerpts": "User: Update the Home repository's own AGENTS.md delegation rules. We are changing Home, not BB or the agent provider. Assistant: Changes prepared; awaiting approval.",
+    "expected": ["Home"]
+  }
+]
