@@ -123,7 +123,6 @@ function setup(
                 (includeHidden === true || row.visibility !== "hidden"),
             )
             .slice(offset, offset + limit),
-        promptHistory: async () => [],
         output: async () => ({ output: "Working on Vercel Agent for Slack." }),
         get: async ({ threadId }: { threadId: string }) =>
           rows.find((t) => t.id === threadId)!,
@@ -390,7 +389,7 @@ describe("active thread overview", () => {
   ])(
     "distinguishes %s native sections on --fresh",
     async (_kind, sectionId, expected) => {
-      const h = setup(1, false, undefined, [
+      const h = setup(1, false, undefined, undefined, [
         { id: "sec_auto", name: "Old automatic group" },
         { id: "sec_manual", name: "Manual correction" },
       ]);
@@ -452,6 +451,7 @@ describe("active thread overview", () => {
     const h = setup(
       1,
       false,
+      undefined,
       undefined,
       [{ id: "sec_old", name: "Old Product" }],
       true,
