@@ -657,8 +657,9 @@ export default async function plugin(bb: BbPluginApi) {
     return saved;
   };
   const splitting = new Set<string>();
-  async function sectionIds() {
+  async function sectionIds(signal?: AbortSignal) {
     const sections = await bb.sdk.threadSections.list();
+    signal?.throwIfAborted();
     const byName = new Map(sections.map((s) => [s.name.toLowerCase(), s.id]));
     const names = new Map(sections.map((s) => [s.id, s.name]));
     return {
@@ -667,6 +668,7 @@ export default async function plugin(bb: BbPluginApi) {
       async ensure(name: string) {
         const existing = byName.get(name.toLowerCase());
         if (existing) return existing;
+        signal?.throwIfAborted();
         const created = await bb.sdk.threadSections.create({ name });
         byName.set(name.toLowerCase(), created.id);
         names.set(created.id, created.name);
@@ -698,11 +700,13 @@ export default async function plugin(bb: BbPluginApi) {
     sections: Awaited<ReturnType<typeof sectionIds>>,
     splitPolicy: "manual" | "auto",
     expectedAt: number,
+    signal?: AbortSignal,
   ): Promise<Pick<LogEntry, "detail" | "undo">> {
     // Historical removal entries remain readable for Undo, but native BB
     // sections have no durable ownership marker or complete membership query.
     if (action.kind === "removeSection")
       throw new Error("Workstreams does not delete native BB sections.");
+    signal?.throwIfAborted();
     const detail = await bb.sdk.threads.get({ threadId: action.threadId });
     if (detail.archivedAt !== null || detail.deletedAt !== null)
       throw new Error("Thread is archived or deleted.");
@@ -726,6 +730,7 @@ export default async function plugin(bb: BbPluginApi) {
         : null,
     };
     if (action.kind === "retitle") {
+      signal?.throwIfAborted();
       await recheck();
       await bb.sdk.threads.update({
         threadId: action.threadId,
@@ -741,12 +746,15 @@ export default async function plugin(bb: BbPluginApi) {
       });
       if (children.nonDeletedChildCount > 0)
         throw new Error("Thread has child threads; archive it manually.");
+      signal?.throwIfAborted();
       await recheck();
       await bb.sdk.threads.archive({ threadId: action.threadId });
       return { detail: action.reason, undo: { ...before, archived: true } };
     }
     if (action.kind === "section") {
+      signal?.throwIfAborted();
       const sectionId = await sections.ensure(action.section);
+      signal?.throwIfAborted();
       await recheck();
       await bb.sdk.threads.update({ threadId: action.threadId, sectionId });
       return {
@@ -755,6 +763,7 @@ export default async function plugin(bb: BbPluginApi) {
       };
     }
     if (action.kind === "parent") {
+      signal?.throwIfAborted();
       await recheck();
       await bb.sdk.threads.update({
         threadId: action.threadId,
@@ -823,6 +832,7 @@ export default async function plugin(bb: BbPluginApi) {
         "Split point is no longer a user request; analyze it again.",
       );
     await recheck();
+    signal?.throwIfAborted();
     const { drift } = action;
     // BB refuses to fork inside turns recorded under another thread's provider
     // session (e.g. delivered manager messages); fall back to earlier turns.
@@ -832,6 +842,7 @@ export default async function plugin(bb: BbPluginApi) {
     for (const sourceSeqEnd of (
       await mainlineSeqs(action.threadId, drift.splitSeq)
     ).slice(0, 5)) {
+      signal?.throwIfAborted();
       await recheck();
       try {
         fork = await bb.sdk.threads.fork({
@@ -859,19 +870,22 @@ export default async function plugin(bb: BbPluginApi) {
         forkedAt = sourceSeqEnd;
         break;
       } catch (e) {
+        signal?.throwIfAborted();
         lastError = e;
       }
     }
     if (!fork) throw lastError;
     try {
-      await bb.sdk.threads.update({
-        threadId: fork.id,
-        sectionId: await sections.ensure(drift.from),
-      });
+      signal?.throwIfAborted();
+      const sectionId = await sections.ensure(drift.from);
+      signal?.throwIfAborted();
+      await bb.sdk.threads.update({ threadId: fork.id, sectionId });
+      signal?.throwIfAborted();
       await bb.sdk.threads.update({
         threadId: action.threadId,
         title: drift.sideTitle,
       });
+      signal?.throwIfAborted();
       await bb.sdk.threads.compact({ threadId: action.threadId });
     } catch (e) {
       throw new PartialSplitError(
@@ -889,11 +903,14 @@ export default async function plugin(bb: BbPluginApi) {
     actions: Action[],
     splitPolicy: "manual" | "auto" = "auto",
     plannedAt: Map<string, number> = new Map(),
+    signal?: AbortSignal,
+    outcomeCounts?: { done: number; failed: number },
   ): Promise<LogEntry[]> {
     const outcomes: LogEntry[] = [];
     if (fixture) {
       const titles = new Map(fixture.contexts.map((c) => [c.id, c.title]));
-      for (const action of actions)
+      for (const action of actions) {
+        signal?.throwIfAborted();
         outcomes.push(
           record({
             action,
@@ -901,14 +918,16 @@ export default async function plugin(bb: BbPluginApi) {
             detail: describe(action, titles),
           }),
         );
+      }
       notify();
       return outcomes;
     }
-    const sections = await sectionIds();
+    const sections = await sectionIds(signal);
     const failedSplits = new Set<string>();
     const failed = new Set<string>();
     const succeeded = new Set<string>();
     for (const action of actions) {
+      if (signal?.aborted) break;
       let locked = false;
       try {
         if (failedSplits.has(action.threadId))
@@ -919,14 +938,22 @@ export default async function plugin(bb: BbPluginApi) {
           splitting.add(action.threadId);
           locked = true;
         }
+        signal?.throwIfAborted();
         const expectedAt = plannedAt.get(action.threadId);
         if (expectedAt === undefined || failed.has(action.threadId))
           throw new Error("Thread changed since action planning.");
-        const result = await execute(action, sections, splitPolicy, expectedAt);
+        const actionResult = await execute(
+          action,
+          sections,
+          splitPolicy,
+          expectedAt,
+          signal,
+        );
         const current = await bb.sdk.threads.get({ threadId: action.threadId });
         plannedAt.set(action.threadId, current.updatedAt);
         succeeded.add(action.threadId);
-        outcomes.push(record({ action, result: "done", ...result }));
+        outcomes.push(record({ action, result: "done", ...actionResult }));
+        if (outcomeCounts) outcomeCounts.done++;
       } catch (e) {
         failed.add(action.threadId);
         if (action.kind === "split") failedSplits.add(action.threadId);
@@ -934,10 +961,16 @@ export default async function plugin(bb: BbPluginApi) {
           record({
             action,
             result: "failed",
-            detail: e instanceof Error ? e.message : String(e),
+            detail: signal?.aborted
+              ? "Cancelled during action; check for partial changes."
+              : e instanceof Error
+                ? e.message
+                : String(e),
             ...(e instanceof PartialSplitError ? { undo: e.undo } : {}),
           }),
         );
+        if (outcomeCounts) outcomeCounts.failed++;
+        if (signal?.aborted) break;
       } finally {
         if (locked) splitting.delete(action.threadId);
       }
@@ -959,14 +992,18 @@ export default async function plugin(bb: BbPluginApi) {
     notify();
     return outcomes;
   }
-  async function organize() {
+  async function organize(
+    signal?: AbortSignal,
+    result?: { done: number; failed: number },
+  ) {
+    signal?.throwIfAborted();
     organizing = true;
     notify();
     try {
-      const threads = await inventory();
+      const threads = await inventory(signal);
       const sectionNames = fixture
         ? new Map<string, string>()
-        : (await sectionIds()).names;
+        : (await sectionIds(signal)).names;
       const namesById = new Map(
         (await bb.sdk.threadSections.list()).map((s) => [s.id, s.name]),
       );
@@ -1004,10 +1041,13 @@ export default async function plugin(bb: BbPluginApi) {
         // from the last section Workstreams assigned on the next run.
         return !assigned || oldName === assigned || assigned === action.section;
       });
+      signal?.throwIfAborted();
       await perform(
         actions,
         "auto",
         new Map(threads.map((thread) => [thread.id, thread.updatedAt])),
+        signal,
+        result,
       );
     } finally {
       organizing = false;
@@ -1220,13 +1260,23 @@ export default async function plugin(bb: BbPluginApi) {
           run = new AbortController();
           const onStop = () => run?.abort();
           signal.addEventListener("abort", onStop);
+          const runSignal = AbortSignal.any([signal, run.signal]);
+          let analyzed = false;
+          const organizeResult = { done: 0, failed: 0 };
           try {
-            await analyze(AbortSignal.any([signal, run.signal]));
-            if ((await settings.get()).organize === "auto") await organize();
-            if (lastHost) await ensureBanners(lastHost, signal);
+            await analyze(runSignal);
+            analyzed = true;
+            runSignal.throwIfAborted();
+            if ((await settings.get()).organize === "auto")
+              await organize(runSignal, organizeResult);
+            runSignal.throwIfAborted();
+            if (lastHost) await ensureBanners(lastHost, runSignal);
+            runSignal.throwIfAborted();
           } catch (e) {
-            error = run.signal.aborted
-              ? "Analysis cancelled. Previous results are unchanged."
+            error = runSignal.aborted
+              ? analyzed
+                ? `Analysis completed; follow-up cancelled. ${organizeResult.done} organize actions completed, ${organizeResult.failed} failed; remaining actions skipped. Check the organize log for changes.`
+                : "Analysis cancelled. Previous results are unchanged."
               : e instanceof Error
                 ? e.message
                 : String(e);
