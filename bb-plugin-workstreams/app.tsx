@@ -9,7 +9,6 @@ import {
 import type { rpcContract, View } from "./server";
 import {
   UNCLASSIFIED,
-  excludeDispatchThreads,
   groupThreads,
   type Row,
   type Snapshot,
@@ -217,8 +216,8 @@ function WorkstreamsPage() {
       setBusy(false);
     }
   };
-  const displayThreads = data ? excludeDispatchThreads(data.threads) : [];
-  const all = data ? groupThreads({ ...data, threads: displayThreads }) : [];
+  const displayThreads = data?.threads ?? [];
+  const all = data ? groupThreads(data) : [];
   // Page and sidebar use the same host-adjusted immediate-ask count.
   const needsYou = data?.analysis?.needsYouCount ?? 0;
   const q = query.trim().toLowerCase();

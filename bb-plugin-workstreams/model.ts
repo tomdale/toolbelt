@@ -48,16 +48,6 @@ export const threadSchema = z.object({
   hasPendingInteraction: z.boolean().default(false),
 });
 export type Thread = z.infer<typeof threadSchema>;
-const TOMDALE_OS_PATH = "/users/tomdale/code/tomdaleos";
-export function excludeDispatchThreads(threads: readonly Thread[]): Thread[] {
-  return threads.filter((thread) => {
-    const path = (thread.environmentPath ?? "")
-      .replace(/\\/g, "/")
-      .replace(/\/$/, "")
-      .toLowerCase();
-    return thread.parentThreadId !== null || path !== TOMDALE_OS_PATH;
-  });
-}
 export type Context = Thread & {
   excerpts: string;
   path: string | null;
