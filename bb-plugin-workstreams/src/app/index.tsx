@@ -3,11 +3,17 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { ProposalBanner } from "./header/ProposalBanner.tsx";
+import { RouteBanner } from "./composer/RouteBanner.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
 import { WorkstreamsThreadList } from "./sidebar/ThreadList.tsx";
 import "./styles.css";
 
 export default definePluginApp((app) => {
+  app.composer.customize({
+    id: "router",
+    scopes: ["new-thread"],
+    banners: [{ id: "route", chrome: "bare", component: RouteBanner }],
+  });
   app.slots.experimental_threadHeaderAction({
     id: "parent-thread",
     title: "Parent thread",

@@ -66,3 +66,25 @@ A prompt or model change ships only if it meets every line:
 
 Gemini 3.1 Flash-Lite passes and is the default. GPT-4.1 mini is faster and
 cheaper but misses the private subject bar and drift detection.
+
+## Routing (`route.ts`)
+
+`node eval/route.ts [model ...]` runs the intake router prompt
+(`src/domain/router.ts`, SPEC §6) on `route.json`: synthetic workstreams, active
+threads, and prompts labeled with the expected outcome (continue a thread, new
+thread in a workstream, new workstream). A private replay built from real first
+messages, labeled with the workstream each thread lives in, runs with
+`EVAL_ROUTE=<replay.json>` under the same private-output rule.
+
+Scores: outcome, exact target, and workstream (the work landed with the right
+workstream, whether by continuing or starting a thread).
+
+Result (2026-09-29):
+
+| Model                          | Synthetic target | Replay workstream | New workstreams | Median |
+| ------------------------------ | ---------------- | ----------------- | --------------- | ------ |
+| `google/gemini-3.1-flash-lite` | 9/10             | 15/19             | 0               | 2.7 s  |
+| `openai/gpt-4.1-mini`          | 8/10             | 9/19              | 0               | 1.2 s  |
+
+Most replay misses are prompts filed under tomdaleOS that the router sends to BB
+& plugins; several of those filings are ones the bootstrap would also move.

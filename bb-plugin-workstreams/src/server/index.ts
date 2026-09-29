@@ -9,6 +9,7 @@ import { Analyzer } from "./analyzer.ts";
 import { Bootstrap } from "./bootstrap.ts";
 import { Evolution } from "./evolution.ts";
 import { WorkstreamMap } from "./map.ts";
+import { Router, type RouteDecision } from "./router.ts";
 import { rpcContract } from "./contract.ts";
 import { hostContract } from "./inference/contract.ts";
 import { openDatabase } from "./db.ts";
@@ -78,6 +79,13 @@ export default async function plugin(bb: BbPluginApi) {
         "When threads show a workstream should split, merge, or move: apply the change with an Undo banner, or ask first.",
       options: ["auto", "ask"],
       default: "auto",
+    },
+    homeProjectId: {
+      type: "project",
+      label: "Home project",
+      description:
+        'Where work with no code target starts. Blank starts it in a fresh personal workspace ("Don\'t work in a project").',
+      default: "",
     },
     sensitivity: {
       type: "select",
@@ -158,6 +166,78 @@ export default async function plugin(bb: BbPluginApi) {
     onChange: notify,
     log: (message) => bb.log.warn(message),
   });
+  const router = new Router({
+    sdk: () => bb.sdk,
+    service,
+    journal,
+    map,
+    analyzer,
+    complete,
+    model: async () => (await settings.get()).model,
+    homeProjectId: async () => (await settings.get()).homeProjectId ?? "",
+  });
+  // A thread the native composer just created from a previewed prompt is
+  // filed where the preview said: via the banner's submit data, or, for a
+  // plain Enter, by matching the prompt. The hook itself always proceeds.
+  bb.experimental_hooks.on("message.dispatch", (ctx) => {
+    const fresh =
+      ctx.attempt === "start-turn" &&
+      ctx.queuedMessages.length === 0 &&
+      !ctx.thread.sectionId &&
+      !ctx.parentThreadId &&
+      Date.now() - ctx.thread.createdAt < 120_000;
+    if (fresh) {
+      const data =
+        ctx.experimental_submission?.pluginId === bb.pluginId
+          ? (ctx.experimental_submission.data as { routeId?: string } | null)
+          : null;
+      const decision = router.recall(
+        data?.routeId ? { id: data.routeId } : { prompt: ctx.input.text },
+      );
+      if (decision)
+        setTimeout(() => {
+          router
+            .fileComposed(ctx.thread.id, decision)
+            .catch((error: unknown) =>
+              bb.log.warn(`Filing a composed thread failed: ${String(error)}`),
+            );
+        }, 0);
+    }
+    return { action: "proceed" };
+  });
+  const choose = (
+    decision: RouteDecision,
+    choice: { threadId: string } | { sectionId: string } | null | undefined,
+  ): RouteDecision => {
+    if (!choice || decision.outcome !== "unsure") return decision;
+    const picked = decision.candidates.find((c) =>
+      "threadId" in choice
+        ? c.kind === "thread" && c.threadId === choice.threadId
+        : c.kind === "workstream" && c.sectionId === choice.sectionId,
+    );
+    if (!picked)
+      throw new UserError("That choice isn't one of the candidates.");
+    return picked.kind === "thread"
+      ? {
+          ...decision,
+          outcome: "continue",
+          threadId: picked.threadId,
+          threadTitle: picked.title,
+          workstream: null,
+        }
+      : {
+          ...decision,
+          outcome: "new-thread",
+          sectionId: picked.sectionId,
+          workstream: picked.name,
+          title: "",
+          placement: {
+            projectId: "",
+            environment: { type: "project-default" },
+            label: "",
+          },
+        };
+  };
   let evolveTimer: ReturnType<typeof setTimeout> | null = null;
   evolveSoon = () => {
     if (evolveTimer) return;
@@ -223,6 +303,23 @@ export default async function plugin(bb: BbPluginApi) {
   };
 
   bb.rpc.register(rpcContract, {
+    route: ({ prompt, pickedProjectId, workstreamId }) =>
+      userFacing(() => router.route(prompt, { pickedProjectId, workstreamId })),
+    routeExecute: ({ decisionId, prompt, choice, execution }) =>
+      userFacing(async () => {
+        const remembered = router.recall({ id: decisionId });
+        if (!remembered)
+          throw new UserError("That preview expired; route it again.");
+        let decision = choose(remembered, choice);
+        // An unsure choice of workstream still needs a real placement.
+        if (decision.outcome === "new-thread" && !decision.placement.projectId)
+          decision = await router.route(
+            `@section:${decision.sectionId} ${prompt}`,
+          );
+        return router.execute(decision, prompt, "router", {
+          execution: (execution ?? undefined) as never,
+        });
+      }),
     state: async () => ({
       ...service.state(),
       workstreams: Object.fromEntries(map.list().map((r) => [r.sectionId, r])),
@@ -315,5 +412,5 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
 
-  registerCli(bb, service, journal, analyzer, bootstrap, map);
+  registerCli(bb, service, journal, analyzer, bootstrap, map, router);
 }

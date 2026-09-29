@@ -526,6 +526,33 @@ export class WorkstreamService {
     });
   }
 
+  /**
+   * Journals a thread the router or a handoff created already filed. Undo
+   * moves it to Unsorted; the thread itself stays.
+   */
+  recordCreated(
+    threadId: string,
+    sectionId: string,
+    source: Source,
+    details: { title: string; rationale: string },
+  ): JournalEntry {
+    const name = this.db
+      .prepare("SELECT name FROM ws_seen_section WHERE section_id = ?")
+      .get(sectionId) as { name: string } | undefined;
+    const entry = this.journal.add({
+      action: "route",
+      source,
+      rationale: details.rationale,
+      threads: [{ id: threadId, name: details.title }],
+      workstreams: [{ id: sectionId, name: name?.name ?? "" }],
+      undo: { kind: "move", moves: [{ threadId, from: null, to: sectionId }] },
+    });
+    this.place(threadId, sectionId, source, entry.id);
+    this.seeThread(threadId, sectionId, null);
+    this.onChange();
+    return entry;
+  }
+
   /** Records that the user decided where a thread stays, without moving it. */
   keep(threadId: string, sectionId: string | null): void {
     this.place(threadId, sectionId, "user", null);

@@ -43,6 +43,8 @@ export async function fakeWorld(
     { requests: string[]; output: string | null }
   >();
   const completions: { prompt: string; model: string }[] = [];
+  const spawned: Record<string, unknown>[] = [];
+  const sent: Record<string, unknown>[] = [];
   const sections: Section[] = [];
   let nextSection = 1;
   const addThread = (id: string, overrides: Partial<Thread> = {}) => {
@@ -80,9 +82,12 @@ export async function fakeWorld(
     },
     sdk: {
       projects: {
-        // A distinctive name that must never reach an analysis prompt.
+        // A distinctive name that must never reach a model prompt.
         list: async () => [{ id: "proj_1", name: "Zebracorn" }],
         get: async () => ({ id: "proj_1", name: "Zebracorn" }),
+        sidebarBootstrap: async () => ({
+          personalProject: { id: "proj_personal", name: "Personal" },
+        }),
       },
       hosts: {
         list: async () => [
@@ -98,6 +103,19 @@ export async function fakeWorld(
               createdAt: i,
               input: text(value),
             })),
+        spawn: async (args: Record<string, unknown>) => {
+          spawned.push(args);
+          const thread = addThread(`spawn${spawned.length}`, {
+            sectionId: (args.sectionId as string | null) ?? null,
+            projectId: args.projectId as string,
+            parentThreadId: (args.parentThreadId as string | null) ?? null,
+          });
+          return thread;
+        },
+        send: async (args: Record<string, unknown>) => {
+          sent.push(args);
+          return { status: "sent" };
+        },
         output: async ({ threadId }: { threadId: string }) => ({
           output: conversations.get(threadId)?.output ?? null,
         }),
@@ -182,5 +200,7 @@ export async function fakeWorld(
     addSection,
     converse,
     completions,
+    spawned,
+    sent,
   };
 }

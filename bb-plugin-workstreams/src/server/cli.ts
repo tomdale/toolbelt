@@ -18,6 +18,7 @@ import { isCurrent, needsYou } from "../domain/analysis.ts";
 import type { Analyzer, StoredAnalysis } from "./analyzer.ts";
 import type { Bootstrap, BootstrapState } from "./bootstrap.ts";
 import type { WorkstreamMap } from "./map.ts";
+import type { RouteDecision, Router } from "./router.ts";
 import {
   listActiveThreads,
   listSections,
@@ -83,6 +84,7 @@ export function registerCli(
   analyzer: Analyzer,
   bootstrap: Bootstrap,
   map: WorkstreamMap,
+  router: Router,
 ): void {
   const load = async () => {
     const [threads, sections] = await Promise.all([
@@ -410,6 +412,64 @@ export function registerCli(
             };
           },
         }),
+        new: cliCommand({
+          summary:
+            "Start new work where it belongs: continue a thread, start one in a workstream, or start a new workstream",
+          positionals: [
+            {
+              name: "prompt",
+              description: "What the work is (the first message)",
+              required: true,
+            },
+          ],
+          options: {
+            workstream: {
+              type: "string",
+              description: "Start it in this workstream (name or section id)",
+            },
+            project: {
+              type: "string",
+              description: "Prefer this project id",
+            },
+            "dry-run": {
+              type: "boolean",
+              description: "Print the route without acting",
+            },
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ positionals, options }) {
+            let prompt = positionals.prompt;
+            if (options.workstream) {
+              const section = resolveWorkstream(
+                await listSections(bb.sdk),
+                options.workstream,
+              );
+              if (!section)
+                throw new PluginCliError(
+                  `No workstream named "${options.workstream}".`,
+                  { code: "workstream_not_found" },
+                );
+              prompt = `@section:${section.id} ${prompt}`;
+            }
+            const decision = await router
+              .route(prompt, { pickedProjectId: options.project ?? null })
+              .catch(fail);
+            // Scripts can't see a preview: continue only when sure.
+            const acted = await actOn(
+              router,
+              decision,
+              positionals.prompt,
+              options["dry-run"],
+              "router",
+            );
+            return {
+              exitCode: acted.outcome === "unsure" ? 3 : 0,
+              stdout: options.json
+                ? JSON.stringify(acted, null, 2)
+                : describeOutcome(acted),
+            };
+          },
+        }),
         rebuild: cliCommand({
           summary:
             "Organize every thread once: propose the workstream map, file threads, and preview the result",
@@ -484,4 +544,88 @@ export function registerCli(
       },
     }),
   );
+}
+
+export type Acted = {
+  outcome: RouteDecision["outcome"];
+  threadId: string | null;
+  link: string | null;
+  workstream: string | null;
+  reason: string;
+  candidates?: string[];
+};
+
+/**
+ * The policy for callers that can't preview (scripts, agent handoffs):
+ * new threads and workstreams act at once, a continue acts only at high
+ * confidence and otherwise starts a thread in that thread's workstream, and
+ * unsure changes nothing.
+ */
+export async function actOn(
+  router: Router,
+  decision: RouteDecision,
+  prompt: string,
+  dryRun: boolean,
+  source: "router" | "handoff",
+  options: { message?: string; spawnedFrom?: string | null } = {},
+): Promise<Acted> {
+  let final = decision;
+  if (decision.outcome === "continue" && decision.confidence !== "high")
+    final = await router.route(prompt, {
+      exclude: decision.threadId,
+    });
+  if (final.outcome === "continue" && final.confidence !== "high")
+    final = { ...final, outcome: "unsure", candidates: [] } as RouteDecision;
+  const workstream =
+    final.outcome === "new-thread"
+      ? final.workstream
+      : final.outcome === "new-workstream"
+        ? final.name
+        : final.outcome === "continue"
+          ? final.workstream
+          : null;
+  if (final.outcome === "unsure")
+    return {
+      outcome: "unsure",
+      threadId: null,
+      link: null,
+      workstream: null,
+      reason: final.reason,
+      candidates:
+        "candidates" in final
+          ? final.candidates.map((c) =>
+              c.kind === "thread"
+                ? `@thread:${c.threadId} (${c.title})`
+                : `${c.name} (workstream)`,
+            )
+          : [],
+    };
+  const result = dryRun
+    ? { threadId: final.outcome === "continue" ? final.threadId : null }
+    : await router.execute(final, prompt, source, options);
+  return {
+    outcome: final.outcome,
+    threadId: result.threadId,
+    link: result.threadId ? `@thread:${result.threadId}` : null,
+    workstream,
+    reason: final.reason,
+  };
+}
+
+function describeOutcome(acted: Acted): string {
+  if (acted.outcome === "unsure")
+    return [
+      `Not sure where this goes: ${acted.reason}`,
+      ...(acted.candidates ?? []).map((c) => `  - ${c}`),
+      "Nothing was started.",
+    ].join("\n");
+  const verb =
+    acted.outcome === "continue"
+      ? "Sent to"
+      : acted.outcome === "new-workstream"
+        ? "Started in new workstream"
+        : "Started in";
+  return `${verb} ${acted.outcome === "continue" ? (acted.link ?? "") : (acted.workstream ?? "")}${
+    acted.link && acted.outcome !== "continue" ? `: ${acted.link}` : ""
+  }\n${acted.reason}`;
 }

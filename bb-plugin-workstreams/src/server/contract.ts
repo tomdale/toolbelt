@@ -137,7 +137,94 @@ const bootstrapSchema = z
   })
   .nullable();
 
+const routeBase = {
+  id: z.string(),
+  confidence: z.enum(["high", "medium", "low"]),
+  reason: z.string(),
+  subject: z.string().nullable(),
+};
+const placementSchema2 = z.object({
+  projectId: z.string(),
+  environment: z.record(z.string(), z.unknown()),
+  label: z.string(),
+});
+export const routeSchema = z.discriminatedUnion("outcome", [
+  z.object({
+    ...routeBase,
+    outcome: z.literal("continue"),
+    threadId: z.string(),
+    threadTitle: z.string(),
+    workstream: z.string().nullable(),
+  }),
+  z.object({
+    ...routeBase,
+    outcome: z.literal("new-thread"),
+    sectionId: z.string(),
+    workstream: z.string(),
+    title: z.string(),
+    placement: placementSchema2,
+  }),
+  z.object({
+    ...routeBase,
+    outcome: z.literal("new-workstream"),
+    name: z.string(),
+    description: z.string(),
+    title: z.string(),
+    placement: placementSchema2,
+  }),
+  z.object({
+    ...routeBase,
+    outcome: z.literal("unsure"),
+    candidates: z.array(
+      z.union([
+        z.object({
+          kind: z.literal("thread"),
+          threadId: z.string(),
+          title: z.string(),
+        }),
+        z.object({
+          kind: z.literal("workstream"),
+          sectionId: z.string(),
+          name: z.string(),
+        }),
+      ]),
+    ),
+  }),
+]);
+
 export const rpcContract = defineRpcContract({
+  /** Where new work would go (SPEC §6). Changes nothing. */
+  route: {
+    input: z.object({
+      prompt: z.string().min(1).max(20_000),
+      pickedProjectId: z.string().nullable().optional(),
+      workstreamId: z.string().nullable().optional(),
+    }),
+    output: routeSchema,
+  },
+  /**
+   * Acts on a previewed route: sends to the thread, or spawns the thread
+   * (with the composer's execution choices when given). `choice` overrides an
+   * unsure decision with one of its candidates.
+   */
+  routeExecute: {
+    input: z.object({
+      decisionId: z.string().min(1),
+      prompt: z.string().min(1).max(20_000),
+      choice: z
+        .union([
+          z.object({ threadId: z.string() }),
+          z.object({ sectionId: z.string() }),
+        ])
+        .nullable()
+        .optional(),
+      execution: z.record(z.string(), z.unknown()).nullable().optional(),
+    }),
+    output: z.object({
+      threadId: z.string().nullable(),
+      sectionId: z.string().nullable(),
+    }),
+  },
   /** Plugin-side facts the live sidebar hook doesn't carry. */
   state: {
     input: z.null(),

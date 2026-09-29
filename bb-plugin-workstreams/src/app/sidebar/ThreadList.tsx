@@ -19,6 +19,7 @@ import { NameDialog, type NameRequest } from "./NameDialog.tsx";
 import { Row } from "./Row.tsx";
 import { RowMenu, type RowMenuHandlers } from "./RowMenu.tsx";
 import { GroupMenu } from "./GroupMenu.tsx";
+import { NewWorkDialog } from "../composer/NewWork.tsx";
 
 type ThreadGroup = Group<PluginSidebarThread>;
 
@@ -31,6 +32,9 @@ export function WorkstreamsThreadList({
   const navigate = useBbNavigate();
   const { isCollapsed, toggle } = useCollapsed();
   const [nameRequest, setNameRequest] = useState<NameRequest | null>(null);
+  const [newWork, setNewWork] = useState<{
+    workstreamId: string | null;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { projection, sections, now } = ws;
   const nameOf = new Map(sections.map((s) => [s.id, s.name]));
@@ -117,6 +121,18 @@ export function WorkstreamsThreadList({
 
   return (
     <div className="ws-list flex flex-col gap-2 pb-4 pt-1">
+      <button
+        type="button"
+        onClick={() => setNewWork({ workstreamId: null })}
+        className="mx-2 flex h-7 items-center gap-1.5 rounded-md px-2 text-left text-[13px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+      >
+        <span aria-hidden="true">＋</span> New work
+      </button>
+      <NewWorkDialog
+        open={newWork !== null}
+        workstreamId={newWork?.workstreamId ?? null}
+        onClose={() => setNewWork(null)}
+      />
       {error ? (
         <p
           role="alert"
@@ -152,12 +168,7 @@ export function WorkstreamsThreadList({
           collapsed={isCollapsed(group.id)}
           toggle={() => toggle(group.id)}
           onRename={() => renameWorkstream(group)}
-          onNewThread={() => {
-            // No project guess: the router (SPEC §6) will choose one. Until
-            // then the composer keeps its own project selection.
-            actions.openNewThread({ sectionId: group.id, focusPrompt: true });
-            onNavigate();
-          }}
+          onNewThread={() => setNewWork({ workstreamId: group.id })}
         >
           {group.rows.map((row) => renderRow(row))}
         </WorkstreamGroup>
