@@ -1,6 +1,7 @@
 /**
  * The workstream-proposal pill in a thread header, with its yellow floating
- * banner (SPEC §9). The header row is 28px tall, so the banner is portalled
+ * banner (SPEC §9). With no proposal, the same surface carries the thread's
+ * drift flag (§10): Hand off, Move, or Dismiss. The header row is 28px tall, so the banner is portalled
  * and anchored below the pill. It never takes focus, collapses to the pill,
  * and on phone widths only the pill shows.
  *
@@ -10,12 +11,16 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  experimental_useSidebarThreads,
   useBbNavigate,
   useSidebarSplitLayout,
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
-import type { ProposalView } from "../../server/evolution.ts";
-import { proposalsByThread, useServerState } from "../useWorkstreams.ts";
+import {
+  driftOf,
+  proposalsByThread,
+  useServerState,
+} from "../useWorkstreams.ts";
 
 const COLLAPSED_KEY = "workstreams:collapsed-proposals";
 
@@ -42,6 +47,21 @@ function useCollapsedProposal(id: string | undefined) {
   return { collapsed: id ? collapsed.has(id) : false, toggle };
 }
 
+type Action = {
+  label: string;
+  primary?: boolean;
+  run: () => Promise<void> | void;
+};
+type Notice = {
+  /** Collapse-state key. */
+  id: string;
+  pill: string;
+  text: string;
+  actions: Action[];
+  /** Phone widths show only the pill; tapping it runs this. */
+  onPill: () => void;
+};
+
 export function ProposalBanner({
   threadId,
   isCompactViewport,
@@ -49,13 +69,100 @@ export function ProposalBanner({
   const { rpc, server } = useServerState();
   const navigate = useBbNavigate();
   const split = useSidebarSplitLayout();
+  const { threads } = experimental_useSidebarThreads({
+    experimental_lifecycles: ["active"],
+  });
   const proposal = proposalsByThread(server.proposals).get(threadId);
-  const { collapsed, toggle } = useCollapsedProposal(proposal?.id);
+  const drift = proposal
+    ? null
+    : driftOf(
+        threads.find((t) => t.id === threadId),
+        server,
+      );
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = (work: () => Promise<unknown>) => async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  let notice: Notice | null = null;
+  if (proposal) {
+    const review = () =>
+      navigate.toPluginPanel("home", { subPath: `activity/${proposal.id}` });
+    const pending = proposal.status === "pending";
+    notice = {
+      id: proposal.id,
+      pill: `✦ ${proposal.targetName}${pending ? "?" : ""}`,
+      text: proposal.text,
+      onPill: review,
+      actions: pending
+        ? [
+            {
+              label: proposal.accept,
+              primary: true,
+              run: run(() =>
+                rpc.call("proposal", { id: proposal.id, action: "accept" }),
+              ),
+            },
+            { label: "Review…", run: review },
+            {
+              label: "Not now",
+              run: run(() =>
+                rpc.call("proposal", { id: proposal.id, action: "dismiss" }),
+              ),
+            },
+          ]
+        : [
+            {
+              label: "Undo",
+              run: run(async () => {
+                if (proposal.entryId)
+                  await rpc.call("undo", { entryId: proposal.entryId });
+              }),
+            },
+            {
+              label: "OK",
+              primary: true,
+              run: run(() =>
+                rpc.call("proposal", {
+                  id: proposal.id,
+                  action: "acknowledge",
+                }),
+              ),
+            },
+          ],
+    };
+  } else if (drift) {
+    const act = (action: "handoff" | "move" | "dismiss") =>
+      run(async () => {
+        const result = await rpc.call("drift", { threadId, action });
+        if (action === "handoff" && result.threadId)
+          navigate.toThread(result.threadId);
+      });
+    notice = {
+      id: `drift:${threadId}:${drift.target}`,
+      pill: `↗ ${drift.target}?`,
+      text: `This thread's latest request looks like ${drift.target} work.`,
+      onPill: act("handoff"),
+      actions: [
+        { label: "Hand off", primary: true, run: act("handoff") },
+        { label: `Move to ${drift.target}`, run: act("move") },
+        { label: "Dismiss", run: act("dismiss") },
+      ],
+    };
+  }
+
+  const { collapsed, toggle } = useCollapsedProposal(notice?.id);
   const pill = useRef<HTMLButtonElement>(null);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   useLayoutEffect(() => {
     // The header moves with sidebar toggles and split changes, which don't
     // resize the window, so re-measure on a light interval too.
@@ -77,40 +184,15 @@ export function ProposalBanner({
       window.removeEventListener("resize", measure);
       clearInterval(timer);
     };
-  }, [proposal?.id, collapsed, split]);
+  }, [notice?.id, collapsed, split]);
 
-  if (!proposal) return null;
-  const pending = proposal.status === "pending";
-  const act = async (action: "accept" | "dismiss" | "acknowledge") => {
-    setBusy(true);
-    setError(null);
-    try {
-      await rpc.call("proposal", { id: proposal.id, action });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const undo = async () => {
-    if (!proposal.entryId) return;
-    setBusy(true);
-    try {
-      await rpc.call("undo", { entryId: proposal.entryId });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const review = () =>
-    navigate.toPluginPanel("home", { subPath: `activity/${proposal.id}` });
-
+  if (!notice) return null;
   const pane = split?.panes.find((p) => p.threadId === threadId);
   const maxWidth = pane
     ? Math.min(560, Math.max(280, pane.rect.width * window.innerWidth - 32))
     : 560;
   const showBanner = !collapsed && !isCompactViewport && anchor !== null;
+  const shown = notice;
 
   return (
     <>
@@ -119,108 +201,51 @@ export function ProposalBanner({
         type="button"
         className="ws-pill"
         aria-expanded={isCompactViewport ? undefined : !collapsed}
-        aria-label={`${proposal.text} ${pending ? "Show proposal" : "Show change"}`}
-        title={proposal.text}
-        onClick={() => (isCompactViewport ? review() : toggle())}
+        aria-label={`${shown.text} ${proposal?.status === "pending" || drift ? "Show proposal" : "Show change"}`}
+        title={shown.text}
+        onClick={() => (isCompactViewport ? shown.onPill() : toggle())}
       >
-        ✦ {proposal.targetName}
-        {pending ? "?" : ""}
+        {shown.pill}
       </button>
       {showBanner
         ? createPortal(
-            <BannerBody
-              proposal={proposal}
-              busy={busy}
-              error={error}
+            <div
+              className="ws-banner"
+              role="status"
+              aria-live="polite"
+              data-workstreams-banner=""
               style={{
                 top: anchor.bottom + 8,
                 right: Math.max(8, window.innerWidth - anchor.right),
                 maxWidth,
               }}
-              onAccept={() => void act("accept")}
-              onReview={review}
-              onDismiss={() => void act("dismiss")}
-              onUndo={() => void undo()}
-              onOk={() => void act("acknowledge")}
-            />,
+            >
+              <span aria-hidden="true" className="ws-banner-mark">
+                ✦
+              </span>
+              <span className="ws-banner-text">
+                {shown.text}
+                {error ? (
+                  <span className="ws-banner-error"> {error}</span>
+                ) : null}
+              </span>
+              <span className="ws-banner-actions">
+                {shown.actions.map((action) => (
+                  <button
+                    key={action.label}
+                    type="button"
+                    className={action.primary ? "ws-banner-primary" : undefined}
+                    disabled={busy}
+                    onClick={() => void action.run()}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </span>
+            </div>,
             document.body,
           )
         : null}
     </>
-  );
-}
-
-function BannerBody({
-  proposal,
-  busy,
-  error,
-  style,
-  onAccept,
-  onReview,
-  onDismiss,
-  onUndo,
-  onOk,
-}: {
-  proposal: ProposalView;
-  busy: boolean;
-  error: string | null;
-  style: React.CSSProperties;
-  onAccept: () => void;
-  onReview: () => void;
-  onDismiss: () => void;
-  onUndo: () => void;
-  onOk: () => void;
-}) {
-  const pending = proposal.status === "pending";
-  return (
-    <div
-      className="ws-banner"
-      role="status"
-      aria-live="polite"
-      style={style}
-      data-workstreams-banner=""
-    >
-      <span aria-hidden="true" className="ws-banner-mark">
-        ✦
-      </span>
-      <span className="ws-banner-text">
-        {proposal.text}
-        {error ? <span className="ws-banner-error"> {error}</span> : null}
-      </span>
-      <span className="ws-banner-actions">
-        {pending ? (
-          <>
-            <button
-              type="button"
-              className="ws-banner-primary"
-              disabled={busy}
-              onClick={onAccept}
-            >
-              {proposal.accept}
-            </button>
-            <button type="button" disabled={busy} onClick={onReview}>
-              Review…
-            </button>
-            <button type="button" disabled={busy} onClick={onDismiss}>
-              Not now
-            </button>
-          </>
-        ) : (
-          <>
-            <button type="button" disabled={busy} onClick={onUndo}>
-              Undo
-            </button>
-            <button
-              type="button"
-              className="ws-banner-primary"
-              disabled={busy}
-              onClick={onOk}
-            >
-              OK
-            </button>
-          </>
-        )}
-      </span>
-    </div>
   );
 }

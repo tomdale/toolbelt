@@ -24,6 +24,7 @@ export type ServerState = {
   placements: Record<string, Placement>;
   analysis: Record<string, StoredAnalysis>;
   proposals: ProposalView[];
+  driftDismissed: Record<string, string>;
   bootstrapped: boolean;
   lastReconciledAt: number | null;
 };
@@ -33,6 +34,7 @@ const EMPTY: ServerState = {
   placements: {},
   analysis: {},
   proposals: [],
+  driftDismissed: {},
   bootstrapped: false,
   lastReconciledAt: null,
 };
@@ -128,4 +130,28 @@ export function useWorkstreams() {
     showRecent: values.showRecent !== false,
     showParentThreadLink: values.showParentThreadLink === true,
   };
+}
+
+/**
+ * A task thread's drift flag: a current, high-confidence analysis that the
+ * latest request belongs elsewhere, not already dismissed for that target.
+ */
+export function driftOf(
+  thread: { id: string; status: string; latestAttentionAt: number } | undefined,
+  server: ServerState,
+): { target: string; sectionId: string | null } | null {
+  if (!thread) return null;
+  const analysis = server.analysis[thread.id];
+  if (!isCurrent(analysis, thread)) return null;
+  const drift = analysis.drift;
+  if (!drift || drift.confidence !== "high") return null;
+  const key = analysis.driftSectionId ?? drift.newName ?? "";
+  if (!key || server.driftDismissed[thread.id] === key) return null;
+  const name =
+    (analysis.driftSectionId
+      ? server.workstreams[analysis.driftSectionId]?.name
+      : null) ??
+    drift.workstream ??
+    drift.newName;
+  return name ? { target: name, sectionId: analysis.driftSectionId } : null;
 }

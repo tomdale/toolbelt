@@ -75,6 +75,13 @@ const MIGRATIONS = [
   )`,
   "CREATE INDEX ws_proposal_status ON ws_proposal (status, updated_at DESC)",
   "CREATE TABLE ws_snooze (key TEXT PRIMARY KEY, evidence_count INTEGER NOT NULL, at INTEGER NOT NULL)",
+  "ALTER TABLE ws_seen_thread ADD COLUMN title TEXT",
+  `CREATE TABLE ws_project_shape (
+    project_id TEXT PRIMARY KEY,
+    shape TEXT NOT NULL,
+    checked_at INTEGER NOT NULL
+  )`,
+  "CREATE TABLE ws_drift_dismissed (thread_id TEXT PRIMARY KEY, target TEXT NOT NULL, at INTEGER NOT NULL)",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

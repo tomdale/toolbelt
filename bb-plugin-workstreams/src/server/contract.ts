@@ -233,6 +233,8 @@ export const rpcContract = defineRpcContract({
       placements: z.record(z.string(), placementSchema),
       analysis: z.record(z.string(), analysisSchema),
       proposals: z.array(proposalSchema),
+      /** Drift flags dismissed, by thread: the target that was dismissed. */
+      driftDismissed: z.record(z.string(), z.string()),
       bootstrapped: z.boolean(),
       lastReconciledAt: z.number().nullable(),
     }),
@@ -244,6 +246,14 @@ export const rpcContract = defineRpcContract({
       aliases: z.array(z.string().max(80)).max(20).optional(),
     }),
     output: z.object({ ok: z.literal(true) }),
+  },
+  /** The per-thread drift flag's actions (SPEC §9, §10). */
+  drift: {
+    input: z.object({
+      threadId: z.string().min(1),
+      action: z.enum(["handoff", "move", "dismiss"]),
+    }),
+    output: z.object({ threadId: z.string().nullable() }),
   },
   proposal: {
     input: z.object({

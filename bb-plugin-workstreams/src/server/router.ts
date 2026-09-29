@@ -107,7 +107,8 @@ export class Router {
     prompt: string,
     options: {
       pickedProjectId?: string | null;
-      exclude?: string | null;
+      /** Threads that can't be the target (the caller, a rejected candidate). */
+      exclude?: string | readonly string[] | null;
       /** A workstream the user already chose; skips the model. */
       workstreamId?: string | null;
     } = {},
@@ -120,9 +121,12 @@ export class Router {
     const forest = buildForest(threads);
     const nameOf = new Map(records.map((r) => [r.sectionId, r.name]));
     const now = this.now();
+    const excluded = new Set(
+      options.exclude == null ? [] : [options.exclude].flat(),
+    );
     const tasks = forest.roots
       .map(({ thread }) => thread)
-      .filter((t) => t.id !== options.exclude)
+      .filter((t) => !excluded.has(t.id))
       .sort((a, b) => b.latestAttentionAt - a.latestAttentionAt);
 
     const mention = options.workstreamId
@@ -130,7 +134,7 @@ export class Router {
       : mentionedTarget(text);
     if (mention && "threadId" in mention) {
       const target = threads.find((t) => t.id === mention.threadId);
-      if (target && target.id !== options.exclude)
+      if (target && !excluded.has(target.id))
         return this.remember(text, {
           id: randomUUID(),
           outcome: "continue",

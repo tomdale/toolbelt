@@ -125,10 +125,9 @@ describe("idle analysis", () => {
       expect(c.prompt).not.toContain("proj_");
       expect(c.prompt).not.toContain("Zebracorn");
     }
+    // Only the project-shape check lists projects; analysis never reads one.
     expect(
-      w.harness.inspection.sdk.calls.filter((c) =>
-        c.path.startsWith("projects"),
-      ),
+      w.harness.inspection.sdk.calls.filter((c) => c.path === "projects.get"),
     ).toEqual([]);
   });
 

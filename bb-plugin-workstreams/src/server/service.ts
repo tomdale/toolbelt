@@ -647,12 +647,13 @@ export class WorkstreamService {
           (
             this.db
               .prepare(
-                "SELECT thread_id, section_id, parent_thread_id FROM ws_seen_thread",
+                "SELECT thread_id, section_id, parent_thread_id, title FROM ws_seen_thread",
               )
               .all() as {
               thread_id: string;
               section_id: string | null;
               parent_thread_id: string | null;
+              title: string | null;
             }[]
           ).map((r) => [r.thread_id, r]),
         );
@@ -696,12 +697,14 @@ export class WorkstreamService {
           if (
             !before ||
             before.section_id !== thread.sectionId ||
-            before.parent_thread_id !== (thread.parentThreadId ?? null)
+            before.parent_thread_id !== (thread.parentThreadId ?? null) ||
+            before.title !== thread.title
           )
             this.seeThread(
               thread.id,
               thread.sectionId,
               thread.parentThreadId ?? null,
+              thread.title,
             );
         }
         const present = new Set(threads.map((t) => t.id));
@@ -759,17 +762,23 @@ export class WorkstreamService {
       .run(threadId, sectionId, source, entryId, this.now());
   }
 
-  private seeThread(
+  /**
+   * The reconciler's snapshot of a visible, non-archived thread. It also
+   * backs `configure`, which must answer synchronously (SPEC §5).
+   */
+  seeThread(
     threadId: string,
     sectionId: string | null,
     parentThreadId: string | null,
+    title?: string,
   ): void {
     this.db
       .prepare(
-        `INSERT INTO ws_seen_thread (thread_id, section_id, parent_thread_id) VALUES (?, ?, ?)
-         ON CONFLICT(thread_id) DO UPDATE SET section_id = excluded.section_id, parent_thread_id = excluded.parent_thread_id`,
+        `INSERT INTO ws_seen_thread (thread_id, section_id, parent_thread_id, title) VALUES (?, ?, ?, ?)
+         ON CONFLICT(thread_id) DO UPDATE SET section_id = excluded.section_id, parent_thread_id = excluded.parent_thread_id,
+           title = COALESCE(excluded.title, ws_seen_thread.title)`,
       )
-      .run(threadId, sectionId, parentThreadId);
+      .run(threadId, sectionId, parentThreadId, title ?? null);
   }
 
   private seeSection(sectionId: string, name: string): void {
