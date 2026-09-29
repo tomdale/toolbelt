@@ -58,6 +58,13 @@ export default async function plugin(bb: BbPluginApi) {
       options: [...MODELS],
       default: MODELS[0],
     },
+    autoTitle: {
+      type: "boolean",
+      label: "Keep thread titles current",
+      description:
+        "Title untitled threads, and retitle a thread when its work moves on. Titles you set yourself are never changed.",
+      default: true,
+    },
     hostId: {
       type: "string",
       label: "Analysis machine ID",
@@ -135,6 +142,19 @@ export default async function plugin(bb: BbPluginApi) {
     onChange: () => {
       notify();
       evolveSoon();
+    },
+    onResult: (threadId, result) => {
+      if (!result.title) return;
+      void settings
+        .get()
+        .then(({ autoTitle }) =>
+          autoTitle
+            ? service.retitle(threadId, result.title, result.revision)
+            : null,
+        )
+        .catch((error: unknown) =>
+          bb.log.warn(`Retitling ${threadId} failed: ${String(error)}`),
+        );
     },
     log: (message) => bb.log.warn(message),
     info: (message) => bb.log.info(message),

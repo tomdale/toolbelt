@@ -38,7 +38,12 @@ against.
   thread's recap, work state, subject, and (for top-level threads) whether its
   latest request drifted to another workstream. Results are tied to the turn
   they describe and show as updating once a new turn starts. Analysis never
-  moves or renames anything.
+  moves anything.
+- **Titles**: the same call suggests a title when a thread has none, its title
+  is cut off or too vague, or its latest requests moved onto different work.
+  Workstreams applies it (at most once an hour for a titled thread) and logs it
+  in Activity with Undo. A title you or an agent set is never changed; clear it
+  to hand it back. Turn this off with the `autoTitle` setting.
 - **Organize once** (Map tab, or `bb workstreams rebuild`): proposes a map
   (renames, merges, new workstreams, descriptions), lets you review it, files
   unfiled and automatically filed threads, and previews the result before
