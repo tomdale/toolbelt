@@ -112,51 +112,67 @@ what BB allows. Rows marked _(spike)_ were verified against BB 0.44 / SDK
 
 ## 5. Thread roles and injected behavior
 
-Delegation uses BB's own spawn. Workstreams adds only instructions and one tool,
-`workstreams_handoff`, because handoff needs the router and BB has no
-equivalent. Both are delivered with `bb.agents.configure` (plus
-`bb.agents.registerTool` for handoff). `configure` is synchronous, and its
-context contains `thread { id, title, parentThreadId, sourceThreadId }`,
-`project`, `environment { path, branchName }`, `origin`, and `pluginMetadata`.
-It **does not include `sectionId` or visibility** _(spike)_, so role and product
-come from metadata plus a synchronous SQLite cache.
+Workstreams registers **no agent tools**. Agents use the `bb` CLI, which they
+already use for everything else: BB's own spawn for delegation, and
+`bb workstreams handoff` for out-of-scope work. Workstreams contributes only
+short, per-thread instructions through `bb.agents.configure`. `configure` is
+synchronous, and its context contains
+`thread { id, title, parentThreadId, sourceThreadId }`, `project`,
+`environment { path, branchName }`, `origin`, and `pluginMetadata`. It **does
+not include `sectionId` or visibility** _(spike)_, so role and product come from
+metadata plus a synchronous SQLite cache. Command details live in `--help` and
+the generated `plugin-commands` skill, not in the instructions.
 
-| Thread                      | Tools                 | Instructions (≤ 4096 characters)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| --------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Task (top-level, visible)   | `workstreams_handoff` | "You are a task thread in **‹product›** (‹one-line description›). Delegate separable subtasks to child threads with `bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"`, always choosing the environment explicitly: `--new-environment worktree` for code changes, `--environment "$BB_ENVIRONMENT_ID"` otherwise. Then coordinate and integrate here. If the user asks for something outside this thread's task or product, don't do it here: call `workstreams_handoff` with their request verbatim and reply with the link." |
-| Delegate (child)            | `workstreams_handoff` | "You are a delegated subtask of ‹parent›. Report results to it. Hand off out-of-scope requests. Don't spawn further threads."                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Hidden, side chat, internal | none                  | none                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Thread                      | Instructions (≤ 4096 characters)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Task (top-level, visible)   | "You are a task thread in **‹product›** (‹one-line description›). Delegate separable subtasks to child threads with `bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"`, always choosing the environment explicitly: `--new-environment worktree` for code changes, `--environment "$BB_ENVIRONMENT_ID"` otherwise. Then coordinate and integrate here. If the user asks for something outside this thread's task or product, don't do it here: pass their request verbatim to `bb workstreams handoff --request-file -` and reply with the link it prints." |
+| Delegate (child)            | "You are a delegated subtask of ‹parent›. Report results to it. Hand off out-of-scope requests with `bb workstreams handoff`. Don't spawn further threads."                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Hidden, side chat, internal | none                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
-**Delegation needs no plugin tool.** BB's spawn already sets the parent,
-lifecycle owner, project, and environment (_spike S5_). Workstreams recognizes a
-delegate structurally, by its `parentThreadId`, so it doesn't matter how the
-child was created (the CLI, the SDK, another plugin). Core retires the child's
-environment. The spawn command omits `--section`, so the child inherits its
-product through tree membership.
+**Delegation.** BB's spawn already sets the parent, lifecycle owner, project,
+and environment (_spike S5_). Workstreams recognizes a delegate structurally, by
+its `parentThreadId`, so it doesn't matter how the child was created (the CLI,
+the SDK, another plugin). Core retires the child's environment. The spawn
+command omits `--section`, so the child inherits its product through tree
+membership.
 
-**`workstreams_handoff({ request, note? })`**, also available as
-`bb workstreams handoff`, backed by the same function:
+**Handoff:
+`bb workstreams handoff (--request-file <path|-> | <request>) [--note <text>] [--dry-run] [--json]`**
 
-- Runs the §6 router with the caller excluded as a target.
-- Returns `{ outcome, threadId, link }`.
-- Sends the text prefixed with "Handed off from @thread:‹caller›", because
+- Built with `defineCli`. The request comes through a file or stdin, because
+  requests are long and the shell would otherwise expand `$(…)` and backticks.
+- The caller is `ctx.threadId` (from `BB_THREAD_ID`). The router (§6) excludes
+  the caller as a target and records the new thread as `spawnedFrom` the caller.
+- Agent handoffs can't use the intake preview, so the policy is:
+  - `new-thread` and `new-product` act immediately (journaled, undoable);
+  - `continue` acts only at high confidence, and otherwise falls back to
+    `new-thread`;
+  - `unsure` makes no change: it prints the candidates and exits with a distinct
+    code, so the agent can ask the user.
+- `--dry-run` prints the route without acting.
+- Output is bounded: `{ outcome, threadId, link, product, reason }`.
+- The sent text is prefixed with "Handed off from @thread:‹caller›", because
   messages the plugin sends are recorded as `initiator: user` with no sender
   _(spike)_.
-- The product map is available through `bb workstreams products`. It is not a
-  separate tool, since the router consults the map itself.
 
 **Guards.**
 
 - No handoff back to the caller.
-- At most 3 handoffs per turn.
+- At most 3 handoffs per turn, counted server-side per `ctx.threadId`.
 - "Delegates don't delegate" is an instruction, not an enforced rule: BB has no
   hook on thread creation.
 - A handoff spawn retries with backoff while the target's new parent is still
   `starting`: spawning a child in that window returns HTTP 500 _(spike)_.
 
-**Timing.** Tools and instructions reach a thread when its provider session next
-starts. A running session does not pick them up until it restarts. _(spike:
-verified on start)_
+**Timing.**
+
+- The CLI works in running sessions right away.
+- The instructions reach a thread when its provider session next starts _(spike:
+  verified on start)_.
+
+**Caveat.** The handoff command needs loopback access from the agent's shell. It
+works on macOS, including Claude's sandbox, but other providers' sandboxes may
+require approval to escalate.
 
 **Side quests.** These are handled **prospectively** through handoff. A per-turn
 drift flag (§10) is the safety net.
@@ -180,7 +196,7 @@ One router serves four entry points:
      outside the component, keyed by scope. _(spike)_
 2. **Workstreams ＋ New**, on the page and the sidebar. It embeds
    `experimental_NewThreadComposer` and routes on the server.
-3. **`workstreams_handoff`**, called by agents.
+3. **`bb workstreams handoff`**, called by agents (§5).
 4. **`bb workstreams new "<prompt>" [--product] [--project]`**, for scripts.
 
 **Inputs.**
@@ -386,7 +402,7 @@ kept separate:
 3. **Thread header:** a parent link (setting), the proposal pill, and the
    floating banner.
 4. **CLI:**
-   `bb workstreams list | show | new | file | products | log | analyze | rebuild`,
+   `bb workstreams list | show | new | handoff | file | products | log | analyze | rebuild`,
    built with `defineCli`.
 5. **Activity log** (page tab and `bb workstreams log`):
    - Covers every change and proposal, newest first, grouped by day.
@@ -413,7 +429,7 @@ v1 tables are left untouched until cutover and are not read after bootstrap.
 ```
 bb-plugin-workstreams/
   src/domain/    tree · project (forest → groups and bands) · attention · rank · evolution · schemas   ← pure; most tests live here
-  src/server/    index · map · journal · reconciler · analyzer (idle queue) · router · evolution-runner · inference/{host,pi,prompts} · rpc · cli · agents (tools + configure)
+  src/server/    index · map · journal · reconciler · analyzer (idle queue) · router · evolution-runner · inference/{host,pi,prompts} · rpc · cli · agents (configure instructions)
   src/app/       index · useWorkstreams (live hook + one state RPC + realtime) · sidebar/* · page/* · header/* (pill + floating banner) · composer/* (routing banner)
   tests/         domain (real exported snapshots) · server (mock SDK) · app (renderSlot)
 ```
@@ -461,15 +477,15 @@ bb-plugin-workstreams/
 
 ## 16. Phases
 
-| Phase | Scope                                                                                                                        | Gate                                                            |
-| ----- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| 0     | Freeze v1 (`organize = suggest`, workers idle), worktree, spikes, this spec                                                  | Tom signs off                                                   |
-| 1     | Deterministic core: forest and projection, sidebar, Unsorted, reconciler, page skeleton, parent link, journal                | Exact-once tests on a real export. Screenshots. No model calls. |
-| 2     | Analysis: idle queue, recap/state/subject, Needs you, eval harness                                                           | Analysis within about 10 s of idle. Passes the eval.            |
-| 3     | Bootstrap and evolution: map proposal, review, assignment, evolution engine, floating banner, Activity log                   | Live state organized in under 2 minutes. Undo works.            |
-| 4     | Intake: router, native-composer banner, ＋ New, CLI `new`                                                                    | Routing eval on replayed real prompts                           |
-| 5     | Task-thread behavior: `configure` instructions, the handoff tool, drift flag; update tomdaleOS agent instructions separately | Handoff and delegate scenarios on throwaway threads             |
-| 6     | Cutover: rename to `workstreams`, remove v1                                                                                  | A day of normal use                                             |
+| Phase | Scope                                                                                                                                | Gate                                                            |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| 0     | Freeze v1 (`organize = suggest`, workers idle), worktree, spikes, this spec                                                          | Tom signs off                                                   |
+| 1     | Deterministic core: forest and projection, sidebar, Unsorted, reconciler, page skeleton, parent link, journal                        | Exact-once tests on a real export. Screenshots. No model calls. |
+| 2     | Analysis: idle queue, recap/state/subject, Needs you, eval harness                                                                   | Analysis within about 10 s of idle. Passes the eval.            |
+| 3     | Bootstrap and evolution: map proposal, review, assignment, evolution engine, floating banner, Activity log                           | Live state organized in under 2 minutes. Undo works.            |
+| 4     | Intake: router, native-composer banner, ＋ New, CLI `new`                                                                            | Routing eval on replayed real prompts                           |
+| 5     | Task-thread behavior: `configure` instructions, `bb workstreams handoff`, drift flag; update tomdaleOS agent instructions separately | Handoff and delegate scenarios on throwaway threads             |
+| 6     | Cutover: rename to `workstreams`, remove v1                                                                                          | A day of normal use                                             |
 
 ## 17. Decisions
 
