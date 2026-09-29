@@ -201,6 +201,51 @@ async function run(h: ReturnType<typeof setup>, fresh = false) {
   }
 }
 
+describe("parent thread link", () => {
+  it("defaults off and never looks up thread details", async () => {
+    const h = setup(2);
+    await plugin(h.bb);
+    expect(
+      await h.harness.behavior.callRpc("parentLink", { threadId: "1" }),
+    ).toBeNull();
+    expect(h.harness.inspection.sdk.callsTo("threads.get")).toHaveLength(0);
+  });
+
+  it("returns only the parent id and title when enabled", async () => {
+    const h = setup(2);
+    h.rows[1].parentThreadId = "0";
+    await plugin(h.bb);
+    await h.harness.behavior.setSettings({ showParentThreadLink: true });
+    expect(
+      await h.harness.behavior.callRpc("parentLink", { threadId: "1" }),
+    ).toEqual({
+      id: "0",
+      title: "Work 0",
+    });
+    expect(
+      await h.harness.behavior.callRpc("parentLink", { threadId: "0" }),
+    ).toBeNull();
+  });
+
+  it("ignores missing, deleted and inaccessible parents", async () => {
+    const h = setup(2);
+    h.rows[1].parentThreadId = "missing";
+    await plugin(h.bb);
+    await h.harness.behavior.setSettings({ showParentThreadLink: true });
+    expect(
+      await h.harness.behavior.callRpc("parentLink", { threadId: "1" }),
+    ).toBeNull();
+    h.rows[1].parentThreadId = "0";
+    h.rows[0].deletedAt = 123;
+    expect(
+      await h.harness.behavior.callRpc("parentLink", { threadId: "1" }),
+    ).toBeNull();
+    await expect(
+      h.harness.behavior.callRpc("parentLink", { threadId: "" }),
+    ).rejects.toThrow();
+  });
+});
+
 describe("active thread overview", () => {
   it("paginates all active threads without starting analysis", async () => {
     const h = setup(205);
