@@ -10,7 +10,7 @@ a default awaiting confirmation.
 Tom works across dozens of BB agent threads in many repositories and switches
 context constantly. Workstreams answers five questions at a glance:
 
-- What product is this work for?
+- Which workstream is this work part of?
 - What is unfinished?
 - Where did it stop?
 - What needs Tom now?
@@ -21,9 +21,10 @@ Workstreams also keeps that organization current as work happens, without manual
 
 Workstreams has four responsibilities:
 
-1. **Organize** threads into products (native BB sections) and keep them there.
-2. **Route** new work: continue an existing thread, start a thread in a product,
-   or start a new product.
+1. **Organize** threads into workstreams (native BB sections) and keep them
+   there.
+2. **Route** new work: continue an existing thread, start a thread in a
+   workstream, or start a new workstream.
 3. **Equip** task threads to delegate subtasks and hand off out-of-scope
    requests.
 4. **Show** state through the sidebar thread list, the Workstreams page, and
@@ -32,12 +33,13 @@ Workstreams has four responsibilities:
 ## 2. Non-goals
 
 - Manager threads as a special role, a Dispatch or intake thread, or any
-  hard-coded product, project, or thread.
+  hard-coded workstream, project, or thread.
 - Retroactive fork, split, or compaction of threads.
 - Generated banner art and AI group summaries.
 - Hidden helper threads. Workstreams ignores them everywhere.
 - Moving a thread between BB projects. BB does not support it.
 - Mutating state through the DOM or CSS outside supported plugin slots.
+- Grouping workstreams into families. Deferred.
 
 ## 3. BB primitives
 
@@ -48,7 +50,7 @@ what BB allows. Rows marked _(spike)_ were verified against BB 0.44 / SDK
 | Primitive       | Meaning                                                                                                                              | Mutable after creation                      | Facts that constrain Workstreams                                                                                                                                                                                                                                                                                                                                           |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Machine         | An execution host                                                                                                                    | —                                           | Currently one machine (`Vercel MBP`).                                                                                                                                                                                                                                                                                                                                      |
-| Project         | A container bound to a source path on each machine. It supplies default environments, `AGENTS.md` and skills, and prompt history.    | Name only. **A thread's project is fixed.** | The personal project means "no project". 22 of 39 active threads share the tomdaleOS checkout, so a project is not a product.                                                                                                                                                                                                                                              |
+| Project         | A container bound to a source path on each machine. It supplies default environments, `AGENTS.md` and skills, and prompt history.    | Name only. **A thread's project is fixed.** | BB's personal project means "Don't work in a project"; its threads run in personal workspaces. 22 of 39 active threads share the tomdaleOS checkout, so a project is not a workstream.                                                                                                                                                                                     |
 | Environment     | The working directory a thread runs in: a project checkout (shared), a managed worktree, a personal workspace, or an unmanaged path. | A thread can switch directories.            | **`{ type: "project-default" }` resolves to the project's server-side default, which can be a managed worktree. The native composer can show "Project checkout" for the same project at the same time.** _(spike)_ BB core owns retirement and teardown: after the last live thread is archived or deleted, the worktree is removed asynchronously and the branch is kept. |
 | Section         | A **global**, cross-project bucket. A thread has at most one `sectionId`.                                                            | Move, rename, delete                        | The built-in sidebar groups each **tree by its root's section**. Sections have no description or owner.                                                                                                                                                                                                                                                                    |
 | Parent / child  | `parentThreadId` (can cross projects). The parent receives child-completion system messages.                                         | Reparent                                    | Each child completion arrives as `[bb system] @thread:X completed: …` and **starts a parent turn**. _(spike)_                                                                                                                                                                                                                                                              |
@@ -68,27 +70,47 @@ what BB allows. Rows marked _(spike)_ were verified against BB 0.44 / SDK
 - **No event fires for section moves, title changes, reparenting, or section
   create/rename/delete, not even `experimental_thread.events`.** _(spike)_
 
+### Project shapes and environments
+
+A project's root is one of three shapes, and each shape allows different
+environments.
+
+| Shape                                                                                                                                                                                    | How Workstreams detects it                                                                                                                                                                        | Shared environment                    | Isolated environment                                                                                                                                                                                                      | Torn down by core                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| **Git checkout**: the project root is a repository                                                                                                                                       | `environments.listProviders({ projectId })` offers `git-worktree` as available, and a cached host probe (`git rev-parse --show-toplevel`) confirms that the root is the top level of a repository | Project checkout                      | BB managed worktree (`--new-environment worktree`), or a Workforest task checkout attached by path                                                                                                                        | Worktree: yes (the branch is kept). Workforest checkout: no. |
+| **Workforest workspace**: the root is a directory of repositories with no root repo, for example `~/Code/Workspaces/vercel-agent/vercel-agent-sdk` (`agents/ api/ front/ integrations/`) | `git-worktree` is unavailable, and the host probe finds no root repository but at least one child repository                                                                                      | Project checkout (the workspace root) | Workforest only: `wf task new <slug> --repo <repo>` for one repository, or `wf new <slug>` for a follow-up workspace across all of them. Attach the result with `--environment <path>`. **BB worktrees are unavailable.** | No. Remove with `wf delete`.                                 |
+| **No project**                                                                                                                                                                           | BB's personal project                                                                                                                                                                             | none                                  | A fresh personal workspace (`--new-environment personal`)                                                                                                                                                                 | Yes                                                          |
+
+- Workstreams always passes an environment explicitly. It never relies on
+  `project-default` (I4).
+- Workstreams itself creates only project-checkout, BB-worktree, and
+  personal-workspace environments. It never runs `wf`. Workforest checkouts are
+  created by agents following the per-thread instructions (§5) and repository
+  instructions, and cleaned up by whoever created them.
+- The shape is recomputed when the project's providers or root path change, and
+  otherwise cached per project.
+
 ## 4. Concepts and invariants
 
-| Concept          | Definition                                                                                       | Source of truth                                            |
-| ---------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| **Product**      | Exactly one native section                                                                       | BB section, plus a product-map record keyed by `sectionId` |
-| **Membership**   | The **root** thread's `sectionId`. Descendants inherit it, and their own `sectionId` is ignored. | BB, plus provenance in plugin state                        |
-| **Task thread**  | A visible, non-archived, top-level thread (no parent). A product has any number of them.         | Derived                                                    |
-| **Delegate**     | A child of a task thread, created for a separable subtask                                        | BB `parentThreadId` + `lifecycleOwnerThreadId`             |
-| **Sibling**      | A task thread spun off from another thread for out-of-scope work                                 | Metadata `spawnedFrom`. This is **not** a parent link.     |
-| **Home project** | The code target for work that has no repository                                                  | Setting                                                    |
-| **Unsorted**     | Unsectioned roots. A safety valve that is kept near-empty.                                       | Derived                                                    |
+| Concept          | Definition                                                                                                                                                                                                      | Source of truth                                               |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| **Workstream**   | Exactly one native section                                                                                                                                                                                      | BB section, plus a workstream-map record keyed by `sectionId` |
+| **Membership**   | The **root** thread's `sectionId`. Descendants inherit it, and their own `sectionId` is ignored.                                                                                                                | BB, plus provenance in plugin state                           |
+| **Task thread**  | A visible, non-archived, top-level thread (no parent). A workstream has any number of them.                                                                                                                     | Derived                                                       |
+| **Delegate**     | A child of a task thread, created for a separable subtask                                                                                                                                                       | BB `parentThreadId` + `lifecycleOwnerThreadId`                |
+| **Sibling**      | A task thread spun off from another thread for out-of-scope work                                                                                                                                                | Metadata `spawnedFrom`. This is **not** a parent link.        |
+| **Home project** | Where work with no code target goes. **Default: none.** Such work goes to BB's personal project ("Don't work in a project") in a fresh personal workspace. The optional `homeProjectId` setting overrides this. | Plugin setting (optional)                                     |
+| **Unsorted**     | Unsectioned roots. A safety valve that is kept near-empty.                                                                                                                                                      | Derived                                                       |
 
 **Invariants.** Tests enforce each one.
 
 - **I1. Exactly once.** Every visible, non-archived thread appears once in the
   sidebar. It nests under its parent when the parent is visible and active;
   otherwise it is a root. Orphans and cycles render deterministically.
-- **I2. Tree membership.** A tree's product is its root's section. Workstreams
-  never writes `sectionId` on a child.
+- **I2. Tree membership.** A tree's workstream is its root's section.
+  Workstreams never writes `sectionId` on a child.
 - **I3. Explicit moves only.** A filed thread moves only through one of these:
-  - (a) placement at creation, by the router or a tool;
+  - (a) placement at creation, by the router (intake or handoff);
   - (b) an explicit move by the user or an agent;
   - (c) auto-filing of an Unsorted root;
   - (d) an **evolution proposal**, accepted by the user or auto-applied under §9
@@ -96,7 +118,7 @@ what BB allows. Rows marked _(spike)_ were verified against BB 0.44 / SDK
 
   Analysis alone never moves a thread; it only adds evidence. Every change
   records its provenance:
-  `user | router | tool | auto | proposal:<id> | bootstrap`.
+  `user | router | handoff | auto | proposal:<id> | bootstrap`.
 
 - **I4. Placement is fixed at creation.** Project and environment are chosen
   once, at creation, and are always passed **explicitly**. Workstreams never
@@ -119,21 +141,33 @@ short, per-thread instructions through `bb.agents.configure`. `configure` is
 synchronous, and its context contains
 `thread { id, title, parentThreadId, sourceThreadId }`, `project`,
 `environment { path, branchName }`, `origin`, and `pluginMetadata`. It **does
-not include `sectionId` or visibility** _(spike)_, so role and product come from
-metadata plus a synchronous SQLite cache. Command details live in `--help` and
-the generated `plugin-commands` skill, not in the instructions.
+not include `sectionId` or visibility** _(spike)_, so role and workstream come
+from metadata plus a synchronous SQLite cache. Command details live in `--help`
+and the generated `plugin-commands` skill, not in the instructions.
 
-| Thread                      | Instructions (≤ 4096 characters)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Task (top-level, visible)   | "You are a task thread in **‹product›** (‹one-line description›). Delegate separable subtasks to child threads with `bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"`, always choosing the environment explicitly: `--new-environment worktree` for code changes, `--environment "$BB_ENVIRONMENT_ID"` otherwise. Then coordinate and integrate here. If the user asks for something outside this thread's task or product, don't do it here: pass their request verbatim to `bb workstreams handoff --request-file -` and reply with the link it prints." |
-| Delegate (child)            | "You are a delegated subtask of ‹parent›. Report results to it. Hand off out-of-scope requests with `bb workstreams handoff`. Don't spawn further threads."                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Hidden, side chat, internal | none                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Thread                      | Instructions (≤ 4096 characters)                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Task (top-level, visible)   | "You are a task thread in **‹workstream›** (‹one-line description›). Delegate separable subtasks to child threads with `bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"`, always choosing the environment explicitly: ‹shape guidance›. Then coordinate and integrate here. If the user asks for something outside this thread's task or workstream, don't do it here: pass their request verbatim to `bb workstreams handoff --request-file -` and reply with the link it prints." |
+| Delegate (child)            | "You are a delegated subtask of ‹parent›. Report results to it. Hand off out-of-scope requests with `bb workstreams handoff`. Don't spawn further threads."                                                                                                                                                                                                                                                                                                                                                |
+| Hidden, side chat, internal | none                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+The ‹shape guidance› text depends on the project shape (§3):
+
+- **Git checkout:** "`--new-environment worktree` for code changes;
+  `--environment "$BB_ENVIRONMENT_ID"` otherwise."
+- **Workforest workspace:** "This project is a multi-repository Workforest
+  workspace, and BB worktrees are unavailable. For isolated code changes, create
+  a checkout with `wf task new <slug> --repo <repo>` (or `wf new <slug>` for a
+  follow-up across the whole workspace), and attach it with
+  `--environment <path>`. Otherwise use `--environment "$BB_ENVIRONMENT_ID"`."
+- **No project:** "`--environment "$BB_ENVIRONMENT_ID"` to share this workspace,
+  or `--new-environment personal`."
 
 **Delegation.** BB's spawn already sets the parent, lifecycle owner, project,
 and environment (_spike S5_). Workstreams recognizes a delegate structurally, by
 its `parentThreadId`, so it doesn't matter how the child was created (the CLI,
 the SDK, another plugin). Core retires the child's environment. The spawn
-command omits `--section`, so the child inherits its product through tree
+command omits `--section`, so the child inherits its workstream through tree
 membership.
 
 **Handoff:
@@ -144,13 +178,13 @@ membership.
 - The caller is `ctx.threadId` (from `BB_THREAD_ID`). The router (§6) excludes
   the caller as a target and records the new thread as `spawnedFrom` the caller.
 - Agent handoffs can't use the intake preview, so the policy is:
-  - `new-thread` and `new-product` act immediately (journaled, undoable);
+  - `new-thread` and `new-workstream` act immediately (journaled, undoable);
   - `continue` acts only at high confidence, and otherwise falls back to
     `new-thread`;
   - `unsure` makes no change: it prints the candidates and exits with a distinct
     code, so the agent can ask the user.
 - `--dry-run` prints the route without acting.
-- Output is bounded: `{ outcome, threadId, link, product, reason }`.
+- Output is bounded: `{ outcome, threadId, link, workstream, reason }`.
 - The sent text is prefixed with "Handed off from @thread:‹caller›", because
   messages the plugin sends are recorded as `initiator: user` with no sender
   _(spike)_.
@@ -197,18 +231,18 @@ One router serves four entry points:
 2. **Workstreams ＋ New**, on the page and the sidebar. It embeds
    `experimental_NewThreadComposer` and routes on the server.
 3. **`bb workstreams handoff`**, called by agents (§5).
-4. **`bb workstreams new "<prompt>" [--product] [--project]`**, for scripts.
+4. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
 
 **Inputs.**
 
 - The prompt.
 - Explicit choices: a project the user picked is a strong hint, and `@thread` or
   `@section` mentions short-circuit the router.
-- The product map (§7).
-- Active task threads (title, product, one-line recap, state, age).
+- The workstream map (§7).
+- Active task threads (title, workstream, one-line recap, state, age).
 
 The BB project _name_ is never used as evidence. The prompt hard-codes no
-products.
+workstreams.
 
 **Decision.** One fast model call (about 1–2 s, about 10K tokens) picks from a
 closed set:
@@ -216,7 +250,7 @@ closed set:
 ```
 continue    { threadId }                                       → send with mode "queue-if-active", open it
 new-thread  { sectionId, projectId, environment, title }       → spawn top-level, filed
-new-product { name, description, projectId, environment, title } → create section + record, then spawn
+new-workstream { name, description, projectId, environment, title } → create section + record, then spawn
 unsure      { candidates[≤ 3] }                                → show choices
 ```
 
@@ -229,32 +263,34 @@ Each decision carries `confidence`, a `reason` of at most 120 characters, and a
   project cannot be changed after creation.
 - Auto-routing per outcome is a later setting, and the eval must support it
   first.
-- Code work goes to the product's primary project, with the product's
-  environment policy.
-- Non-code work goes to the home project's checkout.
+- Code work goes to the workstream's primary project, in its **checkout** by
+  default. It gets a BB worktree only when the workstream's policy asks for one
+  and the project is a git checkout (§3).
+- Non-code work goes to the home project's checkout when one is set, and
+  otherwise to BB's personal project in a fresh personal workspace.
 - The router runs as a direct model call in the plugin server, not as an intake
   agent thread.
 
-## 7. Product map
+## 7. Workstream map
 
 Plugin SQLite, keyed by `sectionId`. The name mirrors BB.
 
 ```
 { sectionId, description, descriptionSource: "generated" | "user", aliases[], subjects[],
-  projects: [{ projectId, role: "primary" | "secondary", environment: "checkout" | "worktree" }],
-  evidence: { repos[], paths[], threadCount, lastActiveAt }, family?, createdBy: "user" | "workstreams", updatedAt }
+  projects: [{ projectId, role: "primary" | "secondary", environment: "checkout" | "worktree" }],  // "worktree" only for git-checkout projects
+  evidence: { repos[], paths[], threadCount, lastActiveAt }, createdBy: "user" | "workstreams", updatedAt }
 ```
 
-| Event                                  | Update                                                                                                    |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Bootstrap                              | Proposal reviewed once (§8)                                                                               |
-| A user creates a section in BB         | The reconciler adds a record. The description is generated lazily.                                        |
-| The router or a tool creates a product | Section and record, with a description generated from the prompt                                          |
-| A thread is filed or created           | Deterministic evidence update                                                                             |
-| Evidence changes materially            | Lazy description refresh, **only when `descriptionSource` is `generated`**                                |
-| The user edits a product               | The edit always wins (`descriptionSource: user`)                                                          |
-| A section is renamed or deleted in BB  | The reconciler mirrors the rename, or drops the record. Former members fall to Unsorted with suggestions. |
-| A spin-out is accepted                 | The source description narrows, e.g. "… BB Recap and Workstreams have their own products".                |
+| Event                                        | Update                                                                                                    |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Bootstrap                                    | Proposal reviewed once (§8)                                                                               |
+| A user creates a section in BB               | The reconciler adds a record. The description is generated lazily.                                        |
+| The router or a handoff creates a workstream | Section and record, with a description generated from the prompt                                          |
+| A thread is filed or created                 | Deterministic evidence update                                                                             |
+| Evidence changes materially                  | Lazy description refresh, **only when `descriptionSource` is `generated`**                                |
+| The user edits a workstream                  | The edit always wins (`descriptionSource: user`)                                                          |
+| A section is renamed or deleted in BB        | The reconciler mirrors the rename, or drops the record. Former members fall to Unsorted with suggestions. |
+| A spin-out is accepted                       | The source description narrows, e.g. "… BB Recap and the Workstreams plugin have their own workstreams".  |
 
 ## 8. Keeping state current
 
@@ -269,7 +305,7 @@ under 2 minutes, including review.
    descriptions, and project associations.
 3. **Review.** Tom reviews the map on one screen.
 4. **Assignment.** Closed-set model calls, 8 threads per batch and 4 batches at
-   a time, give each root a product, `new`, or `unsure`. This step may use a
+   a time, give each root a workstream, `new`, or `unsure`. This step may use a
    stronger fast model.
 5. **Apply.** Preview the diff, then apply it as one journaled, undoable batch.
 
@@ -279,10 +315,10 @@ The bootstrap runs the §9 evolution engine with relaxed thresholds.
 
 | Change                                                                                    | Signal                                                               | Reaction                                                                                       |
 | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Thread created through intake or a tool                                                   | RPC or tool call                                                     | Placed by the router (provenance `router` or `tool`)                                           |
+| Thread created through intake or a handoff                                                | RPC or CLI call                                                      | Placed by the router (provenance `router` or `handoff`)                                        |
 | Child created by any source                                                               | `thread.created`                                                     | No structural change. Analyze it on its first idle.                                            |
 | Top-level thread created elsewhere (native composer without the banner, CLI, automations) | `thread.created`, then the first `thread.idle`                       | Respect a section that is already set. Otherwise classify it, then auto-file or suggest (§17). |
-| Visible fork                                                                              | `thread.created` with `sourceThreadId`                               | Default to the source's product                                                                |
+| Visible fork                                                                              | `thread.created` with `sourceThreadId`                               | Default to the source's workstream                                                             |
 | User sends a message                                                                      | `message.dispatch` (observe and always `proceed`) or `thread.active` | Mark analysis pending. Clear any inferred "needs decision".                                    |
 | Turn completes                                                                            | `thread.idle` (`lastAssistantText` included)                         | Per-thread analysis (§10), debounced about 5 s, at most 4 concurrent                           |
 | Pending approval or question                                                              | `interaction.pending`                                                | Show in Needs you immediately                                                                  |
@@ -296,32 +332,39 @@ The bootstrap runs the §9 evolution engine with relaxed thresholds.
 `threads.list` and `threadSections.list`, compares them with plugin records, and
 records user moves. It is idempotent.
 
-## 9. Product evolution
+## 9. Workstream evolution
 
 The map evolves incrementally as work accumulates. Three kinds of change are
 kept separate:
 
-| Kind                 | Example                                    | Mechanism                                               |
-| -------------------- | ------------------------------------------ | ------------------------------------------------------- |
-| Thread drift         | One thread's work moves to another product | Per-thread drift flag, with Hand off / Move / Dismiss   |
-| Map evolution        | A cluster in BB & plugins becomes BB Recap | Product-level proposals                                 |
-| Classification noise | The model disagrees with itself            | Suppressed: membership is never re-derived turn by turn |
+| Kind                 | Example                                       | Mechanism                                               |
+| -------------------- | --------------------------------------------- | ------------------------------------------------------- |
+| Thread drift         | One thread's work moves to another workstream | Per-thread drift flag, with Hand off / Move / Dismiss   |
+| Map evolution        | A cluster in BB & plugins becomes BB Recap    | Workstream-level proposals                              |
+| Classification noise | The model disagrees with itself               | Suppressed: membership is never re-derived turn by turn |
 
 **Evidence.** Each root carries:
 
-- a `subject`, chosen from the product's existing `subjects[]` when one fits;
+- a `subject`, chosen from the workstream's existing `subjects[]` when one fits;
 - a deterministic `subjectKey` (the repo or package path from its own and its
-  children's environments and PRs), which wins when present.
+  children's environments and PRs), which wins when present. A cached host probe
+  resolves paths to repository identity (the remote URL plus the path inside the
+  repository). That way the same package matches across every layout:
+  - `~/Code/Repos/<repo>/<worktree>/…`
+  - Workforest tasks: `…/_tasks/<parent>/<task>/…`
+  - Workforest workspaces: `~/Code/Workspaces/<template>/<name>/<repo>/…`
+  - BB managed worktrees:
+    `~/.bb/plugins/environment-git-worktree/host-data/worktrees/<thread>-N/<repo>/…`
 
 **Proposals.** Defaults use `responsive` sensitivity. `balanced` and
 `conservative` are settings.
 
-| Proposal         | Trigger                                                                                                                                                        | Effect                                                                              |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Spin out         | Within one product, a subject has **≥ 2 roots** in the last 60 days (active or archived), and at least 1 is active. The router can also propose one at intake. | Create a section and record, move the selected roots, narrow the source description |
-| Move to existing | A subject matches another product (name, alias, or subject key), with ≥ 1 thread                                                                               | Move the selected roots                                                             |
-| Merge            | Small products whose subjects overlap, or the router is repeatedly unsure between them, or the user repeatedly moves threads between them                      | Move all roots into the survivor. Delete the losing section only under I5.          |
-| Dormant          | No active threads for 30 days                                                                                                                                  | View rule only: hidden from the sidebar and listed under Dormant on the page        |
+| Proposal         | Trigger                                                                                                                                                           | Effect                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Spin out         | Within one workstream, a subject has **≥ 2 roots** in the last 60 days (active or archived), and at least 1 is active. The router can also propose one at intake. | Create a section and record, move the selected roots, narrow the source description |
+| Move to existing | A subject matches another workstream (name, alias, or subject key), with ≥ 1 thread                                                                               | Move the selected roots                                                             |
+| Merge            | Small workstreams whose subjects overlap, or the router is repeatedly unsure between them, or the user repeatedly moves threads between them                      | Move all roots into the survivor. Delete the losing section only under I5.          |
+| Dormant          | No active threads for 30 days                                                                                                                                     | View rule only: hidden from the sidebar and listed under Dormant on the page        |
 
 **Surfacing.**
 
@@ -329,7 +372,7 @@ kept separate:
   below the thread header through `experimental_threadHeaderAction` and a portal
   _(spike: works)_.
   - Pending:
-    `✦ This thread and 2 others look like BB Recap work. Spin out a BB Recap product?  [Spin out] [Review…] [Not now]`
+    `✦ This thread and 2 others look like BB Recap work. Spin out a BB Recap workstream?  [Spin out] [Review…] [Not now]`
   - Applied: `✦ Moved from BB & plugins → BB Recap  [Undo] [OK]`. There is no
     action label or timestamp; the Activity log carries those.
   - The banner collapses to a header pill (`✦ BB Recap?`).
@@ -351,7 +394,7 @@ kept separate:
 
 **Anti-churn rules.**
 
-- At most one open proposal per product, and at most 3 globally.
+- At most one open proposal per workstream, and at most 3 globally.
 - A thread the user moved in the last 14 days is excluded.
 - Every proposal is revalidated when it is shown and when it is applied.
 - A model call only names and describes a proposal that has already crossed its
@@ -359,14 +402,14 @@ kept separate:
 
 ## 10. Per-thread analysis
 
-- **Input:** title, product, the last 1–3 user requests (bounded),
+- **Input:** title, workstream, the last 1–3 user requests (bounded),
   `lastAssistantText`, and revision. Branch and PR data come from live hooks,
   not the model.
 - **Output:**
 
   ```
   { recap (≤ 140 characters), state: needs_decision | review | blocked | in_progress | done,
-    needsYou?: reason, subject, drift?: { productId | newName, confidence } }
+    needsYou?: reason, subject, drift?: { workstreamId | newName, confidence } }
   ```
 
   `drift` is produced for task threads only.
@@ -386,42 +429,42 @@ kept separate:
 1. **Sidebar thread list** (`experimental_threadList`):
    - A Needs you band (exact-once, live).
    - An optional Recent band (de-duplicated against Needs you).
-   - Product groups with plain headers: the name, a needs-you count only when
+   - Workstream groups with plain headers: the name, a needs-you count only when
      above 0, and a total.
    - An Unsorted band, a Dormant fold, and a yellow dot on rows affected by a
      proposal.
    - Rows matching Dockside: BB `indicator` glyph plus a work-state glyph (with
      a legend), provider icon, branch/PR, draft, shortcut pill, unread state,
      nesting, split drag, and the keyboard DOM attributes.
-   - Context menu: Move to product… · Rename · Pin · Read/unread · Archive ·
+   - Context menu: Move to workstream… · Rename · Pin · Read/unread · Archive ·
      Delete · Open parent.
 2. **Workstreams page** (the Monday-morning view):
-   - Products ranked by attention, then by recency.
-   - Each product lists "pick back up" rows: title · where it stopped · age.
+   - Workstreams ranked by attention, then by recency.
+   - Each workstream lists "pick back up" rows: title · where it stopped · age.
    - Search with `/`.
-   - Tabs for Products (map editor) and Activity.
+   - Tabs for Map (the workstream editor) and Activity.
 3. **Thread header:** a parent link (setting), the proposal pill, and the
    floating banner.
 4. **CLI:**
-   `bb workstreams list | show | new | handoff | file | products | log | analyze | rebuild`,
+   `bb workstreams list | show | edit | new | handoff | file | log | analyze | rebuild`,
    built with `defineCli`.
 5. **Activity log** (page tab and `bb workstreams log`):
    - Covers every change and proposal, newest first, grouped by day.
-   - Fields: time, action, affected products and threads (linked), rationale (≤
-     120 characters, built from deterministic evidence or the router's reason),
-     source, and status (applied · Undo / pending · Review / dismissed / undone
-     / partial).
-   - Filters by product, action, and needs-review.
+   - Fields: time, action, affected workstreams and threads (linked), rationale
+     (≤ 120 characters, built from deterministic evidence or the router's
+     reason), source, and status (applied · Undo / pending · Review / dismissed
+     / undone / partial).
+   - Filters by workstream, action, and needs-review.
    - Retention: 90 days or 2,000 entries.
    - Moves the reconciler detects appear behind a toggle.
 
 ## 12. Storage
 
-| Data                                                                                    | Store                                                                    |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Product map, analysis cache, journal and Activity log, proposals, reconciler cursor     | Plugin SQLite (`bb.storage.database()`) with migrations                  |
-| Per-thread `{ kind, productAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }` | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
-| Collapse state and UI preferences                                                       | Client local storage                                                     |
+| Data                                                                                       | Store                                                                    |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| Workstream map, analysis cache, journal and Activity log, proposals, reconciler cursor     | Plugin SQLite (`bb.storage.database()`) with migrations                  |
+| Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }` | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
+| Collapse state and UI preferences                                                          | Client local storage                                                     |
 
 v1 tables are left untouched until cutover and are not read after bootstrap.
 
@@ -462,8 +505,13 @@ bb-plugin-workstreams/
 
 - A single implementation owner works in the `workstreams-v2` worktree.
   Subagents review only.
-- Never install from uncommitted work. Develop side by side as
-  `workstreams-next`.
+- Never install from uncommitted work.
+- Rewrite the Workstreams plugin **in place**: same plugin id (`workstreams`),
+  settings, and sidebar selection, developed on the `workstreams-v2` branch.
+- Each phase gate is installed from that branch and fast-forwarded to `main`.
+- Installing Phase 1 replaces v1 live, so v1's recaps and Needs-you inference
+  are missing until Phase 2. Rollback is one command: install a v1 checkout by
+  path.
 - Every phase gate reports:
   - the commit and a clean tree;
   - that the plugin was reloaded;
@@ -494,30 +542,36 @@ bb-plugin-workstreams/
 
 - Manager threads are replaced by task threads that delegate and hand off.
 - Intake is opinionated: continue an existing thread, start a new thread, or
-  start a new product.
+  start a new workstream.
 - No manual or big-bang Analyze or Organize runs.
-- The product map evolves incrementally with responsive thresholds (≥ 2 roots in
-  60 days, archived included) and is dialed down if it proves disruptive.
+- The workstream map evolves incrementally with responsive thresholds (≥ 2 roots
+  in 60 days, archived included) and is dialed down if it proves disruptive.
 - Evolution proposals surface as a yellow floating banner at the top of affected
   threads, with minimal copy.
 - The page carries an Activity log of every change and proposal, with timestamps
   and rationale.
+- Delegation uses BB's own spawn, and handoff is the `bb workstreams handoff`
+  CLI. Workstreams registers no agent tools.
+- There is no default home project. Work with no code target goes to BB's
+  personal project ("Don't work in a project") unless `homeProjectId` is set.
+- Workforest workspaces (multi-repository roots with no root repo) are a
+  first-class project shape (§3).
+- The plugin is rewritten in place, keeping the same id, `workstreams`.
+- The UI term for a section is **workstream**.
+- Grouping workstreams into families is dropped for now.
 
 **Defaults awaiting confirmation.**
 
-| #   | Question                               | Default                                                                                                                                                      |
-| --- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| D1  | What is a product?                     | A native section                                                                                                                                             |
-| D2  | Which intake entry points?             | Native-composer banner, plus ＋ New                                                                                                                          |
-| D3  | How is a route confirmed?              | Always preview. ⏎ accepts.                                                                                                                                   |
-| D4  | Home project and default environments? | Home project: tomdaleOS. Task threads use the product project's **checkout** (explicit). Delegates choose: `worktree` for code changes, `inherit` otherwise. |
-| D5  | Which threads get task instructions?   | All visible top-level threads                                                                                                                                |
-| D6  | Who owns a delegate's lifecycle?       | The task thread (archiving the task archives its delegates)                                                                                                  |
-| D7  | Which models?                          | A stronger fast model for the bootstrap assignment, and Flash-Lite for steady state (pending the eval)                                                       |
-| D8  | Threads created outside Workstreams?   | Auto-filed at high confidence, journaled                                                                                                                     |
-| D9  | Evolution outside intake?              | Auto-apply with an Undo banner                                                                                                                               |
-| D10 | Recent band?                           | Keep, de-duplicated against Needs you                                                                                                                        |
-| D11 | Titles?                                | Auto-title only threads BB left untitled                                                                                                                     |
-| D12 | Development strategy?                  | Side by side as `workstreams-next`                                                                                                                           |
-| D13 | UI term for a section?                 | "Product"                                                                                                                                                    |
-| D14 | Product families?                      | Display-only grouping, off by default                                                                                                                        |
+| #   | Question                             | Default                                                                                                         |
+| --- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| D1  | What is a workstream?                | A native section                                                                                                |
+| D2  | Which intake entry points?           | Native-composer banner, plus ＋ New                                                                             |
+| D3  | How is a route confirmed?            | Always preview. ⏎ accepts.                                                                                      |
+| D4  | Default environments?                | Router-created task threads use the project **checkout**. Delegates follow the project-shape guidance (§3, §5). |
+| D5  | Which threads get task instructions? | All visible top-level threads                                                                                   |
+| D6  | Who owns a delegate's lifecycle?     | The task thread (archiving the task archives its delegates)                                                     |
+| D7  | Which models?                        | A stronger fast model for the bootstrap assignment, and Flash-Lite for steady state (pending the eval)          |
+| D8  | Threads created outside Workstreams? | Auto-filed at high confidence, journaled                                                                        |
+| D9  | Evolution outside intake?            | Auto-apply with an Undo banner                                                                                  |
+| D10 | Recent band?                         | Keep, de-duplicated against Needs you                                                                           |
+| D11 | Titles?                              | Auto-title only threads BB left untitled                                                                        |
