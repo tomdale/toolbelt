@@ -206,7 +206,20 @@ export function buildSidebar(
     );
     const manager =
       managerRoots.length === 1 ? (rows.get(managerRoots[0].id) ?? null) : null;
-    const hasManager = managerRoots.length > 0;
+    const hasManager =
+      managerRoots.length > 0 ||
+      bucket.roots.every((root) =>
+        threads.some(
+          (thread) =>
+            roleMap.get(thread.id) === "manager" &&
+            thread.projectId === root.projectId &&
+            (id.startsWith("section:")
+              ? thread.sectionId === root.sectionId
+              : !thread.sectionId &&
+                managerName(thread.displayTitle)?.toLowerCase() ===
+                  bucket.name.toLowerCase()),
+        ),
+      );
     const groupRows = manager
       ? bucketRows.filter((row) => row.thread.id !== manager.thread.id)
       : bucketRows;

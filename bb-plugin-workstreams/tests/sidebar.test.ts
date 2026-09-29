@@ -222,6 +222,18 @@ it("does not mark a titled manager group unmanaged even if its suffix has a stat
   expect(group.rows.map((row) => row.thread.id)).toEqual(["worker"]);
 });
 
+it("hides unmanaged state for a synthetic product with a standalone manager", () => {
+  const model = buildSidebar(
+    [t("manager", { displayTitle: "Project — manager" }), t("worker")],
+    null,
+    new Map(),
+    new Map([["p", "Project"]]),
+  );
+  expect(
+    model.groups.find((group) => group.id === "product:project")?.unmanaged,
+  ).toBe(false);
+});
+
 it("keeps identically named managers in distinct groups", () => {
   const model = buildSidebar(
     [

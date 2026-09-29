@@ -141,12 +141,18 @@ function Group({
   collapsed,
   toggle,
   renderRow,
+  createManager,
+  creating,
+  createError,
 }: {
   group: SidebarGroup;
   banner?: string;
   collapsed: boolean;
   toggle: () => void;
   renderRow: (row: SidebarRow) => React.ReactNode;
+  createManager: (id: string) => void;
+  creating: boolean;
+  createError: string | null;
 }) {
   const open = group.rows;
   return (
@@ -181,7 +187,19 @@ function Group({
       </button>
       {!collapsed && (
         <>
-          {group.unmanaged && <p className="wss-unmanaged">Unmanaged</p>}
+          {group.unmanaged && (
+            <div className="wss-create-row">
+              <button
+                type="button"
+                className="wss-create"
+                disabled={creating}
+                onClick={() => createManager(group.id)}
+              >
+                {creating ? "Creating manager…" : "+ Create manager"}
+              </button>
+              {createError && <span role="alert">{createError}</span>}
+            </div>
+          )}
           {group.manager && renderRow({ ...group.manager, depth: 0 })}
           {group.summary && (
             <p className="wss-summary">
@@ -232,6 +250,30 @@ export function WorkstreamsThreadList({
     void refresh();
   }, [refresh]);
   const { collapsed, toggle } = useCollapsed();
+  const [creatingGroup, setCreatingGroup] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<{
+    id: string;
+    message: string;
+  } | null>(null);
+  const createManager = async (id: string) => {
+    if (creatingGroup) return;
+    setCreatingGroup(id);
+    setCreateError(null);
+    try {
+      const { threadId } = await rpc.call("createManager", { groupId: id });
+      await refresh();
+      actions.open(threadId);
+      onNavigate();
+    } catch (error) {
+      setCreateError({
+        id,
+        message:
+          error instanceof Error ? error.message : "Could not create manager.",
+      });
+    } finally {
+      setCreatingGroup(null);
+    }
+  };
   const needsBandCollapsed = collapsed.has("__needs");
   const [menu, setMenu] = useState<Menu | null>(null);
   useEffect(() => {
@@ -323,6 +365,9 @@ export function WorkstreamsThreadList({
           collapsed={collapsed.has(g.name)}
           toggle={() => toggle(g.name)}
           renderRow={(r) => renderRow(r)}
+          createManager={(id) => void createManager(id)}
+          creating={creatingGroup === g.id}
+          createError={createError?.id === g.id ? createError.message : null}
         />
       ))}
       {model.other.length > 0 && (
@@ -331,7 +376,7 @@ export function WorkstreamsThreadList({
             id: "other",
             name: "Other",
             manager: null,
-            unmanaged: true,
+            unmanaged: false,
             rows: model.other,
             needsYou: model.other.filter((r) => r.immediateAsk).length,
             summary: null,
@@ -341,6 +386,9 @@ export function WorkstreamsThreadList({
           renderRow={(r) =>
             renderRow(r as SidebarRow & { group: string }, true)
           }
+          createManager={(id) => void createManager(id)}
+          creating={creatingGroup === "other"}
+          createError={createError?.id === "other" ? createError.message : null}
         />
       )}
       {menu && (
