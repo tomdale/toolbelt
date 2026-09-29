@@ -48,6 +48,8 @@ function setup(
   malformed = false,
   failTitle?: string,
   onInference?: () => void,
+  sections: { id: string; name: string }[] = [],
+  pivot = false,
 ) {
   const rows = Array.from({ length: count }, (_, i) => thread(String(i)));
   let running = 0,
@@ -57,7 +59,7 @@ function setup(
     sdk: {
       projects: { list: async () => [project] },
       threadSections: {
-        list: async () => [],
+        list: async () => sections,
         create: async ({ name }: { name: string }) => ({
           id: `sec_${name}`,
           name,
@@ -69,7 +71,39 @@ function setup(
         ],
       },
       threads: {
-        events: { list: async () => [] },
+        events: {
+          list: async () =>
+            pivot
+              ? [
+                  {
+                    type: "client/turn/requested",
+                    seq: 1,
+                    data: {
+                      input: [
+                        {
+                          type: "text",
+                          text: "Now work on the New Product instead of the old project.",
+                        },
+                      ],
+                    },
+                  },
+                ]
+              : [],
+        },
+        promptHistory: async () =>
+          pivot
+            ? [
+                {
+                  createdAt: 2,
+                  input: [
+                    {
+                      type: "text",
+                      text: "Now work on the New Product instead of the old project.",
+                    },
+                  ],
+                },
+              ]
+            : [],
         list: async ({
           archived,
           includeHidden,
@@ -128,9 +162,11 @@ function setup(
               threadId: t.id,
               title: `Feature ${t.id}`,
               group:
-                Number(t.title.split(" ").at(-1)) % 2
-                  ? "vercel-agent-for-slack"
-                  : "Vercel Agent for Slack",
+                pivot && t.excerpts.includes("Now work on the New Product")
+                  ? "New Product"
+                  : Number(t.title.split(" ").at(-1)) % 2
+                    ? "vercel-agent-for-slack"
+                    : "Vercel Agent for Slack",
               recap: `Implement feature ${t.id}`,
               state: "done",
               needsYou: false,
@@ -149,8 +185,12 @@ function setup(
 async function snapshot(h: ReturnType<typeof setup>): Promise<Snapshot> {
   return (await h.harness.behavior.callRpc("snapshot", null)) as Snapshot;
 }
-async function run(h: ReturnType<typeof setup>) {
-  await h.harness.behavior.callRpc("analyze", null);
+async function run(h: ReturnType<typeof setup>, fresh = false) {
+  if (fresh) {
+    expect(
+      (await h.harness.behavior.runCli(["analyze", "--fresh"])).exitCode,
+    ).toBe(0);
+  } else await h.harness.behavior.callRpc("analyze", null);
   const service = h.harness.behavior.runService("thread-analysis");
   try {
     await expect
@@ -358,6 +398,130 @@ describe("active thread overview", () => {
       ((await reloaded.harness.behavior.callRpc("snapshot", null)) as Snapshot)
         .analysis,
     ).toEqual(s.analysis);
+  });
+  it.each([
+    ["auto-assigned", "sec_auto", "Vercel Agent for Slack"],
+    ["manually moved", "sec_manual", "Manual correction"],
+  ])(
+    "distinguishes %s native sections on --fresh",
+    async (_kind, sectionId, expected) => {
+      const h = setup(1, false, undefined, [
+        { id: "sec_auto", name: "Old automatic group" },
+        { id: "sec_manual", name: "Manual correction" },
+      ]);
+      h.rows[0].sectionId = sectionId;
+      await plugin(h.bb);
+      const db = h.bb.storage.database();
+      db.prepare("INSERT INTO state VALUES (?,?)").run(
+        "organize-log",
+        JSON.stringify([
+          {
+            id: "assigned",
+            at: 1,
+            action: {
+              kind: "section",
+              threadId: "0",
+              section: "Old automatic group",
+            },
+            result: "done",
+            detail: "",
+            undone: false,
+            // Existing installations may have only a section name, not an ID.
+            undo: { sectionId: null },
+          },
+        ]),
+      );
+      db.prepare("INSERT INTO state VALUES (?,?)").run(
+        "thread-analysis",
+        JSON.stringify({
+          at: 1,
+          items: [
+            {
+              threadId: "0",
+              group: "Old automatic group",
+              recap: "Old",
+              updatedAt: 1,
+            },
+          ],
+          warnings: [],
+        }),
+      );
+      const reloaded = await h.harness.lifecycle.reload(plugin);
+      fixtures.push(reloaded);
+      await run(reloaded as ReturnType<typeof setup>, true);
+      expect(
+        (await snapshot(reloaded as ReturnType<typeof setup>)).analysis
+          ?.items[0].group,
+      ).toBe(expected);
+      const classifyPrompt = (
+        reloaded.harness.experimental_hostRpcCalls[0].input as {
+          prompt: string;
+        }
+      ).prompt;
+      expect(classifyPrompt).not.toContain(
+        '"previousGroup":"Old automatic group"',
+      );
+    },
+  );
+  it("pivots on explicit recent evidence despite an auto-assigned section", async () => {
+    const h = setup(
+      1,
+      false,
+      undefined,
+      [{ id: "sec_old", name: "Old Product" }],
+      true,
+    );
+    h.rows[0].sectionId = "sec_old";
+    await plugin(h.bb);
+    h.bb.storage
+      .database()
+      .prepare("INSERT INTO state VALUES (?,?)")
+      .run(
+        "organize-log",
+        JSON.stringify([
+          {
+            id: "assigned",
+            at: 1,
+            action: { kind: "section", threadId: "0", section: "Old Product" },
+            result: "done",
+            detail: "",
+            undone: false,
+            undo: { workstreamsSectionId: "sec_old" },
+          },
+        ]),
+      );
+    h.bb.storage
+      .database()
+      .prepare("INSERT INTO state VALUES (?,?)")
+      .run(
+        "thread-analysis",
+        JSON.stringify({
+          at: 1,
+          items: [
+            {
+              threadId: "0",
+              group: "Old Product",
+              recap: "Before pivot",
+              updatedAt: 1,
+            },
+          ],
+          warnings: [],
+        }),
+      );
+    const reloaded = await h.harness.lifecycle.reload(plugin);
+    fixtures.push(reloaded);
+    await run(reloaded as ReturnType<typeof setup>);
+    expect(
+      (await snapshot(reloaded as ReturnType<typeof setup>)).analysis?.items[0]
+        .group,
+    ).toBe("New Product");
+    expect(
+      (
+        reloaded.harness.experimental_hostRpcCalls[0].input as {
+          prompt: string;
+        }
+      ).prompt,
+    ).toContain('"previousGroup":"Old Product"');
   });
   it("rejects concurrent analysis and preserves previous results after invalid output", async () => {
     const h = setup(2, true);

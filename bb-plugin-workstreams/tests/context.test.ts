@@ -1,6 +1,42 @@
 import { expect, it } from "vitest";
-import { contextExcerpt, initialRequest, requestTimeline } from "../context";
+import {
+  contextExcerpt,
+  initialRequest,
+  manualSectionGroup,
+  requestTimeline,
+} from "../context";
+import { logEntrySchema } from "../organize";
 const input = (text: string) => [{ type: "text", text }];
+it("distinguishes native section provenance using the last active assignment", () => {
+  const names = new Map([
+    ["auto", "Renamed group"],
+    ["manual", "Renamed group"],
+  ]);
+  const entry = logEntrySchema.parse({
+    id: "1",
+    at: 1,
+    result: "done",
+    action: { kind: "section", threadId: "a", section: "Old group" },
+    undo: { workstreamsSectionId: "auto" },
+  });
+  expect(manualSectionGroup("auto", names, [entry], "a")).toBe("Renamed group");
+  expect(manualSectionGroup("manual", names, [entry], "a")).toBe(
+    "Renamed group",
+  );
+  const original = new Map([
+    ["auto", "Old group"],
+    ["manual", "Old group"],
+  ]);
+  expect(manualSectionGroup("auto", original, [entry], "a")).toBeUndefined();
+  expect(manualSectionGroup("manual", original, [entry], "a")).toBe(
+    "Old group",
+  );
+  expect(manualSectionGroup("auto", names, [], "a")).toBe("Renamed group");
+  expect(
+    manualSectionGroup("auto", names, [{ ...entry, undone: true }], "a"),
+  ).toBe("Renamed group");
+  expect(manualSectionGroup(null, names, [entry], "a")).toBeUndefined();
+});
 it("recovers the initial request independently of empty prompt history", () => {
   const initial = initialRequest([
     {
