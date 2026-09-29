@@ -69,7 +69,7 @@ When new turns arrive, the next recap uses the previous recap plus those new tur
 
 ### 🪟 Choose a display
 
-Show a compact banner with the full Markdown recap, a larger recap card, or no inline recap until you open the Recap panel.
+Show the recap above the composer as a compact banner or a larger card, or choose **On demand** to show only recaps you request. Dismiss a recap to hide it until a newer one arrives.
 
 </td>
 </tr>
@@ -114,9 +114,9 @@ bb plugin install path:$PWD --yes
 
 | Where | What |
 | --- | --- |
-| **Thread header** | Open the Recap panel and generate a recap. |
+| **Thread header** | Generate a recap; progress shows on the button and errors appear as a notification. |
 | **Command palette** | Choose **Recap: generate for this thread**. |
-| **Composer** | Read the latest recap inline; choose **On demand** to keep it out of the composer. |
+| **Composer** | Read the latest recap inline, or dismiss it; choose **On demand** to show only recaps you request. |
 | **Plugin settings** | In **Recap behavior**, choose a model and configure automatic generation, cleanup, prompt, and display. |
 | **CLI** | Generate, show, or list recaps with `bb recap`. |
 
@@ -133,7 +133,7 @@ flowchart TD
     D --> F["Run a hidden BB worker"]
     E --> F
     F --> G["Store recap separately"]
-    G --> H["Show it in the panel, composer, or CLI"]
+    G --> H["Show it above the composer or in the CLI"]
 ```
 
 - **Bounded input.** Recap reads up to 120,000 transcript characters and limits generated text to 1,200 characters.
