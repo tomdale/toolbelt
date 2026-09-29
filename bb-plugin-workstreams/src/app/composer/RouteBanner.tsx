@@ -202,16 +202,12 @@ export function RouteBanner() {
       })
       .then(
         (applied) => {
-          const env = applied.environment as
-            { workspace?: { type?: string } } | undefined;
-          const wanted = (
-            placement.environment as { workspace?: { type?: string } }
-          ).workspace?.type;
+          // Environments come back in the composer's own shape, so only a
+          // different project is reliably a mismatch.
           set({
             note:
-              applied.projectId !== placement.projectId ||
-              (wanted && env?.workspace?.type !== wanted)
-                ? `the composer kept a different ${applied.projectId !== placement.projectId ? "project" : "environment"}; check the pickers`
+              applied.projectId && applied.projectId !== placement.projectId
+                ? "the composer kept a different project; check the pickers"
                 : null,
           });
         },
