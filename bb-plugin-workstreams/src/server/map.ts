@@ -160,7 +160,9 @@ export class WorkstreamMap {
         const subjects = rank(
           roots.map((root) => analysis[root.id]?.subject ?? null),
         ).slice(0, SUBJECTS_MAX);
-        const projects = rank(roots.map((root) => root.projectId)).map(
+        // Delegates count too: a coordinating root often runs in one project
+        // while the code work its children do runs in another.
+        const projects = rank(members.map((thread) => thread.projectId)).map(
           (projectId, i): MapProject => {
             const previous = record.projects.find(
               (p) => p.projectId === projectId,
