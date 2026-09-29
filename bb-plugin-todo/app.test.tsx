@@ -70,6 +70,25 @@ it("does not show old tasks after an uncertain clear and offers explicit retry",
   slot.lifecycle.unmount();
 });
 
+it("ignores a snapshot started before confirmation so it cannot unmask old tasks", async () => {
+  let oldSnapshot!: (value: unknown) => void;
+  let snapshots = 0;
+  const slot = await mount(() => new Promise(() => {}), () => {
+    if (++snapshots <= 1) return new Promise(resolve => { oldSnapshot = resolve; });
+    return { tasks, nextId: 2, pendingClear: null, completedClear: null };
+  });
+  // The first read is held while a later one provides the visible card.
+  await slot.behavior.setRealtimeConnectionState("reconnecting");
+  await slot.findByText(subject);
+  fireEvent.click(slot.getByRole("button", { name: /To-do list:/ }));
+  fireEvent.click(slot.getByRole("button", { name: "Clear current Pi Todo list" }));
+  fireEvent.click(slot.getByRole("button", { name: "Confirm clear" }));
+  oldSnapshot({ tasks, nextId: 2, pendingClear: null, completedClear: null });
+  await waitFor(() => expect(slot.queryByText(subject)).toBeNull());
+  expect(slot.getByText(/Earlier tasks are hidden/)).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
 it("shows pending clear after reload without automatically invoking the provider action", async () => {
   const calls: unknown[] = [];
   const slot = await mount(input => { calls.push(input); return { nextId: 19, boundarySequence: 8 }; },
