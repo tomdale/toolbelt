@@ -67,9 +67,16 @@ const viewSchema = snapshotSchema.extend({
 });
 export type View = z.infer<typeof viewSchema>;
 const threadInput = z.object({ threadId: z.string() });
+const parentLinkSchema = z
+  .object({ id: z.string(), title: z.string() })
+  .nullable();
 const ok = z.object({ ok: z.boolean() });
 export const rpcContract = defineRpcContract({
   snapshot: { input: z.null(), output: viewSchema },
+  parentLink: {
+    input: z.object({ threadId: z.string().min(1) }),
+    output: parentLinkSchema,
+  },
   /** Analysis only, for the sidebar, which reads threads from BB's live view. */
   sidebar: {
     input: z.null(),
@@ -168,6 +175,13 @@ export default async function plugin(bb: BbPluginApi) {
       type: "string",
       label: "Analysis machine ID (blank uses the only connected machine)",
       default: "",
+    },
+    showParentThreadLink: {
+      type: "boolean",
+      label: "Show parent thread link in thread header",
+      description:
+        "Show a link to the parent thread in the header of child threads.",
+      default: false,
     },
   });
   const notify = () => bb.realtime.publish("changed", {});
@@ -1335,6 +1349,33 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.rpc.register(rpcContract, {
     snapshot,
+    parentLink: async ({ threadId }) => {
+      if (!(await settings.get()).showParentThreadLink) return null;
+      try {
+        const child = await bb.sdk.threads.get({ threadId });
+        if (
+          child.deletedAt !== null ||
+          !child.parentThreadId ||
+          child.parentThreadId === threadId
+        )
+          return null;
+        const parent = await bb.sdk.threads.get({
+          threadId: child.parentThreadId,
+        });
+        if (
+          !parent ||
+          parent.deletedAt !== null ||
+          parent.projectId !== child.projectId
+        )
+          return null;
+        return {
+          id: parent.id,
+          title: parent.title ?? parent.titleFallback ?? "Untitled thread",
+        };
+      } catch {
+        return null;
+      }
+    },
     analyze: async () => start(),
     sidebar: async () => {
       if (fixture)

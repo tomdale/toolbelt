@@ -5,6 +5,7 @@ import {
   useRealtime,
   useRealtimeConnectionState,
   useRpc,
+  useSettings,
 } from "@get-bb/plugin-sdk/app";
 import type { rpcContract, View } from "./server";
 import {
@@ -483,7 +484,64 @@ function WorkstreamsPage() {
     </main>
   );
 }
+function ParentThreadLink({
+  threadId,
+  isCompactViewport,
+}: {
+  threadId: string;
+  isCompactViewport: boolean;
+}) {
+  const { values } = useSettings();
+  const enabled = values?.showParentThreadLink === true;
+  const rpc = useRpc<typeof rpcContract>();
+  const navigate = useBbNavigate();
+  const [result, setResult] = useState<{
+    threadId: string;
+    parent: { id: string; title: string } | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!enabled) return;
+    setResult(null);
+    let active = true;
+    void rpc.call("parentLink", { threadId }).then(
+      (parent) => {
+        if (active) setResult({ threadId, parent });
+      },
+      () => {
+        if (active) setResult({ threadId, parent: null });
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [enabled, rpc, threadId]);
+
+  const parent =
+    enabled && result?.threadId === threadId ? result.parent : null;
+  if (!parent) return null;
+  return (
+    <button
+      type="button"
+      className="ws-parent-link"
+      aria-label={`Go to parent thread: ${parent.title}`}
+      title={`Go to parent thread: ${parent.title}`}
+      onClick={() => navigate.toThread(parent.id)}
+    >
+      <span aria-hidden="true">↖</span>
+      {!isCompactViewport && (
+        <span className="ws-parent-link-title">{parent.title}</span>
+      )}
+    </button>
+  );
+}
+
 export default definePluginApp((app) => {
+  app.slots.experimental_threadHeaderAction({
+    id: "parent-thread",
+    title: "Parent thread",
+    component: ParentThreadLink,
+  });
   app.slots.experimental_threadList({
     id: "sidebar",
     title: "Workstreams threads",
