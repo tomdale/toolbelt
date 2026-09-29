@@ -33,6 +33,7 @@ export function roleOf(
     origin: { kind: "fork" | null; pluginId: string | null };
     pluginMetadata: Readonly<Record<string, unknown>>;
   },
+  now?: number,
 ): ThreadRole | null {
   if (context.origin.kind === "fork" && context.origin.pluginId === "side-chat")
     return null;
@@ -41,7 +42,14 @@ export function roleOf(
   );
   const seen = lookup.get(context.thread.id) as Seen | undefined;
   const kind = context.pluginMetadata.kind;
-  if (!seen && kind !== "task" && kind !== "delegate") return null;
+  // An unseen thread is trusted only on metadata Workstreams wrote moments
+  // ago (a thread it just spawned). Older metadata could be a copy on a
+  // hidden fork, and configure can't see visibility.
+  const filedAt = context.pluginMetadata.filedAt;
+  const fresh =
+    typeof filedAt === "number" && (now ?? Date.now()) - filedAt < 10 * 60_000;
+  if (!seen && !((kind === "task" || kind === "delegate") && fresh))
+    return null;
 
   const parentId = context.thread.parentThreadId;
   const parent = parentId
@@ -146,7 +154,8 @@ export async function refreshShapes(
           ? "git"
           : found.childRepos > 0
             ? "workforest"
-            : "none";
+            : // A plain directory: neither shape's guidance applies.
+              "unknown";
       save.run(project.id, shape, now);
     } catch {
       // The machine may be offline; try again on the next pass.

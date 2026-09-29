@@ -97,10 +97,27 @@ describe("configure", () => {
       w,
       { id: "brand-new" },
       {
-        pluginMetadata: { kind: "task", filedSectionId: w.sections[0]!.id },
+        pluginMetadata: {
+          kind: "task",
+          filedSectionId: w.sections[0]!.id,
+          filedAt: Date.now(),
+        },
       },
     );
     expect(fresh.instructions).toContain('"Alpha" workstream');
+    // Stale task metadata on an unseen thread (a hidden fork's copy) is ignored.
+    const copy = await resolve(
+      w,
+      { id: "hidden-fork" },
+      {
+        pluginMetadata: {
+          kind: "task",
+          filedSectionId: w.sections[0]!.id,
+          filedAt: Date.now() - 60 * 60_000,
+        },
+      },
+    );
+    expect(copy.instructions).toBeNull();
   });
 });
 
@@ -163,6 +180,12 @@ describe("bb workstreams handoff", () => {
     const fourth = await handoff(w, "One more separate request");
     expect(fourth.exitCode).not.toBe(0);
     expect(fourth.stderr + fourth.stdout).toMatch(/already handed off 3/);
+    // The next turn gets three more.
+    w.threads.set("caller", {
+      ...w.threads.get("caller")!,
+      latestAttentionAt: Date.now() + 1000,
+    });
+    expect((await handoff(w, "A request in the next turn")).exitCode).toBe(0);
   });
 
   it("previews without acting on --dry-run", async () => {

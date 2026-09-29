@@ -4,7 +4,8 @@
  * made elsewhere. See SPEC.md.
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { registerCli } from "./cli.ts";
+import { actOn, registerCli } from "./cli.ts";
+import { isCurrent } from "../domain/analysis.ts";
 import { refreshShapes, registerAgentInstructions } from "./agents.ts";
 import { Analyzer } from "./analyzer.ts";
 import { Bootstrap } from "./bootstrap.ts";
@@ -182,20 +183,23 @@ export default async function plugin(bb: BbPluginApi) {
   // filed where the preview said: via the banner's submit data, or, for a
   // plain Enter, by matching the prompt. The hook itself always proceeds.
   bb.experimental_hooks.on("message.dispatch", (ctx) => {
+    // A thread's first message has an origin; follow-ups, steers, and retries
+    // don't. Queued re-attempts of a first message still count.
     const fresh =
+      ctx.origin !== null &&
       ctx.attempt === "start-turn" &&
-      ctx.queuedMessages.length === 0 &&
       !ctx.thread.sectionId &&
       !ctx.parentThreadId &&
-      Date.now() - ctx.thread.createdAt < 120_000;
+      Date.now() - ctx.thread.createdAt < 10 * 60_000;
     if (fresh) {
       const data =
         ctx.experimental_submission?.pluginId === bb.pluginId
           ? (ctx.experimental_submission.data as { routeId?: string } | null)
           : null;
-      const decision = router.recall(
-        data?.routeId ? { id: data.routeId } : { prompt: ctx.input.text },
-      );
+      const decision = router.recall({
+        id: data?.routeId ?? null,
+        prompt: ctx.input.text,
+      });
       if (decision)
         setTimeout(() => {
           router
@@ -226,6 +230,7 @@ export default async function plugin(bb: BbPluginApi) {
           threadId: picked.threadId,
           threadTitle: picked.title,
           workstream: null,
+          sectionId: null,
         }
       : {
           ...decision,
@@ -297,6 +302,7 @@ export default async function plugin(bb: BbPluginApi) {
         thread.sectionId ?? null,
         thread.parentThreadId ?? null,
         thread.title ?? thread.titleFallback ?? undefined,
+        true,
       );
   });
   bb.events.on("thread.deleted", ({ thread }) => {
@@ -323,7 +329,7 @@ export default async function plugin(bb: BbPluginApi) {
       userFacing(() => router.route(prompt, { pickedProjectId, workstreamId })),
     routeExecute: ({ decisionId, prompt, choice, execution }) =>
       userFacing(async () => {
-        const remembered = router.recall({ id: decisionId });
+        const remembered = router.byId(decisionId);
         if (!remembered)
           throw new UserError("That preview expired; route it again.");
         let decision = choose(remembered, choice);
@@ -370,29 +376,48 @@ export default async function plugin(bb: BbPluginApi) {
       userFacing(async () => {
         const analysis = analyzer.get(threadId);
         const drift = analysis?.drift;
-        if (!analysis || !drift)
+        const thread = await bb.sdk.threads.get({ threadId });
+        // Act only on the flag the user saw: a current, high-confidence result.
+        if (
+          !analysis ||
+          !drift ||
+          drift.confidence !== "high" ||
+          !isCurrent(analysis, {
+            status: thread.status,
+            latestAttentionAt: thread.latestAttentionAt ?? thread.updatedAt,
+          })
+        )
           throw new UserError("This thread has no drift flag right now.");
         const target = analysis.driftSectionId ?? drift.newName ?? "";
-        if (action === "dismiss") {
+        const dismiss = () => {
           db.prepare(
             `INSERT INTO ws_drift_dismissed (thread_id, target, at) VALUES (?, ?, ?)
              ON CONFLICT(thread_id) DO UPDATE SET target = excluded.target, at = excluded.at`,
           ).run(threadId, target, Date.now());
           notify();
+        };
+        if (action === "dismiss") {
+          dismiss();
           return { threadId: null };
         }
+        // The drift target as a section: the one analysis named, an existing
+        // one with the suggested name, or a new one.
+        const sectionFor = async (): Promise<string> => {
+          if (analysis.driftSectionId) return analysis.driftSectionId;
+          const name = drift.newName ?? "";
+          const existing = map
+            .list()
+            .find((r) => r.name.toLowerCase() === name.toLowerCase());
+          if (existing) return existing.sectionId;
+          return (await service.createWorkstream(name, "user")).sectionId;
+        };
         if (action === "move") {
-          const sectionId =
-            analysis.driftSectionId ??
-            (drift.newName
-              ? (await service.createWorkstream(drift.newName, "user"))
-                  .sectionId
-              : null);
-          if (!sectionId) throw new UserError("No workstream to move to.");
-          await service.move(threadId, sectionId, "user");
+          await service.move(threadId, await sectionFor(), "user");
+          dismiss();
           return { threadId };
         }
-        // Hand off: the thread's latest request goes where the drift points.
+        // Hand off: the analyzed turn's request goes to the drift target,
+        // under the same policy as `bb workstreams handoff`.
         const [latest] = await bb.sdk.threads.promptHistory({
           threadId,
           limit: "1",
@@ -404,18 +429,14 @@ export default async function plugin(bb: BbPluginApi) {
         if (!request) throw new UserError("There's no request to hand off.");
         const decision = await router.route(request, {
           exclude: threadId,
-          workstreamId: analysis.driftSectionId,
+          workstreamId: await sectionFor(),
         });
-        const result = await router.execute(decision, request, "handoff", {
+        const acted = await actOn(router, decision, request, false, "handoff", {
           message: `Handed off from @thread:${threadId}. This is now this thread's task; the user continues here, so don't report back there.\n\n${request}`,
           spawnedFrom: threadId,
         });
-        db.prepare(
-          `INSERT INTO ws_drift_dismissed (thread_id, target, at) VALUES (?, ?, ?)
-           ON CONFLICT(thread_id) DO UPDATE SET target = excluded.target, at = excluded.at`,
-        ).run(threadId, target, Date.now());
-        notify();
-        return { threadId: result.threadId };
+        dismiss();
+        return { threadId: acted.threadId };
       }),
     proposal: ({ id, action }) =>
       userFacing(async () => {

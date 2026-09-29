@@ -522,13 +522,6 @@ export function registerCli(
               "handoff",
               { message, spawnedFrom: caller },
             );
-            if (acted.threadId === caller)
-              throw new PluginCliError(
-                "A handoff can't go back to its own thread.",
-                {
-                  code: "handoff_to_self",
-                },
-              );
             return {
               exitCode: acted.outcome === "unsure" ? 3 : 0,
               stdout: options.json
@@ -622,11 +615,11 @@ export function registerCli(
             if (!options.yes)
               return {
                 exitCode: 0,
-                stdout: `Would remove v1 data: ${found.state} state rows, ${found.banners} banner images. Rerun with --yes. Rolling back to v1 afterwards starts it with no history.`,
+                stdout: `Would remove v1 data: ${found.state} state rows, ${found.banners} banner images. Rerun with --yes. Rolling back to v1 afterwards starts it with no history or analysis.`,
               };
-            db.exec(
-              "DROP TABLE IF EXISTS banners; DROP TABLE IF EXISTS state;",
-            );
+            // Emptied, not dropped: v1's migration ledger still lists them.
+            for (const table of ["banners", "state"])
+              if (count(table) > 0) db.exec(`DELETE FROM ${table}`);
             return {
               exitCode: 0,
               stdout: `Removed v1 data (${found.state} state rows, ${found.banners} banner images). v1's settings (organize, diagnostics) have no effect in v2; clear them with \`bb plugin config workstreams unset <key>\` if you like.`,
@@ -679,15 +672,18 @@ export async function actOn(
   options: { message?: string; spawnedFrom?: string | null } = {},
 ): Promise<Acted> {
   let final = decision;
-  if (decision.outcome === "continue" && decision.confidence !== "high")
-    final = await router.route(prompt, {
-      exclude: [
-        decision.threadId,
-        ...(options.spawnedFrom ? [options.spawnedFrom] : []),
-      ],
-    });
-  if (final.outcome === "continue" && final.confidence !== "high")
-    final = { ...final, outcome: "unsure", candidates: [] } as RouteDecision;
+  // Continue only when sure; otherwise start a thread in the target's
+  // workstream (SPEC §5), or change nothing when it has none.
+  if (
+    final.outcome === "continue" &&
+    (final.confidence !== "high" || final.threadId === options.spawnedFrom)
+  )
+    final = final.sectionId
+      ? await router.route(prompt, {
+          workstreamId: final.sectionId,
+          exclude: options.spawnedFrom ?? null,
+        })
+      : ({ ...final, outcome: "unsure", candidates: [] } as RouteDecision);
   const workstream =
     final.outcome === "new-thread"
       ? final.workstream
@@ -696,6 +692,11 @@ export async function actOn(
         : final.outcome === "continue"
           ? final.workstream
           : null;
+  if (final.outcome === "unsure" || dryRun) {
+    // A previewed route must not file a later thread with the same text.
+    router.forget(decision.id);
+    router.forget(final.id);
+  }
   if (final.outcome === "unsure")
     return {
       outcome: "unsure",
@@ -751,13 +752,17 @@ export function describeOutcome(acted: Acted, dryRun = false): string {
 const HANDOFFS_PER_TURN = 3;
 const handoffs = new Map<string, { turn: number; count: number }>();
 
-/** The caller's current turn, as far as BB records it. */
+/**
+ * The caller's current turn: the last completed one, which changes when the
+ * turn making these calls completes. If BB can't say, a 15-minute window
+ * stands in so the limit can't stick forever.
+ */
 async function turnOf(bb: BbPluginApi, threadId: string): Promise<number> {
   try {
     const thread = await bb.sdk.threads.get({ threadId });
     return thread.latestAttentionAt ?? thread.updatedAt;
   } catch {
-    return 0;
+    return -Math.floor(Date.now() / (15 * 60_000));
   }
 }
 

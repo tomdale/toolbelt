@@ -34,6 +34,10 @@ type RouteState = {
   busy: boolean;
   /** Why the pickers couldn't be preset, when they couldn't. */
   note: string | null;
+  /** The decision whose selection was applied; each is applied once. */
+  presetFor: string | null;
+  /** ＋ New routes on its own; the banner stays out of its composer. */
+  suppressed: boolean;
 };
 
 let state: RouteState = {
@@ -45,6 +49,8 @@ let state: RouteState = {
   initialProject: null,
   busy: false,
   note: null,
+  presetFor: null,
+  suppressed: false,
 };
 const listeners = new Set<() => void>();
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -73,7 +79,14 @@ export function resetRouteBanner() {
     initialProject: null,
     busy: false,
     note: null,
+    presetFor: null,
+    suppressed: state.suppressed,
   };
+}
+
+/** ＋ New's dialog is open: its embedded composer routes itself. */
+export function suppressRouteBanner(suppressed: boolean) {
+  set({ suppressed });
 }
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
@@ -83,22 +96,33 @@ function schedule(
   text: string,
   projectId: string | null,
   workstreamId?: string,
+  /** The user picked this project over the banner's preset. */
+  userPick?: string,
 ) {
   if (timer) clearTimeout(timer);
+  if (state.suppressed) return;
   const trimmed = text.trim();
+  // An emptied draft starts over, so the next one reads the picker afresh.
+  if (!trimmed) {
+    if (state.text || state.decision || state.initialProject)
+      resetRouteBanner();
+    set({ initialProject: projectId });
+    return;
+  }
+  if (state.initialProject === null) set({ initialProject: projectId });
   if (trimmed.length < MIN_CHARS) {
     if (state.decision || state.text)
       set({ text: "", decision: null, error: null });
     return;
   }
-  if (trimmed === state.text && !workstreamId) return;
-  if (state.initialProject === null) set({ initialProject: projectId });
+  if (trimmed === state.text && !workstreamId && !userPick) return;
   const picked =
-    projectId &&
+    userPick ??
+    (projectId &&
     projectId !== state.preset &&
     projectId !== state.initialProject
       ? projectId
-      : null;
+      : null);
   const mine = ++generation;
   timer = setTimeout(
     () => {
@@ -140,36 +164,66 @@ export function RouteBanner() {
   const text = view.draft.text;
 
   useEffect(() => {
-    schedule(rpc, text, projectId);
+    // A project picked after the banner preset its own is the user's call:
+    // route again with it as the hint instead of switching back.
+    const overridden =
+      state.presetFor !== null &&
+      state.preset !== null &&
+      projectId !== null &&
+      projectId !== state.preset;
+    if (overridden) set({ presetFor: null, preset: null });
+    schedule(
+      rpc,
+      text,
+      projectId,
+      undefined,
+      overridden && projectId ? projectId : undefined,
+    );
   }, [rpc, text, projectId]);
 
-  // Preset the pickers to the routed project and environment.
+  // Preset the pickers to the routed project and environment, once per
+  // decision, and say so if the composer settled on something else.
   const decision = route.decision;
   useEffect(() => {
     if (
       !decision ||
       (decision.outcome !== "new-thread" &&
-        decision.outcome !== "new-workstream")
+        decision.outcome !== "new-workstream") ||
+      state.presetFor === decision.id
     )
       return;
     const { placement } = decision;
-    if (!placement.projectId || placement.projectId === projectId) return;
-    set({ preset: placement.projectId });
+    if (!placement.projectId) return;
+    set({ preset: placement.projectId, presetFor: decision.id });
     void composer
       .experimental_setSelection({
         projectId: placement.projectId,
         environment: placement.environment as never,
       })
       .then(
-        () => set({ note: null }),
+        (applied) => {
+          const env = applied.environment as
+            { workspace?: { type?: string } } | undefined;
+          const wanted = (
+            placement.environment as { workspace?: { type?: string } }
+          ).workspace?.type;
+          set({
+            note:
+              applied.projectId !== placement.projectId ||
+              (wanted && env?.workspace?.type !== wanted)
+                ? `the composer kept a different ${applied.projectId !== placement.projectId ? "project" : "environment"}; check the pickers`
+                : null,
+          });
+        },
         (error: unknown) =>
           set({
             preset: null,
             note: `Pick the project yourself: ${error instanceof Error ? error.message : String(error)}`,
           }),
       );
-  }, [decision, projectId, composer]);
+  }, [decision, composer]);
 
+  if (route.suppressed) return null;
   if (text.trim().length < MIN_CHARS) return null;
   if (route.loading && !decision)
     return (
@@ -213,7 +267,7 @@ export function RouteBanner() {
       });
       resetRouteBanner();
     });
-  const stale = route.text !== text.trim();
+  const stale = route.text !== text.trim() || route.loading;
 
   return (
     <div
@@ -252,7 +306,7 @@ export function RouteBanner() {
         {decision.outcome === "continue" ? (
           <button
             type="button"
-            disabled={route.busy}
+            disabled={route.busy || stale}
             onClick={() => void sendTo()}
           >
             Send there
@@ -263,7 +317,7 @@ export function RouteBanner() {
               <button
                 key={c.threadId}
                 type="button"
-                disabled={route.busy}
+                disabled={route.busy || stale}
                 onClick={() => void sendTo(c.threadId)}
               >
                 {c.title}
@@ -272,7 +326,7 @@ export function RouteBanner() {
               <button
                 key={c.sectionId}
                 type="button"
-                disabled={route.busy}
+                disabled={route.busy || stale}
                 onClick={() => schedule(rpc, text, projectId, c.sectionId)}
               >
                 {c.name}
@@ -282,7 +336,7 @@ export function RouteBanner() {
         ) : (
           <button
             type="button"
-            disabled={route.busy}
+            disabled={route.busy || stale}
             onClick={() => void start()}
           >
             Start ⏎

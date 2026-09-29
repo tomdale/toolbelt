@@ -3,7 +3,7 @@
  * Submitting routes on the server and previews the decision; Start (or ⏎)
  * accepts it. The thread spawns with the execution choices from the composer.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   experimental_NewThreadComposer,
   useBbNavigate,
@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { RpcContract } from "../../server/contract.ts";
+import { suppressRouteBanner } from "./RouteBanner.tsx";
 import type { RouteDecision } from "../../server/router.ts";
 
 const textOf = (request: NewThreadRequest) =>
@@ -61,6 +62,10 @@ export function NewWorkDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const Composer = experimental_NewThreadComposer;
+  useEffect(() => {
+    suppressRouteBanner(open);
+    return () => suppressRouteBanner(false);
+  }, [open]);
 
   const close = () => {
     setPending(null);

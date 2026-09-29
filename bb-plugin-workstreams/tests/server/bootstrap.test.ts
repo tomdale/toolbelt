@@ -205,13 +205,11 @@ describe("cutover", () => {
     const preview = await w.harness.behavior.runCli(["cutover"]);
     expect(preview.stdout).toContain("Would remove v1 data: 1 state rows");
     await w.harness.behavior.runCli(["cutover", "--yes"]);
-    const tables = w.bb.storage
+    const rows = w.bb.storage
       .database()
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('state', 'banners')",
-      )
-      .all();
-    expect(tables).toEqual([]);
+      .prepare("SELECT COUNT(*) AS n FROM state")
+      .get() as { n: number };
+    expect(rows.n).toBe(0);
     // Everything else keeps working.
     expect((await w.harness.behavior.runCli(["list"])).exitCode).toBe(0);
   });

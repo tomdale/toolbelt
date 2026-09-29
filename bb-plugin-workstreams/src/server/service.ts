@@ -553,6 +553,19 @@ export class WorkstreamService {
     return entry;
   }
 
+  /** Files a root that is still in Unsorted; returns null if it moved on. */
+  async fileIfUnsorted(
+    threadId: string,
+    sectionId: string,
+    source: Source,
+  ): Promise<JournalEntry | null> {
+    const thread = await this.sdk()
+      .threads.get({ threadId })
+      .catch(() => null);
+    if (!thread || thread.sectionId) return null;
+    return this.move(threadId, sectionId, source);
+  }
+
   /** Records that the user decided where a thread stays, without moving it. */
   keep(threadId: string, sectionId: string | null): void {
     this.place(threadId, sectionId, "user", null);
@@ -771,7 +784,18 @@ export class WorkstreamService {
     sectionId: string | null,
     parentThreadId: string | null,
     title?: string,
+    /** Seed only: never overwrite what the reconciler or a move recorded. */
+    onlyIfNew = false,
   ): void {
+    if (onlyIfNew) {
+      this.db
+        .prepare(
+          `INSERT INTO ws_seen_thread (thread_id, section_id, parent_thread_id, title) VALUES (?, ?, ?, ?)
+           ON CONFLICT(thread_id) DO NOTHING`,
+        )
+        .run(threadId, sectionId, parentThreadId, title ?? null);
+      return;
+    }
     this.db
       .prepare(
         `INSERT INTO ws_seen_thread (thread_id, section_id, parent_thread_id, title) VALUES (?, ?, ?, ?)
