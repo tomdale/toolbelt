@@ -51,3 +51,19 @@ export function relativeAge(at: number, now: number): string {
   if (days < 14) return `${days}d`;
   return `${Math.floor(days / 7)}w`;
 }
+
+/**
+ * Work-state glyphs from per-thread analysis, drawn beside BB's own status
+ * mark. `in_progress` draws nothing: it is the default and would be noise.
+ */
+export const WORK_STATE: Record<
+  "needs_decision" | "review" | "blocked" | "in_progress" | "done",
+  { glyph: string | null; label: string }
+> = {
+  needs_decision: { glyph: "◆", label: "Needs your decision" },
+  review: { glyph: "◇", label: "Ready for your review" },
+  // U+FE0E keeps the pause sign from rendering as an emoji.
+  blocked: { glyph: "\u23F8\uFE0E", label: "Blocked on something else" },
+  in_progress: { glyph: null, label: "In progress" },
+  done: { glyph: "✓", label: "Done" },
+};

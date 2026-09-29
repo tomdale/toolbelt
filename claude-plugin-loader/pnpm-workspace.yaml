@@ -1,0 +1,11 @@
+# pnpm 11 reads project settings from here instead of package.json.
+#
+# The only heavy dependency is @earendil-works/pi-coding-agent, and it is
+# dev-only (peerDependency at runtime, devDependency for typechecking + tests).
+# It drags in transitive packages with native build scripts that this package
+# never needs, so we decline to build them and skip the pre-run install check
+# that would otherwise block `pnpm build` / `pnpm test`.
+allowBuilds:
+  "@google/genai": false
+  protobufjs: false
+verifyDepsBeforeRun: false

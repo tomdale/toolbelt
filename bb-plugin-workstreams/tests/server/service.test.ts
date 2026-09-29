@@ -244,3 +244,29 @@ describe("cli", () => {
     expect(logged.stdout).toContain("Moved from Unsorted to Alpha");
   });
 });
+
+describe("sidebar order", () => {
+  it("stores workstream and per-group thread order and returns it in state", async () => {
+    const w = await setup();
+    const empty = await rpc<{ order: unknown }>(w, "state", null);
+    expect(empty.order).toEqual({ workstreams: [], threads: {} });
+    await rpc(w, "reorder", { kind: "workstreams", ids: ["sec_b", "sec_a"] });
+    await rpc(w, "reorder", {
+      kind: "threads",
+      groupId: "unsorted",
+      ids: ["t2", "t1"],
+    });
+    const { order } = await rpc<{ order: unknown }>(w, "state", null);
+    expect(order).toEqual({
+      workstreams: ["sec_b", "sec_a"],
+      threads: { unsorted: ["t2", "t1"] },
+    });
+    await rpc(w, "reorder", { kind: "threads", groupId: "unsorted", ids: [] });
+    const cleared = await rpc<{ order: { threads: unknown } }>(
+      w,
+      "state",
+      null,
+    );
+    expect(cleared.order.threads).toEqual({});
+  });
+});

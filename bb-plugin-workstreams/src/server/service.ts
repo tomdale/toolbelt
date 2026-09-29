@@ -15,8 +15,25 @@ import {
   listActiveThreads,
   listSections,
   sectionIsEmpty,
+  type InventoryThread,
 } from "./inventory.ts";
-import type { JournalEntry, Journal, Source } from "./journal.ts";
+import type { JournalEntry, Journal, Source, UndoStep } from "./journal.ts";
+import { retitleDecision } from "../domain/titles.ts";
+import { forgetTitle, observeThreadTitle, writeTitleRecord } from "./titles.ts";
+
+/** Changes applied together; `to` and description keys may name a create. */
+export type BatchPlan = {
+  /** Created only if a surviving move needs it, unless `always`. */
+  creates: {
+    key: string;
+    name: string;
+    description?: string | null;
+    always?: boolean;
+  }[];
+  renames: { sectionId: string; name: string }[];
+  moves: { threadId: string; from: string | null; to: string | null }[];
+  descriptions?: [string, string][];
+};
 
 type Sdk = BbPluginApi["sdk"];
 
@@ -40,6 +57,7 @@ const NAME_MAX = 80;
 export class WorkstreamService {
   private queue: Promise<unknown> = Promise.resolve();
   private lastReconciledAt: number | null = null;
+  private lastThreads: InventoryThread[] = [];
 
   constructor(
     private readonly sdk: () => Sdk,
@@ -219,8 +237,71 @@ export class WorkstreamService {
   }
 
   /**
+   * Applies a title that analysis suggested for the thread's turn at
+   * `revision`, under the retitle policy (SPEC §10.1). Returns null, changing
+   * nothing, when the policy declines it.
+   */
+  retitle(
+    threadId: string,
+    suggestion: string | null,
+    revision: number,
+  ): Promise<JournalEntry | null> {
+    return this.serial(async () => {
+      const sdk = this.sdk();
+      const thread = await sdk.threads.get({ threadId }).catch(() => null);
+      if (
+        !thread ||
+        thread.archivedAt !== null ||
+        thread.visibility === "hidden"
+      )
+        return null;
+      const record = observeThreadTitle(this.db, threadId, thread.title);
+      const from = displayTitle(thread);
+      const decision = retitleDecision({
+        record,
+        thread: {
+          title: thread.title,
+          displayTitle: from,
+          status: thread.status,
+          latestAttentionAt: thread.latestAttentionAt ?? thread.updatedAt,
+        },
+        suggestion,
+        revision,
+        now: this.now(),
+      });
+      if (!decision.ok || !suggestion) return null;
+      await sdk.threads.update({ threadId, title: suggestion });
+      writeTitleRecord(this.db, threadId, {
+        observed: suggestion,
+        written: suggestion,
+        locked: false,
+        retitledAt: this.now(),
+      });
+      this.seeThread(
+        threadId,
+        thread.sectionId ?? null,
+        thread.parentThreadId ?? null,
+        suggestion,
+      );
+      const entry = this.journal.add({
+        action: "retitle",
+        source: "auto",
+        rationale: thread.title
+          ? `Retitled from ${from}`
+          : "Titled an untitled thread",
+        threads: [{ id: threadId, name: suggestion }],
+        workstreams: [],
+        undo: { kind: "retitle", threadId, from: thread.title, to: suggestion },
+      });
+      this.onChange();
+      return entry;
+    });
+  }
+
+  /**
    * Reverses a journaled change where BB state still matches what the change
    * left behind. Parts that were changed again since are skipped and reported.
+   * A batch is undone as a whole, in reverse order.
    */
   undo(entryId: string): Promise<JournalEntry> {
     return this.serial(async () => {
@@ -229,57 +310,16 @@ export class WorkstreamService {
         throw new UserError("That change is no longer in the log.");
       if (original.status === "undone") throw new UserError("Already undone.");
       if (!original.undo) throw new UserError("This change can't be undone.");
-      const sdk = this.sdk();
-      const plan = original.undo;
+      const steps =
+        original.undo.kind === "batch"
+          ? [...original.undo.steps].reverse()
+          : [original.undo];
       let skipped = 0;
       let done = 0;
-      if (plan.kind === "move") {
-        for (const move of plan.moves) {
-          const thread = await sdk.threads.get({ threadId: move.threadId });
-          if (
-            (thread.sectionId ?? null) !== move.to ||
-            thread.archivedAt !== null
-          ) {
-            skipped++;
-            continue;
-          }
-          await sdk.threads.update({
-            threadId: move.threadId,
-            sectionId: move.from,
-          });
-          this.place(move.threadId, move.from, "user", null);
-          this.seeThread(
-            move.threadId,
-            move.from,
-            thread.parentThreadId ?? null,
-          );
-          done++;
-        }
-      } else if (plan.kind === "delete-section") {
-        if (!(await sectionIsEmpty(sdk, plan.sectionId)))
-          throw new UserError(
-            "The workstream still has threads (including archived ones). Move them first.",
-          );
-        await sdk.threadSections.delete({ id: plan.sectionId });
-        this.db
-          .prepare("DELETE FROM ws_workstream WHERE section_id = ?")
-          .run(plan.sectionId);
-        this.db
-          .prepare("DELETE FROM ws_seen_section WHERE section_id = ?")
-          .run(plan.sectionId);
-        done++;
-      } else {
-        const sections = await listSections(sdk);
-        const current = sections.find((s) => s.id === plan.sectionId);
-        if (!current || current.name !== plan.to) skipped++;
-        else {
-          await sdk.threadSections.update({
-            id: plan.sectionId,
-            name: plan.from,
-          });
-          this.seeSection(plan.sectionId, plan.from);
-          done++;
-        }
+      for (const step of steps) {
+        const result = await this.undoStep(step);
+        done += result.done;
+        skipped += result.skipped;
       }
       if (done === 0)
         throw new UserError("Nothing to undo: everything changed again since.");
@@ -301,6 +341,319 @@ export class WorkstreamService {
       this.onChange();
       return entry;
     });
+  }
+
+  /** Reverts one step; returns how many parts were reverted and skipped. */
+  private async undoStep(
+    step: UndoStep,
+  ): Promise<{ done: number; skipped: number }> {
+    const sdk = this.sdk();
+    if (step.kind === "move") {
+      let done = 0;
+      let skipped = 0;
+      for (const move of step.moves) {
+        const thread = await sdk.threads
+          .get({ threadId: move.threadId })
+          .catch(() => null);
+        if (
+          !thread ||
+          (thread.sectionId ?? null) !== move.to ||
+          thread.archivedAt !== null
+        ) {
+          skipped++;
+          continue;
+        }
+        await sdk.threads.update({
+          threadId: move.threadId,
+          sectionId: move.from,
+        });
+        // Undoing is the user's decision: the thread now stays where they put
+        // it back, so automatic filing and evolution leave it alone.
+        this.place(move.threadId, move.from, "user", null);
+        this.seeThread(move.threadId, move.from, thread.parentThreadId ?? null);
+        done++;
+      }
+      return { done, skipped };
+    }
+    if (step.kind === "retitle") {
+      const thread = await sdk.threads
+        .get({ threadId: step.threadId })
+        .catch(() => null);
+      if (!thread || thread.title !== step.to) return { done: 0, skipped: 1 };
+      await sdk.threads.update({ threadId: step.threadId, title: step.from });
+      // Undoing is the user's decision: the title they went back to stays.
+      writeTitleRecord(this.db, step.threadId, {
+        observed: step.from,
+        written: null,
+        locked: true,
+        retitledAt: null,
+      });
+      this.seeThread(
+        step.threadId,
+        thread.sectionId ?? null,
+        thread.parentThreadId ?? null,
+        step.from ?? thread.titleFallback ?? undefined,
+      );
+      return { done: 1, skipped: 0 };
+    }
+    if (step.kind === "delete-section") {
+      if (!(await sectionIsEmpty(sdk, step.sectionId))) {
+        if (!step.inBatch)
+          throw new UserError(
+            "The workstream still has threads (including archived ones). Move them first.",
+          );
+        return { done: 0, skipped: 1 };
+      }
+      await sdk.threadSections.delete({ id: step.sectionId });
+      this.db
+        .prepare("DELETE FROM ws_workstream WHERE section_id = ?")
+        .run(step.sectionId);
+      this.db
+        .prepare("DELETE FROM ws_seen_section WHERE section_id = ?")
+        .run(step.sectionId);
+      return { done: 1, skipped: 0 };
+    }
+    const sections = await listSections(sdk);
+    const current = sections.find((s) => s.id === step.sectionId);
+    if (!current || current.name !== step.to) return { done: 0, skipped: 1 };
+    await sdk.threadSections.update({ id: step.sectionId, name: step.from });
+    this.seeSection(step.sectionId, step.from);
+    return { done: 1, skipped: 0 };
+  }
+
+  /**
+   * Applies several changes as one journaled, undoable batch (bootstrap and
+   * accepted proposals). Moves are preflighted against the section the plan
+   * expected before anything changes; threads that changed since are skipped
+   * and reported, and a new workstream is created only if a surviving move
+   * needs it. If BB fails partway, what already changed is still journaled
+   * (as failed) so it can be undone.
+   */
+  applyBatch(
+    plan: BatchPlan,
+    source: Source,
+    rationale: string,
+    options: {
+      action?: "batch" | "proposal" | "move";
+      into?: string | null;
+    } = {},
+  ): Promise<{
+    entry: JournalEntry | null;
+    skipped: string[];
+    created: Map<string, string>;
+  }> {
+    return this.serial(async () => {
+      const sdk = this.sdk();
+      const sections = await listSections(sdk);
+      const byName = new Map(sections.map((s) => [s.name.toLowerCase(), s]));
+      const names = new Map(sections.map((s) => [s.id, s.name]));
+      const createKeys = new Set(plan.creates.map((c) => c.key));
+      const at = this.now();
+
+      // Preflight: which moves still apply to the thread as the plan saw it.
+      const skipped: string[] = [];
+      const ready: {
+        threadId: string;
+        from: string | null;
+        to: string | null;
+        title: string;
+        parentThreadId: string | null;
+      }[] = [];
+      for (const move of plan.moves) {
+        const thread = await sdk.threads
+          .get({ threadId: move.threadId })
+          .catch(() => null);
+        const target =
+          move.to === null || createKeys.has(move.to) || names.has(move.to);
+        if (
+          !thread ||
+          !target ||
+          thread.archivedAt !== null ||
+          (thread.sectionId ?? null) !== move.from ||
+          (thread.parentThreadId &&
+            (await this.isVisibleActive(thread.parentThreadId)))
+        ) {
+          skipped.push(move.threadId);
+          continue;
+        }
+        if (move.from === move.to) continue;
+        ready.push({
+          ...move,
+          title: displayTitle(thread),
+          parentThreadId: thread.parentThreadId ?? null,
+        });
+      }
+      const needed = new Set(ready.map((m) => m.to));
+
+      const steps: UndoStep[] = [];
+      const created = new Map<string, string>();
+      const touched = new Map<string, string>();
+      const moves: {
+        threadId: string;
+        from: string | null;
+        to: string | null;
+      }[] = [];
+      const threads: { id: string; name: string }[] = [];
+      let failure: unknown = null;
+      try {
+        for (const create of plan.creates) {
+          if (!needed.has(create.key) && !create.always) continue;
+          const clean = normalizeName(create.name);
+          const existing = byName.get(clean.toLowerCase());
+          if (existing) {
+            created.set(create.key, existing.id);
+            continue;
+          }
+          const section = await sdk.threadSections.create({ name: clean });
+          this.db
+            .prepare(
+              `INSERT INTO ws_workstream (section_id, description, description_source, created_by, created_at, updated_at)
+               VALUES (?, ?, 'generated', 'workstreams', ?, ?) ON CONFLICT(section_id) DO NOTHING`,
+            )
+            .run(section.id, create.description ?? null, at, at);
+          this.seeSection(section.id, section.name);
+          names.set(section.id, section.name);
+          byName.set(section.name.toLowerCase(), section);
+          created.set(create.key, section.id);
+          touched.set(section.id, section.name);
+          steps.push({
+            kind: "delete-section",
+            sectionId: section.id,
+            inBatch: true,
+          });
+        }
+        for (const rename of plan.renames) {
+          const clean = normalizeName(rename.name);
+          const current = names.get(rename.sectionId);
+          if (!current || current === clean) continue;
+          if (byName.has(clean.toLowerCase())) continue;
+          await sdk.threadSections.update({
+            id: rename.sectionId,
+            name: clean,
+          });
+          this.seeSection(rename.sectionId, clean);
+          byName.delete(current.toLowerCase());
+          byName.set(clean.toLowerCase(), {
+            id: rename.sectionId,
+            name: clean,
+          });
+          names.set(rename.sectionId, clean);
+          touched.set(rename.sectionId, clean);
+          steps.push({
+            kind: "rename-section",
+            sectionId: rename.sectionId,
+            from: current,
+            to: clean,
+          });
+        }
+        for (const [sectionId, description] of plan.descriptions ?? []) {
+          const id = created.get(sectionId) ?? sectionId;
+          this.db
+            .prepare(
+              `UPDATE ws_workstream SET description = ?, updated_at = ?
+               WHERE section_id = ? AND description_source = 'generated'`,
+            )
+            .run(description, at, id);
+        }
+        for (const move of ready) {
+          const to =
+            move.to === null ? null : (created.get(move.to) ?? move.to);
+          if (to !== null && !names.has(to)) {
+            skipped.push(move.threadId);
+            continue;
+          }
+          await sdk.threads.update({ threadId: move.threadId, sectionId: to });
+          this.seeThread(move.threadId, to, move.parentThreadId);
+          moves.push({ threadId: move.threadId, from: move.from, to });
+          threads.push({ id: move.threadId, name: move.title });
+          if (move.from) touched.set(move.from, names.get(move.from) ?? "");
+          if (to) touched.set(to, names.get(to) ?? "");
+        }
+      } catch (error) {
+        failure = error;
+      }
+      if (moves.length) steps.push({ kind: "move", moves });
+      if (steps.length === 0) {
+        if (failure) throw failure;
+        return { entry: null, skipped, created };
+      }
+      const fields = {
+        status: failure
+          ? ("failed" as const)
+          : skipped.length
+            ? ("partial" as const)
+            : ("applied" as const),
+        rationale,
+        threads,
+        workstreams: [...touched].map(([id, name]) => ({ id, name })),
+        undo: { kind: "batch" as const, steps },
+        detail: failure
+          ? `Stopped partway: ${String(failure).slice(0, 200)}. Undo reverts what changed.`
+          : skipped.length
+            ? `${skipped.length} thread(s) changed since and were left alone.`
+            : null,
+      };
+      let entry: JournalEntry;
+      if (options.into && this.journal.get(options.into)) {
+        this.journal.update(options.into, fields);
+        entry = this.journal.get(options.into)!;
+      } else
+        entry = this.journal.add({
+          action: options.action ?? "batch",
+          source,
+          ...fields,
+        });
+      for (const move of moves)
+        this.place(move.threadId, move.to, source, entry.id);
+      this.onChange();
+      if (failure) throw failure;
+      return { entry, skipped, created };
+    });
+  }
+
+  /**
+   * Journals a thread the router or a handoff created already filed. Undo
+   * moves it to Unsorted; the thread itself stays.
+   */
+  recordCreated(
+    threadId: string,
+    sectionId: string,
+    source: Source,
+    details: { title: string; rationale: string },
+  ): JournalEntry {
+    const name = this.db
+      .prepare("SELECT name FROM ws_seen_section WHERE section_id = ?")
+      .get(sectionId) as { name: string } | undefined;
+    const entry = this.journal.add({
+      action: "route",
+      source,
+      rationale: details.rationale,
+      threads: [{ id: threadId, name: details.title }],
+      workstreams: [{ id: sectionId, name: name?.name ?? "" }],
+      undo: { kind: "move", moves: [{ threadId, from: null, to: sectionId }] },
+    });
+    this.place(threadId, sectionId, source, entry.id);
+    this.seeThread(threadId, sectionId, null);
+    this.onChange();
+    return entry;
+  }
+
+  /** Files a root that is still in Unsorted; returns null if it moved on. */
+  async fileIfUnsorted(
+    threadId: string,
+    sectionId: string,
+    source: Source,
+  ): Promise<JournalEntry | null> {
+    const thread = await this.sdk()
+      .threads.get({ threadId })
+      .catch(() => null);
+    if (!thread || thread.sectionId) return null;
+    return this.move(threadId, sectionId, source);
+  }
+
+  /** Records that the user decided where a thread stays, without moving it. */
+  keep(threadId: string, sectionId: string | null): void {
+    this.place(threadId, sectionId, "user", null);
   }
 
   /**
@@ -392,12 +745,13 @@ export class WorkstreamService {
           (
             this.db
               .prepare(
-                "SELECT thread_id, section_id, parent_thread_id FROM ws_seen_thread",
+                "SELECT thread_id, section_id, parent_thread_id, title FROM ws_seen_thread",
               )
               .all() as {
               thread_id: string;
               section_id: string | null;
               parent_thread_id: string | null;
+              title: string | null;
             }[]
           ).map((r) => [r.thread_id, r]),
         );
@@ -438,15 +792,18 @@ export class WorkstreamService {
             this.place(thread.id, to, "external", entry.id);
             changed = true;
           }
+          observeThreadTitle(this.db, thread.id, thread.ownTitle);
           if (
             !before ||
             before.section_id !== thread.sectionId ||
-            before.parent_thread_id !== (thread.parentThreadId ?? null)
+            before.parent_thread_id !== (thread.parentThreadId ?? null) ||
+            before.title !== thread.title
           )
             this.seeThread(
               thread.id,
               thread.sectionId,
               thread.parentThreadId ?? null,
+              thread.title,
             );
         }
         const present = new Set(threads.map((t) => t.id));
@@ -459,9 +816,26 @@ export class WorkstreamService {
       });
       tx();
       this.lastReconciledAt = at;
+      this.lastThreads = threads;
       if (changed) this.onChange();
       return changed;
     });
+  }
+
+  /** Visible, non-archived threads as of the last reconcile. */
+  threads(): readonly InventoryThread[] {
+    return this.lastThreads;
+  }
+
+  /** Drops per-thread records once BB has deleted the thread. */
+  forget(threadId: string): void {
+    this.db
+      .prepare("DELETE FROM ws_placement WHERE thread_id = ?")
+      .run(threadId);
+    this.db
+      .prepare("DELETE FROM ws_seen_thread WHERE thread_id = ?")
+      .run(threadId);
+    forgetTitle(this.db, threadId);
   }
 
   private async isVisibleActive(threadId: string): Promise<boolean> {
@@ -488,17 +862,34 @@ export class WorkstreamService {
       .run(threadId, sectionId, source, entryId, this.now());
   }
 
-  private seeThread(
+  /**
+   * The reconciler's snapshot of a visible, non-archived thread. It also
+   * backs `configure`, which must answer synchronously (SPEC §5).
+   */
+  seeThread(
     threadId: string,
     sectionId: string | null,
     parentThreadId: string | null,
+    title?: string,
+    /** Seed only: never overwrite what the reconciler or a move recorded. */
+    onlyIfNew = false,
   ): void {
+    if (onlyIfNew) {
+      this.db
+        .prepare(
+          `INSERT INTO ws_seen_thread (thread_id, section_id, parent_thread_id, title) VALUES (?, ?, ?, ?)
+           ON CONFLICT(thread_id) DO NOTHING`,
+        )
+        .run(threadId, sectionId, parentThreadId, title ?? null);
+      return;
+    }
     this.db
       .prepare(
-        `INSERT INTO ws_seen_thread (thread_id, section_id, parent_thread_id) VALUES (?, ?, ?)
-         ON CONFLICT(thread_id) DO UPDATE SET section_id = excluded.section_id, parent_thread_id = excluded.parent_thread_id`,
+        `INSERT INTO ws_seen_thread (thread_id, section_id, parent_thread_id, title) VALUES (?, ?, ?, ?)
+         ON CONFLICT(thread_id) DO UPDATE SET section_id = excluded.section_id, parent_thread_id = excluded.parent_thread_id,
+           title = COALESCE(excluded.title, ws_seen_thread.title)`,
       )
-      .run(threadId, sectionId, parentThreadId);
+      .run(threadId, sectionId, parentThreadId, title ?? null);
   }
 
   private seeSection(sectionId: string, name: string): void {

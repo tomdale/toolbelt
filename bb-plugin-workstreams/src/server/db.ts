@@ -47,6 +47,48 @@ const MIGRATIONS = [
   )`,
   "CREATE TABLE ws_seen_section (section_id TEXT PRIMARY KEY, name TEXT NOT NULL)",
   "CREATE TABLE ws_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+  `CREATE TABLE ws_analysis (
+    thread_id TEXT PRIMARY KEY,
+    revision INTEGER NOT NULL,
+    at INTEGER NOT NULL,
+    result TEXT NOT NULL
+  )`,
+  "ALTER TABLE ws_workstream ADD COLUMN aliases TEXT NOT NULL DEFAULT '[]'",
+  "ALTER TABLE ws_workstream ADD COLUMN subjects TEXT NOT NULL DEFAULT '[]'",
+  "ALTER TABLE ws_workstream ADD COLUMN projects TEXT NOT NULL DEFAULT '[]'",
+  "ALTER TABLE ws_workstream ADD COLUMN evidence TEXT NOT NULL DEFAULT '{}'",
+  `CREATE TABLE ws_proposal (
+    id TEXT PRIMARY KEY,
+    key TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    source_section_id TEXT NOT NULL,
+    target_section_id TEXT,
+    new_name TEXT,
+    thread_ids TEXT NOT NULL,
+    evidence_count INTEGER NOT NULL,
+    entry_id TEXT,
+    acknowledged INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  "CREATE INDEX ws_proposal_status ON ws_proposal (status, updated_at DESC)",
+  "CREATE TABLE ws_snooze (key TEXT PRIMARY KEY, evidence_count INTEGER NOT NULL, at INTEGER NOT NULL)",
+  "ALTER TABLE ws_seen_thread ADD COLUMN title TEXT",
+  `CREATE TABLE ws_project_shape (
+    project_id TEXT PRIMARY KEY,
+    shape TEXT NOT NULL,
+    checked_at INTEGER NOT NULL
+  )`,
+  "CREATE TABLE ws_drift_dismissed (thread_id TEXT PRIMARY KEY, target TEXT NOT NULL, at INTEGER NOT NULL)",
+  `CREATE TABLE ws_title (
+    thread_id TEXT PRIMARY KEY,
+    observed TEXT,
+    written TEXT,
+    locked INTEGER NOT NULL DEFAULT 0,
+    retitled_at INTEGER
+  )`,
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {
