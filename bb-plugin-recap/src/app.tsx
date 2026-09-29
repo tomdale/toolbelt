@@ -193,7 +193,7 @@ function useThreadSettled(): boolean {
 }
 
 const RECAP_BANNER_CLASS =
-  "relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-200/80 bg-sky-50 text-sky-900 dark:border-sky-800/50 dark:bg-sky-950/60 dark:text-sky-200";
+  "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-200/80 bg-sky-50 text-sky-900 dark:border-sky-800/50 dark:bg-sky-950/60 dark:text-sky-200";
 
 /**
  * Inline recap above the composer. With automatic recaps on, it shows the
@@ -327,7 +327,7 @@ function RecapComposerBannerContent({
 // from weight and opacity rather than extra sizes.
 const RECAP_LABEL_CLASS =
   "mb-1 text-[10.5px] font-semibold uppercase leading-4 tracking-[0.08em] text-sky-900/50 dark:text-sky-200/45";
-const RECAP_BODY_CLASS = "text-[13px] leading-[1.5] [text-wrap:pretty]";
+const RECAP_BODY_CLASS = "text-[12px] @lg/recap:text-[13px] leading-[1.5] [text-wrap:pretty]";
 
 /**
  * One recap line rendered through BB's markdown so inline code, emphasis, and
@@ -346,7 +346,7 @@ function RecapText({
   return (
     <Markdown
       content={text}
-      className={`min-w-0 ${typeClass} text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[12px] ${className}`}
+      className={`min-w-0 ${typeClass} text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em] ${className}`}
     />
   );
 }
@@ -405,7 +405,7 @@ function LedgerList({
 function RecapSummary({ summary, layout }: { summary: string; layout: RecapLayout }) {
   const ledger = parseRecapLedger(summary);
   if (!ledger) {
-    return <Markdown content={summary} className="pr-6 text-sm leading-6 text-inherit" />;
+    return <Markdown content={summary} className="pr-6 text-xs leading-5 text-inherit @lg/recap:text-sm @lg/recap:leading-6" />;
   }
   const showGoal = layout !== RECAP_LAYOUTS.minimal && ledger.goal !== null;
   const hasLedger =
@@ -418,7 +418,7 @@ function RecapSummary({ summary, layout }: { summary: string; layout: RecapLayou
           aria-level={2}
           className="pr-8 font-medium tracking-[-0.006em] text-sky-950 dark:text-sky-50"
         >
-          <RecapText text={ledger.goal} typeClass="text-[14px] leading-5 [text-wrap:balance]" />
+          <RecapText text={ledger.goal} typeClass="text-[13px] @lg/recap:text-[14px] leading-[1.43] [text-wrap:balance]" />
         </div>
       ) : null}
       <div
