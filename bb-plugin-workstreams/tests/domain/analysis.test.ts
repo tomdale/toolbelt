@@ -76,6 +76,15 @@ describe("parseAnalysis", () => {
     ).toBeNull();
   });
 
+  it("keeps an ask only for a needs-decision result", () => {
+    const raw = JSON.stringify({
+      recap: "r",
+      state: "review",
+      needsYou: "Ship?",
+    });
+    expect(parseAnalysis(raw).needsYou).toBeNull();
+  });
+
   it("rejects output with no recap", () => {
     expect(() => parseAnalysis('{"state":"done"}')).toThrow();
   });
@@ -108,6 +117,19 @@ describe("analysisPrompt", () => {
     expect(block).toContain("[redacted]");
     expect(block.length).toBeLessThan(5_000);
   });
+
+  it("redacts before cutting, and redacts the title", () => {
+    const secret = `sk-${"b".repeat(40)}`;
+    // Place the token across the excerpt's head/tail seam.
+    const text = `${"x ".repeat(290)}${secret}${" y".repeat(1200)}`;
+    const prompt = analysisPrompt(
+      input({
+        title: `Rotate ${secret}`,
+        requests: [{ text, initial: false }],
+      }),
+    );
+    expect(prompt).not.toContain("bbbbbbbbbbbb");
+  });
 });
 
 describe("freshness", () => {
@@ -131,6 +153,7 @@ describe("freshness", () => {
     expect(isCurrent(analysis, thread("idle"))).toBe(true);
     expect(isCurrent(analysis, thread("active"))).toBe(false);
     expect(isCurrent(analysis, thread("starting"))).toBe(false);
+    expect(isCurrent(analysis, thread("error"))).toBe(false);
     expect(isCurrent(analysis, thread("idle", 101))).toBe(false);
     expect(isCurrent(undefined, thread("idle"))).toBe(false);
   });

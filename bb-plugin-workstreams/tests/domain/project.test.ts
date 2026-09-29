@@ -243,6 +243,24 @@ describe("needs-you folding", () => {
     expect(rowIds(p.groups[0]!)).toEqual(["parent", "child", "late"]);
   });
 
+  it("never folds a pending interaction or a same-time question", () => {
+    const p = projectWorkstreams(
+      [
+        thread("parent", { sectionId: "sec_a", latestAttentionAt: now }),
+        thread("approval", {
+          parentThreadId: "parent",
+          latestAttentionAt: now - 10,
+          hasPendingInteraction: true,
+        }),
+        thread("tie", { parentThreadId: "parent", latestAttentionAt: now }),
+      ],
+      sections,
+      { now, needsYou: () => true },
+    );
+    expect(p.needsYouVia.size).toBe(0);
+    expect(p.needsYou).toHaveLength(3);
+  });
+
   it("keeps a child's question that is newer than the parent's", () => {
     const p = project(now - 20);
     expect(p.needsYou.map((r) => r.thread.id)).toEqual([

@@ -29,7 +29,9 @@ type Complete = (
 
 export const DEBOUNCE_MS = 5_000;
 const CONCURRENCY = 4;
+/** First retry after a failed call; doubles per failure at the same revision. */
 const RETRY_AFTER_MS = 10 * 60_000;
+const MAX_ATTEMPTS = 3;
 const SYSTEM_PREFIX = "[bb system]";
 
 /** The stored result plus a drift target resolved to a section id. */
@@ -46,15 +48,36 @@ function inputText(input: unknown): string {
     .join("\n")
     .trim();
 }
+function readResult(json: string): StoredAnalysis | undefined {
+  try {
+    return JSON.parse(json) as StoredAnalysis;
+  } catch {
+    return undefined;
+  }
+}
+
 const isUserRequest = (text: string) =>
   text.length > 0 && !text.startsWith(SYSTEM_PREFIX);
 
 export class Analyzer {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly waiting: string[] = [];
-  private readonly running = new Set<string>();
-  private readonly failedAt = new Map<string, number>();
-  private readonly lastText = new Map<string, string | null>();
+  /** In-flight runs per thread; a manual run can overlap a queued one. */
+  private readonly running = new Map<string, number>();
+  private inFlight = 0;
+  /** Threads whose turn completed again while a run for them was in flight. */
+  private readonly rerun = new Set<string>();
+  private readonly failures = new Map<
+    string,
+    { revision: number; count: number; at: number }
+  >();
+  /** Deleted threads, so a run that was in flight doesn't write them back. */
+  private readonly forgotten = new Set<string>();
+  /** `lastAssistantText` from `thread.idle`, keyed by the turn it ended. */
+  private readonly lastText = new Map<
+    string,
+    { revision: number; text: string | null }
+  >();
   private disposed = false;
   lastError: string | null = null;
 
@@ -81,12 +104,21 @@ export class Analyzer {
     this.waiting.length = 0;
   }
 
+  /**
+   * Stored results for visible, non-archived threads. Archived threads keep
+   * theirs as evidence for workstream evolution but aren't sent to clients.
+   */
   all(): Record<string, StoredAnalysis> {
     const out: Record<string, StoredAnalysis> = {};
     for (const row of this.deps.db
-      .prepare("SELECT thread_id, result FROM ws_analysis")
-      .all() as { thread_id: string; result: string }[])
-      out[row.thread_id] = JSON.parse(row.result) as StoredAnalysis;
+      .prepare(
+        `SELECT a.thread_id, a.result FROM ws_analysis a
+         JOIN ws_seen_thread t ON t.thread_id = a.thread_id`,
+      )
+      .all() as { thread_id: string; result: string }[]) {
+      const parsed = readResult(row.result);
+      if (parsed) out[row.thread_id] = parsed;
+    }
     return out;
   }
 
@@ -94,12 +126,19 @@ export class Analyzer {
     const row = this.deps.db
       .prepare("SELECT result FROM ws_analysis WHERE thread_id = ?")
       .get(threadId) as { result: string } | undefined;
-    return row ? (JSON.parse(row.result) as StoredAnalysis) : undefined;
+    return row ? readResult(row.result) : undefined;
   }
 
   /** Schedules analysis after a turn completes. */
-  onIdle(threadId: string, lastAssistantText: string | null): void {
-    this.lastText.set(threadId, lastAssistantText);
+  onIdle(
+    thread: { id: string; latestAttentionAt: number },
+    lastAssistantText: string | null,
+  ): void {
+    const threadId = thread.id;
+    this.lastText.set(threadId, {
+      revision: thread.latestAttentionAt,
+      text: lastAssistantText,
+    });
     this.schedule(threadId, DEBOUNCE_MS);
   }
 
@@ -113,10 +152,12 @@ export class Analyzer {
 
   forget(threadId: string): void {
     this.onActive(threadId);
+    this.forgotten.add(threadId);
+    this.rerun.delete(threadId);
+    this.failures.delete(threadId);
     this.deps.db
       .prepare("DELETE FROM ws_analysis WHERE thread_id = ?")
       .run(threadId);
-    this.failedAt.delete(threadId);
   }
 
   /**
@@ -136,8 +177,14 @@ export class Analyzer {
     for (const thread of threads) {
       if (thread.status !== "idle") continue;
       if ((stored.get(thread.id) ?? -1) >= thread.latestAttentionAt) continue;
-      const failed = this.failedAt.get(thread.id);
-      if (failed !== undefined && now - failed < RETRY_AFTER_MS) continue;
+      const failed = this.failures.get(thread.id);
+      if (
+        failed &&
+        failed.revision === thread.latestAttentionAt &&
+        (failed.count >= MAX_ATTEMPTS ||
+          now - failed.at < RETRY_AFTER_MS * 2 ** (failed.count - 1))
+      )
+        continue;
       if (this.timers.has(thread.id) || this.running.has(thread.id)) continue;
       if (this.waiting.includes(thread.id)) continue;
       this.waiting.push(thread.id);
@@ -169,12 +216,20 @@ export class Analyzer {
   private pump(): void {
     while (
       !this.disposed &&
-      this.running.size < CONCURRENCY &&
+      this.inFlight < CONCURRENCY &&
       this.waiting.length > 0
     ) {
       const threadId = this.waiting.shift()!;
-      if (this.running.has(threadId)) continue;
-      void this.run(threadId, false).finally(() => this.pump());
+      // Run again once the in-flight run finishes; it read the older turn.
+      if (this.running.has(threadId)) {
+        this.rerun.add(threadId);
+        continue;
+      }
+      void this.run(threadId, false).finally(() => {
+        if (this.rerun.delete(threadId) && !this.waiting.includes(threadId))
+          this.waiting.unshift(threadId);
+        this.pump();
+      });
     }
   }
 
@@ -182,7 +237,9 @@ export class Analyzer {
     threadId: string,
     force: boolean,
   ): Promise<StoredAnalysis | null> {
-    this.running.add(threadId);
+    this.running.set(threadId, (this.running.get(threadId) ?? 0) + 1);
+    this.inFlight++;
+    let revision = -1;
     try {
       const sdk = this.deps.sdk();
       const thread = await sdk.threads.get({ threadId });
@@ -192,7 +249,7 @@ export class Analyzer {
         (!force && thread.status !== "idle")
       )
         return null;
-      const revision = thread.latestAttentionAt ?? thread.updatedAt;
+      revision = thread.latestAttentionAt ?? thread.updatedAt;
       const previous = this.get(threadId);
       if (!force && previous && previous.revision >= revision) return previous;
 
@@ -215,25 +272,37 @@ export class Analyzer {
         at: this.now(),
         model,
       };
+      if (this.disposed || this.forgotten.has(threadId)) return null;
+      // Never let a slower run for an older turn replace a newer result.
       this.deps.db
         .prepare(
           `INSERT INTO ws_analysis (thread_id, revision, at, result) VALUES (?, ?, ?, ?)
-           ON CONFLICT(thread_id) DO UPDATE SET revision = excluded.revision, at = excluded.at, result = excluded.result`,
+           ON CONFLICT(thread_id) DO UPDATE SET revision = excluded.revision, at = excluded.at, result = excluded.result
+           WHERE excluded.revision >= ws_analysis.revision`,
         )
         .run(threadId, revision, result.at, JSON.stringify(result));
-      this.failedAt.delete(threadId);
-      this.lastText.delete(threadId);
+      this.failures.delete(threadId);
+      if ((this.lastText.get(threadId)?.revision ?? Infinity) <= revision)
+        this.lastText.delete(threadId);
       this.lastError = null;
       this.deps.onChange();
       return result;
     } catch (error) {
-      this.failedAt.set(threadId, this.now());
+      const previous = this.failures.get(threadId);
+      this.failures.set(threadId, {
+        revision,
+        count: previous?.revision === revision ? previous.count + 1 : 1,
+        at: this.now(),
+      });
       this.lastError = error instanceof Error ? error.message : String(error);
       this.deps.log(`Analysis failed for ${threadId}: ${this.lastError}`);
       if (force) throw error;
       return null;
     } finally {
-      this.running.delete(threadId);
+      this.inFlight--;
+      const left = (this.running.get(threadId) ?? 1) - 1;
+      if (left > 0) this.running.set(threadId, left);
+      else this.running.delete(threadId);
     }
   }
 
@@ -268,7 +337,13 @@ export class Analyzer {
         : []),
       ...recent.map((text) => ({ text, initial: false })),
     ];
-    let lastAssistantText = this.lastText.get(thread.id) ?? null;
+    // The idle event's text describes its own turn only; otherwise read the
+    // latest output.
+    const cached = this.lastText.get(thread.id);
+    let lastAssistantText =
+      cached && cached.revision === thread.latestAttentionAt
+        ? cached.text
+        : null;
     if (lastAssistantText === null)
       lastAssistantText = (await sdk.threads.output({ threadId: thread.id }))
         .output;

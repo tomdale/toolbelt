@@ -17,11 +17,11 @@ export { rpcContract } from "./contract.ts";
 const RECONCILE_EVERY_MS = 60_000;
 const RECONCILE_DEBOUNCE_MS = 1_500;
 
-/** Models the eval has been run against (SPEC §10); the first is the default. */
-export const MODELS = [
-  "google/gemini-3.1-flash-lite",
-  "openai/gpt-4.1-mini",
-] as const;
+/**
+ * Models that pass the analysis eval (eval/README.md, SPEC §10); the first is
+ * the default. Add one only after it passes.
+ */
+export const MODELS = ["google/gemini-3.1-flash-lite"] as const;
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
@@ -129,7 +129,7 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
     if (thread.visibility !== "hidden")
-      analyzer.onIdle(thread.id, lastAssistantText);
+      analyzer.onIdle(thread, lastAssistantText);
   });
   bb.events.on("thread.active", ({ thread }) => analyzer.onActive(thread.id));
 

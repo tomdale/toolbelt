@@ -79,6 +79,11 @@ export async function fakeWorld(
       return { text: answer, usage: { input: 100, output: 20, cost: 0.0001 } };
     },
     sdk: {
+      projects: {
+        // A distinctive name that must never reach an analysis prompt.
+        list: async () => [{ id: "proj_1", name: "Zebracorn" }],
+        get: async () => ({ id: "proj_1", name: "Zebracorn" }),
+      },
       hosts: {
         list: async () => [
           makeHostResponse({ id: "host_1", status: "connected" } as never),

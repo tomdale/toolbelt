@@ -79,7 +79,12 @@ export function Row({
         data-sidebar-thread-id={thread.id}
         aria-current={active ? "page" : undefined}
         aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
-        aria-label={thread.displayTitle}
+        aria-label={
+          state?.glyph
+            ? `${thread.displayTitle}, ${state.label}`
+            : thread.displayTitle
+        }
+        aria-describedby={recap ? `ws-recap-${thread.id}` : undefined}
         title={recap ? `${thread.displayTitle}\n${recap}` : undefined}
         onClick={(event) => {
           event.preventDefault();
@@ -88,6 +93,11 @@ export function Row({
         }}
         className="absolute inset-0 rounded-md"
       />
+      {recap ? (
+        <span id={`ws-recap-${thread.id}`} hidden>
+          {recap}
+        </span>
+      ) : null}
       <StatusMark indicator={thread.indicator} label={thread.indicatorLabel} />
       <span
         className={cn(
