@@ -20,14 +20,14 @@ Generate one when you need it, or let Recap refresh it after a thread goes idle.
 
 <br>
 
-<img src="output/playwright/showcase/26-natural-card.png" alt="Recap card showing a fictional launch-planning summary" width="900">
+<img src="output/playwright/showcase/26-natural-card.png" alt="A fictional launch-planning recap in the previous inline display" width="900">
 
 </div>
 
 <br>
 
 > [!NOTE]
-> The screenshots are real BB captures populated with fictional Northstar launch-planning data.
+> These are real BB captures populated with fictional Northstar launch-planning data. They show the previous display UI; updated captures of the current **Recap** and **None** options are pending.
 
 ## The problem
 
@@ -35,7 +35,7 @@ Long threads make it hard to pick up where you left off. You can reread the conv
 
 |  | Without Recap | With Recap |
 | --- | :---: | :---: |
-| Find the current state | Re-read the thread | Open its latest recap |
+| Find the current state | Re-read the thread | Read its inline recap or generate one on demand |
 | Keep the original thread context unchanged | Add any summary to the thread | Store the recap separately |
 
 ## Features
@@ -67,9 +67,9 @@ When new turns arrive, the next recap uses the previous recap plus those new tur
 </td>
 <td valign="top">
 
-### 🪟 Choose a display
+### 🪟 Choose when to show recaps
 
-Show the recap above the composer as a compact banner or a larger card, or choose **On demand** to show only recaps you request. Dismiss a recap to hide it until a newer one arrives.
+Choose **Recap** to show the latest summary above the composer, or **None** to keep it hidden until you click **Generate Recap** inline in the chat. Dismiss a recap to hide it until a newer one arrives.
 
 </td>
 </tr>
@@ -78,11 +78,11 @@ Show the recap above the composer as a compact banner or a larger card, or choos
 <div align="center">
 <table>
 <tr>
-<td align="center"><img src="output/playwright/showcase/24-natural-compact-banner.png" alt="Compact recap banner with fictional Northstar launch details" width="440"><br><sub><b>Compact banner</b></sub></td>
-<td align="center"><img src="output/playwright/showcase/25-natural-expanded-banner.png" alt="Full recap banner with a fictional launch-planning summary" width="440"><br><sub><b>Full recap banner</b></sub></td>
+<td align="center"><img src="output/playwright/showcase/24-natural-compact-banner.png" alt="Earlier compact recap banner design" width="440"><br><sub><b>Previous compact display</b></sub></td>
+<td align="center"><img src="output/playwright/showcase/25-natural-expanded-banner.png" alt="Earlier expanded recap banner design" width="440"><br><sub><b>Previous expanded display</b></sub></td>
 </tr>
 <tr>
-<td align="center"><img src="output/playwright/showcase/17-settings-focus-tall.png" alt="Recap behaviour settings with model, automatic generation, cleanup, and display previews" width="440"><br><sub><b>Model, behaviour, and display settings</b></sub></td>
+<td align="center"><img src="output/playwright/showcase/17-settings-focus-tall.png" alt="Earlier Recap settings screen" width="440"><br><sub><b>Previous settings layout</b></sub></td>
 </tr>
 </table>
 </div>
@@ -116,11 +116,11 @@ bb plugin install path:$PWD --yes
 | --- | --- |
 | **Thread header** | Generate a recap; progress shows on the button and errors appear as a notification. |
 | **Command palette** | Choose **Recap: generate for this thread**. |
-| **Composer** | Read the latest recap inline, or dismiss it; choose **On demand** to show only recaps you request. |
-| **Plugin settings** | In **Recap behavior**, choose a model and configure automatic generation, cleanup, prompt, and display. |
+| **Composer** | Read or dismiss the latest recap; choose **None** to generate one on demand with the inline **Generate Recap** button. |
+| **Plugin settings** | In **Recap behavior**, choose a model and configure automatic generation, cleanup, prompt, and whether the composer shows **Recap** or **None**. |
 | **CLI** | Generate, show, or list recaps with `bb recap`. |
 
-Automatic generation and cleanup are on by default, and the inline display starts as a compact banner. The idle delay defaults to 30 seconds, the minimum is 3 user turns, and up to 2 recap workers may run at once. You can set the delay from 0–86,400 seconds, the minimum from 1–100 turns, and concurrency from 1–5 workers. The prompt accepts up to 8,000 characters; recap text is limited to 1,200 characters.
+Automatic generation and cleanup are on by default, and composer display defaults to **Recap**. In **None** mode, the inline **Generate Recap** button creates a just-in-time recap and is replaced by the resulting summary. The idle delay defaults to 30 seconds, the minimum is 3 user turns, and up to 2 recap workers may run at once. You can set the delay from 0–86,400 seconds, the minimum from 1–100 turns, and concurrency from 1–5 workers. The prompt accepts up to 8,000 characters; recap text is limited to 1,200 characters.
 
 ## How it works
 

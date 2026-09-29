@@ -135,21 +135,21 @@ test("treats reverted settings edits as clean", () => {
   assert.equal(typeof normalizeRecapSettings(null).prompt, "string");
 });
 
-test("form settings patches do not overwrite a newer display mode", () => {
+test("form settings patches do not overwrite a newer display preference", () => {
   const base = normalizeRecapSettings({});
-  const afterLayout = mergeRecapSettingsPatch(base, {
-    displayMode: RECAP_DISPLAY_MODES.card,
+  const afterDisplayChange = mergeRecapSettingsPatch(base, {
+    displayMode: RECAP_DISPLAY_MODES.none,
   });
   const afterForm = mergeRecapSettingsPatch(
-    afterLayout,
+    afterDisplayChange,
     recapSettingsFormPatch({
-      ...afterLayout,
+      ...afterDisplayChange,
       auto: false,
       minTurns: 8,
       prompt: "Write one sentence.",
     }),
   );
-  assert.equal(afterForm.displayMode, RECAP_DISPLAY_MODES.card);
+  assert.equal(afterForm.displayMode, RECAP_DISPLAY_MODES.none);
   assert.equal(afterForm.auto, false);
   assert.equal(afterForm.minTurns, 8);
 });
@@ -244,12 +244,13 @@ test("bounds settings without accepting invalid values", () => {
   assert.equal(parsePositiveInteger("10foo"), null);
   assert.equal(parsePositiveInteger("1.5"), null);
   assert.equal(parsePositiveInteger("0"), null);
-  assert.equal(
-    parseDisplayMode(RECAP_DISPLAY_MODES.card),
-    RECAP_DISPLAY_MODES.card,
-  );
-  assert.equal(parseDisplayMode("compact"), RECAP_DISPLAY_MODES.compact);
-  assert.equal(parseDisplayMode("unknown"), RECAP_DISPLAY_MODES.compact);
+  assert.equal(parseDisplayMode(RECAP_DISPLAY_MODES.recap), RECAP_DISPLAY_MODES.recap);
+  assert.equal(parseDisplayMode(RECAP_DISPLAY_MODES.none), RECAP_DISPLAY_MODES.none);
+  assert.equal(parseDisplayMode("On demand"), RECAP_DISPLAY_MODES.none);
+  assert.equal(parseDisplayMode("on-demand"), RECAP_DISPLAY_MODES.none);
+  assert.equal(parseDisplayMode("Compact banner"), RECAP_DISPLAY_MODES.recap);
+  assert.equal(parseDisplayMode("Recap card"), RECAP_DISPLAY_MODES.recap);
+  assert.equal(parseDisplayMode("unknown"), RECAP_DISPLAY_MODES.recap);
   assert.equal(clampConcurrentGenerations(3), 3);
   assert.equal(clampConcurrentGenerations(0), 2);
   assert.equal(clampConcurrentGenerations(99), MAX_CONCURRENT_GENERATIONS);
