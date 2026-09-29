@@ -259,7 +259,7 @@ function RecapComposerBannerContent({
           ) : null}
           <div
             className={`grid gap-x-6 gap-y-2 ${
-              layout === RECAP_LAYOUTS.detailed ? "sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""
+              layout === RECAP_LAYOUTS.detailed ? "@lg/recap:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""
             }`}
           >
             <div className="space-y-2">
@@ -267,7 +267,7 @@ function RecapComposerBannerContent({
               <div className="h-2 w-3/4 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
             </div>
             {layout === RECAP_LAYOUTS.detailed ? (
-              <div className="space-y-2 sm:border-l sm:border-sky-900/10 sm:pl-6 sm:dark:border-sky-200/10">
+              <div className="space-y-2 border-sky-900/10 @lg/recap:border-l @lg/recap:pl-6 dark:border-sky-200/10">
                 <div className="h-2 w-5/6 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
                 <div className="h-2 w-2/3 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
               </div>
@@ -303,7 +303,9 @@ function RecapComposerBannerContent({
 
   return (
     <div className={`${RECAP_BANNER_CLASS} px-4 py-3`} role="region" aria-label="Latest recap">
-      <RecapSummary summary={visibleRecap.summary} layout={layout} />
+      <div className="@max-[20rem]/recap:[&_*]:!text-[0.625rem] @max-[20rem]/recap:[&_*]:!font-normal @max-[20rem]/recap:[&_*]:!leading-[1.5] @max-[20rem]/recap:[&_*]:!tracking-normal">
+        <RecapSummary summary={visibleRecap.summary} layout={layout} />
+      </div>
       <button
         type="button"
         className="absolute right-2.5 top-2.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-sky-900/50 transition-colors hover:bg-sky-900/10 hover:text-sky-900/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:text-sky-200/50 dark:hover:bg-sky-200/10 dark:hover:text-sky-200/80"
@@ -327,7 +329,7 @@ function RecapComposerBannerContent({
 // from weight and opacity rather than extra sizes.
 const RECAP_LABEL_CLASS =
   "mb-1 text-[10.5px] font-semibold uppercase leading-4 tracking-[0.08em] text-sky-900/50 dark:text-sky-200/45";
-const RECAP_BODY_CLASS = "text-[12px] @lg/recap:text-[13px] leading-[1.5] [text-wrap:pretty]";
+const RECAP_BODY_CLASS = "text-[clamp(0.625rem,calc(0.4375rem+0.9375cqi),0.8125rem)] leading-[1.5] [text-wrap:pretty]";
 
 /**
  * One recap line rendered through BB's markdown so inline code, emphasis, and
@@ -405,7 +407,7 @@ function LedgerList({
 function RecapSummary({ summary, layout }: { summary: string; layout: RecapLayout }) {
   const ledger = parseRecapLedger(summary);
   if (!ledger) {
-    return <Markdown content={summary} className="pr-6 text-xs leading-5 text-inherit @lg/recap:text-sm @lg/recap:leading-6" />;
+    return <Markdown content={summary} className="pr-6 text-[clamp(0.625rem,calc(0.4375rem+0.9375cqi),0.8125rem)] leading-[1.75] text-inherit" />;
   }
   const showGoal = layout !== RECAP_LAYOUTS.minimal && ledger.goal !== null;
   const hasLedger =
@@ -418,12 +420,12 @@ function RecapSummary({ summary, layout }: { summary: string; layout: RecapLayou
           aria-level={2}
           className="pr-8 font-medium tracking-[-0.006em] text-sky-950 dark:text-sky-50"
         >
-          <RecapText text={ledger.goal} typeClass="text-[13px] @lg/recap:text-[14px] leading-[1.43] [text-wrap:balance]" />
+          <RecapText text={ledger.goal} className="w-full max-w-none" typeClass="text-[clamp(0.625rem,calc(0.375rem+1.25cqi),0.875rem)] leading-[1.43] [text-wrap:wrap]" />
         </div>
       ) : null}
       <div
         className={`${showGoal ? "mt-2.5" : "pr-8"} grid gap-x-6 gap-y-3 ${
-          hasLedger ? "sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""
+          hasLedger ? "@lg/recap:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""
         }`}
       >
         <div className="space-y-2.5">
@@ -458,7 +460,7 @@ function RecapSummary({ summary, layout }: { summary: string; layout: RecapLayou
           ))}
         </div>
         {hasLedger ? (
-          <div className="space-y-2.5 border-sky-900/10 sm:border-l sm:pl-6 dark:border-sky-200/10">
+          <div className="space-y-2.5 border-sky-900/10 @lg/recap:border-l @lg/recap:pl-6 dark:border-sky-200/10">
             <LedgerList items={ledger.open} label="Open" />
             <LedgerList items={ledger.done} label="Done" done />
           </div>
