@@ -457,6 +457,77 @@ it("rejects stale high-confidence auto splits without mutating", async () => {
   expect(live.harness.inspection.sdk.callsTo("threads.fork")).toHaveLength(0);
   const view = (await live.harness.behavior.callRpc("snapshot", null)) as View;
   expect(view.log.some((e) => e.action.kind === "split")).toBe(false);
+it("rejects a drifted action and does not stamp failed work current", async () => {
+  const h = host();
+  await plugin(h.bb);
+  const initial = h.rows[0].updatedAt;
+  await seed(h, initial);
+  const live = await h.harness.lifecycle.reload(plugin);
+  fixtures.push(live);
+  // Inventory sees the planned revision; the detail lookup before the fork
+  // sees an edit that occurred during action planning.
+  live.harness.sdk.stub("threads.get", async () => ({
+    ...h.rows[0],
+    updatedAt: initial + 1,
+  }));
+  await live.harness.behavior.callRpc("organize", null);
+  const sdk = live.harness.inspection.sdk;
+  expect(sdk.callsTo("threads.fork")).toHaveLength(0);
+  expect(sdk.callsTo("threads.update")).toHaveLength(0);
+  const view = (await live.harness.behavior.callRpc("snapshot", null)) as View;
+  expect(view.log.find((e) => e.action.kind === "split")).toMatchObject({
+    result: "failed",
+    detail: "Thread changed since action planning.",
+  });
+  expect(view.analysis?.items[0]).toMatchObject({
+    updatedAt: initial,
+    refreshed: false,
+  });
+});
+
+it("rechecks after archive preflight before the side effect", async () => {
+  const h = host();
+  await plugin(h.bb);
+  const initial = h.rows[0].updatedAt;
+  h.bb.storage
+    .database()
+    .prepare("INSERT INTO state VALUES (?,?)")
+    .run(
+      "thread-analysis",
+      JSON.stringify(
+        analysis([
+          {
+            threadId: "a",
+            state: "done",
+            archiveReason: "Duplicate thread",
+            updatedAt: initial,
+          },
+        ]),
+      ),
+    );
+  const live = await h.harness.lifecycle.reload(plugin);
+  fixtures.push(live);
+  let version = initial;
+  live.harness.sdk.stub("threads.get", async () => ({
+    ...h.rows[0],
+    updatedAt: version,
+  }));
+  live.harness.sdk.stub("threads.childSummary", async () => {
+    version++;
+    return { nonDeletedChildCount: 0 };
+  });
+  await live.harness.behavior.callRpc("organize", null);
+  expect(live.harness.inspection.sdk.callsTo("threads.archive")).toHaveLength(
+    0,
+  );
+  const view = (await live.harness.behavior.callRpc("snapshot", null)) as View;
+  expect(view.log.find((e) => e.action.kind === "archive")).toMatchObject({
+    result: "failed",
+  });
+  expect(view.analysis?.items[0]).toMatchObject({
+    updatedAt: initial,
+    refreshed: false,
+  });
 });
 
 it("archives a redundant idle thread with undo", async () => {
