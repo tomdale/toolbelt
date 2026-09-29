@@ -30,6 +30,8 @@ export const actionSchema = z.enum([
   "edit-workstream",
   /** New work placed by the router or a handoff (SPEC §6). */
   "route",
+  /** A thread's title kept current by analysis (SPEC §10.1). */
+  "retitle",
 ]);
 export type Action = z.infer<typeof actionSchema>;
 
@@ -61,6 +63,13 @@ const stepSchema = z.discriminatedUnion("kind", [
      * it instead of failing the whole batch.
      */
     inBatch: z.boolean().optional(),
+  }),
+  z.object({
+    kind: z.literal("retitle"),
+    threadId: z.string(),
+    /** The thread's own title before; null when it was untitled. */
+    from: z.string().nullable(),
+    to: z.string(),
   }),
   z.object({
     kind: z.literal("rename-section"),

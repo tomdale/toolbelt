@@ -6,7 +6,8 @@
  * as pending rather than current.
  *
  * Analysis only adds evidence. It never moves, renames, or files a thread
- * (SPEC I3).
+ * (SPEC I3); a suggested title reaches BB only through `onResult` and the
+ * retitle policy (SPEC §10).
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
@@ -88,6 +89,8 @@ export class Analyzer {
       complete: Complete;
       model: () => Promise<string>;
       onChange: () => void;
+      /** A new result was stored for the thread's current turn. */
+      onResult?: (threadId: string, result: StoredAnalysis) => void;
       log: (message: string) => void;
       info?: (message: string) => void;
       now?: () => number;
@@ -305,6 +308,7 @@ export class Analyzer {
         this.lastText.delete(threadId);
       this.lastError = null;
       this.deps.onChange();
+      this.deps.onResult?.(threadId, result);
       return result;
     } catch (error) {
       const previous = this.failures.get(threadId);
@@ -384,6 +388,7 @@ export class Analyzer {
       sectionByName,
       prompt: {
         title: displayTitle(thread),
+        untitled: !thread.title,
         workstream: own
           ? {
               name: own.name,

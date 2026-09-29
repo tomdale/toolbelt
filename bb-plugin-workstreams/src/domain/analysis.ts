@@ -18,9 +18,17 @@ export const WORK_STATES = [
 export type WorkState = (typeof WORK_STATES)[number];
 
 export const RECAP_MAX = 140;
+/** BB's own generated titles are at most 48 characters wide. */
+export const TITLE_MAX = 48;
 
 export type AnalysisInput = {
+  /** The title BB displays, which is a placeholder when `untitled` is set. */
   readonly title: string;
+  /**
+   * True when the thread has no title of its own and BB shows a placeholder
+   * (the opening words of the first request, or the thread id).
+   */
+  readonly untitled?: boolean;
   /** The thread's workstream, or null when it is Unsorted. */
   readonly workstream: {
     readonly name: string;
@@ -54,6 +62,22 @@ export const analysisOutputSchema = z.object({
   state: z.enum(WORK_STATES).catch("in_progress"),
   needsYou: clipped(120).nullable().catch(null),
   subject: clipped(60).nullable().catch(null),
+  /**
+   * A replacement title, or null when the current one still fits. A title
+   * that is too long is dropped rather than cut, since a clipped title reads
+   * as the incomplete kind this replaces.
+   */
+  title: z
+    .string()
+    .transform(cleanTitle)
+    .pipe(
+      z
+        .string()
+        .min(1)
+        .max(TITLE_MAX + 12),
+    )
+    .nullable()
+    .catch(null),
   drift: z
     .object({
       workstream: z.string().trim().min(1).max(100).nullable().default(null),
@@ -80,6 +104,16 @@ export function clip(text: string, max: number): string {
   const cut = flat.slice(0, max - 1);
   const space = cut.lastIndexOf(" ");
   return `${space > max * 0.6 ? cut.slice(0, space) : cut}…`;
+}
+
+/** One line, without the quotes or closing period models sometimes add. */
+export function cleanTitle(text: string): string {
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^["'“‘`]+|["'”’`]+$/g, "")
+    .replace(/(?<!\.)\.$/, "")
+    .trim();
 }
 
 /** Head-and-tail excerpt: requests state intent up front, reports end with the result. */
@@ -140,17 +174,22 @@ export function analysisPrompt(input: AnalysisInput): string {
 
 You describe one agent thread for someone who switches between dozens of them.
 
-Title: ${JSON.stringify(redact(input.title))}
+${
+  input.untitled
+    ? `Title: none yet (BB shows the placeholder ${JSON.stringify(redact(input.title))})`
+    : `Title: ${JSON.stringify(redact(input.title))}`
+}
 ${where}
 
 Conversation, oldest first:
 ${conversationBlock(input)}
 
-Return {"recap": string, "state": string, "needsYou": string|null, "subject": string|null, "drift": object|null}:
+Return {"recap": string, "state": string, "needsYou": string|null, "subject": string|null, "drift": object|null, "title": string|null}:
 - recap: at most ${RECAP_MAX} characters. Where the work stands now, from the last assistant message: the latest concrete result, and what remains or what is being asked. Don't restate the title. Planned or proposed is not done. Don't invent blockers or next steps. If there's no assistant message, say what was asked.
 - state: "needs_decision" when the last message asks the user something specific (a question, a choice, permission, "want me to…?") or needs a step only the user can take; closing boilerplate like "let me know" doesn't count. "review" when a finished deliverable waits on the user to review, test, merge, or ship. "blocked" when waiting on something other than the user. "done" when nothing is left for the user, including answered questions. Otherwise "in_progress".
 - needsYou: when state is "needs_decision", the ask in at most 80 characters; otherwise null.
-- subject: the product or project whose work this is, named at product level. A built-in part of a product (its SDK, CLI, docs, config, a built-in provider) is the product itself ("Lumen", not "Lumen CLI"); a separately developed plugin or package with its own name is its own subject. Use the readable name alone: drop words like plugin, repo, app, and package, and turn slugs into names, dropping prefixes, suffixes, and per-person or per-fork parts ("bb-plugin-foo-provider" → "Foo", "Acme Search plugin" → "Acme Search"). Reuse a known subject exactly when it fits. The current substantive request decides it, not an outdated title. null for status summaries spanning several products, or when no product can be identified.${drift}`;
+- subject: the product or project whose work this is, named at product level. A built-in part of a product (its SDK, CLI, docs, config, a built-in provider) is the product itself ("Lumen", not "Lumen CLI"); a separately developed plugin or package with its own name is its own subject. Use the readable name alone: drop words like plugin, repo, app, and package, and turn slugs into names, dropping prefixes, suffixes, and per-person or per-fork parts ("bb-plugin-foo-provider" → "Foo", "Acme Search plugin" → "Acme Search"). Reuse a known subject exactly when it fits. The current substantive request decides it, not an outdated title. null for status summaries spanning several products, or when no product can be identified.${drift}
+- title: independent of drift, which a new title never replaces. A new title only when the thread needs one: it has none yet, the current one is cut off or too vague to tell this thread apart, or the latest substantive requests moved the thread onto different work than the title names. Otherwise null. A related follow-up, a procedural ask (commit, explain, test), or a better wording of the same work is no reason to change it. A new title has at most ${TITLE_MAX} characters, in sentence case with no closing period, and names the work as it stands now, not the conversation ("Markdown viewer themes", "Fix stale build cache").`;
 }
 
 /**

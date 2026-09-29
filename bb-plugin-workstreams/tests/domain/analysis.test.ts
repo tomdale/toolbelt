@@ -76,6 +76,19 @@ describe("parseAnalysis", () => {
     ).toBeNull();
   });
 
+  it("cleans a suggested title and drops one too long to use", () => {
+    const raw = (title: unknown) =>
+      JSON.stringify({ recap: "r", state: "done", title });
+    expect(parseAnalysis(raw('"Fix stale  build cache."')).title).toBe(
+      "Fix stale build cache",
+    );
+    expect(parseAnalysis(raw("word ".repeat(30))).title).toBeNull();
+    expect(parseAnalysis(raw("   ")).title).toBeNull();
+    expect(
+      parseAnalysis(JSON.stringify({ recap: "r", state: "done" })).title,
+    ).toBeNull();
+  });
+
   it("keeps an ask only for a needs-decision result", () => {
     const raw = JSON.stringify({
       recap: "r",
@@ -138,6 +151,7 @@ describe("freshness", () => {
     state: "needs_decision" as const,
     needsYou: "Commit?",
     subject: null,
+    title: null,
     drift: null,
     revision: 100,
     at: 1,

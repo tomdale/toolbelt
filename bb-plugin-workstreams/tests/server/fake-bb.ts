@@ -33,7 +33,7 @@ const DEFAULT_ANSWER = JSON.stringify({
 export async function fakeWorld(
   options: {
     complete?: FakeCompletion;
-    settings?: Record<string, string>;
+    settings?: Record<string, string | boolean>;
   } = {},
 ) {
   const threads = new Map<string, Thread>();

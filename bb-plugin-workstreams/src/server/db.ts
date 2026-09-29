@@ -82,6 +82,13 @@ const MIGRATIONS = [
     checked_at INTEGER NOT NULL
   )`,
   "CREATE TABLE ws_drift_dismissed (thread_id TEXT PRIMARY KEY, target TEXT NOT NULL, at INTEGER NOT NULL)",
+  `CREATE TABLE ws_title (
+    thread_id TEXT PRIMARY KEY,
+    observed TEXT,
+    written TEXT,
+    locked INTEGER NOT NULL DEFAULT 0,
+    retitled_at INTEGER
+  )`,
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

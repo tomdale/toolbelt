@@ -15,6 +15,8 @@ const analysisSchema = z.object({
   state: z.enum(WORK_STATES),
   needsYou: z.string().nullable(),
   subject: z.string().nullable(),
+  // Results stored before titles were suggested have none.
+  title: z.string().nullable().default(null),
   drift: z
     .object({
       workstream: z.string().nullable(),

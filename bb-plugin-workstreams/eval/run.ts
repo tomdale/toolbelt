@@ -32,7 +32,7 @@ type Case = {
 };
 type Result = {
   set: string;
-  mode: "cold" | "warm";
+  mode: "cold" | "warm" | "untitled";
   id: string;
   expected: string[];
   project?: string;
@@ -194,6 +194,8 @@ function score(results: Result[]) {
   );
   const stated = cold.filter((r) => r.expectedState);
   const decisions = stated.filter((r) => r.expectedState === "needs_decision");
+  const untitled = results.filter((r) => r.mode === "untitled");
+  const retitled = (r: Result) => Boolean(r.output?.title);
   const drifted = warm.filter((r) => r.driftExpected);
   const healthy = warm.filter((r) => !r.driftExpected);
   const seconds = results.map((r) => r.seconds).sort((a, b) => a - b);
@@ -221,6 +223,18 @@ function score(results: Result[]) {
       detected: pct(drifted.filter(driftFlag).length, drifted.length),
       falseAlarms: pct(healthy.filter(driftFlag).length, healthy.length),
       falseAlarmIds: healthy.filter(driftFlag).map((r) => `${r.set}:${r.id}`),
+    },
+    title: {
+      untitledTitled: pct(untitled.filter(retitled).length, untitled.length),
+      sideQuestsRetitled: pct(drifted.filter(retitled).length, drifted.length),
+      healthyRetitled: pct(healthy.filter(retitled).length, healthy.length),
+      healthyRetitledIds: healthy
+        .filter(retitled)
+        .map((r) => `${r.set}:${r.id} → ${r.output?.title}`),
+      examples: [...untitled, ...drifted]
+        .filter(retitled)
+        .slice(0, 8)
+        .map((r) => `${r.set}:${r.id} → ${r.output?.title}`),
     },
     medianSeconds: q(0.5),
     p90Seconds: q(0.9),
@@ -255,6 +269,21 @@ const jobs: Job[] = [];
 for (const [set, cases] of sets)
   for (const c of cases) {
     if (set !== "drift") jobs.push({ set, mode: "cold", c, input: toInput(c) });
+    // Untitled: BB shows the opening words of the first request instead.
+    if (set === "cases" || set === "state") {
+      const input = toInput(c);
+      const opening = (input.requests[0]?.text ?? "").replace(/\s+/g, " ");
+      jobs.push({
+        set,
+        mode: "untitled",
+        c,
+        input: {
+          ...input,
+          untitled: true,
+          title: `${opening.slice(0, 77)}...`,
+        },
+      });
+    }
     if (set === "drift" || set === "private" || set === "cases") {
       const own = c.drift ? c.drift.from[0]! : c.expected[0]!;
       if (NO_SUBJECT.has(norm(own))) continue;
@@ -312,6 +341,11 @@ for (const model of models) {
         drift: {
           ...summary.drift,
           falseAlarmIds: summary.drift.falseAlarmIds.filter(isPublic),
+        },
+        title: {
+          ...summary.title,
+          healthyRetitledIds: summary.title.healthyRetitledIds.filter(isPublic),
+          examples: summary.title.examples.filter(isPublic),
         },
       },
       null,

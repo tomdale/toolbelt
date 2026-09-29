@@ -18,6 +18,8 @@ import {
   type InventoryThread,
 } from "./inventory.ts";
 import type { JournalEntry, Journal, Source, UndoStep } from "./journal.ts";
+import { retitleDecision } from "../domain/titles.ts";
+import { forgetTitle, observeThreadTitle, writeTitleRecord } from "./titles.ts";
 
 /** Changes applied together; `to` and description keys may name a create. */
 export type BatchPlan = {
@@ -235,6 +237,68 @@ export class WorkstreamService {
   }
 
   /**
+   * Applies a title that analysis suggested for the thread's turn at
+   * `revision`, under the retitle policy (SPEC §10.1). Returns null, changing
+   * nothing, when the policy declines it.
+   */
+  retitle(
+    threadId: string,
+    suggestion: string | null,
+    revision: number,
+  ): Promise<JournalEntry | null> {
+    return this.serial(async () => {
+      const sdk = this.sdk();
+      const thread = await sdk.threads.get({ threadId }).catch(() => null);
+      if (
+        !thread ||
+        thread.archivedAt !== null ||
+        thread.visibility === "hidden"
+      )
+        return null;
+      const record = observeThreadTitle(this.db, threadId, thread.title);
+      const from = displayTitle(thread);
+      const decision = retitleDecision({
+        record,
+        thread: {
+          title: thread.title,
+          displayTitle: from,
+          status: thread.status,
+          latestAttentionAt: thread.latestAttentionAt ?? thread.updatedAt,
+        },
+        suggestion,
+        revision,
+        now: this.now(),
+      });
+      if (!decision.ok || !suggestion) return null;
+      await sdk.threads.update({ threadId, title: suggestion });
+      writeTitleRecord(this.db, threadId, {
+        observed: suggestion,
+        written: suggestion,
+        locked: false,
+        retitledAt: this.now(),
+      });
+      this.seeThread(
+        threadId,
+        thread.sectionId ?? null,
+        thread.parentThreadId ?? null,
+        suggestion,
+      );
+      const entry = this.journal.add({
+        action: "retitle",
+        source: "auto",
+        rationale: thread.title
+          ? `Retitled from ${from}`
+          : "Titled an untitled thread",
+        threads: [{ id: threadId, name: suggestion }],
+        workstreams: [],
+        undo: { kind: "retitle", threadId, from: thread.title, to: suggestion },
+      });
+      this.onChange();
+      return entry;
+    });
+  }
+
+  /**
    * Reverses a journaled change where BB state still matches what the change
    * left behind. Parts that were changed again since are skipped and reported.
    * A batch is undone as a whole, in reverse order.
@@ -310,6 +374,27 @@ export class WorkstreamService {
         done++;
       }
       return { done, skipped };
+    }
+    if (step.kind === "retitle") {
+      const thread = await sdk.threads
+        .get({ threadId: step.threadId })
+        .catch(() => null);
+      if (!thread || thread.title !== step.to) return { done: 0, skipped: 1 };
+      await sdk.threads.update({ threadId: step.threadId, title: step.from });
+      // Undoing is the user's decision: the title they went back to stays.
+      writeTitleRecord(this.db, step.threadId, {
+        observed: step.from,
+        written: null,
+        locked: true,
+        retitledAt: null,
+      });
+      this.seeThread(
+        step.threadId,
+        thread.sectionId ?? null,
+        thread.parentThreadId ?? null,
+        step.from ?? thread.titleFallback ?? undefined,
+      );
+      return { done: 1, skipped: 0 };
     }
     if (step.kind === "delete-section") {
       if (!(await sectionIsEmpty(sdk, step.sectionId))) {
@@ -707,6 +792,7 @@ export class WorkstreamService {
             this.place(thread.id, to, "external", entry.id);
             changed = true;
           }
+          observeThreadTitle(this.db, thread.id, thread.ownTitle);
           if (
             !before ||
             before.section_id !== thread.sectionId ||
@@ -749,6 +835,7 @@ export class WorkstreamService {
     this.db
       .prepare("DELETE FROM ws_seen_thread WHERE thread_id = ?")
       .run(threadId);
+    forgetTitle(this.db, threadId);
   }
 
   private async isVisibleActive(threadId: string): Promise<boolean> {
