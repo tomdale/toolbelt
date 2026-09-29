@@ -89,9 +89,8 @@ const modelSelectionSchema = z
 export type ModelSelection = z.infer<typeof modelSelectionSchema>;
 
 const displayModeSchema = z.enum([
-  RECAP_DISPLAY_MODES.compact,
-  RECAP_DISPLAY_MODES.card,
-  RECAP_DISPLAY_MODES.onDemand,
+  RECAP_DISPLAY_MODES.recap,
+  RECAP_DISPLAY_MODES.none,
 ]);
 
 const recapSettingsSchema = z

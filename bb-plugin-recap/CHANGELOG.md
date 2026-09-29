@@ -12,7 +12,7 @@ All notable changes to Recap are documented here. The format follows
   button; dismissing hides only the current recap.
 - Generate recaps in place from the thread header and command palette; the
   header button shows progress and errors appear as notifications.
-- **On demand** display shows only manually requested recaps in the composer.
+- Replace compact/card/on-demand layouts with **Recap** and **None** display options. In **None**, a **Generate Recap** button appears inline and is replaced by the just-in-time recap.
 
 ### Removed
 

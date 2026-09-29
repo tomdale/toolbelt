@@ -3,27 +3,24 @@ export const DEFAULT_RECAP_PROMPT = `You are an internal recap worker.
 Return exactly one plain-text sentence of about 25–40 words, with no heading, bullets, markdown, or extra explanation. Use the language of the user's messages. Lead with "You asked …" for questions or reviews, or "We <past-tense verb> …" for implemented changes. Mention concrete files, symbols, flags, endpoints, decisions, or remaining work when present. Never invent progress. Do not call tools. If almost nothing happened, say "You had just begun this session."`;
 
 export const RECAP_DISPLAY_MODES = {
-  compact: "Compact banner",
-  card: "Recap card",
-  onDemand: "On demand",
+  recap: "Recap",
+  none: "None",
 } as const;
 
 export type RecapDisplayMode =
   (typeof RECAP_DISPLAY_MODES)[keyof typeof RECAP_DISPLAY_MODES];
 
 export const RECAP_DISPLAY_MODE_OPTIONS: RecapDisplayMode[] = [
-  RECAP_DISPLAY_MODES.compact,
-  RECAP_DISPLAY_MODES.card,
-  RECAP_DISPLAY_MODES.onDemand,
+  RECAP_DISPLAY_MODES.recap,
+  RECAP_DISPLAY_MODES.none,
 ];
 
 export function parseDisplayMode(raw: string): RecapDisplayMode {
   if (RECAP_DISPLAY_MODE_OPTIONS.includes(raw as RecapDisplayMode))
     return raw as RecapDisplayMode;
-  if (raw === "compact") return RECAP_DISPLAY_MODES.compact;
-  if (raw === "card") return RECAP_DISPLAY_MODES.card;
-  if (raw === "on-demand") return RECAP_DISPLAY_MODES.onDemand;
-  return RECAP_DISPLAY_MODES.compact;
+  if (raw === "On demand" || raw === "on-demand") return RECAP_DISPLAY_MODES.none;
+  // Older compact and card preferences both map to the single recap display.
+  return RECAP_DISPLAY_MODES.recap;
 }
 
 export function shouldShowRecapBanner(
