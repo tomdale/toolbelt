@@ -23,11 +23,8 @@ import {
   settingsFormStatusLabel,
   parseBoundedInteger,
   parseClampedInteger,
-  parseDisplayMode,
   parsePositiveInteger,
-  RECAP_DISPLAY_MODES,
   shouldShowRecapBanner,
-  automaticRecapsEnabled,
   isVisibleThread,
   clampConcurrentGenerations,
   createGenerationLimiter,
@@ -136,38 +133,28 @@ test("treats reverted settings edits as clean", () => {
   assert.equal(typeof normalizeRecapSettings(null).prompt, "string");
 });
 
-test("form settings patches do not overwrite a newer display preference", () => {
-  const base = normalizeRecapSettings({});
-  const afterDisplayChange = mergeRecapSettingsPatch(base, {
-    displayMode: RECAP_DISPLAY_MODES.none,
-  });
-  const afterForm = mergeRecapSettingsPatch(
-    afterDisplayChange,
-    recapSettingsFormPatch({
-      ...afterDisplayChange,
-      auto: false,
-      minTurns: 8,
-      prompt: "Write one sentence.",
-    }),
+test("legacy on-request display preferences load with automatic recaps off", () => {
+  for (const displayMode of ["None", "On demand", "on-demand"]) {
+    const settings = normalizeRecapSettings({ auto: true, displayMode });
+    assert.equal(settings.auto, false);
+    assert.equal("displayMode" in settings, false);
+  }
+  for (const displayMode of ["Recap", "Compact banner", "Recap card"]) {
+    assert.equal(normalizeRecapSettings({ auto: true, displayMode }).auto, true);
+  }
+  assert.equal(
+    normalizeRecapSettings({ auto: false, displayMode: "Recap" }).auto,
+    false,
   );
-  assert.equal(afterForm.displayMode, RECAP_DISPLAY_MODES.none);
-  assert.equal(afterForm.auto, false);
-  assert.equal(afterForm.minTurns, 8);
+  // Once saved without displayMode, the migrated value stays put.
+  const migrated = normalizeRecapSettings({ auto: true, displayMode: "None" });
+  assert.equal(
+    mergeRecapSettingsPatch(migrated, recapSettingsFormPatch(migrated)).auto,
+    false,
+  );
 });
 
-test("None display disables automatic recaps", () => {
-  assert.equal(
-    automaticRecapsEnabled({ auto: true, displayMode: RECAP_DISPLAY_MODES.recap }),
-    true,
-  );
-  assert.equal(
-    automaticRecapsEnabled({ auto: true, displayMode: RECAP_DISPLAY_MODES.none }),
-    false,
-  );
-  assert.equal(
-    automaticRecapsEnabled({ auto: false, displayMode: RECAP_DISPLAY_MODES.recap }),
-    false,
-  );
+test("automatic_disabled is never retried", () => {
   assert.equal(
     shouldRetryAutomaticRecap({
       generated: false,
@@ -268,13 +255,6 @@ test("bounds settings without accepting invalid values", () => {
   assert.equal(parsePositiveInteger("10foo"), null);
   assert.equal(parsePositiveInteger("1.5"), null);
   assert.equal(parsePositiveInteger("0"), null);
-  assert.equal(parseDisplayMode(RECAP_DISPLAY_MODES.recap), RECAP_DISPLAY_MODES.recap);
-  assert.equal(parseDisplayMode(RECAP_DISPLAY_MODES.none), RECAP_DISPLAY_MODES.none);
-  assert.equal(parseDisplayMode("On demand"), RECAP_DISPLAY_MODES.none);
-  assert.equal(parseDisplayMode("on-demand"), RECAP_DISPLAY_MODES.none);
-  assert.equal(parseDisplayMode("Compact banner"), RECAP_DISPLAY_MODES.recap);
-  assert.equal(parseDisplayMode("Recap card"), RECAP_DISPLAY_MODES.recap);
-  assert.equal(parseDisplayMode("unknown"), RECAP_DISPLAY_MODES.recap);
   assert.equal(clampConcurrentGenerations(3), 3);
   assert.equal(clampConcurrentGenerations(0), 2);
   assert.equal(clampConcurrentGenerations(99), MAX_CONCURRENT_GENERATIONS);
