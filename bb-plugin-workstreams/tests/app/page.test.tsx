@@ -51,7 +51,22 @@ async function mount() {
         projects: [],
       },
       rpc: {
-        state: () => emptyState(),
+        state: () => ({
+          ...emptyState(),
+          analysis: {
+            a1: {
+              recap: "Tests pass; waiting on review.",
+              state: "review",
+              needsYou: null,
+              subject: "Alpha",
+              drift: null,
+              driftSectionId: null,
+              revision: now,
+              at: now,
+              model: "m",
+            },
+          },
+        }),
         journal: () => ({ entries: [entry] }),
         undo: () => ({ entry: { ...entry, id: "e2", action: "undo" } }),
       },
@@ -100,6 +115,121 @@ it("shows the activity log with undo", async () => {
       slot.inspection.rpcCalls.find((c) => c.method === "undo")?.input,
     ).toEqual({
       entryId: "e1",
+    }),
+  );
+  slot.lifecycle.unmount();
+});
+
+it("shows where each thread stopped", async () => {
+  const slot = await mount();
+  const alpha = slot.getByRole("region", { name: "Alpha" });
+  expect(
+    await within(alpha).findByText("Tests pass; waiting on review."),
+  ).toBeTruthy();
+  expect(
+    within(alpha).getByRole("img", { name: "Ready for your review" }),
+  ).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+it("reviews moves by source and destination, noting only what needs a second look", async () => {
+  const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
+  const move = (
+    threadId: string,
+    fromName: string,
+    toName: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
+    threadId,
+    title: `Title ${threadId}`,
+    from: fromName === "Unsorted" ? null : `sec_${fromName}`,
+    fromName,
+    to: `sec_${toName}`,
+    toName,
+    reason: "high confidence",
+    accepted: true,
+    confidence: "high",
+    ...extra,
+  });
+  const state = {
+    status: "preview",
+    startedAt: 0,
+    updatedAt: 0,
+    error: null,
+    roots: [
+      { id: "t1", title: "", sectionId: "sec_Alpha", provenance: "auto" },
+      { id: "t2", title: "", sectionId: "sec_Alpha", provenance: "auto" },
+      { id: "t3", title: "", sectionId: null, provenance: "unfiled" },
+      { id: "t4", title: "", sectionId: "sec_Beta", provenance: "user" },
+    ],
+    descriptions: {},
+    changes: [],
+    preview: {
+      creates: [{ name: "Gamma", description: null }],
+      renames: [],
+      moves: [
+        move("t1", "Alpha", "Beta"),
+        move("t2", "Alpha", "Beta", { confidence: "medium" }),
+        move("t3", "Unsorted", "Gamma", { to: "new:Gamma" }),
+        // An evolution move: no assignment confidence.
+        (({ confidence: _, ...rest }) => rest)(
+          move("t4", "Beta", "Gamma", {
+            to: "new:Gamma",
+            accepted: false,
+            reason: "spin-out (you filed this thread)",
+          }),
+        ),
+      ],
+      unsure: [{ threadId: "t5", title: "Title t5" }],
+    },
+    entryId: null,
+    seconds: { intake: 0, map: 0, assign: 0, apply: 0 },
+  };
+  const slot = renderSlot(
+    app.navPanels[0]!,
+    { subPath: "map" },
+    {
+      sidebarThreads: {
+        status: "ready",
+        threads: [],
+        sections: [],
+        projects: [],
+      },
+      rpc: {
+        state: () => emptyState(),
+        bootstrap: () => ({ state, bootstrapped: false }),
+      },
+    },
+  );
+  const beta = await slot.findByRole("group", { name: "Alpha to Beta" });
+  expect(within(beta).getByRole("checkbox", { name: "Title t1" })).toBeTruthy();
+  expect(
+    within(beta).getByRole("checkbox", {
+      name: "Title t2 Medium confidence",
+    }),
+  ).toBeTruthy();
+  const fresh = slot.getByRole("group", { name: "Unsorted to Gamma New" });
+  expect(
+    within(fresh).getByRole("checkbox", { name: "Title t3" }),
+  ).toBeTruthy();
+  const mine = slot.getByRole("checkbox", { name: "Title t4 Filed by you" });
+  expect((mine as HTMLInputElement).checked).toBe(false);
+  const unsure = slot.getByRole("group", { name: "Unsure — staying put" });
+  expect(within(unsure).getByText("Title t5")).toBeTruthy();
+  expect(slot.queryByText(/prepared in|high confidence/i)).toBeNull();
+
+  fireEvent.click(slot.getByRole("checkbox", { name: "Title t1" }));
+  fireEvent.click(slot.getByRole("button", { name: "Move 2 threads" }));
+  await waitFor(() =>
+    expect(
+      slot.inspection.rpcCalls.find(
+        (c) =>
+          c.method === "bootstrap" &&
+          (c.input as { action: string }).action === "apply",
+      )?.input,
+    ).toEqual({
+      action: "apply",
+      overrides: [{ threadId: "t1", accepted: false }],
     }),
   );
   slot.lifecycle.unmount();

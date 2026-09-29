@@ -118,8 +118,9 @@ environments.
   - (d) an **evolution proposal**, accepted by the user or auto-applied under §9
     policy.
 
-  Analysis alone never moves a thread; it only adds evidence. Every change
-  records its provenance:
+  Analysis alone never moves a thread; it only adds evidence. The one change it
+  can lead to is a thread's title, under the retitle policy (§10.1). Every
+  change records its provenance:
   `user | router | handoff | auto | proposal:<id> | bootstrap`.
 
 - **I4. Placement is fixed at creation.** Project and environment are chosen
@@ -127,8 +128,8 @@ environments.
   relies on `project-default`.
 - **I5. Section ownership.** Workstreams deletes only sections it created, and
   only when they are empty in every lifecycle and the user has confirmed.
-- **I6. Freshness.** Derived data (recap, state, subject, drift) is keyed to the
-  thread's revision. Stale data renders as _pending_, never as current.
+- **I6. Freshness.** Derived data (recap, state, subject, drift, title) is keyed
+  to the thread's revision. Stale data renders as _pending_, never as current.
 - **I7. Journal.** Every mutation is written to the journal (§11.5), with undo
   wherever BB allows it.
 - **I8. One projection.** The sidebar and the page render from one pure
@@ -232,7 +233,13 @@ One router serves four entry points:
    - The banner remounts when the composer scope changes, so its state lives
      outside the component, keyed by scope. _(spike)_
 2. **Workstreams ＋ New**, on the page and the sidebar. It embeds
-   `experimental_NewThreadComposer` and routes on the server.
+   `experimental_NewThreadComposer` and previews server routing while the draft
+   stays editable. Submitting acts on the current preview in the same composer.
+   A workstream's ＋ explicitly selects that workstream and skips
+   classification; manual workstream changes persist through edits. Project
+   selection is automatic, with native controls available under Settings.
+   Destination copy names the workstream or thread without appended placement
+   metadata.
 3. **`bb workstreams handoff`**, called by agents (§5).
 4. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
 
@@ -326,7 +333,7 @@ The bootstrap runs the §9 evolution engine with relaxed thresholds.
 | Turn completes                                                                            | `thread.idle` (`lastAssistantText` included)                         | Per-thread analysis (§10), debounced about 5 s, at most 4 concurrent                           |
 | Pending approval or question                                                              | `interaction.pending`                                                | Show in Needs you immediately                                                                  |
 | Turn fails                                                                                | `thread.failed` / `turn.failed`                                      | Show an error indicator. No analysis.                                                          |
-| Moves, retitles, reparents, section changes                                               | **None**, so the reconciler catches them                             | Record as provenance `user`, never override, update the map                                    |
+| Moves, retitles, reparents, section changes                                               | **None**, so the reconciler catches them                             | Record as provenance `user`, never override (a retitle locks the title, §10.1), update the map |
 | Archive, unarchive, delete                                                                | Lifecycle events                                                     | Update views, re-analyze if stale, purge on delete.                                            |
 | The plugin was offline                                                                    | Load                                                                 | Full reconcile, then analyze every thread whose revision is newer than its last analysis       |
 
@@ -412,10 +419,13 @@ kept separate:
 
   ```
   { recap (≤ 140 characters), state: needs_decision | review | blocked | in_progress | done,
-    needsYou?: reason, subject, drift?: { workstreamId | newName, confidence } }
+    needsYou?: reason, subject, drift?: { workstreamId | newName, confidence },
+    title?: string (≤ 48 characters) }
   ```
 
-  `drift` is produced for task threads only.
+  `drift` is produced for task threads only. `title` is produced for any thread,
+  and only when it needs a new one (§10.1). The input marks an untitled thread,
+  whose displayed title is BB's placeholder.
 
 - **Needs you** is either a pending interaction, or `needs_decision` at the
   current revision. A child's question folds into its parent when the parent has
@@ -426,6 +436,32 @@ kept separate:
   private reference set and `eval/delegation.json`. The input never includes the
   BB project name.
 - **Cost:** about 1 call per completed turn plus 1 per intake.
+
+### 10.1 Titles
+
+Titles go stale: BB generates one only for a first message of five or more
+words, never regenerates it, and a thread's focus drifts over its turns. The
+per-turn analysis suggests a title when the thread has none, its title is cut
+off or too vague to tell it apart, or its latest substantive requests moved onto
+different work. Related follow-ups and procedural asks keep the title.
+
+A suggestion is applied when all of these hold:
+
+- the `autoTitle` setting is on (default);
+- the thread is still idle at the analyzed revision;
+- the title is not **locked**;
+- the thread is untitled, or Workstreams has not retitled it in the last hour.
+
+**Ownership.** BB exposes no title provenance and no title event (§3), so
+Workstreams records each thread's observed raw title (`ws_title`), from the
+reconciler and again just before any retitle. BB's generator only fills an empty
+title, so a change from one title to another that Workstreams did not write was
+made by the user or an agent. That change locks the title, and so does undoing a
+retitle. Clearing a title unlocks it. A title first observed already set is
+treated as BB's own.
+
+Each retitle is journaled (`retitle`, provenance `auto`) with Undo, which
+restores the previous title while it is still the one Workstreams wrote.
 
 ## 11. Surfaces
 
@@ -464,11 +500,11 @@ kept separate:
 
 ## 12. Storage
 
-| Data                                                                                       | Store                                                                    |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| Workstream map, analysis cache, journal and Activity log, proposals, reconciler cursor     | Plugin SQLite (`bb.storage.database()`) with migrations                  |
-| Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }` | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
-| Collapse state and UI preferences                                                          | Client local storage                                                     |
+| Data                                                                                                    | Store                                                                    |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Workstream map, analysis cache, title ownership, journal and Activity log, proposals, reconciler cursor | Plugin SQLite (`bb.storage.database()`) with migrations                  |
+| Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }`              | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
+| Collapse state and UI preferences                                                                       | Client local storage                                                     |
 
 v1 tables are left untouched until cutover and are not read after bootstrap.
 
@@ -578,4 +614,4 @@ bb-plugin-workstreams/
 | D8  | Threads created outside Workstreams? | Auto-filed at high confidence, journaled                                                                        |
 | D9  | Evolution outside intake?            | Auto-apply with an Undo banner                                                                                  |
 | D10 | Recent band?                         | Keep, de-duplicated against Needs you                                                                           |
-| D11 | Titles?                              | Auto-title only threads BB left untitled                                                                        |
+| D11 | Titles?                              | Title untitled threads and retitle drifted ones, never overriding a title set elsewhere (§10.1)                 |

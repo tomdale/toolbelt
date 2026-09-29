@@ -10,9 +10,14 @@ type Sdk = BbPluginApi["sdk"];
 type ThreadResponse = Awaited<ReturnType<Sdk["threads"]["list"]>>[number];
 
 export type InventoryThread = WorkstreamThread & {
+  /** What BB displays: the thread's own title, or a placeholder. */
   readonly title: string;
+  /** The thread's own title; null while BB shows a placeholder. */
+  readonly ownTitle: string | null;
   readonly projectId: string;
   readonly status: string;
+  /** Set on forks: the thread this one was forked from. */
+  readonly sourceThreadId: string | null;
 };
 
 const PAGE = 100;
@@ -31,8 +36,10 @@ export function toInventoryThread(thread: ThreadResponse): InventoryThread {
   return {
     id: thread.id,
     title: displayTitle(thread),
+    ownTitle: thread.title ?? null,
     projectId: thread.projectId,
     status: thread.status,
+    sourceThreadId: thread.sourceThreadId ?? null,
     parentThreadId: thread.parentThreadId ?? null,
     sectionId: thread.sectionId ?? null,
     isHidden: thread.visibility === "hidden",

@@ -6,20 +6,41 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useBbNavigate,
+  type PluginNavPanelProps,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
 import { rankGroups, type Group } from "../../domain/project.ts";
-import { relativeAge } from "../../domain/presentation.ts";
+import { WORK_STATE, relativeAge } from "../../domain/presentation.ts";
 import { StatusMark } from "../sidebar/StatusMark.tsx";
-import { useWorkstreams } from "../useWorkstreams.ts";
+import { useWorkstreams, type WorkView } from "../useWorkstreams.ts";
 import { Activity } from "./Activity.tsx";
+import { MapTab } from "./MapTab.tsx";
+import { NewWorkDialog } from "../composer/NewWork.tsx";
 
-type Tab = "overview" | "activity";
+type Tab = "overview" | "map" | "activity";
+const TAB_LABEL: Record<Tab, string> = {
+  overview: "Overview",
+  map: "Map",
+  activity: "Activity",
+};
 
-export function WorkstreamsPage() {
+/** `subPath` deep links: `map`, `activity`, or `activity/<proposal id>`. */
+function tabOf(subPath: string): { tab: Tab; focus: string | null } {
+  const [head, rest] = subPath.split("/");
+  if (head === "map") return { tab: "map", focus: null };
+  if (head === "activity") return { tab: "activity", focus: rest || null };
+  return { tab: "overview", focus: null };
+}
+
+export function WorkstreamsPage({
+  subPath = "",
+}: Partial<PluginNavPanelProps>) {
   const ws = useWorkstreams();
-  const [tab, setTab] = useState<Tab>("overview");
+  const linked = tabOf(subPath);
+  const [tab, setTab] = useState<Tab>(linked.tab);
+  const [newWork, setNewWork] = useState(false);
+  useEffect(() => setTab(tabOf(subPath).tab), [subPath]);
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -48,11 +69,13 @@ export function WorkstreamsPage() {
         rows: g.name.toLowerCase().includes(q)
           ? g.rows
           : g.rows.filter((r) =>
-              r.thread.displayTitle.toLowerCase().includes(q),
+              `${r.thread.displayTitle} ${ws.server.analysis[r.thread.id]?.recap ?? ""}`
+                .toLowerCase()
+                .includes(q),
             ),
       }))
       .filter((g) => g.rows.length > 0);
-  }, [projection, query]);
+  }, [projection, query, ws.server.analysis]);
 
   const threadCount = projection.rowOf.size;
   const needs = projection.needsYou.length;
@@ -68,8 +91,16 @@ export function WorkstreamsPage() {
               {needs ? ` · ${needs} need${needs === 1 ? "s" : ""} you` : ""}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setNewWork(true)}
+            className="rounded-md border border-border px-2.5 py-1 text-sm hover:bg-state-hover"
+          >
+            ＋ New
+          </button>
+          <NewWorkDialog open={newWork} onClose={() => setNewWork(false)} />
           <div role="tablist" className="flex gap-1 text-sm">
-            {(["overview", "activity"] as const).map((id) => (
+            {(["overview", "map", "activity"] as const).map((id) => (
               <button
                 key={id}
                 role="tab"
@@ -83,7 +114,7 @@ export function WorkstreamsPage() {
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                {id === "overview" ? "Overview" : "Activity"}
+                {TAB_LABEL[id]}
               </button>
             ))}
           </div>
@@ -100,6 +131,19 @@ export function WorkstreamsPage() {
         </header>
         {tab === "overview" ? (
           <div className="mt-5 flex flex-col gap-6">
+            {!ws.server.bootstrapped && ws.status === "ready" ? (
+              <button
+                type="button"
+                onClick={() => setTab("map")}
+                className="rounded-lg border border-border px-3 py-2 text-left text-sm hover:bg-state-hover"
+              >
+                <span className="font-medium">Organize your workstreams</span>
+                <span className="block text-xs text-muted-foreground">
+                  One reviewed pass files your threads; Workstreams keeps them
+                  current after that.
+                </span>
+              </button>
+            ) : null}
             {ranked.map((group) => (
               <WorkstreamCard
                 key={group.id}
@@ -108,6 +152,8 @@ export function WorkstreamsPage() {
                   ws.server.workstreams[group.id]?.description ?? null
                 }
                 now={ws.now}
+                work={ws.work}
+                via={projection.needsYouVia}
               />
             ))}
             {ranked.length === 0 ? (
@@ -120,9 +166,31 @@ export function WorkstreamsPage() {
                 Dormant: {projection.dormant.map((g) => g.name).join(", ")}
               </p>
             ) : null}
+            <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+              {Object.entries(WORK_STATE)
+                .filter(([, v]) => v.glyph)
+                .map(([key, v]) => (
+                  <span key={key}>
+                    <span className={`ws-work ws-work-${key}`}>{v.glyph}</span>{" "}
+                    {v.label}
+                  </span>
+                ))}
+              <span>Italic: updating after new activity</span>
+            </p>
           </div>
+        ) : tab === "map" ? (
+          <MapTab
+            rpc={ws.rpc}
+            records={Object.values(ws.server.workstreams)}
+            bootstrapped={ws.server.bootstrapped}
+          />
         ) : (
-          <Activity rpc={ws.rpc} />
+          <Activity
+            rpc={ws.rpc}
+            proposals={ws.server.proposals}
+            focus={linked.tab === "activity" ? linked.focus : null}
+            sections={ws.sections}
+          />
         )}
       </div>
     </div>
@@ -133,23 +201,43 @@ function WorkstreamCard({
   group,
   description,
   now,
+  work,
+  via,
 }: {
   group: Group<PluginSidebarThread>;
   description: string | null;
   now: number;
+  work: (thread: PluginSidebarThread) => WorkView;
+  via: ReadonlyMap<string, readonly PluginSidebarThread[]>;
 }) {
   const navigate = useBbNavigate();
-  // Needs-you roots first, then the projection's order (pinned, then recent).
-  const roots = group.rows
-    .filter((r) => r.depth === 0)
-    .sort((a, b) => Number(b.needsYou) - Number(a.needsYou));
   const childCount = new Map<string, number>();
+  // A delegate's own question, surfaced on its root row: the page lists
+  // roots only, and folded questions already show on the parent.
+  const childAsk = new Map<string, PluginSidebarThread>();
+  const foldedIds = new Set(
+    [...via.values()].flat().map((thread) => thread.id),
+  );
   let currentRoot: string | null = null;
   for (const row of group.rows) {
     if (row.depth === 0) currentRoot = row.thread.id;
-    else if (currentRoot)
+    else if (currentRoot) {
       childCount.set(currentRoot, (childCount.get(currentRoot) ?? 0) + 1);
+      if (
+        row.needsYou &&
+        !foldedIds.has(row.thread.id) &&
+        !childAsk.has(currentRoot)
+      )
+        childAsk.set(currentRoot, row.thread);
+    }
   }
+  // Roots needing you (themselves or through a delegate) first, then the
+  // projection's order (pinned, then recent).
+  const asks = (row: (typeof group.rows)[number]) =>
+    row.needsYou || childAsk.has(row.thread.id);
+  const roots = group.rows
+    .filter((r) => r.depth === 0)
+    .sort((a, b) => Number(asks(b)) - Number(asks(a)));
   return (
     <section aria-label={group.name}>
       <div className="flex items-baseline gap-2 border-b border-border pb-1">
@@ -168,37 +256,112 @@ function WorkstreamCard({
         <p className="mt-1 text-xs text-muted-foreground">{description}</p>
       ) : null}
       <ul className="mt-1">
-        {roots.map((row) => (
-          <li key={row.thread.id}>
-            <button
-              type="button"
-              onClick={() => navigate.toThread(row.thread.id)}
-              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm hover:bg-state-hover"
-            >
-              <StatusMark
-                indicator={row.thread.indicator}
-                label={row.thread.indicatorLabel}
-              />
-              <span
-                className={cn(
-                  "min-w-0 flex-1 truncate",
-                  row.thread.isUnread ? "font-medium" : "text-foreground/90",
-                )}
+        {roots.map((row) => {
+          const view = work(row.thread);
+          const state =
+            view.kind === "current" ? WORK_STATE[view.analysis.state] : null;
+          const folded = via.get(row.thread.id);
+          return (
+            <li key={row.thread.id}>
+              <button
+                type="button"
+                onClick={() => navigate.toThread(row.thread.id)}
+                className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm hover:bg-state-hover"
               >
-                {row.thread.displayTitle}
-              </span>
-              {childCount.get(row.thread.id) ? (
-                <span className="text-xs text-muted-foreground">
-                  +{childCount.get(row.thread.id)} delegated
+                <StatusMark
+                  indicator={row.thread.indicator}
+                  label={row.thread.indicatorLabel}
+                />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span
+                    className={cn(
+                      "truncate",
+                      row.thread.isUnread
+                        ? "font-medium"
+                        : "text-foreground/90",
+                    )}
+                  >
+                    {state?.glyph && view.kind === "current" ? (
+                      <span
+                        className={`ws-work ws-work-${view.analysis.state} mr-1.5`}
+                        role="img"
+                        aria-label={state.label}
+                        title={state.label}
+                      >
+                        {state.glyph}
+                      </span>
+                    ) : null}
+                    {row.thread.displayTitle}
+                  </span>
+                  <WhereItStopped
+                    view={view}
+                    folded={folded}
+                    child={childAsk.get(row.thread.id)}
+                    work={work}
+                  />
                 </span>
-              ) : null}
-              <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
-                {relativeAge(row.thread.latestAttentionAt, now)}
-              </span>
-            </button>
-          </li>
-        ))}
+                {childCount.get(row.thread.id) ? (
+                  <span className="text-xs text-muted-foreground">
+                    +{childCount.get(row.thread.id)} delegated
+                  </span>
+                ) : null}
+                <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
+                  {relativeAge(row.thread.latestAttentionAt, now)}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </section>
+  );
+}
+
+/** The row's second line: the ask when it needs you, else the recap. */
+function WhereItStopped({
+  view,
+  folded,
+  child,
+  work,
+}: {
+  view: WorkView;
+  folded: readonly PluginSidebarThread[] | undefined;
+  child: PluginSidebarThread | undefined;
+  work: (thread: PluginSidebarThread) => WorkView;
+}) {
+  const analysis =
+    view.kind === "current"
+      ? view.analysis
+      : view.kind === "pending"
+        ? view.previous
+        : null;
+  const ownAsk = view.kind === "current" ? view.analysis.needsYou : null;
+  if (ownAsk)
+    return (
+      <span className="truncate text-xs text-muted-foreground">
+        {ownAsk}
+        {folded?.length ? ` (via ${folded[0]!.displayTitle})` : ""}
+      </span>
+    );
+  if (child) {
+    const childView = work(child);
+    const ask =
+      childView.kind === "current" ? childView.analysis.needsYou : null;
+    return (
+      <span className="truncate text-xs text-muted-foreground">
+        via {child.displayTitle}: {ask ?? "waiting for you"}
+      </span>
+    );
+  }
+  if (!analysis) return null;
+  return (
+    <span
+      className={cn(
+        "truncate text-xs text-muted-foreground",
+        view.kind === "pending" && "italic opacity-70",
+      )}
+    >
+      {analysis.recap}
+    </span>
   );
 }
