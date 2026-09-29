@@ -653,10 +653,10 @@ export default async function plugin(bb: BbPluginApi) {
     action: Action,
     sections: Awaited<ReturnType<typeof sectionIds>>,
   ): Promise<Pick<LogEntry, "detail" | "undo">> {
-    if (action.kind === "removeSection") {
-      await bb.sdk.threadSections.delete({ id: action.sectionId });
-      return { detail: "", undo: {} };
-    }
+    // Historical removal entries remain readable for Undo, but native BB
+    // sections have no durable ownership marker or complete membership query.
+    if (action.kind === "removeSection")
+      throw new Error("Workstreams does not delete native BB sections.");
     const detail = await bb.sdk.threads.get({ threadId: action.threadId });
     if (detail.archivedAt !== null || detail.deletedAt !== null)
       throw new Error("Thread is archived or deleted.");
@@ -800,27 +800,6 @@ export default async function plugin(bb: BbPluginApi) {
     }
     notify();
   }
-  /** Sections no active thread uses once threads are filed by workstream. */
-  async function emptySections(): Promise<Action[]> {
-    const used = new Set((await inventory()).map((t) => t.sectionId));
-    // Archived threads retain their section assignment so Undo can restore them
-    // without pointing at a section deleted during the same organize pass.
-    for (const entry of log)
-      if (
-        entry.action.kind === "archive" &&
-        entry.result === "done" &&
-        !entry.undone
-      )
-        used.add(entry.undo?.sectionId ?? null);
-    return (await bb.sdk.threadSections.list())
-      .filter((s) => !used.has(s.id))
-      .map((s) => ({
-        kind: "removeSection" as const,
-        threadId: "" as const,
-        section: s.name,
-        sectionId: s.id,
-      }));
-  }
   async function organize() {
     organizing = true;
     notify();
@@ -865,7 +844,6 @@ export default async function plugin(bb: BbPluginApi) {
         return !assigned || oldName === assigned || assigned === action.section;
       });
       await perform(actions);
-      if (!fixture) await perform(await emptySections());
     } finally {
       organizing = false;
       notify();

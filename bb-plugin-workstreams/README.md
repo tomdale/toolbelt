@@ -113,7 +113,9 @@ Drifted threads are grouped under the side quest.
   skipped when the thread is running or has children.
 - Renames messy titles (raw prompts, URLs, truncation) to the inferred title.
 - Files every classified thread into a section named after its group, creating
-  sections as needed.
+  sections as needed. Workstreams never deletes native BB sections, including
+  sections that appear empty in the active thread view; they may be manual or
+  contain archived or hidden threads.
 
 With **After analysis** set to `auto` (the default), organize runs after each
 analysis; `suggest` only offers splits and the Organize button. Threads that
