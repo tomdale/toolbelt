@@ -32,6 +32,8 @@ type RouteState = {
   /** The picker's project when routing started, to tell user picks apart. */
   initialProject: string | null;
   busy: boolean;
+  /** Why the pickers couldn't be preset, when they couldn't. */
+  note: string | null;
 };
 
 let state: RouteState = {
@@ -42,6 +44,7 @@ let state: RouteState = {
   preset: null,
   initialProject: null,
   busy: false,
+  note: null,
 };
 const listeners = new Set<() => void>();
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -69,6 +72,7 @@ export function resetRouteBanner() {
     preset: null,
     initialProject: null,
     busy: false,
+    note: null,
   };
 }
 
@@ -156,7 +160,14 @@ export function RouteBanner() {
         projectId: placement.projectId,
         environment: placement.environment as never,
       })
-      .catch(() => undefined);
+      .then(
+        () => set({ note: null }),
+        (error: unknown) =>
+          set({
+            preset: null,
+            note: `Pick the project yourself: ${error instanceof Error ? error.message : String(error)}`,
+          }),
+      );
   }, [decision, projectId, composer]);
 
   if (text.trim().length < MIN_CHARS) return null;
@@ -232,6 +243,9 @@ export function RouteBanner() {
         )}
         {decision.reason && decision.outcome !== "unsure" ? (
           <span className="ws-route-reason"> — {decision.reason}</span>
+        ) : null}
+        {route.note ? (
+          <span className="ws-route-reason"> ({route.note})</span>
         ) : null}
       </span>
       <span className="ws-route-actions">
