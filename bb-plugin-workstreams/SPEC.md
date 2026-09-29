@@ -1,9 +1,9 @@
 # Workstreams v2 specification
 
-Status: **draft for sign-off**. This document defines Workstreams v2, a rewrite
+Status: **approved 2026-09-29**. This document defines Workstreams v2, a rewrite
 of the Workstreams BB plugin. It is the contract that implementation, tests, and
-reviews check against. §17 lists every decision and whether Tom made it or it is
-a default awaiting confirmation.
+reviews check against. §17 lists every decision; Tom made or accepted all of
+them.
 
 ## 1. Purpose
 
@@ -430,7 +430,8 @@ kept separate:
    - A Needs you band (exact-once, live).
    - An optional Recent band (de-duplicated against Needs you).
    - Workstream groups with plain headers: the name, a needs-you count only when
-     above 0, and a total.
+     above 0, and a total. Groups follow BB's section order, so their positions
+     stay stable. The page, not the sidebar, ranks by attention.
    - An Unsorted band, a Dormant fold, and a yellow dot on rows affected by a
      proposal.
    - Rows matching Dockside: BB `indicator` glyph plus a work-state glyph (with
@@ -560,7 +561,7 @@ bb-plugin-workstreams/
 - The UI term for a section is **workstream**.
 - Grouping workstreams into families is dropped for now.
 
-**Defaults awaiting confirmation.**
+**Defaults accepted by Tom (2026-09-29).**
 
 | #   | Question                             | Default                                                                                                         |
 | --- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
