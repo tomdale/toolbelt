@@ -181,6 +181,8 @@ human review.
 
 - `EVAL_RUNS=N EVAL_SEED=1`: sequential runs, each seeded with the previous
   run's multi-thread group names; reports `stableWithPrevious`.
+- `EVAL_BASIS=1`: uses the diagnostic prompt and reports each thread's claimed
+  decisive evidence (`basis`) next to misses.
 - `EVAL_JUDGE=model`: a blind rubric judge. It first writes its own account of
   each thread's state from the excerpts, then scores title+recap for _what_
   (0–2) and _stop_ (0–2), flags title drift, and independently decides whether
@@ -225,3 +227,36 @@ prompt detected 0/3 real side quests; a dedicated per-thread pass fixed that.
 Batches of four raised false detections (a manager-directed scope change in the
 Workstreams thread); one thread per call, checked twice, removed them. Cost for
 a 37-thread analysis including drift: about $0.035 and 8–15 s.
+
+## Shared-project fallback (`delegation.json`)
+
+Live symptom: most threads live in one catch-all BB project whose name is also
+the prompt's agent-operations group (`tomdaleOS`), and unrelated product work
+collapsed into it. `delegation.json` reproduces this synthetically: a product
+manager and its delegated worker (with manager/worker boilerplate), a plugin
+worker, a BB CLI bug, a true agent-operations thread, and a one-off question,
+all in project `tomdaleOS`. GPT-4.1 mini, one run per row:
+
+| Variant                                       | Correct / 6 | Misses                                                  |
+| --------------------------------------------- | ----------- | ------------------------------------------------------- |
+| Production prompt                             | 2           | manager, worker, BB CLI bug, one-off → tomdaleOS        |
+| Production prompt, repeat                     | 2           | same                                                    |
+| Production prompt, reversed                   | 4           | BB CLI bug, one-off → tomdaleOS                         |
+| Project renamed `Workspace`                   | 3           | manager, worker, ops → Workspace                        |
+| Project renamed `Workspace`, reversed         | 4           | BB CLI bug, ops → Workspace                             |
+| + "manager/worker procedure is not agent ops" | 2 / 4       | unchanged from production                               |
+| `project` field omitted from records          | 6 / 5       | reversed: BB CLI bug → tomdaleOS                        |
+| `EVAL_BASIS=1`                                | 2 / 3       | all misses claim `current_request` or `initial_request` |
+
+The record's `project` field anchors delegated and unfamiliar threads to the BB
+project name despite explicit product evidence, and a project named like the
+agent-operations group additionally absorbs BB-core and one-off threads. A
+wording clarification did not help; omitting `project` did. On the main set, the
+production prompt scored 13 and 12 of 16 (forward, reversed), with misses that
+are themselves project names (`api`, `agent-sdk`, `Personal`); without `project`
+it scored 14 and 14, missing only the Slack naming. Holdout was 6/6 both ways.
+These are single runs on small synthetic sets, and the production prompt is
+unchanged: dropping or demoting the project field is a policy decision to
+evaluate on the private reference first. The model's self-reported `basis` did
+not identify the project fallback, so diagnostics also report whether a group
+equals the project name.

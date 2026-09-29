@@ -20,3 +20,7 @@ AI Gateway connection. Organize can split detected side quests, archive only
 explicitly redundant completed threads, tidy titles, file threads into native BB
 sections, and repair worker parentage when analysis identifies the right
 manager. Changes are logged and undoable except for compaction.
+`bb workstreams diagnose` explains, without changing anything, which root,
+section, classification, or project fallback put each thread in its group;
+opt-in traces add the classifier's output and each code rewrite, without
+conversation text.
