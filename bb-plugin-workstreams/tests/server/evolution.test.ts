@@ -169,6 +169,17 @@ describe("auto-apply", () => {
     expect(await proposals(w)).toEqual([]);
   });
 
+  it("files a visible fork with the thread it was forked from", async () => {
+    const w = await setup();
+    const recap = w.addSection("BB Recap");
+    w.addThread("r0", { sectionId: recap.id, title: "Old work" });
+    w.addThread("fork", { sourceThreadId: "r0", title: "Old work (fork)" });
+    await rpc(w, "refresh", null);
+    await rpc(w, "bootstrap", { action: "skip" });
+    await evolve(w);
+    expect(w.threads.get("fork")?.sectionId).toBe(recap.id);
+  });
+
   it("files Unsorted roots the assignment model is sure about", async () => {
     const w = await setup({}, { loose: "BB Recap" });
     const recap = w.addSection("BB Recap");

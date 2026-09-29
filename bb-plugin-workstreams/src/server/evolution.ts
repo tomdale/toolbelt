@@ -429,9 +429,22 @@ export class Evolution {
         const p = placements[t.id];
         return !(p && (p.source === "user" || p.source === "external"));
       })
-      .filter((t) => isCurrent(analysis[t.id], t));
+      .filter((t) => t.sourceThreadId !== null || isCurrent(analysis[t.id], t));
     const toAssign: typeof unsorted = [];
+    const byId = new Map(threads.map((t) => [t.id, t]));
     for (const thread of unsorted) {
+      // A visible fork belongs with the thread it was forked from (SPEC §8).
+      const source = thread.sourceThreadId
+        ? forest.rootOf.get(thread.sourceThreadId)
+        : undefined;
+      const sourceSection = source ? byId.get(source.id)?.sectionId : null;
+      const home = sourceSection
+        ? records.find((r) => r.sectionId === sourceSection)
+        : undefined;
+      if (home) {
+        await this.fileOne(thread.id, home.sectionId, home.name);
+        continue;
+      }
       const subject = analysis[thread.id]?.subject;
       const target = subject ? byName.get(normalize(subject)) : undefined;
       if (target) await this.fileOne(thread.id, target.sectionId, target.name);
