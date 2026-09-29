@@ -48,7 +48,8 @@ import {
   type LogEntry,
 } from "./organize";
 import { hostContract } from "./host-contract";
-import { isManagerTitle } from "./manager";
+import { isManagerTitle, managerName } from "./manager";
+import { buildSidebar } from "./sidebar-model";
 import {
   contextExcerpt,
   initialRequest,
@@ -92,6 +93,10 @@ export const rpcContract = defineRpcContract({
         z.object({ viaWorkers: z.array(z.string()) }),
       ),
     }),
+  },
+  createManager: {
+    input: z.object({ groupId: z.string().min(1).max(200) }).strict(),
+    output: z.object({ threadId: z.string().min(1) }),
   },
   organize: { input: z.null(), output: ok },
   split: { input: threadInput, output: ok },
@@ -227,7 +232,9 @@ export default async function plugin(bb: BbPluginApi) {
           t.visibility === "hidden" ||
           // Mainline forks made by a split are ordinary threads; anything
           // else this plugin creates would be internal.
-          (t.originPluginId === bb.pluginId && t.originKind !== "fork")
+          (t.originPluginId === bb.pluginId &&
+            t.originKind !== "fork" &&
+            !isManagerTitle(t.title ?? t.titleFallback ?? ""))
         )
           continue;
         const project = byId.get(t.projectId);
@@ -1347,8 +1354,107 @@ export default async function plugin(bb: BbPluginApi) {
     mode: (await settings.get()).organize === "suggest" ? "suggest" : "auto",
     organizing,
   });
+  // Serialize creation requests within this plugin instance; the SDK has no
+  // conditional thread-create primitive, so external creators can still race.
+  let managerCreation = Promise.resolve();
+  const createManager = (groupId: string): Promise<{ threadId: string }> => {
+    const run = managerCreation.then(async () => {
+      if (fixture)
+        throw new Error("Manager creation is unavailable in fixture mode.");
+      const [projects, sections] = await Promise.all([
+        bb.sdk.projects.list({ includePersonal: true }),
+        bb.sdk.threadSections.list(),
+      ]);
+      const active: Awaited<ReturnType<typeof bb.sdk.threads.list>> = [];
+      for (let offset = 0; ; offset += 100) {
+        const page = await bb.sdk.threads.list({
+          archived: false,
+          includeHidden: false,
+          limit: 100,
+          offset,
+        });
+        active.push(
+          ...page.filter(
+            (t) =>
+              t.archivedAt === null &&
+              t.deletedAt === null &&
+              t.visibility !== "hidden" &&
+              (t.originPluginId !== bb.pluginId ||
+                t.originKind === "fork" ||
+                isManagerTitle(t.title ?? t.titleFallback ?? "")),
+          ),
+        );
+        if (page.length < 100) break;
+      }
+      const model = buildSidebar(
+        active.map((t) => ({
+          id: t.id,
+          displayTitle: t.title ?? t.titleFallback ?? "Untitled thread",
+          parentThreadId: t.parentThreadId ?? null,
+          sectionId: t.sectionId,
+          projectId: t.projectId,
+          status: t.runtime.displayStatus,
+          hasPendingInteraction: t.hasPendingInteraction,
+          isUnread: false,
+          isPinned: false,
+          updatedAt: t.updatedAt,
+          latestAttentionAt: t.latestAttentionAt,
+        })),
+        analysis,
+        new Map(sections.map((s) => [s.id, s.name])),
+        new Map(projects.map((p) => [p.id, p.name])),
+      );
+      const group = model.groups.find((g) => g.id === groupId);
+      if (!group) throw new Error("This product group is no longer available.");
+      const projectIds = new Set(group.rows.map((r) => r.thread.projectId));
+      if (group.manager) projectIds.add(group.manager.thread.projectId);
+      if (projectIds.size !== 1)
+        throw new Error(
+          "This group spans projects; choose a single project first.",
+        );
+      const projectId = [...projectIds][0];
+      if (!projects.some((p) => p.id === projectId))
+        throw new Error("The group's project is no longer available.");
+      const sectionId = groupId.startsWith("section:")
+        ? groupId.slice("section:".length)
+        : null;
+      if (sectionId && !sections.some((s) => s.id === sectionId))
+        throw new Error("The group's section is no longer available.");
+      const existing = active.find(
+        (t) =>
+          t.projectId === projectId &&
+          isManagerTitle(t.title ?? t.titleFallback ?? "") &&
+          (sectionId
+            ? t.sectionId === sectionId
+            : !t.sectionId &&
+              managerName(t.title ?? t.titleFallback ?? "")?.toLowerCase() ===
+                group.name.toLowerCase()),
+      );
+      if (existing) return { threadId: existing.id };
+      if (!group.unmanaged)
+        throw new Error("This group already has a manager.");
+      const product = group.name.trim();
+      if (!product || product === "Section" || product === "Unknown project")
+        throw new Error("Cannot determine a product name for this group.");
+      const created = await bb.sdk.threads.spawn({
+        projectId,
+        environment: { type: "project-default" },
+        input: [],
+        title: `${product} — manager`,
+        ...(sectionId ? { sectionId } : {}),
+      });
+      notify();
+      return { threadId: created.id };
+    });
+    managerCreation = run.then(
+      () => {},
+      () => {},
+    );
+    return run;
+  };
   bb.rpc.register(rpcContract, {
     snapshot,
+    createManager: ({ groupId }) => createManager(groupId),
     parentLink: async ({ threadId }) => {
       if (!(await settings.get()).showParentThreadLink) return null;
       try {

@@ -230,13 +230,31 @@
     transform: rotate(360deg);
   }
 }
-.wss-unmanaged {
+.wss-create-row {
   margin: 2px 8px 3px 26px;
-  color: var(--wss-amber);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--wss-red);
+}
+.wss-create {
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.wss-create:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.wss-create:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.wss-create-row [role="alert"] {
+  display: block;
+  margin-top: 3px;
 }
 .wss-via {
   margin-left: 5px;

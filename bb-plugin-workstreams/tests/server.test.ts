@@ -201,6 +201,162 @@ async function run(h: ReturnType<typeof setup>, fresh = false) {
   }
 }
 
+describe("create manager", () => {
+  it("validates group input before reading or mutating threads", async () => {
+    const h = setup(1);
+    await plugin(h.bb);
+    for (const input of [
+      { groupId: "" },
+      { groupId: 2 },
+      { groupId: "product:personal", title: "Injected" },
+    ])
+      await expect(
+        h.harness.behavior.callRpc("createManager", input),
+      ).rejects.toThrow();
+    expect(h.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(0);
+  });
+
+  it("creates an idle manager in the group's project and native section only on click", async () => {
+    const h = setup(1, false, undefined, undefined, [
+      { id: "sec", name: "Product" },
+    ]);
+    h.rows[0].sectionId = "sec";
+    h.harness.sdk.stub(
+      "threads.spawn",
+      async ({
+        title,
+        projectId,
+        sectionId,
+      }: {
+        title: string;
+        projectId: string;
+        sectionId?: string;
+      }) =>
+        makeThreadResponse({ id: "new-manager", title, projectId, sectionId }),
+    );
+    await plugin(h.bb);
+    expect(h.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(0);
+    expect(
+      await h.harness.behavior.callRpc("createManager", {
+        groupId: "section:sec",
+      }),
+    ).toEqual({ threadId: "new-manager" });
+    expect(h.harness.inspection.sdk.callsTo("threads.spawn")).toMatchObject([
+      [
+        {
+          projectId: "p",
+          title: "Product — manager",
+          sectionId: "sec",
+          environment: { type: "project-default" },
+          input: [],
+        },
+      ],
+    ]);
+    expect(
+      h.harness.inspection.sdk.callsTo("threadSections.create"),
+    ).toHaveLength(0);
+    expect(h.harness.inspection.sdk.callsTo("threads.update")).toHaveLength(0);
+  });
+
+  it("returns an existing section manager even when it belongs to another tree", async () => {
+    const h = setup(2, false, undefined, undefined, [
+      { id: "sec", name: "Product" },
+    ]);
+    h.rows[0].sectionId = "sec";
+    h.rows[1].sectionId = "sec";
+    h.rows[1].title = "Product — manager";
+    h.rows[1].parentThreadId = "0";
+    await plugin(h.bb);
+    expect(
+      await h.harness.behavior.callRpc("createManager", {
+        groupId: "section:sec",
+      }),
+    ).toEqual({ threadId: "1" });
+    expect(h.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(0);
+  });
+
+  it("derives a synthetic product title without changing sections", async () => {
+    const h = setup(1);
+    h.harness.sdk.stub(
+      "threads.spawn",
+      async ({ title, projectId }: { title: string; projectId: string }) =>
+        makeThreadResponse({ id: "manager", title, projectId }),
+    );
+    await plugin(h.bb);
+    expect(
+      await h.harness.behavior.callRpc("createManager", {
+        groupId: "product:personal",
+      }),
+    ).toEqual({ threadId: "manager" });
+    expect(
+      h.harness.inspection.sdk.callsTo("threads.spawn")[0][0],
+    ).toMatchObject({
+      title: "Personal — manager",
+      projectId: "p",
+      input: [],
+    });
+    expect(
+      h.harness.inspection.sdk.callsTo("threads.spawn")[0][0],
+    ).not.toHaveProperty("sectionId");
+  });
+
+  it("returns an existing manager, including on concurrent repeated requests", async () => {
+    const h = setup(1);
+    h.harness.sdk.stub("threads.spawn", async () => {
+      const manager = makeThreadResponse({
+        id: "manager",
+        projectId: "p",
+        title: "Personal — manager",
+      });
+      h.rows.push(manager);
+      return manager;
+    });
+    await plugin(h.bb);
+    const [first, second] = await Promise.all([
+      h.harness.behavior.callRpc("createManager", {
+        groupId: "product:personal",
+      }),
+      h.harness.behavior.callRpc("createManager", {
+        groupId: "product:personal",
+      }),
+    ]);
+    expect(first).toEqual({ threadId: "manager" });
+    expect(second).toEqual(first);
+    expect(h.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(1);
+  });
+
+  it("refuses ambiguous projects, missing groups, and spawn errors without mutations", async () => {
+    const h = setup(2);
+    h.rows[1].projectId = "other";
+    h.harness.sdk.stub("projects.list", async () => [
+      project,
+      { ...project, id: "other", name: "Personal" },
+    ]);
+    h.harness.sdk.stub("threads.spawn", async () => {
+      throw new Error("spawn unavailable");
+    });
+    await plugin(h.bb);
+    await expect(
+      h.harness.behavior.callRpc("createManager", {
+        groupId: "product:personal",
+      }),
+    ).rejects.toThrow("spans projects");
+    await expect(
+      h.harness.behavior.callRpc("createManager", {
+        groupId: "product:missing",
+      }),
+    ).rejects.toThrow("no longer available");
+    expect(h.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(0);
+    h.rows[1].projectId = "p";
+    await expect(
+      h.harness.behavior.callRpc("createManager", {
+        groupId: "product:personal",
+      }),
+    ).rejects.toThrow("spawn unavailable");
+    expect(h.harness.inspection.sdk.callsTo("threads.update")).toHaveLength(0);
+  });
+});
+
 describe("parent thread link", () => {
   it("defaults off and never looks up thread details", async () => {
     const h = setup(2);
