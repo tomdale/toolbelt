@@ -9,6 +9,7 @@ import { z } from "zod";
 import {
   BATCH_SIZE,
   analysisSchema,
+  cleanDerivedAnalysis,
   snapshotSchema,
   UNCLASSIFIED,
   fixtureSchema,
@@ -129,7 +130,10 @@ export default async function plugin(bb: BbPluginApi) {
         }
       : null;
     put("fixture", path);
-    analysis = analysisSchema.nullable().catch(null).parse(get(analysisKey()));
+    analysis = cleanDerivedAnalysis(
+      analysisSchema.nullable().catch(null).parse(get(analysisKey())),
+    );
+    if (analysis) put(analysisKey(), analysis);
     error = null;
     notify();
   };
@@ -162,7 +166,10 @@ export default async function plugin(bb: BbPluginApi) {
   } catch {
     put("fixture", null);
   }
-  analysis ??= analysisSchema.nullable().catch(null).parse(get(analysisKey()));
+  analysis ??= cleanDerivedAnalysis(
+    analysisSchema.nullable().catch(null).parse(get(analysisKey())),
+  );
+  if (analysis) put(analysisKey(), analysis);
   const advance = (
     stage: NonNullable<Snapshot["progress"]>["stage"],
     completed: number,
@@ -501,7 +508,7 @@ export default async function plugin(bb: BbPluginApi) {
         "Classification failed for every thread. Previous results are unchanged.",
       );
     const timestamps = new Map(threads.map((t) => [t.id, t.updatedAt]));
-    const next: Analysis = {
+    let next: Analysis = {
       at: Date.now(),
       needsYouCount: items.filter(
         (i) =>
@@ -522,6 +529,7 @@ export default async function plugin(bb: BbPluginApi) {
       warnings,
       summaries: {},
     };
+    next = cleanDerivedAnalysis(next)!;
     try {
       const input = summaryInput({
         items: next.items.map((i) => ({
@@ -586,7 +594,7 @@ export default async function plugin(bb: BbPluginApi) {
     stats.seconds = Math.round((Date.now() - started) / 100) / 10;
     stats.cost = Math.round(stats.cost * 10000) / 10000;
     stats.summaryCost = Math.round(stats.summaryCost * 10000) / 10000;
-    analysis = { ...next, stats };
+    analysis = cleanDerivedAnalysis({ ...next, stats });
     put(analysisKey(), analysis);
   }
   const logKey = () => (fixture ? "fixture-organize-log" : "organize-log");
@@ -1198,15 +1206,12 @@ export default async function plugin(bb: BbPluginApi) {
             /\b(ask|talk|work with|coordinate|continue in|go to|message|reply|answer)\b/i.test(
               reportText,
             );
-          const explicitlyAsks =
-            workerEvents.some((event) => {
-              const input = inputText(
-                (event.data as { input?: unknown }).input,
-              );
-              return /\?\s*$|\b(please|can you|could you|let me know|confirm|choose|which|what do you think)\b/i.test(
-                input,
-              );
-            });
+          const explicitlyAsks = workerEvents.some((event) => {
+            const input = inputText((event.data as { input?: unknown }).input);
+            return /\?\s*$|\b(please|can you|could you|let me know|confirm|choose|which|what do you think)\b/i.test(
+              input,
+            );
+          });
           if (
             report &&
             !referred &&
