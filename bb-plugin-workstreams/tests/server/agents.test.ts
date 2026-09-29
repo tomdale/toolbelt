@@ -188,6 +188,21 @@ describe("bb workstreams handoff", () => {
     expect((await handoff(w, "A request in the next turn")).exitCode).toBe(0);
   });
 
+  it("doesn't bounce a handed-off request back to where it came from", async () => {
+    const w = await setup();
+    w.addThread("origin", { sectionId: w.sections[0]!.id });
+    await w.harness.behavior.callRpc("refresh", null);
+    w.harness.sdk.stub("threads.getPluginMetadata", async () => ({
+      spawnedFrom: "origin",
+    }));
+    await handoff(w, "Please also redo the landing page copy");
+    const route = w.completions.find((c) =>
+      c.prompt.includes("Someone is starting new work"),
+    )!;
+    expect(route.prompt).not.toContain('id "origin"');
+    expect(route.prompt).not.toContain('id "caller"');
+  });
+
   it("previews without acting on --dry-run", async () => {
     const w = await setup();
     const result = await handoff(w, "Redo the landing page copy", [

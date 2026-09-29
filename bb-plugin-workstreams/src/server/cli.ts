@@ -506,7 +506,11 @@ export function registerCli(
             if (!options["dry-run"])
               takeHandoffSlot(caller, await turnOf(bb, caller));
             const decision = await router
-              .route(request, { exclude: caller })
+              .route(request, {
+                // Never back to the caller, or to the thread that handed the
+                // caller its work: a handoff doesn't bounce.
+                exclude: [caller, ...(await handedOffFrom(bb, caller))],
+              })
               .catch(fail);
             const note = options.note
               ? ` (${options.note.replace(/\s+/g, " ").slice(0, 200)})`
@@ -776,4 +780,21 @@ function takeHandoffSlot(caller: string, turn: number): void {
       { code: "handoff_limit" },
     );
   handoffs.set(caller, { turn, count: count + 1 });
+}
+
+/** The thread a handoff came from, per the caller's Workstreams metadata. */
+async function handedOffFrom(
+  bb: BbPluginApi,
+  threadId: string,
+): Promise<string[]> {
+  try {
+    const metadata = (await bb.sdk.threads.getPluginMetadata({ threadId })) as {
+      spawnedFrom?: unknown;
+    };
+    return typeof metadata.spawnedFrom === "string"
+      ? [metadata.spawnedFrom]
+      : [];
+  } catch {
+    return [];
+  }
 }
