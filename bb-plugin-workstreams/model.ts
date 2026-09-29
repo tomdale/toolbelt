@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { projectThreadTrees } from "./tree-groups.ts";
-import { isManagerTitle } from "./manager";
+import { isManagerTitle } from "./manager.ts";
 
 export const MODEL = "openai/gpt-4.1-mini";
 export const PARALLELISM = 4;
@@ -61,6 +61,8 @@ export type Context = Thread & {
   previousGroup?: string;
   /** Group fixed by a split or by a native section not assigned by Workstreams. */
   pinnedGroup?: string;
+  /** Which of the two fixed pinnedGroup; reported by diagnostics. */
+  pinSource?: "split" | "section";
 };
 /** Frozen thread contexts (e.g. from `bb workstreams export`); extra keys such as eval labels are ignored. */
 export const fixtureSchema = z.array(
@@ -83,6 +85,22 @@ export const classificationSchema = z.object({
   drift: driftSchema.nullable().optional().catch(null),
 });
 export type Classification = z.infer<typeof classificationSchema>;
+/** Evidence the classifier names as decisive when diagnostics request it. */
+export const BASES = [
+  "current_request",
+  "recent_requests",
+  "assistant_report",
+  "initial_request",
+  "title",
+  "previous_group",
+  "repository",
+  "checkout_path",
+  "project",
+  "none",
+] as const;
+export type Basis = (typeof BASES)[number];
+/** A parsed classification as the model returned it, before code rewrites. */
+export type RawClassification = Classification & { basis?: Basis };
 export const analysisSchema = z.object({
   at: z.number(),
   /** Deduplicated immediate asks, shared by page and sidebar Needs decision counts. */
@@ -166,11 +184,13 @@ function clip(text: string): string {
 export function parseClassifications(
   text: string,
   ids: string[],
-): Classification[] {
+): RawClassification[] {
   const { items } = z
     .object({
       items: z.array(
         classificationSchema.extend({
+          // Diagnostic-only; an unexpected value must not fail the batch.
+          basis: z.enum(BASES).optional().catch(undefined),
           title: z.string().trim().min(1).max(80),
           // Overlong recaps are clipped rather than failing the whole batch.
           recap: z.string().trim().min(1).max(400).transform(clip),
@@ -209,6 +229,7 @@ Naming: the group is the product name alone. Never append or prepend descriptors
 export function classificationPrompt(
   threads: Context[],
   known: string[] = [],
+  options: { basis?: boolean } = {},
 ): string {
   const sticky = threads.some((t) => t.previousGroup)
     ? `\npreviousGroup is the group this thread had in the last analysis. Keep it exactly unless the context clearly shows the thread's substantive work belongs to a different product; don't move threads between groups over wording.`
@@ -228,36 +249,49 @@ For each thread, write:
   in_progress: the agent is still working, or work continues without needing the user.
   done: finished with nothing left for the user, including answered questions and completed research.
 - archiveReason: null for nearly every thread. Set a short reason ONLY when the thread is both done and clearly redundant: an explicitly superseded duplicate, a completed handoff-only shell with no independent work, or a duplicate whose useful work continues in another identified thread. Never archive solely because work is done, idle, old, blocked, or because the title looks similar. If evidence does not explicitly establish redundancy, use null.
-Output {"items":[{"threadId":"exact ID","group":"Project or product","title":"Short description of work","recap":"Where it stands","state":"done","archiveReason":null}]}. Include every supplied thread exactly once. Use only the short record id supplied at the top level; IDs appearing within excerpts are unrelated. Include unclear and empty records as Unclassified rather than omitting them.
+Output {"items":[{"threadId":"exact ID","group":"Project or product","title":"Short description of work","recap":"Where it stands","state":"done","archiveReason":null}]}. Include every supplied thread exactly once. Use only the short record id supplied at the top level; IDs appearing within excerpts are unrelated. Include unclear and empty records as Unclassified rather than omitting them.${options.basis ? `\nAlso give each item "basis": the single evidence source that decided its group, one of ${JSON.stringify(BASES)}.` : ""}
 ${JSON.stringify(threads.map(({ id, title, project, repository, path, previousGroup, excerpts }) => ({ id, title, project, repository, path, ...(previousGroup ? { previousGroup } : {}), excerpts })))}`;
 }
 export async function classifyBatch(
   threads: Context[],
   complete: (prompt: string) => Promise<string>,
   known: string[] = [],
+  options: {
+    /** Ask the model to name its decisive evidence (diagnostics only). */
+    basis?: boolean;
+    /** Receives each model result, mapped to its BB thread, before pinning. */
+    onRaw?: (item: RawClassification) => void;
+  } = {},
 ): Promise<Classification[]> {
   const records = threads.map((thread, index) => ({
     ...thread,
     id: String(index + 1),
   }));
   const result = parseClassifications(
-    await complete(classificationPrompt(records, known)),
+    await complete(
+      classificationPrompt(records, known, { basis: options.basis }),
+    ),
     records.map((t) => t.id),
   );
-  return result.map((item) => {
+  return result.map(({ basis, ...item }) => {
     const thread = threads[Number(item.threadId) - 1];
+    options.onRaw?.({ ...item, basis, threadId: thread.id });
     return {
       ...item,
       threadId: thread.id,
-      // A pin like "v0 Dev Environment Provisioning" defers to the
-      // classifier's shorter product name when it names the same thing.
-      group:
-        thread.pinnedGroup &&
-        !thread.pinnedGroup.toLowerCase().startsWith(item.group.toLowerCase())
-          ? thread.pinnedGroup
-          : item.group,
+      group: applyPin(thread.pinnedGroup, item.group),
     };
   });
+}
+/**
+ * A pin (split side or manual native section) replaces the model's group,
+ * except that a pin like "v0 Dev Environment Provisioning" defers to the
+ * classifier's shorter product name when it names the same thing.
+ */
+export function applyPin(pinned: string | undefined, group: string): string {
+  return pinned && !pinned.toLowerCase().startsWith(group.toLowerCase())
+    ? pinned
+    : group;
 }
 /**
  * Removes packaging descriptors the model tends to attach despite instructions
@@ -273,16 +307,19 @@ export function cleanGroupName(name: string): string {
   n = n.replace(/[-_ ](?:bb[-_ ])?(?:plugin|addon|extension|package)$/i, "");
   return n.trim() || name.trim();
 }
+/** Typographic identity of a group name: case, width, spaces, `_` and `-`. */
+export const groupKey = (name: string) =>
+  name
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s_-]+/g, " ")
+    .trim();
 export function normalizeGroups(items: Classification[]): Classification[] {
   const names = new Map<string, string>();
   return items.map((item) => {
     const cleaned = cleanGroupName(item.group);
     // Normalize typography only; never merge semantically different labels.
-    const key = cleaned
-      .normalize("NFKC")
-      .toLowerCase()
-      .replace(/[\s_-]+/g, " ")
-      .trim();
+    const key = groupKey(cleaned);
     const group = names.get(key) ?? cleaned;
     names.set(key, group);
     return { ...item, group };
@@ -300,12 +337,6 @@ export function knownGroups(analysis: Analysis | null): string[] {
     .map(([g]) => g)
     .sort();
 }
-const key = (name: string) =>
-  name
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[\s_-]+/g, " ")
-    .trim();
 /**
  * A drifted thread's current work is the side quest. The classifier tends to
  * keep grouping such threads under the mainline (or Unclassified for
@@ -314,9 +345,9 @@ const key = (name: string) =>
 export function applyDrift(item: Classification): Classification {
   const d = item.drift;
   if (!d || d.confidence === "low") return item;
-  const g = key(item.group);
+  const g = groupKey(item.group);
   // "v0 Dev Environment Provisioning" still names the v0 mainline.
-  return key(d.from).startsWith(g) || item.group === UNCLASSIFIED
+  return groupKey(d.from).startsWith(g) || item.group === UNCLASSIFIED
     ? { ...item, group: d.to }
     : item;
 }
