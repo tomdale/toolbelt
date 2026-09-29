@@ -135,7 +135,15 @@ export function normalizeAnalysis(analysis: Analysis | null): Analysis | null {
   };
 }
 export const progressSchema = z.object({
-  stage: z.enum(["reading", "classifying"]),
+  stage: z.enum([
+    "preparing",
+    "reading",
+    "classifying",
+    "summarizing",
+    "verifying",
+    "organizing",
+    "banners",
+  ]),
   completed: z.number(),
   total: z.number(),
 });

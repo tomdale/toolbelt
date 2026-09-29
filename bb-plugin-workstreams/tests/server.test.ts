@@ -723,6 +723,55 @@ describe("active thread overview", () => {
       ).prompt,
     ).toContain('"previousGroup":"Old Product"');
   });
+  it("publishes a preparing stage immediately and clears it on pending cancellation", async () => {
+    const h = setup(2);
+    await plugin(h.bb);
+    await h.harness.behavior.callRpc("analyze", null);
+    expect((await snapshot(h)).progress).toEqual({
+      stage: "preparing",
+      completed: 0,
+      total: 0,
+    });
+    await expect(h.harness.behavior.callRpc("analyze", null)).rejects.toThrow(
+      /already/,
+    );
+    await h.harness.behavior.callRpc("cancel", null);
+    expect((await snapshot(h)).progress).toBeNull();
+    expect(h.harness.inspection.sdk.callsTo("threads.update")).toHaveLength(0);
+  });
+  it("reports classification and summary work without treating classification as completion", async () => {
+    const h = setup(9);
+    h.harness.sdk.stub(
+      "threads.get",
+      async ({ threadId }: { threadId: string }) => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return h.rows.find((row) => row.id === threadId)!;
+      },
+    );
+    await plugin(h.bb);
+    await h.harness.behavior.callRpc("analyze", null);
+    const service = h.harness.behavior.runService("thread-analysis");
+    const stages = new Set<string>();
+    try {
+      await expect
+        .poll(
+          async () => {
+            const progress = (await snapshot(h)).progress;
+            if (progress) stages.add(progress.stage);
+            return progress;
+          },
+          { interval: 1, timeout: 3000 },
+        )
+        .toBeNull();
+      expect(stages).toContain("reading");
+      expect(stages).toContain("classifying");
+      expect(stages).toContain("summarizing");
+      expect(stages).toContain("verifying");
+    } finally {
+      service.controller.abort();
+      await service.done;
+    }
+  });
   it("rejects concurrent analysis and preserves previous results after invalid output", async () => {
     const h = setup(2, true);
     await plugin(h.bb);

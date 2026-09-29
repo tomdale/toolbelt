@@ -242,15 +242,72 @@ it("disables analysis while it runs and keeps previous threads visible", async (
   });
   await v.findByText("Fix Slack replies");
   expect(
-    (v.getByRole("button", { name: "Analyze threads" }) as HTMLButtonElement)
+    (v.getByRole("button", { name: "Analyzing…" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
-  expect(v.getByRole("status").textContent).toContain("1/2");
+  expect(v.getByRole("status").textContent).toContain(
+    "Classifying threads · 1/2",
+  );
+  expect(v.getByRole("button", { name: "Analyzing…" })).toBeTruthy();
   fireEvent.click(v.getByRole("button", { name: "Cancel" }));
   await waitFor(() =>
     expect(v.inspection.rpcCalls.some((c) => c.method === "cancel")).toBe(true),
   );
   v.lifecycle.unmount();
+});
+it("shows feedback immediately after Analyze is clicked, before the RPC returns", async () => {
+  let resolveAnalyze!: (value: { ok: boolean }) => void;
+  const app = await loadPluginApp(() => import("../app"));
+  const v = renderSlot(
+    app.navPanels[0],
+    { subPath: "" },
+    {
+      rpc: {
+        snapshot: () => initial,
+        analyze: () =>
+          new Promise<{ ok: boolean }>((resolve) => {
+            resolveAnalyze = resolve;
+          }),
+      },
+    },
+  );
+  await v.findByText("Fix Slack replies");
+  fireEvent.click(v.getByRole("button", { name: "Analyze threads" }));
+  expect(v.getByRole("status").textContent).toContain("Starting analysis");
+  expect(
+    (v.getByRole("button", { name: "Analyzing…" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  resolveAnalyze({ ok: true });
+  await waitFor(() => expect(v.queryByText("Starting analysis")).toBeNull());
+  v.lifecycle.unmount();
+});
+it("shows each analysis stage with an honest count and no invented percentage", async () => {
+  const data = {
+    ...initial,
+    progress: { stage: "preparing" as const, completed: 0, total: 0 },
+  };
+  const v = await mount(data);
+  await v.findByText("Fix Slack replies");
+  expect(v.getByRole("status").textContent).toContain("Preparing analysis");
+  expect(v.getByRole("status").textContent).not.toContain("0/0");
+  v.lifecycle.unmount();
+
+  for (const [stage, label] of [
+    ["reading", "Reading threads"],
+    ["summarizing", "Summarizing workstreams"],
+    ["verifying", "Checking thread freshness"],
+    ["organizing", "Organizing threads"],
+    ["banners", "Generating Hotline banners"],
+  ] as const) {
+    const view = await mount({
+      ...initial,
+      progress: { stage, completed: 1, total: 3 },
+    });
+    await view.findByText("Fix Slack replies");
+    expect(view.getByRole("status").textContent).toContain(`${label} · 1/3`);
+    view.lifecycle.unmount();
+  }
 });
 it("refreshes the inventory after a realtime event", async () => {
   const v = await mount();
