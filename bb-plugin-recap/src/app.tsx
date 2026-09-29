@@ -561,7 +561,11 @@ function SettingsSectionBody() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="font-medium text-foreground">Automatic recaps</p>
-              <p className="text-xs text-muted-foreground">Generate a recap after the thread has been idle.</p>
+              <p className="text-xs text-muted-foreground">
+                {draft.displayMode === RECAP_DISPLAY_MODES.none
+                  ? "Paused while composer display is None; recaps generate only when you request one."
+                  : "Generate a recap after the thread has been idle."}
+              </p>
             </div>
             <input
               type="checkbox"

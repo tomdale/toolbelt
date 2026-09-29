@@ -27,6 +27,7 @@ import {
   parsePositiveInteger,
   RECAP_DISPLAY_MODES,
   shouldShowRecapBanner,
+  automaticRecapsEnabled,
   isVisibleThread,
   clampConcurrentGenerations,
   createGenerationLimiter,
@@ -152,6 +153,29 @@ test("form settings patches do not overwrite a newer display preference", () => 
   assert.equal(afterForm.displayMode, RECAP_DISPLAY_MODES.none);
   assert.equal(afterForm.auto, false);
   assert.equal(afterForm.minTurns, 8);
+});
+
+test("None display disables automatic recaps", () => {
+  assert.equal(
+    automaticRecapsEnabled({ auto: true, displayMode: RECAP_DISPLAY_MODES.recap }),
+    true,
+  );
+  assert.equal(
+    automaticRecapsEnabled({ auto: true, displayMode: RECAP_DISPLAY_MODES.none }),
+    false,
+  );
+  assert.equal(
+    automaticRecapsEnabled({ auto: false, displayMode: RECAP_DISPLAY_MODES.recap }),
+    false,
+  );
+  assert.equal(
+    shouldRetryAutomaticRecap({
+      generated: false,
+      reason: "automatic_disabled",
+      retryCount: 0,
+    }),
+    false,
+  );
 });
 
 test("retries automatic recaps only for transient failures", () => {
