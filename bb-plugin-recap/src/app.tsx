@@ -190,7 +190,7 @@ function useThreadSettled(): boolean {
 }
 
 const RECAP_BANNER_CLASS =
-  "relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-800/70 dark:bg-sky-950/60 dark:text-sky-200";
+  "relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-200/80 bg-sky-50 text-sky-900 dark:border-sky-800/50 dark:bg-sky-950/60 dark:text-sky-200";
 
 /**
  * Inline recap above the composer. With automatic recaps on, it shows the
@@ -235,7 +235,7 @@ function RecapComposerBannerContent({
     // replaces it in place instead of popping in below an empty gap.
     return (
       <div
-        className={`${RECAP_BANNER_CLASS} px-3.5 py-2.5`}
+        className={`${RECAP_BANNER_CLASS} px-4 py-3`}
         role="status"
         aria-live="polite"
         aria-label="Generating recap"
@@ -247,9 +247,19 @@ function RecapComposerBannerContent({
           </svg>
           Generating recap…
         </div>
-        <div aria-hidden="true" className="mt-2 space-y-1.5 animate-pulse">
-          <div className="h-2 w-full rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
-          <div className="h-2 w-4/5 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+        {/* Mirrors the recap's goal line and two columns so the result lands in place. */}
+        <div aria-hidden="true" className="mt-3 animate-pulse">
+          <div className="h-2.5 w-2/5 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+          <div className="mt-3.5 grid gap-x-6 gap-y-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+            <div className="space-y-2">
+              <div className="h-2 w-full rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+              <div className="h-2 w-3/4 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+            </div>
+            <div className="space-y-2 sm:border-l sm:border-sky-900/10 sm:pl-6 sm:dark:border-sky-200/10">
+              <div className="h-2 w-5/6 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+              <div className="h-2 w-2/3 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -279,11 +289,11 @@ function RecapComposerBannerContent({
   }
 
   return (
-    <div className={`${RECAP_BANNER_CLASS} px-3.5 py-2.5`} role="region" aria-label="Latest recap">
+    <div className={`${RECAP_BANNER_CLASS} px-4 py-3`} role="region" aria-label="Latest recap">
       <RecapSummary summary={visibleRecap.summary} />
       <button
         type="button"
-        className="absolute right-1.5 top-1.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-sky-900/50 transition-colors hover:bg-sky-900/10 hover:text-sky-900/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:text-sky-200/50 dark:hover:bg-sky-200/10 dark:hover:text-sky-200/80"
+        className="absolute right-2.5 top-2.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-sky-900/50 transition-colors hover:bg-sky-900/10 hover:text-sky-900/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:text-sky-200/50 dark:hover:bg-sky-200/10 dark:hover:text-sky-200/80"
         aria-label="Dismiss recap"
         title="Dismiss recap"
         onClick={() => {
@@ -299,29 +309,60 @@ function RecapComposerBannerContent({
   );
 }
 
+// Recap typography. Both columns share one body size and line height so
+// their labels and first lines sit on the same baselines; hierarchy comes
+// from weight and opacity rather than extra sizes.
 const RECAP_LABEL_CLASS =
-  "text-[11px] font-semibold uppercase leading-5 tracking-wide text-sky-900/55 dark:text-sky-200/55";
+  "mb-1 text-[10.5px] font-semibold uppercase leading-4 tracking-[0.08em] text-sky-900/50 dark:text-sky-200/45";
+const RECAP_BODY_CLASS = "text-[13px] leading-[1.5] [text-wrap:pretty]";
 
-function LedgerList({ items, mark, label }: { items: string[]; mark: string; label: string }) {
+function OpenMark() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 12 12" className="mt-[4px] h-3 w-3 opacity-60" fill="none">
+      <circle cx="6" cy="6" r="4.25" stroke="currentColor" strokeWidth="1.25" />
+    </svg>
+  );
+}
+
+function DoneMark() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 12 12" className="mt-[4px] h-3 w-3 opacity-60" fill="none">
+      <path d="M2.5 6.25 4.9 8.5 9.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function LedgerList({
+  items,
+  label,
+  done = false,
+}: {
+  items: string[];
+  label: string;
+  done?: boolean;
+}) {
   if (items.length === 0) return null;
   return (
-    <div>
-      <p className={RECAP_LABEL_CLASS}>{label}</p>
-      <ul className="mt-0.5 space-y-0.5">
+    <section>
+      <h3 className={RECAP_LABEL_CLASS}>{label}</h3>
+      <ul className="space-y-1">
         {items.map((item, index) => (
-          <li key={index} className="grid grid-cols-[1rem_1fr]">
-            <span aria-hidden="true" className="opacity-60">{mark}</span>
+          <li
+            key={index}
+            className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${RECAP_BODY_CLASS} ${done ? "opacity-70" : ""}`}
+          >
+            {done ? <DoneMark /> : <OpenMark />}
             <span>{item}</span>
           </li>
         ))}
       </ul>
-    </div>
+    </section>
   );
 }
 
 /**
  * Renders the default prompt's format: the goal as a one-line heading, then
- * the latest result (or what the session needs from you) beside a Done/Open
+ * the latest result (or what the session needs from you) beside an Open/Done
  * ledger. Any other recap shape (older single-sentence recaps, custom
  * prompts) renders as markdown.
  */
@@ -333,30 +374,46 @@ function RecapSummary({ summary }: { summary: string }) {
   const hasLedger = ledger.done.length > 0 || ledger.open.length > 0;
   const needsYou = ledger.lead?.kind === "needs-you";
   return (
-    <div className="pr-6 text-sm leading-6">
-      {ledger.goal ? <p className="font-medium">{ledger.goal}</p> : null}
+    <div>
+      {ledger.goal ? (
+        <h2 className="pr-8 text-[14px] font-medium leading-5 tracking-[-0.006em] text-sky-950 [text-wrap:balance] dark:text-sky-50">
+          {ledger.goal}
+        </h2>
+      ) : null}
       <div
-        className={`${ledger.goal ? "mt-1.5" : ""} grid gap-x-5 gap-y-2 ${
-          hasLedger ? "sm:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]" : ""
+        className={`${ledger.goal ? "mt-2.5" : "pr-8"} grid gap-x-6 gap-y-3 ${
+          hasLedger ? "sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""
         }`}
       >
-        <div>
+        <section>
           {ledger.lead ? (
             <>
-              <p className={needsYou ? `${RECAP_LABEL_CLASS} !text-amber-700 dark:!text-amber-300` : RECAP_LABEL_CLASS}>
+              <h3
+                className={`${RECAP_LABEL_CLASS} ${
+                  needsYou ? "!text-amber-700 dark:!text-amber-300/90" : ""
+                }`}
+              >
                 {ledger.lead.label}
+              </h3>
+              <p
+                className={`${RECAP_BODY_CLASS} text-sky-950/90 dark:text-sky-100/90 ${
+                  needsYou ? "font-medium" : ""
+                }`}
+              >
+                {ledger.lead.text}
               </p>
-              <p className={needsYou ? "font-medium" : undefined}>{ledger.lead.text}</p>
             </>
           ) : null}
           {ledger.notes.map((note, index) => (
-            <p key={index} className="mt-1 text-[13px] opacity-75">{note}</p>
+            <p key={index} className={`mt-1.5 ${RECAP_BODY_CLASS} opacity-70`}>
+              {note}
+            </p>
           ))}
-        </div>
+        </section>
         {hasLedger ? (
-          <div className="space-y-1.5 border-sky-200 text-[13px] leading-5 sm:border-l sm:pl-4 dark:border-sky-800/70">
-            <LedgerList items={ledger.open} mark="○" label="Open" />
-            <LedgerList items={ledger.done} mark="✓" label="Done" />
+          <div className="space-y-2.5 border-sky-900/10 sm:border-l sm:pl-6 dark:border-sky-200/10">
+            <LedgerList items={ledger.open} label="Open" />
+            <LedgerList items={ledger.done} label="Done" done />
           </div>
         ) : null}
       </div>
