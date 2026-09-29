@@ -1189,15 +1189,30 @@ export default async function plugin(bb: BbPluginApi) {
           const report = (managerReports.get(manager.id) ?? []).find(
             (event) => event.at > Math.max(completedAt, requestedAt),
           );
-          const text = report?.text.toLowerCase() ?? "";
-          const title = worker.title.toLowerCase();
+          const reportText = report?.text.toLowerCase() ?? "";
+          const workerTitle = worker.title.toLowerCase();
+          const workerPrefix = workerTitle.slice(0, 18);
           const referred =
             report &&
-            text.includes(title.slice(0, 18)) &&
-            /\\b(ask|talk|work with|coordinate|continue in|go to)\\b/.test(
-              text,
+            reportText.includes(workerPrefix) &&
+            /\b(ask|talk|work with|coordinate|continue in|go to|message|reply|answer)\b/i.test(
+              reportText,
             );
-          if (report && !referred && !worker.hasPendingInteraction)
+          const explicitlyAsks =
+            workerEvents.some((event) => {
+              const input = inputText(
+                (event.data as { input?: unknown }).input,
+              );
+              return /\?\s*$|\b(please|can you|could you|let me know|confirm|choose|which|what do you think)\b/i.test(
+                input,
+              );
+            });
+          if (
+            report &&
+            !referred &&
+            !worker.hasPendingInteraction &&
+            !explicitlyAsks
+          )
             owners[manager.id].viaWorkers.push(worker.title);
         }
       }
