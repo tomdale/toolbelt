@@ -243,6 +243,31 @@ function RecapComposerBannerContent({
     );
   }
 
+  if (mode === RECAP_DISPLAY_MODES.none && requestedRecap && generating) {
+    // Occupies the recap's slot at a similar size so the finished recap
+    // replaces it in place instead of popping in below an empty gap.
+    return (
+      <div
+        className={`${RECAP_BANNER_CLASS} px-3.5 py-2.5`}
+        role="status"
+        aria-live="polite"
+        aria-label="Generating recap"
+      >
+        <div className="flex items-center gap-2 text-xs font-medium text-sky-900/70 dark:text-sky-200/70">
+          <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 animate-spin" fill="none">
+            <circle cx="8" cy="8" r="6" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
+            <path d="M14 8a6 6 0 0 0-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+          Generating recap…
+        </div>
+        <div aria-hidden="true" className="mt-2 space-y-1.5 animate-pulse">
+          <div className="h-2 w-full rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+          <div className="h-2 w-4/5 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+        </div>
+      </div>
+    );
+  }
+
   if (!recap || recap.id === dismissedRecapId) return null;
   if (mode === RECAP_DISPLAY_MODES.none && recap.automatic && !requestedRecap) return null;
 
