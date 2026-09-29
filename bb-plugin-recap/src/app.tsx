@@ -384,7 +384,7 @@ function LedgerList({
 
 /**
  * Renders the default prompt's format: the goal as a one-line heading, then
- * the latest result (or what the session needs from you) beside an Open/Done
+ * the latest result (or the input the session is waiting for) beside an Open/Done
  * ledger. Any other recap shape (older single-sentence recaps, custom
  * prompts) renders as markdown.
  */
@@ -411,10 +411,10 @@ function RecapSummary({ summary }: { summary: string }) {
         }`}
       >
         <div className="space-y-2.5">
-          {ledger.needsYou ? (
+          {ledger.needsInput ? (
             <section>
-              <h3 className={`${RECAP_LABEL_CLASS} !text-amber-700 dark:!text-amber-300/90`}>Needs you</h3>
-              <RecapText text={ledger.needsYou} className="font-medium text-sky-950/90 dark:text-sky-100/90" />
+              <h3 className={`${RECAP_LABEL_CLASS} !text-amber-700 dark:!text-amber-300/90`}>Needs input</h3>
+              <RecapText text={ledger.needsInput} className="font-medium text-sky-950/90 dark:text-sky-100/90" />
             </section>
           ) : null}
           {ledger.latest.length > 0 ? (

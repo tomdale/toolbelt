@@ -516,11 +516,11 @@ test("keeps zoom-level lines when cleaning recap text", () => {
 test("parses the default recap ledger and rejects other shapes", () => {
   assert.deepEqual(
     parseRecapLedger(
-      "Goal: Shipping the parser.\nNeeds you: Approve the push\nDone: Parser fixed\nDone: Tests pass\nOpen: Push to main",
+      "Goal: Shipping the parser.\nNeeds input: Approve the push\nDone: Parser fixed\nDone: Tests pass\nOpen: Push to main",
     ),
     {
       goal: "Shipping the parser.",
-      needsYou: "Approve the push",
+      needsInput: "Approve the push",
       latest: [],
       notes: [],
       done: ["Parser fixed", "Tests pass"],
@@ -536,12 +536,16 @@ test("parses the default recap ledger and rejects other shapes", () => {
     parseRecapLedger("Goal: Ship it\nNow: Fixing tests\nLatest: Tests green"),
     {
       goal: "Ship it",
-      needsYou: null,
+      needsInput: null,
       latest: ["Tests green"],
       notes: ["Fixing tests"],
       done: [],
       open: [],
     },
+  );
+  assert.equal(
+    parseRecapLedger("Goal: G\nNeeds you: Approve")?.needsInput,
+    "Approve",
   );
   assert.equal(parseRecapLedger("We fixed the parser in src/parse.ts."), null);
   assert.equal(parseRecapLedger("Goal: Ship it\nNote: something else"), null);

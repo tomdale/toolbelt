@@ -62,7 +62,7 @@ Recap can run after a visible thread goes idle and reaches the minimum user-turn
 
 ### 🔭 Goal, latest, and a ledger
 
-Each recap opens with a one-line goal ("Rendering Pi Todo calls natively in BB."), then shows the most recent result beside a ledger of what's **Open** and what's **Done**. When the session is waiting on you, **Latest** becomes **Needs you** and says what is being asked.
+Each recap opens with a one-line goal ("Rendering Pi Todo calls natively in BB."), then shows the most recent result beside a ledger of what's **Open** and what's **Done**. When the session is waiting for an answer, from you or another thread, **Latest** becomes **Needs input** and says what is being asked.
 
 </td>
 <td valign="top">
