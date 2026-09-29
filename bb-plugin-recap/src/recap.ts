@@ -1,6 +1,64 @@
-export const DEFAULT_RECAP_PROMPT = `You are an internal recap worker.
+export const DEFAULT_RECAP_PROMPT = `You are an internal recap worker. A developer is returning to this coding-agent session after time away. Write a recap that re-orients them in seconds, at three zoom levels from the whole session down to its last moment.
 
-Return exactly one plain-text sentence of about 25–40 words, with no heading, bullets, markdown, or extra explanation. Use the language of the user's messages. Lead with "You asked …" for questions or reviews, or "We <past-tense verb> …" for implemented changes. Mention concrete files, symbols, flags, endpoints, decisions, or remaining work when present. Never invent progress. Do not call tools. If almost nothing happened, say "You had just begun this session."`;
+Output exactly three lines, in this order, and nothing else:
+Goal: <why this session exists, 20 words or fewer>
+Now: <the task or phase in progress when the session stopped, and its state, 25 words or fewer>
+Latest: <the most recent concrete result, 30 words or fewer>
+
+Label the third line "Needs you:" instead of "Latest:" when the session ends waiting on the developer: the last assistant message asks a question, offers options to choose between, proposes a next step that needs their go-ahead, or reports a blocker only they can clear. Say exactly what is being asked. A finished answer or report with nothing pending is "Latest:".
+
+Goal
+- Take it from the opening request and how the developer's later messages reshaped it, not from the last few messages. The first message is often a task brief written by a manager thread; it defines the goal. If it assigns a standing role ("You are the X manager"), the goal is that role's scope.
+- A long session can hold several separate requests. Then the goal is the umbrella they share (the role, project, or theme), not the most recent request.
+- If the goal pivoted, state the goal as it stands now.
+- For a manager or coordination session, the goal is the scope it manages, not one worker's task.
+
+Now
+- The step underway at the end: what is being built, debugged, researched, or decided, plus what is done and what remains.
+- If work was reversed or superseded (a revert, a changed decision, a rejected approach), describe the final agreed state, not the abandoned one.
+- In a manager session, name the in-flight work items (up to three) and which worker owns each, rather than only the most recent one.
+
+Latest / Needs you
+- The final exchange: the last change, test result, finding, answer, or handoff.
+- For a question-and-answer session, give the substance of the latest answer, not just its topic.
+
+Rules
+- Messages labeled "System notice" are reports from other threads or BB itself. They are evidence of status, not new requests from the developer.
+- Never overstate progress. Do not say something was committed, pushed, deployed, archived, verified, or fixed unless the transcript shows it. Say "unverified", "not committed", or "blocked" when that is the state.
+- Be specific. Name the file, command, setting, PR, branch, or decision that matters, at most two per line. Skip hashes, ports, paths, and IDs the developer would not act on.
+- Do not repeat information across lines. Each line zooms in on the previous one; if Now and Latest would say the same thing, make Now about the phase and Latest about the specific outcome.
+- Ignore environment dumps, tool noise, and internal bookkeeping. Never repeat secrets or credential values.
+- Write terse fragments in the developer's language, without "We", "The user", or "The assistant" as a subject.
+- Plain text only: three lines with no blank lines between them, and no markdown, bullets, or quotes. Do not call tools.
+- If almost nothing has happened yet, say so on the Now line.`;
+
+/**
+ * Earlier built-in prompts. Settings saved while one of these was the default
+ * stored its full text, so a stored prompt matching one of them is treated as
+ * "use the default" and picks up the current prompt.
+ */
+const LEGACY_DEFAULT_RECAP_PROMPTS = new Set(
+  [
+    `You are an internal recap worker.
+
+Return exactly one plain-text sentence of about 25–40 words, with no heading, bullets, markdown, or extra explanation. Use the language of the user's messages. Lead with "You asked …" for questions or reviews, or "We <past-tense verb> …" for implemented changes. Mention concrete files, symbols, flags, endpoints, decisions, or remaining work when present. Never invent progress. Do not call tools. If almost nothing happened, say "You had just begun this session."`,
+  ].flatMap((prompt) => [
+    comparablePrompt(prompt),
+    comparablePrompt(prompt.replace(/^You are an internal recap worker\.\s*/, "")),
+  ]),
+);
+
+function comparablePrompt(prompt: string): string {
+  return prompt.split(/\s+/).join(" ").trim();
+}
+
+export function isDefaultRecapPrompt(prompt: string): boolean {
+  const comparable = comparablePrompt(prompt);
+  return (
+    comparable === comparablePrompt(DEFAULT_RECAP_PROMPT) ||
+    LEGACY_DEFAULT_RECAP_PROMPTS.has(comparable)
+  );
+}
 
 /**
  * Legacy display preferences that meant "only show recaps I request". Stored
@@ -78,7 +136,20 @@ export function recapFormIsDirty(
 export function normalizeRecapPrompt(raw: unknown): string {
   if (typeof raw !== "string") return DEFAULT_RECAP_PROMPT;
   const prompt = raw.trim();
-  return recapPromptWouldReset(prompt) ? DEFAULT_RECAP_PROMPT : prompt;
+  return recapPromptWouldReset(prompt) || isDefaultRecapPrompt(prompt)
+    ? DEFAULT_RECAP_PROMPT
+    : prompt;
+}
+
+/**
+ * Settings as written to storage. The prompt is stored only when customized,
+ * so improvements to the built-in prompt reach everyone using the default.
+ */
+export function storedRecapSettings(
+  settings: RecapSettingsSnapshot,
+): Omit<RecapSettingsSnapshot, "prompt"> & { prompt?: string } {
+  const { prompt, ...rest } = settings;
+  return isDefaultRecapPrompt(prompt) ? rest : { ...rest, prompt };
 }
 
 function escapeTranscript(text: string): string {
@@ -89,18 +160,25 @@ function escapeTranscript(text: string): string {
 }
 
 const PREVIOUS_RECAP_INSTRUCTIONS =
-  "Write a replacement recap for the whole session. Use the previous recap for earlier work and the new transcript for what happened next. Same one-sentence, 25–40 word rules. Carry forward still-relevant files, symbols, decisions, and unfinished work. Prefer the new transcript when they conflict. Do not say the session just began.";
+  "Write a replacement recap for the whole session in the same format and under the same rules. The previous recap covers earlier work; the transcript shows the session's opening and what happened since. Keep the previous goal unless the new turns change it, carry forward still-relevant decisions and unfinished work, and prefer the new transcript when they conflict. Do not say the session just began.";
 
 export function buildRecapPrompt(
   prompt: string,
   transcript: string,
   previousRecap?: string,
+  title?: string,
 ): string {
   const previous = previousRecap?.trim();
   const previousBlock = previous
     ? `\n\nPrevious recap:\n<previous-recap>\n${escapeTranscript(previous)}\n</previous-recap>\n\n${PREVIOUS_RECAP_INSTRUCTIONS}`
     : "";
-  return `${normalizeRecapPrompt(prompt)}${previousBlock}\n\n${UNTRUSTED_TRANSCRIPT_INSTRUCTIONS}\n\n<session-transcript>\n${escapeTranscript(transcript)}\n</session-transcript>`;
+  const sessionTitle = title?.trim();
+  // The title is set by agents or the developer and can lag behind the work,
+  // so it is labeled as a hint inside the untrusted block.
+  const titleLine = sessionTitle
+    ? `Session title (may be out of date): ${escapeTranscript(truncate(sessionTitle, 200))}\n\n`
+    : "";
+  return `${normalizeRecapPrompt(prompt)}${previousBlock}\n\n${UNTRUSTED_TRANSCRIPT_INSTRUCTIONS}\n\n<session-transcript>\n${titleLine}${escapeTranscript(transcript)}\n</session-transcript>`;
 }
 
 export const MAX_TRANSCRIPT_CHARS = 120_000;
@@ -138,10 +216,21 @@ function rowText(row: UnknownRecord): string | undefined {
   return typeof row.text === "string" ? truncate(row.text) : undefined;
 }
 
+/**
+ * Tool and command output is capped hard: it is usually the bulk of a
+ * session's text but rarely what a returning developer needs, and uncapped it
+ * pushes the conversation itself out of the transcript budget.
+ */
+const WORK_OUTPUT_CHARS = 400;
+const WORK_INPUT_CHARS = 300;
+
 function workRowText(row: UnknownRecord): string | undefined {
   const workKind = row.workKind;
   if (workKind === "tool" && typeof row.toolName === "string") {
-    const output = typeof row.output === "string" ? truncate(row.output) : "";
+    const output =
+      typeof row.output === "string"
+        ? truncate(row.output, WORK_OUTPUT_CHARS)
+        : "";
     return [
       `Tool call: ${truncate(row.toolName)}`,
       output ? `Tool result: ${output}` : "",
@@ -150,9 +239,12 @@ function workRowText(row: UnknownRecord): string | undefined {
       .join("\n");
   }
   if (workKind === "command" && typeof row.command === "string") {
-    const output = typeof row.output === "string" ? truncate(row.output) : "";
+    const output =
+      typeof row.output === "string"
+        ? truncate(row.output, WORK_OUTPUT_CHARS)
+        : "";
     return [
-      `Command: ${truncate(row.command)}`,
+      `Command: ${truncate(row.command, WORK_INPUT_CHARS)}`,
       output ? `Command output: ${output}` : "",
     ]
       .filter(Boolean)
@@ -175,17 +267,48 @@ function workRowText(row: UnknownRecord): string | undefined {
     : undefined;
 }
 
-/** Convert BB timeline rows into a bounded transcript for the recap worker. */
-export function buildConversationText(
+type TranscriptEntry = {
+  role: "user" | "assistant" | "notice" | "other";
+  text: string;
+};
+
+/**
+ * BB delivers orchestration notices (child completions, cross-thread
+ * messages) as user-role rows. Labeling them separately keeps the recap
+ * worker from treating them as the developer's own requests.
+ */
+function isHostNotice(text: string): boolean {
+  return /^\[bb (system|message from)\b/.test(text);
+}
+
+/**
+ * Host operation rows that carry no session meaning. Reasoning is the agent's
+ * private scratch work, provider-unhandled rows are raw protocol payloads, and
+ * generic operations include resolved environment dumps that can contain
+ * credential values, so none of them reach the recap worker.
+ */
+const NOISE_OPERATION_KINDS = new Set([
+  "reasoning",
+  "provider-unhandled",
+  "thread-provisioning",
+  "generic",
+]);
+const SYSTEM_DETAIL_CHARS = 300;
+
+function isNoiseSystemRow(row: UnknownRecord): boolean {
+  return (
+    row.systemKind === "operation" &&
+    typeof row.operationKind === "string" &&
+    NOISE_OPERATION_KINDS.has(row.operationKind)
+  );
+}
+
+function transcriptEntries(
   rows: unknown[],
-  maxChars = MAX_TRANSCRIPT_CHARS,
-  afterUserTurns = 0,
+  afterUserTurns: number,
   threadId?: string,
-): string {
-  const sections: string[] = [];
-  const skipTurns = Number.isFinite(afterUserTurns)
-    ? Math.max(0, Math.floor(afterUserTurns))
-    : 0;
+): TranscriptEntry[] {
+  const entries: TranscriptEntry[] = [];
   let seenUserTurns = 0;
 
   for (const row of flattenRows(rows)) {
@@ -196,39 +319,152 @@ export function buildConversationText(
     ) {
       seenUserTurns += 1;
     }
-    if (skipTurns > 0 && seenUserTurns <= skipTurns) continue;
+    if (afterUserTurns > 0 && seenUserTurns <= afterUserTurns) continue;
     if (row.kind === "conversation") {
-      let role: string | undefined;
-      if (row.role === "user") role = "User";
-      else if (row.role === "assistant") role = "Assistant";
       const text = rowText(row);
-      if (role && text) sections.push(`${role}: ${text}`);
+      if (!text) continue;
+      if (row.role === "user") {
+        entries.push(
+          isHostNotice(text)
+            ? { role: "notice", text: `System notice: ${text}` }
+            : { role: "user", text: `User: ${text}` },
+        );
+      } else if (row.role === "assistant") {
+        entries.push({ role: "assistant", text: `Assistant: ${text}` });
+      }
       continue;
     }
     if (row.kind === "work") {
       const text = workRowText(row);
-      if (text) sections.push(text);
+      if (text) entries.push({ role: "other", text });
       continue;
     }
-    if (row.kind === "system" && typeof row.title === "string") {
+    if (
+      row.kind === "system" &&
+      typeof row.title === "string" &&
+      !isNoiseSystemRow(row)
+    ) {
       const detail =
-        typeof row.detail === "string" ? `: ${truncate(row.detail)}` : "";
-      sections.push(`System: ${truncate(row.title)}${detail}`);
+        typeof row.detail === "string"
+          ? `: ${truncate(row.detail, SYSTEM_DETAIL_CHARS)}`
+          : "";
+      entries.push({
+        role: "other",
+        text: `System: ${truncate(row.title)}${detail}`,
+      });
     }
   }
+  return entries;
+}
 
-  const full = sections.join("\n\n");
+const OMITTED_MARKER = "\n\n[…middle of transcript omitted…]\n\n";
+const CONDENSED_MARKER =
+  "\n\n[…earlier middle of the session, condensed to the developer's messages…]\n\n";
+const RECENT_MARKER = "\n\n[…most recent part of the session…]\n\n";
+/** Below this budget the structured layout has no room; fall back to head and tail. */
+const MIN_STRUCTURED_TRANSCRIPT_CHARS = 2_000;
+const MIDDLE_USER_MESSAGE_CHARS = 600;
+
+function headAndTail(full: string, limit: number): string {
+  if (limit <= OMITTED_MARKER.length + 1) return `${full.slice(0, limit - 1)}…`;
+  const bodyLimit = limit - OMITTED_MARKER.length;
+  const headSize = Math.floor(bodyLimit * 0.25);
+  const tailSize = bodyLimit - headSize;
+  return `${full.slice(0, headSize).trimEnd()}${OMITTED_MARKER}${full.slice(-tailSize).trimStart()}`;
+}
+
+/**
+ * Convert BB timeline rows into a bounded transcript for the recap worker.
+ *
+ * Long sessions keep three parts so every recap level has evidence: the
+ * opening exchange (why the thread exists), the developer's messages from the
+ * middle (how the goal evolved), and as much of the recent transcript as fits
+ * (the current task and latest result).
+ */
+export function buildConversationText(
+  rows: unknown[],
+  maxChars = MAX_TRANSCRIPT_CHARS,
+  afterUserTurns = 0,
+  threadId?: string,
+): string {
+  const skipTurns = Number.isFinite(afterUserTurns)
+    ? Math.max(0, Math.floor(afterUserTurns))
+    : 0;
+  const entries = transcriptEntries(rows, skipTurns, threadId);
+  const full = entries.map((entry) => entry.text).join("\n\n");
   const limit = Number.isFinite(maxChars)
     ? Math.max(1, Math.min(MAX_TRANSCRIPT_CHARS, Math.floor(maxChars)))
     : MAX_TRANSCRIPT_CHARS;
   if (full.length <= limit) return full;
+  if (limit < MIN_STRUCTURED_TRANSCRIPT_CHARS) return headAndTail(full, limit);
 
-  const marker = "\n\n[…middle of transcript omitted…]\n\n";
-  if (limit <= marker.length + 1) return `${full.slice(0, limit - 1)}…`;
-  const bodyLimit = limit - marker.length;
-  const headSize = Math.floor(bodyLimit * 0.25);
-  const tailSize = bodyLimit - headSize;
-  return `${full.slice(0, headSize).trimEnd()}${marker}${full.slice(-tailSize).trimStart()}`;
+  const bodyLimit = limit - CONDENSED_MARKER.length - RECENT_MARKER.length;
+  const openingBudget = Math.floor(bodyLimit * 0.2);
+
+  // Opening: through the first assistant reply to the first developer request.
+  let openingEnd = 0;
+  let sawUser = false;
+  while (openingEnd < entries.length) {
+    const entry = entries[openingEnd];
+    openingEnd += 1;
+    if (entry.role === "user") sawUser = true;
+    if (sawUser && entry.role === "assistant") break;
+  }
+  let opening = entries
+    .slice(0, openingEnd)
+    .map((entry) => entry.text)
+    .join("\n\n");
+  if (opening.length > openingBudget)
+    opening = `${opening.slice(0, openingBudget - 1).trimEnd()}…`;
+
+  // Reserve room for the condensed developer messages, then give the rest of
+  // the budget to the recent transcript.
+  const maxMiddleBudget = Math.floor(bodyLimit * 0.2);
+  let middleReserve = 0;
+  for (let index = openingEnd; index < entries.length; index += 1) {
+    if (entries[index].role !== "user") continue;
+    middleReserve +=
+      Math.min(entries[index].text.length, MIDDLE_USER_MESSAGE_CHARS + 1) + 2;
+    if (middleReserve >= maxMiddleBudget) break;
+  }
+  const tailBudget =
+    bodyLimit - opening.length - Math.min(middleReserve, maxMiddleBudget);
+
+  let tailStart = entries.length;
+  let tailLength = 0;
+  while (tailStart > openingEnd) {
+    const next = entries[tailStart - 1].text.length + 2;
+    if (tailLength + next > tailBudget) break;
+    tailLength += next;
+    tailStart -= 1;
+  }
+  let tail = entries
+    .slice(tailStart)
+    .map((entry) => entry.text)
+    .join("\n\n");
+  if (tail === "") {
+    const last = entries[entries.length - 1].text;
+    tail = `…${last.slice(-(tailBudget - 1)).trimStart()}`;
+    tailStart = entries.length - 1;
+  }
+
+  // Middle: the developer's own messages, newest kept first when space runs out.
+  const middleBudget = bodyLimit - opening.length - tail.length;
+  const middle: string[] = [];
+  let middleLength = 0;
+  for (let index = tailStart - 1; index >= openingEnd; index -= 1) {
+    const entry = entries[index];
+    if (entry.role !== "user") continue;
+    const text = truncate(entry.text, MIDDLE_USER_MESSAGE_CHARS);
+    if (middleLength + text.length + 2 > middleBudget) break;
+    middle.unshift(text);
+    middleLength += text.length + 2;
+  }
+
+  return `${opening}${CONDENSED_MARKER}${middle.join("\n\n")}${RECENT_MARKER}${tail}`.slice(
+    0,
+    limit,
+  );
 }
 
 export function countUserTurns(rows: unknown[], threadId?: string): number {
@@ -245,7 +481,15 @@ export type RecapContext = {
   turns: number;
 };
 
-/** First recap is the full (capped) transcript; later recaps send previous summary + new turns. */
+const INCREMENTAL_OPENING_CHARS = 3_000;
+const INCREMENTAL_MARKER =
+  "\n\n[…earlier session covered by the previous recap…]\n\n";
+
+/**
+ * First recap is the full (capped) transcript. Later recaps send the previous
+ * recap, the session's opening request, and only the turns since then; the
+ * opening keeps the Goal line anchored without resending the whole session.
+ */
 export function buildRecapWorkerInput(
   rows: unknown[],
   previous: RecapContext | null | undefined,
@@ -276,11 +520,40 @@ export function buildRecapWorkerInput(
       previousRecap: undefined,
     };
   }
-  return { transcript, previousRecap: previous.summary };
+  const opening = sessionOpening(rows, threadId);
+  return {
+    transcript: opening
+      ? `${opening}${INCREMENTAL_MARKER}${transcript}`
+      : transcript,
+    previousRecap: previous.summary,
+  };
 }
 
+function sessionOpening(rows: unknown[], threadId?: string): string {
+  const first = transcriptEntries(rows, 0, threadId).find(
+    (entry) => entry.role === "user",
+  );
+  return first ? truncate(first.text, INCREMENTAL_OPENING_CHARS) : "";
+}
+
+/**
+ * Normalize worker output while keeping line breaks, which separate the
+ * default prompt's zoom levels. Whitespace inside a line collapses; blank
+ * lines, list markers, and markdown emphasis on a leading label are dropped.
+ */
 export function cleanRecapText(raw: string): string {
-  let result = raw.split(/\s+/).join(" ").trim();
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .split(/\s+/)
+        .join(" ")
+        .trim()
+        .replace(/^[-*•]\s+/, "")
+        .replace(/^\*\*([^*]+?):?\*\*:?\s*/, "$1: "),
+    )
+    .filter(Boolean);
+  let result = lines.join("\n");
 
   for (const label of [
     "Recap —",
@@ -309,6 +582,43 @@ export function cleanRecapText(raw: string): string {
     result = `${result.slice(0, MAX_RECAP_CHARS - 1).trimEnd()}…`;
   }
   return result;
+}
+
+/** Automatic output longer than this ignored the prompt's length rules. */
+export const MAX_AUTOMATIC_RAW_CHARS = 2_000;
+
+export type RecapLevelKind = "goal" | "now" | "latest" | "needs-you";
+
+export type RecapLevel = {
+  kind: RecapLevelKind;
+  label: string;
+  text: string;
+};
+
+const RECAP_LEVEL_LABELS: Record<string, RecapLevelKind> = {
+  goal: "goal",
+  now: "now",
+  latest: "latest",
+  "needs you": "needs-you",
+};
+
+/**
+ * Split a recap written in the default zoom-level format ("Goal:", "Now:",
+ * "Latest:" or "Needs you:" lines) into its levels. Returns null for any
+ * other shape, such as older single-sentence recaps or custom prompts, which
+ * render as plain markdown instead.
+ */
+export function parseRecapLevels(summary: string): RecapLevel[] | null {
+  const lines = summary.split("\n").filter((line) => line.trim() !== "");
+  if (lines.length < 2) return null;
+  const levels: RecapLevel[] = [];
+  for (const line of lines) {
+    const match = /^([A-Za-z ]+):\s+(.+)$/.exec(line.trim());
+    const kind = match ? RECAP_LEVEL_LABELS[match[1].toLowerCase()] : undefined;
+    if (!match || !kind) return null;
+    levels.push({ kind, label: match[1], text: match[2] });
+  }
+  return levels;
 }
 
 export function parseBoundedInteger(
