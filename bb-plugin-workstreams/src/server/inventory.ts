@@ -13,6 +13,8 @@ export type InventoryThread = WorkstreamThread & {
   readonly title: string;
   readonly projectId: string;
   readonly status: string;
+  /** Set on forks: the thread this one was forked from. */
+  readonly sourceThreadId: string | null;
 };
 
 const PAGE = 100;
@@ -33,6 +35,7 @@ export function toInventoryThread(thread: ThreadResponse): InventoryThread {
     title: displayTitle(thread),
     projectId: thread.projectId,
     status: thread.status,
+    sourceThreadId: thread.sourceThreadId ?? null,
     parentThreadId: thread.parentThreadId ?? null,
     sectionId: thread.sectionId ?? null,
     isHidden: thread.visibility === "hidden",
