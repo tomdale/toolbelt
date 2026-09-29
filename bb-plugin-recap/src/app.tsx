@@ -316,6 +316,28 @@ const RECAP_LABEL_CLASS =
   "mb-1 text-[10.5px] font-semibold uppercase leading-4 tracking-[0.08em] text-sky-900/50 dark:text-sky-200/45";
 const RECAP_BODY_CLASS = "text-[13px] leading-[1.5] [text-wrap:pretty]";
 
+/**
+ * One recap line rendered through BB's markdown so inline code, emphasis, and
+ * links survive. The overrides keep BB's paragraph and code styles inside the
+ * recap's type scale.
+ */
+function RecapText({
+  text,
+  className = "",
+  typeClass = RECAP_BODY_CLASS,
+}: {
+  text: string;
+  className?: string;
+  typeClass?: string;
+}) {
+  return (
+    <Markdown
+      content={text}
+      className={`min-w-0 ${typeClass} text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[12px] ${className}`}
+    />
+  );
+}
+
 function OpenMark() {
   return (
     <svg aria-hidden="true" viewBox="0 0 12 12" className="mt-[4px] h-3 w-3 opacity-60" fill="none">
@@ -352,7 +374,7 @@ function LedgerList({
             className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${RECAP_BODY_CLASS} ${done ? "opacity-70" : ""}`}
           >
             {done ? <DoneMark /> : <OpenMark />}
-            <span>{item}</span>
+            <RecapText text={item} />
           </li>
         ))}
       </ul>
@@ -375,9 +397,13 @@ function RecapSummary({ summary }: { summary: string }) {
   return (
     <div>
       {ledger.goal ? (
-        <h2 className="pr-8 text-[14px] font-medium leading-5 tracking-[-0.006em] text-sky-950 [text-wrap:balance] dark:text-sky-50">
-          {ledger.goal}
-        </h2>
+        <div
+          role="heading"
+          aria-level={2}
+          className="pr-8 font-medium tracking-[-0.006em] text-sky-950 dark:text-sky-50"
+        >
+          <RecapText text={ledger.goal} typeClass="text-[14px] leading-5 [text-wrap:balance]" />
+        </div>
       ) : null}
       <div
         className={`${ledger.goal ? "mt-2.5" : "pr-8"} grid gap-x-6 gap-y-3 ${
@@ -388,16 +414,14 @@ function RecapSummary({ summary }: { summary: string }) {
           {ledger.needsYou ? (
             <section>
               <h3 className={`${RECAP_LABEL_CLASS} !text-amber-700 dark:!text-amber-300/90`}>Needs you</h3>
-              <p className={`${RECAP_BODY_CLASS} font-medium text-sky-950/90 dark:text-sky-100/90`}>
-                {ledger.needsYou}
-              </p>
+              <RecapText text={ledger.needsYou} className="font-medium text-sky-950/90 dark:text-sky-100/90" />
             </section>
           ) : null}
           {ledger.latest.length > 0 ? (
             <section>
               <h3 className={RECAP_LABEL_CLASS}>Latest</h3>
               {ledger.latest.length === 1 ? (
-                <p className={`${RECAP_BODY_CLASS} text-sky-950/90 dark:text-sky-100/90`}>{ledger.latest[0]}</p>
+                <RecapText text={ledger.latest[0]} className="text-sky-950/90 dark:text-sky-100/90" />
               ) : (
                 <ul className="space-y-1">
                   {ledger.latest.map((item, index) => (
@@ -406,7 +430,7 @@ function RecapSummary({ summary }: { summary: string }) {
                       className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${RECAP_BODY_CLASS} text-sky-950/90 dark:text-sky-100/90`}
                     >
                       <span aria-hidden="true" className="ml-[4px] mt-[8px] h-1 w-1 rounded-full bg-current opacity-60" />
-                      <span>{item}</span>
+                      <RecapText text={item} />
                     </li>
                   ))}
                 </ul>
@@ -414,9 +438,7 @@ function RecapSummary({ summary }: { summary: string }) {
             </section>
           ) : null}
           {ledger.notes.map((note, index) => (
-            <p key={index} className={`${RECAP_BODY_CLASS} opacity-70`}>
-              {note}
-            </p>
+            <RecapText key={index} text={note} className="opacity-70" />
           ))}
         </div>
         {hasLedger ? (
