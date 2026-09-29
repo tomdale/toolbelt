@@ -7,7 +7,7 @@ Recap creates short, display-only summaries of BB threads. It stores each recap 
 - Refresh from the previous recap plus new turns when a thread has moved on. A new turn hides the previous recap until another is generated.
 - Write each recap as a one-line goal, the latest result (or **Needs input** when the session is waiting for an answer), and a ledger of **Open** and **Done** items.
 - Show the latest recap above the composer. With automatic recaps off, an inline **Generate Recap** button appears there instead once the thread settles. Dismiss a recap to hide it until a newer one arrives.
-- Configure the model, idle delay, turn minimum, concurrent workers, prompt, and auto-cleanup.
+- Configure the model, recap layout (Detailed, Compact, or Minimal), idle delay, turn minimum, concurrent workers, prompt, and auto-cleanup. Custom prompts must keep the labeled-line output format to use the layouts.
 
 ## Settings
 

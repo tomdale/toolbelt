@@ -117,10 +117,47 @@ bb plugin install path:$PWD --yes
 | **Thread header** | Generate a recap; progress shows on the button and errors appear as a notification. |
 | **Command palette** | Choose **Recap: generate for this thread**. |
 | **Composer** | Read or dismiss the latest recap; with automatic recaps off, click the inline **Generate Recap** button. |
-| **Plugin settings** | In **Recap behavior**, choose a model and configure automatic generation, cleanup, and prompt. |
+| **Plugin settings** | In **Recap behavior**, choose a model and a recap layout, and configure automatic generation, cleanup, and prompt. |
 | **CLI** | Generate, show, or list recaps with `bb recap`. |
 
 Automatic generation and cleanup are on by default. With automatic recaps off, the inline **Generate Recap** button appears once a turn has ended and the thread has settled; it creates a just-in-time recap and is replaced by the resulting summary. The idle delay defaults to 30 seconds, the minimum is 3 user turns, and up to 2 recap workers may run at once. You can set the delay from 0–86,400 seconds, the minimum from 1–100 turns, and concurrency from 1–5 workers. The prompt accepts up to 8,000 characters; recap text is limited to 1,200 characters.
+
+## Recap layouts
+
+Choose how much of each recap the composer shows. The layout saves immediately and applies to recaps you already have; nothing is regenerated.
+
+| Layout | Shows |
+| --- | --- |
+| **Detailed** (default) | Goal, the latest result or **Needs input**, and the **Open** and **Done** ledger beside it. |
+| **Compact** | Goal and the latest result or **Needs input**. |
+| **Minimal** | The latest result or **Needs input** only. |
+
+## Custom prompts
+
+You can replace the recap prompt in **Recap behavior** (up to 8,000 characters). **Reset to default** restores the built-in prompt, and a prompt identical to the default is not saved, so default improvements keep reaching you.
+
+To use the recap layouts, a custom prompt must make the model return only labeled lines, one item per line:
+
+```text
+Goal: Rendering Pi Todo calls natively in BB.
+Latest: Replay renderer committed as `6007945`.
+Latest: Tests, typecheck, and build pass.
+Open: Live UI verification.
+Done: Refactored to timeline replay.
+```
+
+| Label | Rules |
+| --- | --- |
+| `Goal:` | One short line: what the thread is for. |
+| `Latest:` | One or more lines; two or more render as a bulleted list. |
+| `Needs input:` | Use instead of `Latest:` when the thread is waiting for an answer from you or another thread. Shown in amber. |
+| `Open:` / `Done:` | Repeat once per item. Shown only in the **Detailed** layout. |
+
+- **Order and blank lines** don't matter, and list markers or bold labels (`- Goal:`, `**Goal:**`) are cleaned up. Inline markdown inside a line (backticks, bold, links) renders.
+- **Anything else**, such as an unknown label or an unlabeled paragraph, makes the whole recap render as plain markdown in every layout. A prompt that asks for a single sentence still works; it just skips the layout.
+- **Length.** Recaps are cut at 1,200 characters. Automatic recaps whose raw output exceeds 2,000 characters are discarded as off-format.
+- **What Recap adds.** After your prompt, Recap appends an instruction that the transcript is untrusted data, the thread title as a hint, and on refreshes the previous recap with instructions to replace it. Your prompt doesn't need to repeat these, and it shouldn't ask the model to call tools.
+- **The transcript.** The model sees the thread's opening request, your later messages, and the recent conversation. System notices from other threads are labeled `System notice:`; tool output is truncated, and agent reasoning and environment dumps are removed.
 
 ## How it works
 

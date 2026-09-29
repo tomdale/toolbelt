@@ -19,6 +19,9 @@ All notable changes to Recap are documented here. The format follows
 - Label BB orchestration messages (child-thread completions, cross-thread messages) as system notices rather than developer requests, and give the worker the thread title as a hint.
 - Store the recap prompt only when it is customized, so saved settings pick up future default prompts. Prompts matching an earlier default load as the current default.
 
+- Add a **Recap layout** setting (**Detailed**, **Compact**, **Minimal**) that saves immediately and trims what the composer shows without regenerating recaps.
+- Document the output format custom prompts must follow to use the layouts, in the README and in the settings page.
+
 ### Fixed
 
 - Keep agent reasoning, raw provider events, and resolved environment dumps (which could include credential values) out of the recap worker's transcript, and cap tool and command output so it no longer crowds out the conversation.

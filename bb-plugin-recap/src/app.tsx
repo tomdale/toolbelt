@@ -26,7 +26,10 @@ import {
   settingsFormStatusLabel,
   shouldShowRecapBanner,
   parseRecapLedger,
+  RECAP_LAYOUTS,
+  RECAP_LAYOUT_OPTIONS,
 } from "./recap";
+import type { RecapLayout } from "./recap";
 import type { ModelSelection, Recap, RecapSettings, rpcContract } from "./server";
 
 const RECAP_CHANGED = "recap-changed";
@@ -204,9 +207,11 @@ const RECAP_BANNER_CLASS =
 function RecapComposerBannerContent({
   threadId,
   automatic,
+  layout,
 }: {
   threadId: string;
   automatic: boolean;
+  layout: RecapLayout;
 }) {
   const { recap, generating, generate } = useThreadRecap(threadId);
   const [dismissedRecapId, setDismissedRecapId] = useState<string | null>(null);
@@ -249,16 +254,24 @@ function RecapComposerBannerContent({
         </div>
         {/* Mirrors the recap's goal line and two columns so the result lands in place. */}
         <div aria-hidden="true" className="mt-3 animate-pulse">
-          <div className="h-2.5 w-2/5 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
-          <div className="mt-3.5 grid gap-x-6 gap-y-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+          {layout !== RECAP_LAYOUTS.minimal ? (
+            <div className="mb-3.5 h-2.5 w-2/5 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+          ) : null}
+          <div
+            className={`grid gap-x-6 gap-y-2 ${
+              layout === RECAP_LAYOUTS.detailed ? "sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""
+            }`}
+          >
             <div className="space-y-2">
               <div className="h-2 w-full rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
               <div className="h-2 w-3/4 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
             </div>
-            <div className="space-y-2 sm:border-l sm:border-sky-900/10 sm:pl-6 sm:dark:border-sky-200/10">
-              <div className="h-2 w-5/6 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
-              <div className="h-2 w-2/3 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
-            </div>
+            {layout === RECAP_LAYOUTS.detailed ? (
+              <div className="space-y-2 sm:border-l sm:border-sky-900/10 sm:pl-6 sm:dark:border-sky-200/10">
+                <div className="h-2 w-5/6 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+                <div className="h-2 w-2/3 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -290,7 +303,7 @@ function RecapComposerBannerContent({
 
   return (
     <div className={`${RECAP_BANNER_CLASS} px-4 py-3`} role="region" aria-label="Latest recap">
-      <RecapSummary summary={visibleRecap.summary} />
+      <RecapSummary summary={visibleRecap.summary} layout={layout} />
       <button
         type="button"
         className="absolute right-2.5 top-2.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-sky-900/50 transition-colors hover:bg-sky-900/10 hover:text-sky-900/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:text-sky-200/50 dark:hover:bg-sky-200/10 dark:hover:text-sky-200/80"
@@ -384,19 +397,22 @@ function LedgerList({
 
 /**
  * Renders the default prompt's format: the goal as a one-line heading, then
- * the latest result (or the input the session is waiting for) beside an Open/Done
- * ledger. Any other recap shape (older single-sentence recaps, custom
- * prompts) renders as markdown.
+ * the latest result (or the input the session is waiting for) beside an
+ * Open/Done ledger, trimmed to the chosen layout. Any other recap shape
+ * (older single-sentence recaps, custom prompts) renders as markdown in
+ * every layout.
  */
-function RecapSummary({ summary }: { summary: string }) {
+function RecapSummary({ summary, layout }: { summary: string; layout: RecapLayout }) {
   const ledger = parseRecapLedger(summary);
   if (!ledger) {
     return <Markdown content={summary} className="pr-6 text-sm leading-6 text-inherit" />;
   }
-  const hasLedger = ledger.done.length > 0 || ledger.open.length > 0;
+  const showGoal = layout !== RECAP_LAYOUTS.minimal && ledger.goal !== null;
+  const hasLedger =
+    layout === RECAP_LAYOUTS.detailed && (ledger.done.length > 0 || ledger.open.length > 0);
   return (
     <div>
-      {ledger.goal ? (
+      {showGoal && ledger.goal ? (
         <div
           role="heading"
           aria-level={2}
@@ -406,7 +422,7 @@ function RecapSummary({ summary }: { summary: string }) {
         </div>
       ) : null}
       <div
-        className={`${ledger.goal ? "mt-2.5" : "pr-8"} grid gap-x-6 gap-y-3 ${
+        className={`${showGoal ? "mt-2.5" : "pr-8"} grid gap-x-6 gap-y-3 ${
           hasLedger ? "sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""
         }`}
       >
@@ -468,12 +484,132 @@ function RecapComposerBanner() {
   const showBanner = shouldShowRecapBanner(scope.kind, isInlineMessageEditor);
   const content =
     !isLoading && settings && showBanner
-      ? <RecapComposerBannerContent threadId={scope.threadId} automatic={settings.auto} />
+      ? <RecapComposerBannerContent threadId={scope.threadId} automatic={settings.auto} layout={settings.layout} />
       : null;
   return (
     <div ref={bannerRef} className="contents">
       {content}
     </div>
+  );
+}
+
+/** A schematic of each layout, drawn with the recap's own proportions. */
+function LayoutPreview({ layout }: { layout: RecapLayout }) {
+  const bar = "rounded-full bg-sky-900/15 dark:bg-sky-200/20";
+  return (
+    <div
+      aria-hidden="true"
+      className="flex h-14 flex-col justify-center rounded-md border border-sky-200/80 bg-sky-50 px-2.5 dark:border-sky-800/50 dark:bg-sky-950/60"
+    >
+      {layout !== RECAP_LAYOUTS.minimal ? <div className={`mb-2 h-1.5 w-1/2 ${bar} !bg-sky-900/30 dark:!bg-sky-200/35`} /> : null}
+      <div className={`grid gap-2 ${layout === RECAP_LAYOUTS.detailed ? "grid-cols-[1.2fr_1fr]" : ""}`}>
+        <div className="space-y-1">
+          <div className={`h-1 w-1/4 ${bar}`} />
+          <div className={`h-1 w-full ${bar}`} />
+          <div className={`h-1 w-3/4 ${bar}`} />
+        </div>
+        {layout === RECAP_LAYOUTS.detailed ? (
+          <div className="space-y-1 border-l border-sky-900/10 pl-2 dark:border-sky-200/10">
+            <div className={`h-1 w-1/4 ${bar}`} />
+            <div className={`h-1 w-5/6 ${bar}`} />
+            <div className={`h-1 w-2/3 ${bar}`} />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function LayoutSettings({
+  layout,
+  saving,
+  error,
+  onSelect,
+}: {
+  layout: RecapLayout;
+  saving: boolean;
+  error: string | null;
+  onSelect: (layout: RecapLayout) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-labelledby="recap-layout-label"
+      aria-describedby="recap-layout-help"
+      className="space-y-2 border-t border-border pt-4"
+    >
+      <p id="recap-layout-label" className="font-medium text-foreground">Recap layout</p>
+      <p id="recap-layout-help" className="text-xs text-muted-foreground">
+        How much of each recap to show above the composer. Saves immediately; recaps are not regenerated.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {RECAP_LAYOUT_OPTIONS.map((option) => {
+          const selected = option.value === layout;
+          return (
+            <label
+              key={option.value}
+              className={`flex cursor-pointer flex-col gap-2 rounded-lg border p-2.5 transition-colors ${
+                selected ? "border-foreground/60 bg-accent/40" : "border-border hover:bg-accent/20"
+              }`}
+            >
+              <LayoutPreview layout={option.value} />
+              <span className="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name="recap-layout"
+                  value={option.value}
+                  checked={selected}
+                  disabled={saving}
+                  onChange={() => onSelect(option.value)}
+                  className="mt-0.5 accent-foreground"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-foreground">{option.label}</span>
+                  <span className="block text-xs text-muted-foreground">{option.description}</span>
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+/** The output contract a custom prompt must follow to use the recap layouts. */
+function PromptFormatHelp() {
+  return (
+    <details className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
+      <summary className="cursor-pointer font-medium text-foreground">Output format for custom prompts</summary>
+      <div className="mt-2 space-y-2">
+        <p>
+          To use the recap layouts, the model must return only labeled lines, one item per line, with no blank lines,
+          headings, or bullets:
+        </p>
+        <pre className="overflow-x-auto rounded bg-muted px-2 py-1.5 font-mono text-[11px] leading-4 text-foreground">{`Goal: Rendering Pi Todo calls natively in BB.
+Latest: Replay renderer committed as \`6007945\`.
+Latest: Tests, typecheck, and build pass.
+Open: Live UI verification.
+Done: Refactored to timeline replay.`}</pre>
+        <ul className="list-disc space-y-1 pl-4">
+          <li><span className="font-medium text-foreground">Goal:</span> one short line.</li>
+          <li>
+            <span className="font-medium text-foreground">Latest:</span> one or more lines; several render as a list.
+            Use <span className="font-medium text-foreground">Needs input:</span> instead when the thread is waiting
+            for an answer.
+          </li>
+          <li><span className="font-medium text-foreground">Open:</span> and <span className="font-medium text-foreground">Done:</span> repeat once per item.</li>
+          <li>Inline markdown such as backticks, bold, and links renders inside a line.</li>
+          <li>Any other label or unlabeled text makes the whole recap render as plain markdown, in every layout.</li>
+          <li>Recaps are capped at 1,200 characters; automatic output over 2,000 characters is discarded.</li>
+        </ul>
+        <p>
+          Recap adds its own instructions after your prompt: the untrusted-transcript boundary, the thread title, and,
+          on refreshes, the previous recap. Your prompt does not need to repeat them.
+        </p>
+      </div>
+    </details>
   );
 }
 
@@ -553,6 +689,8 @@ function SettingsSectionBody() {
   const [localDraft, setLocalDraft] = useState<RecapSettings | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [layoutSaving, setLayoutSaving] = useState(false);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
   const rpcRef = useRef(rpc);
   rpcRef.current = rpc;
 
@@ -612,6 +750,20 @@ function SettingsSectionBody() {
   }, [settings]);
 
 
+  const onLayoutSelect = useCallback((layout: RecapLayout) => {
+    const previous = settings?.layout;
+    if (previous === undefined || previous === layout || layoutSaving) return;
+    setLayoutError(null);
+    setLayoutSaving(true);
+    setLoadedSettings((current) => (current ? { ...current, layout } : current));
+    void rpc.call("recap_layout_set", { layout })
+      .catch((cause) => {
+        setLoadedSettings((current) => (current ? { ...current, layout: previous } : current));
+        setLayoutError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => setLayoutSaving(false));
+  }, [layoutSaving, rpc, setLoadedSettings, settings?.layout]);
+
   const pickerValue = pickerValueFromSelection(selection);
 
   return (
@@ -644,6 +796,14 @@ function SettingsSectionBody() {
         <p className="text-xs text-muted-foreground">Loading recap settings…</p>
       ) : (
         <>
+        {settings ? (
+          <LayoutSettings
+            layout={settings.layout}
+            saving={layoutSaving}
+            error={layoutError}
+            onSelect={onLayoutSelect}
+          />
+        ) : null}
         <form
           className="space-y-5 border-t border-border pt-4"
           onSubmit={(event) => {
@@ -739,7 +899,9 @@ function SettingsSectionBody() {
           </div>
           <label className="space-y-1.5">
             <span className="block font-medium text-foreground">Recap prompt</span>
-            <span className="block text-xs text-muted-foreground">Instructions sent to the recap model.</span>
+            <span className="block text-xs text-muted-foreground">
+              Instructions sent to the recap model. A custom prompt must keep the output format below to use the recap layouts.
+            </span>
             <div className="relative">
               <textarea
                 value={draft.prompt}
@@ -780,6 +942,7 @@ function SettingsSectionBody() {
               </p>
             ) : null}
           </label>
+          <PromptFormatHelp />
           {settingsError ? <p role="alert" className="text-sm text-destructive">{settingsError}</p> : null}
           <div className="flex items-center justify-between gap-3 pt-8">
             <p role="status" className="text-xs text-muted-foreground">
@@ -843,7 +1006,7 @@ export default definePluginApp((app) => {
   app.slots.settingsSection({
     id: "settings",
     title: "Recap behavior",
-    description: "Choose the model, automatic behavior, and cleanup.",
+    description: "Choose the model, layout, automatic behavior, and cleanup.",
     component: SettingsSection,
   });
   app.slots.experimental_threadHeaderAction({
