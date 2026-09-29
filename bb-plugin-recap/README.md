@@ -4,6 +4,8 @@
 
 # Recap
 
+Originally created by [MacHatter1](https://github.com/MacHatter1) as [`MacHatter1/bb-recap`](https://github.com/MacHatter1/bb-recap); this fork is maintained in [`tomdale/toolbelt`](https://github.com/tomdale/toolbelt/tree/main/bb-extension-sources/bb-plugin-recap). The original MIT license and copyright notice are preserved in [LICENSE](LICENSE).
+
 ### Get the thread context without re-reading the history.
 
 Read a short summary of a BB thread without scrolling back through the whole conversation. The recap stays separate from the thread's model context.<br>
