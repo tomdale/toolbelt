@@ -1,3 +1,5 @@
+import { managerName } from "./manager";
+
 export type TreeThread = {
   id: string;
   parentThreadId?: string | null;
@@ -48,8 +50,8 @@ export function projectThreadTrees<T extends TreeThread>(
   const managerNames = new Map<string, number>();
   for (const thread of threads) {
     if (roles.get(thread.id) !== "manager") continue;
-    const name = thread.displayTitle.replace(/\s*[—–-]\s*manager$/i, "");
-    managerNames.set(name, (managerNames.get(name) ?? 0) + 1);
+    const name = managerName(thread.displayTitle);
+    if (name) managerNames.set(name, (managerNames.get(name) ?? 0) + 1);
   }
   const groupForRoot = (root: T) => {
     if (root.sectionId)
@@ -58,7 +60,7 @@ export function projectThreadTrees<T extends TreeThread>(
         name: sectionNames.get(root.sectionId) ?? "Section",
       };
     if (roles.get(root.id) === "manager") {
-      const base = root.displayTitle.replace(/\s*[—–-]\s*manager$/i, "");
+      const base = managerName(root.displayTitle) ?? root.displayTitle;
       return {
         id: `manager:${root.id}`,
         name:

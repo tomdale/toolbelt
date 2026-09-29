@@ -48,6 +48,7 @@ import {
   type LogEntry,
 } from "./organize";
 import { hostContract } from "./host-contract";
+import { isManagerTitle } from "./manager";
 import {
   contextExcerpt,
   initialRequest,
@@ -1347,9 +1348,7 @@ export default async function plugin(bb: BbPluginApi) {
       const owners: Record<string, { viaWorkers: string[] }> = {};
       const managerReports = new Map<string, { at: number; text: string }[]>();
       const byId = new Map(active.map((t) => [t.id, t]));
-      const managers = active.filter((t) =>
-        /\s*[—–-]\s*manager$/i.test(t.title),
-      );
+      const managers = active.filter((thread) => isManagerTitle(thread.title));
       if (managers.length) {
         for (const manager of managers) {
           const events = await bb.sdk.threads.events.list({

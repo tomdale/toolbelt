@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { projectThreadTrees } from "./tree-groups.ts";
+import { isManagerTitle } from "./manager";
 
 export const MODEL = "openai/gpt-4.1-mini";
 export const PARALLELISM = 4;
@@ -386,7 +387,7 @@ export function groupThreadTrees(
         (thread) =>
           [
             thread.id,
-            /\s*[—–-]\s*manager$/i.test(thread.title) ? "manager" : "worker",
+            isManagerTitle(thread.title) ? "manager" : "worker",
           ] as const,
       ),
     ),

@@ -200,6 +200,28 @@ it("breaks cyclic parentage deterministically and retains every row", () => {
   expect(model.warnings).toHaveLength(1);
 });
 
+it("does not mark a titled manager group unmanaged even if its suffix has a status note", () => {
+  const model = buildSidebar(
+    [
+      t("pi-manager", {
+        displayTitle: "pi-desktop — manager (awaiting architecture decisions)",
+        sectionId: "work",
+      }),
+      t("worker", { parentThreadId: "pi-manager", sectionId: "other" }),
+    ],
+    null,
+    new Map([
+      ["work", "Work"],
+      ["other", "Other"],
+    ]),
+    new Map([["p", "Project"]]),
+  );
+  const group = model.groups.find((candidate) => candidate.name === "Work")!;
+  expect(group.unmanaged).toBe(false);
+  expect(group.manager?.thread.id).toBe("pi-manager");
+  expect(group.rows.map((row) => row.thread.id)).toEqual(["worker"]);
+});
+
 it("keeps identically named managers in distinct groups", () => {
   const model = buildSidebar(
     [

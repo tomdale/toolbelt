@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { managerName } from "./manager";
 import {
   UNCLASSIFIED,
   driftSchema,
@@ -91,14 +92,9 @@ export function planOrganize(
   alreadySplit: Set<string>,
 ): Action[] {
   const items = new Map(analysis?.items.map((i) => [i.threadId, i]));
-  const managers = threads.filter((thread) =>
-    /\s*[—–-]\s*manager$/i.test(thread.title),
-  );
+  const managers = threads.filter((thread) => managerName(thread.title));
   const managerGroup = (manager: Thread) =>
-    manager.title
-      .replace(/\s*[—–-]\s*manager$/i, "")
-      .trim()
-      .toLowerCase();
+    (managerName(manager.title) ?? manager.title).toLowerCase();
   const matchesManager = (group: string, manager: Thread) => {
     const normalized = group.trim().toLowerCase();
     const name = managerGroup(manager);
