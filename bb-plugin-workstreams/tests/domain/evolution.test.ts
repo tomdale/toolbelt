@@ -4,6 +4,7 @@ import {
   detectProposals,
   pendingCopy,
   proposalKey,
+  snoozeKey,
   type EvolutionRoot,
 } from "../../src/domain/evolution.ts";
 
@@ -163,9 +164,19 @@ describe("anti-churn", () => {
     ).toBe(true);
   });
 
+  it("skips raised keys without letting them take a slot", () => {
+    const all = detect(roots, { capped: false });
+    const first = detect(roots)[0]!;
+    const next = detect(roots, { exclude: new Set([first.key]) });
+    expect(next.some((p) => p.key === first.key)).toBe(false);
+    expect(next.some((p) => p.sourceSectionId === first.sourceSectionId)).toBe(
+      all.filter((p) => p.sourceSectionId === first.sourceSectionId).length > 1,
+    );
+  });
+
   it("brings a dismissed subject back only after two more roots", () => {
     const key = proposalKey("spin-out", "plug", "Workstreams");
-    const snoozed = new Map([[key, 2]]);
+    const snoozed = new Map([[snoozeKey(key), 2]]);
     const few = [
       ...core,
       root("w1", "plug", "Workstreams"),

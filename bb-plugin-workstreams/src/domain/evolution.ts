@@ -58,8 +58,16 @@ export type Candidate = {
 export type DetectOptions = {
   readonly now: number;
   readonly sensitivity: Sensitivity;
-  /** Snoozed keys and the evidence count when they were dismissed. */
+  /**
+   * Snoozed subjects ({@link snoozeKey}) and their evidence count when
+   * dismissed or undone. Kind-agnostic, so a dismissed move that grows into a
+   * merge still waits for two more roots.
+   */
   readonly snoozed?: ReadonlyMap<string, number>;
+  /** Keys already raised; they neither return nor take a slot. */
+  readonly exclude?: ReadonlySet<string>;
+  /** Apply the per-workstream and global caps (default true). */
+  readonly capped?: boolean;
   /** Source workstreams that already have an open proposal. */
   readonly openSources?: ReadonlySet<string>;
   /** Open proposals across all workstreams. */
@@ -76,6 +84,9 @@ export const proposalKey = (
   sourceSectionId: string,
   subject: string,
 ) => `${kind}:${sourceSectionId}:${normalize(subject)}`;
+
+/** The snooze identity of a proposal key: its source and subject. */
+export const snoozeKey = (key: string) => key.slice(key.indexOf(":") + 1);
 
 /**
  * Proposals the evidence supports now, most evidence first, within the
@@ -171,10 +182,15 @@ export function detectProposals(
   const sources = new Set(options.openSources ?? []);
   let open = options.openCount ?? 0;
   for (const candidate of candidates) {
-    const snoozedAt = options.snoozed?.get(candidate.key);
+    if (options.exclude?.has(candidate.key)) continue;
+    const snoozedAt = options.snoozed?.get(snoozeKey(candidate.key));
     // A dismissed subject comes back only after two more roots.
     if (snoozedAt !== undefined && candidate.evidenceCount < snoozedAt + 2)
       continue;
+    if (options.capped === false) {
+      out.push(candidate);
+      continue;
+    }
     if (sources.has(candidate.sourceSectionId)) continue;
     if (open >= MAX_OPEN) break;
     out.push(candidate);

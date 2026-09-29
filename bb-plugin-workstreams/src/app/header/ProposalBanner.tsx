@@ -57,20 +57,27 @@ export function ProposalBanner({
   const [error, setError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
-    const measure = () =>
-      setAnchor(pill.current?.getBoundingClientRect() ?? null);
+    // The header moves with sidebar toggles and split changes, which don't
+    // resize the window, so re-measure on a light interval too.
+    const measure = () => {
+      const rect = pill.current?.getBoundingClientRect() ?? null;
+      setAnchor((previous) =>
+        previous &&
+        rect &&
+        previous.bottom === rect.bottom &&
+        previous.right === rect.right
+          ? previous
+          : rect,
+      );
+    };
     measure();
     window.addEventListener("resize", measure);
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(measure);
-    if (pill.current) observer?.observe(pill.current);
+    const timer = setInterval(measure, 500);
     return () => {
       window.removeEventListener("resize", measure);
-      observer?.disconnect();
+      clearInterval(timer);
     };
-  }, [proposal?.id, collapsed]);
+  }, [proposal?.id, collapsed, split]);
 
   if (!proposal) return null;
   const pending = proposal.status === "pending";

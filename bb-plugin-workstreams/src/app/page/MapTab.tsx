@@ -3,7 +3,7 @@
  * flow (§8): propose a map, review it, assign threads, preview, apply.
  */
 import { useEffect, useState } from "react";
-import type { useRpc } from "@get-bb/plugin-sdk/app";
+import { useRealtime, type useRpc } from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
 import type { RpcContract } from "../../server/contract.ts";
 import type { BootstrapState } from "../../server/bootstrap.ts";
@@ -195,6 +195,7 @@ function Organize({ rpc, bootstrapped }: { rpc: Rpc; bootstrapped: boolean }) {
     void call({ action: "get" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useRealtime("changed", () => void call({ action: "get" }));
   // Model steps report progress through realtime "changed"; poll lightly too.
   const working =
     state?.status === "proposing" ||
@@ -211,6 +212,15 @@ function Organize({ rpc, bootstrapped }: { rpc: Rpc; bootstrapped: boolean }) {
   }, [working]);
 
   const elapsed = state ? Math.round((now - state.startedAt) / 1000) : 0;
+  // Time the machine spent, not time spent waiting on review.
+  const machine = state
+    ? (
+        state.seconds.intake +
+        state.seconds.map +
+        state.seconds.assign +
+        state.seconds.apply
+      ).toFixed(1)
+    : "0";
   const shell = (children: React.ReactNode) => (
     <section
       aria-label="Organize"
@@ -304,7 +314,7 @@ function Organize({ rpc, bootstrapped }: { rpc: Rpc; bootstrapped: boolean }) {
         <p className="text-xs text-muted-foreground">
           {state.roots.length} threads ·{" "}
           {state.roots.filter((r) => r.provenance !== "user").length} to file
-          (unfiled or filed automatically) · {elapsed}s so far
+          (unfiled or filed automatically) · proposed in {machine}s
         </p>
         <ul className="mt-2 flex flex-col gap-1">
           {changes.length === 0 ? (
@@ -399,7 +409,7 @@ function Organize({ rpc, bootstrapped }: { rpc: Rpc; bootstrapped: boolean }) {
         {preview.renames.length
           ? `Renamed: ${preview.renames.map((r) => `${r.from} → ${r.to}`).join(", ")} · `
           : ""}
-        {elapsed}s so far
+        prepared in {machine}s
       </p>
       {[...byTarget].map(([target, moves]) => (
         <div key={target} className="mt-2">

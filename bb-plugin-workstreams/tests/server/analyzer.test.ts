@@ -111,9 +111,12 @@ describe("idle analysis", () => {
     await idle(w, "parent");
     await idle(w, "child");
     await settle(6_000);
+    const analyses = w.completions.filter((c) =>
+      c.prompt.includes("You describe one agent thread"),
+    );
     const [parent, child] = [
-      w.completions.find((c) => c.prompt.includes("Thread parent")),
-      w.completions.find((c) => c.prompt.includes("Thread child")),
+      analyses.find((c) => c.prompt.includes('Title: "Thread parent"')),
+      analyses.find((c) => c.prompt.includes('Title: "Thread child"')),
     ];
     expect(parent?.prompt).toContain('Other workstreams: ["Beta"]');
     expect(child?.prompt).toContain('Workstream: "Alpha"');

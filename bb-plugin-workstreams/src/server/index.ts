@@ -255,14 +255,23 @@ export default async function plugin(bb: BbPluginApi) {
       }),
     bootstrap: (input) =>
       userFacing(async () => {
-        // Model steps take seconds; they report progress over realtime.
-        const settle = (work: Promise<unknown>) =>
-          Promise.race([
-            work.catch((error: unknown) =>
-              bb.log.warn(`Organizing failed: ${String(error)}`),
-            ),
+        // Model steps take seconds and report progress over realtime; a
+        // refusal (already running, nothing to apply) still reaches the caller.
+        const settle = async (work: Promise<unknown>) => {
+          let refusal: unknown = null;
+          const done = work.then(
+            () => undefined,
+            (error: unknown) => {
+              if (error instanceof UserError) refusal = error;
+              else bb.log.warn(`Organizing failed: ${String(error)}`);
+            },
+          );
+          await Promise.race([
+            done,
             new Promise((resolve) => setTimeout(resolve, 300)),
           ]);
+          if (refusal) throw refusal;
+        };
         if (input.action === "start") await settle(bootstrap.start());
         else if (input.action === "assign")
           await settle(bootstrap.assign(input.decisions));
@@ -294,7 +303,11 @@ export default async function plugin(bb: BbPluginApi) {
         entry: await service.renameWorkstream(sectionId, name, "user"),
       })),
     undo: ({ entryId }) =>
-      userFacing(async () => ({ entry: await service.undo(entryId) })),
+      userFacing(async () => {
+        const entry = await service.undo(entryId);
+        evolution.settleUndone();
+        return { entry };
+      }),
     refresh: async () => {
       const changed = await service.reconcile();
       await evolution.tick();

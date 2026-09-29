@@ -14,6 +14,7 @@ import {
   detectProposals,
   normalize,
   pendingCopy,
+  snoozeKey,
   type Candidate,
   type EvolutionRoot,
   type ProposalKind,
@@ -42,7 +43,14 @@ import {
 type Sdk = BbPluginApi["sdk"];
 
 export type ProposalStatus =
-  "pending" | "applied" | "partial" | "undone" | "dismissed" | "expired";
+  | "pending"
+  /** Claimed by an accept in flight; never shown. */
+  | "applying"
+  | "applied"
+  | "partial"
+  | "undone"
+  | "dismissed"
+  | "expired";
 
 export type ProposalView = {
   id: string;
@@ -84,11 +92,14 @@ const UNSORTED = "";
 const APPLIED_BANNER_MS = 7 * 24 * 60 * 60 * 1000;
 const ARCHIVE_CACHE_MS = 10 * 60_000;
 const WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
+const DESCRIBE_RETRY_MS = 60 * 60_000;
 
 export class Evolution {
   private archived: { at: number; roots: EvolutionRoot[] } | null = null;
   /** Unsorted roots already offered to the assignment model, by revision. */
   private readonly assignedAt = new Map<string, number>();
+  /** Workstreams whose description was last requested, to back off retries. */
+  private readonly describedAt = new Map<string, number>();
   private ticking = false;
 
   constructor(
@@ -120,11 +131,13 @@ export class Evolution {
     try {
       const threads = this.deps.service.threads();
       this.deps.map.refresh(threads, this.deps.analyzer.all());
+      // Descriptions are plugin data only, so they fill in from the start.
+      await this.describeMissing();
       if (!this.deps.bootstrap.isDone()) return;
       this.settleUndone();
+      await this.expireStale();
       await this.propose();
       await this.fileUnsorted();
-      await this.describeMissing();
     } catch (error) {
       this.deps.log(`Evolution pass failed: ${String(error)}`);
     } finally {
@@ -140,26 +153,45 @@ export class Evolution {
           row.status === "pending" ||
           ((row.status === "applied" || row.status === "partial") &&
             !row.acknowledged &&
-            row.updated_at >= cutoff),
+            row.updated_at >= cutoff &&
+            // Undone from the banner or Activity: gone before the next pass.
+            (!row.entry_id ||
+              this.deps.journal.get(row.entry_id)?.status !== "undone")),
       )
       .map((row) => this.view(row));
   }
 
   async accept(id: string): Promise<ProposalView> {
+    // Claim the row first, so a second accept can't apply it again.
+    const claimed = this.deps.db
+      .prepare(
+        "UPDATE ws_proposal SET status = 'applying' WHERE id = ? AND status = 'pending'",
+      )
+      .run(id);
     const row = this.row(id);
-    if (!row || row.status !== "pending")
+    if (!row || claimed.changes === 0)
       throw new UserError("That proposal is no longer open.");
-    const fresh = (await this.candidates(false)).find((c) => c.key === row.key);
-    if (!fresh && row.source_section_id !== UNSORTED) {
-      this.setStatus(row, "expired");
-      if (row.entry_id)
-        this.deps.journal.update(row.entry_id, {
-          status: "dismissed",
-          detail: "No longer applies.",
-        });
-      throw new UserError("This no longer applies; nothing changed.");
+    try {
+      const shown = JSON.parse(row.thread_ids) as string[];
+      let threadIds = shown;
+      if (row.source_section_id !== UNSORTED) {
+        // Revalidate uncapped; move only threads the banner showed.
+        const fresh = (await this.candidates({ capped: false })).find(
+          (c) => c.key === row.key,
+        );
+        threadIds = fresh
+          ? shown.filter((t) => fresh.threadIds.includes(t))
+          : [];
+      }
+      if (threadIds.length === 0) {
+        this.expire(row);
+        throw new UserError("This no longer applies; nothing changed.");
+      }
+      return this.view(await this.apply(row, threadIds));
+    } catch (error) {
+      if (this.row(id)?.status === "applying") this.setStatus(row, "pending");
+      throw error;
     }
-    return this.view(await this.apply(row, fresh?.threadIds));
   }
 
   dismiss(id: string): void {
@@ -182,7 +214,7 @@ export class Evolution {
 
   private async propose(): Promise<void> {
     const settings = await this.deps.settings();
-    for (const candidate of await this.candidates(true)) {
+    for (const candidate of await this.candidates({ capped: true })) {
       const row = this.insert(candidate);
       if (settings.evolution === "ask") {
         const entry = this.deps.journal.add({
@@ -202,8 +234,16 @@ export class Evolution {
     }
   }
 
-  /** Candidates the evidence supports; `fresh` drops ones already raised. */
-  private async candidates(fresh: boolean): Promise<Candidate[]> {
+  /**
+   * Candidates the evidence supports now. Capped: new ones only, within the
+   * open-proposal limits (unacknowledged applied changes count as open).
+   * Uncapped: every candidate, for revalidating what is already raised.
+   */
+  private async candidates({
+    capped,
+  }: {
+    capped: boolean;
+  }): Promise<Candidate[]> {
     const threads = this.deps.service.threads();
     const forest = buildForest(threads);
     const placements = this.deps.service.state().placements;
@@ -227,7 +267,16 @@ export class Evolution {
       ...(await this.archivedRoots()),
     ];
     const rows = this.rows();
-    const open = rows.filter((r) => r.status === "pending");
+    const cutoff = this.now() - APPLIED_BANNER_MS;
+    const open = rows.filter(
+      (r) =>
+        r.status === "pending" ||
+        r.status === "applying" ||
+        ((r.status === "applied" || r.status === "partial") &&
+          !r.acknowledged &&
+          r.updated_at >= cutoff &&
+          r.source_section_id !== UNSORTED),
+    );
     const raised = new Set(
       rows
         .filter((r) => r.status !== "expired")
@@ -242,7 +291,7 @@ export class Evolution {
       ).map((r) => [r.key, r.evidence_count]),
     );
     const settings = await this.deps.settings();
-    const candidates = detectProposals(
+    return detectProposals(
       roots,
       this.deps.map
         .list()
@@ -255,13 +304,34 @@ export class Evolution {
           ? settings.sensitivity
           : "responsive") as Sensitivity,
         snoozed,
-        openSources: fresh
-          ? new Set(open.map((r) => r.source_section_id))
-          : new Set(),
-        openCount: fresh ? open.length : 0,
+        capped,
+        exclude: capped ? raised : undefined,
+        openSources: new Set(open.map((r) => r.source_section_id)),
+        openCount: open.length,
       },
     );
-    return fresh ? candidates.filter((c) => !raised.has(c.key)) : candidates;
+  }
+
+  /** Pending proposals are revalidated each pass; stale ones expire. */
+  private async expireStale(): Promise<void> {
+    const pending = this.rows().filter(
+      (r) => r.status === "pending" && r.source_section_id !== UNSORTED,
+    );
+    if (!pending.length) return;
+    const live = new Set(
+      (await this.candidates({ capped: false })).map((c) => c.key),
+    );
+    for (const row of pending) if (!live.has(row.key)) this.expire(row);
+  }
+
+  private expire(row: Row): void {
+    this.setStatus(row, "expired");
+    if (row.entry_id)
+      this.deps.journal.update(row.entry_id, {
+        status: "dismissed",
+        detail: "No longer applies.",
+      });
+    this.deps.onChange();
   }
 
   private async apply(row: Row, threadIds?: readonly string[]): Promise<Row> {
@@ -288,8 +358,13 @@ export class Evolution {
       plan,
       from === null ? "auto" : "proposal",
       this.rationale(row, ""),
-      { action: "proposal", into: row.entry_id },
+      // Filing an Unsorted root is a plain move (I3c), not a map proposal.
+      { action: from === null ? "move" : "proposal", into: row.entry_id },
     );
+    if (!entry) {
+      this.expire(row);
+      return this.row(row.id)!;
+    }
     const target =
       row.kind === "spin-out"
         ? (created.get("new") ?? null)
@@ -315,7 +390,7 @@ export class Evolution {
   }
 
   /** Undone proposals are snoozed like dismissed ones. */
-  private settleUndone(): void {
+  settleUndone(): void {
     for (const row of this.rows()) {
       if (
         (row.status !== "applied" && row.status !== "partial") ||
@@ -428,8 +503,15 @@ export class Evolution {
           })),
       }))
       .filter((m) => m.roots.length > 0)
+      .filter(
+        (m) =>
+          this.now() - (this.describedAt.get(m.record.sectionId) ?? 0) >
+          DESCRIBE_RETRY_MS,
+      )
       .slice(0, 8);
     if (!missing.length) return;
+    for (const m of missing)
+      this.describedAt.set(m.record.sectionId, this.now());
     const { text } = await this.deps.complete(
       describePrompt(
         missing.map((m) => ({ name: m.record.name, roots: m.roots })),
@@ -539,7 +621,7 @@ export class Evolution {
         `INSERT INTO ws_snooze (key, evidence_count, at) VALUES (?, ?, ?)
          ON CONFLICT(key) DO UPDATE SET evidence_count = excluded.evidence_count, at = excluded.at`,
       )
-      .run(row.key, row.evidence_count, this.now());
+      .run(snoozeKey(row.key), row.evidence_count, this.now());
   }
 
   private nameOf(sectionId: string | null): string {

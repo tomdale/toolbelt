@@ -178,6 +178,10 @@ describe("bootstrap", () => {
     await settle(w, "applied");
     expect(w.threads.get("loose")?.sectionId).toBeNull();
     expect(w.sections.some((s) => s.name === "Beta Prime")).toBe(false);
+    // Evolution, now on, respects the unchecked move.
+    await w.harness.behavior.runCli(["analyze", "loose"]);
+    await w.harness.behavior.callRpc("refresh", null);
+    expect(w.threads.get("loose")?.sectionId).toBeNull();
   });
 
   it("previews from the CLI without changing anything", async () => {
