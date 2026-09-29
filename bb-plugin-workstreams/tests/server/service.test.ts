@@ -229,7 +229,7 @@ describe("cli", () => {
     const list = await cli(["list"]);
     expect(list.exitCode).toBe(0);
     expect(list.stdout).toMatch(/Alpha\s+2 threads/);
-    expect(list.stdout).toMatch(/Unsorted\s+1 threads/);
+    expect(list.stdout).toMatch(/Unsorted\s+1 thread /);
 
     const show = await cli(["show", "alpha"]);
     expect(show.stdout).toContain("Root task");
