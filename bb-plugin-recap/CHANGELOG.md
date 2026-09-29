@@ -19,6 +19,7 @@ All notable changes to Recap are documented here. The format follows
 - Label BB orchestration messages (child-thread completions, cross-thread messages) as system notices rather than developer requests, and give the worker the thread title as a hint.
 - Store the recap prompt only when it is customized, so saved settings pick up future default prompts. Prompts matching an earlier default load as the current default.
 
+- Tune the default prompt against real threads: goals describe the thread's lasting purpose as an -ing phrase, each Latest line keeps its caveats, and **Needs input** covers implied go/no-go requests without flagging optional follow-ups or agent-owned next steps.
 - Add a **Recap layout** setting (**Detailed**, **Compact**, **Minimal**) that saves immediately and trims what the composer shows without regenerating recaps.
 - Document the output format custom prompts must follow to use the layouts, in the README and in the settings page.
 
