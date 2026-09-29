@@ -131,6 +131,10 @@ export class Router {
       .filter((t) => !excluded.has(t.id))
       .sort((a, b) => b.latestAttentionAt - a.latestAttentionAt);
 
+    if (options.workstreamId && !nameOf.has(options.workstreamId))
+      throw new UserError(
+        "That workstream no longer exists. Choose another workstream.",
+      );
     const mention = options.workstreamId
       ? { sectionId: options.workstreamId }
       : mentionedTarget(text);
@@ -341,7 +345,9 @@ export class Router {
     if (decision.outcome === "continue") {
       await sdk.threads.send({
         threadId: decision.threadId,
-        input: [{ type: "text", text, mentions: [] }],
+        input: options.execution?.input ?? [
+          { type: "text", text, mentions: [] },
+        ],
         mode: "queue-if-active",
       });
       this.deps.journal.add({
@@ -378,7 +384,10 @@ export class Router {
         ...options.execution,
         ...body,
         projectId: decision.placement.projectId,
-        environment: decision.placement.environment,
+        environment:
+          options.execution?.projectId === decision.placement.projectId
+            ? (options.execution.environment ?? decision.placement.environment)
+            : decision.placement.environment,
         sectionId,
         pluginMetadata: {
           kind: "task",
@@ -440,21 +449,27 @@ export class Router {
     picked: string | null | undefined,
   ): Promise<Placement> {
     const personal = await this.personalProjectId();
+    const projects = sectionId
+      ? (this.deps.map.get(sectionId)?.projects ?? [])
+      : [];
+    if (picked) {
+      const configured = projects.find((p) => p.projectId === picked);
+      return this.on(
+        picked,
+        picked === personal
+          ? "personal workspace"
+          : configured?.environment === "worktree"
+            ? "worktree"
+            : "checkout",
+      );
+    }
     if (code) {
-      const projects = sectionId
-        ? (this.deps.map.get(sectionId)?.projects ?? [])
-        : [];
-      const chosen =
-        (picked &&
-          picked !== personal &&
-          projects.find((p) => p.projectId === picked)) ||
-        projects.find((p) => p.role === "primary");
+      const chosen = projects.find((p) => p.role === "primary");
       if (chosen)
         return this.on(
           chosen.projectId,
           chosen.environment === "worktree" ? "worktree" : "checkout",
         );
-      if (picked && picked !== personal) return this.on(picked, "checkout");
     }
     const home = (await this.deps.homeProjectId()).trim();
     if (home) return this.on(home, "checkout");

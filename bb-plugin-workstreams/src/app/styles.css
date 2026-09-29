@@ -275,3 +275,9 @@
 .ws-route-actions button:disabled {
   opacity: 0.6;
 }
+
+/* The host keeps placement and permissions in the row beneath its prompt.
+   Intake resolves placement automatically; Settings reveals the native row. */
+.ws-intake[data-settings="closed"] [data-app-composer] > div:last-child {
+  display: none;
+}

@@ -232,7 +232,13 @@ One router serves four entry points:
    - The banner remounts when the composer scope changes, so its state lives
      outside the component, keyed by scope. _(spike)_
 2. **Workstreams ＋ New**, on the page and the sidebar. It embeds
-   `experimental_NewThreadComposer` and routes on the server.
+   `experimental_NewThreadComposer` and previews server routing while the draft
+   stays editable. Submitting acts on the current preview in the same composer.
+   A workstream's ＋ explicitly selects that workstream and skips
+   classification; manual workstream changes persist through edits. Project
+   selection is automatic, with native controls available under Settings.
+   Destination copy names the workstream or thread without appended placement
+   metadata.
 3. **`bb workstreams handoff`**, called by agents (§5).
 4. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
 
