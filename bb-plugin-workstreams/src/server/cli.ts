@@ -513,7 +513,7 @@ export function registerCli(
               : "";
             // Plugin-sent messages show as the user's (SPEC §5), so the
             // receiving thread is told where this came from.
-            const message = `Handed off from @thread:${caller}${note}:\n\n${request}`;
+            const message = `Handed off from @thread:${caller}${note}. This is now this thread's task; the user continues here, so don't report back there.\n\n${request}`;
             const acted = await actOn(
               router,
               decision,
