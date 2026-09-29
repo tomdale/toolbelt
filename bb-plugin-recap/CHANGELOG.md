@@ -14,7 +14,7 @@ All notable changes to Recap are documented here. The format follows
   header button shows progress and errors appear as notifications.
 - Remove the separate display setting (compact banner, recap card, on demand); **Automatic recaps** now decides what the composer shows. When it is off, a **Generate Recap** button appears inline after the thread settles, stays hidden while a turn runs, shows an in-place progress placeholder while generating, and is replaced by the just-in-time recap. Saved **On demand** preferences load with automatic recaps off.
 
-- Write recaps at three zoom levels—**Goal**, **Now**, and **Latest**, or **Needs you** when the session is waiting on the developer—shown as labeled rows above the composer. Older recaps and custom prompts still render as plain text.
+- Write recaps as a one-line goal, the latest result (or **Needs you** when the session is waiting on the developer), and a ledger of **Open** and **Done** items, shown above the composer with the ledger beside the latest result. Older recaps and custom prompts still render as plain text.
 - Build long-thread transcripts from the opening request, the developer's messages, and the recent conversation instead of the newest 120,000 characters, so the goal survives in long sessions. Refreshes include the opening request alongside the previous recap and new turns.
 - Label BB orchestration messages (child-thread completions, cross-thread messages) as system notices rather than developer requests, and give the worker the thread title as a hint.
 - Store the recap prompt only when it is customized, so saved settings pick up future default prompts. Prompts matching an earlier default load as the current default.
