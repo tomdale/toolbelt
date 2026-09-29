@@ -2,14 +2,14 @@ import { randomUUID } from "node:crypto";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
-  buildConversationText,
   buildRecapPrompt,
   buildRecapWorkerInput,
   cleanRecapText,
+  MAX_AUTOMATIC_RAW_CHARS,
+  storedRecapSettings,
   countUserTurns,
   MAX_RECAP_CHARS,
   MAX_RECAP_PROMPT_CHARS,
-  MAX_TRANSCRIPT_CHARS,
   parsePositiveInteger,
   createGenerationLimiter,
   isVisibleThread,
@@ -33,6 +33,7 @@ import {
 } from "./recap.ts";
 
 const MAX_ID_CHARS = 256;
+const MAX_TIMELINE_PAGES = 60;
 const MAX_STORED_RECAPS = 1_000;
 const RETRY_AFTER_MS = 90_000;
 const WORKER_TIMEOUT_MS = 120_000;
@@ -126,6 +127,29 @@ export const rpcContract = defineRpcContract({
       })
       .strict(),
   },
+  // Internal prompt-tuning hook, called with `bb plugin rpc call`. It builds
+  // the same worker input as a real recap and, when `run` is set, sends it
+  // through a real worker with the given prompt. Nothing is stored.
+  recap_eval: {
+    input: z
+      .object({
+        threadId: z.string().min(1).max(MAX_ID_CHARS),
+        prompt: z.string().max(MAX_RECAP_PROMPT_CHARS).optional(),
+        previousRecap: z.string().max(MAX_RECAP_CHARS * 4).optional(),
+        previousTurns: z.number().int().min(0).optional(),
+        run: z.boolean().optional(),
+      })
+      .strict(),
+    output: z
+      .object({
+        turns: z.number(),
+        transcript: z.string(),
+        previousRecap: z.string().nullable(),
+        raw: z.string().nullable(),
+        summary: z.string().nullable(),
+      })
+      .strict(),
+  },
   recap_model_get: {
     input: z.object({}).strict(),
     output: z
@@ -159,6 +183,7 @@ type ThreadSnapshot = {
   status: string;
   visibility: "visible" | "hidden";
   originPluginId: string | null;
+  title?: string | null;
 };
 
 type ThreadState = {
@@ -373,7 +398,9 @@ export default async function plugin(bb: BbPluginApi) {
     const pages: unknown[][] = [];
     let before: { id: string; seq: number } | undefined;
 
-    for (let page = 0; page < 20; page += 1) {
+    // Page back to the start of the thread: the opening request anchors the
+    // recap's high-level summary even when the middle is condensed.
+    for (let page = 0; page < MAX_TIMELINE_PAGES; page += 1) {
       const response = await bb.sdk.threads.timeline({
         threadId,
         includeNestedRows: "true",
@@ -383,11 +410,6 @@ export default async function plugin(bb: BbPluginApi) {
         signal,
       });
       pages.unshift(response.rows);
-      if (
-        buildConversationText(pages.flat(), MAX_TRANSCRIPT_CHARS).length >=
-        MAX_TRANSCRIPT_CHARS
-      )
-        break;
       if (
         !response.timelinePage.hasOlderRows ||
         response.timelinePage.olderCursor === null
@@ -502,6 +524,7 @@ export default async function plugin(bb: BbPluginApi) {
       serviceTier?: BbServiceTier;
     },
     signal?: AbortSignal,
+    prompt = config.prompt,
   ): Promise<string> => {
     if (signal?.aborted) return "";
     const worker = await bb.sdk.threads.spawn({
@@ -517,9 +540,10 @@ export default async function plugin(bb: BbPluginApi) {
       title: "Recap worker",
       visibility: "hidden",
       prompt: buildRecapPrompt(
-        config.prompt,
+        prompt,
         input.transcript,
         input.previousRecap,
+        thread.title ?? undefined,
       ),
     });
 
@@ -618,7 +642,7 @@ export default async function plugin(bb: BbPluginApi) {
 
     const suppressed =
       automatic &&
-      (raw.length > 500 ||
+      (raw.length > MAX_AUTOMATIC_RAW_CHARS ||
         (summary.endsWith("…") && summary.length >= MAX_RECAP_CHARS));
     const recap = saveRecap(
       threadId,
@@ -770,7 +794,7 @@ export default async function plugin(bb: BbPluginApi) {
   ): Promise<RecapSettings> => {
     const run = persistQueue.then(async () => {
       const next = mergeRecapSettingsPatch(config, patch);
-      await bb.storage.kv.set(SETTINGS_KEY, next);
+      await bb.storage.kv.set(SETTINGS_KEY, storedRecapSettings(next));
       config = next;
       generationLimiter.setLimit(config.maxConcurrent);
       if (config.autoCleanup) cleanupStoredRecaps();
@@ -838,6 +862,40 @@ export default async function plugin(bb: BbPluginApi) {
       modelSelection = stored;
       publishChanged({ settings: true });
       return { selection: stored };
+    },
+    recap_eval: async ({ threadId, prompt, previousRecap, previousTurns, run }) => {
+      const thread = (await bb.sdk.threads.get({ threadId })) as ThreadSnapshot;
+      const rows = await readTimeline(threadId);
+      const turns = countUserTurns(rows, threadId);
+      const previous =
+        previousRecap !== undefined
+          ? { summary: previousRecap, turns: previousTurns ?? 0 }
+          : null;
+      const input = buildRecapWorkerInput(rows, previous, turns, threadId);
+      if (!run) {
+        return {
+          turns,
+          transcript: input.transcript,
+          previousRecap: input.previousRecap ?? null,
+          raw: null,
+          summary: null,
+        };
+      }
+      const execution = await resolveExecution(thread);
+      const raw = await runWorker(
+        thread,
+        input,
+        execution,
+        undefined,
+        prompt ?? config.prompt,
+      );
+      return {
+        turns,
+        transcript: input.transcript,
+        previousRecap: input.previousRecap ?? null,
+        raw,
+        summary: cleanRecapText(raw),
+      };
     },
     recap_settings_get: async () => parseStoredSettings(config),
     recap_settings_set: async (next) =>

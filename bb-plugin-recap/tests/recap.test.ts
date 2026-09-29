@@ -28,6 +28,9 @@ import {
   isVisibleThread,
   clampConcurrentGenerations,
   createGenerationLimiter,
+  parseRecapLevels,
+  storedRecapSettings,
+  MAX_TRANSCRIPT_CHARS,
 } from "../src/recap.ts";
 
 test("builds a bounded BB transcript and preserves the latest context", () => {
@@ -433,9 +436,11 @@ test("later recaps send the previous summary plus new turns", () => {
   const next = buildRecapWorkerInput(rows, previous, 3, "t1");
   assert.equal(next.previousRecap, previous.summary);
   assert.match(next.transcript, /session cookies/);
-  assert.doesNotMatch(next.transcript, /Add JWT auth in src\/auth\.ts/);
+  // The opening request anchors the goal; turns the previous recap covers are left out.
+  assert.ok(next.transcript.startsWith("User: Add JWT auth in src/auth.ts"));
+  assert.match(next.transcript, /covered by the previous recap/);
   assert.doesNotMatch(next.transcript, /tests\/auth\.test\.ts/);
-  assert.ok(next.transcript.length < first.transcript.length);
+  assert.doesNotMatch(next.transcript, /Added JWT middleware/);
 
   const prompt = buildRecapPrompt(
     "Write one sentence.",
@@ -495,4 +500,104 @@ test("incremental recap input stays near the new-turn size", () => {
     previous = { summary: `We worked on file-${turns}.ts.`, turns };
   }
   assert.ok(incrementalCost < fullCost / 2);
+});
+
+const LEGACY_DEFAULT_PROMPT = "You are an internal recap worker.\n\nReturn exactly one plain-text sentence of about 25–40 words, with no heading, bullets, markdown, or extra explanation. Use the language of the user's messages. Lead with \"You asked …\" for questions or reviews, or \"We <past-tense verb> …\" for implemented changes. Mention concrete files, symbols, flags, endpoints, decisions, or remaining work when present. Never invent progress. Do not call tools. If almost nothing happened, say \"You had just begun this session.\"";
+
+test("keeps zoom-level lines when cleaning recap text", () => {
+  assert.equal(
+    cleanRecapText(
+      "Recap:\n**Goal:** Ship   the parser\n\n- Now: Fixing tests\n  Needs you: Approve the push  ",
+    ),
+    "Goal: Ship the parser\nNow: Fixing tests\nNeeds you: Approve the push",
+  );
+});
+
+test("parses the default zoom-level format and rejects other shapes", () => {
+  assert.deepEqual(
+    parseRecapLevels(
+      "Goal: Ship the parser\nNow: Fixing tests\nNeeds you: Approve the push",
+    ),
+    [
+      { kind: "goal", label: "Goal", text: "Ship the parser" },
+      { kind: "now", label: "Now", text: "Fixing tests" },
+      { kind: "needs-you", label: "Needs you", text: "Approve the push" },
+    ],
+  );
+  assert.equal(parseRecapLevels("We fixed the parser in src/parse.ts."), null);
+  assert.equal(parseRecapLevels("Goal: Ship it\nNote: something else"), null);
+});
+
+test("default and legacy default prompts are not stored as custom prompts", () => {
+  for (const prompt of [
+    DEFAULT_RECAP_PROMPT,
+    LEGACY_DEFAULT_PROMPT,
+    LEGACY_DEFAULT_PROMPT.replace(/^You are an internal recap worker\.\s*/, ""),
+  ]) {
+    assert.equal(normalizeRecapPrompt(prompt), DEFAULT_RECAP_PROMPT);
+    const settings = normalizeRecapSettings({ prompt });
+    assert.equal("prompt" in storedRecapSettings(settings), false);
+  }
+  const custom = normalizeRecapSettings({ prompt: "Write one sentence." });
+  assert.equal(storedRecapSettings(custom).prompt, "Write one sentence.");
+});
+
+test("long transcripts keep the opening, the developer's messages, and the recent tail", () => {
+  const rows: Record<string, unknown>[] = [
+    { kind: "conversation", role: "user", threadId: "t1", text: "OPENING: build the importer" },
+    { kind: "conversation", role: "assistant", threadId: "t1", text: "Starting the importer" },
+  ];
+  for (let i = 0; i < 400; i += 1) {
+    rows.push({ kind: "conversation", role: "user", threadId: "t1", text: `MIDDLE-${i}` });
+    rows.push({
+      kind: "conversation",
+      role: "assistant",
+      threadId: "t1",
+      text: `reply ${i} ${"x".repeat(1_000)}`,
+    });
+  }
+  rows.push({ kind: "conversation", role: "user", threadId: "t1", text: "LAST request" });
+  const transcript = buildConversationText(rows, 60_000, 0, "t1");
+
+  assert.ok(transcript.length <= 60_000);
+  assert.ok(transcript.startsWith("User: OPENING: build the importer"));
+  assert.match(transcript, /condensed to the developer's messages/);
+  assert.match(transcript, /User: MIDDLE-10\b/);
+  assert.doesNotMatch(transcript, /reply 10 /);
+  assert.ok(transcript.endsWith("User: LAST request"));
+});
+
+test("labels host notices and drops noisy or sensitive host rows", () => {
+  const transcript = buildConversationText([
+    { kind: "conversation", role: "user", text: "[bb system]\n\n@thread:thr_1 completed" },
+    { kind: "conversation", role: "user", text: "Please continue" },
+    {
+      kind: "system",
+      systemKind: "operation",
+      operationKind: "generic",
+      title: "Provider environment resolved",
+      detail: "API_KEY=secret-value",
+    },
+    { kind: "system", systemKind: "operation", operationKind: "reasoning", title: "Thought", detail: "hmm" },
+    { kind: "system", systemKind: "operation", operationKind: "provider-unhandled", title: "Unhandled Pi event" },
+    { kind: "system", systemKind: "operation", operationKind: "parent-change", title: "Assigned to manager" },
+    {
+      kind: "work",
+      workKind: "command",
+      command: "npm test",
+      output: "y".repeat(5_000),
+    },
+  ]);
+
+  assert.match(transcript, /^System notice: \[bb system\]/);
+  assert.match(transcript, /User: Please continue/);
+  assert.match(transcript, /System: Assigned to manager/);
+  assert.doesNotMatch(transcript, /secret-value|Thought|Unhandled Pi event/);
+  assert.ok(transcript.length < 1_000);
+  assert.ok(MAX_TRANSCRIPT_CHARS > transcript.length);
+});
+
+test("includes the session title as an untrusted hint", () => {
+  const prompt = buildRecapPrompt("Write it.", "User: hi", undefined, "Fix <parser>");
+  assert.match(prompt, /<session-transcript>\nSession title \(may be out of date\): Fix &lt;parser&gt;/);
 });

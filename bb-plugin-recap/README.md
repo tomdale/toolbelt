@@ -60,9 +60,9 @@ Recap can run after a visible thread goes idle and reaches the minimum user-turn
 <tr>
 <td valign="top">
 
-### 🔄 Carry context forward
+### 🔭 Three zoom levels
 
-When new turns arrive, the next recap uses the previous recap plus those new turns instead of sending the full earlier transcript again.
+Each recap reads from the whole session down to its last moment: **Goal** (why the thread exists), **Now** (the task in progress), and **Latest** (the most recent result). When the session is waiting on you, the last line becomes **Needs you** and says what is being asked.
 
 </td>
 <td valign="top">
@@ -136,8 +136,8 @@ flowchart TD
     G --> H["Show it above the composer or in the CLI"]
 ```
 
-- **Bounded input.** Recap reads up to 120,000 transcript characters and limits generated text to 1,200 characters.
-- **Incremental refresh.** When a thread has new turns, Recap sends the earlier summary plus the new turns. The worker is archived and stopped after each attempt.
+- **Bounded input.** Recap reads up to 120,000 transcript characters and limits generated text to 1,200 characters. Long threads keep their opening request, the developer's later messages, and as much of the recent conversation as fits. Tool and command output is heavily truncated, and agent reasoning, raw provider events, and resolved environment dumps are left out.
+- **Incremental refresh.** When a thread has new turns, Recap sends the previous recap, the thread's opening request, and the new turns instead of the whole transcript again. The worker is archived and stopped after each attempt.
 - **Separate storage.** Recaps live in Recap's namespaced SQLite database. A new thread turn hides the earlier recap until a fresh one is generated.
 - **Automatic runs.** Recap listens for visible threads going idle, waits for the configured delay and turn minimum, and retries transient failures up to three times.
 

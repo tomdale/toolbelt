@@ -25,6 +25,7 @@ import {
   settingsFormStatus,
   settingsFormStatusLabel,
   shouldShowRecapBanner,
+  parseRecapLevels,
 } from "./recap";
 import type { ModelSelection, Recap, RecapSettings, rpcContract } from "./server";
 
@@ -279,7 +280,7 @@ function RecapComposerBannerContent({
 
   return (
     <div className={`${RECAP_BANNER_CLASS} px-3.5 py-2.5`} role="region" aria-label="Latest recap">
-      <Markdown content={visibleRecap.summary} className="text-sm leading-6 text-inherit" />
+      <RecapSummary summary={visibleRecap.summary} />
       <button
         type="button"
         className="absolute right-1.5 top-1.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-sky-900/50 transition-colors hover:bg-sky-900/10 hover:text-sky-900/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:text-sky-200/50 dark:hover:bg-sky-200/10 dark:hover:text-sky-200/80"
@@ -295,6 +296,36 @@ function RecapComposerBannerContent({
         </svg>
       </button>
     </div>
+  );
+}
+
+/**
+ * Renders the default prompt's zoom levels as a label/text grid, with a
+ * pending request to the developer called out. Any other recap shape (older
+ * single-sentence recaps, custom prompts) renders as markdown.
+ */
+function RecapSummary({ summary }: { summary: string }) {
+  const levels = parseRecapLevels(summary);
+  if (!levels) {
+    return <Markdown content={summary} className="pr-6 text-sm leading-6 text-inherit" />;
+  }
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 pr-6 text-sm leading-6">
+      {levels.map((level, index) => (
+        <div key={index} className="contents">
+          <dt
+            className={`whitespace-nowrap pt-px text-xs font-semibold uppercase leading-6 tracking-wide ${
+              level.kind === "needs-you"
+                ? "text-amber-700 dark:text-amber-300"
+                : "text-sky-900/55 dark:text-sky-200/55"
+            }`}
+          >
+            {level.label}
+          </dt>
+          <dd className={level.kind === "needs-you" ? "font-medium" : undefined}>{level.text}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

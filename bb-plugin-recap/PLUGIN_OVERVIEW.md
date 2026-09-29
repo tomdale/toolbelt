@@ -5,6 +5,7 @@ Recap creates short, display-only summaries of BB threads. It stores each recap 
 - Generate from the thread header, command palette, or CLI. Manual generation requires a visible, idle thread; hidden worker threads are not eligible.
 - Create automatic recaps after a visible thread goes idle and reaches the configured user-turn minimum. Recap does not scan idle threads at startup.
 - Refresh from the previous recap plus new turns when a thread has moved on. A new turn hides the previous recap until another is generated.
+- Write each recap at three zoom levels: **Goal**, **Now**, and **Latest**, or **Needs you** when the session is waiting on the developer.
 - Show the latest recap above the composer. With automatic recaps off, an inline **Generate Recap** button appears there instead once the thread settles. Dismiss a recap to hide it until a newer one arrives.
 - Configure the model, idle delay, turn minimum, concurrent workers, prompt, and auto-cleanup.
 
@@ -25,7 +26,7 @@ Omit `thread-id` in a thread-aware BB CLI context. `summarize` is an alias for `
 
 ## Privacy and permissions
 
-A hidden BB worker receives a bounded transcript and the configured recap prompt. It uses `accept-edits`, the least-permissive spawn mode BB currently offers, and is instructed to return only a recap; Recap archives and stops it after each attempt. Hidden is not a security boundary, and the worker remains subject to BB's tools and permission model. The configured provider may process the transcript remotely under its own policy. Recap makes no direct network requests, filesystem access, subprocesses, or telemetry calls; it uses BB's namespaced storage API for its SQLite database.
+A hidden BB worker receives a bounded transcript and the configured recap prompt. The transcript leaves out agent reasoning, raw provider events, and resolved environment dumps, and truncates tool and command output. It uses `accept-edits`, the least-permissive spawn mode BB currently offers, and is instructed to return only a recap; Recap archives and stops it after each attempt. Hidden is not a security boundary, and the worker remains subject to BB's tools and permission model. The configured provider may process the transcript remotely under its own policy. Recap makes no direct network requests, filesystem access, subprocesses, or telemetry calls; it uses BB's namespaced storage API for its SQLite database.
 
 ## Requirements
 
