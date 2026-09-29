@@ -925,7 +925,53 @@ export function clampConcurrentGenerations(value: number): number {
 export const DEFAULT_AFTER_SECONDS = 30;
 export const DEFAULT_MIN_TURNS = 3;
 
-export type RecapSettingsSnapshot = RecapFormSnapshot;
+/**
+ * How much of a structured recap the composer shows. Every layout uses the
+ * same stored recap, so switching layouts never regenerates anything.
+ */
+export const RECAP_LAYOUTS = {
+  /** Goal, latest result or Needs input, and the Open/Done ledger. */
+  detailed: "detailed",
+  /** Goal and latest result or Needs input. */
+  compact: "compact",
+  /** Latest result or Needs input only. */
+  minimal: "minimal",
+} as const;
+
+export type RecapLayout = (typeof RECAP_LAYOUTS)[keyof typeof RECAP_LAYOUTS];
+
+export const RECAP_LAYOUT_OPTIONS: readonly {
+  value: RecapLayout;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: RECAP_LAYOUTS.detailed,
+    label: "Detailed",
+    description: "Goal, latest result, and what's open and done.",
+  },
+  {
+    value: RECAP_LAYOUTS.compact,
+    label: "Compact",
+    description: "Goal and latest result.",
+  },
+  {
+    value: RECAP_LAYOUTS.minimal,
+    label: "Minimal",
+    description: "Latest result only.",
+  },
+];
+
+export function parseRecapLayout(raw: unknown): RecapLayout {
+  return RECAP_LAYOUT_OPTIONS.some((option) => option.value === raw)
+    ? (raw as RecapLayout)
+    : RECAP_LAYOUTS.detailed;
+}
+
+export type RecapSettingsSnapshot = RecapFormSnapshot & {
+  /** Saved on its own, immediately; the settings form never writes it. */
+  layout: RecapLayout;
+};
 
 export function normalizeRecapSettings(value: unknown): RecapSettingsSnapshot {
   const stored =
@@ -968,6 +1014,7 @@ export function normalizeRecapSettings(value: unknown): RecapSettingsSnapshot {
       MAX_CONCURRENT_GENERATIONS,
     ),
     prompt: normalizeRecapPrompt(stored.prompt),
+    layout: parseRecapLayout(stored.layout),
   };
 }
 

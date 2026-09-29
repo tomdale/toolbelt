@@ -29,6 +29,8 @@ import {
   clampConcurrentGenerations,
   createGenerationLimiter,
   parseRecapLedger,
+  parseRecapLayout,
+  RECAP_LAYOUTS,
   storedRecapSettings,
   MAX_TRANSCRIPT_CHARS,
 } from "../src/recap.ts";
@@ -624,4 +626,20 @@ test("labels host notices and drops noisy or sensitive host rows", () => {
 test("includes the session title as an untrusted hint", () => {
   const prompt = buildRecapPrompt("Write it.", "User: hi", undefined, "Fix <parser>");
   assert.match(prompt, /<session-transcript>\nSession title \(may be out of date\): Fix &lt;parser&gt;/);
+});
+
+test("layout defaults to detailed and survives settings form saves", () => {
+  assert.equal(normalizeRecapSettings({}).layout, RECAP_LAYOUTS.detailed);
+  assert.equal(parseRecapLayout("compact"), RECAP_LAYOUTS.compact);
+  assert.equal(parseRecapLayout("Compact banner"), RECAP_LAYOUTS.detailed);
+  const saved = mergeRecapSettingsPatch(normalizeRecapSettings({}), {
+    layout: RECAP_LAYOUTS.minimal,
+  });
+  const afterForm = mergeRecapSettingsPatch(
+    saved,
+    recapSettingsFormPatch({ ...saved, minTurns: 5 }),
+  );
+  assert.equal(afterForm.layout, RECAP_LAYOUTS.minimal);
+  assert.equal(afterForm.minTurns, 5);
+  assert.equal(storedRecapSettings(afterForm).layout, RECAP_LAYOUTS.minimal);
 });

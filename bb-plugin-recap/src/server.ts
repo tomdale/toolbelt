@@ -7,6 +7,7 @@ import {
   cleanRecapText,
   MAX_AUTOMATIC_RAW_CHARS,
   storedRecapSettings,
+  RECAP_LAYOUTS,
   countUserTurns,
   MAX_RECAP_CHARS,
   MAX_RECAP_PROMPT_CHARS,
@@ -88,6 +89,12 @@ const modelSelectionSchema = z
   .strict();
 export type ModelSelection = z.infer<typeof modelSelectionSchema>;
 
+const recapLayoutSchema = z.enum([
+  RECAP_LAYOUTS.detailed,
+  RECAP_LAYOUTS.compact,
+  RECAP_LAYOUTS.minimal,
+]);
+
 const recapSettingsSchema = z
   .object({
     auto: z.boolean(),
@@ -100,6 +107,7 @@ const recapSettingsSchema = z
       .min(MIN_CONCURRENT_GENERATIONS)
       .max(MAX_CONCURRENT_GENERATIONS),
     prompt: z.string().max(MAX_RECAP_PROMPT_CHARS),
+    layout: recapLayoutSchema,
   })
   .strict();
 
@@ -149,6 +157,10 @@ export const rpcContract = defineRpcContract({
         summary: z.string().nullable(),
       })
       .strict(),
+  },
+  recap_layout_set: {
+    input: z.object({ layout: recapLayoutSchema }).strict(),
+    output: z.object({ layout: recapLayoutSchema }).strict(),
   },
   recap_model_get: {
     input: z.object({}).strict(),
@@ -900,6 +912,10 @@ export default async function plugin(bb: BbPluginApi) {
     recap_settings_get: async () => parseStoredSettings(config),
     recap_settings_set: async (next) =>
       persistSettings(recapSettingsFormPatch(next)),
+    recap_layout_set: async ({ layout }) => {
+      const saved = await persistSettings({ layout });
+      return { layout: saved.layout };
+    },
     recap_generate: async ({ threadId, automatic }) => {
       const isAutomatic = automatic === true;
       const generation = await beginGeneration(threadId, isAutomatic);
