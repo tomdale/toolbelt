@@ -216,7 +216,7 @@ describe("create manager", () => {
     expect(h.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(0);
   });
 
-  it("creates an idle manager in the group's project and native section only on click", async () => {
+  it("creates a manager with a coordination prompt in the group's project and native section only on click", async () => {
     const h = setup(1, false, undefined, undefined, [
       { id: "sec", name: "Product" },
     ]);
@@ -248,7 +248,15 @@ describe("create manager", () => {
           title: "Product — manager",
           sectionId: "sec",
           environment: { type: "project-default" },
-          input: [],
+          input: [
+            {
+              type: "text",
+              text: expect.stringMatching(
+                /Workstreams manager.*product "Product".*coordinate its workstream threads.*Do not assume a specific task or start work on other threads yet; ask what the user wants coordinated first/s,
+              ),
+              mentions: [],
+            },
+          ],
         },
       ],
     ]);
@@ -293,7 +301,13 @@ describe("create manager", () => {
     ).toMatchObject({
       title: "Personal — manager",
       projectId: "p",
-      input: [],
+      input: [
+        {
+          type: "text",
+          text: expect.stringContaining('product "Personal"'),
+          mentions: [],
+        },
+      ],
     });
     expect(
       h.harness.inspection.sdk.callsTo("threads.spawn")[0][0],

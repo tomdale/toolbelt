@@ -1439,7 +1439,13 @@ export default async function plugin(bb: BbPluginApi) {
       const created = await bb.sdk.threads.spawn({
         projectId,
         environment: { type: "project-default" },
-        input: [],
+        input: [
+          {
+            type: "text",
+            text: `You are the Workstreams manager for the product ${JSON.stringify(product)} in this BB project. Help coordinate its workstream threads when the user provides priorities or tasks. Do not assume a specific task or start work on other threads yet; ask what the user wants coordinated first.`,
+            mentions: [],
+          },
+        ],
         title: `${product} — manager`,
         ...(sectionId ? { sectionId } : {}),
       });
