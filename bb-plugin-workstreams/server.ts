@@ -91,6 +91,14 @@ export const rpcContract = defineRpcContract({
 });
 
 export const SPLIT_NOTE = "Workstreams split this thread";
+class PartialSplitError extends Error {
+  constructor(
+    message: string,
+    readonly undo: NonNullable<LogEntry["undo"]>,
+  ) {
+    super(message);
+  }
+}
 function isSplitNote(data: unknown): boolean {
   return inputText((data as { input?: unknown }).input).startsWith(SPLIT_NOTE);
 }
@@ -595,16 +603,19 @@ export default async function plugin(bb: BbPluginApi) {
     .catch([])
     .parse(get(logKey()) ?? []);
   let organizing = false;
-  const record = (entry: Omit<LogEntry, "id" | "at" | "undone">) => {
-    log.push({
+  const record = (entry: Omit<LogEntry, "id" | "at" | "undone">): LogEntry => {
+    const saved = {
       ...entry,
       id: crypto.randomUUID(),
       at: Date.now(),
       undone: false,
-    });
+    };
+    log.push(saved);
     log = log.slice(-500);
     put(logKey(), log);
+    return saved;
   };
+  const splitting = new Set<string>();
   async function sectionIds() {
     const sections = await bb.sdk.threadSections.list();
     const byName = new Map(sections.map((s) => [s.name.toLowerCase(), s.id]));
@@ -644,6 +655,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function execute(
     action: Action,
     sections: Awaited<ReturnType<typeof sectionIds>>,
+    splitPolicy: "manual" | "auto",
   ): Promise<Pick<LogEntry, "detail" | "undo">> {
     // Historical removal entries remain readable for Undo, but native BB
     // sections have no durable ownership marker or complete membership query.
@@ -691,8 +703,65 @@ export default async function plugin(bb: BbPluginApi) {
       });
       return { detail: "Parentage updated.", undo: before };
     }
-    if (detail.status !== "idle" && detail.status !== "error")
-      throw new Error("Thread is running; split it when it is idle.");
+    const item = analysis?.items.find((i) => i.threadId === action.threadId);
+    if (
+      !item?.refreshed ||
+      !item.drift ||
+      JSON.stringify(item.drift) !== JSON.stringify(action.drift)
+    )
+      throw new Error("Split analysis is missing or no longer current.");
+    if (
+      item.drift.confidence === "low" ||
+      (splitPolicy === "auto" && item.drift.confidence !== "high")
+    )
+      throw new Error("Split confidence is below the required threshold.");
+    if (
+      log.some(
+        (e) =>
+          e.action.kind === "split" &&
+          !e.undone &&
+          (e.result === "done" || !!e.undo?.forkId) &&
+          (e.action.threadId === action.threadId ||
+            e.undo?.forkId === action.threadId),
+      )
+    )
+      throw new Error("Thread has already been split.");
+    const visible = (await inventory()).find((t) => t.id === action.threadId);
+    if (
+      !visible ||
+      visible.hasPendingInteraction ||
+      (visible.status !== "idle" && visible.status !== "error") ||
+      (detail.status !== "idle" && detail.status !== "error")
+    )
+      throw new Error(
+        "Thread is not eligible, idle, or has a pending interaction.",
+      );
+    if (
+      item.updatedAt !== detail.updatedAt ||
+      item.updatedAt !== visible.updatedAt
+    )
+      throw new Error("Thread changed since split analysis; analyze it again.");
+    // Confirm that the proposed pivot is still a real user request, not a
+    // synthetic note or an event that disappeared from the source timeline.
+    const pivot = await bb.sdk.threads.events.list({
+      threadId: action.threadId,
+      types: ["client/turn/requested"],
+      afterSeq: String(item.drift.splitSeq - 1),
+      order: "asc",
+      limit: "1",
+    });
+    const request = pivot[0];
+    const text =
+      request && inputText((request.data as { input?: unknown }).input);
+    if (
+      request?.seq !== item.drift.splitSeq ||
+      !text ||
+      text.startsWith("[bb system]") ||
+      text.startsWith(SPLIT_NOTE)
+    )
+      throw new Error(
+        "Split point is no longer a user request; analyze it again.",
+      );
     const { drift } = action;
     // BB refuses to fork inside turns recorded under another thread's provider
     // session (e.g. delivered manager messages); fall back to earlier turns.
@@ -732,48 +801,78 @@ export default async function plugin(bb: BbPluginApi) {
       }
     }
     if (!fork) throw lastError;
-    await bb.sdk.threads.update({
-      threadId: fork.id,
-      sectionId: await sections.ensure(drift.from),
-    });
-    await bb.sdk.threads.update({
-      threadId: action.threadId,
-      title: drift.sideTitle,
-    });
-    let compacted = "compacted";
     try {
+      await bb.sdk.threads.update({
+        threadId: fork.id,
+        sectionId: await sections.ensure(drift.from),
+      });
+      await bb.sdk.threads.update({
+        threadId: action.threadId,
+        title: drift.sideTitle,
+      });
       await bb.sdk.threads.compact({ threadId: action.threadId });
-    } catch {
-      compacted = "not compacted";
+    } catch (e) {
+      throw new PartialSplitError(
+        `Fork ${fork.id} was created, but split setup or compaction failed: ${e instanceof Error ? e.message : String(e)}`,
+        { ...before, forkId: fork.id },
+      );
     }
     return {
-      detail: `New thread ${fork.id} (mainline through #${forkedAt}); original ${compacted}.`,
+      detail: `New thread ${fork.id} (mainline through #${forkedAt}); original compacted.`,
       undo: { ...before, forkId: fork.id },
     };
   }
-  /** Applies actions one at a time; failures are logged and don't stop the pass. */
-  async function perform(actions: Action[]) {
+  /** Applies actions one at a time; callers receive each logged outcome. */
+  async function perform(
+    actions: Action[],
+    splitPolicy: "manual" | "auto" = "auto",
+  ): Promise<LogEntry[]> {
+    const outcomes: LogEntry[] = [];
     if (fixture) {
       const titles = new Map(fixture.contexts.map((c) => [c.id, c.title]));
       for (const action of actions)
-        record({ action, result: "planned", detail: describe(action, titles) });
+        outcomes.push(
+          record({
+            action,
+            result: "planned",
+            detail: describe(action, titles),
+          }),
+        );
       notify();
-      return;
+      return outcomes;
     }
     const sections = await sectionIds();
+    const failedSplits = new Set<string>();
     for (const action of actions) {
+      let locked = false;
       try {
-        record({
-          action,
-          result: "done",
-          ...(await execute(action, sections)),
-        });
+        if (failedSplits.has(action.threadId))
+          throw new Error("Skipped because the split failed.");
+        if (action.kind === "split") {
+          if (splitting.has(action.threadId))
+            throw new Error("A split is already in progress for this thread.");
+          splitting.add(action.threadId);
+          locked = true;
+        }
+        outcomes.push(
+          record({
+            action,
+            result: "done",
+            ...(await execute(action, sections, splitPolicy)),
+          }),
+        );
       } catch (e) {
-        record({
-          action,
-          result: "failed",
-          detail: e instanceof Error ? e.message : String(e),
-        });
+        if (action.kind === "split") failedSplits.add(action.threadId);
+        outcomes.push(
+          record({
+            action,
+            result: "failed",
+            detail: e instanceof Error ? e.message : String(e),
+            ...(e instanceof PartialSplitError ? { undo: e.undo } : {}),
+          }),
+        );
+      } finally {
+        if (locked) splitting.delete(action.threadId);
       }
     }
     // The plugin's own edits aren't new work; keep acted-on threads current.
@@ -782,8 +881,9 @@ export default async function plugin(bb: BbPluginApi) {
       analysis = {
         ...analysis,
         items: analysis.items.map((i) =>
-          actions.some((a) => a.threadId === i.threadId) &&
-          fresh.has(i.threadId)
+          outcomes.some(
+            (e) => e.result === "done" && e.action.threadId === i.threadId,
+          ) && fresh.has(i.threadId)
             ? { ...i, updatedAt: fresh.get(i.threadId)! }
             : i,
         ),
@@ -791,6 +891,7 @@ export default async function plugin(bb: BbPluginApi) {
       put(analysisKey(), analysis);
     }
     notify();
+    return outcomes;
   }
   async function organize() {
     organizing = true;
@@ -811,7 +912,9 @@ export default async function plugin(bb: BbPluginApi) {
         log
           .filter(
             (e) =>
-              e.action.kind === "split" && e.result !== "failed" && !e.undone,
+              e.action.kind === "split" &&
+              !e.undone &&
+              (e.result === "done" || !!e.undo?.forkId),
           )
           .map((e) => e.action.threadId),
       );
@@ -843,7 +946,13 @@ export default async function plugin(bb: BbPluginApi) {
   }
   async function undo(id: string) {
     const entry = log.find((e) => e.id === id);
-    if (!entry || entry.undone || entry.result !== "done" || !entry.undo)
+    if (
+      !entry ||
+      entry.undone ||
+      (entry.result !== "done" &&
+        !(entry.action.kind === "split" && entry.undo?.forkId)) ||
+      !entry.undo
+    )
       throw new Error("Nothing to undo for this entry.");
     if (entry.action.kind === "removeSection") {
       await bb.sdk.threadSections.create({ name: entry.action.section });
@@ -1225,13 +1334,13 @@ export default async function plugin(bb: BbPluginApi) {
     split: async ({ threadId }) => {
       const item = analysis?.items.find((i) => i.threadId === threadId);
       if (!item?.drift) throw new Error("No side quest found for this thread.");
-      await perform([
-        {
-          kind: "split",
-          threadId,
-          drift: item.drift,
-        },
-      ]);
+      if (progress || organizing) throw new Error("Busy; try again shortly.");
+      const [outcome] = await perform(
+        [{ kind: "split", threadId, drift: item.drift }],
+        "manual",
+      );
+      if (outcome.result !== "done")
+        throw new Error(outcome.detail || "Split was not performed.");
       return { ok: true };
     },
     undo: async ({ id }) => {

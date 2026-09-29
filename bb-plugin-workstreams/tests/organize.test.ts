@@ -52,7 +52,7 @@ const analysis = (items: Partial<Analysis["items"][number]>[]): Analysis => ({
   })),
 });
 
-it("plans a fresh high-confidence drift even after the thread changes since analysis", () => {
+it("does not plan a split after the thread changes since analysis", () => {
   expect(
     planOrganize(
       [thread("a")],
@@ -66,7 +66,7 @@ it("plans a fresh high-confidence drift even after the thread changes since anal
       ]),
       new Set(),
     ),
-  ).toEqual([{ kind: "split", threadId: "a", drift: drift("high") }]);
+  ).toEqual([]);
 });
 
 it("plans high-confidence splits, messy-title renames, and section moves", () => {
@@ -157,7 +157,13 @@ const fixtures: ReturnType<typeof createFakePluginHost>[] = [];
 afterEach(async () => {
   for (const h of fixtures.splice(0)) await h.harness.lifecycle.dispose();
 });
-function host() {
+function host(
+  options: {
+    forkFails?: boolean;
+    compactFails?: boolean;
+    missingPivot?: boolean;
+  } = {},
+) {
   const rows = [
     makeThreadResponse({
       id: "a",
@@ -190,22 +196,42 @@ function host() {
         list: async () => rows,
         get: async () => rows[0],
         update: async () => rows[0],
-        compact: async () => ({ ok: true }),
+        compact: async () => {
+          if (options.compactFails) throw new Error("compact unavailable");
+          return { ok: true };
+        },
         archive: async () => ({ ok: true }),
         unarchive: async () => ({ ok: true }),
         childSummary: async () => ({ nonDeletedChildCount: 0 }),
-        fork: async () => ({ ...rows[0], id: "fork" }),
+        fork: async () => {
+          if (options.forkFails) throw new Error("fork unavailable");
+          return { ...rows[0], id: "fork" };
+        },
         events: {
-          list: async () => [
-            {
-              seq: 20,
-              data: { input: [{ type: "text", text: "[bb system] note" }] },
-            },
-            {
-              seq: 12,
-              data: { input: [{ type: "text", text: "remote cache?" }] },
-            },
-          ],
+          list: async ({ afterSeq }: { afterSeq?: string }) =>
+            afterSeq
+              ? [
+                  {
+                    seq: options.missingPivot ? 31 : 30,
+                    data: {
+                      input: [
+                        { type: "text", text: "Switch to Markdown viewer" },
+                      ],
+                    },
+                  },
+                ]
+              : [
+                  {
+                    seq: 20,
+                    data: {
+                      input: [{ type: "text", text: "[bb system] note" }],
+                    },
+                  },
+                  {
+                    seq: 12,
+                    data: { input: [{ type: "text", text: "remote cache?" }] },
+                  },
+                ],
         },
       },
     },
@@ -324,6 +350,114 @@ it.each([
     expect(view.log.map((entry) => entry.action.kind)).toEqual(["section"]);
   },
 );
+it("rejects direct split RPC for stale, low-confidence, duplicate and failed forks", async () => {
+  for (const scenario of [
+    "stale",
+    "unrefreshed",
+    "low",
+    "pending",
+    "pivot",
+    "duplicate",
+    "fork-fails",
+    "compact-fails",
+  ] as const) {
+    const h = host({
+      forkFails: scenario === "fork-fails",
+      compactFails: scenario === "compact-fails",
+      missingPivot: scenario === "pivot",
+    });
+    await plugin(h.bb);
+    await seed(h, h.rows[0].updatedAt);
+    const db = h.bb.storage.database();
+    if (scenario === "unrefreshed" || scenario === "low") {
+      const saved = analysis([
+        {
+          threadId: "a",
+          group: "Markdown viewer",
+          drift: drift(scenario === "low" ? "medium" : "high"),
+          refreshed: scenario !== "unrefreshed",
+          updatedAt: h.rows[0].updatedAt,
+        },
+      ]);
+      if (scenario === "low")
+        saved.items[0].drift = { ...drift("medium"), confidence: "low" };
+      db.prepare("UPDATE state SET value = ? WHERE key = ?").run(
+        JSON.stringify(saved),
+        "thread-analysis",
+      );
+    }
+    const live = await h.harness.lifecycle.reload(plugin);
+    fixtures.push(live);
+    if (scenario === "stale") h.rows[0].updatedAt += 1;
+    if (scenario === "pending")
+      Object.assign(h.rows[0], { hasPendingInteraction: true });
+    const call = live.harness.behavior.callRpc;
+    if (scenario === "duplicate") {
+      expect(await call("split", { threadId: "a" })).toEqual({ ok: true });
+    }
+    await expect(call("split", { threadId: "a" })).rejects.toThrow();
+    const sdk = live.harness.inspection.sdk;
+    expect(sdk.callsTo("threads.fork")).toHaveLength(
+      scenario === "duplicate" ||
+        scenario === "fork-fails" ||
+        scenario === "compact-fails"
+        ? 1
+        : 0,
+    );
+    expect(sdk.callsTo("threads.compact")).toHaveLength(
+      scenario === "duplicate" || scenario === "compact-fails" ? 1 : 0,
+    );
+    const view = (await call("snapshot", null)) as View;
+    expect(view.log.at(-1)?.result).toBe("failed");
+    if (scenario === "compact-fails") {
+      expect(view.log.at(-1)?.undo?.forkId).toBe("fork");
+      await expect(call("split", { threadId: "a" })).rejects.toThrow();
+      expect(sdk.callsTo("threads.fork")).toHaveLength(1);
+    }
+  }
+});
+
+it("permits a current medium-confidence manual split but not an automatic one", async () => {
+  const h = host();
+  await plugin(h.bb);
+  await seed(h, h.rows[0].updatedAt);
+  h.bb.storage
+    .database()
+    .prepare("UPDATE state SET value = ? WHERE key = ?")
+    .run(
+      JSON.stringify(
+        analysis([
+          {
+            threadId: "a",
+            group: "Markdown viewer",
+            updatedAt: h.rows[0].updatedAt,
+            drift: drift("medium"),
+          },
+        ]),
+      ),
+      "thread-analysis",
+    );
+  const live = await h.harness.lifecycle.reload(plugin);
+  fixtures.push(live);
+  const call = live.harness.behavior.callRpc;
+  await call("organize", null);
+  expect(live.harness.inspection.sdk.callsTo("threads.fork")).toHaveLength(0);
+  expect(await call("split", { threadId: "a" })).toEqual({ ok: true });
+  expect(live.harness.inspection.sdk.callsTo("threads.fork")).toHaveLength(1);
+});
+
+it("rejects stale high-confidence auto splits without mutating", async () => {
+  const h = host();
+  await plugin(h.bb);
+  await seed(h, h.rows[0].updatedAt);
+  const live = await h.harness.lifecycle.reload(plugin);
+  fixtures.push(live);
+  h.rows[0].updatedAt += 1;
+  await live.harness.behavior.callRpc("organize", null);
+  expect(live.harness.inspection.sdk.callsTo("threads.fork")).toHaveLength(0);
+  const view = (await live.harness.behavior.callRpc("snapshot", null)) as View;
+  expect(view.log.some((e) => e.action.kind === "split")).toBe(false);
+});
 
 it("archives a redundant idle thread with undo", async () => {
   const h = host();
