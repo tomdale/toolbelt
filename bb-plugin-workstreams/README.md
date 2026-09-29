@@ -1,15 +1,16 @@
 # Workstreams for BB
 
-All your active threads, grouped by the project or product they concern. Open
-**Workstreams** in the sidebar (`/plugins/workstreams/home`).
+Your visible active threads, grouped by the project or product they concern.
+Open **Workstreams** in the sidebar (`/plugins/workstreams/home`).
 
-- Every active non-archived thread from BB's sidebar hook appears, including
-  idle and hidden helper threads. BB's built-in sidebar hides helper threads
-  marked hidden; Workstreams intentionally shows them to satisfy the all-active-
-  threads view. Archived threads are not requested. The list is uncapped and not
-  limited to recent activity. **Recent** is a separate, live five-thread window
-  without an overflow control. Only collapsing a whole sidebar band or group
-  hides its rows, and collapse state persists.
+- The page and analysis include visible, non-archived, non-deleted threads,
+  including idle ones. Hidden helper threads (such as side chats and workflow
+  workers) and Workstreams' own internal workers are excluded from the server
+  inventory and automatic organizing. The replacement sidebar reads BB's
+  visible-only sidebar hook, so hidden helpers are absent there too. The full
+  list is paged rather than limited to recent activity. **Recent** is a
+  separate, live five-thread window without an overflow control. Collapsing a
+  sidebar band or group hides its rows, and collapse state persists.
 - Workstreams first builds the complete parent/child tree, then groups each tree
   by the root thread's native BB section assignment. A descendant's own section
   does not split it from its parent, matching BB's built-in custom-section
@@ -43,12 +44,12 @@ All your active threads, grouped by the project or product they concern. Open
   the user messages a thread. Runtime status appears only when it matters
   (running, error) and is never used as evidence of work state.
 - Every identified product gets a short “what it is” and cross-thread status
-  summary. Project managers headline their groups; all other non-archived
-  threads stay visible, including singletons and done work (dimmed). Product
-  banners are omitted from the page to avoid clipping; group summaries remain.
-  Recent is a live five-thread strip. Group chips appear in Needs you and
-  Recent; search (`/`) covers inferred and original titles, recaps, projects,
-  and groups. Clicking a row opens the thread.
+  summary. Project managers headline their groups; all other visible,
+  non-archived threads stay visible, including singletons and done work
+  (dimmed). Product banners are omitted from the page to avoid clipping; group
+  summaries remain. Recent is a live five-thread strip. Group chips appear in
+  Needs you and Recent; search (`/`) covers inferred and original titles,
+  recaps, projects, and groups. Clicking a row opens the thread.
 - Results appear together when analysis completes and survive reloads. Rows are
   marked “Not analyzed” (new), “Updated since analysis”, or “Not refreshed”. A
   failed batch is retried once; if it still fails, those threads keep their
