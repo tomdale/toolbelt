@@ -329,10 +329,13 @@ export default async function plugin(bb: BbPluginApi) {
       userFacing(() => router.route(prompt, { pickedProjectId, workstreamId })),
     routeExecute: ({ decisionId, prompt, choice, execution }) =>
       userFacing(async () => {
-        const remembered = router.byId(decisionId);
+        const remembered = router.recall({ id: decisionId, prompt });
         if (!remembered)
           throw new UserError("That preview expired; route it again.");
         let decision = choose(remembered, choice);
+        // Claim the preview before resolving an ambiguous placement, which
+        // yields and could otherwise let a second submit consume it too.
+        router.forget(decisionId);
         // An unsure choice of workstream still needs a real placement.
         if (decision.outcome === "new-thread" && !decision.placement.projectId)
           decision = await router.route(

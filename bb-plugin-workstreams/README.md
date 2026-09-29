@@ -9,8 +9,10 @@ against.
 ## What it does
 
 - **Sidebar thread list** (select it under Settings → Appearance → Sidebar):
-  - **＋ New work** at the top opens BB's composer; Workstreams previews where
-    the work goes before anything starts.
+  - **＋ New work** opens a composer that previews the destination as you type.
+    Edit the prompt or choose a workstream before sending. A workstream's **＋**
+    selects that workstream explicitly and skips classification. The project is
+    chosen automatically; **Settings** reveals project and execution controls.
   - **Needs you**: a pending approval or question, or a thread whose latest turn
     asks you to decide something. A delegate's question folds into its parent's
     newer one ("via …").

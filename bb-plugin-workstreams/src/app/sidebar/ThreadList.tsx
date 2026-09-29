@@ -34,6 +34,7 @@ export function WorkstreamsThreadList({
   const [nameRequest, setNameRequest] = useState<NameRequest | null>(null);
   const [newWork, setNewWork] = useState<{
     workstreamId: string | null;
+    workstreamName?: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { projection, sections, now } = ws;
@@ -131,6 +132,7 @@ export function WorkstreamsThreadList({
       <NewWorkDialog
         open={newWork !== null}
         workstreamId={newWork?.workstreamId ?? null}
+        workstreamName={newWork?.workstreamName ?? null}
         onClose={() => setNewWork(null)}
       />
       {error ? (
@@ -168,7 +170,9 @@ export function WorkstreamsThreadList({
           collapsed={isCollapsed(group.id)}
           toggle={() => toggle(group.id)}
           onRename={() => renameWorkstream(group)}
-          onNewThread={() => setNewWork({ workstreamId: group.id })}
+          onNewThread={() =>
+            setNewWork({ workstreamId: group.id, workstreamName: group.name })
+          }
         >
           {group.rows.map((row) => renderRow(row))}
         </WorkstreamGroup>

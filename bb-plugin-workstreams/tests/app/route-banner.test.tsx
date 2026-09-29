@@ -57,9 +57,7 @@ it("stays quiet for short drafts", async () => {
 it("previews a new thread, presets the pickers, and starts through the composer", async () => {
   const slot = await mount(newThread);
   await slot.findByText("Alpha", {}, { timeout: 2000 });
-  expect(slot.container.textContent).toContain(
-    "New thread in Alpha · checkout",
-  );
+  expect(slot.container.textContent).toContain("New thread in Alpha");
   await waitFor(() =>
     expect(slot.inspection.composer.selections).toEqual([
       { projectId: "proj_alpha", environment: CHECKOUT },

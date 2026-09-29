@@ -351,3 +351,132 @@ describe("composer filing guards", () => {
     expect(w.threads.get("composed")?.sectionId).toBeNull();
   });
 });
+
+describe("inline intake", () => {
+  it("uses the workstream chosen with + even for a prompt naming other work", async () => {
+    const { w, alpha } = await setup({
+      outcome: "unsure",
+      candidates: [],
+      reason: "",
+    });
+    const decision = await w.harness.behavior.callRpc("route", {
+      prompt: "Start work on Beta",
+      workstreamId: alpha.id,
+    });
+    expect(decision).toMatchObject({
+      outcome: "new-thread",
+      sectionId: alpha.id,
+    });
+    expect(routePrompts(w)).toHaveLength(0);
+    await expect(
+      w.harness.behavior.callRpc("route", {
+        prompt: "Start work on Beta",
+        workstreamId: "deleted-workstream",
+      }),
+    ).rejects.toThrow("no longer exists");
+  });
+
+  it("rejects execution for an edited draft and a decision already used", async () => {
+    const { w, alpha } = await setup({
+      outcome: "unsure",
+      candidates: [],
+      reason: "",
+    });
+    const prompt = "Fix the Alpha parser";
+    const decision = (await w.harness.behavior.callRpc("route", {
+      prompt,
+      workstreamId: alpha.id,
+    })) as Decision;
+    await expect(
+      w.harness.behavior.callRpc("routeExecute", {
+        decisionId: decision.id,
+        prompt: "Different request",
+      }),
+    ).rejects.toThrow("preview expired");
+    expect(w.spawned).toHaveLength(0);
+    await w.harness.behavior.callRpc("routeExecute", {
+      decisionId: decision.id,
+      prompt,
+    });
+    await expect(
+      w.harness.behavior.callRpc("routeExecute", {
+        decisionId: decision.id,
+        prompt,
+      }),
+    ).rejects.toThrow("preview expired");
+    expect(w.spawned).toHaveLength(1);
+  });
+
+  it("keeps structured composer input when continuing a thread", async () => {
+    const { w } = await setup({
+      outcome: "continue",
+      threadId: "a1",
+      confidence: "high",
+      reason: "Same task",
+    });
+    const prompt = "Fix the parser using this example";
+    const decision = await route(w, prompt);
+    const input = [
+      { type: "text", text: prompt, mentions: [] },
+      { type: "image", path: "uploads/example.png" },
+    ];
+    await w.harness.behavior.callRpc("routeExecute", {
+      decisionId: decision.id,
+      prompt,
+      execution: { input },
+    });
+    expect(w.sent[0]).toMatchObject({ threadId: "a1", input });
+  });
+
+  it("uses the composer's environment override only for the routed project", async () => {
+    const { w, alpha } = await setup({
+      outcome: "unsure",
+      candidates: [],
+      reason: "",
+    });
+    const prompt = "Fix the Alpha parser";
+    const decision = (await w.harness.behavior.callRpc("route", {
+      prompt,
+      workstreamId: alpha.id,
+    })) as Decision;
+    const environment = { type: "reuse", environmentId: "env_mine" };
+    await w.harness.behavior.callRpc("routeExecute", {
+      decisionId: decision.id,
+      prompt,
+      execution: { projectId: "proj_1", environment },
+    });
+    expect(w.spawned[0]).toMatchObject({ projectId: "proj_1", environment });
+    const next = (await w.harness.behavior.callRpc("route", {
+      prompt,
+      workstreamId: alpha.id,
+    })) as Decision;
+    await w.harness.behavior.callRpc("routeExecute", {
+      decisionId: next.id,
+      prompt,
+      execution: { projectId: "proj_other", environment },
+    });
+    expect(w.spawned[1]).toMatchObject({
+      environment: next.placement!.environment,
+    });
+  });
+});
+
+it("honors an explicit project override outside the workstream's project map", async () => {
+  const { w, alpha } = await setup({
+    outcome: "unsure",
+    candidates: [],
+    reason: "",
+  });
+  for (const pickedProjectId of ["proj_other", "proj_personal"]) {
+    const decision = await w.harness.behavior.callRpc("route", {
+      prompt: "Fix Alpha",
+      workstreamId: alpha.id,
+      pickedProjectId,
+    });
+    expect(decision).toMatchObject({
+      outcome: "new-thread",
+      sectionId: alpha.id,
+      placement: { projectId: pickedProjectId },
+    });
+  }
+});

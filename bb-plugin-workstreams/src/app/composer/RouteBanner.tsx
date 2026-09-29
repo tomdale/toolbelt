@@ -8,7 +8,9 @@
  * the project switch the banner itself makes), so routing state lives in a
  * module-level store rather than in the component.
  */
-import { useEffect, useSyncExternalStore } from "react";
+import { useContext, useEffect, useSyncExternalStore } from "react";
+import { IntakeContext } from "./intake.ts";
+import { IntakeBanner } from "./IntakeBanner.tsx";
 import {
   useBbNavigate,
   useComposer,
@@ -36,8 +38,6 @@ type RouteState = {
   note: string | null;
   /** The decision whose selection was applied; each is applied once. */
   presetFor: string | null;
-  /** ＋ New routes on its own; the banner stays out of its composer. */
-  suppressed: boolean;
 };
 
 let state: RouteState = {
@@ -50,7 +50,6 @@ let state: RouteState = {
   busy: false,
   note: null,
   presetFor: null,
-  suppressed: false,
 };
 const listeners = new Set<() => void>();
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -80,13 +79,7 @@ export function resetRouteBanner() {
     busy: false,
     note: null,
     presetFor: null,
-    suppressed: state.suppressed,
   };
-}
-
-/** ＋ New's dialog is open: its embedded composer routes itself. */
-export function suppressRouteBanner(suppressed: boolean) {
-  set({ suppressed });
 }
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
@@ -100,7 +93,6 @@ function schedule(
   userPick?: string,
 ) {
   if (timer) clearTimeout(timer);
-  if (state.suppressed) return;
   const trimmed = text.trim();
   // An emptied draft starts over, so the next one reads the picker afresh.
   if (!trimmed) {
@@ -154,6 +146,11 @@ function schedule(
 }
 
 export function RouteBanner() {
+  const intake = useContext(IntakeContext);
+  return intake ? <IntakeBanner intake={intake} /> : <NativeRouteBanner />;
+}
+
+function NativeRouteBanner() {
   const rpc = useRpc<RpcContract>();
   const view = useComposerView();
   const composer = useComposer();
@@ -219,7 +216,6 @@ export function RouteBanner() {
       );
   }, [decision, composer]);
 
-  if (route.suppressed) return null;
   if (text.trim().length < MIN_CHARS) return null;
   if (route.loading && !decision)
     return (
@@ -280,20 +276,15 @@ export function RouteBanner() {
           </>
         ) : decision.outcome === "new-thread" ? (
           <>
-            New thread in <strong>{decision.workstream}</strong> ·{" "}
-            {decision.placement.label}
+            New thread in <strong>{decision.workstream}</strong>
           </>
         ) : decision.outcome === "new-workstream" ? (
           <>
-            New workstream <strong>{decision.name}</strong> ·{" "}
-            {decision.placement.label}
+            New workstream <strong>{decision.name}</strong>
           </>
         ) : (
           <>Not sure where this goes:</>
         )}
-        {decision.reason && decision.outcome !== "unsure" ? (
-          <span className="ws-route-reason"> — {decision.reason}</span>
-        ) : null}
         {route.note ? (
           <span className="ws-route-reason"> ({route.note})</span>
         ) : null}
