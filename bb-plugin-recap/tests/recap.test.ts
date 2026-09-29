@@ -520,26 +520,29 @@ test("parses the default recap ledger and rejects other shapes", () => {
     ),
     {
       goal: "Shipping the parser.",
-      lead: { kind: "needs-you", label: "Needs you", text: "Approve the push" },
+      needsYou: "Approve the push",
+      latest: [],
       notes: [],
       done: ["Parser fixed", "Tests pass"],
       open: ["Push to main"],
     },
+  );
+  assert.deepEqual(
+    parseRecapLedger("Goal: G\nLatest: Pushed fce13d3\nLatest: Reloaded the plugin")?.latest,
+    ["Pushed fce13d3", "Reloaded the plugin"],
   );
   // Recaps saved in the earlier three-level format still parse.
   assert.deepEqual(
     parseRecapLedger("Goal: Ship it\nNow: Fixing tests\nLatest: Tests green"),
     {
       goal: "Ship it",
-      lead: { kind: "latest", label: "Latest", text: "Tests green" },
+      needsYou: null,
+      latest: ["Tests green"],
       notes: ["Fixing tests"],
       done: [],
       open: [],
     },
   );
-  const both = parseRecapLedger("Goal: G\nLatest: Tests green\nNeeds you: Approve");
-  assert.equal(both?.lead?.text, "Approve");
-  assert.deepEqual(both?.notes, ["Tests green"]);
   assert.equal(parseRecapLedger("We fixed the parser in src/parse.ts."), null);
   assert.equal(parseRecapLedger("Goal: Ship it\nNote: something else"), null);
   assert.equal(parseRecapLedger("Done: a\nOpen: b"), null);
