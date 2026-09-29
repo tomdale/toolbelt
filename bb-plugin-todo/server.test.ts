@@ -86,7 +86,6 @@ test("a pending clear masks old tasks across reload and only matching completion
 
 test("clear calls only the scoped Pi reset action and returns its durable boundary", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "todo" });
-  harness.sdk.stub("threads.events.list", async () => []);
   harness.sdk.stub("threads.experimental_providerAction", async () => ({ nextId: 19, boundarySequence: 42 }));
   await plugin(bb);
   try {
@@ -98,44 +97,43 @@ test("clear calls only the scoped Pi reset action and returns its durable bounda
     assert.equal(request.threadId, "thread-a");
     assert.equal(request.action, "pi-todo.reset");
     assert.equal(request.requestId, requestId);
-    assert.equal(await bb.storage.kv.get(`clear:thread-a`), undefined);
+    assert.equal(harness.inspection.sdk.callsTo("threads.events.list").length, 0);
   } finally { await harness.lifecycle.dispose(); }
 });
 
 test("clear propagates provider errors without writing synthetic state", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "todo" });
-  harness.sdk.stub("threads.events.list", async () => []);
   harness.sdk.stub("threads.experimental_providerAction", async () => { throw new Error("Pi Todo reset unavailable"); });
   await plugin(bb);
   try {
     const requestId = "ec48d3bd-e9c1-4271-99cf-9e27aef416ab";
     await assert.rejects(harness.behavior.callRpc("clear", { threadId: "thread-a", requestId }), /Pi Todo reset unavailable/);
-    assert.equal(await bb.storage.kv.get<string>("clear:thread-a"), requestId);
+    assert.equal(harness.inspection.sdk.callsTo("threads.events.list").length, 0);
   } finally { await harness.lifecycle.dispose(); }
 });
 
-test("retry keeps the durable requestId after provider failure and refuses a replacement", async () => {
+test("retry forwards the same UUID and reads pending only from the BB timeline", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "todo" });
   const requestId = "ec48d3bd-e9c1-4271-99cf-9e27aef416ab";
-  const otherId = "49effbf7-1cd1-49b1-b86f-53b3ebeb64f9";
-  harness.sdk.stub("threads.events.list", async () => [{
+  const events = [{
     seq: 1, type: "item/completed", data: { item: { type: "toolCall", tool: "todo", status: "completed", arguments: { action: "create", subject: "Old" }, result: "Created" } },
-  }]);
+  }];
+  harness.sdk.stub("threads.events.list", async (args: { afterSeq?: string }) => events.filter(event => event.seq > Number(args.afterSeq ?? 0)));
   let attempts = 0;
   harness.sdk.stub("threads.experimental_providerAction", async () => {
-    if (++attempts === 1) throw new Error("boundary append interrupted");
+    if (++attempts === 1) {
+      events.push({ seq: 2, type: "system/plugin-todo-reset", data: { pluginId: "pi-todo", requestId, status: "pending" } });
+      throw new Error("boundary append interrupted");
+    }
     return { nextId: 19, boundarySequence: 42 };
   });
   await plugin(bb);
   try {
     await assert.rejects(harness.behavior.callRpc("clear", { threadId: "thread-a", requestId }), /boundary append interrupted/);
-    assert.equal(await bb.storage.kv.get<string>("clear:thread-a"), requestId);
     assert.deepEqual(await harness.behavior.callRpc("snapshot", { threadId: "thread-a" }), {
       tasks: [], nextId: 2, pendingClear: requestId, completedClear: null,
     });
-    await assert.rejects(harness.behavior.callRpc("clear", { threadId: "thread-a", requestId: otherId }), /different Pi Todo reset is pending/);
     assert.deepEqual(await harness.behavior.callRpc("clear", { threadId: "thread-a", requestId }), { nextId: 19, boundarySequence: 42 });
-    assert.equal(await bb.storage.kv.get<string>("clear:thread-a"), undefined);
     assert.deepEqual(harness.inspection.sdk.callsTo("threads.experimental_providerAction").map(call => call[0]), [
       { threadId: "thread-a", action: "pi-todo.reset", requestId },
       { threadId: "thread-a", action: "pi-todo.reset", requestId },

@@ -57,9 +57,9 @@ function TodoCard() {
       if (generation.current === request) {
         setTasks(result.tasks);
         if (result.pendingClear) requestId.current = result.pendingClear;
-        else if (result.completedClear === requestId.current) requestId.current = null;
-        // An older snapshot must not unmask tasks while a clear is in flight.
-        setPendingClear(result.pendingClear ?? requestId.current);
+        else if (!clearInFlight.current) requestId.current = null;
+        // While the call is in flight, the snapshot may predate BB's pending event.
+        setPendingClear(result.pendingClear ?? (clearInFlight.current ? requestId.current : null));
         setError(null);
       }
     }, cause => {
@@ -82,8 +82,9 @@ function TodoCard() {
     if (!threadId || clearInFlight.current) return;
     clearInFlight.current = true;
     const currentThread = threadId;
-    const id = pendingClear ?? requestId.current ?? crypto.randomUUID();
+    const id = pendingClear ?? crypto.randomUUID();
     requestId.current = id;
+    generation.current++;
     setPendingClear(id);
     setClearing(true);
     setClearError(null);
@@ -97,7 +98,7 @@ function TodoCard() {
       }
     } finally {
       clearInFlight.current = false;
-      if (activeThread.current === currentThread) setClearing(false);
+      if (activeThread.current === currentThread) { setClearing(false); refresh(); }
     }
   };
   const card = useMemo(() => buildCardView(pendingClear || clearing ? [] : tasks), [tasks, pendingClear, clearing]);
