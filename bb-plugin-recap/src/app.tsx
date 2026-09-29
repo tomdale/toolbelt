@@ -25,7 +25,7 @@ import {
   settingsFormStatus,
   settingsFormStatusLabel,
   shouldShowRecapBanner,
-  parseRecapLevels,
+  parseRecapLedger,
 } from "./recap";
 import type { ModelSelection, Recap, RecapSettings, rpcContract } from "./server";
 
@@ -299,33 +299,68 @@ function RecapComposerBannerContent({
   );
 }
 
+const RECAP_LABEL_CLASS =
+  "text-[11px] font-semibold uppercase leading-5 tracking-wide text-sky-900/55 dark:text-sky-200/55";
+
+function LedgerList({ items, mark, label }: { items: string[]; mark: string; label: string }) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <p className={RECAP_LABEL_CLASS}>{label}</p>
+      <ul className="mt-0.5 space-y-0.5">
+        {items.map((item, index) => (
+          <li key={index} className="grid grid-cols-[1rem_1fr]">
+            <span aria-hidden="true" className="opacity-60">{mark}</span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /**
- * Renders the default prompt's zoom levels as a label/text grid, with a
- * pending request to the developer called out. Any other recap shape (older
- * single-sentence recaps, custom prompts) renders as markdown.
+ * Renders the default prompt's format: the goal as a one-line heading, then
+ * the latest result (or what the session needs from you) beside a Done/Open
+ * ledger. Any other recap shape (older single-sentence recaps, custom
+ * prompts) renders as markdown.
  */
 function RecapSummary({ summary }: { summary: string }) {
-  const levels = parseRecapLevels(summary);
-  if (!levels) {
+  const ledger = parseRecapLedger(summary);
+  if (!ledger) {
     return <Markdown content={summary} className="pr-6 text-sm leading-6 text-inherit" />;
   }
+  const hasLedger = ledger.done.length > 0 || ledger.open.length > 0;
+  const needsYou = ledger.lead?.kind === "needs-you";
   return (
-    <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 pr-6 text-sm leading-6">
-      {levels.map((level, index) => (
-        <div key={index} className="contents">
-          <dt
-            className={`whitespace-nowrap pt-px text-xs font-semibold uppercase leading-6 tracking-wide ${
-              level.kind === "needs-you"
-                ? "text-amber-700 dark:text-amber-300"
-                : "text-sky-900/55 dark:text-sky-200/55"
-            }`}
-          >
-            {level.label}
-          </dt>
-          <dd className={level.kind === "needs-you" ? "font-medium" : undefined}>{level.text}</dd>
+    <div className="pr-6 text-sm leading-6">
+      {ledger.goal ? <p className="font-medium">{ledger.goal}</p> : null}
+      <div
+        className={`${ledger.goal ? "mt-1.5" : ""} grid gap-x-5 gap-y-2 ${
+          hasLedger ? "sm:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]" : ""
+        }`}
+      >
+        <div>
+          {ledger.lead ? (
+            <>
+              <p className={needsYou ? `${RECAP_LABEL_CLASS} !text-amber-700 dark:!text-amber-300` : RECAP_LABEL_CLASS}>
+                {ledger.lead.label}
+              </p>
+              <p className={needsYou ? "font-medium" : undefined}>{ledger.lead.text}</p>
+            </>
+          ) : null}
+          {ledger.notes.map((note, index) => (
+            <p key={index} className="mt-1 text-[13px] opacity-75">{note}</p>
+          ))}
         </div>
-      ))}
-    </dl>
+        {hasLedger ? (
+          <div className="space-y-1.5 border-sky-200 text-[13px] leading-5 sm:border-l sm:pl-4 dark:border-sky-800/70">
+            <LedgerList items={ledger.open} mark="○" label="Open" />
+            <LedgerList items={ledger.done} mark="✓" label="Done" />
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

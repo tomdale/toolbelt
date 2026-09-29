@@ -28,7 +28,7 @@ import {
   isVisibleThread,
   clampConcurrentGenerations,
   createGenerationLimiter,
-  parseRecapLevels,
+  parseRecapLedger,
   storedRecapSettings,
   MAX_TRANSCRIPT_CHARS,
 } from "../src/recap.ts";
@@ -513,19 +513,36 @@ test("keeps zoom-level lines when cleaning recap text", () => {
   );
 });
 
-test("parses the default zoom-level format and rejects other shapes", () => {
+test("parses the default recap ledger and rejects other shapes", () => {
   assert.deepEqual(
-    parseRecapLevels(
-      "Goal: Ship the parser\nNow: Fixing tests\nNeeds you: Approve the push",
+    parseRecapLedger(
+      "Goal: Shipping the parser.\nNeeds you: Approve the push\nDone: Parser fixed\nDone: Tests pass\nOpen: Push to main",
     ),
-    [
-      { kind: "goal", label: "Goal", text: "Ship the parser" },
-      { kind: "now", label: "Now", text: "Fixing tests" },
-      { kind: "needs-you", label: "Needs you", text: "Approve the push" },
-    ],
+    {
+      goal: "Shipping the parser.",
+      lead: { kind: "needs-you", label: "Needs you", text: "Approve the push" },
+      notes: [],
+      done: ["Parser fixed", "Tests pass"],
+      open: ["Push to main"],
+    },
   );
-  assert.equal(parseRecapLevels("We fixed the parser in src/parse.ts."), null);
-  assert.equal(parseRecapLevels("Goal: Ship it\nNote: something else"), null);
+  // Recaps saved in the earlier three-level format still parse.
+  assert.deepEqual(
+    parseRecapLedger("Goal: Ship it\nNow: Fixing tests\nLatest: Tests green"),
+    {
+      goal: "Ship it",
+      lead: { kind: "latest", label: "Latest", text: "Tests green" },
+      notes: ["Fixing tests"],
+      done: [],
+      open: [],
+    },
+  );
+  const both = parseRecapLedger("Goal: G\nLatest: Tests green\nNeeds you: Approve");
+  assert.equal(both?.lead?.text, "Approve");
+  assert.deepEqual(both?.notes, ["Tests green"]);
+  assert.equal(parseRecapLedger("We fixed the parser in src/parse.ts."), null);
+  assert.equal(parseRecapLedger("Goal: Ship it\nNote: something else"), null);
+  assert.equal(parseRecapLedger("Done: a\nOpen: b"), null);
 });
 
 test("default and legacy default prompts are not stored as custom prompts", () => {
