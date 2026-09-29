@@ -45,17 +45,17 @@ Everything Workstreams does is expressed in these primitives. This table records
 what BB allows. Rows marked _(spike)_ were verified against BB 0.44 / SDK
 0.5.29.
 
-| Primitive       | Meaning                                                                                                                              | Mutable after creation                      | Facts that constrain Workstreams                                                                                                                                                                                                                                                                         |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Machine         | An execution host                                                                                                                    | —                                           | Currently one machine (`Vercel MBP`).                                                                                                                                                                                                                                                                    |
-| Project         | A container bound to a source path on each machine. It supplies default environments, `AGENTS.md` and skills, and prompt history.    | Name only. **A thread's project is fixed.** | The personal project means "no project". 22 of 39 active threads share the tomdaleOS checkout, so a project is not a product.                                                                                                                                                                            |
-| Environment     | The working directory a thread runs in: a project checkout (shared), a managed worktree, a personal workspace, or an unmanaged path. | A thread can switch directories.            | **`{ type: "project-default" }` resolves to the project's server-side default, which can be a managed worktree. The native composer can show "Project checkout" for the same project at the same time.** _(spike)_ **Deleting a thread does not tear down its worktree or delete the branch.** _(spike)_ |
-| Section         | A **global**, cross-project bucket. A thread has at most one `sectionId`.                                                            | Move, rename, delete                        | The built-in sidebar groups each **tree by its root's section**. Sections have no description or owner.                                                                                                                                                                                                  |
-| Parent / child  | `parentThreadId` (can cross projects). The parent receives child-completion system messages.                                         | Reparent                                    | Each child completion arrives as `[bb system] @thread:X completed: …` and **starts a parent turn**. _(spike)_                                                                                                                                                                                            |
-| Lifecycle owner | Archiving or deleting the owner cascades to the thread.                                                                              | Set at spawn                                | Independent of the parent.                                                                                                                                                                                                                                                                               |
-| Fork            | `originKind: fork`, `sourceThreadId`                                                                                                 | —                                           | Side chats are hidden forks from `side-chat`.                                                                                                                                                                                                                                                            |
-| Visibility      | `visible` or `hidden`                                                                                                                | Yes                                         | The sidebar hook omits hidden threads. _(spike)_                                                                                                                                                                                                                                                         |
-| Plugin metadata | A per-thread JSON namespace (≤ 256 KiB)                                                                                              | Yes                                         | Any client can write it. Validate it, and never treat it as authorization.                                                                                                                                                                                                                               |
+| Primitive       | Meaning                                                                                                                              | Mutable after creation                      | Facts that constrain Workstreams                                                                                                                                                                                                                                                                                                                                           |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Machine         | An execution host                                                                                                                    | —                                           | Currently one machine (`Vercel MBP`).                                                                                                                                                                                                                                                                                                                                      |
+| Project         | A container bound to a source path on each machine. It supplies default environments, `AGENTS.md` and skills, and prompt history.    | Name only. **A thread's project is fixed.** | The personal project means "no project". 22 of 39 active threads share the tomdaleOS checkout, so a project is not a product.                                                                                                                                                                                                                                              |
+| Environment     | The working directory a thread runs in: a project checkout (shared), a managed worktree, a personal workspace, or an unmanaged path. | A thread can switch directories.            | **`{ type: "project-default" }` resolves to the project's server-side default, which can be a managed worktree. The native composer can show "Project checkout" for the same project at the same time.** _(spike)_ BB core owns retirement and teardown: after the last live thread is archived or deleted, the worktree is removed asynchronously and the branch is kept. |
+| Section         | A **global**, cross-project bucket. A thread has at most one `sectionId`.                                                            | Move, rename, delete                        | The built-in sidebar groups each **tree by its root's section**. Sections have no description or owner.                                                                                                                                                                                                                                                                    |
+| Parent / child  | `parentThreadId` (can cross projects). The parent receives child-completion system messages.                                         | Reparent                                    | Each child completion arrives as `[bb system] @thread:X completed: …` and **starts a parent turn**. _(spike)_                                                                                                                                                                                                                                                              |
+| Lifecycle owner | Archiving or deleting the owner cascades to the thread.                                                                              | Set at spawn                                | Independent of the parent.                                                                                                                                                                                                                                                                                                                                                 |
+| Fork            | `originKind: fork`, `sourceThreadId`                                                                                                 | —                                           | Side chats are hidden forks from `side-chat`.                                                                                                                                                                                                                                                                                                                              |
+| Visibility      | `visible` or `hidden`                                                                                                                | Yes                                         | The sidebar hook omits hidden threads. _(spike)_                                                                                                                                                                                                                                                                                                                           |
+| Plugin metadata | A per-thread JSON namespace (≤ 256 KiB)                                                                                              | Yes                                         | Any client can write it. Validate it, and never treat it as authorization.                                                                                                                                                                                                                                                                                                 |
 
 **Signals.**
 
@@ -109,48 +109,50 @@ what BB allows. Rows marked _(spike)_ were verified against BB 0.44 / SDK
   wherever BB allows it.
 - **I8. One projection.** The sidebar and the page render from one pure
   projection function over the same inputs.
-- **I9. Cleanup.** Workstreams owns cleanup of every environment it provisions,
-  since archiving or deleting a thread does not tear down its worktree.
 
 ## 5. Thread roles and injected behavior
 
-These are delivered with `bb.agents.registerTool` plus `bb.agents.configure`.
-`configure` is synchronous, and its context contains
-`thread { id, title, parentThreadId, sourceThreadId }`, `project`,
-`environment { path, branchName }`, `origin`, and `pluginMetadata`. It **does
-not include `sectionId` or visibility** _(spike)_, so role and product come from
-metadata plus a synchronous SQLite cache.
+Delegation uses BB's own spawn. Workstreams adds only instructions and one tool,
+`workstreams_handoff`, because handoff needs the router and BB has no
+equivalent. Both are delivered with `bb.agents.configure` (plus
+`bb.agents.registerTool` for handoff). `configure` is synchronous, and its
+context contains `thread { id, title, parentThreadId, sourceThreadId }`,
+`project`, `environment { path, branchName }`, `origin`, and `pluginMetadata`.
+It **does not include `sectionId` or visibility** _(spike)_, so role and product
+come from metadata plus a synchronous SQLite cache.
 
-| Thread                      | Tools                                                                 | Instructions (≤ 4096 characters)                                                                                                                                                                                                                                                                                             |
-| --------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Task (top-level, visible)   | `workstreams_delegate`, `workstreams_handoff`, `workstreams_products` | "You are a task thread in **‹product›** (‹one-line description›). Delegate separable subtasks to child threads, then coordinate and integrate here. If the user asks for something outside this thread's task or product, don't do it here: call `workstreams_handoff` with their request verbatim and reply with the link." |
-| Delegate (child)            | `workstreams_handoff`                                                 | "You are a delegated subtask of ‹parent›. Report results to it. Hand off out-of-scope requests. Don't spawn further threads."                                                                                                                                                                                                |
-| Hidden, side chat, internal | none                                                                  | none                                                                                                                                                                                                                                                                                                                         |
+| Thread                      | Tools                 | Instructions (≤ 4096 characters)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Task (top-level, visible)   | `workstreams_handoff` | "You are a task thread in **‹product›** (‹one-line description›). Delegate separable subtasks to child threads with `bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"`, always choosing the environment explicitly: `--new-environment worktree` for code changes, `--environment "$BB_ENVIRONMENT_ID"` otherwise. Then coordinate and integrate here. If the user asks for something outside this thread's task or product, don't do it here: call `workstreams_handoff` with their request verbatim and reply with the link." |
+| Delegate (child)            | `workstreams_handoff` | "You are a delegated subtask of ‹parent›. Report results to it. Hand off out-of-scope requests. Don't spawn further threads."                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Hidden, side chat, internal | none                  | none                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
-**`workstreams_delegate({ prompt, title, environment: "inherit" | "worktree" | "checkout", projectId? })`**
+**Delegation needs no plugin tool.** BB's spawn already sets the parent,
+lifecycle owner, project, and environment (_spike S5_). Workstreams recognizes a
+delegate structurally, by its `parentThreadId`, so it doesn't matter how the
+child was created (the CLI, the SDK, another plugin). Core retires the child's
+environment. The spawn command omits `--section`, so the child inherits its
+product through tree membership.
 
-- Spawns a child with `parentThreadId` and `lifecycleOwnerThreadId` set to the
-  caller, and an explicit environment.
-- Does not write a section; the child inherits its product.
-- Records the environment for cleanup (I9).
-
-**`workstreams_handoff({ request, note? })`**
+**`workstreams_handoff({ request, note? })`**, also available as
+`bb workstreams handoff`, backed by the same function:
 
 - Runs the §6 router with the caller excluded as a target.
 - Returns `{ outcome, threadId, link }`.
 - Sends the text prefixed with "Handed off from @thread:‹caller›", because
   messages the plugin sends are recorded as `initiator: user` with no sender
   _(spike)_.
-
-**`workstreams_products()`** returns the product map summary.
+- The product map is available through `bb workstreams products`. It is not a
+  separate tool, since the router consults the map itself.
 
 **Guards.**
 
 - No handoff back to the caller.
-- At most 3 delegate or handoff calls per turn.
-- Delegates cannot delegate.
-- A spawn retries with backoff while the parent is still `starting`: spawning a
-  child in that window returns HTTP 500 _(spike)_.
+- At most 3 handoffs per turn.
+- "Delegates don't delegate" is an instruction, not an enforced rule: BB has no
+  hook on thread creation.
+- A handoff spawn retries with backoff while the target's new parent is still
+  `starting`: spawning a child in that window returns HTTP 500 _(spike)_.
 
 **Timing.** Tools and instructions reach a thread when its provider session next
 starts. A running session does not pick them up until it restarts. _(spike:
@@ -258,19 +260,19 @@ The bootstrap runs the §9 evolution engine with relaxed thresholds.
 
 **Steady state.**
 
-| Change                                                                                    | Signal                                                               | Reaction                                                                                                 |
-| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Thread created through intake or a tool                                                   | RPC or tool call                                                     | Placed by the router (provenance `router` or `tool`)                                                     |
-| Child created by any source                                                               | `thread.created`                                                     | No structural change. Analyze it on its first idle.                                                      |
-| Top-level thread created elsewhere (native composer without the banner, CLI, automations) | `thread.created`, then the first `thread.idle`                       | Respect a section that is already set. Otherwise classify it, then auto-file or suggest (§17).           |
-| Visible fork                                                                              | `thread.created` with `sourceThreadId`                               | Default to the source's product                                                                          |
-| User sends a message                                                                      | `message.dispatch` (observe and always `proceed`) or `thread.active` | Mark analysis pending. Clear any inferred "needs decision".                                              |
-| Turn completes                                                                            | `thread.idle` (`lastAssistantText` included)                         | Per-thread analysis (§10), debounced about 5 s, at most 4 concurrent                                     |
-| Pending approval or question                                                              | `interaction.pending`                                                | Show in Needs you immediately                                                                            |
-| Turn fails                                                                                | `thread.failed` / `turn.failed`                                      | Show an error indicator. No analysis.                                                                    |
-| Moves, retitles, reparents, section changes                                               | **None**, so the reconciler catches them                             | Record as provenance `user`, never override, update the map                                              |
-| Archive, unarchive, delete                                                                | Lifecycle events                                                     | Update views, re-analyze if stale, purge on delete. Tear down environments Workstreams provisioned (I9). |
-| The plugin was offline                                                                    | Load                                                                 | Full reconcile, then analyze every thread whose revision is newer than its last analysis                 |
+| Change                                                                                    | Signal                                                               | Reaction                                                                                       |
+| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Thread created through intake or a tool                                                   | RPC or tool call                                                     | Placed by the router (provenance `router` or `tool`)                                           |
+| Child created by any source                                                               | `thread.created`                                                     | No structural change. Analyze it on its first idle.                                            |
+| Top-level thread created elsewhere (native composer without the banner, CLI, automations) | `thread.created`, then the first `thread.idle`                       | Respect a section that is already set. Otherwise classify it, then auto-file or suggest (§17). |
+| Visible fork                                                                              | `thread.created` with `sourceThreadId`                               | Default to the source's product                                                                |
+| User sends a message                                                                      | `message.dispatch` (observe and always `proceed`) or `thread.active` | Mark analysis pending. Clear any inferred "needs decision".                                    |
+| Turn completes                                                                            | `thread.idle` (`lastAssistantText` included)                         | Per-thread analysis (§10), debounced about 5 s, at most 4 concurrent                           |
+| Pending approval or question                                                              | `interaction.pending`                                                | Show in Needs you immediately                                                                  |
+| Turn fails                                                                                | `thread.failed` / `turn.failed`                                      | Show an error indicator. No analysis.                                                          |
+| Moves, retitles, reparents, section changes                                               | **None**, so the reconciler catches them                             | Record as provenance `user`, never override, update the map                                    |
+| Archive, unarchive, delete                                                                | Lifecycle events                                                     | Update views, re-analyze if stale, purge on delete.                                            |
+| The plugin was offline                                                                    | Load                                                                 | Full reconcile, then analyze every thread whose revision is newer than its last analysis       |
 
 **Reconciler.** A deterministic diff that calls no model. It runs on load, every
 60 s while a client is connected, and on page focus. It pages through
@@ -398,11 +400,11 @@ kept separate:
 
 ## 12. Storage
 
-| Data                                                                                                          | Store                                                                    |
-| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Product map, analysis cache, journal and Activity log, proposals, provisioned environments, reconciler cursor | Plugin SQLite (`bb.storage.database()`) with migrations                  |
-| Per-thread `{ kind, productAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }`                       | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
-| Collapse state and UI preferences                                                                             | Client local storage                                                     |
+| Data                                                                                    | Store                                                                    |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Product map, analysis cache, journal and Activity log, proposals, reconciler cursor     | Plugin SQLite (`bb.storage.database()`) with migrations                  |
+| Per-thread `{ kind, productAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }` | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
+| Collapse state and UI preferences                                                       | Client local storage                                                     |
 
 v1 tables are left untouched until cutover and are not read after bootstrap.
 
@@ -411,7 +413,7 @@ v1 tables are left untouched until cutover and are not read after bootstrap.
 ```
 bb-plugin-workstreams/
   src/domain/    tree · project (forest → groups and bands) · attention · rank · evolution · schemas   ← pure; most tests live here
-  src/server/    index · map · journal · reconciler · analyzer (idle queue) · router · evolution-runner · environments · inference/{host,pi,prompts} · rpc · cli · agents (tools + configure)
+  src/server/    index · map · journal · reconciler · analyzer (idle queue) · router · evolution-runner · inference/{host,pi,prompts} · rpc · cli · agents (tools + configure)
   src/app/       index · useWorkstreams (live hook + one state RPC + realtime) · sidebar/* · page/* · header/* (pill + floating banner) · composer/* (routing banner)
   tests/         domain (real exported snapshots) · server (mock SDK) · app (renderSlot)
 ```
@@ -429,15 +431,15 @@ bb-plugin-workstreams/
 
 ## 14. Platform findings (spikes, 2026-09-29)
 
-| #   | Question                                                                                   | Result                                                                                                                                                                                                                                  |
-| --- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S1  | Does the live sidebar hook work on a plugin page?                                          | **Yes.** It returned 38 visible threads, 16 sections (including the spike's temporary one), and 14 projects, with fields including `indicator`, `environment`, `lifecycleOwnerThreadId`, and `queuedWork`. Hidden threads are excluded. |
-| S2  | Does a banner in the new-thread composer work, with `setSelection` and clearing the draft? | **Yes.** The scope exposes `projectId`, the picker switched to the requested project, and `clear()` works. The banner remounts when the scope changes, so its state must live outside the component.                                    |
-| S3  | What does the `configure` context contain, and does tool and instruction injection work?   | **Yes**, gated by metadata: an injected codeword and tool call succeeded, and threads without the metadata got neither. The context has no `sectionId` or visibility.                                                                   |
-| S4  | Is there an event for section, title, or rename changes?                                   | **No**, not even `experimental_thread.events`. A reconciler is required.                                                                                                                                                                |
-| S5  | Can one spawn set section, parent, and lifecycle owner?                                    | **Yes**, but it returns HTTP 500 while the parent is still `starting`. `project-default` provisioned a managed worktree and branch. Deleting the thread left both behind, so they must be cleaned up explicitly.                        |
-| S6  | How does a plugin-sent message appear?                                                     | As `initiator: user` with no sender, and the agent reads it as the user. Child completions reach the parent as system messages that start a turn.                                                                                       |
-| S7  | Does a floating banner at the top of the thread work?                                      | **Yes**, using the header action plus a portal. Pane geometry is available only in split view.                                                                                                                                          |
+| #   | Question                                                                                   | Result                                                                                                                                                                                                                                   |
+| --- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S1  | Does the live sidebar hook work on a plugin page?                                          | **Yes.** It returned 38 visible threads, 16 sections (including the spike's temporary one), and 14 projects, with fields including `indicator`, `environment`, `lifecycleOwnerThreadId`, and `queuedWork`. Hidden threads are excluded.  |
+| S2  | Does a banner in the new-thread composer work, with `setSelection` and clearing the draft? | **Yes.** The scope exposes `projectId`, the picker switched to the requested project, and `clear()` works. The banner remounts when the scope changes, so its state must live outside the component.                                     |
+| S3  | What does the `configure` context contain, and does tool and instruction injection work?   | **Yes**, gated by metadata: an injected codeword and tool call succeeded, and threads without the metadata got neither. The context has no `sectionId` or visibility.                                                                    |
+| S4  | Is there an event for section, title, or rename changes?                                   | **No**, not even `experimental_thread.events`. A reconciler is required.                                                                                                                                                                 |
+| S5  | Can one spawn set section, parent, and lifecycle owner?                                    | **Yes**, but it returns HTTP 500 while the parent is still `starting`. `project-default` provisioned a managed worktree and branch. (Core tears down a worktree after its last thread is deleted, asynchronously, and keeps the branch.) |
+| S6  | How does a plugin-sent message appear?                                                     | As `initiator: user` with no sender, and the agent reads it as the user. Child completions reach the parent as system messages that start a turn.                                                                                        |
+| S7  | Does a floating banner at the top of the thread work?                                      | **Yes**, using the header action plus a portal. Pane geometry is available only in split view.                                                                                                                                           |
 
 ## 15. Process rules
 
@@ -459,15 +461,15 @@ bb-plugin-workstreams/
 
 ## 16. Phases
 
-| Phase | Scope                                                                                                                     | Gate                                                            |
-| ----- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| 0     | Freeze v1 (`organize = suggest`, workers idle), worktree, spikes, this spec                                               | Tom signs off                                                   |
-| 1     | Deterministic core: forest and projection, sidebar, Unsorted, reconciler, page skeleton, parent link, journal             | Exact-once tests on a real export. Screenshots. No model calls. |
-| 2     | Analysis: idle queue, recap/state/subject, Needs you, eval harness                                                        | Analysis within about 10 s of idle. Passes the eval.            |
-| 3     | Bootstrap and evolution: map proposal, review, assignment, evolution engine, floating banner, Activity log                | Live state organized in under 2 minutes. Undo works.            |
-| 4     | Intake: router, native-composer banner, ＋ New, CLI `new`                                                                 | Routing eval on replayed real prompts                           |
-| 5     | Task-thread behavior: tools, `configure`, drift flag, environment cleanup; update tomdaleOS agent instructions separately | Handoff and delegate scenarios on throwaway threads             |
-| 6     | Cutover: rename to `workstreams`, remove v1                                                                               | A day of normal use                                             |
+| Phase | Scope                                                                                                                        | Gate                                                            |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| 0     | Freeze v1 (`organize = suggest`, workers idle), worktree, spikes, this spec                                                  | Tom signs off                                                   |
+| 1     | Deterministic core: forest and projection, sidebar, Unsorted, reconciler, page skeleton, parent link, journal                | Exact-once tests on a real export. Screenshots. No model calls. |
+| 2     | Analysis: idle queue, recap/state/subject, Needs you, eval harness                                                           | Analysis within about 10 s of idle. Passes the eval.            |
+| 3     | Bootstrap and evolution: map proposal, review, assignment, evolution engine, floating banner, Activity log                   | Live state organized in under 2 minutes. Undo works.            |
+| 4     | Intake: router, native-composer banner, ＋ New, CLI `new`                                                                    | Routing eval on replayed real prompts                           |
+| 5     | Task-thread behavior: `configure` instructions, the handoff tool, drift flag; update tomdaleOS agent instructions separately | Handoff and delegate scenarios on throwaway threads             |
+| 6     | Cutover: rename to `workstreams`, remove v1                                                                                  | A day of normal use                                             |
 
 ## 17. Decisions
 
