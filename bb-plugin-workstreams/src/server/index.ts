@@ -16,6 +16,7 @@ import { rpcContract } from "./contract.ts";
 import { hostContract } from "./inference/contract.ts";
 import { openDatabase } from "./db.ts";
 import { Journal } from "./journal.ts";
+import { loadOrder, saveOrder } from "./order.ts";
 import { UserError, WorkstreamService } from "./service.ts";
 
 export { rpcContract } from "./contract.ts";
@@ -377,7 +378,13 @@ export default async function plugin(bb: BbPluginApi) {
         ).map((r) => [r.thread_id, r.target]),
       ),
       bootstrapped: bootstrap.isDone(),
+      order: loadOrder(db),
     }),
+    reorder: async (change) => {
+      const order = saveOrder(db, change);
+      notify();
+      return { order };
+    },
     editWorkstream: ({ sectionId, description, aliases }) =>
       userFacing(async () => {
         const record = map.get(sectionId);
