@@ -73,15 +73,6 @@ export type RouteDecision =
 export type RouteSource = "router" | "handoff";
 
 const MEMORY_MS = 15 * 60_000;
-const CHECKOUT: Environment = {
-  type: "host",
-  workspace: { type: "unmanaged", path: null },
-};
-const WORKTREE: Environment = {
-  type: "host",
-  workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
-};
-const PERSONAL: Environment = { type: "host", workspace: { type: "personal" } };
 
 const hash = (text: string) =>
   createHash("sha256").update(text.trim()).digest("hex");
@@ -392,7 +383,11 @@ export class Router {
     if (sectionId) await this.deps.service.move(threadId, sectionId, "router");
   }
 
-  /** Project and environment for new work (SPEC §6 policy, I4: explicit). */
+  /**
+   * Project and environment for new work (SPEC §6 policy, I4: always
+   * explicit, never `project-default`). The host is the project's default
+   * source machine, so the composer can apply the selection as-is.
+   */
   private async placement(
     sectionId: string | null,
     code: boolean,
@@ -409,28 +404,64 @@ export class Router {
           projects.find((p) => p.projectId === picked)) ||
         projects.find((p) => p.role === "primary");
       if (chosen)
-        return chosen.environment === "worktree"
-          ? {
-              projectId: chosen.projectId,
-              environment: WORKTREE,
-              label: "worktree",
-            }
-          : {
-              projectId: chosen.projectId,
-              environment: CHECKOUT,
-              label: "checkout",
-            };
-      if (picked && picked !== personal)
-        return { projectId: picked, environment: CHECKOUT, label: "checkout" };
+        return this.on(
+          chosen.projectId,
+          chosen.environment === "worktree" ? "worktree" : "checkout",
+        );
+      if (picked && picked !== personal) return this.on(picked, "checkout");
     }
     const home = (await this.deps.homeProjectId()).trim();
-    if (home)
-      return { projectId: home, environment: CHECKOUT, label: "checkout" };
+    if (home) return this.on(home, "checkout");
+    return this.on(personal, "personal workspace");
+  }
+
+  private async on(
+    projectId: string,
+    label: "checkout" | "worktree" | "personal workspace",
+  ): Promise<Placement> {
+    const hostId = await this.hostFor(projectId);
+    const workspace =
+      label === "worktree"
+        ? {
+            type: "managed-worktree" as const,
+            baseBranch: { kind: "default" as const },
+          }
+        : label === "personal workspace"
+          ? { type: "personal" as const }
+          : { type: "unmanaged" as const, path: null };
     return {
-      projectId: personal,
-      environment: PERSONAL,
-      label: "personal workspace",
+      projectId,
+      label,
+      environment: {
+        type: "host",
+        ...(hostId ? { hostId } : {}),
+        workspace,
+      } as Environment,
     };
+  }
+
+  private async hostFor(projectId: string): Promise<string | null> {
+    const sdk = this.deps.sdk();
+    try {
+      const projects = await sdk.projects.list({
+        includePersonal: true,
+      } as never);
+      const project = (
+        projects as {
+          id: string;
+          sources?: { hostId: string; isDefault?: boolean }[];
+        }[]
+      ).find((p) => p.id === projectId);
+      const source =
+        project?.sources?.find((s) => s.isDefault) ?? project?.sources?.[0];
+      if (source) return source.hostId;
+    } catch {
+      // Fall back to the only connected machine.
+    }
+    const hosts = (await sdk.hosts.list()).filter(
+      (h) => h.status === "connected",
+    );
+    return hosts.length === 1 ? hosts[0]!.id : null;
   }
 
   private async personalProjectId(): Promise<string> {

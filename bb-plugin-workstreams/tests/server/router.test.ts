@@ -97,7 +97,11 @@ describe("route", () => {
       (await route(w, "Plan a three-day trip to Lisbon in May")).placement,
     ).toEqual({
       projectId: "proj_personal",
-      environment: { type: "host", workspace: { type: "personal" } },
+      environment: {
+        type: "host",
+        hostId: "host_1",
+        workspace: { type: "personal" },
+      },
       label: "personal workspace",
     });
     await world!.harness.lifecycle.dispose();
