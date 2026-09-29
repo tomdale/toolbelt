@@ -54,8 +54,7 @@ export default async function plugin(bb: BbPluginApi) {
     model: {
       type: "select",
       label: "Analysis model",
-      description:
-        "Summarizes each thread after every turn through Pi's AI Gateway. Change it only to a model that passes the eval.",
+      description: "Summarizes each thread after every turn.",
       options: [...MODELS],
       default: MODELS[0],
     },
