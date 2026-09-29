@@ -466,7 +466,7 @@ export function registerCli(
               exitCode: acted.outcome === "unsure" ? 3 : 0,
               stdout: options.json
                 ? JSON.stringify(acted, null, 2)
-                : describeOutcome(acted),
+                : describeOutcome(acted, options["dry-run"]),
             };
           },
         }),
@@ -612,7 +612,7 @@ export async function actOn(
   };
 }
 
-function describeOutcome(acted: Acted): string {
+export function describeOutcome(acted: Acted, dryRun = false): string {
   if (acted.outcome === "unsure")
     return [
       `Not sure where this goes: ${acted.reason}`,
@@ -621,10 +621,16 @@ function describeOutcome(acted: Acted): string {
     ].join("\n");
   const verb =
     acted.outcome === "continue"
-      ? "Sent to"
+      ? dryRun
+        ? "Would send to"
+        : "Sent to"
       : acted.outcome === "new-workstream"
-        ? "Started in new workstream"
-        : "Started in";
+        ? dryRun
+          ? "Would start in new workstream"
+          : "Started in new workstream"
+        : dryRun
+          ? "Would start in"
+          : "Started in";
   return `${verb} ${acted.outcome === "continue" ? (acted.link ?? "") : (acted.workstream ?? "")}${
     acted.link && acted.outcome !== "continue" ? `: ${acted.link}` : ""
   }\n${acted.reason}`;
