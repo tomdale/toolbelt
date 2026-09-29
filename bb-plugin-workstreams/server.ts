@@ -190,21 +190,13 @@ export default async function plugin(bb: BbPluginApi) {
     for (let offset = 0; ; offset += 100) {
       const page = await bb.sdk.threads.list({
         archived: false,
-        includeHidden: false,
+        includeHidden: true,
         limit: 100,
         offset,
         signal,
       });
       for (const t of page) {
-        if (
-          t.archivedAt !== null ||
-          t.deletedAt !== null ||
-          t.visibility === "hidden" ||
-          // Mainline forks made by a split are ordinary threads; anything
-          // else this plugin creates would be internal.
-          (t.originPluginId === bb.pluginId && t.originKind !== "fork")
-        )
-          continue;
+        if (t.archivedAt !== null || t.deletedAt !== null) continue;
         const project = byId.get(t.projectId);
         threads.push({
           id: t.id,
