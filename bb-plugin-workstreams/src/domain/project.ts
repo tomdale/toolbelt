@@ -127,16 +127,18 @@ export function projectWorkstreams<T extends WorkstreamThread>(
     rowsBySection.set(key, rows);
   }
 
-  // A child's question folds into its parent when the parent's own
-  // needs-you turn is at least as recent (SPEC §10: timestamps only).
+  // A child's question folds into its parent when the parent has a newer
+  // turn that also needs a decision (SPEC §10: timestamps only). A pending
+  // interaction never folds: only the child can answer it.
   const needsYouVia = new Map<string, T[]>();
   const folded = new Set<string>();
   for (const row of rowOf.values()) {
     if (!row.needsYou || !row.thread.parentThreadId) continue;
+    if (row.thread.hasPendingInteraction) continue;
     const parent = rowOf.get(row.thread.parentThreadId);
     if (
       !parent?.needsYou ||
-      parent.thread.latestAttentionAt < row.thread.latestAttentionAt
+      parent.thread.latestAttentionAt <= row.thread.latestAttentionAt
     )
       continue;
     folded.add(row.thread.id);

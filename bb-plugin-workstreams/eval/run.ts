@@ -298,8 +298,26 @@ for (const model of models) {
       };
     }
   });
-  report[model] = { score: score(results), results };
-  console.log(model, JSON.stringify(score(results), null, 2));
+  const summary = score(results);
+  report[model] = { score: summary, results };
+  // Private cases stay out of stdout (transcripts); EVAL_OUTPUT has them.
+  const isPublic = (id: string) => !id.startsWith("private:");
+  console.log(
+    model,
+    JSON.stringify(
+      {
+        ...summary,
+        anchoredOnProject: summary.anchoredOnProject.length,
+        misses: summary.misses.filter(isPublic),
+        drift: {
+          ...summary.drift,
+          falseAlarmIds: summary.drift.falseAlarmIds.filter(isPublic),
+        },
+      },
+      null,
+      2,
+    ),
+  );
 }
 if (env.EVAL_OUTPUT)
   await writeFile(env.EVAL_OUTPUT, JSON.stringify(report, null, 2));

@@ -210,7 +210,7 @@ describe("thread list", () => {
       within(band)
         .getAllByRole("link")
         .map((a) => a.getAttribute("aria-label")),
-    ).toEqual(["Fresh ask"]);
+    ).toEqual(["Fresh ask, Needs your decision"]);
     expect(
       within(slot.getByRole("region", { name: "Unsorted" })).getAllByRole(
         "img",

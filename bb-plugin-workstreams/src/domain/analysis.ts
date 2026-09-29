@@ -107,19 +107,20 @@ const REQUEST_CHARS = 1500;
 const INITIAL_CHARS = 1800;
 const REPORT_CHARS = 2500;
 
-/** The conversation block: bounded, redacted, oldest first. */
+/** The conversation block: redacted, then bounded, oldest first. */
 export function conversationBlock(input: AnalysisInput): string {
+  const cut = (text: string, max: number) => excerpt(redact(text), max);
   const parts = input.requests.map((request) =>
     request.initial
-      ? `[Opening request — historical intent; later requests take precedence]\n${excerpt(request.text, INITIAL_CHARS)}`
-      : `[User request]\n${excerpt(request.text, REQUEST_CHARS)}`,
+      ? `[Opening request — historical intent; later requests take precedence]\n${cut(request.text, INITIAL_CHARS)}`
+      : `[User request]\n${cut(request.text, REQUEST_CHARS)}`,
   );
   parts.push(
     input.lastAssistantText
-      ? `[Last assistant message — unverified]\n${excerpt(input.lastAssistantText, REPORT_CHARS)}`
+      ? `[Last assistant message — unverified]\n${cut(input.lastAssistantText, REPORT_CHARS)}`
       : "[No assistant message yet]",
   );
-  return redact(parts.join("\n\n"));
+  return parts.join("\n\n");
 }
 
 export function analysisPrompt(input: AnalysisInput): string {
@@ -139,7 +140,7 @@ export function analysisPrompt(input: AnalysisInput): string {
 
 You describe one agent thread for someone who switches between dozens of them.
 
-Title: ${JSON.stringify(input.title)}
+Title: ${JSON.stringify(redact(input.title))}
 ${where}
 
 Conversation, oldest first:
@@ -165,7 +166,9 @@ export function parseAnalysis(
     .trim()
     .replace(/^```(?:json)?\s*/, "")
     .replace(/\s*```$/, "");
-  const output = analysisOutputSchema.parse(JSON.parse(body));
+  const parsed = analysisOutputSchema.parse(JSON.parse(body));
+  const output =
+    parsed.state === "needs_decision" ? parsed : { ...parsed, needsYou: null };
   if (!input || !output.drift) return output;
   const same = (a: string | null) =>
     a !== null &&
@@ -181,9 +184,10 @@ export function parseAnalysis(
 }
 
 /**
- * A result describes the thread only while it is settled (idle, or failed) at
- * the revision that was analyzed. A starting or running turn, or a newer
- * completed one, makes it pending (SPEC I6).
+ * A result describes the thread only while it is idle at the revision that
+ * was analyzed. A starting or running turn, or a newer completed one, makes it
+ * pending (SPEC I6). A failed turn gets no analysis (SPEC §8), so a thread in
+ * error has no current result either.
  */
 export function isCurrent(
   analysis: Pick<ThreadAnalysis, "revision"> | undefined,
@@ -191,7 +195,7 @@ export function isCurrent(
 ): analysis is ThreadAnalysis {
   return (
     analysis !== undefined &&
-    (thread.status === "idle" || thread.status === "error") &&
+    thread.status === "idle" &&
     analysis.revision >= thread.latestAttentionAt
   );
 }

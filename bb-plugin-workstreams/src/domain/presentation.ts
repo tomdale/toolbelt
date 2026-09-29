@@ -62,7 +62,8 @@ export const WORK_STATE: Record<
 > = {
   needs_decision: { glyph: "◆", label: "Needs your decision" },
   review: { glyph: "◇", label: "Ready for your review" },
-  blocked: { glyph: "⏸", label: "Blocked on something else" },
+  // U+FE0E keeps the pause sign from rendering as an emoji.
+  blocked: { glyph: "\u23F8\uFE0E", label: "Blocked on something else" },
   in_progress: { glyph: null, label: "In progress" },
   done: { glyph: "✓", label: "Done" },
 };

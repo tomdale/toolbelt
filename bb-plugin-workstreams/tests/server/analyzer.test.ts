@@ -42,6 +42,7 @@ describe("idle analysis", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     w.addThread("t1", { latestAttentionAt: 500 });
     w.converse("t1", ["Fix the bug"]);
+    await w.harness.behavior.callRpc("refresh", null);
     await idle(w, "t1", "Fixed; tests pass.");
     await settle(1_000);
     expect(w.completions).toHaveLength(0);
@@ -65,7 +66,7 @@ describe("idle analysis", () => {
     expect(w.completions).toHaveLength(0);
   });
 
-  it("never moves, renames, or files a thread", async () => {
+  it("only reads from BB: never moves, renames, or files a thread", async () => {
     const w = await setup(() =>
       JSON.stringify({
         recap: "Now building a markdown viewer.",
@@ -78,17 +79,25 @@ describe("idle analysis", () => {
     const beta = w.addSection("Beta");
     w.addThread("t1", { sectionId: alpha.id });
     await w.harness.behavior.callRpc("refresh", null);
+    const before = w.harness.inspection.sdk.calls.length;
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     await idle(w, "t1");
     await settle(6_000);
     const { analysis } = await state(w);
     expect(analysis.t1?.driftSectionId).toBe(beta.id);
     expect(w.threads.get("t1")?.sectionId).toBe(alpha.id);
-    const paths = w.harness.inspection.sdk.calls.map((call) => call.path);
-    expect(paths).toContain("threads.get");
-    const mutations =
-      /^(threads\.(update|send|spawn|archive)|threadSections\.(create|update|delete))$/;
-    expect(paths.filter((p) => mutations.test(p))).toEqual([]);
+    const READS = new Set([
+      "threads.get",
+      "threads.list",
+      "threads.promptHistory",
+      "threads.output",
+      "threads.events.list",
+      "threadSections.list",
+      "hosts.list",
+    ]);
+    const calls = w.harness.inspection.sdk.calls.slice(before);
+    expect(calls.map((c) => c.path)).toContain("threads.get");
+    expect(calls.map((c) => c.path).filter((p) => !READS.has(p))).toEqual([]);
   });
 
   it("offers drift targets only to task threads, never the project name", async () => {
@@ -109,7 +118,15 @@ describe("idle analysis", () => {
     expect(parent?.prompt).toContain('Other workstreams: ["Beta"]');
     expect(child?.prompt).toContain('Workstream: "Alpha"');
     expect(child?.prompt).toContain("- drift: null.");
-    for (const c of w.completions) expect(c.prompt).not.toContain("proj_");
+    for (const c of w.completions) {
+      expect(c.prompt).not.toContain("proj_");
+      expect(c.prompt).not.toContain("Zebracorn");
+    }
+    expect(
+      w.harness.inspection.sdk.calls.filter((c) =>
+        c.path.startsWith("projects"),
+      ),
+    ).toEqual([]);
   });
 
   it("keeps at most four calls in flight", async () => {
@@ -152,6 +169,7 @@ describe("idle analysis", () => {
   it("purges results for deleted threads", async () => {
     const w = await setup();
     w.addThread("t1");
+    await w.harness.behavior.callRpc("refresh", null);
     await w.harness.behavior.runCli(["analyze", "t1"]);
     expect((await state(w)).analysis.t1).toBeDefined();
     await w.harness.behavior.emitThreadEvent("thread.deleted", {
@@ -166,5 +184,80 @@ describe("idle analysis", () => {
     const result = await w.harness.behavior.runCli(["analyze", "t1"]);
     expect(result.exitCode).not.toBe(0);
     expect((await state(w)).analysis.t1).toBeUndefined();
+  });
+
+  it("runs again when a turn completes while its run is in flight", async () => {
+    const release: (() => void)[] = [];
+    const w = await setup(async ({ prompt }) => {
+      await new Promise<void>((resolve) => release.push(resolve));
+      return JSON.stringify({
+        recap: prompt.includes("second") ? "second" : "first",
+        state: "done",
+      });
+    });
+    w.addThread("t1", { latestAttentionAt: 1 });
+    w.converse("t1", ["go"], "first");
+    await w.harness.behavior.callRpc("refresh", null);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await idle(w, "t1", "first");
+    await settle(6_000);
+    expect(release).toHaveLength(1);
+    // The next turn finishes while the first run is still waiting on the model.
+    w.threads.set("t1", { ...w.threads.get("t1")!, latestAttentionAt: 2 });
+    await idle(w, "t1", "second");
+    await settle(6_000);
+    release.shift()!();
+    await settle(100);
+    expect(release).toHaveLength(1);
+    release.shift()!();
+    await settle(100);
+    expect((await state(w)).analysis.t1).toMatchObject({
+      recap: "second",
+      revision: 2,
+    });
+  });
+
+  it("backs off after a failure and retries once the thread has a new turn", async () => {
+    let fail = true;
+    const w = await setup(() =>
+      fail ? "not json" : JSON.stringify({ recap: "ok", state: "done" }),
+    );
+    w.addThread("t1", { latestAttentionAt: 10 });
+    await w.harness.behavior.callRpc("refresh", null);
+    const queue = async () =>
+      (await w.harness.behavior.runCli(["analyze"])).stdout;
+    expect(await queue()).toContain("Queued 1 thread");
+    await vi.waitFor(() => expect(w.completions).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await queue()).toContain("Queued 0 threads");
+    fail = false;
+    w.threads.set("t1", { ...w.threads.get("t1")!, latestAttentionAt: 11 });
+    await w.harness.behavior.callRpc("refresh", null);
+    expect(await queue()).toContain("Queued 1 thread");
+    await vi.waitFor(async () =>
+      expect((await state(w)).analysis.t1?.revision).toBe(11),
+    );
+  });
+
+  it("doesn't write back a thread deleted while its run was in flight", async () => {
+    const release: (() => void)[] = [];
+    const w = await setup(async () => {
+      await new Promise<void>((resolve) => release.push(resolve));
+      return JSON.stringify({ recap: "late", state: "done" });
+    });
+    w.addThread("t1");
+    await w.harness.behavior.callRpc("refresh", null);
+    const run = w.harness.behavior.runCli(["analyze", "t1"]);
+    await vi.waitFor(() => expect(release).toHaveLength(1));
+    await w.harness.behavior.emitThreadEvent("thread.deleted", {
+      thread: makeThreadResponse({ id: "t1" }),
+    });
+    release.shift()!();
+    await run;
+    const row = w.bb.storage
+      .database()
+      .prepare("SELECT 1 FROM ws_analysis WHERE thread_id = 't1'")
+      .get();
+    expect(row).toBeUndefined();
   });
 });

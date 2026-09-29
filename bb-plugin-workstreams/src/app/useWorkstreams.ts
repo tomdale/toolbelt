@@ -41,7 +41,8 @@ export function workView(
   thread: PluginSidebarThread,
   analysis: StoredAnalysis | undefined,
 ): WorkView {
-  if (!analysis) return { kind: "none" };
+  // A failed turn gets no analysis; BB's own error mark says enough.
+  if (!analysis || thread.status === "error") return { kind: "none" };
   return isCurrent(analysis, thread)
     ? { kind: "current", analysis }
     : { kind: "pending", previous: analysis };

@@ -158,17 +158,33 @@ function WorkstreamCard({
   via: ReadonlyMap<string, readonly PluginSidebarThread[]>;
 }) {
   const navigate = useBbNavigate();
-  // Needs-you roots first, then the projection's order (pinned, then recent).
-  const roots = group.rows
-    .filter((r) => r.depth === 0)
-    .sort((a, b) => Number(b.needsYou) - Number(a.needsYou));
   const childCount = new Map<string, number>();
+  // A delegate's own question, surfaced on its root row: the page lists
+  // roots only, and folded questions already show on the parent.
+  const childAsk = new Map<string, PluginSidebarThread>();
+  const foldedIds = new Set(
+    [...via.values()].flat().map((thread) => thread.id),
+  );
   let currentRoot: string | null = null;
   for (const row of group.rows) {
     if (row.depth === 0) currentRoot = row.thread.id;
-    else if (currentRoot)
+    else if (currentRoot) {
       childCount.set(currentRoot, (childCount.get(currentRoot) ?? 0) + 1);
+      if (
+        row.needsYou &&
+        !foldedIds.has(row.thread.id) &&
+        !childAsk.has(currentRoot)
+      )
+        childAsk.set(currentRoot, row.thread);
+    }
   }
+  // Roots needing you (themselves or through a delegate) first, then the
+  // projection's order (pinned, then recent).
+  const asks = (row: (typeof group.rows)[number]) =>
+    row.needsYou || childAsk.has(row.thread.id);
+  const roots = group.rows
+    .filter((r) => r.depth === 0)
+    .sort((a, b) => Number(asks(b)) - Number(asks(a)));
   return (
     <section aria-label={group.name}>
       <div className="flex items-baseline gap-2 border-b border-border pb-1">
@@ -189,12 +205,6 @@ function WorkstreamCard({
       <ul className="mt-1">
         {roots.map((row) => {
           const view = work(row.thread);
-          const analysis =
-            view.kind === "current"
-              ? view.analysis
-              : view.kind === "pending"
-                ? view.previous
-                : null;
           const state =
             view.kind === "current" ? WORK_STATE[view.analysis.state] : null;
           const folded = via.get(row.thread.id);
@@ -230,18 +240,12 @@ function WorkstreamCard({
                     ) : null}
                     {row.thread.displayTitle}
                   </span>
-                  {analysis ? (
-                    <span
-                      className={cn(
-                        "truncate text-xs text-muted-foreground",
-                        view.kind === "pending" && "italic opacity-70",
-                      )}
-                    >
-                      {view.kind === "current" && analysis.needsYou
-                        ? `${analysis.needsYou}${folded?.length ? ` (via ${folded[0]!.displayTitle})` : ""}`
-                        : analysis.recap}
-                    </span>
-                  ) : null}
+                  <WhereItStopped
+                    view={view}
+                    folded={folded}
+                    child={childAsk.get(row.thread.id)}
+                    work={work}
+                  />
                 </span>
                 {childCount.get(row.thread.id) ? (
                   <span className="text-xs text-muted-foreground">
@@ -257,5 +261,54 @@ function WorkstreamCard({
         })}
       </ul>
     </section>
+  );
+}
+
+/** The row's second line: the ask when it needs you, else the recap. */
+function WhereItStopped({
+  view,
+  folded,
+  child,
+  work,
+}: {
+  view: WorkView;
+  folded: readonly PluginSidebarThread[] | undefined;
+  child: PluginSidebarThread | undefined;
+  work: (thread: PluginSidebarThread) => WorkView;
+}) {
+  const analysis =
+    view.kind === "current"
+      ? view.analysis
+      : view.kind === "pending"
+        ? view.previous
+        : null;
+  const ownAsk = view.kind === "current" ? view.analysis.needsYou : null;
+  if (ownAsk)
+    return (
+      <span className="truncate text-xs text-muted-foreground">
+        {ownAsk}
+        {folded?.length ? ` (via ${folded[0]!.displayTitle})` : ""}
+      </span>
+    );
+  if (child) {
+    const childView = work(child);
+    const ask =
+      childView.kind === "current" ? childView.analysis.needsYou : null;
+    return (
+      <span className="truncate text-xs text-muted-foreground">
+        via {child.displayTitle}: {ask ?? "waiting for you"}
+      </span>
+    );
+  }
+  if (!analysis) return null;
+  return (
+    <span
+      className={cn(
+        "truncate text-xs text-muted-foreground",
+        view.kind === "pending" && "italic opacity-70",
+      )}
+    >
+      {analysis.recap}
+    </span>
   );
 }
