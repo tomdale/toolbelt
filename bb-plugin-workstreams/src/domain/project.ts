@@ -7,7 +7,13 @@
  * thread appears in exactly one group row (SPEC I1). Needs you and Recent are
  * overlays that reference those rows; they never replace them.
  */
-import { buildForest, flatten, type TreeThread } from "./tree.ts";
+import { applyOrder, type ManualOrder } from "./order.ts";
+import {
+  buildForest,
+  flatten,
+  type TreeNode,
+  type TreeThread,
+} from "./tree.ts";
 
 export type WorkstreamThread = TreeThread & {
   readonly sectionId: string | null;
@@ -45,12 +51,18 @@ export type Group<T extends WorkstreamThread> = {
 export type Projection<T extends WorkstreamThread> = {
   readonly needsYou: readonly Row<T>[];
   readonly recent: readonly Row<T>[];
-  /** Active workstreams, in BB's section order. */
+  /** Active workstreams, in the manual order, else BB's section order. */
   readonly groups: readonly Group<T>[];
   readonly unsorted: Group<T>;
   /** Workstreams with no visible threads, or none active within the window. */
   readonly dormant: readonly Group<T>[];
   readonly rowOf: ReadonlyMap<string, Row<T>>;
+  /**
+   * Children whose question folded into their parent's newer one, keyed by
+   * parent id. Folded children stay in their group but leave the Needs you
+   * band and counts, so one decision isn't counted twice.
+   */
+  readonly needsYouVia: ReadonlyMap<string, readonly T[]>;
 };
 
 export const UNSORTED_ID = "unsorted";
@@ -62,6 +74,8 @@ export type ProjectionOptions<T extends WorkstreamThread> = {
   readonly dormantAfterMs?: number;
   /** Whether a thread needs Tom. Defaults to a live pending interaction. */
   readonly needsYou?: (thread: T) => boolean;
+  /** The user's drag-and-drop order for workstreams and root threads. */
+  readonly order?: ManualOrder;
 };
 
 const pinOrder = (a: WorkstreamThread, b: WorkstreamThread) =>
@@ -100,14 +114,26 @@ export function projectWorkstreams<T extends WorkstreamThread>(
   });
   const known = new Set(sections.map((section) => section.id));
 
-  const rowsBySection = new Map<string, Row<T>[]>();
-  const rowOf = new Map<string, Row<T>>();
+  const rootsBySection = new Map<string, TreeNode<T>[]>();
   for (const root of forest.roots) {
     const sectionId = root.thread.sectionId;
-    const workstreamId = sectionId && known.has(sectionId) ? sectionId : null;
-    const key = workstreamId ?? UNSORTED_ID;
-    const rows = rowsBySection.get(key) ?? [];
-    for (const node of flatten(root)) {
+    const key = sectionId && known.has(sectionId) ? sectionId : UNSORTED_ID;
+    const roots = rootsBySection.get(key) ?? [];
+    roots.push(root);
+    rootsBySection.set(key, roots);
+  }
+  const rowsBySection = new Map<string, Row<T>[]>();
+  const rowOf = new Map<string, Row<T>>();
+  for (const [key, roots] of rootsBySection) {
+    const workstreamId = key === UNSORTED_ID ? null : key;
+    const rows: Row<T>[] = [];
+    const ordered = applyOrder(
+      roots,
+      options.order?.threads[key],
+      (root) => root.thread.id,
+      "first",
+    );
+    for (const node of ordered.flatMap((root) => flatten(root))) {
       const row: Row<T> = {
         thread: node.thread,
         depth: node.depth,
@@ -121,6 +147,28 @@ export function projectWorkstreams<T extends WorkstreamThread>(
     rowsBySection.set(key, rows);
   }
 
+  // A child's question folds into its parent when the parent has a newer
+  // turn that also needs a decision (SPEC §10: timestamps only). A pending
+  // interaction never folds: only the child can answer it.
+  const needsYouVia = new Map<string, T[]>();
+  const folded = new Set<string>();
+  for (const row of rowOf.values()) {
+    if (!row.needsYou || !row.thread.parentThreadId) continue;
+    if (row.thread.hasPendingInteraction) continue;
+    const parent = rowOf.get(row.thread.parentThreadId);
+    if (
+      !parent?.needsYou ||
+      parent.thread.latestAttentionAt <= row.thread.latestAttentionAt
+    )
+      continue;
+    folded.add(row.thread.id);
+    needsYouVia.set(parent.thread.id, [
+      ...(needsYouVia.get(parent.thread.id) ?? []),
+      row.thread,
+    ]);
+  }
+  const counts = (row: Row<T>) => row.needsYou && !folded.has(row.thread.id);
+
   const group = (id: string, name: string): Group<T> => {
     const rows = rowsBySection.get(id) ?? [];
     return {
@@ -128,7 +176,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
       name,
       rows,
       total: rows.length,
-      needsYou: rows.filter((row) => row.needsYou).length,
+      needsYou: rows.filter(counts).length,
       lastActiveAt: Math.max(
         0,
         ...rows.map((row) => row.thread.latestAttentionAt),
@@ -138,7 +186,13 @@ export function projectWorkstreams<T extends WorkstreamThread>(
 
   const groups: Group<T>[] = [];
   const dormant: Group<T>[] = [];
-  for (const section of sections) {
+  const orderedSections = applyOrder(
+    sections,
+    options.order?.workstreams,
+    (section) => section.id,
+    "last",
+  );
+  for (const section of orderedSections) {
     const g = group(section.id, section.name);
     const quiet = options.now - g.lastActiveAt > dormantAfterMs;
     if (g.total === 0 || (quiet && g.needsYou === 0)) dormant.push(g);
@@ -149,7 +203,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
     b.thread.latestAttentionAt - a.thread.latestAttentionAt ||
     a.thread.id.localeCompare(b.thread.id);
   const all = [...rowOf.values()];
-  const needsYouRows = all.filter((row) => row.needsYou).sort(byAttention);
+  const needsYouRows = all.filter(counts).sort(byAttention);
   const recent = all
     .filter((row) => !row.needsYou)
     .sort(byAttention)
@@ -162,6 +216,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
     unsorted: group(UNSORTED_ID, "Unsorted"),
     dormant,
     rowOf,
+    needsYouVia,
   };
 }
 

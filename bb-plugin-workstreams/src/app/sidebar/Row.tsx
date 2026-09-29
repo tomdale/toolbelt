@@ -11,7 +11,8 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import { relativeAge } from "../../domain/presentation.ts";
+import { WORK_STATE, relativeAge } from "../../domain/presentation.ts";
+import type { WorkView } from "../useWorkstreams.ts";
 import { StatusMark } from "./StatusMark.tsx";
 
 const INDENT_PX = 12;
@@ -34,6 +35,8 @@ export function Row({
   active,
   now,
   context,
+  work,
+  proposal,
   onNavigate,
 }: {
   thread: PluginSidebarThread;
@@ -42,8 +45,19 @@ export function Row({
   now: number;
   /** Shown instead of the age in overlay bands: the row's workstream name. */
   context?: string;
+  work?: WorkView;
+  /** Banner text of a proposal that involves this thread. */
+  proposal?: string;
   onNavigate: () => void;
 }) {
+  const state =
+    work?.kind === "current" ? WORK_STATE[work.analysis.state] : null;
+  const recap =
+    work?.kind === "current"
+      ? work.analysis.recap
+      : work?.kind === "pending"
+        ? `Updating… (was: ${work.previous.recap})`
+        : undefined;
   const actions = experimental_useSidebarThreadActions();
   const { splitProps } = experimental_useSidebarThreadSplit(thread.id);
   const { hasUnsubmittedDraft } = useSidebarThreadDraft(thread.id);
@@ -68,7 +82,13 @@ export function Row({
         data-sidebar-thread-id={thread.id}
         aria-current={active ? "page" : undefined}
         aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
-        aria-label={thread.displayTitle}
+        aria-label={
+          state?.glyph
+            ? `${thread.displayTitle}, ${state.label}`
+            : thread.displayTitle
+        }
+        aria-describedby={recap ? `ws-recap-${thread.id}` : undefined}
+        title={recap ? `${thread.displayTitle}\n${recap}` : undefined}
         onClick={(event) => {
           event.preventDefault();
           actions.open(thread.id, { split: event.metaKey || event.ctrlKey });
@@ -76,6 +96,11 @@ export function Row({
         }}
         className="absolute inset-0 rounded-md"
       />
+      {recap ? (
+        <span id={`ws-recap-${thread.id}`} hidden>
+          {recap}
+        </span>
+      ) : null}
       <StatusMark indicator={thread.indicator} label={thread.indicatorLabel} />
       <span
         className={cn(
@@ -87,7 +112,19 @@ export function Row({
       >
         <ThreadTitle threadId={thread.id} />
       </span>
-      <span className="pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70">
+      <span className="pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70 group-hover/row:opacity-0 group-has-[button:focus-visible]/row:opacity-0">
+        {proposal ? (
+          <span className="ws-proposal-dot" role="img" aria-label={proposal} />
+        ) : null}
+        {state?.glyph && work?.kind === "current" ? (
+          <span
+            className={`ws-work ws-work-${work.analysis.state}`}
+            role="img"
+            aria-label={state.label}
+          >
+            {state.glyph}
+          </span>
+        ) : null}
         {rowStatus ? (
           <span title={rowStatus.label} aria-label={rowStatus.label} role="img">
             <Icon name={rowStatus.icon} className="size-3" />
@@ -115,6 +152,24 @@ export function Row({
           <span>{relativeAge(thread.latestAttentionAt, now)}</span>
         )}
       </span>
+      {/* Replaces the trailing details on hover, as in BB's own row. It
+            stops pointer and mouse downs so it never starts a drag. */}
+      <button
+        type="button"
+        aria-label="Archive thread"
+        title="Archive"
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          actions.archive(thread.id);
+        }}
+        className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 pointer-coarse:hidden"
+      >
+        <Icon name="Archive" className="size-3.5" />
+      </button>
     </div>
   );
 }

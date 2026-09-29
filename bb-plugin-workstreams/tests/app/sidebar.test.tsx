@@ -25,7 +25,12 @@ async function mount(
     sidebarThread("loose", { title: "Loose task" }),
     sidebarThread("hidden", { isHidden: true, title: "Hidden helper" }),
   ],
-  options: { settings?: Record<string, boolean>; onNavigate?: () => void } = {},
+  options: {
+    settings?: Record<string, boolean>;
+    onNavigate?: () => void;
+    analysis?: Record<string, unknown>;
+    order?: { workstreams: string[]; threads: Record<string, string[]> };
+  } = {},
 ) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   const list = app.threadLists[0]!;
@@ -42,8 +47,25 @@ async function mount(
       sidebarThreads: { status: "ready", threads, sections, projects: [] },
       settings: options.settings ?? {},
       rpc: {
-        state: () => emptyState(),
+        state: () => ({
+          ...emptyState(),
+          analysis: options.analysis ?? {},
+          order: options.order ?? { workstreams: [], threads: {} },
+        }),
         moveThread: () => ({ entry: null }),
+        reorder: (raw: unknown) => {
+          const input = raw as {
+            kind: string;
+            groupId?: string;
+            ids: string[];
+          };
+          return {
+            order:
+              input.kind === "workstreams"
+                ? { workstreams: input.ids, threads: {} }
+                : { workstreams: [], threads: { [input.groupId!]: input.ids } },
+          };
+        },
       },
     },
   );
@@ -180,4 +202,156 @@ describe("thread list", () => {
     expect(item.getAttribute("aria-disabled")).toBe("true");
     slot.lifecycle.unmount();
   });
+
+  it("lists a current needs-decision result in Needs you, but not a stale one", async () => {
+    const at = Date.now();
+    const result = (revision: number) => ({
+      recap: "Asked whether to ship.",
+      state: "needs_decision",
+      needsYou: "Ship it?",
+      subject: null,
+      drift: null,
+      driftSectionId: null,
+      revision,
+      at,
+      model: "m",
+    });
+    const slot = await mount(
+      [
+        sidebarThread("fresh", { title: "Fresh ask", latestAttentionAt: 100 }),
+        sidebarThread("stale", { title: "Stale ask", latestAttentionAt: 200 }),
+      ],
+      { analysis: { fresh: result(100), stale: result(150) } },
+    );
+    const band = await slot.findByRole("region", { name: "Needs you" });
+    expect(
+      within(band)
+        .getAllByRole("link")
+        .map((a) => a.getAttribute("aria-label")),
+    ).toEqual(["Fresh ask, Needs your decision"]);
+    expect(
+      within(slot.getByRole("region", { name: "Unsorted" })).getAllByRole(
+        "img",
+        { name: "Needs your decision" },
+      ),
+    ).toHaveLength(1);
+    slot.lifecycle.unmount();
+  });
+
+  it("archives a thread from its hover button without opening it", async () => {
+    let navigated = 0;
+    const slot = await mount(undefined, {
+      settings: { showRecent: false },
+      onNavigate: () => navigated++,
+    });
+    const row = within(slot.getByRole("region", { name: "Beta" }))
+      .getByRole("link", { name: "Beta task" })
+      .closest("li")!;
+    fireEvent.click(
+      within(row).getByRole("button", { name: "Archive thread" }),
+    );
+    expect(slot.inspection.sidebarActionCalls.at(-1)).toMatchObject({
+      method: "archive",
+    });
+    expect(navigated).toBe(0);
+    slot.lifecycle.unmount();
+  });
+
+  it("shows workstreams and threads in the stored manual order", async () => {
+    const slot = await mount(
+      [
+        sidebarThread("a1", { sectionId: "sec_a", title: "A one" }),
+        sidebarThread("b1", { sectionId: "sec_b", title: "B one" }),
+        sidebarThread("b2", { sectionId: "sec_b", title: "B two" }),
+        sidebarThread("b3", { sectionId: "sec_b", title: "B three" }),
+      ],
+      {
+        settings: { showRecent: false },
+        order: { workstreams: ["sec_b"], threads: { sec_b: ["b3", "b1"] } },
+      },
+    );
+    await waitFor(() =>
+      expect(
+        slot.getAllByRole("region").map((r) => r.getAttribute("aria-label")),
+      ).toEqual(["Beta", "Alpha", "Dormant"]),
+    );
+    expect(groupRows(slot, "Beta")).toEqual(["B two", "B three", "B one"]);
+    slot.lifecycle.unmount();
+  });
+
+  it("reorders roots by dragging a row", async () => {
+    const restore = layoutByRows();
+    try {
+      const slot = await mount(
+        [
+          sidebarThread("l1", { title: "Loose one", latestAttentionAt: 3 }),
+          sidebarThread("l2", { title: "Loose two", latestAttentionAt: 2 }),
+          sidebarThread("l3", { title: "Loose three", latestAttentionAt: 1 }),
+        ],
+        { settings: { showRecent: false } },
+      );
+      expect(groupRows(slot, "Unsorted")).toEqual([
+        "Loose one",
+        "Loose two",
+        "Loose three",
+      ]);
+      let navigated = 0;
+      const link = slot.getByRole("link", { name: "Loose three" });
+      link.addEventListener("click", (event) => {
+        if (!event.defaultPrevented) navigated++;
+      });
+      const row = link.closest("li")!;
+      fireEvent.mouseDown(row, {
+        button: 0,
+        clientX: 10,
+        clientY: 2 * 28 + 14,
+      });
+      fireEvent.mouseMove(document, { clientX: 10, clientY: 2 * 28 + 4 });
+      fireEvent.mouseMove(document, { clientX: 10, clientY: 10 });
+      fireEvent.mouseUp(document, { clientX: 10, clientY: 10 });
+      fireEvent.click(link);
+      await waitFor(() =>
+        expect(
+          slot.inspection.rpcCalls.find((c) => c.method === "reorder")?.input,
+        ).toEqual({
+          kind: "threads",
+          groupId: "unsorted",
+          ids: ["l3", "l1", "l2"],
+        }),
+      );
+      expect(groupRows(slot, "Unsorted")).toEqual([
+        "Loose three",
+        "Loose one",
+        "Loose two",
+      ]);
+      expect(navigated).toBe(0);
+      expect(
+        slot.inspection.sidebarActionCalls.some((c) => c.method === "open"),
+      ).toBe(false);
+      slot.lifecycle.unmount();
+    } finally {
+      restore();
+    }
+  });
 });
+
+/**
+ * jsdom has no layout. Lays rows out 28px apart in document order, 200px
+ * wide, and gives every other element the union of the rows it contains.
+ */
+function layoutByRows(): () => void {
+  const original = Element.prototype.getBoundingClientRect;
+  Element.prototype.getBoundingClientRect = function (this: Element) {
+    const anchors = [...document.querySelectorAll("[data-sidebar-thread-id]")];
+    const inside = anchors
+      .map((a, i) => [a, i] as const)
+      .filter(([a]) => this === a || this.contains(a));
+    if (!inside.length) return new DOMRect(0, 0, 0, 0);
+    const top = inside[0]![1] * 28;
+    const bottom = (inside.at(-1)![1] + 1) * 28;
+    return new DOMRect(0, top, 200, bottom - top);
+  };
+  return () => {
+    Element.prototype.getBoundingClientRect = original;
+  };
+}
