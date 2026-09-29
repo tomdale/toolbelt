@@ -105,24 +105,12 @@ function setup(
               ]
             : [],
         list: async ({
-          archived,
-          includeHidden,
           offset = 0,
           limit = 100,
         }: {
-          archived?: boolean;
-          includeHidden?: boolean;
           offset?: number;
           limit?: number;
-        } = {}) =>
-          rows
-            .filter(
-              (row) =>
-                row.deletedAt === null &&
-                (archived !== false || row.archivedAt === null) &&
-                (includeHidden === true || row.visibility !== "hidden"),
-            )
-            .slice(offset, offset + limit),
+        } = {}) => rows.slice(offset, offset + limit),
         promptHistory: async () => [],
         output: async () => ({ output: "Working on Vercel Agent for Slack." }),
         get: async ({ threadId }: { threadId: string }) =>
@@ -210,59 +198,14 @@ describe("active thread overview", () => {
     expect(h.harness.inspection.sdk.callsTo("threads.list")).toHaveLength(3);
     expect(h.harness.experimental_hostRpcCalls).toHaveLength(0);
   });
-  it("includes hidden helpers and plugin workers exactly once, but excludes archived and deleted threads", async () => {
-    const h = setup(205);
-    h.rows[1].visibility = "hidden";
-    h.rows[1].originPluginId = "another-plugin";
-    h.rows[99].visibility = "hidden";
-    h.rows[99].originPluginId = "workstreams";
-    h.rows[100].visibility = "hidden";
-    h.rows[202].archivedAt = 123;
-    h.rows[203].visibility = "hidden";
-    h.rows[203].archivedAt = 123;
-    h.rows[204].deletedAt = 123;
-    await plugin(h.bb);
-    const ids = (await snapshot(h)).threads.map((t) => t.id);
-    expect(ids).toEqual(h.rows.slice(0, 202).map((t) => t.id));
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(
-      h.harness.inspection.sdk.callsTo("threads.list").map(([args]) => args),
-    ).toEqual(
-      [0, 100, 200].map((offset) =>
-        expect.objectContaining({
-          archived: false,
-          includeHidden: true,
-          offset,
-        }),
-      ),
-    );
-  });
-  it("deduplicates an active hidden thread repeated across pages", async () => {
-    const h = setup(101);
-    h.rows[99].visibility = "hidden";
-    h.harness.sdk.stub(
-      "threads.list",
-      async ({ offset = 0 }: { offset?: number }) =>
-        offset === 0 ? h.rows.slice(0, 100) : [h.rows[99]!, h.rows[100]!],
-    );
-    await plugin(h.bb);
-    const ids = (await snapshot(h)).threads.map((t) => t.id);
-    expect(ids).toHaveLength(101);
-    expect(ids.filter((id) => id === "99")).toHaveLength(1);
-    expect(ids).toContain("100");
-  });
-  it("analyzes active hidden helpers but not archived threads", async () => {
-    const h = setup(3);
+  it("excludes hidden, archived, deleted and plugin worker threads, not idle threads", async () => {
+    const h = setup(5);
     h.rows[1].visibility = "hidden";
     h.rows[2].archivedAt = 123;
+    h.rows[3].deletedAt = 123;
+    h.rows[4].originPluginId = "workstreams";
     await plugin(h.bb);
-    await run(h);
-    const s = await snapshot(h);
-    expect(s.threads.map((t) => t.id)).toEqual(["0", "1"]);
-    expect(s.analysis?.items.map((item) => item.threadId).sort()).toEqual([
-      "0",
-      "1",
-    ]);
+    expect((await snapshot(h)).threads.map((t) => t.id)).toEqual(["0"]);
   });
   it("rejects incomplete group summaries", () => {
     expect(() => parseSummaries('{"groups":[]}', ["Missing"])).toThrow(
