@@ -457,6 +457,8 @@ it("rejects stale high-confidence auto splits without mutating", async () => {
   expect(live.harness.inspection.sdk.callsTo("threads.fork")).toHaveLength(0);
   const view = (await live.harness.behavior.callRpc("snapshot", null)) as View;
   expect(view.log.some((e) => e.action.kind === "split")).toBe(false);
+});
+
 it("rejects a drifted action and does not stamp failed work current", async () => {
   const h = host();
   await plugin(h.bb);

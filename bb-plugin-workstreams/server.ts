@@ -660,6 +660,7 @@ export default async function plugin(bb: BbPluginApi) {
     action: Action,
     sections: Awaited<ReturnType<typeof sectionIds>>,
     splitPolicy: "manual" | "auto",
+    expectedAt: number,
   ): Promise<Pick<LogEntry, "detail" | "undo">> {
     // Historical removal entries remain readable for Undo, but native BB
     // sections have no durable ownership marker or complete membership query.
@@ -668,6 +669,13 @@ export default async function plugin(bb: BbPluginApi) {
     const detail = await bb.sdk.threads.get({ threadId: action.threadId });
     if (detail.archivedAt !== null || detail.deletedAt !== null)
       throw new Error("Thread is archived or deleted.");
+    const recheck = async () => {
+      const current = await bb.sdk.threads.get({ threadId: action.threadId });
+      if (current.archivedAt !== null || current.deletedAt !== null || current.updatedAt !== expectedAt)
+        throw new Error("Thread changed since action planning.");
+    };
+    if (detail.updatedAt !== expectedAt)
+      throw new Error("Thread changed since action planning.");
     const before = {
       title: detail.title,
       sectionId: detail.sectionId,
@@ -677,6 +685,7 @@ export default async function plugin(bb: BbPluginApi) {
         : null,
     };
     if (action.kind === "retitle") {
+      await recheck();
       await bb.sdk.threads.update({
         threadId: action.threadId,
         title: action.title,
@@ -691,11 +700,13 @@ export default async function plugin(bb: BbPluginApi) {
       });
       if (children.nonDeletedChildCount > 0)
         throw new Error("Thread has child threads; archive it manually.");
+      await recheck();
       await bb.sdk.threads.archive({ threadId: action.threadId });
       return { detail: action.reason, undo: { ...before, archived: true } };
     }
     if (action.kind === "section") {
       const sectionId = await sections.ensure(action.section);
+      await recheck();
       await bb.sdk.threads.update({ threadId: action.threadId, sectionId });
       return {
         detail: "",
@@ -703,6 +714,7 @@ export default async function plugin(bb: BbPluginApi) {
       };
     }
     if (action.kind === "parent") {
+      await recheck();
       await bb.sdk.threads.update({
         threadId: action.threadId,
         parentThreadId: action.parentThreadId ?? undefined,
@@ -769,6 +781,7 @@ export default async function plugin(bb: BbPluginApi) {
       throw new Error(
         "Split point is no longer a user request; analyze it again.",
       );
+    await recheck();
     const { drift } = action;
     // BB refuses to fork inside turns recorded under another thread's provider
     // session (e.g. delivered manager messages); fall back to earlier turns.
@@ -778,6 +791,7 @@ export default async function plugin(bb: BbPluginApi) {
     for (const sourceSeqEnd of (
       await mainlineSeqs(action.threadId, drift.splitSeq)
     ).slice(0, 5)) {
+      await recheck();
       try {
         fork = await bb.sdk.threads.fork({
           sourceThreadId: action.threadId,
@@ -833,6 +847,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function perform(
     actions: Action[],
     splitPolicy: "manual" | "auto" = "auto",
+    plannedAt: Map<string, number> = new Map(),
   ): Promise<LogEntry[]> {
     const outcomes: LogEntry[] = [];
     if (fixture) {
@@ -850,6 +865,8 @@ export default async function plugin(bb: BbPluginApi) {
     }
     const sections = await sectionIds();
     const failedSplits = new Set<string>();
+    const failed = new Set<string>();
+    const succeeded = new Set<string>();
     for (const action of actions) {
       let locked = false;
       try {
@@ -861,14 +878,16 @@ export default async function plugin(bb: BbPluginApi) {
           splitting.add(action.threadId);
           locked = true;
         }
-        outcomes.push(
-          record({
-            action,
-            result: "done",
-            ...(await execute(action, sections, splitPolicy)),
-          }),
-        );
+        const expectedAt = plannedAt.get(action.threadId);
+        if (expectedAt === undefined || failed.has(action.threadId))
+          throw new Error("Thread changed since action planning.");
+        const result = await execute(action, sections, splitPolicy, expectedAt);
+        const current = await bb.sdk.threads.get({ threadId: action.threadId });
+        plannedAt.set(action.threadId, current.updatedAt);
+        succeeded.add(action.threadId);
+        outcomes.push(record({ action, result: "done", ...result }));
       } catch (e) {
+        failed.add(action.threadId);
         if (action.kind === "split") failedSplits.add(action.threadId);
         outcomes.push(
           record({
@@ -882,17 +901,16 @@ export default async function plugin(bb: BbPluginApi) {
         if (locked) splitting.delete(action.threadId);
       }
     }
-    // The plugin's own edits aren't new work; keep acted-on threads current.
-    const fresh = new Map((await inventory()).map((t) => [t.id, t.updatedAt]));
+    // Keep successful plugin edits current; failed actions remain explicitly stale.
     if (analysis) {
       analysis = {
         ...analysis,
-        items: analysis.items.map((i) =>
-          outcomes.some(
-            (e) => e.result === "done" && e.action.threadId === i.threadId,
-          ) && fresh.has(i.threadId)
-            ? { ...i, updatedAt: fresh.get(i.threadId)! }
-            : i,
+        items: analysis.items.map((item) =>
+          failed.has(item.threadId)
+            ? { ...item, refreshed: false }
+            : succeeded.has(item.threadId) && plannedAt.has(item.threadId)
+              ? { ...item, updatedAt: plannedAt.get(item.threadId)! }
+              : item,
         ),
       };
       put(analysisKey(), analysis);
@@ -945,7 +963,11 @@ export default async function plugin(bb: BbPluginApi) {
         // from the last section Workstreams assigned on the next run.
         return !assigned || oldName === assigned || assigned === action.section;
       });
-      await perform(actions);
+      await perform(
+        actions,
+        "auto",
+        new Map(threads.map((thread) => [thread.id, thread.updatedAt])),
+      );
     } finally {
       organizing = false;
       notify();
@@ -1350,6 +1372,7 @@ export default async function plugin(bb: BbPluginApi) {
       const [outcome] = await perform(
         [{ kind: "split", threadId, drift: item.drift }],
         "manual",
+        new Map([[threadId, item.updatedAt]]),
       );
       if (outcome.result !== "done")
         throw new Error(outcome.detail || "Split was not performed.");
