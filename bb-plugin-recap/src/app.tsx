@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   Markdown,
   definePluginApp,
   experimental_ProviderModelPicker as ProviderModelPicker,
-  useBbNavigate,
   useComposerView,
   useRealtime,
   useRpc,
@@ -12,7 +12,6 @@ import type {
   ExperimentalProviderModelPickerValue,
   PluginSettingsSectionProps,
   PluginThreadHeaderActionProps,
-  PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
 import {
   DEFAULT_RECAP_PROMPT,
@@ -124,20 +123,14 @@ function useThreadRecap(threadId: string) {
   const rpc = useRpc<typeof rpcContract>();
   const [recap, setRecap] = useState<Recap | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    setLoading(true);
     try {
       const next = await rpc.call("recap_get", { threadId });
       setRecap(next.recap);
       setGenerating(next.generating);
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setLoading(false);
+    } catch {
+      // Keep the last known recap; the next realtime signal retries.
     }
   }, [rpc, threadId]);
 
@@ -150,88 +143,33 @@ function useThreadRecap(threadId: string) {
   }, [reload, threadId]);
   useRealtime(RECAP_CHANGED, onSignal);
 
-  const generate = useCallback(async () => {
+  /** Generates a manual recap; resolves to an error message, or null on success. */
+  const generate = useCallback(async (): Promise<string | null> => {
     setGenerating(true);
-    setError(null);
     try {
       const next = await rpc.call("recap_generate", { threadId, automatic: false });
       setRecap(next.recap);
-      if (!next.recap && next.reason !== "suppressed") setError(generationErrorMessage(next.reason));
+      return !next.recap && next.reason !== "suppressed" ? generationErrorMessage(next.reason) : null;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      return cause instanceof Error ? cause.message : String(cause);
     } finally {
       setGenerating(false);
       void reload();
     }
   }, [reload, rpc, threadId]);
 
-  return { recap, generating, loading, error, generate };
+  return { recap, generating, generate };
 }
 
-function RecapPanel({ threadId, params }: PluginThreadPanelProps) {
-  const { recap, generating, loading, error, generate } = useThreadRecap(threadId);
-  const requested = isRecord(params) && params.generate === true;
-  const requestedAt =
-    isRecord(params) &&
-    typeof params.requestedAt === "number" &&
-    Number.isFinite(params.requestedAt)
-      ? params.requestedAt
-      : null;
-  const requestedKey = requested ? `${threadId}:${requestedAt ?? "legacy"}` : null;
-  const requestedRef = useRef<string | null>(null);
+const RECAP_BANNER_CLASS =
+  "relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-800/70 dark:bg-sky-950/60 dark:text-sky-200";
 
-  useEffect(() => {
-    if (!requested || requestedKey === null) {
-      requestedRef.current = null;
-      return;
-    }
-    const needsGeneration =
-      recap === null ||
-      (requestedAt !== null && recap.generatedAt < requestedAt);
-    if (
-      requestedRef.current !== requestedKey &&
-      !loading &&
-      needsGeneration &&
-      !generating
-    ) {
-      requestedRef.current = requestedKey;
-      void generate();
-    }
-  }, [generate, generating, loading, recap, requested, requestedAt, requestedKey]);
-
-  return (
-    <div className="space-y-4 p-4 md:p-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-foreground">Latest recap</p>
-          <p className="text-xs text-muted-foreground">Stored separately from the thread transcript.</p>
-        </div>
-        <button
-          type="button"
-          className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-          onClick={() => void generate()}
-          disabled={loading || generating}
-        >
-          {loading ? "Loading…" : generating ? "Generating…" : "Generate"}
-        </button>
-      </div>
-      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-      {recap ? (
-        <div className="rounded-xl border-2 border-border border-l-4 border-l-foreground bg-card p-5 shadow-md sm:p-6">
-          <Markdown content={recap.summary} className="text-base leading-7 text-foreground" />
-          <p className="mt-3 text-xs text-muted-foreground">
-            {recap.automatic ? "Automatic" : "Manual"} · {recap.model} · {new Date(recap.generatedAt).toLocaleString()}
-          </p>
-        </div>
-      ) : (
-        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-          No recap has been generated for this thread yet.
-        </div>
-      )}
-    </div>
-  );
-}
-
+/**
+ * Read-only inline recap showing only the latest recap text. Generation
+ * progress and errors surface on the thread header action instead. Dismissal
+ * is keyed by recap id and held in component state, so a newer recap
+ * reappears. In on-demand mode only manually requested recaps are shown.
+ */
 function RecapComposerBannerContent({
   threadId,
   mode,
@@ -239,92 +177,38 @@ function RecapComposerBannerContent({
   threadId: string;
   mode: RecapDisplayMode;
 }) {
-  const { recap, generating, error } = useThreadRecap(threadId);
+  const { recap } = useThreadRecap(threadId);
+  const [dismissedRecapId, setDismissedRecapId] = useState<string | null>(null);
   const compact = mode === RECAP_DISPLAY_MODES.compact;
 
-  if (!recap) {
-    if (!generating) return null;
-    return (
-      <div
-        className={compact
-          ? "mx-auto mb-3 flex w-full min-w-0 max-w-4xl items-center gap-4 rounded-xl border-2 border-border border-l-4 border-l-foreground bg-card px-4 py-4 shadow-md sm:px-5"
-          : "mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-xl border-2 border-border border-l-4 border-l-foreground bg-card p-5 shadow-lg sm:p-6"}
-        role="status"
-        aria-live="polite"
-        aria-label="Generating recap"
-      >
-        <p className="text-sm text-muted-foreground">Generating recap…</p>
-      </div>
-    );
-  }
-
-  if (compact) {
-    const compactSummary = (
-      <>
-        <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-base text-foreground">
-          ✦
-        </span>
-        <div aria-live="polite" className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 text-xs font-semibold text-foreground">Recap</span>
-            <span className="truncate text-[11px] text-muted-foreground">
-              {recap.automatic ? "Automatic" : "Manual"} · {new Date(recap.generatedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-            </span>
-          </div>
-          <Markdown content={recap.summary} className="mt-1 text-sm leading-6 text-foreground" />
-          <p className="mt-2 text-xs text-muted-foreground">
-            {recap.model} · {new Date(recap.generatedAt).toLocaleString()}
-          </p>
-          {error ? <p role="alert" className="mt-1 text-xs text-destructive">{error}</p> : null}
-        </div>
-      </>
-    );
-
-    return (
-      <div
-        className="mx-auto mb-3 flex w-full min-w-0 max-w-4xl items-start gap-4 rounded-xl border-2 border-border border-l-4 border-l-foreground bg-card px-4 py-4 shadow-md sm:px-5"
-        role="region"
-        aria-label="Latest recap"
-      >
-        {compactSummary}
-      </div>
-    );
-  }
+  if (!recap || recap.id === dismissedRecapId) return null;
+  if (mode === RECAP_DISPLAY_MODES.onDemand && recap.automatic) return null;
 
   return (
     <div
-      className="mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-xl border-2 border-border border-l-4 border-l-foreground bg-card p-5 shadow-lg sm:p-6"
+      className={`${RECAP_BANNER_CLASS} ${compact ? "py-2.5 pl-3.5 pr-9" : "py-3.5 pl-4 pr-10"}`}
       role="region"
       aria-label="Latest recap"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-base text-foreground">
-            ✦
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-foreground">Latest recap</p>
-            <p className="truncate text-xs text-muted-foreground">
-              Updated {new Date(recap.generatedAt).toLocaleString()}
-            </p>
-          </div>
-        </div>
-        <span className="shrink-0 rounded-full border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground">
-          {recap.automatic ? "Automatic" : "Manual"}
-        </span>
-      </div>
-      <div aria-live="polite" className="mt-4">
-        <Markdown content={recap.summary} className="text-base leading-7 text-foreground" />
-        {error ? <p role="alert" className="mt-2 text-xs text-destructive">{error}</p> : null}
-      </div>
-      <div className="mt-5 border-t border-border pt-4">
-        <p className="truncate text-xs text-muted-foreground" title={recap.model}>
-          Generated with {recap.model}
-        </p>
-      </div>
+      <Markdown
+        content={recap.summary}
+        className={compact ? "text-sm leading-6 text-inherit" : "text-base leading-7 text-inherit"}
+      />
+      <button
+        type="button"
+        className="absolute right-1.5 top-1.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-sky-900/50 transition-colors hover:bg-sky-900/10 hover:text-sky-900/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:text-sky-200/50 dark:hover:bg-sky-200/10 dark:hover:text-sky-200/80"
+        aria-label="Dismiss recap"
+        title="Dismiss recap"
+        onClick={() => setDismissedRecapId(recap.id)}
+      >
+        <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M4 4l8 8M12 4l-8 8" />
+        </svg>
+      </button>
     </div>
   );
 }
+
 function RecapComposerBanner() {
   const { scope } = useComposerView();
   const { settings, isLoading } = useRecapSettings();
@@ -340,7 +224,7 @@ function RecapComposerBanner() {
   if (scope.kind !== "thread") return null;
   const showBanner = shouldShowRecapBanner(scope.kind, isInlineMessageEditor);
   const content =
-    !isLoading && settings && showBanner && settings.displayMode !== RECAP_DISPLAY_MODES.onDemand
+    !isLoading && settings && showBanner
       ? <RecapComposerBannerContent threadId={scope.threadId} mode={settings.displayMode} />
       : null;
   return (
@@ -376,39 +260,18 @@ function DisplayModePreview({
         <span className="text-xs text-muted-foreground">{selected ? "Current" : "Preview"}</span>
       </div>
       <div className="mt-3 rounded-md bg-background p-2" aria-hidden="true">
-        {mode === RECAP_DISPLAY_MODES.compact ? (
-          <div className="flex min-h-16 items-start gap-3 rounded-xl border-2 border-border border-l-4 border-l-foreground bg-card px-3 py-3">
-            <div className="h-8 w-8 shrink-0 rounded-lg bg-muted" />
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <div className="h-1.5 w-12 rounded-full bg-muted" />
-              <div className="h-2 w-full rounded-full bg-muted" />
-              <div className="h-2 w-4/5 rounded-full bg-muted" />
-            </div>
-          </div>
-        ) : mode === RECAP_DISPLAY_MODES.card ? (
-          <div className="space-y-3 rounded-xl border-2 border-border border-l-4 border-l-foreground bg-card p-4 shadow-md">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <div className="h-7 w-7 shrink-0 rounded-lg bg-muted" />
-                <div className="space-y-1.5">
-                  <div className="h-1.5 w-20 rounded-full bg-muted" />
-                  <div className="h-1.5 w-24 rounded-full bg-muted" />
-                </div>
-              </div>
-              <div className="h-5 w-14 shrink-0 rounded-full bg-muted" />
-            </div>
-            <div className="space-y-1.5">
-              <div className="h-2 w-full rounded-full bg-muted" />
-              <div className="h-2 w-4/5 rounded-full bg-muted" />
-              <div className="h-2 w-1/2 rounded-full bg-muted" />
-            </div>
-            <div className="border-t border-border pt-2">
-              <div className="h-1.5 w-28 rounded-full bg-muted" />
+        {mode === RECAP_DISPLAY_MODES.compact || mode === RECAP_DISPLAY_MODES.card ? (
+          <div className={`relative rounded-lg border border-sky-200 bg-sky-50 dark:border-sky-800/70 dark:bg-sky-950/60 ${mode === RECAP_DISPLAY_MODES.compact ? "py-2.5 pl-3 pr-7" : "py-3.5 pl-3.5 pr-8"}`}>
+            <div className="absolute right-2 top-2 h-2 w-2 rounded-sm bg-sky-900/20 dark:bg-sky-200/20" />
+            <div className={mode === RECAP_DISPLAY_MODES.compact ? "space-y-1.5" : "space-y-2"}>
+              <div className={`${mode === RECAP_DISPLAY_MODES.compact ? "h-1.5" : "h-2"} w-full rounded-full bg-sky-900/20 dark:bg-sky-200/25`} />
+              <div className={`${mode === RECAP_DISPLAY_MODES.compact ? "h-1.5" : "h-2"} w-4/5 rounded-full bg-sky-900/20 dark:bg-sky-200/25`} />
+              {mode === RECAP_DISPLAY_MODES.card ? <div className="h-2 w-1/2 rounded-full bg-sky-900/20 dark:bg-sky-200/25" /> : null}
             </div>
           </div>
         ) : (
           <div className="flex min-h-10 items-center justify-center rounded-md border border-dashed border-border bg-surface-recessed/10 px-2">
-            <span className="text-xs text-muted-foreground">No inline recap</span>
+            <span className="text-xs text-muted-foreground">Only recaps you request</span>
           </div>
         )}
       </div>
@@ -779,20 +642,37 @@ function SettingsSectionBody() {
   );
 }
 
-function RecapHeaderAction({ isCompactViewport }: PluginThreadHeaderActionProps) {
-  const navigate = useBbNavigate();
+/**
+ * Manual generators for threads whose header is mounted, so the command
+ * palette (which has no RPC client) can trigger the same generation flow.
+ */
+const headerGenerators = new Map<string, () => void>();
+
+function RecapHeaderAction({ threadId, isCompactViewport }: PluginThreadHeaderActionProps) {
+  const { generating, generate } = useThreadRecap(threadId);
+  const run = useCallback(() => {
+    void generate().then((message) => {
+      if (message) toast.error(message);
+    });
+  }, [generate]);
+
+  useEffect(() => {
+    headerGenerators.set(threadId, run);
+    return () => {
+      if (headerGenerators.get(threadId) === run) headerGenerators.delete(threadId);
+    };
+  }, [run, threadId]);
+
   return (
     <button
       type="button"
-      className="inline-flex h-7 items-center justify-center rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-      aria-label="Generate Recap"
-      onClick={() => navigate.openThreadPanel({
-        actionId: "recap",
-        title: "Recap",
-        params: { generate: true, requestedAt: Date.now() },
-      })}
+      className="inline-flex h-7 cursor-pointer items-center justify-center rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
+      aria-label={generating ? "Generating recap" : "Generate recap"}
+      title={generating ? "Generating recap…" : "Generate recap"}
+      disabled={generating}
+      onClick={run}
     >
-      {isCompactViewport ? "✦" : "Recap"}
+      {isCompactViewport ? "✦" : generating ? "Recapping…" : "Recap"}
     </button>
   );
 }
@@ -808,12 +688,6 @@ export default definePluginApp((app) => {
     description: "Choose the model, automatic behavior, cleanup, and display previews.",
     component: SettingsSection,
   });
-  app.slots.threadPanelAction({
-    id: "recap",
-    title: "Recap",
-    icon: "Zap",
-    component: RecapPanel,
-  });
   app.slots.experimental_threadHeaderAction({
     id: "recap",
     title: "Recap",
@@ -822,10 +696,9 @@ export default definePluginApp((app) => {
   app.slots.commandPaletteAction({
     id: "generate",
     title: "Recap: generate for this thread",
-    isAvailable: ({ threadId }) => threadId !== null,
-    run: ({ openPanel, threadId }) => {
-      if (threadId === null) return;
-      openPanel({ actionId: "recap", title: "Recap", params: { generate: true, requestedAt: Date.now() } });
+    isAvailable: ({ threadId }) => threadId !== null && headerGenerators.has(threadId),
+    run: ({ threadId }) => {
+      if (threadId !== null) headerGenerators.get(threadId)?.();
     },
   });
 });

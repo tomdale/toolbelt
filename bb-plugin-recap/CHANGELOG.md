@@ -6,6 +6,18 @@ All notable changes to Recap are documented here. The format follows
 
 ## Unreleased
 
+### Changed
+
+- Simplify the composer recap to accent-colored recap text with a dismiss
+  button; dismissing hides only the current recap.
+- Generate recaps in place from the thread header and command palette; the
+  header button shows progress and errors appear as notifications.
+- **On demand** display shows only manually requested recaps in the composer.
+
+### Removed
+
+- Remove the Recap side panel.
+
 ## 0.2.2 - 2026-09-25
 
 ### Changed
