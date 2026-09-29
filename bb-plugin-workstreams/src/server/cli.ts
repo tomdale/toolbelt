@@ -591,6 +591,48 @@ export function registerCli(
             return { exitCode: 0, stdout: lines.join("\n") };
           },
         }),
+        cutover: cliCommand({
+          summary:
+            "After organizing, remove the data Workstreams v1 left behind (its key-value state and banner images)",
+          options: {
+            yes: {
+              type: "boolean",
+              description: "Remove it (default: show what would be removed)",
+            },
+          },
+          async run({ options }) {
+            if (!bootstrap.isDone())
+              throw new PluginCliError(
+                "Organize first (Workstreams → Map, or `bb workstreams rebuild`): it reads v1's change log to tell your filings from v1's.",
+                { code: "not_organized" },
+              );
+            const db = bb.storage.database();
+            const count = (table: string) => {
+              try {
+                return (
+                  db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as {
+                    n: number;
+                  }
+                ).n;
+              } catch {
+                return 0;
+              }
+            };
+            const found = { state: count("state"), banners: count("banners") };
+            if (!options.yes)
+              return {
+                exitCode: 0,
+                stdout: `Would remove v1 data: ${found.state} state rows, ${found.banners} banner images. Rerun with --yes. Rolling back to v1 afterwards starts it with no history.`,
+              };
+            db.exec(
+              "DROP TABLE IF EXISTS banners; DROP TABLE IF EXISTS state;",
+            );
+            return {
+              exitCode: 0,
+              stdout: `Removed v1 data (${found.state} state rows, ${found.banners} banner images). v1's settings (organize, diagnostics) have no effect in v2; clear them with \`bb plugin config workstreams unset <key>\` if you like.`,
+            };
+          },
+        }),
         undo: cliCommand({
           summary: "Undo a logged change, where BB state still allows it",
           positionals: [
