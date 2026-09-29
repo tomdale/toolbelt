@@ -52,6 +52,7 @@ const proposalSchema = z.object({
   kind: z.enum(["spin-out", "move", "merge"]),
   status: z.enum([
     "pending",
+    "applying",
     "applied",
     "partial",
     "undone",

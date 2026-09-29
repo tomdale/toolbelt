@@ -17,6 +17,7 @@ import { buildForest } from "../domain/tree.ts";
 import {
   detectProposals,
   normalize,
+  snoozeKey,
   type EvolutionRoot,
 } from "../domain/evolution.ts";
 import {
@@ -48,6 +49,9 @@ export type BootstrapMove = {
   toName: string;
   reason: string;
   accepted: boolean;
+  /** Set for moves from the evolution engine: snoozed if left unchecked. */
+  key?: string;
+  evidenceCount?: number;
 };
 
 export type BootstrapState = {
@@ -138,24 +142,28 @@ export class Bootstrap {
 
   private async propose(): Promise<BootstrapState> {
     const startedAt = this.now();
-    await this.deps.service.reconcile();
-    const roots = this.intake();
     let state: BootstrapState = this.save({
       status: "proposing",
       startedAt,
       updatedAt: startedAt,
       error: null,
-      roots,
+      roots: [],
       descriptions: {},
       changes: [],
       preview: null,
       entryId: null,
-      seconds: {
-        intake: (this.now() - startedAt) / 1000,
-        map: 0,
-        assign: 0,
-        apply: 0,
-      },
+      seconds: { intake: 0, map: 0, assign: 0, apply: 0 },
+    });
+    try {
+      await this.deps.service.reconcile();
+    } catch (error) {
+      return this.save({ ...state, status: "failed", error: String(error) });
+    }
+    const roots = this.intake();
+    state = this.save({
+      ...state,
+      roots,
+      seconds: { ...state.seconds, intake: (this.now() - startedAt) / 1000 },
     });
     const mapStarted = this.now();
     try {
@@ -447,9 +455,19 @@ export class Bootstrap {
             toName: name,
             reason: `${candidate.kind} (you filed this thread)`,
             accepted: false,
+            key: candidate.key,
+            evidenceCount: candidate.evidenceCount,
           });
         }
 
+      // A new workstream for a single thread starts unchecked: new
+      // workstreams need two roots unless the user opts in.
+      const perTarget = new Map<string, number>();
+      for (const m of moves)
+        perTarget.set(m.to, (perTarget.get(m.to) ?? 0) + 1);
+      for (const m of moves)
+        if (m.to.startsWith(NEW_PREFIX) && (perTarget.get(m.to) ?? 0) < 2)
+          m.accepted = false;
       state = this.save({
         ...state,
         status: "preview",
@@ -472,6 +490,18 @@ export class Bootstrap {
     overrides: { threadId: string; accepted: boolean }[] = [],
   ): Promise<BootstrapState> {
     this.busy();
+    const work = this.runApply(overrides);
+    this.running = work;
+    try {
+      return await work;
+    } finally {
+      this.running = null;
+    }
+  }
+
+  private async runApply(
+    overrides: { threadId: string; accepted: boolean }[],
+  ): Promise<BootstrapState> {
     const current = this.state();
     if (!current || current.status !== "preview" || !current.preview)
       throw new UserError("Nothing to apply yet.");
@@ -517,6 +547,19 @@ export class Bootstrap {
         "bootstrap",
         `Organized ${moves.length} thread${moves.length === 1 ? "" : "s"} across ${touched.size} workstreams`,
       );
+      // A move left unchecked is the user's call: the thread stays, and an
+      // evolution candidate behind it is snoozed like a dismissal.
+      for (const move of current.preview.moves) {
+        if (override.get(move.threadId) ?? move.accepted) continue;
+        this.deps.service.keep(move.threadId, move.from);
+        if (move.key)
+          this.deps.db
+            .prepare(
+              `INSERT INTO ws_snooze (key, evidence_count, at) VALUES (?, ?, ?)
+               ON CONFLICT(key) DO UPDATE SET evidence_count = excluded.evidence_count, at = excluded.at`,
+            )
+            .run(snoozeKey(move.key), move.evidenceCount ?? 1, this.now());
+      }
       setMeta(this.deps.db, "bootstrapped", "1");
       state = this.save({
         ...state,
@@ -569,7 +612,9 @@ export class Bootstrap {
       const provenance: Provenance = !thread.sectionId
         ? "unfiled"
         : placement && placement.sectionId === thread.sectionId
-          ? placement.source === "auto" || placement.source === "proposal"
+          ? placement.source === "auto" ||
+            placement.source === "proposal" ||
+            placement.source === "bootstrap"
             ? "auto"
             : "user"
           : v1Filed(thread.id, thread.sectionId)

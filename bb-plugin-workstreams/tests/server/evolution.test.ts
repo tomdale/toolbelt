@@ -115,8 +115,43 @@ describe("auto-apply", () => {
     await rpc(w, "undo", { entryId: applied!.entryId });
     expect(w.threads.get("w1")?.sectionId).toBe(plugins.id);
     expect(w.sections.some((s) => s.name === "Workstreams")).toBe(false);
+    // The banner goes with the undo, not on the next pass.
+    expect(await proposals(w)).toEqual([]);
     await evolve(w);
     expect(await proposals(w)).toEqual([]);
+    const snoozed = w.bb.storage
+      .database()
+      .prepare("SELECT evidence_count FROM ws_snooze WHERE key = ?")
+      .get(`${plugins.id}:workstreams`) as
+      { evidence_count: number } | undefined;
+    expect(snoozed?.evidence_count).toBe(2);
+  });
+
+  it("journals what changed even when BB fails partway", async () => {
+    const w = await setup();
+    const plugins = seed(w);
+    await analyzeAll(w);
+    await rpc(w, "bootstrap", { action: "skip" });
+    w.harness.sdk.stub("threads.update", async (args: { threadId: string }) => {
+      if (args.threadId === "w2") throw new Error("BB is down");
+      const thread = w.threads.get(args.threadId)!;
+      const next = { ...thread, ...(args as object) };
+      w.threads.set(args.threadId, next as typeof thread);
+      return next;
+    });
+    await evolve(w);
+    const failed = (await log(w)).find((e) => e.status === "failed");
+    expect(failed).toBeDefined();
+    const moved = w.sections.find((s) => s.name === "Workstreams")!;
+    expect(
+      [w.threads.get("w1")?.sectionId, w.threads.get("w2")?.sectionId].filter(
+        (id) => id === moved.id,
+      ),
+    ).toHaveLength(1);
+    await rpc(w, "undo", { entryId: failed!.id });
+    expect(w.threads.get("w1")?.sectionId).toBe(plugins.id);
+    expect(w.threads.get("w2")?.sectionId).toBe(plugins.id);
+    expect(w.sections.some((s) => s.name === "Workstreams")).toBe(false);
   });
 
   it("files an Unsorted root whose subject names a workstream", async () => {
@@ -167,6 +202,41 @@ describe("ask first", () => {
     expect((await log(w)).find((e) => e.id === pending!.entryId)?.status).toBe(
       "applied",
     );
+  });
+
+  it("applies a proposal once when accepted twice at the same time", async () => {
+    const w = await setup({ evolution: "ask" });
+    seed(w);
+    await analyzeAll(w);
+    await rpc(w, "bootstrap", { action: "skip" });
+    await evolve(w);
+    const [pending] = await proposals(w);
+    const results = await Promise.allSettled([
+      rpc(w, "proposal", { id: pending!.id, action: "accept" }),
+      rpc(w, "proposal", { id: pending!.id, action: "accept" }),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(w.sections.filter((s) => s.name === "Workstreams")).toHaveLength(1);
+    expect((await log(w)).filter((e) => e.action === "proposal")).toHaveLength(
+      1,
+    );
+  });
+
+  it("expires a pending proposal whose evidence is gone", async () => {
+    const w = await setup({ evolution: "ask" });
+    seed(w);
+    await analyzeAll(w);
+    await rpc(w, "bootstrap", { action: "skip" });
+    await evolve(w);
+    const [pending] = await proposals(w);
+    w.threads.set("w2", { ...w.threads.get("w2")!, archivedAt: 5 });
+    await evolve(w);
+    expect(await proposals(w)).toEqual([]);
+    const entry = (await log(w)).find((e) => e.id === pending!.entryId);
+    expect(entry?.status).toBe("dismissed");
   });
 
   it("dismissing snoozes the subject", async () => {
