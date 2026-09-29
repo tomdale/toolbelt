@@ -6,7 +6,8 @@
  *
  * The composer remounts this banner whenever its scope changes (including
  * the project switch the banner itself makes), so routing state lives in a
- * module-level store rather than in the component.
+ * module-level store rather than in the component. Inside New work,
+ * `IntakeBanner` renders instead and keeps its state in the dialog's `Intake`.
  */
 import { useContext, useEffect, useSyncExternalStore } from "react";
 import { IntakeContext } from "./intake.ts";
