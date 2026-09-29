@@ -1,0 +1,1025 @@
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import {
+  Markdown,
+  definePluginApp,
+  experimental_ProviderModelPicker as ProviderModelPicker,
+  useComposerView,
+  useRealtime,
+  useRpc,
+} from "@get-bb/plugin-sdk/app";
+import type {
+  ExperimentalProviderModelPickerValue,
+  PluginSettingsSectionProps,
+  PluginThreadHeaderActionProps,
+} from "@get-bb/plugin-sdk/app";
+import {
+  DEFAULT_RECAP_PROMPT,
+  isBlankRecapPrompt,
+  MAX_CONCURRENT_GENERATIONS,
+  MAX_RECAP_PROMPT_CHARS,
+  MIN_CONCURRENT_GENERATIONS,
+  normalizeRecapSettings,
+  parseClampedInteger,
+  recapFormIsDirty,
+  settingsFormStatus,
+  settingsFormStatusLabel,
+  shouldShowRecapBanner,
+  parseRecapLedger,
+  RECAP_LAYOUTS,
+  RECAP_LAYOUT_OPTIONS,
+} from "./recap";
+import type { RecapLayout } from "./recap";
+import type { ModelSelection, Recap, RecapSettings, rpcContract } from "./server";
+
+const RECAP_CHANGED = "recap-changed";
+
+function generationErrorMessage(reason: string | null): string {
+  switch (reason) {
+    case "no_conversation":
+      return "There is no conversation to recap yet.";
+    case "not_enough_turns":
+      return "There are not enough user turns for an automatic recap yet.";
+    case "hidden_thread":
+      return "Recaps cannot be generated for hidden threads.";
+    case "already_exists":
+      return "A recap already exists for this conversation state.";
+    case "already_generating":
+      return "A recap is already being generated.";
+    case "stale":
+      return "The thread changed while the recap was generating. Try again.";
+    case "aborted":
+      return "Recap generation was cancelled.";
+    case "empty_model_response":
+      return "The recap model returned no usable summary.";
+    case "suppressed":
+      return "This recap was suppressed because the model response was too long.";
+    default:
+      return reason ? `Could not generate a recap (${reason}).` : "No recap was generated.";
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function checkboxFromInput(
+  event: { currentTarget: EventTarget | null; target: EventTarget },
+): boolean {
+  const element = event.currentTarget instanceof HTMLInputElement
+    ? event.currentTarget
+    : event.target instanceof HTMLInputElement
+      ? event.target
+      : null;
+  return element?.checked ?? false;
+}
+
+function textFromInput(
+  event: { currentTarget: EventTarget | null; target: EventTarget },
+): string {
+  const element = event.currentTarget instanceof HTMLTextAreaElement || event.currentTarget instanceof HTMLInputElement
+    ? event.currentTarget
+    : event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement
+      ? event.target
+      : null;
+  return element?.value ?? "";
+}
+
+function useRecapSettings() {
+  const rpc = useRpc<typeof rpcContract>();
+  const [settings, setSettings] = useState<RecapSettings | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const rpcRef = useRef(rpc);
+  rpcRef.current = rpc;
+
+  const applySettings = useCallback((value: unknown) => {
+    setSettings(normalizeRecapSettings(value));
+  }, []);
+
+  const reload = useCallback(async (background = false) => {
+    if (!background) setIsLoading(true);
+    try {
+      applySettings(await rpcRef.current.call("recap_settings_get", {}));
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (!background) setIsLoading(false);
+    }
+  }, [applySettings]);
+
+  useEffect(() => {
+    void reload(false);
+  }, [reload]);
+  const onSettingsSignal = useCallback((payload: unknown) => {
+    if (isRecord(payload) && payload.settings === true) void reload(true);
+  }, [reload]);
+  useRealtime(RECAP_CHANGED, onSettingsSignal);
+
+  return { settings, setSettings, isLoading, error };
+}
+
+function useThreadRecap(threadId: string) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [recap, setRecap] = useState<Recap | null>(null);
+  const [generating, setGenerating] = useState(false);
+
+  const reload = useCallback(async () => {
+    try {
+      const next = await rpc.call("recap_get", { threadId });
+      setRecap(next.recap);
+      setGenerating(next.generating);
+    } catch {
+      // Keep the last known recap; the next realtime signal retries.
+    }
+  }, [rpc, threadId]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const onSignal = useCallback((payload: unknown) => {
+    if (isRecord(payload) && payload.threadId === threadId) void reload();
+  }, [reload, threadId]);
+  useRealtime(RECAP_CHANGED, onSignal);
+
+  /** Generates a manual recap and returns its result for inline and header actions. */
+  const generate = useCallback(async (): Promise<{ recap: Recap | null; error: string | null }> => {
+    setGenerating(true);
+    try {
+      const next = await rpc.call("recap_generate", { threadId, automatic: false });
+      setRecap(next.recap);
+      return {
+        recap: next.recap,
+        error: !next.recap ? generationErrorMessage(next.reason) : null,
+      };
+    } catch (cause) {
+      return {
+        recap: null,
+        error: cause instanceof Error ? cause.message : String(cause),
+      };
+    } finally {
+      setGenerating(false);
+      void reload();
+    }
+  }, [reload, rpc, threadId]);
+
+  return { recap, generating, generate };
+}
+
+/** Quiet period after a turn ends before the inline Generate Recap action appears. */
+const THREAD_SETTLE_MS = 1_500;
+
+/**
+ * True once the composer has been idle for THREAD_SETTLE_MS. It drops to false
+ * as soon as a turn is submitted or running, so brief idle gaps between agent
+ * steps do not flash the action. A thread that is already idle on mount counts
+ * as settled immediately.
+ */
+function useThreadSettled(): boolean {
+  const { run } = useComposerView();
+  const busy = run.isRunning || run.isSubmitting;
+  const [settled, setSettled] = useState(!busy);
+  useEffect(() => {
+    if (busy) {
+      setSettled(false);
+      return;
+    }
+    const timer = setTimeout(() => setSettled(true), THREAD_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [busy]);
+  return settled && !busy;
+}
+
+const RECAP_BANNER_CLASS =
+  "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-200/80 bg-sky-50 text-sky-900 dark:border-sky-800/50 dark:bg-sky-950/60 dark:text-sky-200";
+
+/**
+ * Inline recap above the composer. With automatic recaps on, it shows the
+ * latest recap. With them off, it shows an inline Generate Recap action once
+ * the thread has settled, a progress placeholder while that just-in-time
+ * recap generates, and then the recap itself; automatic recaps left over from
+ * before the setting changed stay hidden. Errors surface as notifications.
+ * Dismissal is keyed by recap id and held in component state, so a newer
+ * recap reappears.
+ */
+function RecapComposerBannerContent({
+  threadId,
+  automatic,
+  layout,
+}: {
+  threadId: string;
+  automatic: boolean;
+  layout: RecapLayout;
+}) {
+  const { recap, generating, generate } = useThreadRecap(threadId);
+  const [dismissedRecapId, setDismissedRecapId] = useState<string | null>(null);
+  const [requestedRecap, setRequestedRecap] = useState(false);
+  const settled = useThreadSettled();
+
+  // A new turn invalidates the requested recap, so return to the inline action
+  // for the next settled point instead of leaving an empty slot.
+  useEffect(() => {
+    if (!settled && !generating) setRequestedRecap(false);
+  }, [generating, settled]);
+
+  const runJustInTimeRecap = useCallback(async () => {
+    setRequestedRecap(true);
+    const result = await generate();
+    if (result.error) {
+      setRequestedRecap(false);
+      toast.error(result.error);
+    }
+  }, [generate]);
+
+  const onRequest = !automatic;
+
+  if (onRequest && requestedRecap && generating) {
+    // Occupies the recap's slot at a similar size so the finished recap
+    // replaces it in place instead of popping in below an empty gap.
+    return (
+      <div
+        className={`${RECAP_BANNER_CLASS} px-4 py-3`}
+        role="status"
+        aria-live="polite"
+        aria-label="Generating recap"
+      >
+        <div className="flex items-center gap-2 text-xs font-medium text-sky-900/70 dark:text-sky-200/70">
+          <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 animate-spin" fill="none">
+            <circle cx="8" cy="8" r="6" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
+            <path d="M14 8a6 6 0 0 0-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+          Generating recap…
+        </div>
+        {/* Mirrors the recap's goal line and two columns so the result lands in place. */}
+        <div aria-hidden="true" className="mt-3 animate-pulse">
+          {layout !== RECAP_LAYOUTS.minimal ? (
+            <div className="mb-3.5 h-2.5 w-2/5 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+          ) : null}
+          <div
+            className={`grid gap-x-6 gap-y-2 ${
+              layout === RECAP_LAYOUTS.detailed ? "sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""
+            }`}
+          >
+            <div className="space-y-2">
+              <div className="h-2 w-full rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+              <div className="h-2 w-3/4 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+            </div>
+            {layout === RECAP_LAYOUTS.detailed ? (
+              <div className="space-y-2 sm:border-l sm:border-sky-900/10 sm:pl-6 sm:dark:border-sky-200/10">
+                <div className="h-2 w-5/6 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+                <div className="h-2 w-2/3 rounded-full bg-sky-900/10 dark:bg-sky-200/15" />
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const visibleRecap =
+    recap &&
+    recap.id !== dismissedRecapId &&
+    (!onRequest || !recap.automatic || requestedRecap)
+      ? recap
+      : null;
+
+  if (!visibleRecap) {
+    if (!onRequest || !settled) return null;
+    return (
+      <div className="mx-auto mb-3 flex w-full min-w-0 max-w-4xl justify-center">
+        <button
+          type="button"
+          className="cursor-pointer rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60"
+          disabled={generating}
+          onClick={() => void runJustInTimeRecap()}
+        >
+          {generating ? "Generating recap…" : "Generate Recap"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${RECAP_BANNER_CLASS} px-4 py-3`} role="region" aria-label="Latest recap">
+      <RecapSummary summary={visibleRecap.summary} layout={layout} />
+      <button
+        type="button"
+        className="absolute right-2.5 top-2.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-sky-900/50 transition-colors hover:bg-sky-900/10 hover:text-sky-900/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:text-sky-200/50 dark:hover:bg-sky-200/10 dark:hover:text-sky-200/80"
+        aria-label="Dismiss recap"
+        title="Dismiss recap"
+        onClick={() => {
+          setDismissedRecapId(visibleRecap.id);
+          setRequestedRecap(false);
+        }}
+      >
+        <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M4 4l8 8M12 4l-8 8" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+// Recap typography. Both columns share one body size and line height so
+// their labels and first lines sit on the same baselines; hierarchy comes
+// from weight and opacity rather than extra sizes.
+const RECAP_LABEL_CLASS =
+  "mb-1 text-[10.5px] font-semibold uppercase leading-4 tracking-[0.08em] text-sky-900/50 dark:text-sky-200/45";
+const RECAP_BODY_CLASS = "text-[12px] @lg/recap:text-[13px] leading-[1.5] [text-wrap:pretty]";
+
+/**
+ * One recap line rendered through BB's markdown so inline code, emphasis, and
+ * links survive. The overrides keep BB's paragraph and code styles inside the
+ * recap's type scale.
+ */
+function RecapText({
+  text,
+  className = "",
+  typeClass = RECAP_BODY_CLASS,
+}: {
+  text: string;
+  className?: string;
+  typeClass?: string;
+}) {
+  return (
+    <Markdown
+      content={text}
+      className={`min-w-0 ${typeClass} text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em] ${className}`}
+    />
+  );
+}
+
+function OpenMark() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 12 12" className="mt-[4px] h-3 w-3 opacity-60" fill="none">
+      <circle cx="6" cy="6" r="4.25" stroke="currentColor" strokeWidth="1.25" />
+    </svg>
+  );
+}
+
+function DoneMark() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 12 12" className="mt-[4px] h-3 w-3 opacity-60" fill="none">
+      <path d="M2.5 6.25 4.9 8.5 9.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function LedgerList({
+  items,
+  label,
+  done = false,
+}: {
+  items: string[];
+  label: string;
+  done?: boolean;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section>
+      <h3 className={RECAP_LABEL_CLASS}>{label}</h3>
+      <ul className="space-y-1">
+        {items.map((item, index) => (
+          <li
+            key={index}
+            className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${RECAP_BODY_CLASS} ${done ? "opacity-70" : ""}`}
+          >
+            {done ? <DoneMark /> : <OpenMark />}
+            <RecapText text={item} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * Renders the default prompt's format: the goal as a one-line heading, then
+ * the latest result (or the input the session is waiting for) beside an
+ * Open/Done ledger, trimmed to the chosen layout. Any other recap shape
+ * (older single-sentence recaps, custom prompts) renders as markdown in
+ * every layout.
+ */
+function RecapSummary({ summary, layout }: { summary: string; layout: RecapLayout }) {
+  const ledger = parseRecapLedger(summary);
+  if (!ledger) {
+    return <Markdown content={summary} className="pr-6 text-xs leading-5 text-inherit @lg/recap:text-sm @lg/recap:leading-6" />;
+  }
+  const showGoal = layout !== RECAP_LAYOUTS.minimal && ledger.goal !== null;
+  const hasLedger =
+    layout === RECAP_LAYOUTS.detailed && (ledger.done.length > 0 || ledger.open.length > 0);
+  return (
+    <div>
+      {showGoal && ledger.goal ? (
+        <div
+          role="heading"
+          aria-level={2}
+          className="pr-8 font-medium tracking-[-0.006em] text-sky-950 dark:text-sky-50"
+        >
+          <RecapText text={ledger.goal} typeClass="text-[13px] @lg/recap:text-[14px] leading-[1.43] [text-wrap:balance]" />
+        </div>
+      ) : null}
+      <div
+        className={`${showGoal ? "mt-2.5" : "pr-8"} grid gap-x-6 gap-y-3 ${
+          hasLedger ? "sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""
+        }`}
+      >
+        <div className="space-y-2.5">
+          {ledger.needsInput ? (
+            <section>
+              <h3 className={`${RECAP_LABEL_CLASS} !text-amber-700 dark:!text-amber-300/90`}>Needs input</h3>
+              <RecapText text={ledger.needsInput} className="font-medium text-sky-950/90 dark:text-sky-100/90" />
+            </section>
+          ) : null}
+          {ledger.latest.length > 0 ? (
+            <section>
+              <h3 className={RECAP_LABEL_CLASS}>Latest</h3>
+              {ledger.latest.length === 1 ? (
+                <RecapText text={ledger.latest[0]} className="text-sky-950/90 dark:text-sky-100/90" />
+              ) : (
+                <ul className="space-y-1">
+                  {ledger.latest.map((item, index) => (
+                    <li
+                      key={index}
+                      className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${RECAP_BODY_CLASS} text-sky-950/90 dark:text-sky-100/90`}
+                    >
+                      <span aria-hidden="true" className="ml-[4px] mt-[8px] h-1 w-1 rounded-full bg-current opacity-60" />
+                      <RecapText text={item} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
+          {ledger.notes.map((note, index) => (
+            <RecapText key={index} text={note} className="opacity-70" />
+          ))}
+        </div>
+        {hasLedger ? (
+          <div className="space-y-2.5 border-sky-900/10 sm:border-l sm:pl-6 dark:border-sky-200/10">
+            <LedgerList items={ledger.open} label="Open" />
+            <LedgerList items={ledger.done} label="Done" done />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function RecapComposerBanner() {
+  const { scope } = useComposerView();
+  const { settings, isLoading } = useRecapSettings();
+  const bannerRef = useRef<HTMLDivElement>(null);
+  const [isInlineMessageEditor, setIsInlineMessageEditor] = useState(false);
+
+  // ponytail: BB DOM-marker fallback; switch to ComposerView edit state when the host exposes it.
+  useLayoutEffect(() => {
+    const next = Boolean(bannerRef.current?.closest("[data-inline-message-editor-frame]"));
+    setIsInlineMessageEditor((current) => current === next ? current : next);
+  }, [isInlineMessageEditor, scope.kind]);
+
+  if (scope.kind !== "thread") return null;
+  const showBanner = shouldShowRecapBanner(scope.kind, isInlineMessageEditor);
+  const content =
+    !isLoading && settings && showBanner
+      ? <RecapComposerBannerContent threadId={scope.threadId} automatic={settings.auto} layout={settings.layout} />
+      : null;
+  return (
+    <div ref={bannerRef} className="contents">
+      {content}
+    </div>
+  );
+}
+
+/** A schematic of each layout, drawn with the recap's own proportions. */
+function LayoutPreview({ layout }: { layout: RecapLayout }) {
+  const bar = "rounded-full bg-sky-900/15 dark:bg-sky-200/20";
+  return (
+    <div
+      aria-hidden="true"
+      className="flex h-14 flex-col justify-center rounded-md border border-sky-200/80 bg-sky-50 px-2.5 dark:border-sky-800/50 dark:bg-sky-950/60"
+    >
+      {layout !== RECAP_LAYOUTS.minimal ? <div className={`mb-2 h-1.5 w-1/2 ${bar} !bg-sky-900/30 dark:!bg-sky-200/35`} /> : null}
+      <div className={`grid gap-2 ${layout === RECAP_LAYOUTS.detailed ? "grid-cols-[1.2fr_1fr]" : ""}`}>
+        <div className="space-y-1">
+          <div className={`h-1 w-1/4 ${bar}`} />
+          <div className={`h-1 w-full ${bar}`} />
+          <div className={`h-1 w-3/4 ${bar}`} />
+        </div>
+        {layout === RECAP_LAYOUTS.detailed ? (
+          <div className="space-y-1 border-l border-sky-900/10 pl-2 dark:border-sky-200/10">
+            <div className={`h-1 w-1/4 ${bar}`} />
+            <div className={`h-1 w-5/6 ${bar}`} />
+            <div className={`h-1 w-2/3 ${bar}`} />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function LayoutSettings({
+  layout,
+  saving,
+  error,
+  onSelect,
+}: {
+  layout: RecapLayout;
+  saving: boolean;
+  error: string | null;
+  onSelect: (layout: RecapLayout) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-labelledby="recap-layout-label"
+      aria-describedby="recap-layout-help"
+      className="space-y-2 border-t border-border pt-4"
+    >
+      <p id="recap-layout-label" className="font-medium text-foreground">Recap layout</p>
+      <p id="recap-layout-help" className="text-xs text-muted-foreground">
+        How much of each recap to show above the composer. Saves immediately; recaps are not regenerated.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {RECAP_LAYOUT_OPTIONS.map((option) => {
+          const selected = option.value === layout;
+          return (
+            <label
+              key={option.value}
+              className={`flex cursor-pointer flex-col gap-2 rounded-lg border p-2.5 transition-colors ${
+                selected ? "border-foreground/60 bg-accent/40" : "border-border hover:bg-accent/20"
+              }`}
+            >
+              <LayoutPreview layout={option.value} />
+              <span className="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name="recap-layout"
+                  value={option.value}
+                  checked={selected}
+                  disabled={saving}
+                  onChange={() => onSelect(option.value)}
+                  className="mt-0.5 accent-foreground"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-foreground">{option.label}</span>
+                  <span className="block text-xs text-muted-foreground">{option.description}</span>
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+/** The output contract a custom prompt must follow to use the recap layouts. */
+function PromptFormatHelp() {
+  return (
+    <details className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
+      <summary className="cursor-pointer font-medium text-foreground">Output format for custom prompts</summary>
+      <div className="mt-2 space-y-2">
+        <p>
+          To use the recap layouts, the model must return only labeled lines, one item per line, with no blank lines,
+          headings, or bullets:
+        </p>
+        <pre className="overflow-x-auto rounded bg-muted px-2 py-1.5 font-mono text-[11px] leading-4 text-foreground">{`Goal: Rendering Pi Todo calls natively in BB.
+Latest: Replay renderer committed as \`6007945\`.
+Latest: Tests, typecheck, and build pass.
+Open: Live UI verification.
+Done: Refactored to timeline replay.`}</pre>
+        <ul className="list-disc space-y-1 pl-4">
+          <li><span className="font-medium text-foreground">Goal:</span> one short line.</li>
+          <li>
+            <span className="font-medium text-foreground">Latest:</span> one or more lines; several render as a list.
+            Use <span className="font-medium text-foreground">Needs input:</span> instead when the thread is waiting
+            for an answer.
+          </li>
+          <li><span className="font-medium text-foreground">Open:</span> and <span className="font-medium text-foreground">Done:</span> repeat once per item.</li>
+          <li>Inline markdown such as backticks, bold, and links renders inside a line.</li>
+          <li>Any other label or unlabeled text makes the whole recap render as plain markdown, in every layout.</li>
+          <li>Recaps are capped at 1,200 characters; automatic output over 2,000 characters is discarded.</li>
+        </ul>
+        <p>
+          Recap adds its own instructions after your prompt: the untrusted-transcript boundary, the thread title, and,
+          on refreshes, the previous recap. Your prompt does not need to repeat them.
+        </p>
+      </div>
+    </details>
+  );
+}
+
+function pickerValueFromSelection(selection: ModelSelection | null): ExperimentalProviderModelPickerValue | null {
+  if (
+    !selection ||
+    typeof selection.providerId !== "string" ||
+    typeof selection.model !== "string" ||
+    typeof selection.reasoningLevel !== "string"
+  ) {
+    return null;
+  }
+  return {
+    providerId: selection.providerId,
+    model: selection.model,
+    reasoningLevel: selection.reasoningLevel,
+    ...(selection.serviceTier ? { serviceTier: selection.serviceTier } : {}),
+  };
+}
+
+function BoundedNumberInput({
+  value,
+  min,
+  max,
+  fallback,
+  disabled,
+  onCommit,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  fallback: number;
+  disabled?: boolean;
+  onCommit: (next: number) => void;
+}) {
+  const [text, setText] = useState<string | null>(null);
+  const display = text ?? String(value);
+
+  const handleChange = (event: { currentTarget: EventTarget | null; target: EventTarget }) => {
+    const raw = textFromInput(event);
+    setText(raw);
+    if (/^-?\d+$/.test(raw.trim())) {
+      onCommit(parseClampedInteger(raw, fallback, min, max));
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={display}
+      disabled={disabled}
+      onChange={handleChange}
+      onBlur={() => setText(null)}
+      className="h-8 w-full rounded-md border border-border bg-background px-2.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+    />
+  );
+}
+
+function SettingsSection(_props: PluginSettingsSectionProps) {
+  return <SettingsSectionBody />;
+}
+
+function SettingsSectionBody() {
+  const rpc = useRpc<typeof rpcContract>();
+  const {
+    settings,
+    setSettings: setLoadedSettings,
+    isLoading: settingsLoading,
+    error: settingsLoadError,
+  } = useRecapSettings();
+  const [selection, setSelection] = useState<ModelSelection | null>(null);
+  const [configured, setConfigured] = useState(false);
+  const [modelLoading, setModelLoading] = useState(true);
+  const [modelSaving, setModelSaving] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
+  const [localDraft, setLocalDraft] = useState<RecapSettings | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [layoutSaving, setLayoutSaving] = useState(false);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
+  const rpcRef = useRef(rpc);
+  rpcRef.current = rpc;
+
+  const loadModel = useCallback(async (background = false) => {
+    if (!background) setModelLoading(true);
+    try {
+      const next = await rpcRef.current.call("recap_model_get", {});
+      setSelection(next.selection);
+      setConfigured(next.configured);
+      setModelError(null);
+    } catch (cause) {
+      setModelError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (!background) setModelLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadModel(false);
+  }, [loadModel]);
+  const onModelSettingsSignal = useCallback((payload: unknown) => {
+    if (isRecord(payload) && payload.settings === true) void loadModel(true);
+  }, [loadModel]);
+  useRealtime(RECAP_CHANGED, onModelSettingsSignal);
+
+  const draft = settings ? (localDraft ?? settings) : null;
+  const settingsDirty = localDraft !== null && settings !== null && recapFormIsDirty(localDraft, settings);
+
+  const onModelChange = useCallback((next: ExperimentalProviderModelPickerValue) => {
+    const nextSelection: ModelSelection = {
+      providerId: next.providerId,
+      model: next.model,
+      reasoningLevel: next.reasoningLevel,
+      ...(next.serviceTier ? { serviceTier: next.serviceTier } : {}),
+    };
+    setSelection(nextSelection);
+    setModelSaving(true);
+    setModelError(null);
+    void rpc.call("recap_model_set", nextSelection)
+      .then((result) => {
+        setSelection(result.selection);
+        setConfigured(true);
+      })
+      .catch((cause) => {
+        setModelError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => setModelSaving(false));
+  }, [rpc]);
+
+  const updateDraft = useCallback((update: (current: RecapSettings) => RecapSettings) => {
+    if (!settings) return;
+    setLocalDraft((current) => {
+      const next = update(current ?? settings);
+      return recapFormIsDirty(next, settings) ? next : null;
+    });
+    setSettingsError(null);
+  }, [settings]);
+
+
+  const onLayoutSelect = useCallback((layout: RecapLayout) => {
+    const previous = settings?.layout;
+    if (previous === undefined || previous === layout || layoutSaving) return;
+    setLayoutError(null);
+    setLayoutSaving(true);
+    setLoadedSettings((current) => (current ? { ...current, layout } : current));
+    void rpc.call("recap_layout_set", { layout })
+      .catch((cause) => {
+        setLoadedSettings((current) => (current ? { ...current, layout: previous } : current));
+        setLayoutError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => setLayoutSaving(false));
+  }, [layoutSaving, rpc, setLoadedSettings, settings?.layout]);
+
+  const pickerValue = pickerValueFromSelection(selection);
+
+  return (
+    <div className="space-y-3 text-sm">
+      <p className="text-muted-foreground">
+        Choose the recap model with BB's native provider/model picker. With no saved choice, recaps use BB's primary default model.
+      </p>
+      {modelLoading ? (
+        <p className="text-xs text-muted-foreground">Loading BB models…</p>
+      ) : pickerValue ? (
+        <ProviderModelPicker
+          value={pickerValue}
+          onChange={onModelChange}
+          align="start"
+          className="w-full"
+          disabled={modelSaving}
+        />
+      ) : (
+        <p role="alert" className="text-sm text-destructive">BB's model catalog is unavailable.</p>
+      )}
+      {modelError ? <p role="alert" className="text-sm text-destructive">{modelError}</p> : null}
+      {selection ? (
+        <p className="text-xs text-muted-foreground">
+          {configured ? "Saved selection" : "BB primary default"} · {selection.providerId}/{selection.model} · {selection.reasoningLevel} reasoning
+          {selection.serviceTier ? " · " + selection.serviceTier + " service tier" : ""}
+        </p>
+      ) : null}
+      {settingsLoadError ? <p role="alert" className="text-sm text-destructive">{settingsLoadError}</p> : null}
+      {settingsLoading || !draft ? (
+        <p className="text-xs text-muted-foreground">Loading recap settings…</p>
+      ) : (
+        <>
+        {settings ? (
+          <LayoutSettings
+            layout={settings.layout}
+            saving={layoutSaving}
+            error={layoutError}
+            onSelect={onLayoutSelect}
+          />
+        ) : null}
+        <form
+          className="space-y-5 border-t border-border pt-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const promptBlank = isBlankRecapPrompt(draft.prompt);
+            if (!settingsDirty || settingsSaving || promptBlank) return;
+            setSettingsSaving(true);
+            setSettingsError(null);
+            void rpc.call("recap_settings_set", draft)
+              .then((saved) => {
+                setLoadedSettings(normalizeRecapSettings(saved));
+                setLocalDraft(null);
+              })
+              .catch((cause) => {
+                setSettingsError(cause instanceof Error ? cause.message : String(cause));
+              })
+              .finally(() => setSettingsSaving(false));
+          }}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="font-medium text-foreground">Automatic recaps</p>
+              <p className="text-xs text-muted-foreground">
+                {draft.auto
+                  ? "Show a recap above the composer after the thread has been idle."
+                  : "Off: a Generate Recap button appears above the composer instead."}
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              aria-label="Automatic recaps"
+              checked={draft.auto}
+              onChange={(event) => {
+                const auto = checkboxFromInput(event);
+                updateDraft((current) => ({ ...current, auto }));
+              }}
+              className="mt-0.5 h-4 w-4 accent-foreground"
+            />
+          </div>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="font-medium text-foreground">Auto-clean up recaps</p>
+              <p className="text-xs text-muted-foreground">Keep only the newest 1,000 visible recaps.</p>
+            </div>
+            <input
+              type="checkbox"
+              aria-label="Auto-clean up recaps"
+              checked={draft.autoCleanup}
+              onChange={(event) => {
+                const autoCleanup = checkboxFromInput(event);
+                updateDraft((current) => ({ ...current, autoCleanup }));
+              }}
+              className="mt-0.5 h-4 w-4 accent-foreground"
+            />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="space-y-1.5">
+              <span className="block font-medium text-foreground">Idle delay (seconds)</span>
+              <BoundedNumberInput
+                value={draft.afterSeconds}
+                min={0}
+                max={86_400}
+                fallback={0}
+                disabled={settingsSaving}
+                onCommit={(afterSeconds) => updateDraft((current) => ({ ...current, afterSeconds }))}
+              />
+              <span className="block text-xs text-muted-foreground">Wait this long after activity stops.</span>
+            </label>
+            <label className="space-y-1.5">
+              <span className="block font-medium text-foreground">Minimum user turns</span>
+              <BoundedNumberInput
+                value={draft.minTurns}
+                min={1}
+                max={100}
+                fallback={1}
+                disabled={settingsSaving}
+                onCommit={(minTurns) => updateDraft((current) => ({ ...current, minTurns }))}
+              />
+              <span className="block text-xs text-muted-foreground">Start automatically at this many user turns.</span>
+            </label>
+            <label className="space-y-1.5">
+              <span className="block font-medium text-foreground">Max concurrent recaps</span>
+              <BoundedNumberInput
+                value={draft.maxConcurrent}
+                min={MIN_CONCURRENT_GENERATIONS}
+                max={MAX_CONCURRENT_GENERATIONS}
+                fallback={MIN_CONCURRENT_GENERATIONS}
+                disabled={settingsSaving}
+                onCommit={(maxConcurrent) => updateDraft((current) => ({ ...current, maxConcurrent }))}
+              />
+              <span className="block text-xs text-muted-foreground">How many recap workers may run at once.</span>
+            </label>
+          </div>
+          <label className="space-y-1.5">
+            <span className="block font-medium text-foreground">Recap prompt</span>
+            <span className="block text-xs text-muted-foreground">
+              Instructions sent to the recap model. A custom prompt must keep the output format below to use the recap layouts.
+            </span>
+            <div className="relative">
+              <textarea
+                value={draft.prompt}
+                rows={6}
+                maxLength={MAX_RECAP_PROMPT_CHARS}
+                spellCheck={false}
+                aria-describedby="recap-prompt-count"
+                onChange={(event) => {
+                  const prompt = textFromInput(event);
+                  updateDraft((current) => ({ ...current, prompt }));
+                }}
+                className="w-full resize-y rounded-md border border-border bg-background px-2.5 py-2 pb-8 text-sm leading-5 text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+              <p
+                id="recap-prompt-count"
+                className={MAX_RECAP_PROMPT_CHARS - draft.prompt.length < 200
+                  ? "pointer-events-none absolute bottom-2 right-2 rounded-md bg-background/90 px-1.5 py-0.5 text-[11px] tabular-nums text-destructive"
+                  : "pointer-events-none absolute bottom-2 right-2 rounded-md bg-background/90 px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground"}
+              >
+                {draft.prompt.length.toLocaleString()} / {MAX_RECAP_PROMPT_CHARS.toLocaleString()}
+                {" · "}
+                {(MAX_RECAP_PROMPT_CHARS - draft.prompt.length).toLocaleString()} left
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => updateDraft((current) => ({ ...current, prompt: DEFAULT_RECAP_PROMPT }))}
+                disabled={draft.prompt === DEFAULT_RECAP_PROMPT || settingsSaving}
+              >
+                Reset to default
+              </button>
+            </div>
+            {isBlankRecapPrompt(draft.prompt) ? (
+              <p role="alert" className="text-sm text-destructive">
+                Prompt cannot be empty. Save is disabled so the default is not restored silently. Use Reset to default if you want the built-in instructions.
+              </p>
+            ) : null}
+          </label>
+          <PromptFormatHelp />
+          {settingsError ? <p role="alert" className="text-sm text-destructive">{settingsError}</p> : null}
+          <div className="flex items-center justify-between gap-3 pt-8">
+            <p role="status" className="text-xs text-muted-foreground">
+              {settingsFormStatusLabel(settingsFormStatus(settingsSaving, settingsDirty))}
+            </p>
+            <button
+              type="submit"
+              className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!settingsDirty || settingsSaving || isBlankRecapPrompt(draft.prompt)}
+            >
+              Save settings
+            </button>
+          </div>
+        </form>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Manual generators for threads whose header is mounted, so the command
+ * palette (which has no RPC client) can trigger the same generation flow.
+ */
+const headerGenerators = new Map<string, () => void>();
+
+function RecapHeaderAction({ threadId, isCompactViewport }: PluginThreadHeaderActionProps) {
+  const { generating, generate } = useThreadRecap(threadId);
+  const run = useCallback(() => {
+    void generate().then(({ error }) => {
+      if (error) toast.error(error);
+    });
+  }, [generate]);
+
+  useEffect(() => {
+    headerGenerators.set(threadId, run);
+    return () => {
+      if (headerGenerators.get(threadId) === run) headerGenerators.delete(threadId);
+    };
+  }, [run, threadId]);
+
+  return (
+    <button
+      type="button"
+      className="inline-flex h-7 cursor-pointer items-center justify-center rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
+      aria-label={generating ? "Generating recap" : "Generate recap"}
+      title={generating ? "Generating recap…" : "Generate recap"}
+      disabled={generating}
+      onClick={run}
+    >
+      {isCompactViewport ? "✦" : generating ? "Recapping…" : "Recap"}
+    </button>
+  );
+}
+
+export default definePluginApp((app) => {
+  app.composer.customize({
+    id: "recap-banner",
+    banners: [{ id: "recap", chrome: "bare", component: RecapComposerBanner }],
+  });
+  app.slots.settingsSection({
+    id: "settings",
+    title: "Recap behavior",
+    description: "Choose the model, layout, automatic behavior, and cleanup.",
+    component: SettingsSection,
+  });
+  app.slots.experimental_threadHeaderAction({
+    id: "recap",
+    title: "Recap",
+    component: RecapHeaderAction,
+  });
+  app.slots.commandPaletteAction({
+    id: "generate",
+    title: "Recap: generate for this thread",
+    isAvailable: ({ threadId }) => threadId !== null && headerGenerators.has(threadId),
+    run: ({ threadId }) => {
+      if (threadId !== null) headerGenerators.get(threadId)?.();
+    },
+  });
+});

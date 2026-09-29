@@ -1,0 +1,56 @@
+[
+  {
+    "id": "ember-core",
+    "title": "Fix tracked properties",
+    "project": "Workspace",
+    "repository": "https://github.com/emberjs/ember.js.git",
+    "path": "/code/ember/bugfix",
+    "excerpts": "User: Fix reactivity tracking in Ember itself. Assistant: Regression test added; runtime fix pending.",
+    "expected": ["Ember", "Ember.js"]
+  },
+  {
+    "id": "ember-addon",
+    "title": "Fix validation addon compatibility",
+    "project": "Workspace",
+    "repository": "https://github.com/example/ember-changeset.git",
+    "path": "/code/ember-changeset",
+    "excerpts": "User: Update the standalone ember-changeset addon for the latest Ember release. Do not change Ember itself. Assistant: Compatibility fix needs review.",
+    "expected": ["ember-changeset"]
+  },
+  {
+    "id": "beacon-api",
+    "title": "Repair webhook deliveries",
+    "project": "api-main",
+    "repository": "https://github.com/example/services.git",
+    "path": "/code/services/pr-42",
+    "excerpts": "User: Fix webhook retry behavior for our Beacon incident management product, whose backend is in this shared services repository. Assistant: Waiting for reproduction logs.",
+    "expected": ["Beacon"]
+  },
+  {
+    "id": "beacon-ui",
+    "title": "Clarify incident statuses",
+    "project": "dashboard",
+    "repository": "https://github.com/example/dashboard.git",
+    "path": "/code/dashboard",
+    "excerpts": "User: Change the incident status labels in Beacon's dashboard. Same incident management product as the webhook backend. Assistant: Design approved; implementation next.",
+    "expected": ["Beacon"]
+  },
+  {
+    "id": "tool-trap",
+    "title": "Set up a Svelte build",
+    "project": "Personal",
+    "repository": "https://github.com/example/receipt-reader.git",
+    "path": "/code/receipt-reader",
+    "excerpts": "User: Build the Receipt Reader app's upload form using Svelte. We are not developing Svelte itself. Assistant: Upload form works locally; accessibility review pending.",
+    "expected": ["Receipt Reader", "receipt-reader"]
+  },
+  {
+    "id": "unknown",
+    "title": "Continue",
+    "project": "Personal",
+    "repository": null,
+    "path": null,
+    "excerpts": "User: Let's continue. Assistant: What would you like to work on?",
+    "expected": ["Unclassified"]
+  }
+]

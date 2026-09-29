@@ -1,0 +1,56 @@
+[
+  {
+    "id": "lumen-manager",
+    "title": "Lumen — manager",
+    "project": "tomdaleOS",
+    "repository": null,
+    "path": "/code/tomdaleOS",
+    "excerpts": "Initial user request (historical intent; later explicit scope changes take precedence):\nYou are the Workstreams manager for the product \"Lumen\" in this BB project. Help coordinate its workstream threads when the user provides priorities or tasks.\n\nRecent user request (2026-01-02T10:00:00.000Z):\nSpawn a worker to fix Lumen's stale build cache and another to review the Lumen release notes. Report back when both finish.\n\nLast assistant report (unverified; may describe procedure rather than the work):\nSpawned two child workers: one fixing Lumen cache invalidation, one reviewing the Lumen 2.3 release notes. Waiting for their reports.",
+    "expected": ["Lumen"]
+  },
+  {
+    "id": "lumen-worker",
+    "title": "Fix Lumen cache invalidation",
+    "project": "tomdaleOS",
+    "repository": null,
+    "path": "/code/lumen/fix-cache",
+    "excerpts": "Initial user request (historical intent; later explicit scope changes take precedence):\nManager: Lumen — manager @thread:thr_abc123. You are a child worker; do not spawn other agents. Exact checkout: /code/lumen/fix-cache. Task: Lumen's build cache is not invalidated when a config file changes. Find the cause, fix it with a regression test, commit on the branch, do not push. Report root cause, files, and tests to your manager.\n\nLast assistant report (unverified; may describe procedure rather than the work):\nRoot cause: the cache key ignored lumen.config.ts. Added the config hash to the key, with a regression test. Committed on fix-cache; reported to the manager.",
+    "expected": ["Lumen"]
+  },
+  {
+    "id": "beacon-worker",
+    "title": "Debug thread grouping",
+    "project": "tomdaleOS",
+    "repository": null,
+    "path": "/code/toolbelt/bb-plugin-beacon",
+    "excerpts": "Initial user request (historical intent; later explicit scope changes take precedence):\nManager: Beacon — manager. You are a child worker; do not spawn other agents. The Beacon plugin groups BB threads into the wrong workstreams. Investigate its classifier and grouping code, add tests, commit on the branch.\n\nLast assistant report (unverified; may describe procedure rather than the work):\nBeacon's grouping falls back to the BB project name for unclassified roots. Added a regression test and a fix in bb-plugin-beacon/tree.ts.",
+    "expected": ["Beacon"]
+  },
+  {
+    "id": "bb-cli-bug",
+    "title": "Fix thread open argument handling",
+    "project": "tomdaleOS",
+    "repository": null,
+    "path": "/code/tomdaleOS",
+    "excerpts": "Initial user request (historical intent; later explicit scope changes take precedence):\n`bb thread open <id> <path>` opens the current thread instead of the one named when a path is also given. Figure out why in the BB CLI and draft a BB issue.\n\nLast assistant report (unverified; may describe procedure rather than the work):\nThe CLI parses the optional path before the thread ID. Drafted an issue for the BB CLI with a reproduction.",
+    "expected": ["BB"]
+  },
+  {
+    "id": "ops-skill",
+    "title": "Tighten worker delegation skill",
+    "project": "tomdaleOS",
+    "repository": null,
+    "path": "/code/tomdaleOS",
+    "excerpts": "Initial user request (historical intent; later explicit scope changes take precedence):\nUpdate my agent-manager skill so managers always tell child workers which checkout to use and require a report back before closing.\n\nLast assistant report (unverified; may describe procedure rather than the work):\nUpdated skills/agent-manager/SKILL.md with checkout and report-back rules.",
+    "expected": ["tomdaleOS"]
+  },
+  {
+    "id": "one-off",
+    "title": "quick question",
+    "project": "tomdaleOS",
+    "repository": null,
+    "path": "/code/tomdaleOS",
+    "excerpts": "Recent user request (2026-01-02T10:00:00.000Z):\nwhat is the capital of Australia?\n\nLast assistant report (unverified; may describe procedure rather than the work):\nCanberra.",
+    "expected": ["Unclassified"]
+  }
+]
