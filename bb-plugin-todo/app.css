@@ -136,6 +136,36 @@
   color: var(--destructive-text, var(--destructive));
 }
 
+.todo-pending {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--muted-foreground);
+}
+.todo-actions {
+  display: grid;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+.todo-actions p { margin: 0; }
+.todo-action-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.todo-actions button {
+  width: fit-content;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 0.5rem);
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.todo-actions button:hover:not(:disabled) { background: var(--muted); }
+.todo-actions button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.todo-actions button:disabled { cursor: not-allowed; opacity: 0.5; }
+.todo-actions .todo-clear-confirm { color: var(--destructive-text, var(--destructive)); }
+.todo-clear-error { color: var(--destructive-text, var(--destructive)); }
+
 .todo-sr {
   position: absolute;
   width: 1px;
