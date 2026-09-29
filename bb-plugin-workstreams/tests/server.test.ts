@@ -43,7 +43,12 @@ const thread = (id: string) =>
     environmentId: null,
     status: "idle",
   });
-function setup(count = 17, malformed = false, failTitle?: string) {
+function setup(
+  count = 17,
+  malformed = false,
+  failTitle?: string,
+  onInference?: () => void,
+) {
   const rows = Array.from({ length: count }, (_, i) => thread(String(i)));
   let running = 0,
     peak = 0;
@@ -93,6 +98,7 @@ function setup(count = 17, malformed = false, failTitle?: string) {
       },
     },
     experimental_callHostRpc: async ({ input }) => {
+      onInference?.();
       running++;
       peak = Math.max(peak, running);
       try {
@@ -430,6 +436,73 @@ describe("active thread overview", () => {
       });
       expect(s.analysis?.stats).toMatchObject({ calls: 5, failedCalls: 2 });
       expect(s.analysis?.warnings).toHaveLength(1);
+    } finally {
+      service.controller.abort();
+      await service.done;
+    }
+  });
+  it("retains prior analysis without stamping a thread edited during inference", async () => {
+    let infer: (() => void) | undefined;
+    const h = setup(2, false, undefined, () => infer?.());
+    const initial = h.rows[0].updatedAt;
+    await plugin(h.bb);
+    h.bb.storage
+      .database()
+      .prepare("INSERT INTO state VALUES (?,?)")
+      .run(
+        "thread-analysis",
+        JSON.stringify({
+          at: 1,
+          items: [
+            {
+              threadId: "0",
+              group: "Earlier",
+              recap: "Prior work",
+              updatedAt: initial,
+            },
+          ],
+          warnings: [],
+        }),
+      );
+    const live = await h.harness.lifecycle.reload(plugin);
+    fixtures.push(live);
+    // Change the authoritative row only when inference begins, after inventory.
+    infer = () => {
+      h.rows[0].updatedAt = initial + 1;
+    };
+    await live.harness.behavior.callRpc("analyze", null);
+    const service = live.harness.behavior.runService("thread-analysis");
+    try {
+      await expect
+        .poll(
+          async () =>
+            (
+              (await live.harness.behavior.callRpc(
+                "snapshot",
+                null,
+              )) as Snapshot
+            ).progress,
+        )
+        .toBeNull();
+      const result = (await live.harness.behavior.callRpc(
+        "snapshot",
+        null,
+      )) as Snapshot;
+      expect(result.error).toBeNull();
+      expect(
+        result.analysis?.items.find((i) => i.threadId === "0"),
+      ).toMatchObject({
+        group: "Earlier",
+        updatedAt: initial,
+        refreshed: false,
+      });
+      expect(
+        result.analysis?.items.find((i) => i.threadId === "1")?.refreshed,
+      ).toBe(true);
+      expect(result.analysis?.warnings).toContain(
+        "Thread 0 changed during analysis; not refreshed.",
+      );
+      expect(live.harness.experimental_hostRpcCalls.length).toBeGreaterThan(0);
     } finally {
       service.controller.abort();
       await service.done;
