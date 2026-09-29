@@ -567,6 +567,8 @@ export default async function plugin(bb: BbPluginApi) {
         })),
       });
       if (input.length) {
+        advance("summarizing", 0, input.length);
+        let summarized = 0;
         const summaryStarted = Date.now();
         // One group per call avoids truncated or incomplete multi-group JSON
         // from the fast model and makes a single failure local to one summary.
@@ -590,6 +592,7 @@ export default async function plugin(bb: BbPluginApi) {
                       needsYou: exactNeedsYou,
                     });
                 }
+                advance("summarizing", ++summarized, input.length);
                 return summaries;
               } catch {
                 signal.throwIfAborted();
@@ -597,6 +600,7 @@ export default async function plugin(bb: BbPluginApi) {
             }
             // A bad summary response must not discard classifications or the
             // summaries already saved for this group.
+            advance("summarizing", ++summarized, input.length);
             return new Map(
               batch.flatMap(({ name }) =>
                 analysis?.summaries?.[name]
@@ -620,6 +624,8 @@ export default async function plugin(bb: BbPluginApi) {
     // Inference may outlive the inventory snapshot. Preserve the prior result
     // for any thread that changed while the model was working.
     if (!fixture) {
+      advance("verifying", 0, next.items.length);
+      let verified = 0;
       const current: Analysis["items"] = [];
       for (const item of next.items) {
         signal.throwIfAborted();
@@ -641,6 +647,7 @@ export default async function plugin(bb: BbPluginApi) {
             `Thread ${item.threadId} changed during analysis; not refreshed.`,
           );
         }
+        advance("verifying", ++verified, next.items.length);
       }
       next.items = current;
       next.needsYouCount = current.filter((item) => item.needsYou).length;
@@ -927,6 +934,7 @@ export default async function plugin(bb: BbPluginApi) {
     plannedAt: Map<string, number> = new Map(),
     signal?: AbortSignal,
     outcomeCounts?: { done: number; failed: number },
+    onProgress?: (completed: number) => void,
   ): Promise<LogEntry[]> {
     const outcomes: LogEntry[] = [];
     if (fixture) {
@@ -940,6 +948,7 @@ export default async function plugin(bb: BbPluginApi) {
             detail: describe(action, titles),
           }),
         );
+        onProgress?.(outcomes.length);
       }
       notify();
       return outcomes;
@@ -995,6 +1004,7 @@ export default async function plugin(bb: BbPluginApi) {
         if (signal?.aborted) break;
       } finally {
         if (locked) splitting.delete(action.threadId);
+        onProgress?.(outcomes.length);
       }
     }
     // Keep successful plugin edits current; failed actions remain explicitly stale.
@@ -1064,12 +1074,17 @@ export default async function plugin(bb: BbPluginApi) {
         return !assigned || oldName === assigned || assigned === action.section;
       });
       signal?.throwIfAborted();
+      if (progress?.stage === "organizing")
+        advance("organizing", 0, actions.length);
       await perform(
         actions,
         "auto",
         new Map(threads.map((thread) => [thread.id, thread.updatedAt])),
         signal,
         result,
+        progress?.stage === "organizing"
+          ? (completed) => advance("organizing", completed, actions.length)
+          : undefined,
       );
     } finally {
       organizing = false;
@@ -1232,6 +1247,8 @@ export default async function plugin(bb: BbPluginApi) {
         cached.get(bannerKey(name)) !==
         hotlineBannerSignature(name, bannerMotif(name, summary.motif)),
     );
+    if (progress?.stage === "banners") advance("banners", 0, missing.length);
+    let generated = 0;
     if (missing.length)
       bb.log.info(
         `Generating ${missing.length} Hotline banners: ${missing.map(([name]) => name).join(", ")}`,
@@ -1271,6 +1288,9 @@ export default async function plugin(bb: BbPluginApi) {
         bb.log.warn(
           `Could not generate Hotline banner for ${name}: ${error instanceof Error ? error.message : String(error)}`,
         );
+      } finally {
+        if (progress?.stage === "banners")
+          advance("banners", ++generated, missing.length);
       }
     });
   }
@@ -1289,10 +1309,15 @@ export default async function plugin(bb: BbPluginApi) {
             await analyze(runSignal);
             analyzed = true;
             runSignal.throwIfAborted();
-            if ((await settings.get()).organize === "auto")
+            if ((await settings.get()).organize === "auto") {
+              advance("organizing", 0, 0);
               await organize(runSignal, organizeResult);
+            }
             runSignal.throwIfAborted();
-            if (lastHost) await ensureBanners(lastHost, runSignal);
+            if (lastHost) {
+              advance("banners", 0, 0);
+              await ensureBanners(lastHost, runSignal);
+            }
             runSignal.throwIfAborted();
           } catch (e) {
             error = runSignal.aborted
@@ -1324,7 +1349,7 @@ export default async function plugin(bb: BbPluginApi) {
     freshRun = !!options.fresh;
     pending = true;
     error = null;
-    advance("reading", 0, 0);
+    advance("preparing", 0, 0);
     return { ok: true };
   };
   const cancel = () => {

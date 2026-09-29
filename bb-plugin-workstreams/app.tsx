@@ -56,6 +56,15 @@ function when(ms: number): string {
     day: "numeric",
   });
 }
+const PROGRESS_LABEL: Record<NonNullable<View["progress"]>["stage"], string> = {
+  preparing: "Preparing analysis",
+  reading: "Reading threads",
+  classifying: "Classifying threads",
+  summarizing: "Summarizing workstreams",
+  verifying: "Checking thread freshness",
+  organizing: "Checking organization",
+  banners: "Checking Hotline banners",
+};
 const OTHER = "Other groups";
 const anchor = (id: string) =>
   `ws-${id.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
@@ -164,6 +173,7 @@ function WorkstreamsPage() {
   const [data, setData] = useState<View | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [startingAnalysis, setStartingAnalysis] = useState(false);
   const [query, setQuery] = useState("");
   const [onlyYou, setOnlyYou] = useState(false);
   const search = useRef<HTMLInputElement>(null);
@@ -204,6 +214,7 @@ function WorkstreamsPage() {
     input: unknown = null,
   ) => {
     setBusy(true);
+    if (method === "analyze") setStartingAnalysis(true);
     setError("");
     try {
       await (rpc.call as (m: string, i: unknown) => Promise<unknown>)(
@@ -215,6 +226,7 @@ function WorkstreamsPage() {
       setError(String(e));
     } finally {
       setBusy(false);
+      setStartingAnalysis(false);
     }
   };
   const displayThreads = data?.threads ?? [];
@@ -310,7 +322,9 @@ function WorkstreamsPage() {
               }
               onClick={() => void call("analyze")}
             >
-              Analyze threads
+              {startingAnalysis || data?.progress
+                ? "Analyzing…"
+                : "Analyze threads"}
             </Button>
           </div>
         </header>
@@ -327,13 +341,21 @@ function WorkstreamsPage() {
             </Button>
           </div>
         )}
-        {data?.progress && (
-          <p role="status" className="ws-notice">
-            {data.progress.stage === "reading"
-              ? "Reading threads"
-              : "Classifying"}
-            {data.progress.total > 0 &&
-              ` · ${data.progress.completed}/${data.progress.total}`}
+        {(data?.progress || startingAnalysis) && (
+          <p role="status" aria-live="polite" className="ws-notice ws-progress">
+            <span className="ws-progress-indicator" aria-hidden="true" />
+            <span>
+              {data?.progress
+                ? data.progress.stage === "organizing" && data.progress.total
+                  ? "Organizing threads"
+                  : data.progress.stage === "banners" && data.progress.total
+                    ? "Generating Hotline banners"
+                    : PROGRESS_LABEL[data.progress.stage]
+                : "Starting analysis"}
+              {data?.progress &&
+                data.progress.total > 0 &&
+                ` · ${data.progress.completed}/${data.progress.total}`}
+            </span>
           </p>
         )}
         {!data ? (
