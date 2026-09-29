@@ -112,7 +112,7 @@ export function Row({
       >
         <ThreadTitle threadId={thread.id} />
       </span>
-      <span className="pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70">
+      <span className="pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70 group-hover/row:opacity-0 group-has-[button:focus-visible]/row:opacity-0">
         {proposal ? (
           <span className="ws-proposal-dot" role="img" aria-label={proposal} />
         ) : null}
@@ -152,6 +152,24 @@ export function Row({
           <span>{relativeAge(thread.latestAttentionAt, now)}</span>
         )}
       </span>
+      {/* Replaces the trailing details on hover, as in BB's own row. It
+            stops pointer and mouse downs so it never starts a drag. */}
+      <button
+        type="button"
+        aria-label="Archive thread"
+        title="Archive"
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          actions.archive(thread.id);
+        }}
+        className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 pointer-coarse:hidden"
+      >
+        <Icon name="Archive" className="size-3.5" />
+      </button>
     </div>
   );
 }

@@ -1,9 +1,15 @@
 /**
  * The Workstreams sidebar thread list: Needs you and Recent overlays, then one
- * group per workstream (BB section, in BB's order), Unsorted, and a Dormant
- * fold. Every visible thread appears in exactly one group (SPEC I1).
+ * group per workstream (BB section, in the user's drag-and-drop order, else
+ * BB's), Unsorted, and a Dormant fold. Every visible thread appears in exactly
+ * one group (SPEC I1).
  */
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { DndContext } from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import {
   experimental_useSidebarThreadActions,
   useBbNavigate,
@@ -20,8 +26,29 @@ import { Row } from "./Row.tsx";
 import { RowMenu, type RowMenuHandlers } from "./RowMenu.tsx";
 import { GroupMenu } from "./GroupMenu.tsx";
 import { NewWorkDialog } from "../composer/NewWork.tsx";
+import {
+  DropTarget,
+  Sortable,
+  useSidebarDnd,
+  type DragHandle,
+  type Drop,
+} from "./dnd.tsx";
+import { planDrop } from "./drop.ts";
 
 type ThreadGroup = Group<PluginSidebarThread>;
+type ThreadRow = RowModel<PluginSidebarThread>;
+
+const groupKey = (id: string) => `ws:${id}`;
+const treeKey = (id: string) => `t:${id}`;
+
+/** A group's rows split into trees, each led by its root. */
+function treesOf(rows: readonly ThreadRow[]): ThreadRow[][] {
+  const trees: ThreadRow[][] = [];
+  for (const row of rows)
+    if (row.depth === 0 || trees.length === 0) trees.push([row]);
+    else trees.at(-1)!.push(row);
+  return trees;
+}
 
 export function WorkstreamsThreadList({
   activeThreadId,
@@ -40,14 +67,26 @@ export function WorkstreamsThreadList({
   const { projection, sections, now } = ws;
   const nameOf = new Map(sections.map((s) => [s.id, s.name]));
 
+  const listRef = useRef<HTMLDivElement>(null);
+
   const report = (cause: unknown) =>
     setError(cause instanceof Error ? cause.message : String(cause));
+  const onDrop = (drop: Drop) => {
+    setError(null);
+    const plan = planDrop(drop, projection, sections, ws.server.order);
+    if (plan.move)
+      ws.moveThread(plan.move.threadId, plan.move.sectionId).catch(report);
+    if (plan.reorder) ws.reorder(plan.reorder).catch(report);
+  };
+  const { contextProps, dropGroupId } = useSidebarDnd({
+    containerRef: listRef,
+    onDrop,
+  });
+
   const handlers: RowMenuHandlers = {
     move: (thread, sectionId) => {
       setError(null);
-      ws.rpc
-        .call("moveThread", { threadId: thread.id, sectionId })
-        .catch(report);
+      ws.moveThread(thread.id, sectionId).catch(report);
     },
     newWorkstream: (thread) =>
       setNameRequest({
@@ -82,12 +121,12 @@ export function WorkstreamsThreadList({
       },
     });
 
-  const bandContext = (row: RowModel<PluginSidebarThread>) => {
+  const bandContext = (row: ThreadRow) => {
     const via = projection.needsYouVia.get(row.thread.id);
     if (via?.length) return `via ${via[0]!.displayTitle}`;
     return row.workstreamId ? nameOf.get(row.workstreamId) : "Unsorted";
   };
-  const renderRow = (row: RowModel<PluginSidebarThread>, band?: boolean) => (
+  const renderRow = (row: ThreadRow, band?: boolean, handle?: DragHandle) => (
     <RowMenu
       key={row.thread.id}
       thread={row.thread}
@@ -96,7 +135,7 @@ export function WorkstreamsThreadList({
       sections={sections}
       handlers={handlers}
     >
-      <li className="list-none">
+      <li ref={handle?.ref} {...handle?.listeners} className="list-none">
         <Row
           thread={row.thread}
           depth={band ? 0 : row.depth}
@@ -110,6 +149,57 @@ export function WorkstreamsThreadList({
       </li>
     </RowMenu>
   );
+  /** A group's rows as sortable trees; the root row drags the whole tree. */
+  const renderTrees = (group: ThreadGroup) => (
+    <SortableContext
+      items={treesOf(group.rows).map((tree) => treeKey(tree[0]!.thread.id))}
+      strategy={verticalListSortingStrategy}
+    >
+      {treesOf(group.rows).map((tree) => {
+        const root = tree[0]!.thread;
+        return (
+          <Sortable
+            key={root.id}
+            id={treeKey(root.id)}
+            data={{ type: "thread", threadId: root.id, groupId: group.id }}
+          >
+            {({ ref, style, handle }) => (
+              <li ref={ref} style={style} className="list-none">
+                <ul>
+                  {tree.map((row, index) =>
+                    renderRow(row, false, index === 0 ? handle : undefined),
+                  )}
+                </ul>
+              </li>
+            )}
+          </Sortable>
+        );
+      })}
+    </SortableContext>
+  );
+  const renderSortableGroup = (
+    group: ThreadGroup,
+    props: Omit<GroupProps, "group" | "children">,
+  ) => (
+    <Sortable
+      key={group.id}
+      id={groupKey(group.id)}
+      data={{ type: "group", groupId: group.id }}
+    >
+      {({ ref, style, handle }) => (
+        <WorkstreamGroup
+          {...props}
+          group={group}
+          sectionRef={ref}
+          style={style}
+          handle={handle}
+          dropTarget={dropGroupId === group.id}
+        >
+          {renderTrees(group)}
+        </WorkstreamGroup>
+      )}
+    </Sortable>
+  );
 
   if (ws.status === "loading")
     return <p className="px-3 py-2 text-xs text-muted-foreground">Loading…</p>;
@@ -121,96 +211,115 @@ export function WorkstreamsThreadList({
     );
 
   return (
-    <div className="ws-list flex flex-col gap-2 pb-4 pt-1">
-      <button
-        type="button"
-        onClick={() => setNewWork({ workstreamId: null })}
-        className="mx-2 flex h-7 items-center gap-1.5 rounded-md px-2 text-left text-[13px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
-      >
-        <span aria-hidden="true">＋</span> New work
-      </button>
-      <NewWorkDialog
-        open={newWork !== null}
-        workstreamId={newWork?.workstreamId ?? null}
-        workstreamName={newWork?.workstreamName ?? null}
-        onClose={() => setNewWork(null)}
-      />
-      {error ? (
-        <p
-          role="alert"
-          className="mx-2 rounded-md bg-destructive/10 px-2 py-1 text-xs text-destructive"
+    <DndContext {...contextProps}>
+      <div ref={listRef} className="ws-list flex flex-col gap-2 pb-4 pt-1">
+        <button
+          type="button"
+          onClick={() => setNewWork({ workstreamId: null })}
+          className="mx-2 flex h-7 items-center gap-1.5 rounded-md px-2 text-left text-[13px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
         >
-          {error}
-        </p>
-      ) : null}
-      {projection.needsYou.length > 0 ? (
-        <Band
-          title="Needs you"
-          count={projection.needsYou.length}
-          tone="attention"
-          collapsed={isCollapsed("__needs")}
-          toggle={() => toggle("__needs")}
+          <span aria-hidden="true">＋</span> New work
+        </button>
+        <NewWorkDialog
+          open={newWork !== null}
+          workstreamId={newWork?.workstreamId ?? null}
+          workstreamName={newWork?.workstreamName ?? null}
+          onClose={() => setNewWork(null)}
+        />
+        {error ? (
+          <p
+            role="alert"
+            className="mx-2 rounded-md bg-destructive/10 px-2 py-1 text-xs text-destructive"
+          >
+            {error}
+          </p>
+        ) : null}
+        {projection.needsYou.length > 0 ? (
+          <Band
+            title="Needs you"
+            count={projection.needsYou.length}
+            tone="attention"
+            collapsed={isCollapsed("__needs")}
+            toggle={() => toggle("__needs")}
+          >
+            {projection.needsYou.map((row) => renderRow(row, true))}
+          </Band>
+        ) : null}
+        {ws.showRecent && projection.recent.length > 0 ? (
+          <Band
+            title="Recent"
+            collapsed={isCollapsed("__recent")}
+            toggle={() => toggle("__recent")}
+          >
+            {projection.recent.map((row) => renderRow(row, true))}
+          </Band>
+        ) : null}
+        <SortableContext
+          items={projection.groups.map((group) => groupKey(group.id))}
+          strategy={verticalListSortingStrategy}
         >
-          {projection.needsYou.map((row) => renderRow(row, true))}
-        </Band>
-      ) : null}
-      {ws.showRecent && projection.recent.length > 0 ? (
-        <Band
-          title="Recent"
-          collapsed={isCollapsed("__recent")}
-          toggle={() => toggle("__recent")}
-        >
-          {projection.recent.map((row) => renderRow(row, true))}
-        </Band>
-      ) : null}
-      {projection.groups.map((group) => (
-        <WorkstreamGroup
-          key={group.id}
-          group={group}
-          collapsed={isCollapsed(group.id)}
-          toggle={() => toggle(group.id)}
-          onRename={() => renameWorkstream(group)}
-          onNewThread={() =>
-            setNewWork({ workstreamId: group.id, workstreamName: group.name })
-          }
-        >
-          {group.rows.map((row) => renderRow(row))}
-        </WorkstreamGroup>
-      ))}
-      {projection.unsorted.total > 0 ? (
-        <WorkstreamGroup
-          group={projection.unsorted}
-          collapsed={isCollapsed(projection.unsorted.id)}
-          toggle={() => toggle(projection.unsorted.id)}
-          muted
-        >
-          {projection.unsorted.rows.map((row) => renderRow(row))}
-        </WorkstreamGroup>
-      ) : null}
-      {projection.dormant.length > 0 ? (
-        <Band
-          title="Dormant"
-          count={projection.dormant.length}
-          collapsed={isCollapsed("__dormant", true)}
-          toggle={() => toggle("__dormant", true)}
-        >
-          {projection.dormant.map((group) => (
-            <li key={group.id} className="list-none">
+          {projection.groups.map((group) =>
+            renderSortableGroup(group, {
+              collapsed: isCollapsed(group.id),
+              toggle: () => toggle(group.id),
+              onRename: () => renameWorkstream(group),
+              onNewThread: () =>
+                setNewWork({
+                  workstreamId: group.id,
+                  workstreamName: group.name,
+                }),
+            }),
+          )}
+        </SortableContext>
+        {projection.unsorted.total > 0 ? (
+          <DropTarget
+            id={groupKey(projection.unsorted.id)}
+            data={{ type: "target", groupId: projection.unsorted.id }}
+          >
+            {(ref) => (
               <WorkstreamGroup
-                group={group}
-                collapsed={isCollapsed(group.id, true)}
-                toggle={() => toggle(group.id, true)}
-                onRename={() => renameWorkstream(group)}
+                group={projection.unsorted}
+                sectionRef={ref}
+                collapsed={isCollapsed(projection.unsorted.id)}
+                toggle={() => toggle(projection.unsorted.id)}
+                dropTarget={dropGroupId === projection.unsorted.id}
                 muted
               >
-                {group.rows.map((row) => renderRow(row))}
+                {renderTrees(projection.unsorted)}
               </WorkstreamGroup>
-            </li>
-          ))}
-        </Band>
-      ) : null}
-      <NameDialog request={nameRequest} onClose={() => setNameRequest(null)} />
-    </div>
+            )}
+          </DropTarget>
+        ) : null}
+        {projection.dormant.length > 0 ? (
+          <Band
+            title="Dormant"
+            count={projection.dormant.length}
+            collapsed={isCollapsed("__dormant", true)}
+            toggle={() => toggle("__dormant", true)}
+          >
+            <SortableContext
+              items={projection.dormant.map((group) => groupKey(group.id))}
+              strategy={verticalListSortingStrategy}
+            >
+              {projection.dormant.map((group) => (
+                <li key={group.id} className="list-none">
+                  {renderSortableGroup(group, {
+                    collapsed: isCollapsed(group.id, true),
+                    toggle: () => toggle(group.id, true),
+                    onRename: () => renameWorkstream(group),
+                    muted: true,
+                  })}
+                </li>
+              ))}
+            </SortableContext>
+          </Band>
+        ) : null}
+        <NameDialog
+          request={nameRequest}
+          onClose={() => setNameRequest(null)}
+        />
+      </div>
+    </DndContext>
   );
 }
 
@@ -255,6 +364,22 @@ function Band({
   );
 }
 
+type GroupProps = {
+  group: ThreadGroup;
+  collapsed: boolean;
+  toggle: () => void;
+  onRename?: () => void;
+  onNewThread?: () => void;
+  muted?: boolean;
+  /** Drag-and-drop wiring: the section moves, the header drags it. */
+  sectionRef?: (element: HTMLElement | null) => void;
+  style?: CSSProperties;
+  handle?: DragHandle;
+  /** A thread from another group is being dragged over this one. */
+  dropTarget?: boolean;
+  children: ReactNode;
+};
+
 function WorkstreamGroup({
   group,
   collapsed,
@@ -262,20 +387,29 @@ function WorkstreamGroup({
   onRename,
   onNewThread,
   muted,
+  sectionRef,
+  style,
+  handle,
+  dropTarget,
   children,
-}: {
-  group: ThreadGroup;
-  collapsed: boolean;
-  toggle: () => void;
-  onRename?: () => void;
-  onNewThread?: () => void;
-  muted?: boolean;
-  children: ReactNode;
-}) {
+}: GroupProps) {
   return (
-    <section aria-label={group.name} className="px-1">
+    <section
+      ref={sectionRef}
+      style={style}
+      aria-label={group.name}
+      data-drop-target={dropTarget ? "" : undefined}
+      className={cn(
+        "rounded-md px-1",
+        dropTarget && "bg-sidebar-accent/40 ring-1 ring-sidebar-ring",
+      )}
+    >
       <GroupMenu onRename={onRename} onNewThread={onNewThread}>
-        <div className="group/head flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-sidebar-accent/60">
+        <div
+          ref={handle?.ref}
+          {...handle?.listeners}
+          className="group/head flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-sidebar-accent/60"
+        >
           <button
             type="button"
             aria-expanded={!collapsed}

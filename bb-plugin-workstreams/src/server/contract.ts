@@ -140,6 +140,12 @@ const bootstrapSchema = z
   })
   .nullable();
 
+const idList = z.array(z.string().min(1)).max(5000);
+const orderSchema = z.object({
+  workstreams: z.array(z.string()),
+  threads: z.record(z.string(), z.array(z.string())),
+});
+
 const routeBase = {
   id: z.string(),
   confidence: z.enum(["high", "medium", "low"]),
@@ -241,7 +247,24 @@ export const rpcContract = defineRpcContract({
       driftDismissed: z.record(z.string(), z.string()),
       bootstrapped: z.boolean(),
       lastReconciledAt: z.number().nullable(),
+      /** The sidebar's drag-and-drop order. */
+      order: orderSchema,
     }),
+  },
+  /**
+   * Stores the sidebar's manual order: every workstream, or one group's root
+   * threads (a section id or "unsorted"), top to bottom.
+   */
+  reorder: {
+    input: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("workstreams"), ids: idList }),
+      z.object({
+        kind: z.literal("threads"),
+        groupId: z.string().min(1),
+        ids: idList,
+      }),
+    ]),
+    output: z.object({ order: orderSchema }),
   },
   editWorkstream: {
     input: z.object({

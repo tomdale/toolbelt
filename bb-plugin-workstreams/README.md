@@ -18,15 +18,19 @@ against.
     newer one ("via …").
   - **Recent**: the five most recently active threads not already in Needs you
     (the `showRecent` setting).
-  - **One group per workstream**, in BB's section order. Each thread tree is
-    filed under its root thread's section, exactly as BB's own sidebar does.
+  - **One group per workstream**, in BB's section order until you drag a header
+    to reorder them. Each thread tree is filed under its root thread's section,
+    exactly as BB's own sidebar does. Drag a root thread to reorder it within
+    its group or drop it on another group to move it there; its children come
+    with it, and threads you never placed stay newest first above the ones you
+    did.
   - **Unsorted** and a collapsed **Dormant** fold (no threads, or none touched
     in 30 days).
   - Rows show BB's status, a work-state mark from analysis (◆ decision, ◇
     review, ⏸ blocked, ✓ done; hover for where it stopped), unread state,
     drafts, shortcuts, pull requests, and a yellow dot when a workstream change
-    involves the thread. Right-click to move, rename, pin, mark read, archive,
-    or delete.
+    involves the thread. Hover a row for its Archive button; right-click to
+    move, rename, pin, mark read, archive, or delete.
 - **Workstreams page** (`/plugins/workstreams/home`):
   - **Overview**: workstreams ranked by what needs you, each thread with where
     it stopped. Search with `/`.

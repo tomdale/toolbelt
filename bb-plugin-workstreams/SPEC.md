@@ -469,13 +469,20 @@ restores the previous title while it is still the one Workstreams wrote.
    - A Needs you band (exact-once, live).
    - An optional Recent band (de-duplicated against Needs you).
    - Workstream groups with plain headers: the name, a needs-you count only when
-     above 0, and a total. Groups follow BB's section order, so their positions
-     stay stable. The page, not the sidebar, ranks by attention.
+     above 0, and a total. Groups follow the user's manual order (drag a
+     header), else BB's section order, so their positions stay stable. The page,
+     not the sidebar, ranks by attention.
+   - Drag and drop: a root row drags its whole tree, reordering it within the
+     group or moving it to the group it is dropped on (a journaled move, as from
+     the context menu). Manual order is plugin state shared across clients;
+     unplaced roots sit above placed ones in the default order, and unplaced
+     workstreams sit after placed ones.
    - An Unsorted band, a Dormant fold, and a yellow dot on rows affected by a
      proposal.
    - Rows matching Dockside: BB `indicator` glyph plus a work-state glyph (with
      a legend), provider icon, branch/PR, draft, shortcut pill, unread state,
-     nesting, split drag, and the keyboard DOM attributes.
+     nesting, split drag, the keyboard DOM attributes, and an Archive button on
+     hover.
    - Context menu: Move to workstream… · Rename · Pin · Read/unread · Archive ·
      Delete · Open parent.
 2. **Workstreams page** (the Monday-morning view):
