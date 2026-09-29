@@ -1,20 +1,19 @@
 {
   "name": "bb-plugin-workstreams",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "engines": {
-    "bb": ">=0.42",
-    "bbPluginSdk": ">=0.5.9"
+    "bb": ">=0.44",
+    "bbPluginSdk": ">=0.5.29"
   },
   "bb": {
     "name": "Workstreams",
-    "description": "All your active threads, grouped and recapped by project or product.",
+    "description": "Your BB threads organized into workstreams, kept current as you work.",
     "branding": {
       "icon": "Layers"
     },
-    "server": "./server.ts",
-    "app": "./app.tsx",
-    "host": "./host.ts",
+    "server": "./src/server/index.ts",
+    "app": "./src/app/index.tsx",
     "skills": []
   },
   "dependencies": {
@@ -22,7 +21,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.5.9",
+    "@get-bb/plugin-sdk": "0.5.29",
     "@pierre/diffs": "^1.2.9",
     "@radix-ui/react-alert-dialog": "^1.1.19",
     "@radix-ui/react-context-menu": "^2.3.3",
@@ -64,13 +63,13 @@
   },
   "files": [
     "dist",
-    "*.ts",
-    "*.tsx",
-    "*.css",
+    "src",
     "components",
     "lib",
+    "hooks",
     "README.md",
     "PLUGIN_OVERVIEW.md",
+    "SPEC.md",
     "tsconfig.json"
   ]
 }

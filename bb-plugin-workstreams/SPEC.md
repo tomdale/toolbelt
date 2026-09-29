@@ -104,9 +104,11 @@ environments.
 
 **Invariants.** Tests enforce each one.
 
-- **I1. Exactly once.** Every visible, non-archived thread appears once in the
-  sidebar. It nests under its parent when the parent is visible and active;
-  otherwise it is a root. Orphans and cycles render deterministically.
+- **I1. Exactly once.** Every visible, non-archived thread appears in exactly
+  one workstream group (Unsorted and Dormant included). It nests under its
+  parent when the parent is visible and active; otherwise it is a root. Orphans
+  and cycles render deterministically. Needs you and Recent are overlays that
+  repeat rows from the groups; they never replace them.
 - **I2. Tree membership.** A tree's workstream is its root's section.
   Workstreams never writes `sectionId` on a child.
 - **I3. Explicit moves only.** A filed thread moves only through one of these:
@@ -145,11 +147,11 @@ not include `sectionId` or visibility** _(spike)_, so role and workstream come
 from metadata plus a synchronous SQLite cache. Command details live in `--help`
 and the generated `plugin-commands` skill, not in the instructions.
 
-| Thread                      | Instructions (≤ 4096 characters)                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Task (top-level, visible)   | "You are a task thread in **‹workstream›** (‹one-line description›). Delegate separable subtasks to child threads with `bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"`, always choosing the environment explicitly: ‹shape guidance›. Then coordinate and integrate here. If the user asks for something outside this thread's task or workstream, don't do it here: pass their request verbatim to `bb workstreams handoff --request-file -` and reply with the link it prints." |
-| Delegate (child)            | "You are a delegated subtask of ‹parent›. Report results to it. Hand off out-of-scope requests with `bb workstreams handoff`. Don't spawn further threads."                                                                                                                                                                                                                                                                                                                                                |
-| Hidden, side chat, internal | none                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Thread                      | Instructions (≤ 4096 characters)                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Task (top-level, visible)   | "You are a task thread in **‹workstream›** (‹one-line description›). Delegate separable subtasks to child threads with `bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"`, always choosing the environment explicitly: ‹shape guidance›. Then coordinate and integrate here. If the user asks for something outside this thread's task or workstream, don't do it here: pass their request verbatim to `bb workstreams handoff --request-stdin` and reply with the link it prints." |
+| Delegate (child)            | "You are a delegated subtask of ‹parent›. Report results to it. Hand off out-of-scope requests with `bb workstreams handoff`. Don't spawn further threads."                                                                                                                                                                                                                                                                                                                                               |
+| Hidden, side chat, internal | none                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 The ‹shape guidance› text depends on the project shape (§3):
 
@@ -171,10 +173,11 @@ command omits `--section`, so the child inherits its workstream through tree
 membership.
 
 **Handoff:
-`bb workstreams handoff (--request-file <path|-> | <request>) [--note <text>] [--dry-run] [--json]`**
+`bb workstreams handoff (--request <text> | --request-stdin) [--note <text>] [--dry-run] [--json]`**
 
-- Built with `defineCli`. The request comes through a file or stdin, because
-  requests are long and the shell would otherwise expand `$(…)` and backticks.
+- Built with `defineCli`. Agents pass the request on stdin (the option's
+  `stdin: true` form, `--request-stdin`) with a quoted heredoc, because requests
+  are long and the shell would otherwise expand `$(…)` and backticks.
 - The caller is `ctx.threadId` (from `BB_THREAD_ID`). The router (§6) excludes
   the caller as a target and records the new thread as `spawnedFrom` the caller.
 - Agent handoffs can't use the intake preview, so the policy is:

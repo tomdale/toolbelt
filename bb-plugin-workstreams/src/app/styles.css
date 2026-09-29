@@ -1,0 +1,72 @@
+/* Status marks: BB's resolved thread status, drawn by this plugin. */
+.ws-mark {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+  position: relative;
+}
+.ws-mark-working::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  color: var(--success-foreground, var(--primary));
+  animation: ws-spin 0.9s linear infinite;
+}
+.ws-mark-waiting {
+  color: var(--warning-text, #e0a84f);
+}
+.ws-mark-error {
+  color: var(--destructive, #e5484d);
+}
+.ws-mark-unread::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--primary, currentColor);
+}
+.ws-mark-draft {
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+@keyframes ws-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-mark-working::before {
+    animation: none;
+  }
+}
+
+/* Pull request number, tinted by state. */
+.ws-pr {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.ws-pr-open {
+  color: var(--success-foreground, #46a758);
+}
+.ws-pr-merged {
+  color: #8e4ec6;
+}
+.ws-pr-closed,
+.ws-pr-draft {
+  color: var(--muted-foreground);
+}
+.ws-pr-failed {
+  color: var(--destructive, #e5484d);
+}
+.ws-pr-attention {
+  color: var(--warning-text, #e0a84f);
+}
