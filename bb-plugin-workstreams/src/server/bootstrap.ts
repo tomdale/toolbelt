@@ -49,6 +49,8 @@ export type BootstrapMove = {
   toName: string;
   reason: string;
   accepted: boolean;
+  /** The assignment call's confidence; unset for merge and evolution moves. */
+  confidence?: Assignment["confidence"];
   /** Set for moves from the evolution engine: snoozed if left unchecked. */
   key?: string;
   evidenceCount?: number;
@@ -398,6 +400,7 @@ export class Bootstrap {
           toName: option.name,
           reason: `${a.confidence} confidence`,
           accepted: a.confidence !== "low",
+          confidence: a.confidence,
         });
       }
       // Roots in a merged-away workstream follow the merge.

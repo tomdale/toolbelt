@@ -19,6 +19,7 @@ type State = {
       to: string;
       toName: string;
       accepted: boolean;
+      confidence?: string;
     }[];
     unsure: { threadId: string }[];
   } | null;
@@ -135,6 +136,12 @@ describe("bootstrap", () => {
     );
     expect(moves).toEqual({ loose: "Alpha", loose2: "Gamma", v1auto: "Gamma" });
     expect(state.preview!.moves.some((m) => m.threadId === "mine")).toBe(false);
+    // The preview shows confidence without parsing the CLI's reason text.
+    expect(state.preview!.moves.map((m) => m.confidence)).toEqual([
+      "high",
+      "high",
+      "high",
+    ]);
 
     await call(w, { action: "apply", overrides: [] });
     state = await settle(w, "applied");
