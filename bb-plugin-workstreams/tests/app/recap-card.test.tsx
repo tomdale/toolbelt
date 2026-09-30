@@ -217,6 +217,20 @@ it("keeps the dismissed card's space while Generate Recap fades in below", async
       return { height } as DOMRect;
     },
   );
+  // jsdom resolves Tailwind's classes to no style, so give the button's
+  // wrapper the bottom margin it has in BB.
+  const computed = window.getComputedStyle;
+  vi.spyOn(window, "getComputedStyle").mockImplementation((element, pseudo) => {
+    const style = computed(element, pseudo);
+    return element instanceof HTMLElement &&
+      element.classList.contains("ws-fade-in")
+      ? ({
+          ...style,
+          marginTop: "0px",
+          marginBottom: "12px",
+        } as CSSStyleDeclaration)
+      : style;
+  });
   const slot = await mount({});
   await slot.findByRole("region", { name: "Latest recap" });
   // The dismissed card eases out in its slot while the button fades in
@@ -245,7 +259,8 @@ it("keeps the dismissed card's space while Generate Recap fades in below", async
   const button = await slot.findByRole("button", { name: "Generate Recap" });
   observer.disconnect();
   expect(together).toBe(true);
-  expect(heights).toContain("80px");
+  // 120 held, minus the 40px button and its 12px margin.
+  expect(heights).toContain("68px");
   expect(heights).not.toContain("0px");
   fireEvent.click(button);
   await waitFor(() =>
