@@ -725,6 +725,38 @@
   font-size: 12.5px;
   color: var(--muted-foreground);
 }
+.ws-intake-redirect {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+}
+.ws-intake-redirect button {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ws-intake-redirect button:hover,
+.ws-intake-redirect button:focus-visible {
+  background: var(--accent);
+  outline: 1px solid var(--ring);
+}
+.ws-intake-recovery {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 12.5px;
+  color: var(--destructive);
+}
+.ws-intake-recovery button {
+  text-decoration: underline;
+  cursor: pointer;
+}
 .ws-intake-status {
   display: flex;
   align-items: center;

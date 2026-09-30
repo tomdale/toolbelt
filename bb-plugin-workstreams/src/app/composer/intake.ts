@@ -133,6 +133,7 @@ export type IntakeState = {
   synchronizedThread: string | null;
   synchronizedPlacement: string | null;
   selectionRevision: number;
+  redirectPending: boolean;
 };
 let sessions = 0;
 /** The dialog owns selections and catalogs because the host remounts banners on project changes. */
@@ -159,6 +160,8 @@ export class Intake {
   private selectionThread: string | null = null;
   private selectionGeneration = 0;
   private selectionRequests = new WeakMap<ComposerSelection, number>();
+  private routingRevision = 0;
+  private redirectRevision: number | null = null;
   private decisionIntent: RouteIntent = {};
   constructor(
     private route: (options: {
@@ -196,6 +199,7 @@ export class Intake {
       synchronizedThread: null,
       synchronizedPlacement: null,
       selectionRevision: 0,
+      redirectPending: false,
     };
   }
   snapshot = () => this.state;
@@ -355,12 +359,79 @@ export class Intake {
     return request;
   }
   effectiveAction(): IntakeAction {
+    if (this.state.redirectPending) return "automatic";
     if (this.state.action.source === "manual") return this.state.action.value;
     if (this.state.destination.source === "manual")
       return this.state.destination.value.kind === "thread"
         ? "send-message"
         : "new-thread";
+    // A classifier suggestion is only a proposal. It becomes a continuation
+    // after the user explicitly accepts it; dismissing it keeps the composer
+    // on the create-thread path.
     return this.state.action.value;
+  }
+  acceptRedirect() {
+    const decision = this.state.decision;
+    if (
+      !this.state.redirectPending ||
+      this.redirectRevision !== this.routingRevision ||
+      decision?.outcome !== "continue"
+    )
+      return;
+    this.redirectRevision = null;
+    const destination: IntakeDestination = {
+      kind: "thread",
+      id: decision.threadId,
+      title: decision.threadTitle,
+    };
+    this.selectionKey = "";
+    this.selectionThread = null;
+    this.set({
+      redirectPending: false,
+      action: manual("send-message"),
+      destination: manual(destination),
+      synchronizedThread: null,
+      synchronizedPlacement: null,
+      selectionRevision: this.state.selectionRevision + 1,
+    });
+  }
+  dismissRedirect() {
+    if (
+      !this.state.redirectPending ||
+      this.redirectRevision !== this.routingRevision ||
+      this.state.decision?.outcome !== "continue"
+    )
+      return;
+    this.redirectRevision = null;
+    const destination = this.state.destination.value;
+    const thread = destination.kind === "thread" ? destination : null;
+    const decision = this.state.decision;
+    const workstream =
+      decision?.outcome === "continue" && decision.sectionId
+        ? {
+            kind: "workstream" as const,
+            id: decision.sectionId,
+            name: decision.workstream ?? decision.sectionId,
+          }
+        : { kind: "automatic" as const };
+    const fallbackDestination: IntakeDestination =
+      workstream.kind === "workstream"
+        ? {
+            kind: "workstream",
+            id: workstream.id,
+            name: workstream.name,
+          }
+        : { kind: "unassigned" };
+    this.set({
+      redirectPending: false,
+      action: manual("new-thread"),
+      destination: manual(fallbackDestination),
+      decision: null,
+      // The project and environment fields were never changed by a proposed
+      // redirect, so leaving them untouched restores the create intent.
+      announcement: thread ? "New thread" : "",
+    });
+    this.schedule();
   }
   lockedThread() {
     const destination = this.state.destination.value;
@@ -437,7 +508,11 @@ export class Intake {
     this.schedule();
   }
   selectDestination(value: IntakeDestination) {
-    this.set({ destination: manual(value), error: null });
+    this.set({
+      destination: manual(value),
+      error: null,
+      redirectPending: false,
+    });
     this.schedule();
   }
   selectWorkstream(id: string | null, name: string | null) {
@@ -450,13 +525,26 @@ export class Intake {
   }
   selectProject(value: string) {
     const old = this.state.project.value;
+    const environment = this.state.environment.value;
+    const sourceHosts =
+      this.state.projects.find((project) => project.id === value)?.hostIds ?? [];
+    const incompatible =
+      old !== value &&
+      this.state.environment.source === "manual" &&
+      (environment?.type === "reuse" ||
+        (environment?.type === "host" &&
+          !!environment.hostId &&
+          sourceHosts.length > 0 &&
+          !sourceHosts.includes(environment.hostId)));
     this.set({
       project: manual(value),
-      ...(old !== value && this.state.environment.source === "automatic"
+      ...(old !== value && (this.state.environment.source === "automatic" || incompatible)
         ? { environment: auto({ type: "project-default" }) }
         : {}),
     });
     this.schedule();
+    if (incompatible)
+      this.set({ announcement: "Environment reset for the selected project." });
   }
   selectEnvironment(value: Environment) {
     this.set({ environment: manual(value) });
@@ -607,8 +695,11 @@ export class Intake {
   }
   private schedule() {
     this.invalidate();
+    this.routingRevision++;
+    this.redirectRevision = null;
     this.set({
       decision: null,
+      redirectPending: false,
       error: null,
       announcement: "",
       loading: !!this.state.text,
@@ -680,13 +771,19 @@ export class Intake {
             this.autoEnvironmentLabel = placement?.label ?? "";
           }
         }
+        const redirectPending =
+          decision.outcome === "continue" &&
+          this.state.action.source === "automatic" &&
+          this.state.destination.source === "automatic";
+        if (redirectPending) this.redirectRevision = this.routingRevision;
         this.set({
           decision,
           loading: false,
-          ...(this.state.action.source === "automatic"
+          redirectPending,
+          ...(this.state.action.source === "automatic" && !redirectPending
             ? { action: auto(resolvedAction) }
             : {}),
-          ...(this.state.destination.source === "automatic"
+          ...(this.state.destination.source === "automatic" && !redirectPending
             ? { destination: auto(this.autoDestination) }
             : {}),
           ...(this.state.project.source === "automatic"
@@ -725,6 +822,7 @@ export class Intake {
       !s.selectionError &&
       !!s.decision &&
       s.decision.outcome !== "unsure" &&
+      !s.redirectPending &&
       (s.decision.outcome === "continue"
         ? s.synchronizedThread === s.decision.threadId
         : !!s.project.value &&

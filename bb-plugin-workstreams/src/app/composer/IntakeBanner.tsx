@@ -263,13 +263,15 @@ export function environmentLabel(
   if (environment.type === "reuse")
     return (
       state.environments.find((e) => e.id === environment.environmentId)
-        ?.name ?? environment.environmentId
+        ?.name ?? "Unnamed environment"
     );
   if (environment.type === "project-default") return "Project default";
   if (environment.type === "host")
     return environment.workspace.type === "managed-worktree"
       ? "New worktree"
-      : "Project checkout";
+      : environment.workspace.type === "personal"
+        ? "Personal workspace"
+        : "Project checkout";
   return environment.type === "provider" ? "New environment" : "Environment";
 }
 export function IntakeBanner({ intake }: { intake: Intake }) {
@@ -328,14 +330,7 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
       { value: "none", label: "No workstream", group: "Workstreams" },
     );
   }
-  if (state.action.source !== "manual" || action === "send-message")
-    destinationOptions.push(
-      ...state.threads.map((t) => ({
-        value: `thread:${t.id}`,
-        label: t.title,
-        group: "Threads",
-      })),
-    );
+  // Existing threads are classifier proposals, not a general message router.
   const hostId =
     state.projects.find((p) => p.id === projectId)?.hostId ?? state.hostId;
   const label =
@@ -402,7 +397,6 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
           }
           options={[
             { value: "new-thread", label: "New thread" },
-            { value: "send-message", label: "Send message" },
             { value: "new-workstream", label: "New workstream" },
           ]}
           onPick={(value) =>
@@ -511,7 +505,10 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
             ...(hostId
               ? [
                   { value: "checkout", label: "Project checkout" },
-                  { value: "worktree", label: "New worktree" },
+                  ...(state.environment.value?.type === "host" &&
+                  state.environment.value.workspace.type === "personal"
+                    ? [{ value: "personal", label: "Personal workspace" }]
+                    : [{ value: "worktree", label: "New worktree" }]),
                 ]
               : []),
             ...state.environments.map((e) => ({
@@ -527,7 +524,13 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
                     hostId: hostId ?? undefined,
                     workspace: { type: "unmanaged", path: null },
                   }
-                : value === "worktree"
+                : value === "personal"
+                  ? {
+                      type: "host",
+                      hostId: hostId ?? undefined,
+                      workspace: { type: "personal" },
+                    }
+                  : value === "worktree"
                   ? {
                       type: "host",
                       hostId: hostId ?? undefined,
@@ -541,30 +544,40 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
           }
         />
       </div>
-      <div
-        className="ws-intake-status"
-        data-error={!!(state.error || state.selectionError)}
-      >
-        {statusText(state)}
-        {state.error || state.selectionError ? (
+      {state.redirectPending && state.decision?.outcome === "continue" ? (
+        <div className="ws-intake-redirect" role="group" aria-label="Suggested existing thread">
+          <span>Continue in {state.decision.threadTitle}?</span>
+          <button type="button" onClick={() => intake.acceptRedirect()}>Continue</button>
+          <button type="button" onClick={() => intake.dismissRedirect()}>New thread</button>
+        </div>
+      ) : null}
+      <p className="ws-intake-status sr-only" aria-live="polite">
+        {state.redirectPending ? "Suggested existing thread" : statusText(state)}
+      </p>
+      {state.error || state.selectionError || state.catalogError ? (
+        <div
+          className="ws-intake-recovery"
+          role="alert"
+          data-error={!!(state.error || state.selectionError)}
+        >
+          <span>{state.error || state.selectionError || state.catalogError}</span>
           <button type="button" onClick={() => intake.retry()}>
             Retry
           </button>
-        ) : null}
-        {state.catalogError ? (
-          <button
-            type="button"
-            onClick={() => {
-              void intake.loadCatalogs(sdk);
-              void intake.loadEnvironments(sdk, projectId);
-              if (selectedThreadId)
-                void intake.loadThread(sdk, selectedThreadId);
-            }}
-          >
-            Retry choices
-          </button>
-        ) : null}
-      </div>
+          {state.catalogError ? (
+            <button
+              type="button"
+              onClick={() => {
+                void intake.loadCatalogs(sdk);
+                void intake.loadEnvironments(sdk, projectId);
+                if (selectedThreadId) void intake.loadThread(sdk, selectedThreadId);
+              }}
+            >
+              Retry choices
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {state.decision?.outcome === "unsure" ? (
         <div
           role="group"

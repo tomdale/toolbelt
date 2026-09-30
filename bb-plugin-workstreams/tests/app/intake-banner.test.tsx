@@ -182,7 +182,12 @@ it("thread menu shows accurate locked placement then restores editable creation 
     sectionId: "sec_a",
     workstream: "Alpha",
   });
-  await choose(slot, "Workstream", "Parser tabs");
+  await slot.behavior.setComposerText("Continue with parser tabs");
+  await waitFor(() =>
+    expect(slot.getByRole("group", { name: "Suggested existing thread" })).toBeTruthy(),
+  );
+  expect(slot.getByRole("group", { name: "Suggested existing thread" }).textContent).toContain("Parser tabs");
+  fireEvent.click(slot.getByRole("button", { name: "Continue" }));
   await waitFor(() => expect(intake.snapshot().loading).toBe(false));
   expect(slot.getByRole("button", { name: /^Project:/ }).textContent).toContain(
     "dotfiles",
@@ -354,14 +359,16 @@ it("a routed thread outside the initial catalog gets accurate placement and exec
     workstream: null,
   });
   // mount's SDK get fixture is the authoritative target rather than a list guess.
-  await waitFor(
-    () =>
-      expect(
-        slot.inspection.composer.selections.some(
-          (s) => s.environment?.type === "reuse",
-        ),
-      ).toBe(true),
-    { timeout: 2000 },
+  await waitFor(() =>
+    expect(slot.getByRole("group", { name: "Suggested existing thread" })).toBeTruthy(),
+  );
+  fireEvent.click(slot.getByRole("button", { name: "Continue" }));
+  await waitFor(() =>
+    expect(
+      slot.inspection.composer.selections.some(
+        (s) => s.environment?.type === "reuse",
+      ),
+    ).toBe(true),
   );
   expect(slot.getByRole("button", { name: /^Project:/ }).textContent).toContain(
     "dotfiles",
