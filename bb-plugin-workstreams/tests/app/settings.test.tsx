@@ -52,15 +52,12 @@ describe("working indicator settings", () => {
     slot.lifecycle.unmount();
   });
 
-  it("enables the track color only for shapes that draw a track", async () => {
+  it("shows the track color only for shapes that draw a track", async () => {
     const slot = await mount();
     await waitFor(() =>
       expect(checked(slot, "Animation", /Spokes/)).toBe(true),
     );
-    expect(slot.getByRole("group", { name: "Track" })).toHaveProperty(
-      "disabled",
-      true,
-    );
+    expect(slot.queryByRole("group", { name: "Track" })).toBeNull();
     fireEvent.click(
       group(slot, "Animation").getByRole("radio", { name: /Arc/ }),
     );
@@ -72,6 +69,42 @@ describe("working indicator settings", () => {
         spinner: { shape: "arc", primary: "subtle", secondary: "none" },
       }),
     );
+    slot.lifecycle.unmount();
+  });
+
+  it("scrolls the track color into view when a pick reveals it", async () => {
+    const slot = await mount();
+    await waitFor(() =>
+      expect(checked(slot, "Animation", /Spokes/)).toBe(true),
+    );
+    // Lay out a scroller whose visible area ends above the section's bottom.
+    const scroller = slot.container.parentElement!;
+    scroller.style.overflowY = "auto";
+    const rect = (top: number, bottom: number) =>
+      ({
+        top,
+        bottom,
+        left: 0,
+        right: 0,
+        width: 0,
+        height: bottom - top,
+      }) as DOMRect;
+    scroller.getBoundingClientRect = () => rect(0, 400);
+    const original = HTMLFieldSetElement.prototype.getBoundingClientRect;
+    HTMLFieldSetElement.prototype.getBoundingClientRect = function () {
+      return this.querySelector("legend")?.textContent === "Track"
+        ? rect(380, 440)
+        : rect(0, 0);
+    };
+    try {
+      fireEvent.click(
+        group(slot, "Animation").getByRole("radio", { name: /Orbit/ }),
+      );
+      expect(slot.getByRole("group", { name: "Track" })).toBeTruthy();
+      expect(scroller.scrollTop).toBe(56);
+    } finally {
+      HTMLFieldSetElement.prototype.getBoundingClientRect = original;
+    }
     slot.lifecycle.unmount();
   });
 
