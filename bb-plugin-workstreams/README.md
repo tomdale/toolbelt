@@ -77,6 +77,10 @@ against.
   turn; clearing the draft does not bring it back. Reading, scrolling, and
   focusing the composer do not dismiss it. A later completed turn can produce a
   new suggestion. Workstreams never archives automatically.
+- **Recap freshness**: stored recaps are shown only for the idle thread revision
+  they summarize. A new turn invalidates the recap, and generation checks the
+  revision again before saving. Freshness reads do not scan conversation history;
+  recaps without a recorded revision regenerate before being shown.
 - **Titles**: the same call suggests a title when a thread has none, its title
   is cut off or too vague, or its latest requests moved onto different work.
   Workstreams applies it (at most once an hour for a titled thread) and logs it

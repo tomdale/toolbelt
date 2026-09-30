@@ -246,6 +246,7 @@ const MIGRATIONS = [
   "ALTER TABLE ws_proposal ADD COLUMN snapshot TEXT NOT NULL DEFAULT '{}'",
   "ALTER TABLE ws_proposal ADD COLUMN reason TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE ws_proposal ADD COLUMN confidence REAL NOT NULL DEFAULT 0",
+  "ALTER TABLE ws_recap ADD COLUMN revision INTEGER",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

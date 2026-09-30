@@ -36,6 +36,7 @@ const recapSchema = z.object({
   generatedAt: z.number(),
   turns: z.number(),
   model: z.string(),
+  revision: z.number().nullable().default(null),
 });
 
 const analysisSchema = z.object({
