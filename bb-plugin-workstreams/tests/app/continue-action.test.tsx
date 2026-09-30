@@ -87,7 +87,10 @@ it("sends the draft to the suggested thread through the composer's own submit", 
   expect(button.getAttribute("aria-keyshortcuts")).toMatch(
     /^(Meta|Control)\+Enter$/,
   );
-  expect(button.textContent).toContain("Parser tabs");
+  expect(button.textContent).toMatch(/^Continue/);
+  expect(button.title).toMatch(
+    /^Continue Parser tabs instead \((⌘⏎|Ctrl ⏎)\)$/,
+  );
   fireEvent.click(button);
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   // The composer's guard and submit read this target.

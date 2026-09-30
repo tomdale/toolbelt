@@ -3,6 +3,9 @@
  * suggested, from the composer's action row beside Create thread. ⌘⏎
  * (Ctrl+⏎ elsewhere), the alternate send in bb's composers, does the same.
  * It renders only inside New work, and only while there is a suggestion.
+ *
+ * The thread's title is in the tooltip and accessible name rather than the
+ * label: the action row's width comes out of the model picker beside it.
  */
 import {
   useCallback,
@@ -96,7 +99,8 @@ function ContinueButton({ intake }: { intake: Intake }) {
   const shortcut = mac ? "⌘⏎" : "Ctrl ⏎";
   const label = `Continue ${suggestion.threadTitle} instead`;
   return (
-    // A plain button, so the truncated title can show in full on hover.
+    // A plain button: the vendored Button omits `title`, the only place the
+    // target thread's name is visible.
     <button
       ref={button}
       key={suggestion.threadId}
@@ -104,7 +108,7 @@ function ContinueButton({ intake }: { intake: Intake }) {
       className={cn(
         buttonVariants({ variant: "outline", size: "sm" }),
         COARSE_POINTER_PROMPT_ACTION_BUTTON_CLASS,
-        "ws-continue-action max-w-[13rem] gap-1.5 font-normal text-muted-foreground hover:text-foreground",
+        "gap-1.5 font-normal text-muted-foreground hover:text-foreground",
       )}
       aria-label={label}
       aria-keyshortcuts={mac ? "Meta+Enter" : "Control+Enter"}
@@ -114,7 +118,7 @@ function ContinueButton({ intake }: { intake: Intake }) {
       onClick={() => void send()}
     >
       <Icon name="CornerDownRight" aria-hidden />
-      <span className="min-w-0 truncate">{suggestion.threadTitle}</span>
+      Continue
       <kbd className="shrink-0 font-sans text-[11px] text-muted-foreground">
         {shortcut}
       </kbd>
