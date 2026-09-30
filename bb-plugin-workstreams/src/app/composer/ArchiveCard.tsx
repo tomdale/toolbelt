@@ -1,102 +1,35 @@
 import { useComposerView } from "@get-bb/plugin-sdk/app";
-import { ArchiveReview, useArchiveStyle } from "../archive/ArchiveControls.tsx";
 import { useArchiveSuggestion } from "../archive/useArchiveSuggestion.ts";
 
+/** Composer toolbar action offering to archive a finished, idle thread. */
 export function ArchiveCard() {
-  const style = useArchiveStyle();
-  return style === "inline" || style === "floating" ? (
-    <ArchiveBanner style={style} />
-  ) : null;
-}
-
-function ArchiveBanner({ style }: { style: "inline" | "floating" }) {
   const { scope, draft, run } = useComposerView();
+  const continuing =
+    !draft.isEmpty ||
+    draft.attachmentCount > 0 ||
+    run.isRunning ||
+    run.isSubmitting;
   const suggestion = useArchiveSuggestion(
     scope.kind === "thread" ? scope.threadId : null,
-    style === "inline" || style === "floating",
+    continuing,
   );
-  if (
-    !suggestion.visible ||
-    !draft.isEmpty ||
-    run.isRunning ||
-    run.isSubmitting
-  )
-    return null;
-  if (style === "inline")
-    return (
-      <div className="ws-archive-inline" role="status" aria-live="polite">
-        <span>✓ Work finished</span>
-        <button
-          type="button"
-          disabled={suggestion.busy}
-          onClick={() => void suggestion.decide("archive")}
-        >
-          Archive thread
-        </button>
-        <button
-          type="button"
-          className="ws-archive-dismiss"
-          aria-label="Dismiss archive suggestion"
-          disabled={suggestion.busy}
-          onClick={() => void suggestion.decide("dismiss")}
-        >
-          ×
-        </button>
-        {suggestion.error ? (
-          <span className="ws-banner-error">{suggestion.error}</span>
-        ) : null}
-      </div>
-    );
+  if (!suggestion.visible || continuing) return null;
   return (
-    <div className="ws-archive-anchor">
-      <div className="ws-archive-card" role="status" aria-live="polite">
-        <div className="ws-archive-copy">
-          <strong>All done here?</strong>
-          <span>This thread looks finished, with no outstanding work.</span>
-          {suggestion.error ? (
-            <span className="ws-banner-error">{suggestion.error}</span>
-          ) : null}
-        </div>
-        <div className="ws-archive-actions">
-          <button
-            type="button"
-            disabled={suggestion.busy}
-            onClick={() => void suggestion.decide("dismiss")}
-          >
-            Dismiss
-          </button>
-          <button
-            type="button"
-            className="ws-archive-primary"
-            disabled={suggestion.busy}
-            onClick={() => void suggestion.decide("archive")}
-          >
-            Archive thread
-          </button>
-        </div>
-      </div>
-    </div>
+    <span className="ws-archive-suggestion">
+      {suggestion.error ? (
+        <span className="ws-banner-error" role="alert">
+          {suggestion.error}
+        </span>
+      ) : null}
+      <button
+        type="button"
+        className="ws-archive-button"
+        aria-label="Archive thread"
+        disabled={suggestion.busy}
+        onClick={() => void suggestion.decide("archive")}
+      >
+        Archive
+      </button>
+    </span>
   );
-}
-
-export function ArchiveComposerAction() {
-  const style = useArchiveStyle();
-  const { layout } = useComposerView();
-  return style === "action" && layout === "expanded" ? <ArchiveAction /> : null;
-}
-
-function ArchiveAction() {
-  const { scope, draft, run } = useComposerView();
-  const suggestion = useArchiveSuggestion(
-    scope.kind === "thread" ? scope.threadId : null,
-    true,
-  );
-  if (
-    !suggestion.visible ||
-    !draft.isEmpty ||
-    run.isRunning ||
-    run.isSubmitting
-  )
-    return null;
-  return <ArchiveReview suggestion={suggestion} />;
 }

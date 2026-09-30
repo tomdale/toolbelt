@@ -125,6 +125,43 @@ it("does not show a popover for initial automatic filing", async () => {
   slot.lifecycle.unmount();
 });
 
+it("shows an inline automatic filing notice with Undo", async () => {
+  const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
+  const custom = app.composerCustomizations.find(
+    (c) => c.id === "automatic-filing",
+  )!;
+  const slot = renderSlot(
+    custom.banners![0]!,
+    {},
+    {
+      composer: { scope: { kind: "thread", threadId: "t1" } },
+      rpc: {
+        state: () => ({
+          ...emptyState(),
+          proposals: [
+            {
+              ...proposal("applied", "Moved from Unsorted → BB Recap"),
+              kind: "move",
+              sourceSectionId: null,
+            },
+          ],
+        }),
+        undo: () => ({ entry: {} }),
+      },
+    },
+  );
+  expect((await slot.findByRole("status")).textContent).toContain(
+    "Moved to the BB Recap workstream automatically",
+  );
+  fireEvent.click(slot.getByRole("button", { name: "Undo" }));
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls.some((c) => c.method === "undo")).toBe(
+      true,
+    ),
+  );
+  slot.lifecycle.unmount();
+});
+
 it("offers Undo and OK once applied, and hides for unaffected threads", async () => {
   const slot = await mount("applied");
   await slot.findByRole("button", { name: /Show change/ });

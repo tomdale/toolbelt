@@ -191,6 +191,20 @@ describe("auto-apply", () => {
     await evolve(w);
     expect(w.threads.get("loose")?.sectionId).toBe(recap.id);
   });
+
+  it("creates and files a new workstream for a high-confidence new assignment", async () => {
+    const w = await setup({}, { loose: "new: Computer" });
+    w.addThread("loose", { title: "Integrate Computer [Computer]" });
+    await analyzeAll(w);
+    await rpc(w, "bootstrap", { action: "skip" });
+    await evolve(w);
+    const computer = w.sections.find((s) => s.name === "Computer");
+    expect(computer).toBeDefined();
+    expect(w.threads.get("loose")?.sectionId).toBe(computer?.id);
+    expect((await log(w)).some((e) => e.action === "create-workstream")).toBe(
+      true,
+    );
+  });
 });
 
 describe("ask first", () => {

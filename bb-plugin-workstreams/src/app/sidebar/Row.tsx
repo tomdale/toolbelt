@@ -11,7 +11,11 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import { WORK_STATE, relativeAge } from "../../domain/presentation.ts";
+import {
+  WORK_STATE,
+  relativeAge,
+  statusRole,
+} from "../../domain/presentation.ts";
 import type { WorkView } from "../useWorkstreams.ts";
 import { StatusMark } from "./StatusMark.tsx";
 
@@ -74,6 +78,12 @@ export function Row({
   const { hasUnsubmittedDraft } = useSidebarThreadDraft(thread.id);
   const rowStatus = useSidebarThreadRowStatus(thread.id);
   const shortcut = useSidebarThreadShortcut(thread.id);
+  // BB's own status is the primary pill. Workstreams' assessed state is only
+  // shown when BB has no active/unread/draft/error/waiting status to report.
+  const nativeStatus =
+    Boolean(statusRole(thread.indicator)) ||
+    thread.hasPendingInteraction ||
+    thread.isUnread;
   const { pullRequest } = experimental_useSidebarThreadPullRequest(thread.id);
 
   return (
@@ -112,7 +122,26 @@ export function Row({
           {recap}
         </span>
       ) : null}
-      <StatusMark indicator={thread.indicator} label={thread.indicatorLabel} />
+      <span className="ws-status-slot">
+        {nativeStatus ? (
+          <StatusMark
+            indicator={thread.indicator}
+            label={thread.indicatorLabel}
+            hasPendingInteraction={thread.hasPendingInteraction}
+            isUnread={thread.isUnread}
+          />
+        ) : null}
+        {state?.glyph && !nativeStatus ? (
+          <span
+            className={`ws-work ws-work-${shownState} relative inline-flex size-3.5 shrink-0 items-center justify-center`}
+            role="img"
+            aria-label={state.label}
+            title={state.label}
+          >
+            {state.glyph}
+          </span>
+        ) : null}
+      </span>
       <span
         className={cn(
           "pointer-events-none relative min-w-0 flex-1 truncate",
@@ -128,15 +157,6 @@ export function Row({
       <span className="pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70 group-hover/row:opacity-0 group-has-[button:focus-visible]/row:opacity-0">
         {proposal ? (
           <span className="ws-proposal-dot" role="img" aria-label={proposal} />
-        ) : null}
-        {state?.glyph ? (
-          <span
-            className={`ws-work ws-work-${shownState}`}
-            role="img"
-            aria-label={state.label}
-          >
-            {state.glyph}
-          </span>
         ) : null}
         {rowStatus ? (
           <span title={rowStatus.label} aria-label={rowStatus.label} role="img">

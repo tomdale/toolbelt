@@ -5,34 +5,23 @@ import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { ProposalBanner } from "./header/ProposalBanner.tsx";
 import { RouteBanner } from "./composer/RouteBanner.tsx";
-import { ArchiveCard, ArchiveComposerAction } from "./composer/ArchiveCard.tsx";
-import { ArchiveHeader } from "./archive/ArchiveControls.tsx";
-import { ArchivePanel } from "./archive/ArchivePanel.tsx";
+import { ArchiveCard } from "./composer/ArchiveCard.tsx";
+import { AutomaticFilingCard } from "./composer/AutomaticFilingCard.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
 import { SpinnerSettings } from "./settings/SpinnerSettings.tsx";
 import { WorkstreamsThreadList } from "./sidebar/ThreadList.tsx";
 import "./styles.css";
 
 export default definePluginApp((app) => {
-  app.slots.threadPanelAction({
-    id: "archive-review",
-    title: "Review archive suggestion",
-    icon: "Archive",
-    component: ArchivePanel,
-  });
-  app.slots.messageAction({
-    id: "archive-review",
-    title: "Review archive suggestion",
-    icon: "Archive",
-    run: ({ openPanel }) => {
-      openPanel({ actionId: "archive-review", title: "Archive thread" });
-    },
+  app.composer.customize({
+    id: "automatic-filing",
+    scopes: ["thread"],
+    banners: [{ id: "filing", chrome: "bare", component: AutomaticFilingCard }],
   });
   app.composer.customize({
     id: "archive-suggestion",
     scopes: ["thread"],
-    banners: [{ id: "archive", chrome: "bare", component: ArchiveCard }],
-    actions: [{ id: "archive-action", component: ArchiveComposerAction }],
+    actions: [{ id: "archive", component: ArchiveCard }],
   });
   app.composer.customize({
     id: "router",
@@ -43,11 +32,6 @@ export default definePluginApp((app) => {
     id: "parent-thread",
     title: "Parent thread",
     component: ParentThreadLink,
-  });
-  app.slots.experimental_threadHeaderAction({
-    id: "archive-suggestion",
-    title: "Finished thread",
-    component: ArchiveHeader,
   });
   app.slots.experimental_threadHeaderAction({
     id: "workstream-proposal",

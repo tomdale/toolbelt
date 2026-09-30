@@ -98,10 +98,9 @@ export function ProposalBanner({
   };
 
   let notice: Notice | null = null;
-  // Initial automatic filing is reconciliation, not a user decision. The
-  // thread was created without a section and Evolution immediately moved it
-  // to a confident destination; don't turn that bookkeeping into a header
-  // popover. Other applied moves remain visible so the user can undo them.
+  // Initial automatic filing is shown inline in the thread composer rather
+  // than as a floating header popover. Other applied moves remain visible so
+  // the user can undo them.
   if (
     proposal &&
     !(

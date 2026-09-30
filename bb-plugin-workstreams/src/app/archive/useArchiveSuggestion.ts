@@ -1,10 +1,29 @@
-import { useEffect, useState } from "react";
-import { experimental_useSidebarThreads } from "@get-bb/plugin-sdk/app";
+import { useEffect, useRef, useState } from "react";
+import {
+  experimental_usePluginId,
+  experimental_useSidebarThreads,
+} from "@get-bb/plugin-sdk/app";
 import { isCurrent } from "../../domain/analysis.ts";
 import { useServerState } from "../useWorkstreams.ts";
 
-export function useArchiveSuggestion(threadId: string | null, enabled = true) {
+function readDismissed(storageKey: string): Set<string> {
+  try {
+    return new Set(
+      JSON.parse(sessionStorage.getItem(storageKey) ?? "[]") as string[],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+export function useArchiveSuggestion(
+  threadId: string | null,
+  continuing = false,
+) {
   const { rpc, server, refresh } = useServerState();
+  const pluginId = experimental_usePluginId();
+  const storageKey = `${pluginId}:archive-dismissed`;
+  const dismissed = useRef(readDismissed(storageKey));
   const { threads } = experimental_useSidebarThreads({
     experimental_lifecycles: ["active"],
   });
@@ -19,15 +38,89 @@ export function useArchiveSuggestion(threadId: string | null, enabled = true) {
   const [error, setError] = useState<string | null>(null);
   const revision =
     suggestion?.threadId === threadId ? suggestion.revision : null;
-  const key = `${threadId}:${revision}`;
+  const key = `${threadId}:${analysis?.revision}`;
+  const activeWork =
+    thread !== undefined &&
+    (thread.status !== "idle" ||
+      thread.runtimeStatus !== "idle" ||
+      thread.queuedWork !== "none" ||
+      thread.hasPendingInteraction ||
+      Object.values(thread.activity).some((count) => count > 0));
+
+  useEffect(() => {
+    if (
+      !threadId ||
+      analysis?.state !== "done" ||
+      !(continuing || activeWork) ||
+      busy ||
+      dismissed.current.has(key)
+    )
+      return;
+    // Continuation intent dismisses the analyzed turn even before archiveStatus
+    // returns. Clearing the draft or remounting must not resurrect that button.
+    dismissed.current.add(key);
+    setSettled(key);
+    try {
+      sessionStorage.setItem(
+        storageKey,
+        JSON.stringify([...dismissed.current].slice(-100)),
+      );
+    } catch {}
+  }, [
+    threadId,
+    analysis?.state,
+    analysis?.revision,
+    continuing,
+    activeWork,
+    busy,
+    key,
+    rpc,
+    storageKey,
+  ]);
+
+  useEffect(() => {
+    if (!threadId || analysis?.state !== "done" || !dismissed.current.has(key))
+      return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let delay = 1000;
+    const persist = async () => {
+      try {
+        await rpc.call("archiveSuggestion", {
+          threadId,
+          revision: analysis.revision,
+          action: "dismiss",
+        });
+      } catch {
+        if (disposed) return;
+        // Retry while this analyzed turn is mounted; the local copy hides it
+        // immediately and lets a remount retry after a connection failure.
+        timer = setTimeout(() => void persist(), delay);
+        delay = Math.min(delay * 2, 30000);
+      }
+    };
+    void persist();
+    return () => {
+      disposed = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [threadId, analysis?.state, analysis?.revision, settled, key, rpc]);
+
   useEffect(() => {
     let canceled = false;
     setSuggestion(null);
-    if (enabled && threadId && analysis?.state === "done") {
+    if (
+      threadId &&
+      analysis?.state === "done" &&
+      !continuing &&
+      !activeWork &&
+      !dismissed.current.has(key)
+    ) {
       void rpc
         .call("archiveStatus", { threadId })
         .then(({ revision }) => {
-          if (!canceled) setSuggestion({ threadId, revision });
+          if (!canceled && !dismissed.current.has(key))
+            setSuggestion({ threadId, revision });
         })
         .catch(() => {});
     }
@@ -35,7 +128,6 @@ export function useArchiveSuggestion(threadId: string | null, enabled = true) {
       canceled = true;
     };
   }, [
-    enabled,
     threadId,
     analysis?.revision,
     analysis?.state,
@@ -51,6 +143,9 @@ export function useArchiveSuggestion(threadId: string | null, enabled = true) {
     thread?.activity.backgroundAgents,
     thread?.activity.backgroundCommands,
     thread?.activity.workflows,
+    continuing,
+    activeWork,
+    key,
     rpc,
   ]);
   useEffect(() => {
@@ -58,22 +153,20 @@ export function useArchiveSuggestion(threadId: string | null, enabled = true) {
   }, [key]);
 
   const visible =
-    enabled &&
+    !continuing &&
+    !activeWork &&
     threadId !== null &&
     revision !== null &&
     thread !== undefined &&
     !thread.isArchived &&
     !thread.isHidden &&
-    thread.runtimeStatus === "idle" &&
-    thread.queuedWork === "none" &&
-    !thread.hasPendingInteraction &&
-    Object.values(thread.activity).every((count) => count === 0) &&
     isCurrent(analysis, thread) &&
     analysis.state === "done" &&
     analysis.revision === revision &&
-    settled !== key;
+    settled !== key &&
+    !dismissed.current.has(key);
 
-  const decide = async (action: "archive" | "dismiss") => {
+  const decide = async (action: "archive") => {
     if (!visible || !threadId || revision === null || busy) return;
     setBusy(true);
     setError(null);
