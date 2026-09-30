@@ -211,6 +211,62 @@ describe("shared server state", () => {
     expect(consumers.get(0)!.server.snoozePrefs.morningHour).toBe(10);
   });
 
+  it("re-reads a realtime change consumed during an active mutation", async () => {
+    const firstRead = deferred<ServerState>();
+    const secondRead = deferred<ServerState>();
+    const write = deferred<{ order: ServerState["order"] }>();
+    const read = vi
+      .fn()
+      .mockImplementationOnce(() => Promise.resolve(state(1)))
+      .mockImplementationOnce(() => firstRead.promise)
+      .mockImplementationOnce(() => secondRead.promise);
+    const { slot, consumers } = mount({
+      read,
+      reorder: vi.fn(() => write.promise),
+    });
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    const mutation = consumers.get(0)!.reorder({
+      kind: "workstreams",
+      ids: ["a"],
+    });
+    await slot.behavior.emitRealtime("changed", {});
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    firstRead.resolve({ ...state(2), proposals: [{ id: "server-change" }] as never });
+    await Promise.resolve();
+    expect(consumers.get(0)!.server.proposals).toEqual([]);
+    write.resolve({ order: { workstreams: ["a"], threads: {} } });
+    await mutation;
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
+    secondRead.resolve({ ...state(3), proposals: [{ id: "server-change" }] as never });
+    await waitFor(() => expect(consumers.get(0)!.server.lastReconciledAt).toBe(3));
+    expect(consumers.get(0)!.server.proposals).toHaveLength(1);
+  });
+
+  it("rolls back rejected preferences and shows authoritative normalization", async () => {
+    const failure = new Error("preferences failed");
+    const write = deferred<{ prefs: ServerState["snoozePrefs"] }>();
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce(state(1))
+      .mockResolvedValueOnce({
+        ...state(2),
+        snoozePrefs: { ...state().snoozePrefs, morningHour: 6 },
+      });
+    const { consumers } = mount({
+      read,
+      setSnoozePrefs: vi.fn(() => write.promise),
+    });
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    const pending = consumers.get(0)!.saveSnoozePrefs({ morningHour: 22 });
+    expect(consumers.get(0)!.server.snoozePrefs.morningHour).toBe(22);
+    write.reject(failure);
+    await expect(pending).rejects.toBe(failure);
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(consumers.get(0)!.server.snoozePrefs.morningHour).toBe(6),
+    );
+  });
+
   it("registers one app-wide realtime bridge", async () => {
     const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
     expect(
