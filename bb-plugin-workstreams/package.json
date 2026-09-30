@@ -4,7 +4,7 @@
   "type": "module",
   "engines": {
     "bb": ">=0.44",
-    "bbPluginSdk": ">=0.5.29"
+    "bbPluginSdk": ">=0.6.5"
   },
   "bb": {
     "name": "Workstreams",
@@ -49,6 +49,7 @@
     "cron-parser": "^5.5.0",
     "hono": "^4.11.9",
     "jsdom": "^29.1.1",
+    "playwright-core": "^1.63.0",
     "prettier": "^3.9.6",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

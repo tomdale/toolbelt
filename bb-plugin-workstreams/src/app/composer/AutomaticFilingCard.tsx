@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useComposerView } from "@get-bb/plugin-sdk/app";
+import { useComposer } from "@get-bb/plugin-sdk/app";
 import { useServerState } from "../useWorkstreams.ts";
 
 function relativeTime(at: number): string {
@@ -15,7 +15,7 @@ function relativeTime(at: number): string {
 
 /** A quiet, inline receipt for an automatic initial Unsorted filing. */
 export function AutomaticFilingCard() {
-  const { scope } = useComposerView();
+  const { scope } = useComposer();
   const { rpc, server, refresh } = useServerState();
   const [busy, setBusy] = useState(false);
   const [hidden, setHidden] = useState(false);

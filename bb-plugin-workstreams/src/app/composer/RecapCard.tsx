@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Markdown, useComposerView, useRealtime, useRpc, useSettings } from "@get-bb/plugin-sdk/app";
+import { Markdown, useComposer, useRealtime, useRpc, useSettings } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import { parseRecapLedger } from "../../domain/recap.ts";
 import { useArchiveSuggestion } from "../archive/useArchiveSuggestion.ts";
@@ -244,14 +244,14 @@ function Skeleton({ layout }: { layout: Layout }) {
  * keyed by the recap's generation time, so a newer recap reappears.
  */
 export function RecapCard() {
-  const { scope, draft, run } = useComposerView();
+  const { scope, isEmpty, attachmentCount, isRunning, isSubmitting } = useComposer();
   const threadId = scope.kind === "thread" ? scope.threadId : null;
-  const continuing = !draft.isEmpty || draft.attachmentCount > 0 || run.isRunning || run.isSubmitting;
+  const continuing = !isEmpty || attachmentCount > 0 || isRunning || isSubmitting;
   const { recap, generating, needsInput, error, generate } = useRecap(threadId);
   const { values } = useSettings();
   const layout = ((values?.recapLayout as Layout | undefined) ?? "detailed");
   const automatic = values?.recapAutomatic !== false;
-  const settled = useSettled(run.isRunning || run.isSubmitting);
+  const settled = useSettled(isRunning || isSubmitting);
   const archive = useArchiveSuggestion(threadId, continuing);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const markerRef = useRef<HTMLDivElement>(null);

@@ -10,9 +10,13 @@ against.
 
 - **Sidebar thread list** (select it under Settings → Appearance → Sidebar):
   - **＋ New work** opens a composer that previews the destination as you type.
-    Edit the prompt or choose a workstream before sending. A workstream's **＋**
-    selects that workstream explicitly and skips classification. The project is
-    chosen automatically; **Settings** reveals project and execution controls.
+    Action, destination, Project and Environment controls stay visible. Solid
+    yellow stars mark automatic fields; each chosen field has its own revert.
+    Choices survive prompt edits. A workstream's **＋** explicitly selects it
+    and skips classification. **No workstream** creates an unassigned thread and
+    requires a chosen or confidently inferred project. Existing threads show
+    locked placement and use their existing execution settings. Pending routing
+    blocks Enter and click before the native composer clears the draft.
   - **Needs you**: a pending approval or question, or a thread whose latest turn
     asks you to decide something. These rows sit at the top in a tinted block
     under a collapsible header, each naming its workstream. A delegate's
@@ -138,14 +142,34 @@ A workstream argument is a section id or its name (case-insensitive). `new` and
 
 ## Development
 
+The New work composer requires matching BB host and Plugin SDK builds with
+`experimental_submitLabel`, `experimental_submitDisabled`,
+`experimental_onBeforeSubmit`, `experimental_placementVisibility`, and
+`experimental_executionControlsVisibility`. A registry version alone does not
+establish support for these controls. Until a compatible SDK is published, build
+and pack `packages/plugin-sdk` from the host source containing them, then
+install the resulting tarball after installing dependencies:
+`npm install --no-save --package-lock=false /path/to/packed-sdk.tgz`. Keep local
+tarball paths out of package metadata.
+
 ```sh
 npm install
+# Install the locally packed SDK described above before these checks.
 npm run typecheck
 npm test
 npm run build
 bb plugin install .   # or `bb plugin reload workstreams` once installed from this path
 node eval/run.ts      # analysis eval (calls models); see eval/README.md
 node eval/route.ts    # routing eval
+```
+
+Standalone screenshots use actual IntakeBanner markup and production CSS, with
+native composer and SDK icons represented by test stand-ins. With Chrome
+installed, capture them without opening BB:
+
+```sh
+NEW_WORK_CAPTURE_DIR=/tmp/new-work-shots npm test -- --run tests/app/intake-banner.test.tsx
+node scripts/capture-new-work.mjs /tmp/new-work-shots
 ```
 
 - `src/domain/`: pure logic: `tree.ts` (exact-once forests), `project.ts` (the

@@ -1,67 +1,203 @@
 import { createContext } from "react";
-import type { Placement, RouteDecision } from "../../server/router.ts";
+import type {
+  ComposerSelection,
+  NewThreadRequest,
+  PluginBrowserBbSdk,
+} from "@get-bb/plugin-sdk/app";
+import type { RouteDecision, RouteIntent } from "../../server/router.ts";
 import { routeDelay } from "./timing.ts";
-
-type RouteOptions = {
-  prompt: string;
-  workstreamId: string | null;
-  pickedProjectId: string | null;
-  /** The unsure decision the workstream was picked from (its trace carries over). */
-  fromDecisionId?: string;
+export type Environment = NonNullable<NewThreadRequest["environment"]>;
+export type IntakeAction =
+  "automatic" | "new-thread" | "send-message" | "new-workstream";
+export type IntakeDestination =
+  | { kind: "automatic" }
+  | { kind: "workstream"; id: string; name: string }
+  | { kind: "thread"; id: string; title: string }
+  | { kind: "unassigned" };
+type Field<T> = { value: T; source: "automatic" | "manual" };
+const auto = <T>(value: T): Field<T> => ({ value, source: "automatic" });
+const manual = <T>(value: T): Field<T> => ({ value, source: "manual" });
+function sameJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  return (
+    keys.length === Object.keys(right).length &&
+    keys.every(
+      (key) => Object.hasOwn(right, key) && sameJson(left[key], right[key]),
+    )
+  );
+}
+function environmentAcknowledged(
+  requested: Environment | undefined,
+  applied: Environment | undefined,
+): boolean {
+  if (sameJson(requested, applied)) return true;
+  if (requested?.type !== "host" || !applied) return false;
+  const workspace = requested.workspace;
+  let equivalent: Environment = requested;
+  if (applied.type === "provider") {
+    if (!requested.hostId) return false;
+    equivalent = {
+      type: "provider",
+      environmentProviderId:
+        workspace.type === "managed-worktree"
+          ? "git-worktree"
+          : workspace.type === "unmanaged"
+            ? "project-checkout"
+            : "personal-workspace",
+      machine: { type: "existing", hostId: requested.hostId },
+      inputs:
+        workspace.type === "managed-worktree"
+          ? { branch: workspace.baseBranch }
+          : workspace.type === "unmanaged"
+            ? {
+                ...(workspace.path === null ? {} : { path: workspace.path }),
+                ...(workspace.branch ? { branch: workspace.branch } : {}),
+              }
+            : null,
+    };
+  }
+  // The host represents workspace sugar as a provider and may resolve a
+  // configured default worktree base to its name. Keep the requested args
+  // unchanged so the preview intent and execution payload still agree.
+  if (
+    workspace.type === "managed-worktree" &&
+    workspace.baseBranch.kind === "default"
+  ) {
+    if (
+      applied.type === "host" &&
+      applied.workspace.type === "managed-worktree" &&
+      applied.workspace.baseBranch.kind === "named" &&
+      applied.workspace.baseBranch.name
+    )
+      return sameJson(requested, {
+        ...applied,
+        workspace: { ...applied.workspace, baseBranch: { kind: "default" } },
+      });
+    if (applied.type === "provider" && equivalent.type === "provider") {
+      const inputs = applied.inputs;
+      const branch =
+        inputs && typeof inputs === "object" && !Array.isArray(inputs)
+          ? inputs.branch
+          : null;
+      if (
+        branch &&
+        typeof branch === "object" &&
+        !Array.isArray(branch) &&
+        branch.kind === "named" &&
+        typeof branch.name === "string" &&
+        branch.name &&
+        Object.keys(branch).length === 2
+      )
+        equivalent = { ...equivalent, inputs: { branch } };
+    }
+  }
+  return sameJson(equivalent, applied);
+}
+export type CatalogThread = {
+  id: string;
+  title: string;
+  sectionId: string | null;
+  projectId: string;
+  environmentId: string | null;
+  environmentName: string | null;
 };
+export type CatalogEnvironment = { id: string; name: string | null };
 export type IntakeState = {
   text: string;
+  action: Field<IntakeAction>;
+  destination: Field<IntakeDestination>;
+  project: Field<string | null>;
+  environment: Field<Environment | null>;
+  name: Field<string>;
   decision: RouteDecision | null;
   loading: boolean;
   error: string | null;
-  workstreamId: string | null;
-  workstreamName: string | null;
-  pickedProjectId: string | null;
-  choice: { threadId: string } | null;
-  /** Whether the host's project, environment, and permission row is shown. */
-  settings: boolean;
+  selectionError: string | null;
+  announcement: string;
+  projects: readonly {
+    id: string;
+    name: string;
+    hostId: string | null;
+    hostIds: string[];
+  }[];
+  environments: readonly CatalogEnvironment[];
+  threads: readonly CatalogThread[];
+  catalogError: string | null;
+  hostId: string | null;
+  threadExecution: Record<string, ComposerSelection>;
+  synchronizedThread: string | null;
+  synchronizedPlacement: string | null;
+  selectionRevision: number;
 };
-
 let sessions = 0;
-
-/** One composer owns one session; project changes may remount its banner. */
+/** The dialog owns selections and catalogs because the host remounts banners on project changes. */
 export class Intake {
-  /** Lets the banner's select reference the dialog's stable live region. */
   readonly statusId = `ws-intake-status-${++sessions}`;
-  /** The banner control to refocus after the host remounts the banner. */
-  focused: "workstream" | "settings" | null = null;
+  focused: string | null = null;
   private state: IntakeState;
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private generation = 0;
   private pending: Promise<RouteDecision | null> | null = null;
-  private lastProject: string | null | undefined;
-  private selectionKey: string | null = null;
-  customizePlacement = false;
-  private preset: string | null = null;
+  private catalogGeneration = 0;
+  private environmentGeneration = 0;
+  private catalogs: Promise<void> | null = null;
+  private threadRequests = new Map<string, Promise<void>>();
+  private autoProject: string | null = null;
+  private autoEnvironment: Environment | null = null;
+  private autoEnvironmentLabel = "";
+  private autoDestination: IntakeDestination = { kind: "automatic" };
+  private autoAction: IntakeAction = "automatic";
+  private autoName = "";
   private submitting = false;
-  private fromDecisionId: string | null = null;
-
+  private selectionKey = "";
+  private selectionThread: string | null = null;
+  private selectionGeneration = 0;
+  private selectionRequests = new WeakMap<ComposerSelection, number>();
+  private decisionIntent: RouteIntent = {};
   constructor(
-    private route: (options: RouteOptions) => Promise<RouteDecision>,
+    private route: (options: {
+      prompt: string;
+      intent: RouteIntent;
+    }) => Promise<RouteDecision>,
     workstreamId: string | null,
     workstreamName: string | null,
-    /** Aborts the routing call in flight on the server; its answer is stale. */
     private cancel: () => void = () => {},
   ) {
     this.state = {
       text: "",
+      action: auto("automatic"),
+      destination: workstreamId
+        ? manual({
+            kind: "workstream",
+            id: workstreamId,
+            name: workstreamName ?? workstreamId,
+          })
+        : auto({ kind: "automatic" }),
+      project: auto(null),
+      environment: auto(null),
+      name: auto(""),
       decision: null,
       loading: false,
       error: null,
-      workstreamId,
-      workstreamName,
-      pickedProjectId: null,
-      choice: null,
-      settings: false,
+      selectionError: null,
+      announcement: "",
+      projects: [],
+      environments: [],
+      threads: [],
+      catalogError: null,
+      hostId: null,
+      threadExecution: {},
+      synchronizedThread: null,
+      synchronizedPlacement: null,
+      selectionRevision: 0,
     };
   }
-
   snapshot = () => this.state;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -73,112 +209,501 @@ export class Intake {
     this.state = { ...this.state, ...patch };
     this.listeners.forEach((listener) => listener());
   }
-  dispose() {
+  private invalidate() {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.generation++;
     if (this.pending) this.cancel();
     this.pending = null;
   }
-  presetProject(projectId: string) {
-    this.preset = projectId;
+  dispose() {
+    this.invalidate();
+    this.catalogGeneration++;
+    this.environmentGeneration++;
   }
-  shouldPreset(decisionId: string, placement: Placement) {
-    const key = JSON.stringify([placement.projectId, placement.environment]);
-    if (this.state.decision?.id !== decisionId || this.selectionKey === key)
-      return false;
-    this.selectionKey = key;
-    this.presetProject(placement.projectId);
-    return true;
+  async loadCatalogs(sdk: PluginBrowserBbSdk) {
+    if (this.catalogs) return this.catalogs;
+    const mine = ++this.catalogGeneration;
+    this.catalogs = Promise.all([
+      sdk.projects.list({ includePersonal: true }),
+      sdk.threads.list({ limit: 500 }),
+      sdk.system.config(),
+    ])
+      .then(([projects, result, config]) => {
+        if (mine !== this.catalogGeneration) return;
+        this.set({
+          projects: projects.map(({ id, name, sources }) => ({
+            id,
+            name,
+            hostIds: sources?.map((s) => s.hostId) ?? [],
+            hostId:
+              sources?.find((s) => s.isDefault)?.hostId ??
+              sources?.[0]?.hostId ??
+              config.primaryHostId,
+          })),
+          threads: [
+            ...result.map((t) => ({
+              id: t.id,
+              title: t.title ?? t.titleFallback ?? t.id,
+              sectionId: t.sectionId,
+              projectId: t.projectId,
+              environmentId: t.environmentId,
+              environmentName: t.environmentName,
+            })),
+            ...this.state.threads.filter(
+              (t) => !result.some((r) => r.id === t.id),
+            ),
+          ],
+          catalogError: null,
+          hostId: config.primaryHostId,
+        });
+      })
+      .catch((error) => {
+        if (mine === this.catalogGeneration) {
+          this.catalogs = null;
+          this.set({ catalogError: String(error) });
+        }
+      });
+    return this.catalogs;
   }
-  retry() {
-    this.schedule(this.state.text);
+  async loadEnvironments(sdk: PluginBrowserBbSdk, projectId: string | null) {
+    const mine = ++this.environmentGeneration;
+    this.set({ environments: [] });
+    if (!projectId) return;
+    try {
+      const environments = await sdk.environments.list({
+        projectId,
+        status: "ready",
+      });
+      if (
+        mine !== this.environmentGeneration ||
+        projectId !== this.state.project.value
+      )
+        return;
+      this.set({ environments });
+      const env = this.state.environment.value;
+      const sourceHosts =
+        this.state.projects.find((p) => p.id === projectId)?.hostIds ?? [];
+      const invalidReuse =
+        env?.type === "reuse" &&
+        !environments.some((e) => e.id === env.environmentId);
+      const invalidHost =
+        env?.type === "host" &&
+        env.hostId &&
+        sourceHosts.length > 0 &&
+        !sourceHosts.includes(env.hostId);
+      if (
+        this.state.environment.source === "manual" &&
+        (invalidReuse || invalidHost)
+      ) {
+        this.set({ environment: auto({ type: "project-default" }) });
+        this.schedule();
+        this.set({
+          announcement: "Environment reset to the project's default.",
+        });
+      }
+    } catch (error) {
+      if (mine === this.environmentGeneration)
+        this.set({ catalogError: String(error) });
+    }
   }
-  /** Once the user has seen the placement row, their project picks count. */
-  toggleSettings() {
-    this.customizePlacement = true;
-    this.set({ settings: !this.state.settings });
+  async loadThread(sdk: PluginBrowserBbSdk, threadId: string) {
+    if (this.state.threadExecution[threadId]) return;
+    if (this.threadRequests.has(threadId))
+      return this.threadRequests.get(threadId);
+    const mine = this.catalogGeneration;
+    const request = Promise.all([
+      sdk.threads.get({ threadId, include: "environment" }),
+      sdk.threads.defaultExecutionOptions({ threadId }),
+    ])
+      .then(async ([record, execution]) => {
+        const environment =
+          "environment" in record
+            ? record.environment
+            : record.environmentId
+              ? await sdk.environments.get({
+                  environmentId: record.environmentId,
+                })
+              : null;
+        if (mine !== this.catalogGeneration) return;
+        if (!execution)
+          throw new Error("Thread settings are unavailable. Retry choices.");
+        this.set({
+          threadExecution: {
+            ...this.state.threadExecution,
+            [threadId]: execution,
+          },
+          threads: [
+            ...this.state.threads.filter((t) => t.id !== threadId),
+            {
+              id: record.id,
+              title: record.title ?? record.id,
+              sectionId: record.sectionId,
+              projectId: record.projectId,
+              environmentId: record.environmentId,
+              environmentName: environment?.name ?? environment?.path ?? null,
+            },
+          ],
+        });
+      })
+      .catch((error) => {
+        if (mine === this.catalogGeneration)
+          this.set({ catalogError: String(error) });
+      })
+      .finally(() => this.threadRequests.delete(threadId));
+    this.threadRequests.set(threadId, request);
+    return request;
   }
-
-  observe(text: string, projectId: string | null) {
-    // BB clears the editor before awaiting onSubmit and restores it on
-    // rejection. That temporary empty draft must not cancel its route.
+  effectiveAction(): IntakeAction {
+    if (this.state.action.source === "manual") return this.state.action.value;
+    if (this.state.destination.source === "manual")
+      return this.state.destination.value.kind === "thread"
+        ? "send-message"
+        : "new-thread";
+    return this.state.action.value;
+  }
+  lockedThread() {
+    const destination = this.state.destination.value;
+    return this.effectiveAction() === "send-message" &&
+      destination.kind === "thread"
+      ? this.state.threads.find((t) => t.id === destination.id)
+      : undefined;
+  }
+  intent(): RouteIntent {
+    const { action, destination, project, environment, name } = this.state;
+    const intent: RouteIntent = {};
+    if (action.source === "manual" && action.value !== "automatic")
+      intent.action = action.value;
+    if (
+      destination.source === "manual" &&
+      this.effectiveAction() !== "new-workstream"
+    ) {
+      if (
+        destination.value.kind === "workstream" ||
+        destination.value.kind === "thread"
+      )
+        intent.destination = {
+          kind: destination.value.kind,
+          id: destination.value.id,
+        };
+      if (destination.value.kind === "unassigned")
+        intent.destination = { kind: "none" };
+    }
+    const fixedContinuation =
+      this.effectiveAction() === "send-message" &&
+      (action.source === "manual" || destination.source === "manual");
+    if (!fixedContinuation) {
+      const placement: NonNullable<RouteIntent["placement"]> = {};
+      if (project.source === "manual" && project.value)
+        placement.projectId = project.value;
+      if (environment.source === "manual" && environment.value)
+        placement.environment = environment.value;
+      if (Object.keys(placement).length) intent.placement = placement;
+    }
+    if (name.source === "manual" && this.effectiveAction() === "new-workstream")
+      intent.workstreamName = name.value;
+    return intent;
+  }
+  observe(text: string, _hostProject?: string | null) {
     if (this.submitting && !text.trim()) return;
-    const picked =
-      this.customizePlacement &&
-      this.lastProject !== undefined &&
-      projectId !== this.lastProject &&
-      projectId !== this.preset
-        ? projectId
-        : this.state.pickedProjectId;
-    this.lastProject = projectId;
     if (
       text.trim() === this.state.text &&
-      picked === this.state.pickedProjectId &&
-      (!this.state.loading || this.pending !== null || this.timer !== null)
+      (!this.state.loading || this.pending || this.timer)
     )
       return;
-    this.set({ pickedProjectId: picked });
-    this.schedule(text);
+    this.set({ text: text.trim() });
+    this.schedule();
   }
-  /** `fromDecisionId`: the unsure decision whose candidate this is. */
-  selectWorkstream(
-    id: string | null,
-    name: string | null,
-    fromDecisionId: string | null = null,
-  ) {
-    this.fromDecisionId = fromDecisionId;
-    this.set({ workstreamId: id, workstreamName: name, choice: null });
-    this.schedule(this.state.text);
+  selectAction(value: Exclude<IntakeAction, "automatic">) {
+    const destination = this.state.destination.value;
+    let next = this.state.destination;
+    if (value === "new-thread" && destination.kind === "thread") {
+      const thread = this.state.threads.find((t) => t.id === destination.id);
+      const d = this.state.decision;
+      const sectionId =
+        thread?.sectionId ?? (d?.outcome === "continue" ? d.sectionId : null);
+      const name = d?.outcome === "continue" ? d.workstream : null;
+      next = auto(
+        sectionId
+          ? { kind: "workstream", id: sectionId, name: name ?? sectionId }
+          : { kind: "automatic" },
+      );
+    } else if (
+      (value === "send-message" && destination.kind !== "thread") ||
+      value === "new-workstream"
+    )
+      next = auto({ kind: "automatic" });
+    this.set({ action: manual(value), destination: next });
+    this.schedule();
   }
-  selectThread(threadId: string) {
-    this.set({ choice: { threadId }, error: null });
+  selectDestination(value: IntakeDestination) {
+    this.set({ destination: manual(value), error: null });
+    this.schedule();
   }
-  private fail(message: string): never {
-    this.set({ error: message });
-    throw new Error(message);
+  selectWorkstream(id: string | null, name: string | null) {
+    id
+      ? this.selectDestination({ kind: "workstream", id, name: name ?? id })
+      : this.revertField("destination");
   }
-
-  private schedule(text: string) {
-    this.dispose();
+  selectUnassigned() {
+    this.selectDestination({ kind: "unassigned" });
+  }
+  selectProject(value: string) {
+    const old = this.state.project.value;
     this.set({
-      text: text.trim(),
-      decision: null,
-      choice: null,
-      error: null,
-      loading: !!text.trim(),
+      project: manual(value),
+      ...(old !== value && this.state.environment.source === "automatic"
+        ? { environment: auto({ type: "project-default" }) }
+        : {}),
     });
-    if (!text.trim()) return;
+    this.schedule();
+  }
+  selectEnvironment(value: Environment) {
+    this.set({ environment: manual(value) });
+    this.schedule();
+  }
+  selectName(value: string) {
+    this.set({ name: manual(value) });
+    this.schedule();
+  }
+  revertField(
+    field: "action" | "destination" | "project" | "environment" | "name",
+  ) {
+    if (field === "action") this.set({ action: auto(this.autoAction) });
+    if (field === "destination")
+      this.set({ destination: auto(this.autoDestination) });
+    if (field === "project") this.set({ project: auto(this.autoProject) });
+    if (field === "environment")
+      this.set({ environment: auto(this.autoEnvironment) });
+    if (field === "name") this.set({ name: auto(this.autoName) });
+    this.schedule();
+  }
+  automaticPreview(field: string): string {
+    if (field === "action")
+      return this.autoAction === "automatic"
+        ? ""
+        : this.autoAction.replaceAll("-", " ");
+    if (field === "destination")
+      return this.autoDestination.kind === "workstream"
+        ? this.autoDestination.name
+        : this.autoDestination.kind === "thread"
+          ? this.autoDestination.title
+          : "";
+    if (field === "project")
+      return (
+        this.state.projects.find((p) => p.id === this.autoProject)?.name ?? ""
+      );
+    if (field === "environment") return this.autoEnvironmentLabel;
+    return this.autoName;
+  }
+  selection(): ComposerSelection | null {
+    const thread = this.lockedThread();
+    if (
+      this.effectiveAction() === "send-message" &&
+      (!thread ||
+        !thread.environmentId ||
+        !this.state.threadExecution[thread.id])
+    )
+      return null;
+    if (
+      this.effectiveAction() !== "send-message" &&
+      (!this.state.project.value || !this.state.environment.value)
+    )
+      return null;
+    const selection = thread
+      ? {
+          ...this.state.threadExecution[thread.id],
+          projectId: thread.projectId,
+          environment: {
+            type: "reuse" as const,
+            environmentId: thread.environmentId!,
+          },
+        }
+      : {
+          projectId: this.state.project.value!,
+          environment: this.state.environment.value!,
+        };
+    const key = JSON.stringify(selection);
+    if (
+      key === this.selectionKey &&
+      this.selectionThread === (thread?.id ?? null)
+    )
+      return null;
+    this.selectionKey = key;
+    this.selectionThread = thread?.id ?? null;
+    this.selectionRequests.set(selection, ++this.selectionGeneration);
+    this.set({ synchronizedThread: null, synchronizedPlacement: null });
+    return selection;
+  }
+  reconcileSelection(requested: ComposerSelection, applied: ComposerSelection) {
+    if (
+      JSON.stringify(requested) !== this.selectionKey ||
+      this.selectionRequests.get(requested) !== this.selectionGeneration
+    )
+      return;
+    if (this.effectiveAction() === "send-message") {
+      const thread = this.lockedThread();
+      if (
+        thread &&
+        applied.projectId === requested.projectId &&
+        JSON.stringify(applied.environment) ===
+          JSON.stringify(requested.environment) &&
+        applied.providerId === requested.providerId &&
+        applied.model === requested.model
+      )
+        this.set({ synchronizedThread: thread.id, selectionError: null });
+      else
+        this.selectionFailed(
+          "The composer couldn't use the thread's settings. Retry choices.",
+        );
+      return;
+    }
+    if (applied.projectId && applied.projectId !== requested.projectId) {
+      this.selectionFailed("Choose a project the composer can use.");
+      return;
+    }
+    if (
+      requested.environment?.type !== "project-default" &&
+      !environmentAcknowledged(requested.environment, applied.environment)
+    ) {
+      this.selectionFailed("Choose an environment the composer can use.");
+      return;
+    }
+    if (
+      requested.environment?.type === "project-default" &&
+      applied.environment &&
+      this.state.environment.source === "automatic"
+    ) {
+      this.set({ environment: auto(applied.environment) });
+      this.selectionKey = JSON.stringify({
+        projectId: requested.projectId,
+        environment: applied.environment,
+      });
+    }
+    this.set({
+      selectionError: null,
+      synchronizedPlacement: JSON.stringify([
+        this.state.project.value,
+        this.state.environment.value,
+      ]),
+    });
+  }
+  selectionFailed(error: unknown, requested?: ComposerSelection) {
+    if (
+      requested &&
+      (JSON.stringify(requested) !== this.selectionKey ||
+        this.selectionRequests.get(requested) !== this.selectionGeneration)
+    )
+      return;
+    this.selectionKey = "";
+    this.set({ selectionError: String(error) });
+  }
+  retry() {
+    this.set({
+      selectionRevision: this.state.selectionRevision + 1,
+      selectionError: null,
+    });
+    this.schedule();
+  }
+  private schedule() {
+    this.invalidate();
+    this.set({
+      decision: null,
+      error: null,
+      announcement: "",
+      loading: !!this.state.text,
+    });
+    if (!this.state.text) return;
     this.timer = setTimeout(
       () => {
         void this.resolve();
       },
-      this.state.workstreamId ? 0 : routeDelay(text),
+      this.state.destination.source === "manual"
+        ? 0
+        : routeDelay(this.state.text),
     );
   }
-
   async resolve(): Promise<RouteDecision | null> {
     if (this.pending) return this.pending;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     const mine = ++this.generation;
-    const { text, workstreamId, pickedProjectId } = this.state;
-    if (!text) this.fail("Describe the work first.");
+    const { text } = this.state;
+    if (!text) return null;
     this.set({ loading: true, error: null });
-    this.pending = this.route({
-      prompt: text,
-      workstreamId,
-      pickedProjectId,
-      // RPC input must be JSON: omit rather than send undefined.
-      ...(this.fromDecisionId ? { fromDecisionId: this.fromDecisionId } : {}),
-    }).then(
+    const intent = this.intent();
+    this.pending = this.route({ prompt: text, intent }).then(
       (decision) => {
         if (mine !== this.generation) return null;
         this.pending = null;
-        this.set({ decision, loading: false });
+        this.decisionIntent = intent;
+        const resolvedAction =
+          decision.outcome === "continue"
+            ? "send-message"
+            : decision.outcome === "new-thread"
+              ? "new-thread"
+              : decision.outcome === "new-workstream"
+                ? "new-workstream"
+                : "automatic";
+        const resolvedDestination: IntakeDestination =
+          decision.outcome === "continue"
+            ? {
+                kind: "thread",
+                id: decision.threadId,
+                title: decision.threadTitle,
+              }
+            : decision.outcome === "new-thread" && decision.sectionId
+              ? {
+                  kind: "workstream",
+                  id: decision.sectionId,
+                  name: decision.workstream ?? decision.sectionId,
+                }
+              : { kind: "automatic" };
+        const placement = "placement" in decision ? decision.placement : null;
+        if (
+          this.state.action.source === "automatic" &&
+          this.state.destination.source === "automatic"
+        )
+          this.autoAction = resolvedAction;
+        if (this.state.destination.source === "automatic")
+          this.autoDestination = resolvedDestination;
+        if (this.state.name.source === "automatic")
+          this.autoName =
+            decision.outcome === "new-workstream" ? decision.name : "";
+        if ("placement" in decision) {
+          if (this.state.project.source === "automatic")
+            this.autoProject = placement?.projectId ?? null;
+          if (this.state.environment.source === "automatic") {
+            this.autoEnvironment =
+              placement?.environment ??
+              (this.state.project.value ? { type: "project-default" } : null);
+            this.autoEnvironmentLabel = placement?.label ?? "";
+          }
+        }
+        this.set({
+          decision,
+          loading: false,
+          ...(this.state.action.source === "automatic"
+            ? { action: auto(resolvedAction) }
+            : {}),
+          ...(this.state.destination.source === "automatic"
+            ? { destination: auto(this.autoDestination) }
+            : {}),
+          ...(this.state.project.source === "automatic"
+            ? { project: auto(this.autoProject) }
+            : {}),
+          ...(this.state.environment.source === "automatic"
+            ? {
+                environment: auto(this.autoEnvironment),
+              }
+            : {}),
+          ...(this.state.name.source === "automatic"
+            ? { name: auto(this.autoName) }
+            : {}),
+        });
         return decision;
       },
-      (error: unknown) => {
+      (error) => {
         if (mine !== this.generation) return null;
         this.pending = null;
         this.set({
@@ -191,34 +716,43 @@ export class Intake {
     );
     return this.pending;
   }
-
-  async forSubmit(text: string) {
-    this.submitting = true;
-    try {
-      return await this.prepareSubmit(text);
-    } finally {
-      this.submitting = false;
-    }
+  canSubmit() {
+    const s = this.state;
+    return (
+      !!s.text &&
+      !s.loading &&
+      !s.error &&
+      !s.selectionError &&
+      !!s.decision &&
+      s.decision.outcome !== "unsure" &&
+      (s.decision.outcome === "continue"
+        ? s.synchronizedThread === s.decision.threadId
+        : !!s.project.value &&
+          !!s.environment.value &&
+          s.synchronizedPlacement ===
+            JSON.stringify([s.project.value, s.environment.value]) &&
+          (s.decision.outcome !== "new-workstream" || !!s.name.value.trim()))
+    );
   }
-
-  private async prepareSubmit(text: string) {
-    if (text.trim() !== this.state.text) this.schedule(text);
-    let decision = this.state.decision;
-    if (!decision) {
-      decision = await this.resolve();
-      if (!decision)
-        this.fail(
-          this.state.error ??
-            "The draft changed. Review the destination before sending.",
-        );
-      // An explicit workstream is already previewed before the user types.
-      if (!this.state.workstreamId)
-        this.fail("Review the destination, then send.");
-    }
-    if (decision.outcome === "unsure" && !this.state.choice)
-      this.fail("Choose where this work goes.");
-    return { decision, choice: this.state.choice };
+  async forSubmit(text: string) {
+    if (text.trim() !== this.state.text) this.observe(text);
+    if (!this.canSubmit())
+      throw new Error(
+        this.state.error || this.state.selectionError
+          ? "Retry or choose where this goes."
+          : this.state.loading
+            ? "Wait for the destination to be ready."
+            : "Choose a destination and project before sending.",
+      );
+    this.submitting = true;
+    return {
+      decision: this.state.decision!,
+      choice: null,
+      intent: this.decisionIntent,
+    };
+  }
+  completeSubmit() {
+    this.submitting = false;
   }
 }
-
 export const IntakeContext = createContext<Intake | null>(null);
