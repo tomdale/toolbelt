@@ -1,6 +1,6 @@
 /**
  * Snooze in the thread header: a split button whose face snoozes with the
- * default choice (the `snoozeDefault` setting) and whose arrow lists every
+ * default choice (the Snooze settings section) and whose arrow lists every
  * choice. A snoozed thread shows when it wakes instead, with Wake now in its
  * menu. BB's own thread menu takes no plugin items, so this is the header's
  * snooze entry point, alongside the command palette.
@@ -9,7 +9,6 @@ import { useEffect, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   experimental_useSidebarThreads,
-  useSettings,
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
@@ -18,7 +17,6 @@ import { cn } from "@/lib/utils";
 import {
   describeWake,
   isSnoozed,
-  presetFromSetting,
   shortWake,
   wakeTime,
 } from "../../domain/snooze.ts";
@@ -46,13 +44,11 @@ export function SnoozeHeaderAction({
   const { threads } = experimental_useSidebarThreads({
     experimental_lifecycles: ["active"],
   });
-  const settings = useSettings();
   const portalScope = usePortalScopeProps();
   const [picking, setPicking] = useState(false);
   const thread = threads.find((t) => t.id === threadId);
-  const preset = presetFromSetting(
-    (settings.values as Record<string, unknown> | undefined)?.snoozeDefault,
-  );
+  const prefs = server.snoozePrefs;
+  const preset = prefs.default;
   const now = useNow();
   const stored = server.snoozes[threadId];
   const snooze = thread && isSnoozed(stored, thread, now) ? stored : undefined;
@@ -60,7 +56,8 @@ export function SnoozeHeaderAction({
   const snoozeUntil = (until: number | null) => {
     if (thread) snoozeThread(setSnooze, thread, until, snooze);
   };
-  const snoozeDefault = () => snoozeUntil(wakeTime(preset, Date.now()));
+  const snoozeDefault = () =>
+    snoozeUntil(wakeTime(preset, Date.now(), prefs.morningHour));
   const wake = () => {
     if (thread) wakeThread(setSnooze, thread);
   };
@@ -79,7 +76,7 @@ export function SnoozeHeaderAction({
   // to snooze them out of.
   if (!thread) return null;
 
-  const defaultTitle = `Snooze ${describeWake(wakeTime(preset, now), now)}`;
+  const defaultTitle = `Snooze ${describeWake(wakeTime(preset, now, prefs.morningHour), now)}`;
   const menu = (
     <DropdownMenu.Portal>
       <DropdownMenu.Content
@@ -91,6 +88,7 @@ export function SnoozeHeaderAction({
         <SnoozeMenuItems
           now={now}
           preset={preset}
+          morningHour={prefs.morningHour}
           snooze={snooze}
           onSnooze={snoozeUntil}
           onWake={wake}

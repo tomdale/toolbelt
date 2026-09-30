@@ -25,12 +25,11 @@ import { TraceStore } from "./trace.ts";
 import { RecapScheduler } from "./recap.ts";
 import { loadRecapPrefs, saveRecapPrefs } from "./recapPrefs.ts";
 import { Notebooks } from "./notebooks.ts";
-import { ThreadSnoozes } from "./snooze.ts";
 import {
-  DEFAULT_SNOOZE,
-  SNOOZE_SETTING_OPTIONS,
-  presetLabel,
-} from "../domain/snooze.ts";
+  ThreadSnoozes,
+  loadSnoozePrefs,
+  saveSnoozePrefs,
+} from "./snooze.ts";
 
 export { rpcContract } from "./contract.ts";
 
@@ -73,14 +72,6 @@ export default async function plugin(bb: BbPluginApi) {
       description:
         "The five most recently active threads, excluding ones already in For you.",
       default: true,
-    },
-    snoozeDefault: {
-      type: "select",
-      label: "Default snooze",
-      description:
-        "What the one-click snooze button does. Right-click a thread, or use the arrow beside the thread header's snooze button, for the other choices.",
-      options: [...SNOOZE_SETTING_OPTIONS],
-      default: presetLabel(DEFAULT_SNOOZE),
     },
     model: {
       type: "select",
@@ -646,7 +637,13 @@ export default async function plugin(bb: BbPluginApi) {
       bootstrapped: bootstrap.isDone(),
       order: loadOrder(db),
       snoozes: snoozes.all(),
+      snoozePrefs: loadSnoozePrefs(db),
     }),
+    setSnoozePrefs: async ({ patch }) => {
+      const prefs = saveSnoozePrefs(db, patch);
+      notify();
+      return { prefs };
+    },
     snooze: ({ threadId, until }) =>
       userFacing(async () => {
         const now = Date.now();

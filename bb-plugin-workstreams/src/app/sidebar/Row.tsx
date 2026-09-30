@@ -1,9 +1,4 @@
-import {
-  forwardRef,
-  type ComponentPropsWithoutRef,
-  type ReactNode,
-} from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import type { ReactNode } from "react";
 import {
   ThreadTitle,
   experimental_useSidebarThreadActions,
@@ -25,9 +20,7 @@ import {
 import type { WorkView } from "../useWorkstreams.ts";
 import { StatusMark } from "./StatusMark.tsx";
 import { SnoozeIcon, WakeIcon } from "../snooze/icons.tsx";
-import { snoozeMenuContentClass } from "../snooze/SnoozeMenuItems.tsx";
-import { Hint } from "../Hint.tsx";
-import { usePortalScopeProps } from "@/lib/portal-scope";
+import { HoverAction, HoverMenuButton } from "./HoverActions.tsx";
 
 const INDENT_PX = 12;
 const MAX_INDENT = 4;
@@ -120,7 +113,7 @@ export function Row({
   /**
    * The hover button after Archive: snooze with the default choice, or wake
    * a snoozed thread. `title` names what a click does; `menu` holds the other
-   * choices, opened from a chevron beside the button.
+   * choices, opened by resting the pointer on the button.
    */
   snoozeAction?: {
     kind: "snooze" | "wake";
@@ -281,7 +274,7 @@ export function Row({
           </span>
         ) : null}
       </span>
-      {/* Archive, then snooze and its chevron, left of the age. Collapsed
+      {/* Archive, then snooze (its menu opens on hover), left of the age. Collapsed
           rather than display:none, so keyboard focus can reach them;
           focusing one opens the group, and so does an open menu. The
           negative margin cancels the row's gap while collapsed. */}
@@ -290,16 +283,19 @@ export function Row({
           <Icon name="Archive" className="size-3.5" />
         </HoverAction>
         {snoozeAction ? (
-          <HoverAction label={snoozeAction.title} onClick={snoozeAction.run}>
-            {snoozeAction.kind === "wake" ? (
-              <WakeIcon className="size-3.5" />
-            ) : (
-              <SnoozeIcon className="size-3.5" />
-            )}
-          </HoverAction>
-        ) : null}
-        {snoozeAction?.menu ? (
-          <SnoozeChevron>{snoozeAction.menu}</SnoozeChevron>
+          snoozeAction.menu ? (
+            <HoverMenuButton
+              label={snoozeAction.title}
+              onClick={snoozeAction.run}
+              menu={snoozeAction.menu}
+            >
+              {snoozeIcon(snoozeAction.kind)}
+            </HoverMenuButton>
+          ) : (
+            <HoverAction label={snoozeAction.title} onClick={snoozeAction.run}>
+              {snoozeIcon(snoozeAction.kind)}
+            </HoverAction>
+          )
         ) : null}
       </span>
       {/* A fixed-width column, so ages line up down the list; only a
@@ -319,91 +315,9 @@ export function Row({
   );
 }
 
-/** The chevron beside the snooze button: every other snooze choice. */
-function SnoozeChevron({ children }: { children: ReactNode }) {
-  const portalScope = usePortalScopeProps();
-  return (
-    <DropdownMenu.Root>
-      <HoverAction label="More snooze options" className="w-3.5" trigger>
-        <Icon name="ChevronDown" className="size-3" />
-      </HoverAction>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          {...portalScope}
-          align="end"
-          sideOffset={4}
-          className={snoozeMenuContentClass}
-        >
-          {children}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
-  );
-}
-
-/**
- * A row button (see the hover group in `Row`), with a tooltip naming it. It stops pointer and mouse downs so it
- * never starts a drag, and clicks so it never opens the row. With `trigger`
- * it opens the enclosing dropdown menu instead of running `onClick`.
- */
-function HoverAction({
-  label,
-  onClick,
-  className,
-  trigger = false,
-  children,
-}: {
-  label: string;
-  onClick?: () => void;
-  className?: string;
-  trigger?: boolean;
-  children: ReactNode;
-}) {
-  const button = (
-    <HoverButton label={label} onRun={onClick} className={className}>
-      {children}
-    </HoverButton>
-  );
-  return trigger ? (
-    <DropdownMenu.Trigger asChild>
-      <Hint label={label}>{button}</Hint>
-    </DropdownMenu.Trigger>
+const snoozeIcon = (kind: "snooze" | "wake") =>
+  kind === "wake" ? (
+    <WakeIcon className="size-3.5" />
   ) : (
-    <Hint label={label}>{button}</Hint>
+    <SnoozeIcon className="size-3.5" />
   );
-}
-
-const HoverButton = forwardRef<
-  HTMLButtonElement,
-  ComponentPropsWithoutRef<"button"> & { label: string; onRun?: () => void }
->(function HoverButton(
-  { label, onRun, className, children, onPointerDown, onClick, ...rest },
-  ref,
-) {
-  return (
-    <button
-      {...rest}
-      ref={ref}
-      type="button"
-      aria-label={label}
-      onPointerDown={(event) => {
-        event.stopPropagation();
-        onPointerDown?.(event);
-      }}
-      onMouseDown={(event) => event.stopPropagation()}
-      onTouchStart={(event) => event.stopPropagation()}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onClick?.(event);
-        onRun?.();
-      }}
-      className={cn(
-        "flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground",
-        className,
-      )}
-    >
-      {children}
-    </button>
-  );
-});

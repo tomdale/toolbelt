@@ -88,3 +88,39 @@ it("forgets the snooze of an archived thread", async () => {
   } as never);
   expect(await snoozes(w)).toEqual({});
 });
+
+it("stores Snooze settings, repairs bad values, and returns them in state", async () => {
+  const w = await world();
+  const state = async () =>
+    (
+      (await w.harness.behavior.callRpc("state", null)) as {
+        snoozePrefs: unknown;
+      }
+    ).snoozePrefs;
+  expect(await state()).toEqual({
+    default: "tomorrow",
+    quick: ["1h", "tomorrow", "next-week", "activity"],
+    morningHour: 9,
+  });
+  const { prefs } = (await w.harness.behavior.callRpc("setSnoozePrefs", {
+    patch: { default: "3h", quick: ["activity", "30m"], morningHour: 7 },
+  })) as { prefs: unknown };
+  expect(prefs).toEqual({
+    default: "3h",
+    quick: ["30m", "activity"],
+    morningHour: 7,
+  });
+  await w.harness.behavior.callRpc("setSnoozePrefs", {
+    patch: { morningHour: 11 },
+  });
+  expect(await state()).toEqual({
+    default: "3h",
+    quick: ["30m", "activity"],
+    morningHour: 11,
+  });
+  await expect(
+    w.harness.behavior.callRpc("setSnoozePrefs", {
+      patch: { default: "someday" },
+    }),
+  ).rejects.toThrow();
+});

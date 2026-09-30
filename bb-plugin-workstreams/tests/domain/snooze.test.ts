@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_SNOOZE,
+  DEFAULT_SNOOZE_PREFS,
   isSnoozed,
-  presetFromSetting,
+  parseSnoozePrefs,
   shortWake,
   snoozeChoices,
   wakeTime,
@@ -15,7 +15,8 @@ const at = (y: number, m: number, d: number, h = 0, min = 0) =>
 const wednesday = at(2026, 9, 30, 14, 15);
 
 describe("wakeTime", () => {
-  it("adds hours for the short presets", () => {
+  it("adds minutes and hours for the short presets", () => {
+    expect(wakeTime("30m", wednesday)).toBe(at(2026, 9, 30, 14, 45));
     expect(wakeTime("1h", wednesday)).toBe(at(2026, 9, 30, 15, 15));
     expect(wakeTime("3h", wednesday)).toBe(at(2026, 9, 30, 17, 15));
   });
@@ -30,6 +31,16 @@ describe("wakeTime", () => {
     expect(wakeTime("next-week", monday)).toBe(at(2026, 10, 12, 9));
     const sunday = at(2026, 10, 4, 20);
     expect(wakeTime("next-week", sunday)).toBe(at(2026, 10, 5, 9));
+  });
+
+  it("wakes this weekend on the coming Saturday morning, never today", () => {
+    expect(wakeTime("weekend", wednesday)).toBe(at(2026, 10, 3, 9));
+    expect(wakeTime("weekend", at(2026, 10, 3, 8))).toBe(at(2026, 10, 10, 9));
+  });
+
+  it("wakes day choices at the chosen morning hour", () => {
+    expect(wakeTime("tomorrow", wednesday, 7)).toBe(at(2026, 10, 1, 7));
+    expect(wakeTime("next-week", wednesday, 11)).toBe(at(2026, 10, 5, 11));
   });
 
   it("has no time for an activity snooze", () => {
@@ -58,24 +69,43 @@ describe("isSnoozed", () => {
 });
 
 describe("settings and labels", () => {
-  it("reads the setting by label or id, falling back to the default", () => {
-    expect(presetFromSetting("3 hours")).toBe("3h");
-    expect(presetFromSetting("next-week")).toBe("next-week");
-    expect(presetFromSetting("someday")).toBe(DEFAULT_SNOOZE);
-    expect(presetFromSetting(undefined)).toBe(DEFAULT_SNOOZE);
+  it("reads stored preferences, repairing what doesn't fit", () => {
+    expect(parseSnoozePrefs(null)).toEqual(DEFAULT_SNOOZE_PREFS);
+    expect(
+      parseSnoozePrefs({
+        default: "someday",
+        quick: ["activity", "30m", "nope", "1h", "3h", "tomorrow"],
+        morningHour: 3,
+      }),
+    ).toEqual({
+      default: "tomorrow",
+      // Menu order, unknown ids dropped, at most four.
+      quick: ["30m", "1h", "3h", "tomorrow"],
+      morningHour: 5,
+    });
   });
 
   it("offers every preset with its wake hint", () => {
     const choices = snoozeChoices(wednesday);
     expect(choices.map((c) => c.id)).toEqual([
+      "30m",
       "1h",
       "3h",
       "tomorrow",
+      "weekend",
       "next-week",
       "activity",
     ]);
     expect(choices.at(-1)!.hint).toBe("");
-    expect(choices[2]!.until).toBe(at(2026, 10, 1, 9));
+    expect(choices[3]!.until).toBe(at(2026, 10, 1, 9));
+    const quick = snoozeChoices(wednesday, {
+      morningHour: 8,
+      only: ["activity", "tomorrow"],
+    });
+    expect(quick.map((c) => [c.id, c.until])).toEqual([
+      ["tomorrow", at(2026, 10, 1, 8)],
+      ["activity", null],
+    ]);
   });
 
   it("labels rows compactly", () => {

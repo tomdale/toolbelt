@@ -41,6 +41,7 @@ async function mount(
       string,
       { until: number | null; attentionAt: number; at: number }
     >;
+    snoozePrefs?: Record<string, unknown>;
   } = {},
 ) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
@@ -65,6 +66,7 @@ async function mount(
           analysis: options.analysis ?? {},
           order: options.order ?? { workstreams: [], threads: {} },
           snoozes: { ...snoozes },
+          snoozePrefs: options.snoozePrefs ?? {},
         }),
         moveThread: () => ({ entry: null }),
         snooze: (raw: unknown) => {
@@ -640,7 +642,8 @@ describe("snoozing", () => {
 
   it("snoozes with the default choice from the row's hover button", async () => {
     const slot = await mount(threads(), {
-      settings: { showRecent: false, snoozeDefault: "3 hours" },
+      settings: { showRecent: false },
+      snoozePrefs: { default: "3h" },
     });
     const alpha = await waitFor(() =>
       slot.getByRole("region", { name: "Alpha" }),
@@ -742,39 +745,104 @@ describe("row hover buttons", () => {
       )
     ).parentElement!;
 
-  it("opens every snooze choice from the chevron beside the snooze button", async () => {
-    const slot = await mount(undefined, { settings: { showRecent: false } });
-    const row = await rowOf(slot);
-    const chevron = within(row).getByRole("button", {
-      name: "More snooze options",
+  const snoozeButton = (row: HTMLElement) =>
+    within(row).getByRole("button", { name: /^Snooze until/ });
+
+  it("opens the quick choices when the pointer rests on the snooze button", async () => {
+    const slot = await mount(undefined, {
+      settings: { showRecent: false },
+      snoozePrefs: { quick: ["30m", "weekend"] },
     });
-    fireEvent.pointerDown(chevron, { button: 0, ctrlKey: false });
+    const button = snoozeButton(await rowOf(slot));
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    const menu = await screen.findByRole("menu", {}, { timeout: 2000 });
+    expect(button.getAttribute("data-state")).toBe("open");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      expect.stringMatching(/^30 minutes/),
+      expect.stringMatching(/^This weekend/),
+      "Pick a date and time…",
+    ]);
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: /^30 minutes/ }),
+    );
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    const call = slot.inspection.rpcCalls.find((c) => c.method === "snooze")!;
+    expect(call.input).toMatchObject({ threadId: "root" });
+    slot.lifecycle.unmount();
+  });
+
+  it("does nothing when the pointer only passes over the button", async () => {
+    const slot = await mount(undefined, { settings: { showRecent: false } });
+    const button = snoozeButton(await rowOf(slot));
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    fireEvent.pointerLeave(button, { pointerType: "mouse" });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(screen.queryByRole("menu")).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("stays open on the way into the menu and closes after leaving it", async () => {
+    const slot = await mount(undefined, { settings: { showRecent: false } });
+    const button = snoozeButton(await rowOf(slot));
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    const menu = await screen.findByRole("menu", {}, { timeout: 2000 });
+    fireEvent.pointerLeave(button, { pointerType: "mouse" });
+    fireEvent.pointerEnter(menu, { pointerType: "mouse" });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(screen.queryByRole("menu")).not.toBeNull();
+    fireEvent.pointerLeave(menu, { pointerType: "mouse" });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    slot.lifecycle.unmount();
+  });
+
+  it("leaves focus where it was when the menu opens on hover", async () => {
+    const slot = await mount(undefined, { settings: { showRecent: false } });
+    const composer = document.createElement("textarea");
+    document.body.append(composer);
+    composer.focus();
+    const button = snoozeButton(await rowOf(slot));
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    await screen.findByRole("menu", {}, { timeout: 2000 });
+    expect(document.activeElement).toBe(composer);
+    composer.remove();
+    slot.lifecycle.unmount();
+  });
+
+  it("snoozes on click, and opens the menu from the keyboard with ArrowDown", async () => {
+    const slot = await mount(undefined, { settings: { showRecent: false } });
+    const button = snoozeButton(await rowOf(slot));
+    button.focus();
+    fireEvent.keyDown(button, { key: "ArrowDown" });
     const menu = await screen.findByRole("menu");
-    expect(chevron.getAttribute("data-state")).toBe("open");
-    for (const label of ["1 hour", "Next week", "Pick a date and time…"])
-      expect(menu.textContent).toContain(label);
-    fireEvent.click(within(menu).getByRole("menuitem", { name: /^1 hour/ }));
+    const [first, second] = within(menu).getAllByRole("menuitem");
+    await waitFor(() => expect(document.activeElement).toBe(first));
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(second);
+    fireEvent.keyDown(menu, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(document.activeElement).toBe(button);
+    fireEvent.click(button);
     await waitFor(() =>
-      expect(slot.inspection.rpcCalls.at(-1)).toMatchObject({
-        method: "snooze",
-        input: { threadId: "root" },
-      }),
+      expect(slot.inspection.rpcCalls.some((c) => c.method === "snooze")).toBe(
+        true,
+      ),
     );
     slot.lifecycle.unmount();
   });
 
-  it("puts archive, snooze, and its chevron left of the age", async () => {
+  it("puts archive and snooze left of the age", async () => {
     const slot = await mount(undefined, { settings: { showRecent: false } });
     const row = await rowOf(slot);
-    const buttons = within(row)
-      .getAllByRole("button")
-      .map((b) => b.getAttribute("aria-label"))
-      .filter((label) => label !== "Hide child threads");
-    expect(buttons).toEqual([
-      "Archive",
-      expect.stringMatching(/^Snooze until/),
-      "More snooze options",
-    ]);
+    expect(
+      within(row)
+        .getAllByRole("button")
+        .map((b) => b.getAttribute("aria-label"))
+        .filter((label) => label === "Archive" || /^Snooze/.test(label ?? "")),
+    ).toEqual(["Archive", expect.stringMatching(/^Snooze until/)]);
     // The age is the row's last element and stays out of the hover group.
     const age = row.lastElementChild!;
     expect(age.textContent).toBe("now");
@@ -784,53 +852,17 @@ describe("row hover buttons", () => {
     slot.lifecycle.unmount();
   });
 
-  it("never shows the chevron's tooltip over its open menu", async () => {
+  it("names the archive button in a tooltip", async () => {
     const slot = await mount(undefined, { settings: { showRecent: false } });
     const row = await rowOf(slot);
-    const chevron = within(row).getByRole("button", {
-      name: "More snooze options",
-    });
-    fireEvent.pointerMove(chevron, { pointerType: "mouse" });
-    await screen.findByRole("tooltip", {}, { timeout: 2000 });
-    fireEvent.pointerDown(chevron, { button: 0, ctrlKey: false });
-    await screen.findByRole("menu");
-    expect(screen.queryByRole("tooltip")).toBeNull();
-    // Moving over the trigger again with the menu open stays quiet too.
-    fireEvent.pointerMove(chevron, { pointerType: "mouse" });
-    await new Promise((resolve) => setTimeout(resolve, 700));
-    expect(screen.queryByRole("tooltip")).toBeNull();
-    // Closing the menu doesn't bring the old tooltip back.
-    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
-    expect(screen.queryByRole("tooltip")).toBeNull();
-    slot.lifecycle.unmount();
-  });
-
-  it("names the snooze, chevron, and archive buttons in tooltips", async () => {
-    const slot = await mount(undefined, { settings: { showRecent: false } });
-    const row = await rowOf(slot);
-    for (const [name, tip] of [
-      [/^Snooze until/, /^Snooze until/],
-      ["More snooze options", "More snooze options"],
-      ["Archive", "Archive"],
-    ] as const) {
-      const button = within(row).getByRole("button", { name });
-      fireEvent.pointerMove(button, { pointerType: "mouse" });
-      await waitFor(
-        () =>
-          expect(
-            screen
-              .queryAllByRole("tooltip")
-              .some((tooltip) =>
-                typeof tip === "string"
-                  ? tooltip.textContent === tip
-                  : tip.test(tooltip.textContent ?? ""),
-              ),
-          ).toBe(true),
-        { timeout: 2000 },
-      );
-      fireEvent.pointerLeave(button, { pointerType: "mouse" });
-    }
+    fireEvent.pointerMove(
+      within(row).getByRole("button", { name: "Archive" }),
+      {
+        pointerType: "mouse",
+      },
+    );
+    const tooltip = await screen.findByRole("tooltip", {}, { timeout: 2000 });
+    expect(tooltip.textContent).toBe("Archive");
     slot.lifecycle.unmount();
   });
 });

@@ -35,14 +35,16 @@ against.
     in 30 days).
   - A collapsed **Snoozed** fold. Snoozing a thread takes it (and its children)
     out of For you, Recent, and its group until it wakes. Hover a row and click
-    its alarm clock to snooze with your default (the `snoozeDefault` setting;
-    Tomorrow morning unless changed), or right-click → **Snooze** for 1 hour, 3
-    hours, Tomorrow morning, Next week, Until it updates, or a date and time you
-    pick. The thread header has the same choices as a split button, and the
-    command palette has "Workstreams: snooze this thread". A timed snooze
-    returns the thread marked unread at its time; "Until it updates" returns it
-    at its next activity; sending the thread a message or **Wake now** ends any
-    snooze.
+    its alarm clock to snooze with your default (Tomorrow morning unless
+    changed), or rest the pointer on it for a menu of quick choices. Right-click
+    → **Snooze** lists them all: 30 minutes, 1 hour, 3 hours, Tomorrow morning,
+    This weekend, Next week, Until it updates, or a date and time you pick. The
+    thread header has the same choices as a split button, and the command
+    palette has "Workstreams: snooze this thread". Settings → **Snooze** picks
+    the default, the hover menu's choices (up to four), and when morning is. A
+    timed snooze returns the thread marked unread at its time; "Until it
+    updates" returns it at its next activity; sending the thread a message or
+    **Wake now** ends any snooze.
   - Rows show BB's status, a work-state mark from analysis (◆ decision, ◇
     review, ⏸ blocked; hover for where it stopped), unread state, drafts,
     shortcuts, pull requests, and a yellow dot when a workstream change involves

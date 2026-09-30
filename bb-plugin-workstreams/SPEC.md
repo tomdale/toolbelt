@@ -562,13 +562,23 @@ Recent, and its workstream group, taking its descendants with it, and is listed
 in the sidebar's Snoozed fold, soonest to wake first, with its wake time. Its
 workstream is unchanged.
 
-- **Choices:** 1 hour · 3 hours · Tomorrow morning (9:00) · Next week (Monday,
-  9:00) · Until it updates · Pick a date and time…. Times are the client's local
-  clock.
-- **One click** applies the `snoozeDefault` setting (default: Tomorrow morning):
-  the row's hover button, the face of the thread header's split button, and the
-  palette's "Workstreams: snooze this thread". The context menu's Snooze submenu
-  and the header button's arrow list every choice.
+- **Choices:** 30 minutes · 1 hour · 3 hours · Tomorrow morning · This weekend
+  (Saturday morning) · Next week (Monday morning) · Until it updates · Pick a
+  date and time…. Times are the client's local clock; morning is a setting
+  (default 9:00), and day choices are never today.
+- **One click** applies the default choice (default: Tomorrow morning): the
+  row's hover snooze button, the face of the thread header's split button, and
+  the palette's "Workstreams: snooze this thread".
+- **Hover menu:** resting the pointer on a row's snooze button for 350 ms opens
+  up to four quick choices plus Pick a date and time…, above the button when
+  there's room. Passing over the button does nothing; the menu survives 200 ms
+  after the pointer leaves it or the button, so the pointer can travel between
+  them. A hover-opened menu never takes focus. From the keyboard, Enter snoozes
+  with the default and ArrowDown opens the menu. The context menu's Snooze
+  submenu and the header button's arrow list every choice.
+- **Settings:** the Snooze settings section picks the default, the hover menu's
+  choices, and the morning hour. They're stored with the plugin and shared by
+  every client.
 - **Waking:** a timed snooze ends at its time, whatever the agent does in the
   meantime, and the thread returns marked unread. "Until it updates" ends when
   the thread's `latestAttentionAt` passes its value at snooze time. Every snooze
@@ -586,7 +596,7 @@ entry point is a Workstreams header action.
 | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | Workstream map, analysis cache, title ownership, journal and Activity log, proposals, reconciler cursor, debug traces | Plugin SQLite (`bb.storage.database()`) with migrations                  |
 | Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }`                            | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
-| Manual order and thread snoozes                                                                                       | Plugin SQLite, `ws_meta` values                                          |
+| Manual order, thread snoozes, and Snooze settings                                                                     | Plugin SQLite, `ws_meta` values                                          |
 | Collapse state and UI preferences                                                                                     | Client local storage                                                     |
 
 Obsolete state/banner tables are migrated and dropped during installation;

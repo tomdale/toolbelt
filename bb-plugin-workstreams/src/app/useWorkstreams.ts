@@ -20,8 +20,10 @@ import { isCurrent, needsYou } from "../domain/analysis.ts";
 import { EMPTY_ORDER, type ManualOrder } from "../domain/order.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
 import {
+  DEFAULT_SNOOZE_PREFS,
   isSnoozed,
-  presetFromSetting,
+  parseSnoozePrefs,
+  type SnoozePrefs,
   type ThreadSnooze,
 } from "../domain/snooze.ts";
 
@@ -35,6 +37,7 @@ export type ServerState = {
   lastReconciledAt: number | null;
   order: ManualOrder;
   snoozes: Record<string, ThreadSnooze>;
+  snoozePrefs: SnoozePrefs;
 };
 
 export type ReorderChange =
@@ -51,6 +54,7 @@ const EMPTY: ServerState = {
   lastReconciledAt: null,
   order: EMPTY_ORDER,
   snoozes: {},
+  snoozePrefs: DEFAULT_SNOOZE_PREFS,
 };
 
 /**
@@ -62,7 +66,12 @@ export function useServerState() {
   const [server, setServer] = useState<ServerState>(EMPTY);
   const refresh = useCallback(async () => {
     try {
-      setServer({ ...EMPTY, ...(await rpc.call("state", null)) });
+      const state = await rpc.call("state", null);
+      setServer({
+        ...EMPTY,
+        ...state,
+        snoozePrefs: parseSnoozePrefs(state.snoozePrefs),
+      });
     } catch {
       // Everything still renders from live BB data without plugin state.
     }
@@ -119,7 +128,27 @@ export function useServerState() {
     },
     [rpc, refresh],
   );
-  return { rpc, server, refresh, reorder, setSnooze };
+  /** Saves Snooze settings, applied locally at once. */
+  const saveSnoozePrefs = useCallback(
+    async (patch: Partial<SnoozePrefs>) => {
+      setServer((prev) => ({
+        ...prev,
+        snoozePrefs: parseSnoozePrefs({ ...prev.snoozePrefs, ...patch }),
+      }));
+      try {
+        const { prefs } = await rpc.call("setSnoozePrefs", { patch });
+        setServer((prev) => ({
+          ...prev,
+          snoozePrefs: parseSnoozePrefs(prefs),
+        }));
+      } catch (cause) {
+        await refresh();
+        throw cause;
+      }
+    },
+    [rpc, refresh],
+  );
+  return { rpc, server, refresh, reorder, setSnooze, saveSnoozePrefs };
 }
 
 function applyChange(order: ManualOrder, change: ReorderChange): ManualOrder {
@@ -252,7 +281,7 @@ export function useWorkstreams() {
       const snooze = snoozes[thread.id];
       return isSnoozed(snooze, thread, now) ? snooze : undefined;
     },
-    defaultSnooze: presetFromSetting(values.snoozeDefault),
+    snoozePrefs: server.snoozePrefs,
     showForYou: values.showForYou !== false,
     showRecent: values.showRecent !== false,
     showParentThreadLink: values.showParentThreadLink === true,
