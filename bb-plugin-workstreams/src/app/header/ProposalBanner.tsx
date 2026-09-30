@@ -190,6 +190,7 @@ export function ProposalBanner({
   const pill = useRef<HTMLButtonElement>(null);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   useLayoutEffect(() => {
+    if (!notice) return;
     // The header moves with sidebar toggles and split changes, which don't
     // resize the window, so re-measure on a light interval too.
     const measure = () => {

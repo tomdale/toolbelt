@@ -3,7 +3,13 @@
  * attention, then recency; each lists its threads to pick back up. The
  * Activity tab shows the journal.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   useBbNavigate,
   type PluginNavPanelProps,
@@ -50,7 +56,7 @@ export function WorkstreamsPage({
   const [tab, setTab] = useState<Tab>(linked.tab);
   const tabs: Tab[] = ["overview", "map", "activity", "understanding"];
   const [newWork, setNewWork] = useState(false);
-  useEffect(() => setTab(tabOf(subPath).tab), [subPath]);
+  useLayoutEffect(() => setTab(tabOf(subPath).tab), [subPath]);
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
   useEffect(() => {
