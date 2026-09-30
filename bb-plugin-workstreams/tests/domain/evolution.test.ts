@@ -31,6 +31,9 @@ const root = (
 });
 // A workstream with a clear core subject, so secondary subjects can spin out.
 const core = ["c1", "c2", "c3", "c4"].map((id) => root(id, "plug", "BB"));
+const newProduct = (name: string): Partial<EvolutionRoot> => ({
+  drift: { workstream: null, newName: name, confidence: "high" },
+});
 const detect = (roots: EvolutionRoot[], extra = {}) =>
   detectProposals(roots, workstreams, {
     now,
@@ -42,8 +45,11 @@ describe("spin-out", () => {
   it("proposes a secondary subject with two roots, one of them active", () => {
     const [p] = detect([
       ...core,
-      root("w1", "plug", "Workstreams"),
-      root("w2", "plug", "Workstreams", { active: false }),
+      root("w1", "plug", "Workstreams", newProduct("Workstreams")),
+      root("w2", "plug", "Workstreams", {
+        ...newProduct("Workstreams"),
+        active: false,
+      }),
     ]);
     expect(p).toMatchObject({
       kind: "spin-out",
@@ -54,18 +60,50 @@ describe("spin-out", () => {
     });
   });
 
+  it("does not spin out a repeated subject without independent ownership evidence", () => {
+    expect(
+      detect([
+        ...core,
+        root("w1", "plug", "Workstreams"),
+        root("w2", "plug", "Workstreams"),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("does not spin out the current product when a vague subject repeats", () => {
+    const streams = [
+      { id: "specific", name: "Workstreams", aliases: [] },
+      { id: "general", name: "BB & plugins", aliases: [] },
+    ];
+    expect(
+      detectProposals(
+        [
+          root("w1", "specific", "Workstreams"),
+          root("w2", "specific", "Workstreams"),
+          root("w3", "specific", "BB"),
+          root("b1", "general", "BB"),
+        ],
+        streams,
+        { now, sensitivity: "responsive" },
+      ),
+    ).toEqual([]);
+  });
+
   it("needs more roots at lower sensitivity and ignores old evidence", () => {
     const roots = [
       ...core,
-      root("w1", "plug", "Workstreams"),
-      root("w2", "plug", "Workstreams"),
+      root("w1", "plug", "Workstreams", newProduct("Workstreams")),
+      root("w2", "plug", "Workstreams", newProduct("Workstreams")),
     ];
     expect(detect(roots, { sensitivity: "balanced" })).toEqual([]);
     expect(
       detect([
         ...core,
-        root("w1", "plug", "Workstreams"),
-        root("w2", "plug", "Workstreams", { lastActiveAt: now - 61 * DAY }),
+        root("w1", "plug", "Workstreams", newProduct("Workstreams")),
+        root("w2", "plug", "Workstreams", {
+          ...newProduct("Workstreams"),
+          lastActiveAt: now - 61 * DAY,
+        }),
       ]),
     ).toEqual([]);
   });
@@ -74,16 +112,22 @@ describe("spin-out", () => {
     expect(
       detect([
         ...core,
-        root("w1", "plug", "Workstreams", { active: false }),
-        root("w2", "plug", "Workstreams", { active: false }),
+        root("w1", "plug", "Workstreams", {
+          ...newProduct("Workstreams"),
+          active: false,
+        }),
+        root("w2", "plug", "Workstreams", {
+          ...newProduct("Workstreams"),
+          active: false,
+        }),
       ]),
     ).toEqual([]);
     expect(detect(core)).toEqual([]);
     expect(
       detect([
         root("c1", "plug", "BB"),
-        root("w1", "plug", "Workstreams"),
-        root("w2", "plug", "Workstreams"),
+        root("w1", "plug", "Workstreams", newProduct("Workstreams")),
+        root("w2", "plug", "Workstreams", newProduct("Workstreams")),
       ]),
     ).toEqual([]);
   });
@@ -92,8 +136,11 @@ describe("spin-out", () => {
     expect(
       detect([
         ...core,
-        root("w1", "plug", "Workstreams", { userMovedAt: now - 2 * DAY }),
-        root("w2", "plug", "Workstreams"),
+        root("w1", "plug", "Workstreams", {
+          ...newProduct("Workstreams"),
+          userMovedAt: now - 2 * DAY,
+        }),
+        root("w2", "plug", "Workstreams", newProduct("Workstreams")),
       ]),
     ).toEqual([]);
   });
@@ -103,7 +150,9 @@ describe("move and merge", () => {
   it("moves roots whose subject names another live workstream or alias", () => {
     const [p] = detect([
       ...core,
-      root("r1", "plug", "Recap"),
+      root("r1", "plug", "Recap", {
+        drift: { workstream: "BB Recap", confidence: "high" },
+      }),
       root("r0", "recap", "BB Recap"),
     ]);
     expect(p).toMatchObject({
@@ -111,6 +160,67 @@ describe("move and merge", () => {
       targetSectionId: "recap",
       subject: "BB Recap",
       threadIds: ["r1"],
+    });
+  });
+
+  it("does not move specific product work into a broad applicable workstream", () => {
+    const streams = [
+      { id: "workstreams", name: "Workstreams", aliases: [] },
+      { id: "bb", name: "BB & plugins", aliases: [] },
+    ];
+    const roots = [
+      root("specific", "workstreams", "BB & plugins"),
+      root("general", "bb", "BB & plugins"),
+    ];
+    expect(
+      detectProposals(roots, streams, { now, sensitivity: "responsive" }),
+    ).toEqual([]);
+    expect(
+      detectProposals(
+        [
+          {
+            ...roots[0]!,
+            drift: { workstream: "BB & plugins", confidence: "medium" },
+          },
+          roots[1]!,
+        ],
+        streams,
+        { now, sensitivity: "responsive" },
+      ),
+    ).toEqual([]);
+    expect(
+      detectProposals(
+        [
+          {
+            ...roots[0]!,
+            drift: { workstream: "BB & plugins", confidence: "high" },
+          },
+          roots[1]!,
+        ],
+        streams,
+        { now, sensitivity: "responsive" },
+      )[0],
+    ).toMatchObject({
+      kind: "merge",
+      sourceSectionId: "workstreams",
+      targetSectionId: "bb",
+      threadIds: ["specific"],
+    });
+  });
+
+  it("uses explicit drift even when the extracted subject names another product", () => {
+    const [proposal] = detect([
+      ...core,
+      root("r0", "recap", "BB Recap"),
+      root("mismatch", "plug", "Workstreams", {
+        drift: { workstream: "BB Recap", confidence: "high" },
+      }),
+    ]);
+    expect(proposal).toMatchObject({
+      kind: "move",
+      sourceSectionId: "plug",
+      targetSectionId: "recap",
+      threadIds: ["mismatch"],
     });
   });
 
@@ -122,14 +232,20 @@ describe("move and merge", () => {
     const [p] = detect([
       ...core,
       root("r1", "recap", "BB"),
-      root("r2", "recap", "BB & plugins"),
+      root("r2", "recap", "BB & plugins", {
+        drift: { workstream: "BB & plugins", confidence: "high" },
+      }),
     ]);
     // Subjects differ ("BB" vs "BB & plugins"); only the named one matches.
     expect(p?.kind).toBe("move");
     const [merge] = detect([
       ...core,
-      root("r1", "recap", "BB & plugins"),
-      root("r2", "recap", "BB & plugins"),
+      root("r1", "recap", "BB & plugins", {
+        drift: { workstream: "BB & plugins", confidence: "high" },
+      }),
+      root("r2", "recap", "BB & plugins", {
+        drift: { workstream: "BB & plugins", confidence: "high" },
+      }),
     ]);
     expect(merge).toMatchObject({
       kind: "merge",
@@ -142,13 +258,13 @@ describe("move and merge", () => {
 describe("anti-churn", () => {
   const roots = [
     ...core,
-    root("w1", "plug", "Workstreams"),
-    root("w2", "plug", "Workstreams"),
-    root("d1", "plug", "Dockyard"),
-    root("d2", "plug", "Dockyard"),
+    root("w1", "plug", "Workstreams", newProduct("Workstreams")),
+    root("w2", "plug", "Workstreams", newProduct("Workstreams")),
+    root("d1", "plug", "Dockyard", newProduct("Dockyard")),
+    root("d2", "plug", "Dockyard", newProduct("Dockyard")),
     root("r1", "recap", "BB & plugins"),
-    root("x1", "recap", "Recap Eval"),
-    root("x2", "recap", "Recap Eval"),
+    root("x1", "recap", "Recap Eval", newProduct("Recap Eval")),
+    root("x2", "recap", "Recap Eval", newProduct("Recap Eval")),
   ];
 
   it("keeps one open proposal per workstream and three overall", () => {
@@ -179,12 +295,21 @@ describe("anti-churn", () => {
     const snoozed = new Map([[snoozeKey(key), 2]]);
     const few = [
       ...core,
-      root("w1", "plug", "Workstreams"),
-      root("w2", "plug", "Workstreams"),
-      root("w3", "plug", "Workstreams", { active: false }),
+      root("w1", "plug", "Workstreams", newProduct("Workstreams")),
+      root("w2", "plug", "Workstreams", newProduct("Workstreams")),
+      root("w3", "plug", "Workstreams", {
+        ...newProduct("Workstreams"),
+        active: false,
+      }),
     ];
     expect(detect(few, { snoozed })).toEqual([]);
-    const more = [...few, root("w4", "plug", "Workstreams", { active: false })];
+    const more = [
+      ...few,
+      root("w4", "plug", "Workstreams", {
+        ...newProduct("Workstreams"),
+        active: false,
+      }),
+    ];
     expect(detect(more, { snoozed })[0]?.key).toBe(key);
   });
 });

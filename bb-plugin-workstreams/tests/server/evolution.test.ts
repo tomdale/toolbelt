@@ -32,6 +32,12 @@ function model(assign: Record<string, string> = {}) {
         recap: "Working.",
         state: "in_progress",
         subject,
+        drift:
+          subject === "Workstreams" ||
+          subject === "Dockyard" ||
+          subject === "Recap Eval"
+            ? { workstream: null, newName: subject, confidence: "high" }
+            : null,
       });
     }
     if (prompt.includes("File each thread under")) {
@@ -94,6 +100,34 @@ describe("before organizing", () => {
 });
 
 describe("auto-apply", () => {
+  it("does not move filed work on stale drift evidence", async () => {
+    const w = (world = await fakeWorld({
+      complete: ({ prompt }) =>
+        JSON.stringify({
+          recap: "Switched product.",
+          state: "in_progress",
+          subject: "BB & plugins",
+          drift: prompt.includes('Title: "Thread specific"')
+            ? { workstream: "BB & plugins", newName: null, confidence: "high" }
+            : null,
+        }),
+    }));
+    const specific = w.addSection("Workstreams");
+    const broad = w.addSection("BB & plugins");
+    w.addThread("specific", { sectionId: specific.id });
+    w.addThread("broad", { sectionId: broad.id });
+    await analyzeAll(w);
+    await rpc(w, "bootstrap", { action: "skip" });
+    const thread = w.threads.get("specific")!;
+    w.threads.set("specific", {
+      ...thread,
+      latestAttentionAt: thread.latestAttentionAt + 1,
+    });
+    await evolve(w);
+    expect(w.threads.get("specific")?.sectionId).toBe(specific.id);
+    expect(await proposals(w)).toEqual([]);
+  });
+
   it("spins out a subject with an Undo banner, and undo snoozes it", async () => {
     const w = await setup();
     const plugins = seed(w);
@@ -155,7 +189,7 @@ describe("auto-apply", () => {
     expect(w.sections.some((s) => s.name === "Workstreams")).toBe(false);
   });
 
-  it("files an Unsorted root whose subject names a workstream", async () => {
+  it("does not file an Unsorted root from subject alone", async () => {
     const w = await setup();
     const recap = w.addSection("BB Recap");
     w.addThread("r0", { sectionId: recap.id, title: "Old [BB Recap]" });
@@ -163,10 +197,7 @@ describe("auto-apply", () => {
     await analyzeAll(w);
     await rpc(w, "bootstrap", { action: "skip" });
     await evolve(w);
-    expect(w.threads.get("loose")?.sectionId).toBe(recap.id);
-    const [p] = await proposals(w);
-    expect(p?.text).toBe("Moved from Unsorted → BB Recap");
-    await rpc(w, "proposal", { id: p!.id, action: "acknowledge" });
+    expect(w.threads.get("loose")?.sectionId).toBeNull();
     expect(await proposals(w)).toEqual([]);
   });
 

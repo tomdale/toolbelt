@@ -109,6 +109,7 @@ const MIGRATIONS = [
   )`,
   "CREATE INDEX ws_trace_link_trace ON ws_trace_link (trace_id)",
   "CREATE TABLE ws_archive_dismissed (thread_id TEXT PRIMARY KEY, revision INTEGER NOT NULL)",
+  "ALTER TABLE ws_workstream ADD COLUMN concepts TEXT NOT NULL DEFAULT '[]'",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

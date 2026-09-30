@@ -54,6 +54,43 @@ describe("idle analysis", () => {
     expect(analysis.t1).toMatchObject({ state: "review", revision: 500 });
   });
 
+  it("persists distinctive product concepts into map evidence, including delegates", async () => {
+    const w = await setup(({ prompt }) =>
+      JSON.stringify({
+        recap: "Working.",
+        state: "in_progress",
+        subject: "Workstreams",
+        concepts: prompt.includes('Title: "Thread child"')
+          ? [{ name: "thread routing", terms: ["routeExecute", "New work"] }]
+          : [{ name: "workstream map", terms: ["section assignment"] }],
+      }),
+    );
+    const section = w.addSection("Workstreams");
+    w.addThread("parent", { sectionId: section.id });
+    w.addThread("child", { parentThreadId: "parent" });
+    await w.harness.behavior.callRpc("refresh", null);
+    await w.harness.behavior.runCli(["analyze", "parent"]);
+    await w.harness.behavior.runCli(["analyze", "child"]);
+    await w.harness.behavior.callRpc("refresh", null);
+    const result = (await w.harness.behavior.callRpc("state", null)) as {
+      workstreams: Record<
+        string,
+        { concepts: { name: string; terms: string[] }[] }
+      >;
+    };
+    expect(result.workstreams[section.id]?.concepts).toEqual(
+      expect.arrayContaining([
+        { name: "workstream map", terms: ["section assignment"] },
+        { name: "thread routing", terms: ["routeExecute", "New work"] },
+      ]),
+    );
+    await w.harness.behavior.runCli(["analyze", "parent"]);
+    expect(w.completions.at(-1)?.prompt).toContain(
+      "Known product concepts in this workstream",
+    );
+    expect(w.completions.at(-1)?.prompt).toContain("thread routing");
+  });
+
   it("drops a scheduled run when a new turn starts first", async () => {
     const w = await setup();
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });

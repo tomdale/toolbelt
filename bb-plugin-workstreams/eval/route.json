@@ -14,6 +14,30 @@
       "name": "Home",
       "description": "Personal repo: agent instructions, skills, and notes.",
       "subjects": ["Home"]
+    },
+    {
+      "name": "BB & plugins",
+      "description": "General BB core and plugin platform work not owned by a specific plugin.",
+      "subjects": ["BB", "Plugin SDK"]
+    },
+    {
+      "name": "Workstreams",
+      "description": "BB thread organization, new-work routing, and recap integration.",
+      "subjects": ["Workstreams"],
+      "concepts": [
+        {
+          "name": "new-work routing",
+          "terms": ["routeExecute", "intake banner", "New work composer"]
+        },
+        {
+          "name": "workstream map",
+          "terms": [
+            "subject extraction",
+            "thread assignment",
+            "product detection"
+          ]
+        }
+      ]
     }
   ],
   "threads": [
@@ -48,6 +72,14 @@
       "recap": "Removed duplicate skills; symlinks updated.",
       "state": "done",
       "age": "5d"
+    },
+    {
+      "id": "t-workstreams",
+      "title": "Design New work composer routing",
+      "workstream": "Workstreams",
+      "recap": "Implementing the plugin's composer and routing flow with a shared SDK hook.",
+      "state": "in_progress",
+      "age": "2h"
     }
   ],
   "cases": [
@@ -129,6 +161,23 @@
         "outcome": "continue",
         "threadId": "t-skills"
       }
+    },
+    {
+      "id": "specific-over-broad",
+      "prompt": "Investigate how New work's intake banner should present routeExecute errors. This touches Plugin SDK composer controls too.",
+      "exclude": ["t-workstreams"],
+      "expect": { "outcome": "new-thread", "workstream": "Workstreams" }
+    },
+    {
+      "id": "esoteric-concept",
+      "prompt": "Investigate how the Workstreams plugin should extract product-specific concepts for ambiguous routing prompts, as a separate task from the New work composer work.",
+      "exclude": ["t-workstreams"],
+      "expect": { "outcome": "new-thread", "workstream": "Workstreams" }
+    },
+    {
+      "id": "generic-sdk",
+      "prompt": "Add a generic Plugin SDK lifecycle API for every plugin, unrelated to the Workstreams composer.",
+      "expect": { "outcome": "new-thread", "workstream": "BB & plugins" }
     }
   ]
 }

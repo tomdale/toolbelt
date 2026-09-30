@@ -4,7 +4,6 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { ProposalBanner } from "./header/ProposalBanner.tsx";
-import { RouteBanner } from "./composer/RouteBanner.tsx";
 import { ArchiveCard } from "./composer/ArchiveCard.tsx";
 import { AutomaticFilingCard } from "./composer/AutomaticFilingCard.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
@@ -22,11 +21,6 @@ export default definePluginApp((app) => {
     id: "archive-suggestion",
     scopes: ["thread"],
     actions: [{ id: "archive", component: ArchiveCard }],
-  });
-  app.composer.customize({
-    id: "router",
-    scopes: ["new-thread"],
-    banners: [{ id: "route", chrome: "bare", component: RouteBanner }],
   });
   app.slots.experimental_threadHeaderAction({
     id: "parent-thread",

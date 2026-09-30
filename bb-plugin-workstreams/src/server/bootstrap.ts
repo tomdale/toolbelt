@@ -13,6 +13,7 @@
  * Nothing changes in BB before step 5. Evolution and auto-filing stay off
  * until the bootstrap is applied or skipped.
  */
+import { isCurrent } from "../domain/analysis.ts";
 import { buildForest } from "../domain/tree.ts";
 import {
   detectProposals,
@@ -187,11 +188,16 @@ export class Bootstrap {
                 .map((r) => ({
                   title: titled.get(r.id)!,
                   subject: subject(r.id),
+                  concepts: analysis[r.id]?.concepts ?? [],
                 })),
             })),
             unfiled: roots
               .filter((r) => r.provenance !== "user")
-              .map((r) => ({ title: r.title, subject: subject(r.id) })),
+              .map((r) => ({
+                title: r.title,
+                subject: subject(r.id),
+                concepts: analysis[r.id]?.concepts ?? [],
+              })),
           },
           {
             model: await this.deps.model(),
@@ -213,7 +219,9 @@ export class Bootstrap {
         changes: proposal.changes.map((change, i) => ({
           ...change,
           id: `c${i}`,
-          accepted: true,
+          // A model-proposed merge may collapse a specific product into a
+          // broader applicable group. Require an explicit review decision.
+          accepted: change.kind !== "merge",
         })),
         seconds: { ...state.seconds, map: (this.now() - mapStarted) / 1000 },
       });
@@ -321,6 +329,15 @@ export class Bootstrap {
       );
 
       const analysis = this.deps.analyzer.all();
+      const threadById = new Map(
+        this.deps.service.threads().map((t) => [t.id, t]),
+      );
+      const currentAnalysis = (id: string) => {
+        const thread = threadById.get(id);
+        return thread && isCurrent(analysis[id], thread)
+          ? analysis[id]
+          : undefined;
+      };
       const pending = state.roots.filter((r) => r.provenance !== "user");
       const batches: (typeof pending)[] = [];
       for (let i = 0; i < pending.length; i += ASSIGN_BATCH)
@@ -346,12 +363,18 @@ export class Bootstrap {
                 const { value, traceId } = await this.deps.inference.run(
                   "organize-assign",
                   {
-                    workstreams: options,
+                    workstreams: options.map((option) => ({
+                      ...option,
+                      concepts:
+                        records.find((record) => record.sectionId === option.to)
+                          ?.concepts ?? [],
+                    })),
                     threads: batch.map((r) => ({
                       id: r.id,
                       title: r.title,
                       subject: analysis[r.id]?.subject ?? null,
                       recap: analysis[r.id]?.recap ?? null,
+                      concepts: analysis[r.id]?.concepts ?? [],
                     })),
                   },
                   {
@@ -418,6 +441,27 @@ export class Bootstrap {
           continue;
         }
         if (option.to === root.sectionId) continue;
+        // Existing automatically filed work has a real home already. An
+        // equally plausible broad category is not evidence to move it; keep
+        // such changes in the preview unchecked for the user's judgment.
+        const drift = currentAnalysis(a.id)?.drift;
+        const changedOwner =
+          !!drift &&
+          drift.confidence === "high" &&
+          (drift.workstream
+            ? records.some(
+                (record) =>
+                  record.sectionId === option.to &&
+                  [record.name, ...record.aliases].some(
+                    (name) => normalize(name) === normalize(drift.workstream!),
+                  ),
+              )
+            : drift.newName != null &&
+              normalize(drift.newName) === normalize(option.name));
+        const accepted =
+          root.sectionId === null
+            ? a.confidence !== "low"
+            : a.confidence === "high" && changedOwner;
         moves.push({
           threadId: a.id,
           title: root.title,
@@ -426,7 +470,7 @@ export class Bootstrap {
           to: option.to,
           toName: option.name,
           reason: `${a.confidence} confidence`,
-          accepted: a.confidence !== "low",
+          accepted,
           confidence: a.confidence,
           traceId: traceOf.get(a.id) ?? null,
         });
@@ -456,6 +500,7 @@ export class Bootstrap {
           id: r.id,
           sectionId: r.sectionId,
           subject: analysis[r.id]?.subject ?? null,
+          drift: currentAnalysis(r.id)?.drift ?? null,
           active: true,
           lastActiveAt: this.now(),
           userMovedAt: null,

@@ -224,7 +224,9 @@ export class Evolution {
     for (const candidate of await this.candidates({ capped: true })) {
       const row = this.insert(candidate);
       this.linkEvidence(row.id, candidate.threadIds);
-      if (settings.evolution === "ask") {
+      // Existing workstream ownership is sticky: even an explicit model drift
+      // signal cannot automatically relocate filed work in auto mode.
+      if (settings.evolution === "ask" || candidate.kind !== "spin-out") {
         const entry = this.deps.journal.add({
           action: "proposal",
           source: "proposal",
@@ -268,7 +270,7 @@ export class Evolution {
     const forest = buildForest(threads);
     const placements = this.deps.service.state().placements;
     const liveRoots = forest.roots.map(({ thread }) => thread);
-    const subjects = this.deps.analyzer.subjectsOf(liveRoots.map((t) => t.id));
+    const analyses = this.deps.analyzer.all();
     const moved = (id: string) => {
       const p = placements[id];
       return p && (p.source === "user" || p.source === "external")
@@ -279,7 +281,12 @@ export class Evolution {
       ...liveRoots.map((t) => ({
         id: t.id,
         sectionId: t.sectionId,
-        subject: subjects.get(t.id) ?? null,
+        subject: isCurrent(analyses[t.id], t)
+          ? (analyses[t.id]?.subject ?? null)
+          : null,
+        drift: isCurrent(analyses[t.id], t)
+          ? (analyses[t.id]?.drift ?? null)
+          : null,
         active: true,
         lastActiveAt: t.latestAttentionAt,
         userMovedAt: moved(t.id),
@@ -437,9 +444,6 @@ export class Evolution {
     const forest = buildForest(threads);
     const placements = this.deps.service.state().placements;
     const records = this.deps.map.list();
-    const byName = new Map<string, (typeof records)[number]>();
-    for (const r of records)
-      for (const name of [r.name, ...r.aliases]) byName.set(normalize(name), r);
     const analysis = this.deps.analyzer.all();
     const pendingThreads = new Set(
       this.rows()
@@ -469,13 +473,10 @@ export class Evolution {
         await this.fileOne(thread.id, home.sectionId, home.name, []);
         continue;
       }
-      const subject = analysis[thread.id]?.subject;
-      const target = subject ? byName.get(normalize(subject)) : undefined;
-      if (target)
-        await this.fileOne(thread.id, target.sectionId, target.name, [
-          analysis[thread.id]?.traceId,
-        ]);
-      else if (this.assignedAt.get(thread.id) !== thread.latestAttentionAt)
+      // A subject may be a broad substrate (e.g. BB) rather than ownership.
+      // Only an explicit high-confidence assignment can auto-file an unsorted
+      // root; the model sees the workstream descriptions as well as its recap.
+      if (this.assignedAt.get(thread.id) !== thread.latestAttentionAt)
         toAssign.push(thread);
     }
     if (!toAssign.length) return;
@@ -487,12 +488,14 @@ export class Evolution {
         workstreams: records.map((r) => ({
           name: r.name,
           description: r.description,
+          concepts: r.concepts,
         })),
         threads: batch.map((t) => ({
           id: t.id,
           title: t.title,
           subject: analysis[t.id]?.subject ?? null,
           recap: analysis[t.id]?.recap ?? null,
+          concepts: analysis[t.id]?.concepts ?? [],
         })),
       },
       {
@@ -503,7 +506,10 @@ export class Evolution {
     );
     const filed: string[] = [];
     const created: string[] = [];
-    const createdSections = new Map<string, { sectionId: string; name: string }>();
+    const createdSections = new Map<
+      string,
+      { sectionId: string; name: string }
+    >();
     for (const a of assignments) {
       const assignment = a.target;
       if (a.confidence !== "high" || assignment.kind === "unsure") continue;

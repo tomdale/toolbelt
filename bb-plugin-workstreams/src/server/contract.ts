@@ -26,6 +26,9 @@ const analysisSchema = z.object({
   state: z.enum(WORK_STATES),
   needsYou: z.string().nullable(),
   subject: z.string().nullable(),
+  concepts: z
+    .array(z.object({ name: z.string(), terms: z.array(z.string()) }))
+    .default([]),
   // Results stored before titles were suggested have none.
   title: z.string().nullable().default(null),
   drift: z
@@ -49,6 +52,7 @@ const recordSchema = z.object({
   descriptionSource: z.enum(["generated", "user"]),
   aliases: z.array(z.string()),
   subjects: z.array(z.string()),
+  concepts: z.array(z.object({ name: z.string(), terms: z.array(z.string()) })),
   projects: z.array(
     z.object({
       projectId: z.string(),

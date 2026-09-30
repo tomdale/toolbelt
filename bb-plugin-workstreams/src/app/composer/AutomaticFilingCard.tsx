@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useComposerView } from "@get-bb/plugin-sdk/app";
 import { useServerState } from "../useWorkstreams.ts";
+import { useTranscriptTail } from "./transcriptPortal.ts";
 
 function relativeTime(at: number): string {
   const seconds = Math.max(0, Math.round((Date.now() - at) / 1000));
@@ -13,7 +15,11 @@ function relativeTime(at: number): string {
   return `${days}d ago`;
 }
 
-/** A quiet, inline receipt for an automatic initial Unsorted filing. */
+/**
+ * A quiet receipt for an automatic initial Unsorted filing. Registered as a
+ * composer banner for its thread scope, but portaled to the end of the
+ * transcript when the host timeline can be found.
+ */
 export function AutomaticFilingCard() {
   const { scope } = useComposerView();
   const { rpc, server, refresh } = useServerState();
@@ -31,6 +37,10 @@ export function AutomaticFilingCard() {
       )
     : undefined;
 
+  const visible = Boolean(proposal) && !hidden;
+  const anchor = useRef<HTMLSpanElement>(null);
+  const { host: tail, resolved } = useTranscriptTail(anchor, visible);
+
   if (!proposal || hidden) return null;
 
   const undo = async () => {
@@ -45,7 +55,7 @@ export function AutomaticFilingCard() {
     }
   };
 
-  return (
+  const notice = (
     <div className="ws-filing-notice" role="status">
       <span>
         Moved to the <strong>{proposal.targetName}</strong> workstream
@@ -55,5 +65,12 @@ export function AutomaticFilingCard() {
         Undo
       </button>
     </div>
+  );
+
+  return (
+    <>
+      <span ref={anchor} hidden />
+      {resolved ? (tail ? createPortal(notice, tail) : notice) : null}
+    </>
   );
 }

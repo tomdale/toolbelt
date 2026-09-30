@@ -11,7 +11,7 @@ afterEach(async () => {
 type State = {
   status: string;
   roots: { id: string; provenance: string }[];
-  changes: { id: string; kind: string }[];
+  changes: { id: string; kind: string; accepted: boolean }[];
   preview: {
     creates: { name: string }[];
     moves: {
@@ -110,6 +110,39 @@ async function organized(settings: Record<string, boolean> = {}) {
 }
 
 describe("bootstrap", () => {
+  it("leaves model-proposed workstream merges unchecked", async () => {
+    world = await fakeWorld({
+      complete: ({ prompt }) =>
+        prompt.includes("You are tidying")
+          ? JSON.stringify({
+              descriptions: {},
+              changes: [
+                {
+                  kind: "merge",
+                  workstream: "Workstreams",
+                  into: "BB & plugins",
+                  reason: "Both touch BB",
+                },
+              ],
+            })
+          : JSON.stringify({
+              recap: "Working.",
+              state: "in_progress",
+              subject: "Workstreams",
+            }),
+    });
+    const specific = world.addSection("Workstreams");
+    world.addSection("BB & plugins");
+    world.addThread("specific", { sectionId: specific.id });
+    await call(world, { action: "start" });
+    const review = (await settle(world, "review")) as State & {
+      changes: { kind: string; accepted: boolean }[];
+    };
+    expect(
+      review.changes.find((change) => change.kind === "merge")?.accepted,
+    ).toBe(false);
+  });
+
   it("reviews, previews, and applies as one batch, leaving user filings alone", async () => {
     const { w, alpha, beta } = await organized();
     await call(w, { action: "start" });
@@ -143,13 +176,16 @@ describe("bootstrap", () => {
       "high",
       "high",
     ]);
+    expect(
+      state.preview!.moves.find((m) => m.threadId === "v1auto")?.accepted,
+    ).toBe(false);
 
     await call(w, { action: "apply", overrides: [] });
     state = await settle(w, "applied");
     const gamma = w.sections.find((s) => s.name === "Gamma")!;
     expect(w.sections.find((s) => s.id === beta.id)?.name).toBe("Beta Prime");
     expect(w.threads.get("loose")?.sectionId).toBe(alpha.id);
-    expect(w.threads.get("v1auto")?.sectionId).toBe(gamma.id);
+    expect(w.threads.get("v1auto")?.sectionId).toBe(beta.id);
     expect(w.threads.get("mine")?.sectionId).toBe(beta.id);
     expect(w.threads.get("kid")?.sectionId).toBeNull();
     expect(
@@ -197,7 +233,7 @@ describe("bootstrap", () => {
     const result = await w.harness.behavior.runCli(["rebuild"]);
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toMatch(
-      /^Preview: 3 moves, 1 new workstream, 1 rename/,
+      /^Preview: 2 moves, 1 new workstream, 1 rename/,
     );
     expect(w.threads.get("loose")?.sectionId).toBeNull();
   });

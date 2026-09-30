@@ -25,6 +25,12 @@ export type EvolutionRoot = {
   readonly id: string;
   readonly sectionId: string | null;
   readonly subject: string | null;
+  /** Independent evidence that this thread actually changed workstreams. */
+  readonly drift?: {
+    workstream: string | null;
+    newName?: string | null;
+    confidence: "high" | "medium" | "low";
+  } | null;
   readonly active: boolean;
   readonly lastActiveAt: number;
   /** When the user (or someone outside Workstreams) last moved it. */
@@ -105,8 +111,7 @@ export function detectProposals(
       byName.set(normalize(name), ws);
   const own = new Map(workstreams.map((ws) => [ws.id, ws]));
 
-  // Evidence: roots grouped by (workstream, subject). Recently user-moved
-  // roots are excluded; the user's placement stands.
+  // Recently user-moved roots are excluded; the user's placement stands.
   const groups = new Map<string, EvolutionRoot[]>();
   const members = new Map<string, number>();
   const everFiled = new Map<string, number>();
@@ -128,38 +133,68 @@ export function detectProposals(
   }
 
   const candidates: Candidate[] = [];
+  // Relocation is based on explicit drift, independent of the extracted
+  // subject. Subject labels describe the product; they are not a decision to
+  // leave the current workstream.
+  const driftGroups = new Map<string, EvolutionRoot[]>();
+  for (const root of roots) {
+    if (!root.sectionId || !own.has(root.sectionId) || !root.active) continue;
+    if (!relaxed && options.now - root.lastActiveAt > EVIDENCE_WINDOW_MS)
+      continue;
+    if (
+      root.userMovedAt !== null &&
+      options.now - root.userMovedAt < USER_MOVE_COOLDOWN_MS
+    )
+      continue;
+    if (root.drift?.confidence !== "high") continue;
+    if (!root.drift.workstream) continue;
+    const target = byName.get(normalize(root.drift.workstream));
+    if (!target || target.id === root.sectionId) continue;
+    if ((everFiled.get(target.id) ?? 0) === 0) continue;
+    const key = `${root.sectionId}\u0000${target.id}`;
+    driftGroups.set(key, [...(driftGroups.get(key) ?? []), root]);
+  }
+  for (const moved of driftGroups.values()) {
+    const sourceSectionId = moved[0]!.sectionId!;
+    const target = byName.get(normalize(moved[0]!.drift!.workstream!))!;
+    const everyone = members.get(sourceSectionId) ?? 0;
+    const kind: ProposalKind = moved.length === everyone ? "merge" : "move";
+    candidates.push({
+      key: proposalKey(kind, sourceSectionId, target.name),
+      kind,
+      subject: target.name,
+      sourceSectionId,
+      targetSectionId: target.id,
+      newName: null,
+      threadIds: moved.map((root) => root.id),
+      evidenceCount: moved.length,
+    });
+  }
   for (const group of groups.values()) {
     const sourceSectionId = group[0]!.sectionId!;
     const source = own.get(sourceSectionId)!;
-    const subject = mostCommon(group.map((r) => r.subject!));
+    const subject = mostCommon(group.map((root) => root.subject!));
     const subjectKey = normalize(subject);
-    const active = group.filter((r) => r.active).map((r) => r.id);
-    if (active.length === 0) continue;
-    // A subject that names the thread's own workstream is home already.
+    const active = group.filter((root) => root.active).map((root) => root.id);
+    if (!active.length) continue;
     if (byName.get(subjectKey)?.id === sourceSectionId) continue;
-    const target = byName.get(subjectKey);
-    // Moving needs a live target: a workstream with at least one thread.
-    if (target && (everFiled.get(target.id) ?? 0) > 0) {
-      const everyone = members.get(sourceSectionId) ?? 0;
-      const kind: ProposalKind = active.length === everyone ? "merge" : "move";
-      candidates.push({
-        key: proposalKey(kind, sourceSectionId, subject),
-        kind,
-        subject: target.name,
-        sourceSectionId,
-        targetSectionId: target.id,
-        newName: null,
-        threadIds: active,
-        evidenceCount: group.length,
-      });
-      continue;
-    }
-    if (target) continue;
-    // Spin out only a secondary subject: never the workstream's own core,
-    // and never most of its active roots.
-    if (group.length < SPIN_OUT_MIN[options.sensitivity]) continue;
+    // Existing workstreams are only move targets on explicit drift above.
+    if (byName.has(subjectKey)) continue;
+    // A repeated label can be a component of the current product or a broad
+    // substrate. Spin-outs need independent high-confidence ownership evidence.
+    const newProduct = group.filter(
+      (root) =>
+        root.drift?.confidence === "high" &&
+        root.drift.newName != null &&
+        normalize(root.drift.newName) === subjectKey,
+    );
+    if (newProduct.length < SPIN_OUT_MIN[options.sensitivity]) continue;
+    const moving = newProduct
+      .filter((root) => root.active)
+      .map((root) => root.id);
+    if (!moving.length) continue;
     const total = members.get(sourceSectionId) ?? 0;
-    if (!relaxed && active.length * 2 > total) continue;
+    if (!relaxed && moving.length * 2 > total) continue;
     if (normalize(source.name).includes(subjectKey)) continue;
     candidates.push({
       key: proposalKey("spin-out", sourceSectionId, subject),
@@ -168,8 +203,8 @@ export function detectProposals(
       sourceSectionId,
       targetSectionId: null,
       newName: subject,
-      threadIds: active,
-      evidenceCount: group.length,
+      threadIds: moving,
+      evidenceCount: newProduct.length,
     });
   }
 

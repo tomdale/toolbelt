@@ -10,7 +10,12 @@
  * retitle policy (SPEC §10).
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { AnalysisInput, ThreadAnalysis } from "../domain/analysis.ts";
+import {
+  parseConcepts,
+  type AnalysisInput,
+  type ThreadAnalysis,
+} from "../domain/analysis.ts";
+import { normalize } from "../domain/evolution.ts";
 import type { Database } from "./db.ts";
 import { displayTitle, type InventoryThread } from "./inventory.ts";
 import type { Inference } from "./model.ts";
@@ -50,6 +55,14 @@ function readResult(json: string): StoredAnalysis | undefined {
 
 const isUserRequest = (text: string) =>
   text.length > 0 && !text.startsWith(SYSTEM_PREFIX);
+
+function safeConcepts(json: string): unknown {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return [];
+  }
+}
 
 export class Analyzer {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -279,7 +292,7 @@ export class Analyzer {
       );
       const driftSectionId =
         output.drift?.workstream != null
-          ? (input.sectionByName.get(output.drift.workstream.toLowerCase()) ??
+          ? (input.sectionByName.get(normalize(output.drift.workstream)) ??
             null)
           : null;
       const result: StoredAnalysis = {
@@ -388,13 +401,30 @@ export class Analyzer {
       .prepare("SELECT section_id, name FROM ws_seen_section")
       .all() as { section_id: string; name: string }[];
     const sectionByName = new Map(
-      sections.map((s) => [s.name.toLowerCase(), s.section_id]),
+      sections.map((s) => [normalize(s.name), s.section_id]),
     );
+    for (const row of this.deps.db
+      .prepare("SELECT section_id, aliases FROM ws_workstream")
+      .all() as { section_id: string; aliases: string }[]) {
+      let aliases: unknown;
+      try {
+        aliases = JSON.parse(row.aliases);
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(aliases)) continue;
+      for (const alias of aliases)
+        if (typeof alias === "string" && !sectionByName.has(normalize(alias)))
+          sectionByName.set(normalize(alias), row.section_id);
+    }
     const own = sections.find((s) => s.section_id === sectionId);
     const record = own
       ? (this.deps.db
-          .prepare("SELECT description FROM ws_workstream WHERE section_id = ?")
-          .get(own.section_id) as { description: string | null } | undefined)
+          .prepare(
+            "SELECT description, concepts FROM ws_workstream WHERE section_id = ?",
+          )
+          .get(own.section_id) as
+          { description: string | null; concepts: string } | undefined)
       : undefined;
     return {
       sectionByName,
@@ -407,6 +437,9 @@ export class Analyzer {
               name: own.name,
               description: record?.description ?? null,
               subjects: this.subjects(own.section_id, thread.id),
+              concepts: record
+                ? parseConcepts(safeConcepts(record.concepts))
+                : [],
             }
           : null,
         otherWorkstreams: isTask

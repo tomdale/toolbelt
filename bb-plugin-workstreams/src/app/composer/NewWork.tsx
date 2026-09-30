@@ -1,5 +1,5 @@
 /** Workstreams intake keeps the draft and its destination in one composer. */
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   experimental_NewThreadComposer as Composer,
   useBbNavigate,
@@ -96,53 +96,56 @@ function NewWork({
   const message = error ?? routeError;
   useEffect(() => () => intake.dispose(), [intake]);
 
-  const submit = async (request: NewThreadRequest) => {
-    setError(null);
-    setAttempt((n) => n + 1);
-    const prompt = request.input
-      .map((part) => ("text" in part ? part.text : ""))
-      .join("\n")
-      .trim();
-    let executing = false;
-    try {
-      const { decision, choice } = await intake.forSubmit(prompt);
-      executing = true;
-      const result = await rpc.call("routeExecute", {
-        decisionId: decision.id,
-        prompt,
-        choice,
-        execution: JSON.parse(
-          JSON.stringify({
-            providerId: request.providerId,
-            model: request.model,
-            reasoningLevel: request.reasoningLevel,
-            permissionMode: request.permissionMode,
-            serviceTier: request.serviceTier,
-            executionInputSources: request.executionInputSources,
-            input: request.input,
-            ...(intake.customizePlacement &&
-            (decision.outcome === "new-thread" ||
-              decision.outcome === "new-workstream") &&
-            request.projectId === decision.placement.projectId
-              ? {
-                  projectId: request.projectId,
-                  environment: request.environment,
-                }
-              : {}),
-          }),
-        ),
-      });
-      onClose();
-      if (result.threadId) navigate.toThread(result.threadId);
-    } catch (cause) {
-      if (executing) {
-        intake.retry();
-        setError(cause instanceof Error ? cause.message : String(cause));
+  const submit = useCallback(
+    async (request: NewThreadRequest) => {
+      setError(null);
+      setAttempt((n) => n + 1);
+      const prompt = request.input
+        .map((part) => ("text" in part ? part.text : ""))
+        .join("\n")
+        .trim();
+      let executing = false;
+      try {
+        const { decision, choice } = await intake.forSubmit(prompt);
+        executing = true;
+        const result = await rpc.call("routeExecute", {
+          decisionId: decision.id,
+          prompt,
+          choice,
+          execution: JSON.parse(
+            JSON.stringify({
+              providerId: request.providerId,
+              model: request.model,
+              reasoningLevel: request.reasoningLevel,
+              permissionMode: request.permissionMode,
+              serviceTier: request.serviceTier,
+              executionInputSources: request.executionInputSources,
+              input: request.input,
+              ...(intake.customizePlacement &&
+              (decision.outcome === "new-thread" ||
+                decision.outcome === "new-workstream") &&
+              request.projectId === decision.placement.projectId
+                ? {
+                    projectId: request.projectId,
+                    environment: request.environment,
+                  }
+                : {}),
+            }),
+          ),
+        });
+        onClose();
+        if (result.threadId) navigate.toThread(result.threadId);
+      } catch (cause) {
+        if (executing) {
+          intake.retry();
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
+        // Rejection tells the host to preserve attachments, mentions, and text.
+        throw cause;
       }
-      // Rejection tells the host to preserve attachments, mentions, and text.
-      throw cause;
-    }
-  };
+    },
+    [intake, navigate, onClose, rpc],
+  );
 
   return (
     <IntakeContext.Provider value={intake}>

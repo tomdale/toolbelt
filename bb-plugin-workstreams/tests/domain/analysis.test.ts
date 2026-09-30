@@ -6,8 +6,10 @@ import {
   isCurrent,
   needsYou,
   parseAnalysis,
+  parseConcepts,
   type AnalysisInput,
 } from "../../src/domain/analysis.ts";
+import { routePrompt } from "../../src/domain/router.ts";
 
 const input = (overrides: Partial<AnalysisInput> = {}): AnalysisInput => ({
   title: "Fix cache invalidation",
@@ -15,6 +17,9 @@ const input = (overrides: Partial<AnalysisInput> = {}): AnalysisInput => ({
     name: "Lumen",
     description: "The Lumen build tool",
     subjects: ["Lumen"],
+    concepts: [
+      { name: "cache invalidation", terms: ["lockfile", "regression test"] },
+    ],
   },
   otherWorkstreams: ["BB Recap", "Workstreams"],
   requests: [
@@ -41,6 +46,38 @@ describe("parseAnalysis", () => {
     expect(result.recap.length).toBeLessThanOrEqual(RECAP_MAX);
     expect(result.recap.endsWith("…")).toBe(true);
     expect(result.state).toBe("review");
+  });
+
+  it("rejects generic concept labels without losing product evidence", () => {
+    const result = parseAnalysis(
+      JSON.stringify({
+        recap: "Working.",
+        state: "in_progress",
+        subject: "SDK",
+        concepts: [
+          { name: "backend work", terms: ["server"] },
+          {
+            name: "workstream routing",
+            terms: ["routeExecute", "New work", "UI"],
+          },
+        ],
+      }),
+    );
+    expect(result.subject).toBe("SDK");
+    expect(result.concepts).toEqual([
+      { name: "workstream routing", terms: ["routeExecute", "New work"] },
+    ]);
+  });
+
+  it("safely normalizes malformed persisted concepts", () => {
+    expect(
+      parseConcepts([
+        null,
+        { name: "backend work", terms: ["UI"] },
+        { name: "thread routing", terms: ["routeExecute", 3, "testing"] },
+      ]),
+    ).toEqual([{ name: "thread routing", terms: ["routeExecute"] }]);
+    expect(parseConcepts("not an array")).toEqual([]);
   });
 
   it("falls back instead of failing on an unknown state or bad drift", () => {
@@ -82,6 +119,9 @@ describe("parseAnalysis", () => {
     expect(parseAnalysis(raw('"Fix stale  build cache."')).title).toBe(
       "Fix stale build cache",
     );
+    expect(
+      parseAnalysis(raw('"Streamlining the \\"New work\\" flow to improve state consistency and UI clarity."')).title,
+    ).toBeNull();
     expect(parseAnalysis(raw("word ".repeat(30))).title).toBeNull();
     expect(parseAnalysis(raw("   ")).title).toBeNull();
     expect(
@@ -114,6 +154,9 @@ describe("analysisPrompt", () => {
   it("includes known subjects, and never a project field", () => {
     const prompt = analysisPrompt(input());
     expect(prompt).toContain('Known subjects in this workstream: ["Lumen"]');
+    expect(prompt).toContain("Known product concepts in this workstream");
+    expect(prompt).toContain("cache invalidation");
+    expect(prompt).toContain("LATEST substantive user request");
     expect(prompt).not.toMatch(/project:/i);
   });
 
@@ -145,12 +188,42 @@ describe("analysisPrompt", () => {
   });
 });
 
+describe("routing concepts", () => {
+  it("renders concrete concepts with sourced terms and caps the evidence", () => {
+    const prompt = routePrompt({
+      prompt: "add routing",
+      workstreams: [
+        {
+          name: "Workstreams",
+          description: "Routing",
+          subjects: ["Workstreams"],
+          concepts: [
+            {
+              name: "thread routing",
+              terms: ["routePrompt", "workstream map"],
+            },
+          ],
+        },
+      ],
+      threads: [],
+      pickedProjectHosts: null,
+    });
+    expect(prompt).toContain(
+      "concepts: thread routing (routePrompt, workstream map)",
+    );
+    expect(prompt).toContain("A named product outranks a broad ecosystem");
+    expect(prompt).toContain("terse or esoteric requests");
+    expect(prompt).not.toContain("projectId");
+  });
+});
+
 describe("freshness", () => {
   const analysis = {
     recap: "r",
     state: "needs_decision" as const,
     needsYou: "Commit?",
     subject: null,
+    concepts: [],
     title: null,
     drift: null,
     revision: 100,

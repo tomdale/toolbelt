@@ -6,7 +6,7 @@
  * the model never sees.
  */
 import { z } from "zod";
-import { clip, redact } from "./analysis.ts";
+import { cleanTitle, clip, redact, TITLE_MAX } from "./analysis.ts";
 
 export type RouteInput = {
   readonly prompt: string;
@@ -14,6 +14,10 @@ export type RouteInput = {
     readonly name: string;
     readonly description: string | null;
     readonly subjects: readonly string[];
+    readonly concepts?: readonly {
+      readonly name: string;
+      readonly terms: readonly string[];
+    }[];
   }[];
   /** Active task threads, most recent first. */
   readonly threads: readonly {
@@ -37,8 +41,26 @@ export function routePrompt(input: RouteInput): string {
   const workstreams = input.workstreams
     .map(
       (ws) =>
-        `- ${JSON.stringify(ws.name)}${ws.description ? `: ${ws.description}` : ""}${
-          ws.subjects.length ? ` [${ws.subjects.slice(0, 6).join(", ")}]` : ""
+        `- ${JSON.stringify(redact(ws.name))}${ws.description ? `: ${clip(redact(ws.description), 160)}` : ""}${
+          ws.subjects.length
+            ? ` [subjects: ${ws.subjects
+                .slice(0, 6)
+                .map((s) => clip(redact(s), 60))
+                .join(", ")}]`
+            : ""
+        }${
+          ws.concepts?.length
+            ? ` [concepts: ${ws.concepts
+                .slice(0, 6)
+                .map(
+                  (c) =>
+                    `${clip(redact(c.name), 60)} (${c.terms
+                      .slice(0, 4)
+                      .map((term) => clip(redact(term), 40))
+                      .join(", ")})`,
+                )
+                .join("; ")}]`
+            : ""
         }`,
     )
     .join("\n");
@@ -64,6 +86,8 @@ Someone is starting new work. Decide where it goes: continue an existing thread,
 Workstreams:
 ${workstreams || "(none yet)"}
 
+Choose the most specific workstream owning the request's durable product or initiative. A named product outranks a broad ecosystem, SDK, plugin-platform, repository, or activity category even when both apply. Supporting changes to shared infrastructure belong with the specific product they are explicitly delivering; broad categories are fallbacks. Use the concepts and their distinctive terms to recognize product context in terse or esoteric requests, not generic words like UI or backend. A project-host hint is placement context, not evidence that its broad workstream owns the task. If evidence is insufficient, choose unsure rather than a confident broad guess.
+
 Active threads:
 ${threads || "(none)"}${hint}
 
@@ -78,7 +102,7 @@ Return exactly one of:
 {"outcome": "new-workstream", "name": "<product name>", "description": "<one line>", "title": "<3-8 words>", "code": true|false, "projectLike": "<workstream name whose code this changes, or null>", "confidence": ..., "reason": ..., "subject": ...}
 {"outcome": "unsure", "candidates": [{"threadId": "<id>"} | {"workstream": "<name>"}] (at most 3), "reason": ...}
 - continue only when the request plainly carries on that thread's own task (a follow-up, a fix to what it just did). New work in the same area is a new thread.
-- new-workstream only for a product or effort none of the workstreams covers.
+- new-workstream for a distinct named product or durable effort with no specific workstream, even when a broad personal or ecosystem workstream could also apply. A generic personal workstream is not ownership of every unrelated errand or new product. Do not force a new product into a generic catch-all.
 - code: true when the work changes code or files in a repository.
 - unsure when two or more options fit about equally.`;
 }
@@ -97,7 +121,8 @@ const title = z
   .string()
   .trim()
   .min(1)
-  .transform((t) => clip(t, 80));
+  .transform(cleanTitle)
+  .transform((t) => clip(t, TITLE_MAX));
 
 const rawSchema = z.discriminatedUnion("outcome", [
   z.object({
