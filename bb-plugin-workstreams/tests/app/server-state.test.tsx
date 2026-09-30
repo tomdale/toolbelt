@@ -176,13 +176,11 @@ describe("shared server state", () => {
     write.reject(failure);
     await expect(pending).rejects.toBe(failure);
     read.mockImplementationOnce(() => recovery.promise);
-    await act(async () => {
-      await consumers.get(0)!.refresh();
-    });
+    const refresh = consumers.get(0)!.refresh();
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
     recovery.resolve(state(2));
-    await waitFor(() =>
-      expect(consumers.get(0)!.server.order.workstreams).toEqual([]),
-    );
+    await refresh;
+    expect(consumers.get(0)!.server.order.workstreams).toEqual([]);
   });
 
   it("keeps distinct concurrent reorder groups through reverse responses", async () => {
