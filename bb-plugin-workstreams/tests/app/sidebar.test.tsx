@@ -44,6 +44,8 @@ async function mount(
   } = {},
 ) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
+  // Stateful like the server, so a refetch after a change never undoes it.
+  const snoozes = { ...options.snoozes };
   const list = app.threadLists[0]!;
   return renderSlot(
     list,
@@ -62,17 +64,23 @@ async function mount(
           ...emptyState(),
           analysis: options.analysis ?? {},
           order: options.order ?? { workstreams: [], threads: {} },
-          snoozes: options.snoozes ?? {},
+          snoozes: { ...snoozes },
         }),
         moveThread: () => ({ entry: null }),
-        snooze: (raw: unknown) => ({
-          snooze: {
-            until: (raw as { until: number | null }).until,
-            attentionAt: 0,
-            at: Date.now(),
-          },
-        }),
-        unsnooze: () => ({ woke: true }),
+        snooze: (raw: unknown) => {
+          const { threadId, until } = raw as {
+            threadId: string;
+            until: number | null;
+          };
+          snoozes[threadId] = { until, attentionAt: 0, at: Date.now() };
+          return { snooze: snoozes[threadId] };
+        },
+        unsnooze: (raw: unknown) => {
+          const { threadId } = raw as { threadId: string };
+          const woke = threadId in snoozes;
+          delete snoozes[threadId];
+          return { woke };
+        },
         spinner: () => ({
           spinner: options.spinner ?? {
             shape: "spokes",
