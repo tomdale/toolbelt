@@ -600,7 +600,9 @@ export function RecapCard() {
   const visible = available && recap !== null && !dismissedRecap;
 
   const frame: Frame | null =
-    available && generating && (!recap || !automatic)
+    // The generating card shows wherever Generate Recap could have been
+    // pressed, so the press shows at once.
+    available && generating && (!recap || !automatic || dismissedRecap)
       ? { kind: "skeleton", layout }
       : visible
         ? {
