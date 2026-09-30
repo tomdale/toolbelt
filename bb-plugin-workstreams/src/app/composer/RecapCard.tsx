@@ -9,7 +9,7 @@ type Recap = { summary: string; generatedAt: number };
 type Layout = "detailed" | "compact" | "minimal";
 
 const CARD_CLASS =
-  "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-400 bg-sky-50/40 px-4 py-3 text-sky-900 dark:border-sky-500/80 dark:bg-sky-950/25 dark:text-sky-200";
+  "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-400 bg-sky-50/40 px-4 py-3 text-sky-900 dark:border-sky-500/80 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(29.3%_0.066_243.157))] dark:text-sky-200";
 
 // Both columns share one body size and line height so their labels and first
 // lines sit on the same baselines; hierarchy comes from weight and opacity.
