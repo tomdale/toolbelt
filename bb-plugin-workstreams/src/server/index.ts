@@ -64,6 +64,13 @@ export default async function plugin(bb: BbPluginApi) {
       options: [...MODELS],
       default: MODELS[0],
     },
+    recapModel: {
+      type: "select",
+      label: "Recap model",
+      description: "Generates the full thread recap after it is quiet.",
+      options: [...MODELS],
+      default: MODELS[0],
+    },
     autoTitle: {
       type: "boolean",
       label: "Keep thread titles current",
@@ -197,7 +204,12 @@ export default async function plugin(bb: BbPluginApi) {
   const recaps = new RecapScheduler({
     sdk: () => bb.sdk,
     db,
-    model: async () => (await settings.get()).model,
+    model: async () => (await settings.get()).recapModel,
+    inference,
+    triage: (threadId) => {
+      const result = analyzer.get(threadId);
+      return result ? { state: result.state, needsYou: result.needsYou } : undefined;
+    },
     onChange: notify,
     log: (message) => bb.log.warn(message),
   });

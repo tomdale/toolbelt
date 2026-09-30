@@ -537,3 +537,18 @@
     transition: none;
   }
 }
+
+.ws-recap-card {
+  margin: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, rgba(128,128,128,.25));
+  border-radius: 8px;
+  background: var(--muted, rgba(128,128,128,.06));
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ws-recap-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.ws-recap-header h3 { margin: 0; font-weight: 600; }
+.ws-recap-body { margin-top: 6px; display: grid; gap: 4px; }
+.ws-recap-body p { margin: 0; }
+.ws-recap-done { opacity: .7; }
