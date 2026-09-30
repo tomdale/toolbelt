@@ -26,6 +26,7 @@ import { Row } from "./Row.tsx";
 import { RowMenu, type RowMenuHandlers } from "./RowMenu.tsx";
 import { GroupMenu } from "./GroupMenu.tsx";
 import { NewWorkDialog } from "../composer/NewWork.tsx";
+import { TraceInspector } from "../debug/Inspector.tsx";
 import {
   DropTarget,
   Sortable,
@@ -64,6 +65,9 @@ export function WorkstreamsThreadList({
     workstreamName?: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [inspecting, setInspecting] = useState<PluginSidebarThread | null>(
+    null,
+  );
   const { projection, sections, now } = ws;
   const nameOf = new Map(sections.map((s) => [s.id, s.name]));
 
@@ -110,6 +114,7 @@ export function WorkstreamsThreadList({
         onNavigate();
       }
     },
+    inspect: (thread) => setInspecting(thread),
   };
   const renameWorkstream = (group: ThreadGroup) =>
     setNameRequest({
@@ -318,6 +323,14 @@ export function WorkstreamsThreadList({
           request={nameRequest}
           onClose={() => setNameRequest(null)}
         />
+        {inspecting ? (
+          <TraceInspector
+            open
+            onOpenChange={(open) => !open && setInspecting(null)}
+            target={{ link: { kind: "thread", ref: inspecting.id } }}
+            title={`Model calls for ${inspecting.displayTitle}`}
+          />
+        ) : null}
       </div>
     </DndContext>
   );

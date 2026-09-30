@@ -72,8 +72,9 @@ const settle = async (w: World, status: string) => {
   throw new Error(`never reached ${status}`);
 };
 
-async function organized() {
+async function organized(settings: Record<string, boolean> = {}) {
   world = await fakeWorld({
+    settings,
     complete: model({
       loose: "Alpha",
       v1auto: "Gamma",
@@ -219,5 +220,34 @@ describe("cutover", () => {
     expect(rows.n).toBe(0);
     // Everything else keeps working.
     expect((await w.harness.behavior.runCli(["list"])).exitCode).toBe(0);
+  });
+});
+
+describe("debug traces", () => {
+  it("keeps the run's model calls with the run, each move, and the applied batch", async () => {
+    const { w } = await organized({ debug: true });
+    await call(w, { action: "start" });
+    const review = (await settle(w, "review")) as State & {
+      traceIds: string[];
+    };
+    expect(review.traceIds).toHaveLength(1);
+    await call(w, {
+      action: "assign",
+      decisions: review.changes.map((c) => ({ id: c.id, accepted: true })),
+    });
+    const preview = (await settle(w, "preview")) as State & {
+      traceIds: string[];
+      preview: { moves: { traceId?: string | null }[] };
+    };
+    expect(preview.traceIds.length).toBeGreaterThan(1);
+    for (const move of preview.preview.moves)
+      expect(preview.traceIds).toContain(move.traceId);
+    await call(w, { action: "apply", overrides: [] });
+    const applied = await settle(w, "applied");
+    const { entries } = (await w.harness.behavior.callRpc("journal", {})) as {
+      entries: { id: string; traceIds: string[] }[];
+    };
+    const batch = entries.find((e) => e.id === applied.entryId)!;
+    expect([...batch.traceIds].sort()).toEqual([...preview.traceIds].sort());
   });
 });

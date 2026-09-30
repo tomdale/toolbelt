@@ -12,6 +12,7 @@ const decision: RouteDecision = {
   confidence: "high",
   reason: "",
   subject: null,
+  traceId: null,
   placement: {
     projectId: "proj_a",
     environment: { type: "project-default" },
@@ -126,6 +127,7 @@ it("keeps an ambiguous route editable until a destination is chosen", async () =
     confidence: "low",
     reason: "",
     subject: null,
+    traceId: null,
     candidates: [{ kind: "thread", threadId: "thr_a", title: "Parser" }],
   };
   const intake = new Intake(vi.fn().mockResolvedValue(unsure), null, null);

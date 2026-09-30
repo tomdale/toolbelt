@@ -1,6 +1,12 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { WORK_STATES } from "../domain/analysis.ts";
+import {
+  TRACE_KINDS,
+  linkSchema,
+  traceSchema,
+  traceSummarySchema,
+} from "../domain/trace.ts";
 import { entrySchema, sourceSchema } from "./journal.ts";
 
 const placementSchema = z.object({
@@ -28,6 +34,7 @@ const analysisSchema = z.object({
   revision: z.number(),
   at: z.number(),
   model: z.string(),
+  traceId: z.string().nullable().default(null),
 });
 
 const recordSchema = z.object({
@@ -72,6 +79,7 @@ const proposalSchema = z.object({
   text: z.string(),
   accept: z.string(),
   updatedAt: z.number(),
+  traceIds: z.array(z.string()),
 });
 
 const moveSchema = z.object({
@@ -84,6 +92,7 @@ const moveSchema = z.object({
   reason: z.string(),
   accepted: z.boolean(),
   confidence: z.enum(["high", "medium", "low"]).optional(),
+  traceId: z.string().nullable().optional(),
 });
 
 const bootstrapSchema = z
@@ -137,6 +146,8 @@ const bootstrapSchema = z
       assign: z.number(),
       apply: z.number(),
     }),
+    traceIds: z.array(z.string()).default([]),
+    mapTraceId: z.string().nullable().default(null),
   })
   .nullable();
 
@@ -151,6 +162,7 @@ const routeBase = {
   confidence: z.enum(["high", "medium", "low"]),
   reason: z.string(),
   subject: z.string().nullable(),
+  traceId: z.string().nullable(),
 };
 const placementSchema2 = z.object({
   projectId: z.string(),
@@ -209,6 +221,11 @@ export const rpcContract = defineRpcContract({
       prompt: z.string().min(1).max(20_000),
       pickedProjectId: z.string().nullable().optional(),
       workstreamId: z.string().nullable().optional(),
+      /**
+       * The unsure decision whose candidate `workstreamId` is: its routing
+       * call keeps explaining the result (SPEC §11.6).
+       */
+      fromDecisionId: z.string().nullable().optional(),
     }),
     output: routeSchema,
   },
@@ -322,7 +339,12 @@ export const rpcContract = defineRpcContract({
         external: z.boolean().optional(),
       })
       .nullable(),
-    output: z.object({ entries: z.array(entrySchema) }),
+    output: z.object({
+      entries: z.array(
+        // Debug traces of the model calls behind each entry (SPEC §11.6).
+        entrySchema.extend({ traceIds: z.array(z.string()) }),
+      ),
+    }),
   },
   moveThread: {
     input: z.object({
@@ -350,6 +372,36 @@ export const rpcContract = defineRpcContract({
     output: z.object({ entry: entrySchema }),
   },
   refresh: { input: z.null(), output: z.object({ changed: z.boolean() }) },
+  /**
+   * Debug traces (SPEC §11.6), newest first: the given ids, the calls linked
+   * to one thread, entry, proposal, workstream, or organizing run, or the
+   * latest of every kind.
+   */
+  traces: {
+    input: z.object({
+      ids: z.array(z.string()).max(500).optional(),
+      link: linkSchema.optional(),
+      kind: z.enum(TRACE_KINDS).optional(),
+      limit: z.number().int().min(1).max(500).optional(),
+      /** Page cursor: the last trace of the previous page. */
+      before: z.object({ at: z.number(), id: z.string() }).optional(),
+    }),
+    output: z.object({ traces: z.array(traceSummarySchema) }),
+  },
+  /** One trace in full: prompt, reasoning, response, parsed result, links. */
+  trace: {
+    input: z.object({ id: z.string().min(1) }),
+    output: z.object({ trace: traceSchema.nullable() }),
+  },
+  /** Sends a trace's prompt to its model again; changes nothing else. */
+  traceReplay: {
+    input: z.object({ id: z.string().min(1) }),
+    output: z.object({ trace: traceSchema }),
+  },
+  traceClear: {
+    input: z.null(),
+    output: z.object({ removed: z.number() }),
+  },
 });
 
 export type RpcContract = typeof rpcContract;

@@ -12,6 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { RpcContract } from "../../server/contract.ts";
 import type { BootstrapMove, BootstrapState } from "../../server/bootstrap.ts";
+import { InspectButton } from "../debug/InspectButton.tsx";
 import { ghostButton, primaryButton, secondaryButton } from "./controls.ts";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
@@ -179,7 +180,10 @@ function Failed({ state, send }: { state: BootstrapState; send: Call }) {
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-3 p-4">
       <div className="min-w-0 flex-1">
-        <h2 className="font-medium">Organizing stopped</h2>
+        <h2 className="flex items-center gap-1 font-medium">
+          Organizing stopped
+          <RunInspect state={state} />
+        </h2>
         <p className="mt-0.5 text-xs text-destructive">
           {state.error ?? "Something went wrong."}
         </p>
@@ -213,7 +217,7 @@ function ReviewMap({ state, send }: { state: BootstrapState; send: Call }) {
   const accepted = (change: Change) => decisions[change.id] ?? change.accepted;
   return (
     <>
-      <Heading title="Review the map" />
+      <Heading title="Review the map" state={state} />
       <div className="px-2 pb-2">
         {changes.length === 0 ? (
           <p className="px-2 py-1.5 text-muted-foreground">
@@ -369,7 +373,7 @@ function ReviewMoves({ state, send }: { state: BootstrapState; send: Call }) {
   const lanes = lanesOf(preview);
   return (
     <>
-      <Heading title="Review moves" />
+      <Heading title="Review moves" state={state} />
       <div className="px-2 pb-2">
         {lanes.length === 0 &&
         preview.unsure.length === 0 &&
@@ -441,6 +445,14 @@ function ReviewMoves({ state, send }: { state: BootstrapState; send: Call }) {
                         {note}
                       </span>
                     ) : null}
+                    {move.traceId ? (
+                      <InspectButton
+                        target={{ traceIds: [move.traceId] }}
+                        title={`Why ${move.title} goes to ${move.toName}`}
+                        label="Inspect the filing call"
+                        className="text-muted-foreground"
+                      />
+                    ) : null}
                   </label>
                 </li>
               );
@@ -479,11 +491,26 @@ function ReviewMoves({ state, send }: { state: BootstrapState; send: Call }) {
   );
 }
 
-function Heading({ title }: { title: string }) {
+function Heading({ title, state }: { title: string; state: BootstrapState }) {
   return (
-    <header className="px-4 pb-2 pt-3.5">
+    <header className="flex items-center gap-1 px-4 pb-2 pt-3.5">
       <h2 className="font-medium">{title}</h2>
+      <RunInspect state={state} />
     </header>
+  );
+}
+
+/** Debug mode: every model call this organizing run made. */
+function RunInspect({ state }: { state: BootstrapState }) {
+  if (!state.traceIds?.length) return null;
+  return (
+    <InspectButton
+      // By link, so a large run's calls aren't capped by an id list.
+      target={{ link: { kind: "organize", ref: String(state.startedAt) } }}
+      title="Model calls for this organizing run"
+      label="Inspect this run's model calls"
+      className="text-muted-foreground"
+    />
   );
 }
 

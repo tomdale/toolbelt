@@ -11,16 +11,12 @@ import { createHash, randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { isCurrent } from "../domain/analysis.ts";
 import { relativeAge } from "../domain/presentation.ts";
-import {
-  mentionedTarget,
-  parseRoute,
-  routePrompt,
-  type RouteInput,
-} from "../domain/router.ts";
+import { mentionedTarget, type RouteInput } from "../domain/router.ts";
 import { buildForest } from "../domain/tree.ts";
 import type { Analyzer } from "./analyzer.ts";
 import type { Journal } from "./journal.ts";
 import type { WorkstreamMap } from "./map.ts";
+import type { Inference } from "./model.ts";
 import { UserError, type WorkstreamService } from "./service.ts";
 
 type Sdk = BbPluginApi["sdk"];
@@ -39,6 +35,11 @@ type Base = {
   confidence: "high" | "medium" | "low";
   reason: string;
   subject: string | null;
+  /**
+   * The debug trace of the routing call (SPEC §11.6); null when no model was
+   * asked (a mention, a chosen workstream) or debug mode is off.
+   */
+  traceId: string | null;
 };
 
 export type RouteDecision =
@@ -93,7 +94,7 @@ export class Router {
       journal: Journal;
       map: WorkstreamMap;
       analyzer: Analyzer;
-      complete: (prompt: string, model: string) => Promise<{ text: string }>;
+      inference: Inference;
       model: () => Promise<string>;
       homeProjectId: () => Promise<string>;
       now?: () => number;
@@ -113,6 +114,10 @@ export class Router {
       exclude?: string | readonly string[] | null;
       /** A workstream the user already chose; skips the model. */
       workstreamId?: string | null;
+      /** The unsure decision `workstreamId` was picked from; keeps its trace. */
+      fromDecisionId?: string | null;
+      /** The thread asking (a handoff's caller), for its debug trace. */
+      about?: string | null;
     } = {},
   ): Promise<RouteDecision> {
     const text = prompt.trim();
@@ -153,6 +158,7 @@ export class Router {
           confidence: "high",
           reason: "The request mentions this thread.",
           subject: null,
+          traceId: null,
         });
     }
     if (mention && "sectionId" in mention && nameOf.has(mention.sectionId))
@@ -170,6 +176,9 @@ export class Router {
         confidence: "high",
         reason: "The request mentions this workstream.",
         subject: null,
+        traceId: options.fromDecisionId
+          ? (this.byId(options.fromDecisionId)?.traceId ?? null)
+          : null,
       });
 
     const picked = options.pickedProjectId ?? null;
@@ -201,11 +210,15 @@ export class Router {
               .map((r) => r.name)
           : null,
     };
-    const { text: answer } = await this.deps.complete(
-      routePrompt(input),
-      await this.deps.model(),
+    const { value: raw, traceId } = await this.deps.inference.run(
+      "route",
+      input,
+      {
+        model: await this.deps.model(),
+        label: text.replace(/\s+/g, " "),
+        links: options.about ? [{ kind: "thread", ref: options.about }] : [],
+      },
     );
-    const raw = parseRoute(answer, input);
     const idOf = new Map(records.map((r) => [r.name, r.sectionId]));
     const titleOf = new Map(threads.map((t) => [t.id, t]));
     const base = {
@@ -213,6 +226,7 @@ export class Router {
       confidence: "low" as const,
       reason: "",
       subject: null,
+      traceId,
     };
     let decision: RouteDecision;
     if (raw.outcome === "continue") {
@@ -286,6 +300,9 @@ export class Router {
               },
         ),
       };
+    this.deps.inference.annotate(traceId, {
+      decision: { ...decision, traceId: undefined },
+    });
     return this.remember(text, decision);
   }
 
@@ -350,7 +367,7 @@ export class Router {
         ],
         mode: "queue-if-active",
       });
-      this.deps.journal.add({
+      const logged = this.deps.journal.add({
         action: "route",
         source,
         rationale: `Sent to ${decision.threadTitle}: ${decision.reason}`,
@@ -358,6 +375,11 @@ export class Router {
         workstreams: [],
         undo: null,
       });
+      this.deps.inference.link(
+        decision.traceId,
+        { kind: "thread", ref: decision.threadId },
+        { kind: "entry", ref: logged.id },
+      );
       return { threadId: decision.threadId, sectionId: null };
     }
     let sectionId: string;
@@ -399,13 +421,26 @@ export class Router {
         },
       } as SpawnArgs),
     );
-    this.deps.service.recordCreated(thread.id, sectionId, source, {
-      title: decision.title || thread.title || "New thread",
-      rationale:
-        decision.outcome === "new-workstream"
-          ? `Started in new workstream ${decision.name}: ${decision.reason}`
-          : `Started in ${decision.workstream}: ${decision.reason}`,
-    });
+    const logged = this.deps.service.recordCreated(
+      thread.id,
+      sectionId,
+      source,
+      {
+        title: decision.title || thread.title || "New thread",
+        rationale:
+          decision.outcome === "new-workstream"
+            ? `Started in new workstream ${decision.name}: ${decision.reason}`
+            : `Started in ${decision.workstream}: ${decision.reason}`,
+      },
+    );
+    this.deps.inference.link(
+      decision.traceId,
+      { kind: "thread", ref: thread.id },
+      { kind: "entry", ref: logged.id },
+      ...(decision.outcome === "new-workstream"
+        ? [{ kind: "section" as const, ref: sectionId }]
+        : []),
+    );
     return { threadId: thread.id, sectionId };
   }
 
@@ -433,9 +468,27 @@ export class Router {
         .find((t) => t.id === decision.threadId);
       sectionId = target?.sectionId ?? null;
     }
+    this.deps.inference.link(decision.traceId, {
+      kind: "thread",
+      ref: threadId,
+    });
+    if (decision.outcome === "new-workstream" && sectionId)
+      this.deps.inference.link(decision.traceId, {
+        kind: "section",
+        ref: sectionId,
+      });
     // Only if it is still unfiled: a filing the user made meanwhile wins.
-    if (sectionId)
-      await this.deps.service.fileIfUnsorted(threadId, sectionId, "router");
+    if (!sectionId) return;
+    const logged = await this.deps.service.fileIfUnsorted(
+      threadId,
+      sectionId,
+      "router",
+    );
+    if (logged)
+      this.deps.inference.link(decision.traceId, {
+        kind: "entry",
+        ref: logged.id,
+      });
   }
 
   /**

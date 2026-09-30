@@ -89,6 +89,25 @@ const MIGRATIONS = [
     locked INTEGER NOT NULL DEFAULT 0,
     retitled_at INTEGER
   )`,
+  `CREATE TABLE ws_trace (
+    id TEXT PRIMARY KEY,
+    at INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL,
+    label TEXT NOT NULL,
+    model TEXT NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    replay_of TEXT,
+    data TEXT NOT NULL
+  )`,
+  "CREATE INDEX ws_trace_at ON ws_trace (at DESC)",
+  `CREATE TABLE ws_trace_link (
+    kind TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    trace_id TEXT NOT NULL,
+    PRIMARY KEY (kind, ref, trace_id)
+  )`,
+  "CREATE INDEX ws_trace_link_trace ON ws_trace_link (trace_id)",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

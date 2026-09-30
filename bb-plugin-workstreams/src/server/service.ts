@@ -238,14 +238,14 @@ export class WorkstreamService {
 
   /**
    * Applies a title that analysis suggested for the thread's turn at
-   * `revision`, under the retitle policy (SPEC §10.1). Returns null, changing
-   * nothing, when the policy declines it.
+   * `revision`, under the retitle policy (SPEC §10.1). When the policy
+   * declines it, nothing changes and `skipped` says why.
    */
   retitle(
     threadId: string,
     suggestion: string | null,
     revision: number,
-  ): Promise<JournalEntry | null> {
+  ): Promise<{ entry: JournalEntry | null; skipped: string | null }> {
     return this.serial(async () => {
       const sdk = this.sdk();
       const thread = await sdk.threads.get({ threadId }).catch(() => null);
@@ -254,7 +254,7 @@ export class WorkstreamService {
         thread.archivedAt !== null ||
         thread.visibility === "hidden"
       )
-        return null;
+        return { entry: null, skipped: "archived-or-hidden" };
       const record = observeThreadTitle(this.db, threadId, thread.title);
       const from = displayTitle(thread);
       const decision = retitleDecision({
@@ -269,7 +269,11 @@ export class WorkstreamService {
         revision,
         now: this.now(),
       });
-      if (!decision.ok || !suggestion) return null;
+      if (!decision.ok || !suggestion)
+        return {
+          entry: null,
+          skipped: decision.ok ? "no-suggestion" : decision.reason,
+        };
       await sdk.threads.update({ threadId, title: suggestion });
       writeTitleRecord(this.db, threadId, {
         observed: suggestion,
@@ -294,7 +298,7 @@ export class WorkstreamService {
         undo: { kind: "retitle", threadId, from: thread.title, to: suggestion },
       });
       this.onChange();
-      return entry;
+      return { entry, skipped: null };
     });
   }
 

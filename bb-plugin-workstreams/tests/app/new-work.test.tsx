@@ -17,6 +17,7 @@ const decision: RouteDecision = {
   confidence: "high",
   reason: "",
   subject: null,
+  traceId: null,
   placement: {
     projectId: "proj_a",
     environment: { type: "project-default" },

@@ -16,8 +16,10 @@ import { rpcContract } from "./contract.ts";
 import { hostContract } from "./inference/contract.ts";
 import { openDatabase } from "./db.ts";
 import { Journal } from "./journal.ts";
+import { Inference } from "./model.ts";
 import { loadOrder, saveOrder } from "./order.ts";
 import { UserError, WorkstreamService } from "./service.ts";
+import { TraceStore } from "./trace.ts";
 
 export { rpcContract } from "./contract.ts";
 
@@ -104,6 +106,13 @@ export default async function plugin(bb: BbPluginApi) {
       options: ["responsive", "balanced", "conservative"],
       default: "responsive",
     },
+    debug: {
+      type: "boolean",
+      label: "Debug mode",
+      description:
+        "Record every model call's prompt, reasoning, and response, and show an inspect button wherever Workstreams used a model. Records include redacted thread excerpts and are kept for 7 days.",
+      default: false,
+    },
   });
 
   const db = openDatabase(bb);
@@ -111,7 +120,7 @@ export default async function plugin(bb: BbPluginApi) {
   const notify = () => bb.realtime.publish("changed", {});
   const service = new WorkstreamService(() => bb.sdk, db, journal, notify);
 
-  const inference = bb.hosts.experimental_client({ contract: hostContract });
+  const hostRpc = bb.hosts.experimental_client({ contract: hostContract });
   const analysisHost = async (): Promise<string> => {
     const connected = (await bb.sdk.hosts.list()).filter(
       (host) => host.status === "connected",
@@ -128,18 +137,26 @@ export default async function plugin(bb: BbPluginApi) {
       );
     return host.id;
   };
-  const complete = async (prompt: string, model: string) =>
-    inference.call(
-      "complete",
-      { prompt, model },
-      { hostId: await analysisHost(), timeoutMs: 95_000 },
-    );
+  const traces = new TraceStore(db);
+  const inference = new Inference({
+    complete: async (prompt, model) =>
+      hostRpc.call(
+        "complete",
+        { prompt, model },
+        { hostId: await analysisHost(), timeoutMs: 95_000 },
+      ),
+    traces,
+    debug: async () => (await settings.get()).debug === true,
+    log: (message) => bb.log.warn(message),
+  });
+  // Retention also applies while Debug mode is off and nothing is recorded.
+  traces.prune({ force: true });
   let evolveSoon = () => {};
   const analyzer = new Analyzer({
     sdk: () => bb.sdk,
     db,
     model: async () => (await settings.get()).model,
-    complete,
+    inference,
     onChange: () => {
       notify();
       evolveSoon();
@@ -148,11 +165,24 @@ export default async function plugin(bb: BbPluginApi) {
       if (!result.title) return;
       void settings
         .get()
-        .then(({ autoTitle }) =>
-          autoTitle
-            ? service.retitle(threadId, result.title, result.revision)
-            : null,
-        )
+        .then(async ({ autoTitle }) => {
+          if (!autoTitle) {
+            inference.annotate(result.traceId, {
+              title: "not applied: the autoTitle setting is off",
+            });
+            return;
+          }
+          const { entry, skipped } = await service.retitle(
+            threadId,
+            result.title,
+            result.revision,
+          );
+          if (entry)
+            inference.link(result.traceId, { kind: "entry", ref: entry.id });
+          inference.annotate(result.traceId, {
+            title: entry ? "applied" : `not applied: ${skipped}`,
+          });
+        })
         .catch((error: unknown) =>
           bb.log.warn(`Retitling ${threadId} failed: ${String(error)}`),
         );
@@ -168,7 +198,7 @@ export default async function plugin(bb: BbPluginApi) {
     service,
     analyzer,
     map,
-    complete,
+    inference,
     model: async () => (await settings.get()).organizeModel,
     onChange: notify,
   });
@@ -180,7 +210,7 @@ export default async function plugin(bb: BbPluginApi) {
     map,
     analyzer,
     bootstrap,
-    complete,
+    inference,
     model: async () => (await settings.get()).model,
     settings: async () => {
       const values = await settings.get();
@@ -195,7 +225,7 @@ export default async function plugin(bb: BbPluginApi) {
     journal,
     map,
     analyzer,
-    complete,
+    inference,
     model: async () => (await settings.get()).model,
     homeProjectId: async () => (await settings.get()).homeProjectId ?? "",
   });
@@ -287,7 +317,7 @@ export default async function plugin(bb: BbPluginApi) {
         .then(() => {
           analyzer.catchUp(service.threads());
           void refreshShapes(bb.sdk, db, async (hostId, path) =>
-            inference.call("probe", { path }, { hostId, timeoutMs: 15_000 }),
+            hostRpc.call("probe", { path }, { hostId, timeoutMs: 15_000 }),
           ).catch((error: unknown) =>
             bb.log.warn(`Project shape check failed: ${String(error)}`),
           );
@@ -298,7 +328,10 @@ export default async function plugin(bb: BbPluginApi) {
         );
     }, delay);
   };
-  const interval = setInterval(() => reconcileSoon(0), RECONCILE_EVERY_MS);
+  const interval = setInterval(() => {
+    reconcileSoon(0);
+    traces.prune();
+  }, RECONCILE_EVERY_MS);
   bb.onDispose(() => {
     clearInterval(interval);
     if (timer) clearTimeout(timer);
@@ -345,8 +378,10 @@ export default async function plugin(bb: BbPluginApi) {
   };
 
   bb.rpc.register(rpcContract, {
-    route: ({ prompt, pickedProjectId, workstreamId }) =>
-      userFacing(() => router.route(prompt, { pickedProjectId, workstreamId })),
+    route: ({ prompt, pickedProjectId, workstreamId, fromDecisionId }) =>
+      userFacing(() =>
+        router.route(prompt, { pickedProjectId, workstreamId, fromDecisionId }),
+      ),
     routeExecute: ({ decisionId, prompt, choice, execution }) =>
       userFacing(async () => {
         const remembered = router.recall({ id: decisionId, prompt });
@@ -356,11 +391,13 @@ export default async function plugin(bb: BbPluginApi) {
         // Claim the preview before resolving an ambiguous placement, which
         // yields and could otherwise let a second submit consume it too.
         router.forget(decisionId);
-        // An unsure choice of workstream still needs a real placement.
+        // An unsure choice of workstream still needs a real placement; the
+        // routing call behind the choice still explains it.
         if (decision.outcome === "new-thread" && !decision.placement.projectId)
-          decision = await router.route(
-            `@section:${decision.sectionId} ${prompt}`,
-          );
+          decision = {
+            ...(await router.route(`@section:${decision.sectionId} ${prompt}`)),
+            traceId: decision.traceId,
+          };
         return router.execute(decision, prompt, "router", {
           execution: (execution ?? undefined) as never,
         });
@@ -441,7 +478,13 @@ export default async function plugin(bb: BbPluginApi) {
           return (await service.createWorkstream(name, "user")).sectionId;
         };
         if (action === "move") {
-          await service.move(threadId, await sectionFor(), "user");
+          const entry = await service.move(
+            threadId,
+            await sectionFor(),
+            "user",
+          );
+          if (entry)
+            inference.link(analysis.traceId, { kind: "entry", ref: entry.id });
           dismiss();
           return { threadId };
         }
@@ -460,10 +503,20 @@ export default async function plugin(bb: BbPluginApi) {
           exclude: threadId,
           workstreamId: await sectionFor(),
         });
-        const acted = await actOn(router, decision, request, false, "handoff", {
-          message: `Handed off from @thread:${threadId}. This is now this thread's task; the user continues here, so don't report back there.\n\n${request}`,
-          spawnedFrom: threadId,
-        });
+        const acted = await actOn(
+          router,
+          {
+            ...decision,
+            traceId: decision.traceId ?? analysis.traceId ?? null,
+          },
+          request,
+          false,
+          "handoff",
+          {
+            message: `Handed off from @thread:${threadId}. This is now this thread's task; the user continues here, so don't report back there.\n\n${request}`,
+            spawnedFrom: threadId,
+          },
+        );
         dismiss();
         return { threadId: acted.threadId };
       }),
@@ -502,13 +555,23 @@ export default async function plugin(bb: BbPluginApi) {
         else if (input.action === "cancel") bootstrap.cancel();
         return { state: bootstrap.state(), bootstrapped: bootstrap.isDone() };
       }),
-    journal: async (input) => ({
-      entries: journal.list({
+    journal: async (input) => {
+      const entries = journal.list({
         limit: input?.limit,
         before: input?.before,
         external: input?.external,
-      }),
-    }),
+      });
+      const linked = traces.idsFor(
+        "entry",
+        entries.map((e) => e.id),
+      );
+      return {
+        entries: entries.map((e) => ({
+          ...e,
+          traceIds: linked.get(e.id) ?? [],
+        })),
+      };
+    },
     moveThread: ({ threadId, sectionId }) =>
       userFacing(async () => ({
         entry: await service.move(threadId, sectionId, "user"),
@@ -534,7 +597,20 @@ export default async function plugin(bb: BbPluginApi) {
       await evolution.tick();
       return { changed };
     },
+    traces: async (input) => ({ traces: traces.list(input) }),
+    trace: async ({ id }) => ({ trace: traces.get(id) }),
+    traceReplay: ({ id }) =>
+      userFacing(async () => ({ trace: await inference.replay(id) })),
+    traceClear: async () => ({ removed: traces.clear() }),
   });
 
-  registerCli(bb, service, journal, analyzer, bootstrap, map, router);
+  registerCli(bb, {
+    service,
+    journal,
+    analyzer,
+    bootstrap,
+    map,
+    router,
+    traces,
+  });
 }

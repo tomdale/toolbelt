@@ -16,6 +16,8 @@ import {
   useSidebarSplitLayout,
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
+import { InspectButton } from "../debug/InspectButton.tsx";
+import type { InspectTarget } from "../debug/debug.ts";
 import {
   driftOf,
   proposalsByThread,
@@ -60,6 +62,8 @@ type Notice = {
   actions: Action[];
   /** Phone widths show only the pill; tapping it runs this. */
   onPill: () => void;
+  /** The model calls behind it, for Debug mode's inspector. */
+  inspect: { target: InspectTarget; title: string } | null;
 };
 
 export function ProposalBanner({
@@ -103,6 +107,12 @@ export function ProposalBanner({
       pill: `✦ ${proposal.targetName}${pending ? "?" : ""}`,
       text: proposal.text,
       onPill: review,
+      inspect: proposal.traceIds.length
+        ? {
+            target: { traceIds: proposal.traceIds },
+            title: `Model calls behind: ${proposal.text}`,
+          }
+        : null,
       actions: pending
         ? [
             {
@@ -152,6 +162,12 @@ export function ProposalBanner({
       pill: `↗ ${drift.target}?`,
       text: `This thread's latest request looks like ${drift.target} work.`,
       onPill: act("handoff"),
+      inspect: server.analysis[threadId]?.traceId
+        ? {
+            target: { traceIds: [server.analysis[threadId].traceId] },
+            title: `Why this looks like ${drift.target} work`,
+          }
+        : null,
       actions: [
         { label: "Hand off", primary: true, run: act("handoff") },
         { label: `Move to ${drift.target}`, run: act("move") },
@@ -242,6 +258,13 @@ export function ProposalBanner({
                   </button>
                 ))}
               </span>
+              {shown.inspect ? (
+                <InspectButton
+                  target={shown.inspect.target}
+                  title={shown.inspect.title}
+                  label="Inspect the model call behind this"
+                />
+              ) : null}
             </div>,
             document.body,
           )

@@ -16,6 +16,7 @@ type Proposal = {
   threadIds: string[];
   entryId: string | null;
   targetSectionId: string | null;
+  traceIds: string[];
 };
 type Entry = { id: string; action: string; status: string; source: string };
 
@@ -50,7 +51,7 @@ function model(assign: Record<string, string> = {}) {
 }
 
 async function setup(
-  settings: Record<string, string> = {},
+  settings: Record<string, string | boolean> = {},
   assign: Record<string, string> = {},
 ) {
   world = await fakeWorld({ complete: model(assign), settings });
@@ -260,5 +261,52 @@ describe("ask first", () => {
     await rpc(w, "proposal", { id: pending!.id, action: "dismiss" });
     await evolve(w);
     expect(await proposals(w)).toEqual([]);
+  });
+});
+
+describe("debug traces", () => {
+  it("ties a spin-out to the analyses that named the shared subject", async () => {
+    const w = await setup({ debug: true });
+    seed(w);
+    await analyzeAll(w);
+    await rpc(w, "bootstrap", { action: "skip" });
+    await evolve(w);
+    const [applied] = await proposals(w);
+    const state = await rpc<{
+      analysis: Record<string, { traceId: string | null }>;
+    }>(w, "state", null);
+    const expected = ["w1", "w2"].map((id) => state.analysis[id]!.traceId);
+    expect([...applied!.traceIds].sort()).toEqual([...expected].sort());
+    const { entries } = await rpc<{
+      entries: { id: string; traceIds: string[] }[];
+    }>(w, "journal", {});
+    const entry = entries.find((e) => e.id === applied!.entryId)!;
+    expect([...entry.traceIds].sort()).toEqual([...expected].sort());
+  });
+
+  it("records the assignment call that files an Unsorted thread", async () => {
+    const w = await setup({ debug: true }, { loose: "Alpha" });
+    w.addSection("Alpha");
+    w.addThread("a1", {
+      sectionId: w.sections[0]!.id,
+      title: "Alpha work [Alpha]",
+    });
+    w.addThread("loose", { title: "Something [Other]" });
+    await analyzeAll(w);
+    await rpc(w, "bootstrap", { action: "skip" });
+    await evolve(w);
+    const filing = (await proposals(w)).find((p) =>
+      p.threadIds.includes("loose"),
+    );
+    expect(filing?.status).toBe("applied");
+    const { traces } = await rpc<{ traces: { id: string; kind: string }[] }>(
+      w,
+      "traces",
+      { ids: filing!.traceIds },
+    );
+    expect(traces.map((t) => t.kind).sort()).toEqual([
+      "analysis",
+      "file-unsorted",
+    ]);
   });
 });

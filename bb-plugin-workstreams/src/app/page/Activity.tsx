@@ -8,9 +8,13 @@ import {
 import { cn } from "@/lib/utils";
 import type { RpcContract } from "../../server/contract.ts";
 import type { ProposalView } from "../../server/evolution.ts";
-import type { JournalEntry } from "../../server/journal.ts";
+import type { JournalEntry as Entry } from "../../server/journal.ts";
+import { InspectButton } from "../debug/InspectButton.tsx";
 
-const ACTION_LABEL: Record<JournalEntry["action"], string> = {
+/** An entry with the debug traces of the model calls behind it. */
+type JournalEntry = Entry & { traceIds?: string[] };
+
+const ACTION_LABEL: Record<Entry["action"], string> = {
   move: "Move",
   "create-workstream": "New workstream",
   "rename-workstream": "Rename",
@@ -23,7 +27,7 @@ const ACTION_LABEL: Record<JournalEntry["action"], string> = {
   retitle: "Retitle",
 };
 
-const SOURCE_LABEL: Record<JournalEntry["source"], string> = {
+const SOURCE_LABEL: Record<Entry["source"], string> = {
   user: "you",
   external: "outside Workstreams",
   router: "router",
@@ -216,6 +220,14 @@ export function Activity({
                       {thread.name}
                     </button>
                   ))}
+                  {entry.traceIds?.length ? (
+                    <InspectButton
+                      target={{ link: { kind: "entry", ref: entry.id } }}
+                      title={`Model calls behind: ${entry.rationale}`}
+                      label="Inspect the model calls behind this change"
+                      className="ml-1 align-middle text-muted-foreground"
+                    />
+                  ) : null}
                   {entry.detail ? (
                     <span className="block text-xs text-muted-foreground">
                       {entry.detail}

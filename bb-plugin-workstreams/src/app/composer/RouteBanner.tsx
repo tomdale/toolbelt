@@ -20,6 +20,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import type { RouteDecision } from "../../server/router.ts";
+import { InspectButton } from "../debug/InspectButton.tsx";
 
 const MIN_CHARS = 20;
 const DEBOUNCE_MS = 600;
@@ -92,6 +93,8 @@ function schedule(
   workstreamId?: string,
   /** The user picked this project over the banner's preset. */
   userPick?: string,
+  /** The unsure decision `workstreamId` was picked from; keeps its trace. */
+  fromDecisionId?: string,
 ) {
   if (timer) clearTimeout(timer);
   const trimmed = text.trim();
@@ -126,6 +129,7 @@ function schedule(
           pickedProjectId: picked,
           // RPC input must be JSON: omit rather than send undefined.
           ...(workstreamId ? { workstreamId } : {}),
+          ...(fromDecisionId ? { fromDecisionId } : {}),
         })
         .then(
           (decision) => {
@@ -290,6 +294,13 @@ function NativeRouteBanner() {
           <span className="ws-route-reason"> ({route.note})</span>
         ) : null}
       </span>
+      {decision.traceId ? (
+        <InspectButton
+          target={{ traceIds: [decision.traceId] }}
+          title="Why this destination"
+          label="Inspect the routing call"
+        />
+      ) : null}
       <span className="ws-route-actions">
         {decision.outcome === "continue" ? (
           <button
@@ -315,7 +326,16 @@ function NativeRouteBanner() {
                 key={c.sectionId}
                 type="button"
                 disabled={route.busy || stale}
-                onClick={() => schedule(rpc, text, projectId, c.sectionId)}
+                onClick={() =>
+                  schedule(
+                    rpc,
+                    text,
+                    projectId,
+                    c.sectionId,
+                    undefined,
+                    decision.id,
+                  )
+                }
               >
                 {c.name}
               </button>

@@ -5,6 +5,8 @@ type RouteOptions = {
   prompt: string;
   workstreamId: string | null;
   pickedProjectId: string | null;
+  /** The unsure decision the workstream was picked from (its trace carries over). */
+  fromDecisionId?: string;
 };
 export type IntakeState = {
   text: string;
@@ -37,6 +39,7 @@ export class Intake {
   customizePlacement = false;
   private preset: string | null = null;
   private submitting = false;
+  private fromDecisionId: string | null = null;
 
   constructor(
     private route: (options: RouteOptions) => Promise<RouteDecision>,
@@ -114,7 +117,13 @@ export class Intake {
     this.set({ pickedProjectId: picked });
     this.schedule(text);
   }
-  selectWorkstream(id: string | null, name: string | null) {
+  /** `fromDecisionId`: the unsure decision whose candidate this is. */
+  selectWorkstream(
+    id: string | null,
+    name: string | null,
+    fromDecisionId: string | null = null,
+  ) {
+    this.fromDecisionId = fromDecisionId;
     this.set({ workstreamId: id, workstreamName: name, choice: null });
     this.schedule(this.state.text);
   }
@@ -156,6 +165,8 @@ export class Intake {
       prompt: text,
       workstreamId,
       pickedProjectId,
+      // RPC input must be JSON: omit rather than send undefined.
+      ...(this.fromDecisionId ? { fromDecisionId: this.fromDecisionId } : {}),
     }).then(
       (decision) => {
         if (mine !== this.generation) return null;

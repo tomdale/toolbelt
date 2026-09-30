@@ -8,6 +8,7 @@ import {
 import { useComposer, useComposerView } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
+import { InspectButton } from "../debug/InspectButton.tsx";
 import { useServerState } from "../useWorkstreams.ts";
 import type { Intake, IntakeState } from "./intake.ts";
 
@@ -247,6 +248,14 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
             ))}
           </select>
         </div>
+        {decision?.traceId ? (
+          <InspectButton
+            target={{ traceIds: [decision.traceId] }}
+            title="Why this destination"
+            label="Inspect the routing call"
+            className="-mr-1.5 ml-auto text-muted-foreground"
+          />
+        ) : null}
         <button
           ref={settings}
           type="button"
@@ -299,7 +308,11 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
                   // The pills go away once the workstream routes; the select
                   // now shows the choice.
                   select.current?.focus();
-                  intake.selectWorkstream(candidate.sectionId, candidate.name);
+                  intake.selectWorkstream(
+                    candidate.sectionId,
+                    candidate.name,
+                    decision?.id ?? null,
+                  );
                 }}
               >
                 <Icon

@@ -17,10 +17,12 @@ type Section = {
   updatedAt: number;
 };
 
+/** The model's answer: its text, or its text with a reasoning summary. */
+type FakeAnswer = string | { text: string; reasoning: string };
 export type FakeCompletion = (call: {
   prompt: string;
   model: string;
-}) => string | Promise<string>;
+}) => FakeAnswer | Promise<FakeAnswer>;
 
 const DEFAULT_ANSWER = JSON.stringify({
   recap: "Fixed the bug; tests pass.",
@@ -78,7 +80,10 @@ export async function fakeWorld(
       const input = call.input as { prompt: string; model: string };
       completions.push(input);
       const answer = await (options.complete?.(input) ?? DEFAULT_ANSWER);
-      return { text: answer, usage: { input: 100, output: 20, cost: 0.0001 } };
+      const usage = { input: 100, output: 20, cost: 0.0001 };
+      return typeof answer === "string"
+        ? { text: answer, usage }
+        : { ...answer, usage, stopReason: "stop" };
     },
     sdk: {
       projects: {

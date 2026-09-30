@@ -73,6 +73,18 @@ against.
   compares BB's state with its own every minute. Changes made elsewhere are
   recorded as made "outside Workstreams" and never overridden.
 
+- **Debug mode** (the `debug` setting, off by default): every model call is
+  recorded with the exact prompt, the model's reasoning summary, the raw
+  response, the parsed result, and what Workstreams did with it. A small bug
+  button appears wherever Workstreams used a model: the thread header, the drift
+  and proposal banners, the routing banner and New work, Activity entries, the
+  organizing review, generated descriptions, Overview rows, and the sidebar row
+  menu (**Inspect model calls…**). It opens a side pane with those calls. **Run
+  again** sends the same prompt to the same model to show whether the answer is
+  stable, without changing anything. The page's **Debug** tab lists every
+  recorded call. Records include redacted thread excerpts and are kept for 7
+  days (at most 1,000).
+
 Model calls run through Pi's AI Gateway on the analysis machine (`hostId`, blank
 for the only connected machine). The analysis and routing model is a setting
 limited to models that pass the eval (`eval/README.md`).
@@ -92,6 +104,8 @@ bb workstreams analyze [<thread>]              # analyze now, or catch up
 bb workstreams rebuild [--apply]               # organize once; preview unless --apply
 bb workstreams log [--since 7d] [--external]   # the activity log
 bb workstreams undo <entry-id>
+bb workstreams trace [<id>] [--thread <id>] [--entry <id>] [--kind <kind>] [--json]
+                                               # Debug mode: recorded model calls
 bb workstreams cutover                         # after organizing: drop v1's leftover data
 ```
 
@@ -116,10 +130,12 @@ node eval/route.ts    # routing eval
 - `src/server/`: `service.ts` (mutations, batches, undo, reconciler),
   `analyzer.ts`, `bootstrap.ts`, `evolution.ts`, `router.ts`, `agents.ts`
   (`configure`), `map.ts`, `journal.ts`, `db.ts` (append-only migrations; the
-  first two are v1's), `cli.ts`, `contract.ts`, `inference/` (the host entry
-  that runs Pi).
+  first two are v1's), `cli.ts`, `contract.ts`, `model.ts` (every model call's
+  prompt and parser, and Debug mode's recording), `trace.ts` (the trace store),
+  `inference/` (the host entry that runs Pi).
 - `src/app/`: the sidebar list, the page, the header parent link and proposal
-  banner, and the composer routing banner, fed by `useWorkstreams.ts`.
+  banner, the composer routing banner, and `debug/` (inspect buttons, the
+  inspector pane, the Debug tab), fed by `useWorkstreams.ts`.
 
 To check the exact-once guarantee against real data, export a snapshot to
 private storage (it contains thread titles) and point the test at it:

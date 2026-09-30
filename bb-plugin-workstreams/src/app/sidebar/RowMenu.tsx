@@ -7,12 +7,15 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 import { cn } from "@/lib/utils";
+import { useDebugMode } from "../debug/debug.ts";
 
 export type RowMenuHandlers = {
   move: (thread: PluginSidebarThread, sectionId: string | null) => void;
   newWorkstream: (thread: PluginSidebarThread) => void;
   rename: (thread: PluginSidebarThread) => void;
   openParent: (thread: PluginSidebarThread) => void;
+  /** Debug mode: opens the thread's model calls. */
+  inspect: (thread: PluginSidebarThread) => void;
 };
 
 /**
@@ -37,6 +40,7 @@ export function RowMenu({
 }) {
   const actions = experimental_useSidebarThreadActions();
   const portalScope = usePortalScopeProps();
+  const debug = useDebugMode();
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
@@ -103,6 +107,14 @@ export function RowMenu({
           >
             {thread.isUnread ? "Mark read" : "Mark unread"}
           </Item>
+          {debug ? (
+            <>
+              <Separator />
+              <Item onSelect={() => handlers.inspect(thread)}>
+                Inspect model calls…
+              </Item>
+            </>
+          ) : null}
           <Separator />
           <Item onSelect={() => actions.archive(thread.id)}>Archive</Item>
           <Item destructive onSelect={() => actions.requestDelete(thread.id)}>
