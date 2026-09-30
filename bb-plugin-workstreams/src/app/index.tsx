@@ -1,11 +1,12 @@
 // Workstreams frontend entry: the sidebar thread list, the Workstreams page,
-// and the optional parent link in thread headers.
+// the optional parent link in thread headers, and the settings section.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { ProposalBanner } from "./header/ProposalBanner.tsx";
 import { RouteBanner } from "./composer/RouteBanner.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
+import { SpinnerSettings } from "./settings/SpinnerSettings.tsx";
 import { WorkstreamsThreadList } from "./sidebar/ThreadList.tsx";
 import "./styles.css";
 
@@ -39,6 +40,12 @@ export default definePluginApp((app) => {
     description:
       "Threads grouped by workstream (BB section), with Needs you and Recent at the top.",
     component: WorkstreamsThreadList,
+  });
+  app.slots.settingsSection({
+    id: "spinner",
+    title: "Working indicator",
+    description: "How Workstreams marks a thread that's working.",
+    component: SpinnerSettings,
   });
   app.slots.navPanel({
     id: "home",

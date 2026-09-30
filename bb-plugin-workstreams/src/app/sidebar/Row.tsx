@@ -35,6 +35,7 @@ export function Row({
   active,
   now,
   context,
+  attention,
   work,
   proposal,
   onNavigate,
@@ -45,13 +46,23 @@ export function Row({
   now: number;
   /** Shown instead of the age in overlay bands: the row's workstream name. */
   context?: string;
+  /**
+   * The row is in the Needs you section. Every row there needs Tom, so the
+   * needs-decision mark is implied and left out, and the title reads at full
+   * strength.
+   */
+  attention?: boolean;
   work?: WorkView;
   /** Banner text of a proposal that involves this thread. */
   proposal?: string;
   onNavigate: () => void;
 }) {
-  const state =
-    work?.kind === "current" ? WORK_STATE[work.analysis.state] : null;
+  const shownState =
+    work?.kind === "current" &&
+    !(attention && work.analysis.state === "needs_decision")
+      ? work.analysis.state
+      : null;
+  const state = shownState ? WORK_STATE[shownState] : null;
   const recap =
     work?.kind === "current"
       ? work.analysis.recap
@@ -107,7 +118,9 @@ export function Row({
           "pointer-events-none relative min-w-0 flex-1 truncate",
           thread.isUnread || active
             ? "font-medium text-foreground"
-            : "text-muted-foreground group-hover/row:text-foreground",
+            : attention
+              ? "text-foreground"
+              : "text-muted-foreground group-hover/row:text-foreground",
         )}
       >
         <ThreadTitle threadId={thread.id} />
@@ -116,9 +129,9 @@ export function Row({
         {proposal ? (
           <span className="ws-proposal-dot" role="img" aria-label={proposal} />
         ) : null}
-        {state?.glyph && work?.kind === "current" ? (
+        {state?.glyph ? (
           <span
-            className={`ws-work ws-work-${work.analysis.state}`}
+            className={`ws-work ws-work-${shownState}`}
             role="img"
             aria-label={state.label}
           >

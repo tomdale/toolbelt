@@ -14,7 +14,7 @@ function threadHue(id: string): number {
 }
 
 /**
- * Optional Dockside-style chip in a child thread's header that opens its
+ * Optional chip in a child thread's header that opens its
  * parent. It reads the live sidebar thread set, so it hides for roots and for
  * parents that are archived or hidden.
  */
