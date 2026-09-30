@@ -4,7 +4,25 @@ import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { emptyState } from "./fixtures.ts";
 
+// The harness's composer can't start a send after mount, so tests force the
+// sending state through this override; null defers to the real hook.
+const sendingOverride = vi.hoisted(() => ({ value: null as boolean | null }));
+vi.mock("../../src/app/composer/useContinuing.ts", async (importActual) => {
+  const actual =
+    await importActual<
+      typeof import("../../src/app/composer/useContinuing.ts")
+    >();
+  return {
+    ...actual,
+    useContinuing: (input: Parameters<typeof actual.useContinuing>[0]) => {
+      const real = actual.useContinuing(input);
+      return sendingOverride.value ?? real;
+    },
+  };
+});
+
 afterEach(() => {
+  sendingOverride.value = null;
   cleanup();
   vi.restoreAllMocks();
 });
@@ -120,7 +138,14 @@ it("drops an Open item that repeats the For you ask", async () => {
   expect(region.textContent).toContain("Write docs");
 });
 
-it("holds the card's space the moment typing hides it", async () => {
+it("stays up while the user drafts a message", async () => {
+  const slot = await mount({});
+  await slot.findByRole("region", { name: "Latest recap" });
+  await slot.setComposerText("About that recap, ");
+  expect(slot.getByRole("region", { name: "Latest recap" })).toBeTruthy();
+});
+
+it("holds the card's space the moment sending hides it", async () => {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function (this: HTMLElement) {
       return {
@@ -138,6 +163,8 @@ it("holds the card's space the moment typing hides it", async () => {
     if (held) heights.push(held.style.height);
   });
   observer.observe(slot.container, { childList: true, subtree: true });
+  sendingOverride.value = true;
+  // Any composer update re-renders the card with the override applied.
   await slot.setComposerText("Next, ");
   observer.disconnect();
   expect(slot.queryByRole("region", { name: "Latest recap" })).toBeNull();
@@ -176,5 +203,44 @@ it("resizes the generating card into the recap rather than replacing it", async 
   // The same element carries the recap, so it can ease to the new size.
   expect(await slot.findByRole("region", { name: "Latest recap" })).toBe(
     skeleton,
+  );
+});
+
+it("offers Generate Recap after the recap is dismissed", async () => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      return {
+        height: this.classList.contains("flow-root") ? 120 : 0,
+      } as DOMRect;
+    },
+  );
+  const slot = await mount({});
+  await slot.findByRole("region", { name: "Latest recap" });
+  // The dismissed card eases out in its slot while the button fades in below.
+  let together = false;
+  const observer = new MutationObserver(() => {
+    const held = slot.container.querySelector('[aria-hidden="true"].flow-root');
+    const fading = slot.container.querySelector(".ws-fade-in");
+    if (
+      held &&
+      fading &&
+      held.compareDocumentPosition(fading) & Node.DOCUMENT_POSITION_FOLLOWING
+    )
+      together = true;
+  });
+  observer.observe(slot.container, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+  });
+  fireEvent.click(slot.getByRole("button", { name: "Dismiss recap" }));
+  const button = await slot.findByRole("button", { name: "Generate Recap" });
+  observer.disconnect();
+  expect(together).toBe(true);
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(
+      slot.inspection.rpcCalls.some((c) => c.method === "recap_generate"),
+    ).toBe(true),
   );
 });

@@ -1,5 +1,6 @@
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import {
   Markdown,
   useComposer,
@@ -28,14 +29,17 @@ type Layout = "detailed" | "compact" | "minimal";
 const CARD_CLASS =
   "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-400 bg-sky-50/40 px-4 py-3 text-sky-900 dark:border-sky-500/80 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(29.3%_0.066_243.157))] dark:text-sky-200";
 
-// Both columns share one body size and line height so their labels and first
-// lines sit on the same baselines; hierarchy comes from weight and opacity.
-const LABEL_BASE =
-  "mb-1 text-[10.5px] font-semibold uppercase leading-4 tracking-[0.08em]";
+// What happened is the card's primary text.
 const BODY_CLASS =
   "text-[clamp(0.625rem,calc(0.4375rem+0.9375cqi),0.8125rem)] leading-[1.5] [text-wrap:pretty]";
+// Open and Done are supplementary reference, a step below the body size.
+const LEDGER_CLASS =
+  "text-[clamp(0.625rem,calc(0.4375rem+0.75cqi),0.71875rem)] leading-[1.5] [text-wrap:pretty]";
+// The For you ask sits between the goal and the body in the hierarchy.
+const ASK_CLASS =
+  "text-[clamp(0.6875rem,calc(0.4375rem+1.25cqi),0.9375rem)] leading-[1.45] [text-wrap:pretty]";
 const GOAL_CLASS =
-  "text-[clamp(0.75rem,calc(0.5rem+1.5cqi),1rem)] leading-[1.4] [text-wrap:wrap]";
+  "text-[clamp(0.8125rem,calc(0.5rem+1.75cqi),1.0625rem)] leading-[1.4] [text-wrap:wrap]";
 
 /**
  * One recap line through BB's markdown, so inline code, emphasis, and links
@@ -64,7 +68,7 @@ function OpenMark() {
     <svg
       aria-hidden="true"
       viewBox="0 0 12 12"
-      className="mt-[4px] h-3 w-3 opacity-60"
+      className="mt-[0.2em] h-3 w-3 opacity-60"
       fill="none"
     >
       <circle cx="6" cy="6" r="4.25" stroke="currentColor" strokeWidth="1.25" />
@@ -77,7 +81,7 @@ function DoneMark() {
     <svg
       aria-hidden="true"
       viewBox="0 0 12 12"
-      className="mt-[4px] h-3 w-3 text-sky-950 opacity-60 dark:text-sky-50"
+      className="mt-[0.2em] h-3 w-3 opacity-80"
       fill="none"
     >
       <path
@@ -108,14 +112,14 @@ function LedgerList({
         {items.map((item, index) => (
           <li
             key={index}
-            className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${BODY_CLASS} ${
+            className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${LEDGER_CLASS} ${
               done
-                ? "text-slate-600/70 dark:text-slate-300/60 [&_p]:line-through [&_p]:decoration-slate-400/60 dark:[&_p]:decoration-neutral-900"
-                : "text-sky-950 dark:text-sky-50"
+                ? "text-sky-900/45 dark:text-sky-200/35 [&_p]:line-through [&_p]:decoration-sky-900/25 [&_p]:decoration-1 dark:[&_p]:decoration-sky-200/25"
+                : "text-sky-900/70 dark:text-sky-200/65"
             }`}
           >
             {done ? <DoneMark /> : <OpenMark />}
-            <RecapText text={item} />
+            <RecapText text={item} typeClass={LEDGER_CLASS} />
           </li>
         ))}
       </ul>
@@ -172,39 +176,39 @@ function RecapSummary({
           />
         </div>
       ) : null}
+      {needsInput ? (
+        <section
+          className={`${ledger.goal ? "mt-1.5" : "pr-24"} ws-amber-text font-medium`}
+        >
+          <h3 className="sr-only">For you</h3>
+          {/* RecapText inherits its color, so the amber goes on the wrapper. */}
+          <RecapText text={needsInput} typeClass={ASK_CLASS} />
+        </section>
+      ) : null}
       <div
-        className={`${ledger.goal ? "mt-2.5" : "pr-24"} grid gap-x-6 gap-y-3 ${
+        className={`${ledger.goal || needsInput ? "mt-2.5" : "pr-24"} grid gap-x-6 gap-y-3 ${
           hasLedger ? "@lg/recap:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""
         }`}
       >
         <div className="space-y-2.5">
-          {needsInput ? (
-            <section>
-              <h3 className={`${LABEL_BASE} ws-amber-text`}>For you</h3>
-              {/* RecapText inherits its color, so the amber goes on a wrapper. */}
-              <div className="ws-amber-text font-medium">
-                <RecapText text={needsInput} />
-              </div>
-            </section>
-          ) : null}
           {ledger.latest.length > 0 ? (
             <section>
               <h3 className="sr-only">Latest</h3>
               {ledger.latest.length === 1 ? (
                 <RecapText
                   text={ledger.latest[0]!}
-                  className="text-sky-950/90 dark:text-sky-100/90"
+                  className="text-foreground"
                 />
               ) : (
                 <ul className="space-y-1">
                   {ledger.latest.map((item, index) => (
                     <li
                       key={index}
-                      className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${BODY_CLASS} text-sky-950/90 dark:text-sky-100/90`}
+                      className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${BODY_CLASS} text-foreground`}
                     >
                       <span
                         aria-hidden="true"
-                        className="ml-[4px] mt-[8px] h-1 w-1 rounded-full bg-current opacity-60"
+                        className="ml-[4px] mt-[0.65em] h-1 w-1 rounded-full bg-current opacity-60"
                       />
                       <RecapText text={item} />
                     </li>
@@ -534,8 +538,9 @@ function useHold(
 
 /**
  * The thread's recap above the composer, with Archive in its top-right corner
- * when the thread is eligible. Hidden while the thread runs, while the user
- * writes a continuation, and inside the inline message editor. Dismissal is
+ * when the thread is eligible. It stays up while the user drafts, so they can
+ * refer to it in their message, and hides once a message is sent or the
+ * thread runs, and inside the inline message editor. Dismissal is
  * keyed by the recap's generation time, so a newer recap reappears.
  *
  * The card eases between sizes as its contents change, e.g. from its
@@ -547,11 +552,14 @@ export function RecapCard() {
   const { scope, isEmpty, attachmentCount, isRunning, isSubmitting } =
     useComposer();
   const threadId = scope.kind === "thread" ? scope.threadId : null;
+  // Archive is no suggestion for a thread the user is writing into, but the
+  // recap stays readable until the message goes out.
   const continuing = useContinuing({
     drafting: !isEmpty || attachmentCount > 0,
     isSubmitting,
     isRunning,
   });
+  const sending = useContinuing({ drafting: false, isSubmitting, isRunning });
   const { recap, generating, needsInput, error, generate } = useRecap(threadId);
   const { prefs } = useRecapPrefs();
   const layout: Layout = prefs?.layout ?? "detailed";
@@ -586,9 +594,9 @@ export function RecapCard() {
     );
   });
 
-  const available = threadId !== null && !continuing && !inlineEditor;
-  const visible =
-    available && recap !== null && recap.generatedAt !== dismissedAt;
+  const available = threadId !== null && !sending && !inlineEditor;
+  const dismissedRecap = recap !== null && recap.generatedAt === dismissedAt;
+  const visible = available && recap !== null && !dismissedRecap;
 
   const frame: Frame | null =
     available && generating && (!recap || !automatic)
@@ -606,9 +614,18 @@ export function RecapCard() {
         : null;
 
   const content: ReactNode =
-    !frame && available && settled && (!automatic || !recap) ? (
+    // Generate Recap takes the card's place when there's none to show: no
+    // automatic recaps, none written yet, or the user dismissed this one.
+    !frame &&
+    available &&
+    settled &&
+    (!automatic || !recap || dismissedRecap) ? (
       <div
-        className="mx-auto mb-3 flex w-full min-w-0 max-w-4xl flex-col items-center gap-1"
+        className={cn(
+          "mx-auto mb-3 flex w-full min-w-0 max-w-4xl flex-col items-center gap-1",
+          // Fades in under the dismissed card as its slot eases shut.
+          hold?.dismissed && "ws-fade-in",
+        )}
         style={FIRST}
       >
         <button
@@ -653,8 +670,10 @@ export function RecapCard() {
     }
   } else if (shown) {
     setShown(false);
+    // A dismissal always eases out, even with Generate Recap taking the
+    // card's place below it.
     if (
-      content === null &&
+      (content === null || dismissedRecap) &&
       !inlineEditor &&
       lastFrame.current &&
       shownHeight.current > 0
@@ -662,10 +681,10 @@ export function RecapCard() {
       setHold({
         id: ++holdCount,
         height: shownHeight.current,
-        dismissed: recap !== null && recap.generatedAt === dismissedAt,
+        dismissed: dismissedRecap,
         ghost: lastFrame.current,
       });
-  } else if (hold && content !== null) setHold(null);
+  } else if (hold && content !== null && !hold.dismissed) setHold(null);
 
   useHold(hold, slotRef, ghostRef, setHold);
 
@@ -722,7 +741,6 @@ export function RecapCard() {
 
   return (
     <div ref={markerRef} className="contents">
-      {content}
       {frame ? (
         // flow-root keeps the card's bottom margin inside the measured slot.
         <div key="shown" ref={slotRef} className="flow-root" style={FIRST}>
@@ -740,7 +758,7 @@ export function RecapCard() {
             </div>
           </div>
         </div>
-      ) : hold && content === null ? (
+      ) : hold && (content === null || hold.dismissed) ? (
         <div
           key={`hold-${hold.id}`}
           ref={slotRef}
@@ -767,6 +785,7 @@ export function RecapCard() {
           ) : null}
         </div>
       ) : null}
+      {content}
     </div>
   );
 }
