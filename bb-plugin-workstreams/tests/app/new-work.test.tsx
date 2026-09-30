@@ -5,6 +5,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { IntakeContext } from "../../src/app/composer/intake.ts";
 import { IntakeBanner } from "../../src/app/composer/IntakeBanner.tsx";
+import { ContinueAction } from "../../src/app/composer/ContinueAction.tsx";
 import { NewWorkDialog } from "../../src/app/composer/NewWork.tsx";
 import type { PluginBrowserBbSdk } from "@get-bb/plugin-sdk/app";
 import type { RouteDecision } from "../../src/server/router.ts";
@@ -46,6 +47,15 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
                 composer.setSelection(next),
               )
             : composer.setSelection(selection);
+        // The stub has no programmatic submit; drive its button as bb's
+        // composer drives its own pipeline.
+        adapter.submit = async () => {
+          (
+            document.querySelector(
+              '[data-testid="bb-new-thread-composer-submit"]',
+            ) as HTMLButtonElement
+          ).click();
+        };
         return adapter;
       }, [composer]);
     },
@@ -90,6 +100,7 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
               return props.onSubmit(request);
             }}
           />
+          <ContinueAction />
         </div>
       );
     },
@@ -312,8 +323,8 @@ it("wrong-workstream override is used by route and execute after prompt edits", 
     intent: { destination: { kind: "workstream", id: "sec_b" } },
   });
 });
-it("an inferred continuation keeps Enter on the new thread, and its suggestion swaps both ways", async () => {
-  const route = vi.fn().mockResolvedValue({
+const suggested = () =>
+  vi.fn().mockResolvedValue({
     ...base,
     id: "d_continue",
     outcome: "continue",
@@ -323,38 +334,18 @@ it("an inferred continuation keeps Enter on the new thread, and its suggestion s
     workstream: "Alpha",
     alternative: { ...decision, id: "d_new", title: "" },
   });
-  const { slot, execute } = mount(route);
+it("Enter creates the new thread while a continuation is only suggested", async () => {
+  const route = suggested();
+  const { execute } = mount(route);
   await type();
   await ready();
   expect(route).toHaveBeenCalledWith(
     expect.objectContaining({ offerNewThread: true }),
   );
   expect(button().textContent).toBe("Create thread");
-  fireEvent.click(
+  expect(
     screen.getByRole("button", { name: "Continue Spacing fix instead" }),
-  );
-  await ready();
-  expect(button().textContent).toBe("Send message");
-  expect(
-    screen.getByTestId("bb-new-thread-composer").dataset
-      .executionControlsVisibility,
-  ).toBe("hidden");
-  expect(
-    screen.getByRole("button", { name: /^Project:/ }).textContent,
-  ).toContain("sideshow");
-  fireEvent.click(
-    screen.getByRole("button", { name: "Start a new thread instead" }),
-  );
-  await ready();
-  expect(
-    screen.getByTestId("bb-new-thread-composer").dataset
-      .executionControlsVisibility,
-  ).toBe("visible");
-  expect(button().textContent).toBe("Create thread");
-  expect(slot.inspection.composer.selections.at(-1)).toMatchObject({
-    projectId: "proj_a",
-  });
-  expect(route).toHaveBeenCalledTimes(1);
+  ).toBeTruthy();
   fireEvent.keyDown(input(), { key: "Enter" });
   await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
   expect(execute.mock.calls[0]![0]).toMatchObject({
@@ -362,6 +353,42 @@ it("an inferred continuation keeps Enter on the new thread, and its suggestion s
     intent: {},
     execution: { projectId: "proj_a" },
   });
+});
+it.each([
+  [
+    "its button",
+    () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: "Continue Spacing fix instead" }),
+      ),
+  ],
+  [
+    "⌘⏎",
+    () =>
+      fireEvent.keyDown(input(), {
+        key: "Enter",
+        metaKey: true,
+        ctrlKey: true,
+      }),
+  ],
+])("%s sends the draft to the suggested thread instead", async (_, press) => {
+  const route = suggested();
+  const { execute, onClose } = mount(route);
+  await type();
+  await ready();
+  press();
+  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
+  expect(execute.mock.calls[0]![0]).toMatchObject({
+    decisionId: "d_continue",
+    prompt: "Fix the parser",
+    intent: {},
+    execution: {
+      input: [{ type: "text", text: "Fix the parser", mentions: [] }],
+    },
+  });
+  expect(execute.mock.calls[0]![0].execution.projectId).toBeUndefined();
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(route).toHaveBeenCalledTimes(1);
 });
 it("same-project manual environment is used instead of stale host environment", async () => {
   const { execute } = mount();

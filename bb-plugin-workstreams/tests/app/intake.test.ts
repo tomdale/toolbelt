@@ -308,7 +308,7 @@ it("an inferred continuation is a suggestion beside a ready new thread", async (
   const route = vi.fn().mockResolvedValue(continuation);
   const intake = new Intake(route, null, null);
   await ready(intake);
-  expect(intake.snapshot().suggestion?.continuation.threadId).toBe("thr_a");
+  expect(intake.snapshot().suggestion?.threadId).toBe("thr_a");
   expect(intake.effectiveAction()).toBe("new-thread");
   expect(intake.snapshot()).toMatchObject({
     action: { value: "new-thread", source: "automatic" },
@@ -317,6 +317,7 @@ it("an inferred continuation is a suggestion beside a ready new thread", async (
       source: "automatic",
     },
     project: { value: "proj_a", source: "automatic" },
+    submitTarget: "new-thread",
   });
   expect(intake.lockedThread()).toBeUndefined();
   expect(intake.canSubmit()).toBe(true);
@@ -324,91 +325,74 @@ it("an inferred continuation is a suggestion beside a ready new thread", async (
   intake.dispose();
 });
 
-it("accepting and declining a current suggestion swap decisions without routing again", async () => {
+it("continuing a current suggestion submits its continuation once, without routing again", async () => {
   const route = vi.fn().mockResolvedValue(continuation);
   const intake = new Intake(route, null, null);
   await ready(intake);
-  intake.acceptSuggestion({
-    projectId: "proj_a",
-    providerId: "codex",
-    model: "gpt-5",
-  });
-  expect(intake.effectiveAction()).toBe("send-message");
-  expect(intake.snapshot().decision?.id).toBe("d_continue");
-  expect(intake.canSubmit()).toBe(false);
-  intake.declineSuggestion();
-  expect(intake.effectiveAction()).toBe("new-thread");
-  expect(intake.snapshot()).toMatchObject({
-    action: { source: "automatic" },
-    destination: { source: "automatic" },
-    decision: { id: "d_new" },
-  });
-  expect(route).toHaveBeenCalledTimes(1);
-  // The pickers the thread's settings replaced come back with the placement.
-  const restored = intake.selection()!;
-  expect(restored).toMatchObject({
-    providerId: "codex",
-    model: "gpt-5",
-    projectId: "proj_a",
-  });
-  intake.reconcileSelection(restored, restored);
-  expect(intake.selection()).toBeNull();
+  await intake.continueSuggestion();
+  expect(intake.snapshot().submitTarget).toBe("suggestion");
   expect(intake.canSubmit()).toBe(true);
-  expect((await intake.forSubmit(prompt)).intent).toEqual({});
-  intake.dispose();
-});
-
-it("the New thread action and field reverts decline an accepted suggestion", async () => {
-  const route = vi.fn().mockResolvedValue(continuation);
-  const intake = new Intake(route, null, null);
-  await ready(intake);
-  intake.acceptSuggestion();
-  intake.selectAction("new-thread");
-  expect(intake.snapshot().action).toEqual({
-    value: "new-thread",
-    source: "automatic",
+  expect(await intake.forSubmit(prompt)).toMatchObject({
+    decision: { id: "d_continue" },
+    intent: {},
   });
-  intake.acceptSuggestion();
-  intake.revertField("destination");
-  expect(intake.effectiveAction()).toBe("new-thread");
-  intake.acceptSuggestion();
-  intake.revertField("action");
-  expect(intake.snapshot().decision?.id).toBe("d_new");
+  intake.completeSubmit();
+  expect(intake.snapshot().submitTarget).toBe("new-thread");
+  expect((await intake.forSubmit(prompt)).decision.id).toBe("d_new");
   expect(route).toHaveBeenCalledTimes(1);
   intake.dispose();
 });
 
-it("a suggestion stays up while the draft reroutes, and acting on it then routes again", async () => {
+it("continuing a suggestion shown while the draft reroutes routes the current text straight to that thread", async () => {
   const route = vi.fn().mockResolvedValue(continuation);
   const intake = new Intake(route, null, null);
   await ready(intake);
   intake.observe("Fix the parser for tabs");
   expect(intake.snapshot().loading).toBe(true);
-  expect(intake.snapshot().suggestion?.continuation.threadId).toBe("thr_a");
-  route.mockResolvedValue({ ...continuation, alternative: undefined });
-  intake.acceptSuggestion();
-  await vi.runAllTimersAsync();
+  expect(intake.snapshot().suggestion?.threadId).toBe("thr_a");
+  const forced = {
+    ...continuation,
+    id: "d_forced",
+    alternative: undefined,
+  } as RouteDecision;
+  route.mockResolvedValue(forced);
+  await intake.continueSuggestion();
+  const intent = {
+    action: "send-message",
+    destination: { kind: "thread", id: "thr_a" },
+  };
   expect(route).toHaveBeenLastCalledWith({
     prompt: "Fix the parser for tabs",
-    intent: {
-      action: "send-message",
-      destination: { kind: "thread", id: "thr_a" },
-    },
+    intent,
   });
-  expect(intake.snapshot().suggestion).toMatchObject({ newThread: null });
-  route.mockResolvedValue(continuation);
-  intake.declineSuggestion();
-  expect(intake.effectiveAction()).toBe("new-thread");
+  expect(await intake.forSubmit("Fix the parser for tabs")).toMatchObject({
+    decision: { id: "d_forced" },
+    intent,
+  });
+  // The automatic preview it replaced never runs.
   await vi.runAllTimersAsync();
-  expect(route).toHaveBeenLastCalledWith({
-    prompt: "Fix the parser for tabs",
-    intent: {},
+  expect(route).toHaveBeenCalledTimes(2);
+  intake.dispose();
+});
+
+it("a failed continuation says why and routes the draft again", async () => {
+  const route = vi.fn().mockResolvedValue(continuation);
+  const intake = new Intake(route, null, null);
+  await ready(intake);
+  intake.observe("Fix the parser for tabs");
+  const gone = new Error("That thread no longer exists.");
+  route.mockRejectedValueOnce(gone);
+  await expect(intake.continueSuggestion()).rejects.toBe(gone);
+  intake.continuationFailed(gone);
+  expect(intake.snapshot()).toMatchObject({
+    submitTarget: "new-thread",
+    submitError: "That thread no longer exists.",
   });
+  await vi.runAllTimersAsync();
   expect(intake.snapshot().decision?.id).toBe("d_new");
-  route.mockResolvedValue(decision);
-  intake.observe("Something unrelated");
-  await vi.runAllTimersAsync();
-  expect(intake.snapshot().suggestion).toBeNull();
+  expect(intake.snapshot().submitError).toBe("That thread no longer exists.");
+  intake.observe("Fix the parser for spaces");
+  expect(intake.snapshot().submitError).toBeNull();
   intake.dispose();
 });
 
@@ -421,32 +405,22 @@ it("clearing the draft removes the suggestion", async () => {
   await ready(intake);
   intake.observe("");
   expect(intake.snapshot().suggestion).toBeNull();
-  intake.acceptSuggestion();
-  expect(intake.effectiveAction()).toBe("new-thread");
+  await expect(intake.continueSuggestion()).rejects.toThrow(
+    "There's no thread to continue.",
+  );
   intake.dispose();
 });
 
-it("manual placement survives accepting and declining a suggestion", async () => {
-  const intake = new Intake(
-    vi.fn().mockResolvedValue(continuation),
-    null,
-    null,
-  );
-  intake.selectProject("mine");
-  const environment: Environment = {
-    type: "reuse",
-    environmentId: "mine_env",
-  };
-  intake.selectEnvironment(environment);
+it("an explicitly chosen thread is a destination, not a suggestion", async () => {
+  const route = vi
+    .fn()
+    .mockResolvedValue({ ...continuation, alternative: undefined });
+  const intake = new Intake(route, null, null);
+  intake.selectDestination({ kind: "thread", id: "thr_a", title: "Parser" });
   await ready(intake);
-  expect(intake.effectiveAction()).toBe("new-thread");
-  intake.acceptSuggestion();
-  intake.declineSuggestion();
-  expect(intake.effectiveAction()).toBe("new-thread");
-  expect(intake.snapshot().environment).toEqual({
-    source: "manual",
-    value: environment,
-  });
+  expect(intake.snapshot().suggestion).toBeNull();
+  expect(intake.effectiveAction()).toBe("send-message");
+  expect(intake.snapshot().decision?.id).toBe("d_continue");
   intake.dispose();
 });
 
@@ -687,12 +661,9 @@ it("identical native settings still acknowledge the current thread target indepe
     },
   } as unknown as PluginBrowserBbSdk;
   intake.observe("Continue A");
+  intake.selectDestination({ kind: "thread", id: "A", title: "A" });
   await intake.resolve();
   await intake.loadThread(sdk, "A");
-  const first = intake.selection()!;
-  intake.reconcileSelection(first, first);
-  expect(intake.snapshot().suggestion?.continuation.threadId).toBe("A");
-  intake.acceptSuggestion();
   const accepted = intake.selection()!;
   intake.reconcileSelection(accepted, accepted);
   expect(intake.canSubmit()).toBe(true);

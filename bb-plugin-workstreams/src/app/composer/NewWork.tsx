@@ -96,7 +96,8 @@ function NewWork({
   // Each send re-creates the alert so a repeated message is announced again.
   const [attempt, setAttempt] = useState(0);
   const intakeState = useSyncExternalStore(intake.subscribe, intake.snapshot);
-  const routeError = intakeState.error ?? intakeState.selectionError;
+  const routeError =
+    intakeState.submitError ?? intakeState.error ?? intakeState.selectionError;
   // A failed create outlives the preview retry that clears the route error.
   const message = error ?? routeError;
   useEffect(() => () => intake.dispose(), [intake]);

@@ -6,6 +6,7 @@ import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { ProposalBanner } from "./header/ProposalBanner.tsx";
 import { RouteBanner } from "./composer/RouteBanner.tsx";
+import { ContinueAction } from "./composer/ContinueAction.tsx";
 import { RecapCard } from "./composer/RecapCard.tsx";
 import { AutomaticFilingCard } from "./composer/AutomaticFilingCard.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
@@ -37,6 +38,7 @@ export default definePluginApp((app) => {
     id: "router",
     scopes: ["new-thread"],
     banners: [{ id: "route", chrome: "bare", component: RouteBanner }],
+    actions: [{ id: "continue", component: ContinueAction }],
   });
   app.slots.experimental_threadHeaderAction({
     id: "parent-thread",
