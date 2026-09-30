@@ -493,7 +493,8 @@ export function registerCli(
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ positionals, options }) {
-            let prompt = positionals.prompt;
+            const prompt = positionals.prompt;
+            let workstreamId: string | null = null;
             if (options.workstream) {
               const section = resolveWorkstream(
                 await listSections(bb.sdk),
@@ -504,10 +505,13 @@ export function registerCli(
                   `No workstream named "${options.workstream}".`,
                   { code: "workstream_not_found" },
                 );
-              prompt = `@section:${section.id} ${prompt}`;
+              workstreamId = section.id;
             }
             const decision = await router
-              .route(prompt, { pickedProjectId: options.project ?? null })
+              .route(prompt, {
+                pickedProjectId: options.project ?? null,
+                workstreamId,
+              })
               .catch(fail);
             // Scripts can't see a preview: continue only when sure.
             const acted = await actOn(
@@ -813,7 +817,8 @@ export async function actOn(
   if (
     final.outcome === "continue" &&
     (final.confidence !== "high" || final.threadId === options.spawnedFrom)
-  )
+  ) {
+    router.forget(decision.id);
     final = final.sectionId
       ? {
           ...(await router.route(prompt, {
@@ -824,6 +829,7 @@ export async function actOn(
           traceId: final.traceId,
         }
       : ({ ...final, outcome: "unsure", candidates: [] } as RouteDecision);
+  }
   const workstream =
     final.outcome === "new-thread"
       ? final.workstream

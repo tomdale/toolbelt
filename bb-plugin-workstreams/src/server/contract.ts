@@ -12,6 +12,7 @@ import {
   traceSchema,
   traceSummarySchema,
 } from "../domain/trace.ts";
+import type { Environment } from "./router.ts";
 import { entrySchema, sourceSchema } from "./journal.ts";
 
 const placementSchema = z.object({
@@ -187,22 +188,83 @@ const routeBase = {
   subject: z.string().nullable(),
   traceId: z.string().nullable(),
 };
+/** The supported SDK environment selection union, validated before routing or execution. */
+export const environmentSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    type: z.literal("reuse"),
+    environmentId: z.string().min(1),
+  }),
+  z.strictObject({
+    type: z.literal("host"),
+    hostId: z.string().min(1).optional(),
+    workspace: z.discriminatedUnion("type", [
+      z.strictObject({
+        type: z.literal("unmanaged"),
+        path: z.string().nullable(),
+        branch: z
+          .discriminatedUnion("kind", [
+            z.strictObject({
+              kind: z.literal("existing"),
+              name: z.string().min(1),
+            }),
+            z.strictObject({
+              kind: z.literal("new"),
+              baseBranch: z.string().min(1),
+            }),
+          ])
+          .optional(),
+      }),
+      z.strictObject({
+        type: z.literal("managed-worktree"),
+        baseBranch: z.discriminatedUnion("kind", [
+          z.strictObject({ kind: z.literal("default") }),
+          z.strictObject({ kind: z.literal("named"), name: z.string().min(1) }),
+        ]),
+      }),
+      z.strictObject({ type: z.literal("personal") }),
+    ]),
+  }),
+  z.strictObject({ type: z.literal("project-default") }),
+  z.strictObject({
+    type: z.literal("provider"),
+    environmentProviderId: z.string().min(1),
+    inputs: z.json().nullable().default(null),
+    machine: z
+      .discriminatedUnion("type", [
+        z.strictObject({
+          type: z.literal("existing"),
+          hostId: z.string().min(1),
+        }),
+        z.strictObject({
+          type: z.literal("new"),
+          machineProviderId: z.string().min(1),
+          inputs: z.json().nullable().default(null),
+        }),
+      ])
+      .optional(),
+  }),
+]) satisfies z.ZodType<Environment>;
+
 const placementSchema2 = z.object({
   projectId: z.string(),
-  environment: z.record(z.string(), z.unknown()),
+  environment: environmentSchema,
   label: z.string(),
 });
-const routeIntentSchema = z.object({
+export const routeIntentSchema = z.object({
   action: z.enum(["new-thread", "send-message", "new-workstream"]).optional(),
-  destination: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("workstream"), id: z.string() }),
-    z.object({ kind: z.literal("thread"), id: z.string() }),
-    z.object({ kind: z.literal("none") }),
-  ]).optional(),
-  placement: z.object({
-    projectId: z.string().optional(),
-    environment: z.any().optional(),
-  }).optional(),
+  destination: z
+    .discriminatedUnion("kind", [
+      z.object({ kind: z.literal("workstream"), id: z.string() }),
+      z.object({ kind: z.literal("thread"), id: z.string() }),
+      z.object({ kind: z.literal("none") }),
+    ])
+    .optional(),
+  placement: z
+    .object({
+      projectId: z.string().optional(),
+      environment: environmentSchema.optional(),
+    })
+    .optional(),
   workstreamName: z.string().optional(),
 });
 export const routeSchema = z.discriminatedUnion("outcome", [
@@ -217,8 +279,8 @@ export const routeSchema = z.discriminatedUnion("outcome", [
   z.object({
     ...routeBase,
     outcome: z.literal("new-thread"),
-    sectionId: z.string(),
-    workstream: z.string(),
+    sectionId: z.string().nullable(),
+    workstream: z.string().nullable(),
     title: z.string(),
     placement: placementSchema2.nullable(),
   }),
@@ -295,7 +357,14 @@ export const rpcContract = defineRpcContract({
         ])
         .nullable()
         .optional(),
-      execution: z.record(z.string(), z.unknown()).nullable().optional(),
+      execution: z
+        .object({
+          projectId: z.string().optional(),
+          environment: environmentSchema.optional(),
+        })
+        .catchall(z.unknown())
+        .nullable()
+        .optional(),
       intent: routeIntentSchema.nullable().optional(),
     }),
     output: z.object({
