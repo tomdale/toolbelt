@@ -43,13 +43,7 @@ export function StatusMark({
  * which makes rows mounted later visibly drift out of phase. The browser owns
  * all frame scheduling; this only adjusts Web Animations API metadata once.
  */
-export function synchronizeSpinnerAnimations(
-  element: HTMLElement,
-  shape: SpinnerStyle["shape"],
-): void {
-  // Keep the shape in the API so callers cannot accidentally synchronize a
-  // non-spinner subtree when this helper is reused for a new shape.
-  void shape;
+export function synchronizeSpinnerAnimations(element: HTMLElement): void {
   if (typeof element.getAnimations !== "function") return;
   const animations = element.getAnimations({ subtree: true });
   for (const animation of animations) {
@@ -76,8 +70,7 @@ export function WorkingMark({
   const spinner = shown ?? chosen;
   const markRef = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
-    if (markRef.current)
-      synchronizeSpinnerAnimations(markRef.current, spinner.shape);
+    if (markRef.current) synchronizeSpinnerAnimations(markRef.current);
   }, [spinner.shape]);
   const a11y = label
     ? { role: "img", "aria-label": label, title: label }

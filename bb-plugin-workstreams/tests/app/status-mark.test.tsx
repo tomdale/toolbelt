@@ -6,14 +6,28 @@ type FakeAnimation = { startTime: number | null };
 
 const animations = new WeakMap<HTMLElement, FakeAnimation[]>();
 
+const originalGetAnimations = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "getAnimations",
+);
+
 beforeEach(() => {
-  HTMLElement.prototype.getAnimations = vi.fn(function (this: HTMLElement) {
-    return animations.get(this) ?? [];
-  }) as unknown as typeof HTMLElement.prototype.getAnimations;
+  Object.defineProperty(HTMLElement.prototype, "getAnimations", {
+    configurable: true,
+    value: vi.fn(function (this: HTMLElement) {
+      return animations.get(this) ?? [];
+    }),
+  });
 });
 
 afterEach(() => {
-  vi.restoreAllMocks();
+  if (originalGetAnimations)
+    Object.defineProperty(
+      HTMLElement.prototype,
+      "getAnimations",
+      originalGetAnimations,
+    );
+  else Reflect.deleteProperty(HTMLElement.prototype, "getAnimations");
 });
 
 describe("synchronizeSpinnerAnimations", () => {
@@ -25,8 +39,10 @@ describe("synchronizeSpinnerAnimations", () => {
     animations.set(first, [firstAnimation]);
     animations.set(second, [secondAnimation]);
 
-    synchronizeSpinnerAnimations(first, "arc");
-    synchronizeSpinnerAnimations(second, "arc");
+    synchronizeSpinnerAnimations(first);
+    synchronizeSpinnerAnimations(second);
+
+    expect(first.getAnimations).toHaveBeenCalledWith({ subtree: true });
 
     expect(firstAnimation.startTime).toBe(0);
     expect(secondAnimation.startTime).toBe(0);
@@ -40,12 +56,34 @@ describe("synchronizeSpinnerAnimations", () => {
     animations.set(oldMark, [oldAnimation]);
     animations.set(replacement, [replacementAnimation]);
 
-    synchronizeSpinnerAnimations(oldMark, "dots");
-    synchronizeSpinnerAnimations(replacement, "dots");
+    synchronizeSpinnerAnimations(oldMark);
+    synchronizeSpinnerAnimations(replacement);
 
     expect(oldAnimation.startTime).toBe(0);
     expect(replacementAnimation.startTime).toBe(0);
-    expect(animations.has(oldMark)).toBe(true);
-    // The helper owns no listeners, timers, or shared registry to clean up.
+  });
+
+  it("synchronizes every dot without changing its stagger", () => {
+    const mark = document.createElement("span");
+    const dots = [0, 150, 300].map((delay) => ({ startTime: null, delay }));
+    animations.set(mark, dots);
+
+    synchronizeSpinnerAnimations(mark);
+
+    expect(dots.map((dot) => dot.startTime)).toEqual([0, 0, 0]);
+    expect(dots.map((dot) => dot.delay)).toEqual([0, 150, 300]);
+  });
+
+  it("leaves reduced-motion marks without animations alone", () => {
+    expect(() =>
+      synchronizeSpinnerAnimations(document.createElement("span")),
+    ).not.toThrow();
+  });
+
+  it("supports environments without the Web Animations API", () => {
+    Reflect.deleteProperty(HTMLElement.prototype, "getAnimations");
+    expect(() =>
+      synchronizeSpinnerAnimations(document.createElement("span")),
+    ).not.toThrow();
   });
 });
