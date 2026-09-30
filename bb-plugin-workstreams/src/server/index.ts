@@ -357,7 +357,11 @@ export default async function plugin(bb: BbPluginApi) {
       reconcileSoon();
     });
   bb.events.on("thread.created", ({ thread }) => {
-    if (thread.visibility !== "hidden" && thread.archivedAt === null)
+    const metadata = (thread as unknown as { pluginMetadata?: unknown }).pluginMetadata;
+    const unassigned =
+      metadata && typeof metadata === "object" &&
+      (metadata as { unassignedByRouter?: unknown }).unassignedByRouter === true;
+    if (thread.visibility !== "hidden" && thread.archivedAt === null && !unassigned)
       service.seeThread(
         thread.id,
         thread.sectionId ?? null,
@@ -410,7 +414,7 @@ export default async function plugin(bb: BbPluginApi) {
           return router.route(prompt, {
             pickedProjectId,
             workstreamId,
-            intent: intent as never,
+            intent,
             fromDecisionId,
           });
         cancelPreview(draftKey);
@@ -420,7 +424,7 @@ export default async function plugin(bb: BbPluginApi) {
           return await router.route(prompt, {
             pickedProjectId,
             workstreamId,
-            intent: intent as never,
+            intent,
             fromDecisionId,
             signal: controller.signal,
           });
@@ -437,9 +441,8 @@ export default async function plugin(bb: BbPluginApi) {
         if (!remembered)
           throw new UserError("That preview expired; route it again.");
         let decision = choose(remembered, choice);
-        // Claim the preview before resolving an ambiguous placement, which
-        // yields and could otherwise let a second submit consume it too.
-        router.forget(decisionId);
+        // `execute` claims the decision synchronously before any side effect.
+        // Keep it in the cache until then so its intent snapshot is checked.
         // An unsure choice of workstream still needs a real placement; the
         // routing call behind the choice still explains it.
         if (decision.outcome === "new-thread" && !decision.placement?.projectId)
@@ -449,7 +452,7 @@ export default async function plugin(bb: BbPluginApi) {
           };
         return router.execute(decision, prompt, "router", {
           execution: (execution ?? undefined) as never,
-          intent: (intent ?? null) as never,
+          intent: intent ?? null,
         });
       }),
     state: async () => ({

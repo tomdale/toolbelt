@@ -621,23 +621,29 @@ export class WorkstreamService {
    */
   recordCreated(
     threadId: string,
-    sectionId: string,
+    sectionId: string | null,
     source: Source,
     details: { title: string; rationale: string },
   ): JournalEntry {
-    const name = this.db
-      .prepare("SELECT name FROM ws_seen_section WHERE section_id = ?")
-      .get(sectionId) as { name: string } | undefined;
+    const name = sectionId
+      ? (this.db
+          .prepare("SELECT name FROM ws_seen_section WHERE section_id = ?")
+          .get(sectionId) as { name: string } | undefined)
+      : undefined;
     const entry = this.journal.add({
       action: "route",
       source,
       rationale: details.rationale,
       threads: [{ id: threadId, name: details.title }],
-      workstreams: [{ id: sectionId, name: name?.name ?? "" }],
-      undo: { kind: "move", moves: [{ threadId, from: null, to: sectionId }] },
+      workstreams: sectionId ? [{ id: sectionId, name: name?.name ?? "" }] : [],
+      undo: sectionId
+        ? { kind: "move", moves: [{ threadId, from: null, to: sectionId }] }
+        : null,
     });
-    this.place(threadId, sectionId, source, entry.id);
-    this.seeThread(threadId, sectionId, null);
+    if (sectionId) {
+      this.place(threadId, sectionId, source, entry.id);
+      this.seeThread(threadId, sectionId, null);
+    } else this.seeThread(threadId, null, null);
     this.onChange();
     return entry;
   }
