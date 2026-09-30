@@ -19,6 +19,7 @@ export const TRACE_KINDS = [
   "organize-assign",
   "file-unsorted",
   "describe",
+  "supervision",
 ] as const;
 export type TraceKind = (typeof TRACE_KINDS)[number];
 
@@ -98,6 +99,7 @@ export const TRACE_KIND_TITLE: Record<TraceKind, string> = {
   "organize-assign": "Organize: filing",
   "file-unsorted": "Filing Unsorted threads",
   describe: "Workstream descriptions",
+  supervision: "Workstream supervision",
 };
 
 /** Compact labels for narrow columns, such as the Activity log's. */
@@ -109,6 +111,7 @@ export const TRACE_KIND_SHORT: Record<TraceKind, string> = {
   "organize-assign": "Organize filing",
   "file-unsorted": "Filing",
   describe: "Descriptions",
+  supervision: "Supervision",
 };
 
 export const TRACE_STATUS_TITLE: Record<TraceStatus, string> = {

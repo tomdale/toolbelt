@@ -325,9 +325,8 @@ Plugin SQLite, keyed by `sectionId`. The name mirrors BB.
 under 2 minutes, including review.
 
 1. **Deterministic intake.** Read threads and sections, and build the
-   parent/child thread trees. v1's change log identifies the filings v1 made
-   automatically; those count as `auto` and are re-evaluated. Every other filing
-   counts as `user`.
+   parent/child thread trees. Current placement provenance identifies automatic
+   filings, which can be re-evaluated; manual placements remain authoritative.
 2. **Map proposal.** One model call proposes merges, renames, retirements,
    descriptions, and project associations.
 3. **Review.** Tom reviews the map on one screen.
@@ -370,28 +369,21 @@ kept separate:
 | Map evolution        | A cluster in BB & plugins becomes BB Recap    | Workstream-level proposals                              |
 | Classification noise | The model disagrees with itself               | Suppressed: membership is never re-derived turn by turn |
 
-**Evidence.** Each root carries:
+**Evidence and reasoning.** The supervisor considers the current map, active
+root titles and recaps, per-thread notebooks, and shared brief. Workstreams
+represent coherent ongoing efforts; several may belong to one product. It can
+propose spin-outs, moves, and merges when that helps retrieval and navigation.
+No product-label count or repository-path identity determines the proposal.
 
-- a `subject`, chosen from the workstream's existing `subjects[]` when one fits;
-- a deterministic `subjectKey` (the repo or package path from its own and its
-  children's environments and PRs), which wins when present. A cached host probe
-  resolves paths to repository identity (the remote URL plus the path inside the
-  repository). That way the same package matches across every layout:
-  - `~/Code/Repos/<repo>/<worktree>/…`
-  - Workforest tasks: `…/_tasks/<parent>/<task>/…`
-  - Workforest workspaces: `~/Code/Workspaces/<template>/<name>/<repo>/…`
-  - BB managed worktrees:
-    `~/.bb/plugins/environment-git-worktree/host-data/worktrees/<thread>-N/<repo>/…`
+**Actions.** Spin-out creates a workstream and moves a coherent group of roots.
+Move files roots into an existing effort. Merge brings all eligible source work
+into an existing effort. User-written descriptions constrain intended scope;
+recent manual/external placement remains protected. Dormant is a view rule, not
+a model mutation.
 
-**Proposals.** Defaults use `responsive` sensitivity. `balanced` and
-`conservative` are settings.
-
-| Proposal         | Trigger                                                                                                                                                           | Effect                                                                              |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Spin out         | Within one workstream, a subject has **≥ 2 roots** in the last 60 days (active or archived), and at least 1 is active. The router can also propose one at intake. | Create a section and record, move the selected roots, narrow the source description |
-| Move to existing | A subject matches another workstream (name, alias, or subject key), with ≥ 1 thread                                                                               | Move the selected roots                                                             |
-| Merge            | Small workstreams whose subjects overlap, or the router is repeatedly unsure between them, or the user repeatedly moves threads between them                      | Move all roots into the survivor. Delete the losing section only under I5.          |
-| Dormant          | No active threads for 30 days                                                                                                                                     | View rule only: hidden from the sidebar and listed under Dormant on the page        |
+Sensitivity controls confidence and review cadence. Changed notebooks or active
+work make another review useful; unchanged snapshots do not incur a model call
+each reconcile. Failed reviews retain no actionable unvalidated response.
 
 **Surfacing.**
 
@@ -417,15 +409,16 @@ kept separate:
 - Accepting runs a preflight revision check, applies the change as one journaled
   batch, skips threads that changed and reports them, and can be undone as a
   whole.
-- Dismissing snoozes the subject until it gains 2 more threads.
+- Dismissing or undoing suppresses the same suggestion until its relevant
+  evidence changes.
 
 **Anti-churn rules.**
 
 - At most one open proposal per workstream, and at most 3 globally.
 - A thread the user moved in the last 14 days is excluded.
 - Every proposal is revalidated when it is shown and when it is applied.
-- A model call only names and describes a proposal that has already crossed its
-  threshold.
+- The model identifies useful groupings; deterministic validation checks action
+  IDs, membership, manual authority, stale changes, and safe application.
 
 ## 10. Per-thread analysis
 
@@ -595,7 +588,8 @@ entry point is a Workstreams header action.
 | Manual order and thread snoozes                                                                                       | Plugin SQLite, `ws_meta` values                                          |
 | Collapse state and UI preferences                                                                                     | Client local storage                                                     |
 
-v1 tables are left untouched until cutover and are not read after bootstrap.
+Obsolete state/banner tables are migrated and dropped during installation;
+current data is owned by the workstream journal, placements, and notebooks.
 
 ## 13. Architecture
 
@@ -607,10 +601,10 @@ bb-plugin-workstreams/
   tests/         domain (real exported snapshots) · server (mock SDK) · app (renderSlot)
 ```
 
-- Use the current SDK (0.5.29 at the time of writing; v1 was pinned to 0.5.9).
+- Use the Plugin SDK surface compatible with the installed BB host.
 - Keep to about 3K lines of code, excluding tests.
 
-**Carried over from v1:**
+**Current surfaces:**
 
 - the isolated inference runner (`host.ts`), now a direct AI Gateway call
   (`gateway.ts`) with Pi's key: `pi --print --thinking off` sends
@@ -621,89 +615,16 @@ bb-plugin-workstreams/
 - the eval harness, export and fixture replay, the 32-thread reference set, and
   `eval/delegation.json`.
 
-## 14. Platform findings (spikes, 2026-09-29)
+## 14. Learning and supervision
 
-| #   | Question                                                                                   | Result                                                                                                                                                                                                                                   |
-| --- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S1  | Does the live sidebar hook work on a plugin page?                                          | **Yes.** It returned 38 visible threads, 16 sections (including the spike's temporary one), and 14 projects, with fields including `indicator`, `environment`, `lifecycleOwnerThreadId`, and `queuedWork`. Hidden threads are excluded.  |
-| S2  | Does a banner in the new-thread composer work, with `setSelection` and clearing the draft? | **Yes.** The scope exposes `projectId`, the picker switched to the requested project, and `clear()` works. The banner remounts when the scope changes, so its state must live outside the component.                                     |
-| S3  | What does the `configure` context contain, and does tool and instruction injection work?   | **Yes**, gated by metadata: an injected codeword and tool call succeeded, and threads without the metadata got neither. The context has no `sectionId` or visibility.                                                                    |
-| S4  | Is there an event for section, title, or rename changes?                                   | **No**, not even `experimental_thread.events`. A reconciler is required.                                                                                                                                                                 |
-| S5  | Can one spawn set section, parent, and lifecycle owner?                                    | **Yes**, but it returns HTTP 500 while the parent is still `starting`. `project-default` provisioned a managed worktree and branch. (Core tears down a worktree after its last thread is deleted, asynchronously, and keeps the branch.) |
-| S6  | How does a plugin-sent message appear?                                                     | As `initiator: user` with no sender, and the agent reads it as the user. Child completions reach the parent as system messages that start a turn.                                                                                        |
-| S7  | Does a floating banner at the top of the thread work?                                      | **Yes**, using the header action plus a portal. Pane geometry is available only in split view.                                                                                                                                           |
+The learner writes plain thread notebooks and a shared brief. Notes describe
+user goals, product meaning, decisions, outcomes, and uncertainty. AGENTS.md,
+skills, and project guidance own agent operating procedure; notebooks refer to
+those authorities rather than duplicate checklists or lifecycle rules.
 
-## 15. Process rules
+Routing, analysis, reviewed organization, and periodic supervision consume the
+shared understanding. Learning does not mutate sections; organizational actions
+flow through the journal and safe batch application.
 
-- A single implementation owner works in the `workstreams-v2` worktree.
-  Subagents review only.
-- Never install from uncommitted work.
-- Rewrite the Workstreams plugin **in place**: same plugin id (`workstreams`),
-  settings, and sidebar selection, developed on the `workstreams-v2` branch.
-- Each phase gate is installed from that branch and fast-forwarded to `main`.
-- Installing Phase 1 replaces v1 live, so v1's recaps and Needs-you inference
-  are missing until Phase 2. Rollback is one command: install a v1 checkout by
-  path.
-- Every phase gate reports:
-  - the commit and a clean tree;
-  - that the plugin was reloaded;
-  - the **selected sidebar provider**;
-  - fresh data timestamps;
-  - sidebar and page screenshots;
-  - what was not verified.
-- Requirements stay narrow and testable, and each one lists the interpretations
-  it rules out.
-- No live mutations outside throwaway fixtures until the bootstrap phase, and
-  then only through the journal.
-
-## 16. Phases
-
-| Phase | Scope                                                                                                                                | Gate                                                            |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| 0     | Freeze v1 (`organize = suggest`, workers idle), worktree, spikes, this spec                                                          | Tom signs off                                                   |
-| 1     | Deterministic core: thread trees and projection, sidebar, Unsorted, reconciler, page skeleton, parent link, journal                  | Exact-once tests on a real export. Screenshots. No model calls. |
-| 2     | Analysis: idle queue, recap/state/subject, Needs you, eval harness                                                                   | Analysis within about 10 s of idle. Passes the eval.            |
-| 3     | Bootstrap and evolution: map proposal, review, assignment, evolution engine, floating banner, Activity log                           | Live state organized in under 2 minutes. Undo works.            |
-| 4     | Intake: router, native-composer banner, ＋ New, CLI `new`                                                                            | Routing eval on replayed real prompts                           |
-| 5     | Task-thread behavior: `configure` instructions, `bb workstreams handoff`, drift flag; update tomdaleOS agent instructions separately | Handoff and delegate scenarios on throwaway threads             |
-| 6     | Cutover: rename to `workstreams`, remove v1                                                                                          | A day of normal use                                             |
-
-## 17. Decisions
-
-**Decided by Tom.**
-
-- Manager threads are replaced by task threads that delegate and hand off.
-- Intake is opinionated: continue an existing thread, start a new thread, or
-  start a new workstream.
-- No manual or big-bang Analyze or Organize runs.
-- The workstream map evolves incrementally with responsive thresholds (≥ 2 roots
-  in 60 days, archived included) and is dialed down if it proves disruptive.
-- Evolution proposals surface as a yellow floating banner at the top of affected
-  threads, with minimal copy.
-- The page carries an Activity log of every change and proposal, with timestamps
-  and rationale.
-- Delegation uses BB's own spawn, and handoff is the `bb workstreams handoff`
-  CLI. Workstreams registers no agent tools.
-- There is no default home project. Work with no code target goes to BB's
-  personal project ("Don't work in a project") unless `homeProjectId` is set.
-- Workforest workspaces (multi-repository roots with no root repo) are a
-  first-class project shape (§3).
-- The plugin is rewritten in place, keeping the same id, `workstreams`.
-- The UI term for a section is **workstream**.
-- Grouping workstreams into families is dropped for now.
-
-**Defaults accepted by Tom (2026-09-29).**
-
-| #   | Question                             | Default                                                                                                         |
-| --- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| D1  | What is a workstream?                | A native section                                                                                                |
-| D2  | Which intake entry points?           | Native-composer banner, plus ＋ New                                                                             |
-| D3  | How is a route confirmed?            | Always preview. ⏎ accepts.                                                                                      |
-| D4  | Default environments?                | Router-created task threads use the project **checkout**. Delegates follow the project-shape guidance (§3, §5). |
-| D5  | Which threads get task instructions? | All visible top-level threads                                                                                   |
-| D6  | Who owns a delegate's lifecycle?     | The task thread (archiving the task archives its delegates)                                                     |
-| D7  | Which models?                        | A stronger fast model for the bootstrap assignment, and Flash-Lite for steady state (pending the eval)          |
-| D8  | Threads created outside Workstreams? | Auto-filed at high confidence, journaled                                                                        |
-| D9  | Evolution outside intake?            | Auto-apply with an Undo banner                                                                                  |
-| D10 | Recent band?                         | Keep, de-duplicated against Needs you                                                                           |
-| D11 | Titles?                              | Title untitled threads and retitle drifted ones, never overriding a title set elsewhere (§10.1)                 |
+See [organization parity](docs/supervision-parity.md) for the preserved feature
+contracts and the intentional retirement of obsolete cleanup commands.

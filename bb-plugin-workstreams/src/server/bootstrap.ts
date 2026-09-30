@@ -1,9 +1,8 @@
 /**
  * One-time organizing (SPEC §8), also `bb workstreams rebuild`:
  *
- * 1. Intake: roots, sections, and who filed each root. v1's change log marks
- *    the filings v1 made automatically; those, and unfiled roots, are
- *    re-evaluated. Every other filing is the user's and stays put.
+ * 1. Intake: roots, sections, and recorded placement provenance. Automatically
+ *    filed and unfiled roots are re-evaluated; manual placements stay put.
  * 2. Map proposal: one model call proposes renames, merges, new workstreams,
  *    and descriptions.
  * 3. Review: the user accepts or rejects each change.
@@ -14,12 +13,8 @@
  * until the bootstrap is applied or skipped.
  */
 import { buildForest } from "../domain/tree.ts";
-import {
-  detectProposals,
-  normalize,
-  snoozeKey,
-  type EvolutionRoot,
-} from "../domain/evolution.ts";
+import { normalize } from "../domain/evolution.ts";
+import type { SupervisionInput } from "../domain/supervision.ts";
 import {
   ASSIGN_BATCH,
   type Assignment,
@@ -46,9 +41,6 @@ export type BootstrapMove = {
   accepted: boolean;
   /** The assignment call's confidence; unset for merge and evolution moves. */
   confidence?: Assignment["confidence"];
-  /** Set for moves from the evolution engine: snoozed if left unchecked. */
-  key?: string;
-  evidenceCount?: number;
   /** The debug trace of the assignment call that proposed it (SPEC §11.6). */
   traceId?: string | null;
 };
@@ -102,6 +94,10 @@ export class Bootstrap {
       map: WorkstreamMap;
       inference: Inference;
       model: () => Promise<string>;
+      context?: () => string;
+      notebook?: (
+        threadId: string,
+      ) => { text: string; updatedAt: number } | null;
       onChange: () => void;
       now?: () => number;
     },
@@ -179,6 +175,7 @@ export class Bootstrap {
         .run(
           "organize-map",
           {
+            understanding: this.deps.context?.(),
             workstreams: records.map((record) => ({
               name: record.name,
               description: record.description,
@@ -346,6 +343,7 @@ export class Bootstrap {
                 const { value, traceId } = await this.deps.inference.run(
                   "organize-assign",
                   {
+                    understanding: this.deps.context?.(),
                     workstreams: options,
                     threads: batch.map((r) => ({
                       id: r.id,
@@ -448,48 +446,68 @@ export class Bootstrap {
           accepted: true,
         });
       }
-      // The evolution engine, relaxed, over roots the user filed. These are
-      // offered unchecked: a user filing only moves with the user's say-so.
-      const evolutionRoots: EvolutionRoot[] = state.roots
-        .filter((r) => r.provenance === "user")
-        .map((r) => ({
-          id: r.id,
-          sectionId: r.sectionId,
-          subject: analysis[r.id]?.subject ?? null,
-          active: true,
-          lastActiveAt: this.now(),
-          userMovedAt: null,
-        }));
-      const candidates = detectProposals(
-        evolutionRoots,
-        records.map((r) => ({
-          id: r.sectionId,
-          name: r.name,
-          aliases: r.aliases,
-        })),
-        { now: this.now(), sensitivity: "responsive", relaxed: true },
+      // Manual placements are shown as opt-in changes in this reviewed flow.
+      const manualRoots = state.roots.filter(
+        (root) => root.provenance === "user",
       );
-      for (const candidate of candidates)
-        for (const threadId of candidate.threadIds) {
-          if (moves.some((m) => m.threadId === threadId)) continue;
-          const root = rootById.get(threadId)!;
-          const name =
-            candidate.newName ?? finalName(candidate.targetSectionId!);
-          if (candidate.newName && !creates.has(normalize(name)))
-            creates.set(normalize(name), { name, description: null });
-          moves.push({
-            threadId,
-            title: root.title,
-            from: root.sectionId,
-            fromName: fromName(root.sectionId),
-            to: candidate.targetSectionId ?? `${NEW_PREFIX}${name}`,
-            toName: name,
-            reason: `${candidate.kind} (you filed this thread)`,
-            accepted: false,
-            key: candidate.key,
-            evidenceCount: candidate.evidenceCount,
-          });
-        }
+      if (manualRoots.length) {
+        const input: SupervisionInput = {
+          sensitivity: "responsive",
+          context: this.deps.context?.() ?? "",
+          workstreams: records.map((record) => ({
+            id: record.sectionId,
+            name: record.name,
+            description: record.description,
+            descriptionSource: record.descriptionSource,
+            roots: manualRoots
+              .filter((root) => root.sectionId === record.sectionId)
+              .map((root) => {
+                const notebook = this.deps.notebook?.(root.id);
+                return {
+                  id: root.id,
+                  title: root.title,
+                  recap: analysis[root.id]?.recap ?? null,
+                  revision:
+                    this.deps.service.threads().find((t) => t.id === root.id)
+                      ?.latestAttentionAt ?? 0,
+                  notebook: notebook?.text ?? null,
+                  notebookUpdatedAt: notebook?.updatedAt ?? null,
+                  eligible: true,
+                };
+              }),
+          })),
+        };
+        const { value: candidates, traceId } = await this.deps.inference.run(
+          "supervision",
+          input,
+          {
+            model,
+            label: "Review organization of manually filed threads",
+            links: [this.runLink(state.startedAt)],
+          },
+        );
+        if (traceId) traceIds.push(traceId);
+        for (const candidate of candidates)
+          for (const threadId of candidate.threadIds) {
+            if (moves.some((move) => move.threadId === threadId)) continue;
+            const root = rootById.get(threadId)!;
+            const name =
+              candidate.name ?? finalName(candidate.targetSectionId!);
+            if (candidate.name && !creates.has(normalize(name)))
+              creates.set(normalize(name), { name, description: null });
+            moves.push({
+              threadId,
+              title: root.title,
+              from: root.sectionId,
+              fromName: fromName(root.sectionId),
+              to: candidate.targetSectionId ?? `${NEW_PREFIX}${name}`,
+              toName: name,
+              reason: `${candidate.reason} (manual placement; opt in)`,
+              accepted: false,
+              traceId,
+            });
+          }
+      }
 
       // A new workstream for a single thread starts unchecked: new
       // workstreams need two roots unless the user opts in.
@@ -579,18 +597,11 @@ export class Bootstrap {
         "bootstrap",
         `Organized ${moves.length} thread${moves.length === 1 ? "" : "s"} across ${touched.size} workstreams`,
       );
-      // A move left unchecked is the user's call: the thread stays, and an
-      // evolution candidate behind it is snoozed like a dismissal.
+      // A rejected move records manual placement, so periodic supervision
+      // respects the user's decision without a separate classifier cooldown.
       for (const move of current.preview.moves) {
         if (override.get(move.threadId) ?? move.accepted) continue;
         this.deps.service.keep(move.threadId, move.from);
-        if (move.key)
-          this.deps.db
-            .prepare(
-              `INSERT INTO ws_snooze (key, evidence_count, at) VALUES (?, ?, ?)
-               ON CONFLICT(key) DO UPDATE SET evidence_count = excluded.evidence_count, at = excluded.at`,
-            )
-            .run(snoozeKey(move.key), move.evidenceCount ?? 1, this.now());
       }
       if (entry)
         this.deps.inference.copyLinks(this.runLink(current.startedAt), {
@@ -644,19 +655,7 @@ export class Bootstrap {
   private intake(): BootstrapState["roots"] {
     const threads = this.deps.service.threads();
     const forest = buildForest(threads);
-    const v1Auto = this.v1AutoFilings();
     const placements = this.deps.service.state().placements;
-    const names = new Map(
-      this.deps.map.list().map((r) => [r.sectionId, r.name.toLowerCase()]),
-    );
-    const v1Filed = (threadId: string, sectionId: string) => {
-      const filing = v1Auto.get(threadId);
-      if (!filing) return false;
-      // Older v1 entries recorded only the section name.
-      return filing.sectionId
-        ? filing.sectionId === sectionId
-        : filing.name === names.get(sectionId);
-    };
     return forest.roots.map(({ thread }) => {
       const placement = placements[thread.id];
       const provenance: Provenance = !thread.sectionId
@@ -667,9 +666,7 @@ export class Bootstrap {
             placement.source === "bootstrap"
             ? "auto"
             : "user"
-          : v1Filed(thread.id, thread.sectionId)
-            ? "auto"
-            : "user";
+          : "user";
       return {
         id: thread.id,
         title: thread.title,
@@ -677,44 +674,5 @@ export class Bootstrap {
         provenance,
       };
     });
-  }
-
-  /**
-   * Sections v1 filed automatically, by thread: the latest applied section
-   * change in v1's organize log. v1's table is read here and nowhere else.
-   */
-  private v1AutoFilings(): Map<
-    string,
-    { sectionId: string | null; name: string }
-  > {
-    const out = new Map<string, { sectionId: string | null; name: string }>();
-    try {
-      const row = this.deps.db
-        .prepare("SELECT value FROM state WHERE key = 'organize-log'")
-        .get() as { value: string } | undefined;
-      if (!row) return out;
-      const log = JSON.parse(row.value) as {
-        action?: { kind?: string; threadId?: string; section?: string };
-        result?: string;
-        undone?: boolean;
-        undo?: { workstreamsSectionId?: string | null };
-      }[];
-      for (const entry of log) {
-        if (
-          entry.action?.kind !== "section" ||
-          entry.result !== "done" ||
-          entry.undone ||
-          !entry.action.threadId
-        )
-          continue;
-        out.set(entry.action.threadId, {
-          sectionId: entry.undo?.workstreamsSectionId ?? null,
-          name: (entry.action.section ?? "").toLowerCase(),
-        });
-      }
-    } catch {
-      // No v1 data on this install.
-    }
-    return out;
   }
 }

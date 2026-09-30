@@ -77,7 +77,7 @@ async function organized(settings: Record<string, boolean> = {}) {
     settings,
     complete: model({
       loose: "Alpha",
-      v1auto: "Gamma",
+      automatic: "Gamma",
       loose2: "Gamma",
       mine: "Alpha",
     }),
@@ -88,24 +88,16 @@ async function organized(settings: Record<string, boolean> = {}) {
   w.addThread("a1", { sectionId: alpha.id });
   w.addThread("loose");
   w.addThread("loose2");
-  w.addThread("v1auto", { sectionId: beta.id });
+  w.addThread("automatic", { sectionId: beta.id });
   w.addThread("mine", { sectionId: beta.id });
   w.addThread("kid", { parentThreadId: "mine" });
-  // v1's organize log says v1 filed "v1auto" into Beta automatically.
+  await w.harness.behavior.callRpc("refresh", null);
   w.bb.storage
     .database()
-    .prepare("INSERT INTO state (key, value) VALUES ('organize-log', ?)")
-    .run(
-      JSON.stringify([
-        {
-          action: { kind: "section", threadId: "v1auto", section: "Beta" },
-          result: "done",
-          undone: false,
-          undo: { workstreamsSectionId: beta.id },
-        },
-      ]),
-    );
-  await w.harness.behavior.callRpc("refresh", null);
+    .prepare(
+      "INSERT OR REPLACE INTO ws_placement (thread_id,section_id,source,entry_id,at) VALUES (?,?,?,NULL,?)",
+    )
+    .run("automatic", beta.id, "auto", Date.now());
   return { w, alpha, beta };
 }
 
@@ -120,7 +112,7 @@ describe("bootstrap", () => {
       a1: "user",
       loose: "unfiled",
       loose2: "unfiled",
-      v1auto: "auto",
+      automatic: "auto",
       mine: "user",
     });
     expect(state.changes.map((c) => c.kind)).toEqual(["rename", "create"]);
@@ -135,7 +127,11 @@ describe("bootstrap", () => {
     const moves = Object.fromEntries(
       state.preview!.moves.map((m) => [m.threadId, m.toName]),
     );
-    expect(moves).toEqual({ loose: "Alpha", loose2: "Gamma", v1auto: "Gamma" });
+    expect(moves).toEqual({
+      loose: "Alpha",
+      loose2: "Gamma",
+      automatic: "Gamma",
+    });
     expect(state.preview!.moves.some((m) => m.threadId === "mine")).toBe(false);
     // The preview shows confidence without parsing the CLI's reason text.
     expect(state.preview!.moves.map((m) => m.confidence)).toEqual([
@@ -149,7 +145,7 @@ describe("bootstrap", () => {
     const gamma = w.sections.find((s) => s.name === "Gamma")!;
     expect(w.sections.find((s) => s.id === beta.id)?.name).toBe("Beta Prime");
     expect(w.threads.get("loose")?.sectionId).toBe(alpha.id);
-    expect(w.threads.get("v1auto")?.sectionId).toBe(gamma.id);
+    expect(w.threads.get("automatic")?.sectionId).toBe(gamma.id);
     expect(w.threads.get("mine")?.sectionId).toBe(beta.id);
     expect(w.threads.get("kid")?.sectionId).toBeNull();
     expect(
@@ -163,7 +159,7 @@ describe("bootstrap", () => {
     // Undo reverts the whole batch, including the new workstream and rename.
     await w.harness.behavior.callRpc("undo", { entryId: state.entryId });
     expect(w.threads.get("loose")?.sectionId).toBeNull();
-    expect(w.threads.get("v1auto")?.sectionId).toBe(beta.id);
+    expect(w.threads.get("automatic")?.sectionId).toBe(beta.id);
     expect(w.sections.map((s) => s.name).sort()).toEqual(["Alpha", "Beta"]);
   });
 
@@ -200,26 +196,6 @@ describe("bootstrap", () => {
       /^Preview: 3 moves, 1 new workstream, 1 rename/,
     );
     expect(w.threads.get("loose")?.sectionId).toBeNull();
-  });
-});
-
-describe("cutover", () => {
-  it("removes v1 data only after organizing, and only with --yes", async () => {
-    const { w } = await organized();
-    expect(
-      (await w.harness.behavior.runCli(["cutover", "--yes"])).exitCode,
-    ).not.toBe(0);
-    await w.harness.behavior.callRpc("bootstrap", { action: "skip" });
-    const preview = await w.harness.behavior.runCli(["cutover"]);
-    expect(preview.stdout).toContain("Would remove v1 data: 1 state rows");
-    await w.harness.behavior.runCli(["cutover", "--yes"]);
-    const rows = w.bb.storage
-      .database()
-      .prepare("SELECT COUNT(*) AS n FROM state")
-      .get() as { n: number };
-    expect(rows.n).toBe(0);
-    // Everything else keeps working.
-    expect((await w.harness.behavior.runCli(["list"])).exitCode).toBe(0);
   });
 });
 

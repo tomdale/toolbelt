@@ -3,10 +3,9 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export type Database = ReturnType<BbPluginApi["storage"]["database"]>;
 
 /**
- * Append-only migration list (statement index = migration id). The first two
- * statements are Workstreams v1's tables. They stay in the list, unchanged,
- * because v1 already applied them to this plugin's database; v2 never reads
- * them.
+ * Append-only migration list: statement index is the durable migration ID.
+ * Applied entries must stay unchanged, even when later entries remove their
+ * tables, so installed databases advance through the same history.
  */
 const MIGRATIONS = [
   "CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
@@ -232,6 +231,21 @@ const MIGRATIONS = [
   "DROP TABLE IF EXISTS ws_understanding_progress",
   "DELETE FROM ws_trace_link WHERE trace_id IN (SELECT id FROM ws_trace WHERE kind IN ('understanding-extract','understanding-synthesis'))",
   "DELETE FROM ws_trace WHERE kind IN ('understanding-extract','understanding-synthesis')",
+  "ALTER TABLE ws_notebook ADD COLUMN policy_version INTEGER NOT NULL DEFAULT 0",
+  `INSERT OR IGNORE INTO ws_placement(thread_id,section_id,source,entry_id,at)
+    SELECT t.thread_id,t.section_id,'auto',NULL,0 FROM ws_seen_thread t
+    JOIN ws_seen_section s ON s.section_id=t.section_id
+    JOIN json_each(CASE WHEN json_valid((SELECT value FROM state WHERE key='organize-log')) THEN (SELECT value FROM state WHERE key='organize-log') ELSE '[]' END) e
+      ON json_extract(e.value,'$.action.threadId')=t.thread_id
+    WHERE json_extract(e.value,'$.action.kind')='section' AND json_extract(e.value,'$.result')='done'
+      AND COALESCE(json_extract(e.value,'$.undone'),0)=0
+      AND (json_extract(e.value,'$.undo.workstreamsSectionId')=t.section_id
+        OR lower(json_extract(e.value,'$.action.section'))=lower(s.name))`,
+  "DROP TABLE IF EXISTS banners",
+  "DROP TABLE IF EXISTS state",
+  "ALTER TABLE ws_proposal ADD COLUMN snapshot TEXT NOT NULL DEFAULT '{}'",
+  "ALTER TABLE ws_proposal ADD COLUMN reason TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE ws_proposal ADD COLUMN confidence REAL NOT NULL DEFAULT 0",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

@@ -18,6 +18,11 @@ const EVENT: Record<TraceKind, { label: string; description: string }> = {
     label: "Thread recap",
     description: "The model produced the returning developer's thread recap.",
   },
+  supervision: {
+    label: "Organization supervision",
+    description:
+      "The model considered the current notebooks and active work, and proposed useful regrouping. Application is recorded separately with Undo.",
+  },
   route: {
     label: "Destination selection",
     description:
