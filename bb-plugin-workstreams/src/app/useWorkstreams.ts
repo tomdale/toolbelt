@@ -16,11 +16,6 @@ import { projectWorkstreams, type Projection } from "../domain/project.ts";
 import { isCurrent, needsYou } from "../domain/analysis.ts";
 import type { ManualOrder } from "../domain/order.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
-import {
-  isSnoozed,
-  presetFromSetting,
-  type ThreadSnooze,
-} from "../domain/snooze.ts";
 import { useSharedServerState } from "./serverState.ts";
 
 export type ServerState = {
@@ -32,7 +27,6 @@ export type ServerState = {
   bootstrapped: boolean;
   lastReconciledAt: number | null;
   order: ManualOrder;
-  snoozes: Record<string, ThreadSnooze>;
 };
 
 export type ReorderChange =
@@ -90,7 +84,7 @@ export function useWorkstreams() {
     experimental_useSidebarThreads();
   const settings = useSettings();
   const now = useNow();
-  const { rpc, server, refresh, reorder, setSnooze } = useServerState();
+  const { rpc, server, refresh, reorder } = useServerState();
 
   // Moves in flight, by thread: the section the thread is headed to. The row
   // shows there until BB's live list catches up, or the move fails.
@@ -134,19 +128,15 @@ export function useWorkstreams() {
     [threads, moving],
   );
 
-  const { analysis, order, snoozes } = server;
+  const { analysis, order } = server;
   const projection: Projection<PluginSidebarThread> = useMemo(
     () =>
       projectWorkstreams(placed, sections, {
         now,
         needsYou: (thread) => needsYou(thread, analysis[thread.id]),
         order,
-        snoozedUntil: (thread) => {
-          const snooze = snoozes[thread.id];
-          return isSnoozed(snooze, thread, now) ? snooze!.until : undefined;
-        },
       }),
-    [placed, sections, now, analysis, order, snoozes],
+    [placed, sections, now, analysis, order],
   );
   const values = (settings.values ?? {}) as Record<string, unknown>;
   return {
@@ -163,12 +153,6 @@ export function useWorkstreams() {
     refresh,
     reorder,
     moveThread,
-    setSnooze,
-    snoozeOf: (thread: PluginSidebarThread) => {
-      const snooze = snoozes[thread.id];
-      return isSnoozed(snooze, thread, now) ? snooze : undefined;
-    },
-    defaultSnooze: presetFromSetting(values.snoozeDefault),
     showForYou: values.showForYou !== false,
     showRecent: values.showRecent !== false,
     showParentThreadLink: values.showParentThreadLink === true,

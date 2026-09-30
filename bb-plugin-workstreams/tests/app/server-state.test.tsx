@@ -50,7 +50,6 @@ function state(revision = 1): ServerState {
     bootstrapped: true,
     lastReconciledAt: revision,
     order: { workstreams: [], threads: {} },
-    snoozes: {},
   };
 }
 
@@ -65,12 +64,6 @@ function deferred<T>() {
 function mount({
   read = vi.fn(async () => state()),
   reorder = vi.fn(async () => ({ order: state().order })),
-  snooze = vi.fn(
-    async (): Promise<{ snooze: ServerState["snoozes"][string] }> => ({
-      snooze: { until: null, attentionAt: 1, at: 1 },
-    }),
-  ),
-  unsnooze = vi.fn(async () => ({ woke: true })),
   strict = false,
 } = {}) {
   const consumers = new Map<number, ReturnType<typeof useServerState>>();
@@ -104,7 +97,7 @@ function mount({
     { component: Suite },
     {},
     {
-      rpc: { state: read, reorder, snooze, unsnooze },
+      rpc: { state: read, reorder },
     },
   );
   const assertRevision = async (revision: number, count = 3) => {
@@ -176,14 +169,10 @@ describe("shared server state", () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
-  it("shares optimistic order, snooze and wake updates", async () => {
+  it("shares optimistic order updates", async () => {
     const reordered = deferred<{ order: ServerState["order"] }>();
-    const snoozed = deferred<{ snooze: ServerState["snoozes"][string] }>();
-    const woken = deferred<{ woke: boolean }>();
     const { consumers, assertRevision } = mount({
       reorder: vi.fn(() => reordered.promise),
-      snooze: vi.fn(() => snoozed.promise),
-      unsnooze: vi.fn(() => woken.promise),
     });
     await assertRevision(1);
     let pending!: Promise<void>;
@@ -201,61 +190,27 @@ describe("shared server state", () => {
     });
     for (const value of consumers.values())
       expect(value.server.order).toEqual(order);
-    act(() => {
-      pending = consumers
-        .get(1)!
-        .setSnooze({ id: "t1", latestAttentionAt: 42 }, null);
-    });
-    for (const value of consumers.values())
-      expect(value.server.snoozes.t1).toMatchObject({
-        until: null,
-        attentionAt: 42,
-      });
-    await act(async () => {
-      snoozed.resolve({ snooze: { until: null, attentionAt: 42, at: 1 } });
-      await pending;
-    });
-    act(() => {
-      pending = consumers.get(2)!.setSnooze({ id: "t1" }, "wake");
-    });
-    for (const value of consumers.values())
-      expect(value.server.snoozes.t1).toBeUndefined();
-    await act(async () => {
-      woken.resolve({ woke: true });
-      await pending;
-    });
   });
 
-  it.each(["reorder", "snooze", "unsnooze"] as const)(
-    "refreshes all consumers and preserves the original %s failure",
-    async (method) => {
-      const cause = new Error("save failed");
-      const read = vi.fn(async () => state(1));
-      const fail = vi.fn(async () => {
-        throw cause;
-      });
-      const { consumers, assertRevision } = mount({ read, [method]: fail });
-      await assertRevision(1);
-      read.mockImplementation(async () => state(2));
-      await act(async () => {
-        const value = consumers.get(0)!;
-        const result =
-          method === "reorder"
-            ? value.reorder({ kind: "workstreams", ids: ["a"] })
-            : value.setSnooze(
-                { id: "t1" },
-                method === "snooze" ? 1000 : "wake",
-              );
-        await expect(result).rejects.toBe(cause);
-      });
-      await assertRevision(2);
-      for (const value of consumers.values()) {
-        expect(value.server.order).toEqual(state().order);
-        expect(value.server.snoozes).toEqual({});
-      }
-      expect(read).toHaveBeenCalledTimes(2);
-    },
-  );
+  it("refreshes all consumers and preserves the original reorder failure", async () => {
+    const cause = new Error("save failed");
+    const read = vi.fn(async () => state(1));
+    const fail = vi.fn(async () => {
+      throw cause;
+    });
+    const { consumers, assertRevision } = mount({ read, reorder: fail });
+    await assertRevision(1);
+    read.mockImplementation(async () => state(2));
+    await act(async () => {
+      await expect(
+        consumers.get(0)!.reorder({ kind: "workstreams", ids: ["a"] }),
+      ).rejects.toBe(cause);
+    });
+    await assertRevision(2);
+    for (const value of consumers.values())
+      expect(value.server.order).toEqual(state().order);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
 
   it("silently retains the snapshot when a refresh or recovery read fails", async () => {
     const cause = new Error("mutation failed");
@@ -317,7 +272,6 @@ describe("shared server state", () => {
     const right = second.consumers.get(0)!.server;
     expect(left).not.toBe(right);
     expect(left.order).not.toBe(right.order);
-    expect(left.snoozes).not.toBe(right.snoozes);
     await act(async () => request.resolve(state(1)));
   });
 

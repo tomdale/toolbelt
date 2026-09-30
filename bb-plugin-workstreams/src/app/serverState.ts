@@ -16,7 +16,6 @@ function emptyState(): ServerState {
     bootstrapped: false,
     lastReconciledAt: null,
     order: { workstreams: [], threads: {} },
-    snoozes: {},
   };
 }
 
@@ -87,30 +86,6 @@ class ServerStore {
       throw cause;
     }
   };
-
-  /** `until: null` waits for activity; `wake` removes the snooze at once. */
-  setSnooze = async (
-    thread: { id: string; latestAttentionAt?: number },
-    until: number | null | "wake",
-  ): Promise<void> => {
-    const snoozes = { ...this.value.snoozes };
-    if (until === "wake") delete snoozes[thread.id];
-    else
-      snoozes[thread.id] = {
-        until,
-        attentionAt: thread.latestAttentionAt ?? Date.now(),
-        at: Date.now(),
-      };
-    this.publish({ ...this.value, snoozes });
-    try {
-      if (until === "wake")
-        await this.rpc.call("unsnooze", { threadId: thread.id });
-      else await this.rpc.call("snooze", { threadId: thread.id, until });
-    } catch (cause) {
-      await this.refresh();
-      throw cause;
-    }
-  };
 }
 
 function applyChange(order: ManualOrder, change: ReorderChange): ManualOrder {
@@ -156,7 +131,6 @@ export function useSharedServerState() {
     server,
     refresh: store.refresh,
     reorder: store.reorder,
-    setSnooze: store.setSnooze,
   };
 }
 
