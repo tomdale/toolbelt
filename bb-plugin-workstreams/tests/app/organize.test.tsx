@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { Organize } from "../../src/app/page/Organize.tsx";
 
@@ -77,11 +77,15 @@ describe("Organize request freshness", () => {
     await slot.behavior.emitRealtime("changed", {});
     await waitFor(() => expect(gets).toBe(2));
     fireEvent.click(slot.getByRole("button", { name: "Organize…" }));
-    command.resolve({ state: snapshot("command", 2) });
-    await waitFor(() => expect(slot.getByText("command")).toBeTruthy());
-    initial.resolve({ state: snapshot("old read", 1) });
-    await Promise.resolve();
+    await act(async () => {
+      initial.resolve({ state: snapshot("old read", 1) });
+      await Promise.resolve();
+    });
     expect(slot.queryByText("old read")).toBeNull();
+    expect(slot.inspection.rpcCalls.some((call) =>
+      call.method === "bootstrap" && (call.input as { action?: string }).action === "start",
+    )).toBe(true);
+    command.resolve({ state: snapshot("command", 2) });
   });
 
   it("does not let a newer read get replaced by an older command response", async () => {
@@ -95,13 +99,15 @@ describe("Organize request freshness", () => {
           : read.promise
         : command.promise,
     );
-    await waitFor(() => expect(gets).toBe(1));
+    await waitFor(() => expect(slot.getByRole("button", { name: "Organize…" })).toBeTruthy());
     fireEvent.click(slot.getByRole("button", { name: "Organize…" }));
     await slot.behavior.emitRealtime("changed", {});
     read.resolve({ state: snapshot("new read", 3) });
     await waitFor(() => expect(slot.getByText("new read")).toBeTruthy());
-    command.resolve({ state: snapshot("old command", 2) });
-    await Promise.resolve();
+    await act(async () => {
+      command.resolve({ state: snapshot("old command", 2) });
+      await Promise.resolve();
+    });
     expect(slot.queryByText("old command")).toBeNull();
   });
 
@@ -116,7 +122,7 @@ describe("Organize request freshness", () => {
           : read.promise
         : command.promise,
     );
-    await waitFor(() => expect(gets).toBe(1));
+    await waitFor(() => expect(slot.getByRole("button", { name: "Organize…" })).toBeTruthy());
     fireEvent.click(slot.getByRole("button", { name: "Organize…" }));
     command.reject(new Error("command refused"));
     await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("command refused"));
@@ -139,8 +145,10 @@ describe("Organize request freshness", () => {
     await slot.behavior.emitRealtime("changed", {});
     newer.reject(new Error("new read failed"));
     await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("new read failed"));
-    older.resolve({ state: snapshot("old success", 1) });
-    await Promise.resolve();
+    await act(async () => {
+      older.resolve({ state: snapshot("old success", 1) });
+      await Promise.resolve();
+    });
     expect(slot.getByRole("alert").textContent).toContain("new read failed");
   });
 
@@ -157,8 +165,10 @@ describe("Organize request freshness", () => {
     await slot.behavior.emitRealtime("changed", {});
     newer.reject(new Error("newest read failed"));
     await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("newest read failed"));
-    older.reject(new Error("old read failed"));
-    await Promise.resolve();
+    await act(async () => {
+      older.reject(new Error("old read failed"));
+      await Promise.resolve();
+    });
     expect(slot.getByRole("alert").textContent).toContain("newest read failed");
   });
 

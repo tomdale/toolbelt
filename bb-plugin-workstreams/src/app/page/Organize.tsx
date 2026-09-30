@@ -53,6 +53,7 @@ export function Organize({
   const [error, setError] = useState<string | null>(null);
   const requestGeneration = useRef(0);
   const publishedGeneration = useRef(0);
+  const settledGeneration = useRef(0);
   const commandGeneration = useRef(0);
   const errorOwner = useRef<"command" | "read" | null>(null);
   const read = useCallback(async () => {
@@ -62,7 +63,8 @@ export function Organize({
       // A response is allowed to publish only if no newer request has
       // published. This covers a background snapshot overtaking a command and
       // an old command response arriving after a newer realtime read.
-      if (generation < publishedGeneration.current) return;
+      if (generation < settledGeneration.current) return;
+      settledGeneration.current = generation;
       publishedGeneration.current = generation;
       setState(result.state as BootstrapState | null);
       if (errorOwner.current === "read") {
@@ -70,7 +72,8 @@ export function Organize({
         setError(null);
       }
     } catch (cause) {
-      if (generation < publishedGeneration.current) return;
+      if (generation < settledGeneration.current) return;
+      settledGeneration.current = generation;
       if (errorOwner.current !== "command") {
         errorOwner.current = "read";
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -83,14 +86,18 @@ export function Organize({
     async (input: { action: string } & Record<string, unknown>) => {
       const generation = ++commandGeneration.current;
       const request = ++requestGeneration.current;
+      // Invalidate every pre-command response at initiation, not only after
+      // the command settles.
+      settledGeneration.current = request;
       // A command owns the next visible error. Invalidate reads issued before
       // it so a late snapshot cannot erase its result or failure.
-      errorOwner.current = null;
+      errorOwner.current = "command";
       setError(null);
       try {
         const result = await rpc.call("bootstrap", input as never);
         if (generation !== commandGeneration.current) return;
-        if (request >= publishedGeneration.current) {
+        if (request >= settledGeneration.current) {
+          settledGeneration.current = request;
           publishedGeneration.current = request;
           setState(result.state as BootstrapState | null);
         }
