@@ -126,6 +126,13 @@ export async function fakeWorld(
           sent.push(args);
           return { status: "sent" };
         },
+        timeline: async () => ({ goal: null, pendingTodos: null }),
+        archive: async ({ threadId }: { threadId: string }) => {
+          const thread = threads.get(threadId);
+          if (!thread) throw missing(threadId);
+          threads.set(threadId, { ...thread, archivedAt: Date.now() });
+          return { id: threadId };
+        },
         output: async ({ threadId }: { threadId: string }) => ({
           output: conversations.get(threadId)?.output ?? null,
         }),
@@ -151,7 +158,20 @@ export async function fakeWorld(
               (!args.sectionId || t.sectionId === args.sectionId),
           );
           const offset = args.offset ?? 0;
-          return all.slice(offset, offset + (args.limit ?? 100));
+          return all
+            .slice(offset, offset + (args.limit ?? 100))
+            .map((thread) => ({
+              queuedWork: "none",
+              hasPendingInteraction: false,
+              activity: {
+                activeBackgroundAgentCount: 0,
+                activeBackgroundCommandCount: 0,
+                activeGoalCount: 0,
+                activePlanModeCount: 0,
+                activeWorkflowCount: 0,
+              },
+              ...thread,
+            }));
         },
         get: async ({ threadId }: { threadId: string }) => {
           const thread = threads.get(threadId);
