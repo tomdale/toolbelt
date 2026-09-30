@@ -95,13 +95,18 @@ against.
   menu (**Inspect model calls…**). It opens a side pane with those calls. **Run
   again** sends the same prompt to the same model to show whether the answer is
   stable, without changing anything. Activity lists each model call among the
-  changes, including calls that made no change. Internal calls have a muted,
-  dashed treatment with model, timing, token usage, cost, and replay details.
-  Debug controls in **Activity** filter by call kind and failures, show the
-  count and cost of visible calls, load older calls, and clear traces without
-  deleting activity changes. Journal entries also expose expandable internal
-  details. Records include redacted thread excerpts and are kept for 7 days (at
-  most 1,000).
+  changes, including calls that made no change. Model rows use a quiet surface
+  tint and a Model badge, and prioritize the event, subject, and labeled
+  assessment. Related threads use BB-style thread-reference pills on an aligned
+  row, with host-owned link navigation. Small information buttons explain event
+  names and lifecycle terms on hover or keyboard focus. **Technical details**
+  reveals labeled model, duration, token usage, and cost measurements plus
+  prompt inspection; these measurements stay collapsed by default. Debug
+  controls in **Activity** filter by call kind and failures, show the count and
+  cost of visible calls, load older calls, and clear traces without deleting
+  activity changes. Journal entries also expose expandable internal details.
+  Records include redacted thread excerpts and are kept for 7 days (at most
+  1,000).
 
 Model calls go straight to AI Gateway from the analysis machine (`hostId`, blank
 for the only connected machine), with the AI Gateway key Pi has there. They

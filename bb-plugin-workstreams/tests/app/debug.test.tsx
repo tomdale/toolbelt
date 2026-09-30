@@ -251,7 +251,7 @@ it("opens Activity for debug links and shows debug controls only in Debug mode",
   expect(
     on.getByRole("tab", { name: "Activity" }).getAttribute("aria-selected"),
   ).toBe("true");
-  expect(await on.findByText("Invalid response")).toBeTruthy();
+  expect(await on.findByText("Response not usable")).toBeTruthy();
   expect(on.getByRole("checkbox", { name: "Failures only" })).toBeTruthy();
   expect(on.queryByText("No activity yet.")).toBeNull();
 });
@@ -307,16 +307,19 @@ it("lists model calls in the Activity log in Debug mode", async () => {
   off.unmount();
 
   const on = page(true);
-  const summaryLine = await on.findByText(
-    "review · Alpha · drift → Beta (high)",
-  );
+  const summaryLine = await on.findByText("Ready for your review");
   // Newest first: the analysis, the move, then the failed routing call.
   const rows = on.getAllByRole("listitem").map((li) => li.textContent ?? "");
-  const order = ["drift → Beta", "Moved from Unsorted", "Fix the parser"].map(
-    (text) => rows.findIndex((row) => row.includes(text)),
-  );
+  const order = [
+    "Different workstream: Beta",
+    "Moved from Unsorted",
+    "Fix the parser",
+  ].map((text) => rows.findIndex((row) => row.includes(text)));
   expect(order).toEqual([...order].sort((a, b) => a - b));
   expect(on.getByText("Unexpected token")).toBeTruthy();
+  fireEvent.click(
+    within(summaryLine.closest("li")!).getByText("Technical details"),
+  );
   expect(
     within(summaryLine.closest("li")!).getByRole("button", {
       name: "Inspect this model call",

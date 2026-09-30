@@ -34,7 +34,7 @@ const entry = {
   source: "user",
   status: "applied",
   rationale: "Moved a thread",
-  threads: [],
+  threads: [{ id: "missing-thread", name: "Parser thread" }],
   workstreams: [],
   undo: null,
   undoes: null,
@@ -89,13 +89,28 @@ it("filters internal calls, exposes metadata and event internals, and opens the 
     }),
   });
   expect(await slot.findByText("3 model calls shown · $0.0300")).toBeTruthy();
-  expect(slot.getAllByText(/Internal · test\/model/)).toHaveLength(3);
-  expect(slot.getByText(/· Replay/)).toBeTruthy();
-  const details = slot.getByText("Internal event details").closest("details")!;
-  fireEvent.click(within(details).getByText("Internal event details"));
-  expect(details.textContent).toContain('"id": "e1"');
+  expect(
+    slot.getByRole("link", { name: "Parser thread" }).getAttribute("href"),
+  ).toBe("/threads/missing-thread");
+  expect(slot.queryByText(/Internal ·/)).toBeNull();
+  expect(slot.getByText("Replay")).toBeTruthy();
+  expect(
+    slot
+      .getAllByText("Technical details")
+      .every((node) => !node.closest("details")!.open),
+  ).toBe(true);
+  const entryRow = slot.getByText("Moved a thread").closest("li")!;
+  fireEvent.click(within(entryRow).getByText("Technical details"));
+  expect(within(entryRow).getByText("Event ID")).toBeTruthy();
+  expect(within(entryRow).getByText("e1")).toBeTruthy();
+  const callRow = slot.getByText("ok").closest("li")!;
+  fireEvent.click(within(callRow).getByText("Technical details"));
+  expect(within(callRow).getByText("Model", { selector: "dt" })).toBeTruthy();
+  expect(within(callRow).getByText("Duration")).toBeTruthy();
+  expect(within(callRow).getByText("Input tokens")).toBeTruthy();
+  expect(within(callRow).getByText("Output tokens")).toBeTruthy();
   fireEvent.click(
-    slot.getAllByRole("button", { name: "Inspect this model call" })[0]!,
+    within(callRow).getByRole("button", { name: "Inspect this model call" }),
   );
   const pane = await within(document.body).findByRole("dialog");
   expect(await within(pane).findByLabelText("Prompt")).toHaveProperty(
