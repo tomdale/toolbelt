@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,7 +9,7 @@ import { join } from "node:path";
 process.env.PI_CLAUDE_PLUGINS_DIR = join(mkdtempSync(join(tmpdir(), "cpl-")), "claude-plugins");
 
 const { parseSource } = await import("../dist/source.js");
-const { installFromSource } = await import("../dist/install.js");
+const { installFromSource, refreshLocalPlugins } = await import("../dist/install.js");
 const { readRegistry } = await import("../dist/registry.js");
 // pi's real skill loader: the exact code path a live session uses on the
 // skillPaths our extension returns.
@@ -23,6 +23,35 @@ test("parseSource understands pi-style shorthands", () => {
   assert.equal(parseSource("/tmp/local-plugin").kind, "local");
 });
 
+test("refreshes registered local plugins from their source directory", { concurrency: false }, () => {
+  const pluginRoot = join(mkdtempSync(join(tmpdir(), "cpl-local-")), "plugin");
+  const skillRoot = join(pluginRoot, "skills", "example");
+  mkdirSync(skillRoot, { recursive: true });
+  mkdirSync(join(pluginRoot, ".claude-plugin"), { recursive: true });
+  writeFileSync(
+    join(pluginRoot, ".claude-plugin", "plugin.json"),
+    JSON.stringify({ name: "local-plugin" }),
+  );
+  writeFileSync(
+    join(skillRoot, "SKILL.md"),
+    "---\nname: example\ndescription: An example skill\n---\n\nInitial\n",
+  );
+
+  installFromSource(pluginRoot);
+  writeFileSync(
+    join(skillRoot, "SKILL.md"),
+    "---\nname: example\ndescription: An example skill\n---\n\nUpdated\n",
+  );
+  refreshLocalPlugins();
+
+  const [plugin] = readRegistry().plugins;
+  assert.equal(plugin.source, pluginRoot);
+  assert.match(
+    readFileSync(join(plugin.skillDirs[0], "example", "SKILL.md"), "utf8"),
+    /Updated/,
+  );
+});
+
 test("installs github.com/tomdale/skills and pi loads valid namespaced skills", { concurrency: false }, () => {
   const installed = installFromSource("git:github.com/tomdale/skills");
 
@@ -33,12 +62,13 @@ test("installs github.com/tomdale/skills and pi loads valid namespaced skills", 
 
   // The registry is what the extension reads at resources_discover time.
   const registry = readRegistry();
-  assert.equal(registry.plugins.length, 1);
+  const pluginRecord = registry.plugins.find((candidate) => candidate.name === "tdx");
+  assert.ok(pluginRecord, "expected the 'tdx' plugin in the registry");
 
   // Load every registered skill dir exactly as pi would.
   const names = new Set();
   const diagnostics = [];
-  for (const dir of registry.plugins[0].skillDirs) {
+  for (const dir of pluginRecord.skillDirs) {
     const result = loadSkillsFromDir({ dir, source: "test" });
     for (const skill of result.skills) names.add(skill.name);
     diagnostics.push(...result.diagnostics);

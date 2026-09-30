@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { installFromSource } from "./install.ts";
+import { installFromSource, refreshLocalPlugins } from "./install.ts";
 import { readRegistry, removePlugin } from "./registry.ts";
 import type { InstalledPlugin } from "./types.ts";
 
@@ -17,7 +17,10 @@ import type { InstalledPlugin } from "./types.ts";
  * installed skills appear immediately.
  */
 export default function (pi: ExtensionAPI) {
-  pi.on("resources_discover", async () => {
+  pi.on("resources_discover", async (event) => {
+    if (event.reason === "startup" || event.reason === "reload") {
+      refreshLocalPlugins();
+    }
     const registry = readRegistry();
     const skillPaths = new Set<string>();
     const promptPaths = new Set<string>();
