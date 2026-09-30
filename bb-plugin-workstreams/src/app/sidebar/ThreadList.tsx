@@ -67,6 +67,7 @@ export function WorkstreamsThreadList({
     workstreamName?: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showAllNeeds, setShowAllNeeds] = useState(false);
   const [inspecting, setInspecting] = useState<PluginSidebarThread | null>(
     null,
   );
@@ -251,7 +252,23 @@ export function WorkstreamsThreadList({
             collapsed={isCollapsed("__needs")}
             toggle={() => toggle("__needs")}
           >
-            {projection.needsYou.map((row) => renderRow(row, "needs-you"))}
+            {(showAllNeeds
+              ? projection.needsYou
+              : projection.needsYou.slice(0, NEEDS_YOU_LIMIT)
+            ).map((row) => renderRow(row, "needs-you"))}
+            {projection.needsYou.length > NEEDS_YOU_LIMIT ? (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setShowAllNeeds((all) => !all)}
+                  className="w-full rounded-md px-2 py-0.5 text-left text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+                >
+                  {showAllNeeds
+                    ? "Show less"
+                    : `Show ${projection.needsYou.length - NEEDS_YOU_LIMIT} more`}
+                </button>
+              </li>
+            ) : null}
           </Band>
         ) : null}
         {ws.showRecent && projection.recent.length > 0 ? (
@@ -340,10 +357,13 @@ export function WorkstreamsThreadList({
   );
 }
 
+/** Needs you shows this many rows until the user asks for the rest. */
+const NEEDS_YOU_LIMIT = 5;
+
 /**
- * A collapsible overlay band. `boxed` draws its rows in the tinted Needs you
- * block (`.ws-needs`) with extra space around it, so threads waiting on Tom
- * stand apart from the list below.
+ * A collapsible overlay band. `boxed` draws the header and rows inside the
+ * tinted Needs you block (`.ws-needs`) with extra space around it, so threads
+ * waiting on Tom stand apart from the list below.
  */
 function Band({
   title,
@@ -362,31 +382,24 @@ function Band({
 }) {
   return (
     <section aria-label={title} className={cn("px-1", boxed && "my-1")}>
-      <button
-        type="button"
-        aria-expanded={!collapsed}
-        onClick={toggle}
-        className="flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-sidebar-accent/60"
-      >
-        <Icon
-          name={collapsed ? "ChevronRight" : "ChevronDown"}
-          className="size-3"
-        />
-        <span className="flex-1 text-left">{title}</span>
-        {count !== undefined ? (
-          <span className="tabular-nums">{count}</span>
-        ) : null}
-      </button>
-      {collapsed ? null : (
-        <ul
-          className={cn(
-            "mt-0.5",
-            boxed && "ws-needs mx-0.5 rounded-lg px-0.5 py-1.5",
-          )}
+      <div className={cn(boxed && "ws-needs mx-0.5 rounded-lg px-0.5 py-1")}>
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          onClick={toggle}
+          className="flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-sidebar-accent/60"
         >
-          {children}
-        </ul>
-      )}
+          <Icon
+            name={collapsed ? "ChevronRight" : "ChevronDown"}
+            className="size-3"
+          />
+          <span className="flex-1 text-left">{title}</span>
+          {count !== undefined ? (
+            <span className="tabular-nums">{count}</span>
+          ) : null}
+        </button>
+        {collapsed ? null : <ul className="mt-0.5">{children}</ul>}
+      </div>
     </section>
   );
 }

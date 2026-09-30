@@ -211,6 +211,41 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
+  it("caps Needs you at five threads with a way to show the rest", async () => {
+    const at = Date.now();
+    const ids = ["a", "b", "c", "d", "e", "f", "g"];
+    const slot = await mount(
+      ids.map((id, index) =>
+        sidebarThread(id, { title: `Ask ${id}`, latestAttentionAt: 100 + index }),
+      ),
+      {
+        analysis: Object.fromEntries(
+          ids.map((id, index) => [
+            id,
+            {
+              recap: "Asked.",
+              state: "needs_decision",
+              needsYou: "Decide?",
+              subject: null,
+              drift: null,
+              driftSectionId: null,
+              revision: 100 + index,
+              at,
+              model: "m",
+            },
+          ]),
+        ),
+      },
+    );
+    const band = await slot.findByRole("region", { name: "Needs you" });
+    expect(within(band).getAllByRole("link")).toHaveLength(5);
+    fireEvent.click(within(band).getByRole("button", { name: "Show 2 more" }));
+    expect(within(band).getAllByRole("link")).toHaveLength(7);
+    fireEvent.click(within(band).getByRole("button", { name: "Show less" }));
+    expect(within(band).getAllByRole("link")).toHaveLength(5);
+    slot.lifecycle.unmount();
+  });
+
   it("lists a current needs-decision result in Needs you, but not a stale one", async () => {
     const at = Date.now();
     const result = (revision: number) => ({
