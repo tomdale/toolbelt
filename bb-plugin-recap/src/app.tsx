@@ -4,6 +4,7 @@ import {
   Markdown,
   definePluginApp,
   experimental_ProviderModelPicker as ProviderModelPicker,
+  experimental_useSidebarThreads,
   useComposerView,
   useRealtime,
   useRpc,
@@ -217,6 +218,10 @@ function RecapComposerBannerContent({
   const [dismissedRecapId, setDismissedRecapId] = useState<string | null>(null);
   const [requestedRecap, setRequestedRecap] = useState(false);
   const settled = useThreadSettled();
+  const { threads } = experimental_useSidebarThreads();
+  const hasPendingInteraction = threads.some(
+    (thread) => thread.id === threadId && thread.hasPendingInteraction,
+  );
 
   // A new turn invalidates the requested recap, so return to the inline action
   // for the next settled point instead of leaving an empty slot.
@@ -234,6 +239,9 @@ function RecapComposerBannerContent({
   }, [generate]);
 
   const onRequest = !automatic;
+
+  // The live interaction form owns the ask until it is resolved or cancelled.
+  if (hasPendingInteraction) return null;
 
   if (onRequest && requestedRecap && generating) {
     // Occupies the recap's slot at a similar size so the finished recap

@@ -2,7 +2,28 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { emptyState } from "./fixtures.ts";
+import { emptyState, sidebarThread } from "./fixtures.ts";
+
+const interactionOverride = vi.hoisted(() => ({ value: null as boolean | null }));
+vi.mock("@get-bb/plugin-sdk/app", async (importActual) => {
+  const actual = await importActual<typeof import("@get-bb/plugin-sdk/app")>();
+  return {
+    ...actual,
+    experimental_useSidebarThreads: () => {
+      const state = actual.experimental_useSidebarThreads();
+      return interactionOverride.value === null
+        ? state
+        : {
+            ...state,
+            threads: state.threads.map((thread) =>
+              thread.id === "t1"
+                ? { ...thread, hasPendingInteraction: interactionOverride.value }
+                : thread,
+            ),
+          };
+    },
+  };
+});
 
 // The harness's composer can't start a send after mount, so tests force the
 // sending state through this override; null defers to the real hook.
@@ -23,6 +44,7 @@ vi.mock("../../src/app/composer/useContinuing.ts", async (importActual) => {
 
 afterEach(() => {
   sendingOverride.value = null;
+  interactionOverride.value = null;
   cleanup();
   vi.restoreAllMocks();
 });
@@ -34,6 +56,7 @@ async function mount(options: {
   settings?: Record<string, string | boolean>;
   recap?: string | null;
   needsInput?: string | null;
+  pendingThreadId?: string;
   generate?: () => unknown;
   get?: () => unknown;
 }) {
@@ -55,6 +78,12 @@ async function mount(options: {
     {},
     {
       composer: { scope: { kind: "thread", threadId: "t1" } },
+      sidebarThreads: {
+        threads: [
+          sidebarThread("t1", { hasPendingInteraction: options.pendingThreadId === "t1" }),
+          sidebarThread("other", { hasPendingInteraction: options.pendingThreadId === "other" }),
+        ],
+      },
       rpc: {
         recapPrefs: () => ({
           prefs: {
@@ -112,6 +141,54 @@ it("shows what the thread needs from the user", async () => {
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(region.textContent).toContain("For you");
   expect(region.textContent).toContain("Pick A or B");
+});
+
+it("lets a live interaction supersede the recap even while idle", async () => {
+  const slot = await mount({ pendingThreadId: "t1", needsInput: "Pick A or B" });
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls.some((call) => call.method === "recap_get")).toBe(true),
+  );
+  expect(slot.queryByRole("region", { name: "Latest recap" })).toBeNull();
+  expect(slot.queryByRole("button", { name: "Generate Recap" })).toBeNull();
+});
+
+it("keeps the recap when only another thread needs input", async () => {
+  const slot = await mount({ pendingThreadId: "other", needsInput: "Pick A or B" });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  expect(region.textContent).toContain("Pick A or B");
+});
+
+it("hides on live input and restores the same recap when input clears", async () => {
+  const slot = await mount({ needsInput: "Pick A or B" });
+  await slot.findByRole("region", { name: "Latest recap" });
+  interactionOverride.value = true;
+  await slot.setComposerText("Draft retained during input");
+  expect(slot.queryByRole("region", { name: "Latest recap" })).toBeNull();
+  interactionOverride.value = false;
+  await slot.setComposerText("Draft retained after input");
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  expect(region.textContent).toContain("Pick A or B");
+});
+
+it("does not offer recap generation during pending input", async () => {
+  const slot = await mount({ pendingThreadId: "t1", recap: null });
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls.some((call) => call.method === "recap_get")).toBe(true),
+  );
+  expect(slot.queryByRole("button", { name: "Generate Recap" })).toBeNull();
+});
+
+it("hides the generating placeholder during pending input", async () => {
+  const slot = await mount({
+    pendingThreadId: "t1",
+    recap: null,
+    get: () => ({ recap: null, generating: true, needsInput: null }),
+  });
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls.some((call) => call.method === "recap_get")).toBe(true),
+  );
+  expect(slot.queryByRole("status", { name: "Generating recap" })).toBeNull();
+  expect(slot.queryByRole("button", { name: "Generate Recap" })).toBeNull();
 });
 
 it("offers Generate Recap when automatic recaps are off", async () => {
