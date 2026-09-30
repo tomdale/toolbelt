@@ -18,6 +18,7 @@ import { openDatabase } from "./db.ts";
 import { Journal } from "./journal.ts";
 import { Inference } from "./model.ts";
 import { loadOrder, saveOrder } from "./order.ts";
+import { loadSpinner, saveSpinner } from "./spinner.ts";
 import { UserError, WorkstreamService } from "./service.ts";
 import { TraceStore } from "./trace.ts";
 
@@ -139,11 +140,11 @@ export default async function plugin(bb: BbPluginApi) {
   };
   const traces = new TraceStore(db);
   const inference = new Inference({
-    complete: async (prompt, model) =>
+    complete: async (prompt, model, signal) =>
       hostRpc.call(
         "complete",
         { prompt, model },
-        { hostId: await analysisHost(), timeoutMs: 95_000 },
+        { hostId: await analysisHost(), timeoutMs: 95_000, signal },
       ),
     traces,
     debug: async () => (await settings.get()).debug === true,
@@ -377,11 +378,48 @@ export default async function plugin(bb: BbPluginApi) {
     }
   };
 
+  // One routing preview per composer draft: a newer request or a cancel
+  // aborts the model call of the one before it.
+  const previews = new Map<string, AbortController>();
+  const cancelPreview = (draftKey: string) => {
+    const running = previews.get(draftKey);
+    previews.delete(draftKey);
+    running?.abort(new UserError("Canceled: the draft changed."));
+    return running !== undefined;
+  };
+
   bb.rpc.register(rpcContract, {
-    route: ({ prompt, pickedProjectId, workstreamId, fromDecisionId }) =>
-      userFacing(() =>
-        router.route(prompt, { pickedProjectId, workstreamId, fromDecisionId }),
-      ),
+    route: ({
+      prompt,
+      pickedProjectId,
+      workstreamId,
+      fromDecisionId,
+      draftKey,
+    }) =>
+      userFacing(async () => {
+        if (!draftKey)
+          return router.route(prompt, {
+            pickedProjectId,
+            workstreamId,
+            fromDecisionId,
+          });
+        cancelPreview(draftKey);
+        const controller = new AbortController();
+        previews.set(draftKey, controller);
+        try {
+          return await router.route(prompt, {
+            pickedProjectId,
+            workstreamId,
+            fromDecisionId,
+            signal: controller.signal,
+          });
+        } finally {
+          if (previews.get(draftKey) === controller) previews.delete(draftKey);
+        }
+      }),
+    routeCancel: async ({ draftKey }) => ({
+      canceled: cancelPreview(draftKey),
+    }),
     routeExecute: ({ decisionId, prompt, choice, execution }) =>
       userFacing(async () => {
         const remembered = router.recall({ id: decisionId, prompt });
@@ -421,6 +459,12 @@ export default async function plugin(bb: BbPluginApi) {
       const order = saveOrder(db, change);
       notify();
       return { order };
+    },
+    spinner: async () => ({ spinner: loadSpinner(db) }),
+    setSpinner: async ({ spinner }) => {
+      const saved = saveSpinner(db, spinner);
+      bb.realtime.publish("spinner", { spinner: saved });
+      return { spinner: saved };
     },
     editWorkstream: ({ sectionId, description, aliases }) =>
       userFacing(async () => {

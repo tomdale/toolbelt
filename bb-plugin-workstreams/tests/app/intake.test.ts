@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Intake } from "../../src/app/composer/intake.ts";
+import { DEBOUNCE_MS, SHORT_PAUSE_MS } from "../../src/app/composer/timing.ts";
 import type { RouteDecision } from "../../src/server/router.ts";
 
 const prompt = "Fix the parser";
@@ -22,11 +23,11 @@ const decision: RouteDecision = {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-it("routes as the draft changes, without treating the initial project as a choice", async () => {
+it("routes a short draft once typing pauses, without treating the initial project as a choice", async () => {
   const route = vi.fn().mockResolvedValue(decision);
   const intake = new Intake(route, null, null);
   intake.observe(prompt, "proj_unrelated");
-  await vi.advanceTimersByTimeAsync(599);
+  await vi.advanceTimersByTimeAsync(SHORT_PAUSE_MS - 1);
   expect(route).not.toHaveBeenCalled();
   await vi.advanceTimersByTimeAsync(1);
   expect(route).toHaveBeenCalledWith({
@@ -91,7 +92,7 @@ it("ignores a late result after the draft is cleared or replaced", async () => {
   );
   const intake = new Intake(route, null, null);
   intake.observe(prompt, null);
-  await vi.advanceTimersByTimeAsync(600);
+  await vi.advanceTimersByTimeAsync(SHORT_PAUSE_MS);
   intake.observe("", null);
   finish(decision);
   await Promise.resolve();
@@ -100,6 +101,25 @@ it("ignores a late result after the draft is cleared or replaced", async () => {
     decision: null,
     loading: false,
   });
+});
+
+it("routes a long draft on a short debounce and cancels the call in flight when it changes", async () => {
+  const long = "Fix the Alpha parser so it handles tab characters";
+  const route = vi.fn().mockReturnValue(new Promise<RouteDecision>(() => {}));
+  const cancel = vi.fn();
+  const intake = new Intake(route, null, null, cancel);
+  intake.observe(long, null);
+  await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+  expect(route).toHaveBeenCalledTimes(1);
+  expect(cancel).not.toHaveBeenCalled();
+  intake.observe(`${long} and`, null);
+  expect(cancel).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+  expect(route).toHaveBeenCalledTimes(2);
+  expect(route).toHaveBeenLastCalledWith(
+    expect.objectContaining({ prompt: `${long} and` }),
+  );
+  intake.dispose();
 });
 
 it("does not execute a stale result when text changes during a pending submit", async () => {

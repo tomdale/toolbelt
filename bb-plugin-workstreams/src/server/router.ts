@@ -118,6 +118,8 @@ export class Router {
       fromDecisionId?: string | null;
       /** The thread asking (a handoff's caller), for its debug trace. */
       about?: string | null;
+      /** Aborts the model call; the route then rejects with the reason. */
+      signal?: AbortSignal;
     } = {},
   ): Promise<RouteDecision> {
     const text = prompt.trim();
@@ -217,6 +219,7 @@ export class Router {
         model: await this.deps.model(),
         label: text.replace(/\s+/g, " "),
         links: options.about ? [{ kind: "thread", ref: options.about }] : [],
+        signal: options.signal,
       },
     );
     const idOf = new Map(records.map((r) => [r.name, r.sectionId]));

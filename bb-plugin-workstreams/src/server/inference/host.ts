@@ -1,18 +1,19 @@
 /**
- * Workstreams' `bb.host` entry: runs one isolated Pi completion on the
- * machine, through the AI Gateway credentials Pi already has there. No new
+ * Workstreams' `bb.host` entry: runs one isolated AI Gateway completion on
+ * the machine, with the AI Gateway key Pi already has there. No new
  * credentials are stored, and no fallback model is tried.
  */
-import { execFile } from "node:child_process";
 import { readdir, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contract.ts";
-import { parsePiJson, piArgs } from "./pi.ts";
+import { gatewayComplete, gatewayKey } from "./gateway.ts";
 
+const NO_KEY =
+  "Analysis failed: no AI Gateway key on this machine. Sign Pi in to Vercel AI Gateway. No fallback model was used.";
 const FAILURE =
   "Analysis failed. Check Pi's AI Gateway authentication on this machine. No fallback model was used.";
+const TIMEOUT_MS = 90_000;
 
 async function isDir(path: string): Promise<boolean> {
   try {
@@ -42,34 +43,21 @@ export default experimental_defineHostEntry({
           childRepos++;
       return { exists: true, rootRepo: entries.includes(".git"), childRepos };
     },
-    complete: async ({ prompt, model }, ctx) =>
-      new Promise((resolve, reject) => {
-        // The prompt goes over stdin so thread excerpts never appear in
-        // process arguments.
-        const child = execFile(
-          "pi",
-          piArgs(model),
-          {
-            cwd: tmpdir(),
-            signal: ctx.signal,
-            timeout: 90_000,
-            maxBuffer: 4_000_000,
-            encoding: "utf8",
-            env: { ...process.env, PI_OFFLINE: "1" },
-          },
-          (error, stdout) => {
-            if (error) return reject(new Error(FAILURE));
-            try {
-              resolve(parsePiJson(stdout));
-            } catch {
-              reject(new Error(FAILURE));
-            }
-          },
-        );
-        child.stdin?.on("error", () => {
-          /* execFile reports process failures. */
-        });
-        child.stdin?.end(prompt);
-      }),
+    complete: async ({ prompt, model }, ctx) => {
+      const apiKey = await gatewayKey();
+      if (!apiKey) throw new Error(NO_KEY);
+      // The server aborts a call whose answer no longer matters (the draft
+      // changed); that closes the gateway request instead of waiting on it.
+      const signal = AbortSignal.any([
+        ctx.signal,
+        AbortSignal.timeout(TIMEOUT_MS),
+      ]);
+      try {
+        return await gatewayComplete({ prompt, model, apiKey, signal });
+      } catch (error) {
+        if (ctx.signal.aborted) throw error;
+        throw new Error(FAILURE);
+      }
+    },
   },
 });

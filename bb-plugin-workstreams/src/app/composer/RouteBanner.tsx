@@ -21,12 +21,16 @@ import {
 import type { RpcContract } from "../../server/contract.ts";
 import type { RouteDecision } from "../../server/router.ts";
 import { InspectButton } from "../debug/InspectButton.tsx";
+import { routeDelay, SHORT_DRAFT_CHARS } from "./timing.ts";
 
-const MIN_CHARS = 20;
-const DEBOUNCE_MS = 600;
+/**
+ * Identifies this window's new-thread draft to the server, which keeps one
+ * routing call per draft and aborts it when a newer one starts.
+ */
+const DRAFT_KEY = crypto.randomUUID();
 
 type RouteState = {
-  /** Draft text the current decision (or request) is for. */
+  /** Draft text the current decision is for. */
   text: string;
   decision: RouteDecision | null;
   loading: boolean;
@@ -56,6 +60,8 @@ let state: RouteState = {
 const listeners = new Set<() => void>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 let generation = 0;
+/** The text of the routing call in flight, if any. */
+let inflight: string | null = null;
 
 function set(patch: Partial<RouteState>) {
   state = { ...state, ...patch };
@@ -71,6 +77,7 @@ export function resetRouteBanner() {
   if (timer) clearTimeout(timer);
   timer = null;
   generation++;
+  inflight = null;
   state = {
     text: "",
     decision: null,
@@ -86,6 +93,20 @@ export function resetRouteBanner() {
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 
+/**
+ * Drops the routing call in flight, locally at once and on the server, which
+ * aborts its model request. Its answer is for text the user has moved past.
+ */
+function cancelInflight(rpc: Rpc) {
+  if (inflight === null) return;
+  inflight = null;
+  generation++;
+  set({ loading: false });
+  void rpc.call("routeCancel", { draftKey: DRAFT_KEY }).catch(() => {
+    // A cancel that can't reach the server only costs one wasted call.
+  });
+}
+
 function schedule(
   rpc: Rpc,
   text: string,
@@ -97,7 +118,12 @@ function schedule(
   fromDecisionId?: string,
 ) {
   if (timer) clearTimeout(timer);
+  timer = null;
   const trimmed = text.trim();
+  const forced = Boolean(workstreamId || userPick);
+  // Any change to the text makes the call in flight worthless.
+  if (inflight !== null && (inflight !== trimmed || forced))
+    cancelInflight(rpc);
   // An emptied draft starts over, so the next one reads the picker afresh.
   if (!trimmed) {
     if (state.text || state.decision || state.initialProject)
@@ -106,12 +132,7 @@ function schedule(
     return;
   }
   if (state.initialProject === null) set({ initialProject: projectId });
-  if (trimmed.length < MIN_CHARS) {
-    if (state.decision || state.text)
-      set({ text: "", decision: null, error: null });
-    return;
-  }
-  if (trimmed === state.text && !workstreamId && !userPick) return;
+  if (!forced && (inflight === trimmed || state.text === trimmed)) return;
   const picked =
     userPick ??
     (projectId &&
@@ -122,31 +143,41 @@ function schedule(
   const mine = ++generation;
   timer = setTimeout(
     () => {
-      set({ text: trimmed, loading: true, error: null });
+      timer = null;
+      inflight = trimmed;
+      set({ loading: true, error: null });
       rpc
         .call("route", {
           prompt: trimmed,
           pickedProjectId: picked,
+          draftKey: DRAFT_KEY,
           // RPC input must be JSON: omit rather than send undefined.
           ...(workstreamId ? { workstreamId } : {}),
           ...(fromDecisionId ? { fromDecisionId } : {}),
         })
         .then(
           (decision) => {
-            if (mine === generation)
-              set({ decision: decision as RouteDecision, loading: false });
+            if (mine !== generation) return;
+            inflight = null;
+            set({
+              text: trimmed,
+              decision: decision as RouteDecision,
+              loading: false,
+            });
           },
           (error: unknown) => {
-            if (mine === generation)
-              set({
-                loading: false,
-                decision: null,
-                error: error instanceof Error ? error.message : String(error),
-              });
+            if (mine !== generation) return;
+            inflight = null;
+            set({
+              text: trimmed,
+              loading: false,
+              decision: null,
+              error: error instanceof Error ? error.message : String(error),
+            });
           },
         );
     },
-    workstreamId ? 0 : DEBOUNCE_MS,
+    forced ? 0 : routeDelay(trimmed),
   );
 }
 
@@ -221,14 +252,19 @@ function NativeRouteBanner() {
       );
   }, [decision, composer]);
 
-  if (text.trim().length < MIN_CHARS) return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  // A short draft is routed tentatively: only a decision is worth showing,
+  // not progress or errors.
+  const short = trimmed.length < SHORT_DRAFT_CHARS;
+  if (short && !decision) return null;
   if (route.loading && !decision)
     return (
       <div className="ws-route" role="status" aria-live="polite">
         <span aria-hidden="true">✦</span> Finding where this goes…
       </div>
     );
-  if (route.error)
+  if (route.error && !short)
     return (
       <div className="ws-route" role="status">
         <span aria-hidden="true">✦</span> {route.error}

@@ -1,6 +1,6 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { usageSchema } from "./pi.ts";
+import { usageSchema } from "../../domain/trace.ts";
 
 /** RPC between the plugin server and its `bb.host` entry on the machine. */
 export const hostContract = defineRpcContract({

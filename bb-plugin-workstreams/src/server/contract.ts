@@ -2,6 +2,11 @@ import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { WORK_STATES } from "../domain/analysis.ts";
 import {
+  HEX_COLOR,
+  SPINNER_COLORS,
+  SPINNER_SHAPES,
+} from "../domain/spinner.ts";
+import {
   TRACE_KINDS,
   linkSchema,
   traceSchema,
@@ -152,6 +157,16 @@ const bootstrapSchema = z
   .nullable();
 
 const idList = z.array(z.string().min(1)).max(5000);
+const spinnerColorSchema = z.union([
+  z.enum(SPINNER_COLORS),
+  z.string().regex(HEX_COLOR) as z.ZodType<`#${string}`>,
+]);
+const spinnerSchema = z.object({
+  shape: z.enum(SPINNER_SHAPES),
+  primary: spinnerColorSchema,
+  secondary: z.union([spinnerColorSchema, z.enum(["auto", "none"])]),
+});
+
 const orderSchema = z.object({
   workstreams: z.array(z.string()),
   threads: z.record(z.string(), z.array(z.string())),
@@ -226,8 +241,21 @@ export const rpcContract = defineRpcContract({
        * call keeps explaining the result (SPEC §11.6).
        */
       fromDecisionId: z.string().nullable().optional(),
+      /**
+       * The composer draft this preview is for. A newer `route` or a
+       * `routeCancel` for the same draft aborts this one's model call.
+       */
+      draftKey: z.string().min(1).max(500).nullable().optional(),
     }),
     output: routeSchema,
+  },
+  /**
+   * Aborts the in-flight `route` for a draft, because its text changed.
+   * Returns whether one was running.
+   */
+  routeCancel: {
+    input: z.object({ draftKey: z.string().min(1).max(500) }),
+    output: z.object({ canceled: z.boolean() }),
   },
   /**
    * Acts on a previewed route: sends to the thread, or spawns the thread
@@ -282,6 +310,16 @@ export const rpcContract = defineRpcContract({
       }),
     ]),
     output: z.object({ order: orderSchema }),
+  },
+  /** The working indicator's style, chosen in the plugin's settings section. */
+  spinner: {
+    input: z.null(),
+    output: z.object({ spinner: spinnerSchema }),
+  },
+  /** Stores the working indicator's style and pushes it to every client. */
+  setSpinner: {
+    input: z.object({ spinner: spinnerSchema }),
+    output: z.object({ spinner: spinnerSchema }),
   },
   editWorkstream: {
     input: z.object({
