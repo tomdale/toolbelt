@@ -79,7 +79,7 @@ export async function fakeWorld(
   const text = (value: string) => [{ type: "text", text: value }];
   const host = createFakePluginHost({
     pluginId: "workstreams",
-    settings: options.settings,
+    settings: { understandingAutomatic: false, ...options.settings },
     experimental_callHostRpc: async (call) => {
       const input = call.input as { prompt: string; model: string };
       completions.push(input);

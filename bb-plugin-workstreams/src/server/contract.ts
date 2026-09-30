@@ -15,13 +15,7 @@ import {
 } from "../domain/trace.ts";
 import type { Environment } from "./router.ts";
 import { entrySchema, sourceSchema } from "./journal.ts";
-import {
-  debugOverviewSchema,
-  accountDetailSchema,
-  observationDetailSchema,
-  retrievalReportSchema,
-  retrievalSnapshotSchema,
-} from "../domain/understanding-debug.ts";
+import { notebookOverviewSchema, notebookSchema, notebookVersionSchema, learningRunSchema } from "../domain/notebooks.ts";
 
 const placementSchema = z.object({
   sectionId: z.string().nullable(),
@@ -597,44 +591,13 @@ export const rpcContract = defineRpcContract({
     input: z.object({ id: z.string().min(1) }),
     output: z.object({ trace: traceSchema }),
   },
-  understandingOverview: {
-    input: z.object({
-      query: z.string().max(2000).optional(),
-      offset: z.number().int().min(0).max(100000).optional(),
-      limit: z.number().int().min(1).max(100).optional(),
-    }),
-    output: debugOverviewSchema,
-  },
-  understandingAccount: {
-    input: z.object({
-      id: z.string().min(1).max(200),
-      before: z.number().optional(),
-    }),
-    output: accountDetailSchema,
-  },
-  understandingObservation: {
-    input: z.object({ id: z.string().min(1).max(200) }),
-    output: observationDetailSchema,
-  },
-  understandingRetrieve: {
-    input: z.object({
-      query: z.string().max(2000),
-      budget: z.number().int().min(500).max(8000).optional(),
-      limit: z.number().int().min(1).max(100).optional(),
-    }),
-    output: retrievalReportSchema,
-  },
-  understandingRetrievals: {
-    input: z.object({
-      traceId: z.string().min(1).max(200).optional(),
-      threadId: z.string().min(1).max(200).optional(),
-      limit: z.number().int().min(1).max(100).optional(),
-      before: z
-        .object({ at: z.number(), id: z.string().min(1).max(200) })
-        .optional(),
-    }),
-    output: z.object({ retrievals: z.array(retrievalSnapshotSchema) }),
-  },
+  notebookOverview: { input: z.object({ query: z.string().max(2000).optional(), offset: z.number().int().min(0).max(100000).optional() }), output: notebookOverviewSchema },
+  notebook: { input: z.object({ threadId: z.string().min(1).max(200) }), output: z.object({ notebook: notebookSchema.nullable(), versions: z.array(notebookVersionSchema) }) },
+  notebookBriefVersions: { input: z.null(), output: z.object({ versions: z.array(notebookVersionSchema) }) },
+  notebookLearn: { input: z.object({ threadId: z.string().min(1).max(200) }), output: notebookOverviewSchema },
+  notebookAsk: { input: z.object({ question: z.string().trim().min(1).max(4000) }), output: learningRunSchema },
+  notebookRun: { input: z.object({ id: z.string().min(1).max(200) }), output: z.object({ run: learningRunSchema.nullable() }) },
+  notebookCancel: { input: z.object({ id: z.string().min(1).max(200) }), output: z.object({ cancelled: z.boolean() }) },
   traceClear: {
     input: z.null(),
     output: z.object({ removed: z.number() }),

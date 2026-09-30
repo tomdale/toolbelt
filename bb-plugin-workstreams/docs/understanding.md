@@ -1,91 +1,30 @@
-# Incremental understanding (preview)
+# Understanding
 
-Workstreams retains grounded observations from conversations and reconciles them
-into revisable, cross-thread accounts. The workstream map is one consumer of
-these accounts: it is not the memory itself.
+The learner reads conversations and writes two things: a notebook for each thread and a shared brief about the user's work. Both are ordinary prose. The learner chooses what to remember, how to organize it, and when earlier assumptions need revision.
 
-## Evidence and accounts
+## Learning
 
-Extraction reads new conversational entries in chronological, bounded batches.
-Observations describe meaningful product context, ownership, naming,
-implementation boundaries, user intentions, and reported results in free-form
-language. Each observation carries an exact excerpt and a source thread/entry
-reference. Explicit user statements and assistant-reported results remain
-distinguishable. Empty successful batches advance progress; failed extraction
-leaves the batch available for retry.
+After a turn, the learner receives the new conversation and its existing notes. It can search other threads, read conversations and notebooks, and follow connections before writing. Source pointers are useful references, not an exact-quote acceptance protocol. Notes are interpretations, not verified code state.
 
-Reconciliation combines relevant observations across threads into topical
-accounts. Accounts cite stored evidence and retain unresolved questions. They
-can describe unfamiliar situations without requiring a predefined catalog of
-product transitions. A model-generated account is an interpretation of evidence,
-not independent evidence and not verified code state.
+**Learn from conversations** in Workstreams settings enables automatic learning. Historical conversations are processed in chronological, bounded batches. Learning runs separately from ordinary triage. A successful run commits notes and advances progress together; an interrupted or failed run leaves the previous notes and cursor intact. Calls are bounded and cancellable.
 
-Routing and per-thread analysis retrieve bounded, relevant accounts and
-observations. They interpret product scope using that evidence while preserving
-explicit destination choices and existing closed-set validation. This can affect
-subject labels and drift suggestions; interpretation remains model-mediated, so
-inspect consequential suggestions. Per-thread state and Needs you still come
-from that thread's exchange. Accounts do not directly modify sections,
-descriptions, aliases, or placements. Existing routing and evolution policies
-continue to govern actions.
+Routing and analysis receive the shared brief as context. Explicit destination choices remain authoritative. The learner cannot move threads, edit code, or change sections. Its tools let it read conversations and write memory—not perform actions described inside a conversation.
 
-## Use
+## Explore
 
-The preview defaults to manual operation. After building and loading this
-version:
+Open **Workstreams → Understanding** to read the shared brief, browse notebooks and their earlier versions, or inspect learning runs. A run shows the learner's ordinary narration, tools used, results, cost, and errors.
+
+Ask a question such as “Why do you think Recap is separate?” The learner can investigate by searching and reading. Asking makes paid model calls but does not change notes. **Learn from thread** is a separate action that updates memory.
 
 ```sh
-bb workstreams understanding --observe <thread-id> --json
-bb workstreams understanding Recap --json
-bb workstreams understanding Workstreams
+bb workstreams understanding --json
+bb workstreams understanding Recap
+bb workstreams understanding --learn <thread-id>
+bb workstreams understanding --ask "How does Recap relate to Workstreams?"
 ```
 
-`--observe` processes a bounded batch of a visible, unarchived, idle thread.
-Repeat it to consume historical conversations. Inspect JSON for retained
-observations, accounts, questions, and progress. Topic lookup is a local
-retrieval operation, not an extra model call. Text output includes counts of
-indexed, pending, and failing threads; JSON includes errors and backlog.
-Manually collected evidence is available to routing and analysis even when
-automatic collection is off.
+## Boundaries
 
-Enable **Incremental understanding (preview)** in Workstreams settings to queue
-evidence collection alongside each completed-turn analysis. Analysis reads the
-latest available context without waiting for indexing. A rotating catch-up pass
-also processes up to two idle threads per minute, so historical conversations
-can accumulate without requiring more messages. Current threads are skipped;
-failures back off for ten minutes. Collection and reconciliation share one
-serial queue. Each pass can make up to three extraction calls and one
-reconciliation call, additional to ordinary analysis. Extraction or
-reconciliation failure is logged separately and does not prevent ordinary thread
-analysis. Turning automatic collection off stops automatic model calls; it does
-not erase retained evidence.
+Notes and run logs contain private conversational context. Redaction is best-effort. Source deletion invalidates dependent notes, versions, and run logs; the shared brief is rebuilt rather than preserving facts from a deleted source. Learning runs retain a bounded history; notebook versions retain their recent edits.
 
-Use the existing Debug mode to inspect and replay extraction and reconciliation
-calls. Debug traces have their own retention policy; grounded observations and
-accounts are durable plugin data. Quotes and inputs are redacted before storage
-or model use. Transcript excerpts remain an untrusted prompt-injection surface:
-citations validate provenance, not truth or semantic correctness. Redaction is
-best-effort: do not treat it as a guarantee that conversations containing
-sensitive material can safely be indexed.
-
-## Boundaries of this version
-
-The system can preserve and reconcile evidence, and expose the questions it
-cannot resolve. It does not autonomously inspect code, fetch missing transcript
-passages on demand, or interrupt the user with questions. Retrieval uses bounded
-local lexical relevance rather than embeddings. Repeated statements do not
-become verified facts simply because several threads contain them. Source
-deletion removes associated evidence and invalidates every account citing it.
-Long conversational entries are split into source-linked segments. A missing
-cursor or a timeline exceeding the bounded scan is reported as failed without
-advancing progress. Historical text edits are not automatically reindexed;
-source deletion is the supported removal boundary in this preview.
-
-A useful evaluation is to express complementary facts in separate turns and
-threads, then ask where a related task belongs. For example, one thread
-establishes that Recap is separately developed; another establishes that its
-implementation and interface are integrated into Workstreams. The account should
-preserve the historical distinction, reflect the later evidence, and identify
-any uncertainty about whether Recap remains independently developed. The routing
-decision should reason from that evidence rather than treating two historical
-names as proof of two current products.
+The notebook format is deliberately open. There is no extracted-fact schema, hand-built relevance scoring, or predefined vocabulary of product transitions. Whether the learner produces useful understanding is evaluated through its notes and answers, not by counting accepted observations.

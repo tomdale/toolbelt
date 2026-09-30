@@ -10,14 +10,6 @@ import {
 } from "../domain/analysis.ts";
 import { parseRecap, recapPrompt, type RecapInput } from "../domain/recap.ts";
 import {
-  extractionPrompt,
-  parseExtraction,
-  synthesisPrompt,
-  parseSynthesis,
-  type ExtractionInput,
-  type SynthesisInput,
-} from "../domain/understanding.ts";
-import {
   assignPrompt,
   describePrompt,
   mapPrompt,
@@ -64,20 +56,6 @@ export const MODEL_CALLS = {
   recap: {
     prompt: (input: RecapInput) => recapPrompt(input),
     parse: (text: string) => parseRecap(text),
-  },
-  "understanding-extract": {
-    prompt: (input: ExtractionInput) => extractionPrompt(input),
-    parse: (text: string, input: ExtractionInput) =>
-      parseExtraction(text, input.entries),
-  },
-  "understanding-synthesis": {
-    prompt: (input: SynthesisInput) => synthesisPrompt(input),
-    parse: (text: string, input: SynthesisInput) => ({
-      accounts: parseSynthesis(
-        text,
-        new Set(input.observations.map((o) => o.id)),
-      ),
-    }),
   },
   route: {
     prompt: (input: RouteInput) => routePrompt(input),
@@ -133,10 +111,6 @@ export function summarize(
   switch (kind) {
     case "recap":
       return "recap";
-    case "understanding-extract":
-      return `${(value as unknown[]).length} observations`;
-    case "understanding-synthesis":
-      return `${(value as { accounts: unknown[] }).accounts.length} accounts`;
     case "analysis": {
       const a = value as OutputOf<"analysis">;
       return [

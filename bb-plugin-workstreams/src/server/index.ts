@@ -24,7 +24,7 @@ import { UserError, WorkstreamService } from "./service.ts";
 import { TraceStore } from "./trace.ts";
 import { RecapScheduler } from "./recap.ts";
 import { loadRecapPrefs, saveRecapPrefs } from "./recapPrefs.ts";
-import { Understanding } from "./understanding.ts";
+import { Notebooks } from "./notebooks.ts";
 import { ThreadSnoozes } from "./snooze.ts";
 import {
   DEFAULT_SNOOZE,
@@ -91,10 +91,10 @@ export default async function plugin(bb: BbPluginApi) {
     },
     understandingAutomatic: {
       type: "boolean",
-      label: "Incremental understanding (preview)",
+      label: "Learn from conversations",
       description:
-        "Extract cited observations from completed conversations and reconcile cross-thread accounts. Adds model calls and stores redacted evidence; routing and analysis can use this context. Historical conversations are processed incrementally.",
-      default: false,
+        "Let the learner read conversations, follow connections, and write thread notebooks and a shared brief. Uses paid model calls.",
+      default: true,
     },
     recapModel: {
       type: "select",
@@ -209,15 +209,13 @@ export default async function plugin(bb: BbPluginApi) {
   });
   // Retention also applies while Debug mode is off and nothing is recorded.
   traces.prune({ force: true });
-  const understanding = new Understanding({
-    sdk: () => bb.sdk,
-    db,
-    inference,
+  const notebooks = new Notebooks({
+    sdk: () => bb.sdk, db,
+    turn: async (request, signal) => hostRpc.call("agentTurn", request, { hostId: await analysisHost(), timeoutMs: 95000, signal }),
     model: async () => (await settings.get()).model,
-    onChange: notify,
-    log: (message) => bb.log.warn(message),
+    onChange: notify, log: message => bb.log.warn(message),
   });
-  bb.onDispose(() => understanding.dispose());
+  bb.onDispose(() => notebooks.dispose());
   let evolveSoon = () => {};
   const analyzer = new Analyzer({
     sdk: () => bb.sdk,
@@ -226,15 +224,9 @@ export default async function plugin(bb: BbPluginApi) {
     inference,
     observe: async (threadId) => {
       if ((await settings.get()).understandingAutomatic)
-        await understanding.observe(threadId);
+        await notebooks.observe(threadId);
     },
-    retrieval: (query, threadId) => {
-      const report = understanding.retrieve(query);
-      const id = understanding.recordRetrieval(report, "analysis", threadId);
-      return { context: report.context, id };
-    },
-    attachRetrieval: (id, traceId) =>
-      understanding.attachRetrieval(id, traceId),
+    context: () => notebooks.context(),
     onChange: () => {
       notify();
       evolveSoon();
@@ -328,13 +320,7 @@ export default async function plugin(bb: BbPluginApi) {
     inference,
     model: async () => (await settings.get()).model,
     homeProjectId: async () => (await settings.get()).homeProjectId ?? "",
-    retrieval: (query, threadId) => {
-      const report = understanding.retrieve(query);
-      const id = understanding.recordRetrieval(report, "route", threadId);
-      return { context: report.context, id };
-    },
-    attachRetrieval: (id, traceId) =>
-      understanding.attachRetrieval(id, traceId),
+    context: () => notebooks.context(),
   });
   // A thread the native composer just created from a previewed prompt is
   // filed where the preview said: via the banner's submit data, or, for a
@@ -460,7 +446,7 @@ export default async function plugin(bb: BbPluginApi) {
         .filter(
           (thread) =>
             thread.status === "idle" &&
-            understanding.needsObservation(thread.id, thread.latestAttentionAt),
+            notebooks.needsObservation(thread.id, thread.latestAttentionAt),
         )
         .sort((a, b) => a.id.localeCompare(b.id));
       for (let i = 0; i < Math.min(2, eligible.length); i++) {
@@ -468,7 +454,7 @@ export default async function plugin(bb: BbPluginApi) {
         const thread = eligible[understandingOffset % eligible.length]!;
         understandingOffset++;
         try {
-          await understanding.observe(thread.id);
+          await notebooks.observe(thread.id);
         } catch (error) {
           bb.log.warn(
             `Understanding catch-up failed for ${thread.id}: ${String(error)}`,
@@ -527,7 +513,7 @@ export default async function plugin(bb: BbPluginApi) {
   bb.events.on("thread.deleted", ({ thread }) => {
     snoozes.clear(thread.id);
     analyzer.forget(thread.id);
-    understanding.forget(thread.id);
+    notebooks.forget(thread.id);
     archives.forget(thread.id);
     service.forget(thread.id);
   });
@@ -867,16 +853,13 @@ export default async function plugin(bb: BbPluginApi) {
     trace: async ({ id }) => ({ trace: traces.get(id) }),
     traceReplay: ({ id }) =>
       userFacing(async () => ({ trace: await inference.replay(id) })),
-    understandingOverview: async (input) => understanding.debugOverview(input),
-    understandingAccount: async ({ id, before }) =>
-      understanding.accountDetail(id, before),
-    understandingObservation: async ({ id }) =>
-      understanding.observationDetail(id),
-    understandingRetrieve: async ({ query, budget, limit }) =>
-      understanding.retrieve(query, { budget, limit }),
-    understandingRetrievals: async (input) => ({
-      retrievals: understanding.retrievals(input),
-    }),
+    notebookOverview: async ({ query, offset }) => notebooks.overview(query, offset),
+    notebook: async ({ threadId }) => ({ notebook: notebooks.get(threadId), versions: notebooks.versions(threadId) }),
+    notebookBriefVersions: async () => ({ versions: notebooks.versions(null) }),
+    notebookLearn: ({ threadId }) => userFacing(async () => { await notebooks.observe(threadId); return notebooks.overview(); }),
+    notebookAsk: ({ question }) => userFacing(() => notebooks.ask(question)),
+    notebookRun: async ({ id }) => ({ run: notebooks.run(id) }),
+    notebookCancel: async ({ id }) => ({ cancelled: notebooks.cancel(id) }),
     traceClear: async () => ({ removed: traces.clear() }),
   });
 
@@ -888,6 +871,6 @@ export default async function plugin(bb: BbPluginApi) {
     map,
     router,
     traces,
-    understanding,
+    notebooks,
   });
 }

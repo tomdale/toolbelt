@@ -14,8 +14,6 @@ export type Usage = z.infer<typeof usageSchema>;
 export const TRACE_KINDS = [
   "analysis",
   "recap",
-  "understanding-extract",
-  "understanding-synthesis",
   "route",
   "organize-map",
   "organize-assign",
@@ -37,9 +35,6 @@ export const LINK_KINDS = [
   "proposal",
   "section",
   "organize",
-  "observation",
-  "account",
-  "retrieval",
 ] as const;
 export type TraceLink = {
   kind: (typeof LINK_KINDS)[number];
@@ -98,8 +93,6 @@ export type NewTrace = Omit<
 export const TRACE_KIND_TITLE: Record<TraceKind, string> = {
   analysis: "Thread analysis",
   recap: "Thread recap",
-  "understanding-extract": "Understanding extraction",
-  "understanding-synthesis": "Understanding synthesis",
   route: "Routing",
   "organize-map": "Organize: map proposal",
   "organize-assign": "Organize: filing",
@@ -111,8 +104,6 @@ export const TRACE_KIND_TITLE: Record<TraceKind, string> = {
 export const TRACE_KIND_SHORT: Record<TraceKind, string> = {
   analysis: "Analysis",
   recap: "Recap",
-  "understanding-extract": "Extract",
-  "understanding-synthesis": "Synthesis",
   route: "Routing",
   "organize-map": "Organize map",
   "organize-assign": "Organize filing",

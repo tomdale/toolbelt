@@ -62,25 +62,11 @@ against.
   latest request drifted to another workstream. Results are tied to the turn
   they describe and show as updating once a new turn starts. Analysis itself
   never moves anything; the later filing pass may use its subject.
-- **Incremental understanding (preview)**: retain observations backed by exact
-  conversation excerpts, reconcile them into cross-thread accounts with open
-  questions, and retrieve relevant context for routing and analysis. Collection
-  is manual by default; enable `understandingAutomatic` for completed turns and
-  bounded historical catch-up. Accounts interpret evidence rather than verify
-  code or directly reorganize sections. See
-  [the preview guide](docs/understanding.md).
-- **Understanding developer workbench**: browse accounts and source evidence,
-  compare account revisions, inspect actual decision-time retrieval, and explore
-  candidate selection locally without model calls. Collection health explains
-  backlog and failures. See
-  [the developer tools guide](docs/understanding-devtools.md).
-- **Recap card**: above each thread's composer, a recap of the thread's goal,
-  latest results, and Open and Done items, with a For you section when the
-  thread waits on you. Recaps are written after the thread has been quiet (30
-  seconds and 3 of your messages by default) or on demand from the thread
-  header's **Recap** button, the command palette, or **Generate Recap** when
-  automatic recaps are off. Settings → Recap picks the layout (detailed,
-  compact, minimal) and the timing.
+- **Understanding**: a tool-using learner reads conversations, follows connections,
+  and writes freeform thread notebooks plus a shared brief. Routing and analysis
+  read that brief; the learner does not move threads or edit code. Read notes,
+  explore learning runs, or ask it a question in the Understanding tab.
+  See [the guide](docs/understanding.md).
 - **Archive suggestions**: when classification finds a natural end and BB has no
   unfinished tasks, goals, queued messages, interactions, or background work, a
   quiet **Archive** button appears in the composer toolbar. Clicking archives
@@ -159,13 +145,9 @@ bb workstreams new "<prompt>" [--workstream <w>] [--project <id>] [--dry-run]
 bb workstreams handoff --request-stdin [--note <text>] [--dry-run] [--json] <<'EOF'
 <the user's request, verbatim>
 EOF
-bb workstreams understanding [<topic>] [--observe <thread>] [--json]
-                                               # cited accounts, evidence, and indexing progress
-bb workstreams understanding "<query>" --retrieve [--budget 4000] [--json]
-                                               # local retrieval diagnostics; no model call
-bb workstreams understanding --account <id> [--json]
-bb workstreams understanding --evidence <id> [--json]
-bb workstreams understanding --decisions [--trace <id>] [--json]
+bb workstreams understanding [<topic>] [--json] # shared brief and thread notebooks
+bb workstreams understanding --learn <thread-id> # paid learning; updates notes
+bb workstreams understanding --ask "<question>" # paid read-only investigation
 bb workstreams analyze [<thread>]              # analyze now, or catch up
 bb workstreams rebuild [--apply]               # organize once; preview unless --apply
 bb workstreams log [--since 7d] [--external]   # the activity log
@@ -199,7 +181,6 @@ npm run build
 bb plugin install .   # or `bb plugin reload workstreams` once installed from this path
 node eval/run.ts      # analysis eval (calls models); see eval/README.md
 node eval/route.ts    # routing eval
-node eval/understanding.ts # synthetic extraction → reconciliation → routing eval
 ```
 
 Standalone screenshots use actual IntakeBanner markup and production CSS, with

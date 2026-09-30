@@ -92,6 +92,7 @@ describe("idle analysis", () => {
       "threads.promptHistory",
       "threads.output",
       "threads.events.list",
+      "threads.timeline",
       "threadSections.list",
       "hosts.list",
     ]);
