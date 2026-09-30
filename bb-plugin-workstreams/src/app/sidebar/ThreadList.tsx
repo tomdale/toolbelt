@@ -276,7 +276,7 @@ export function WorkstreamsThreadList({
                   // Left edge matches the row titles: 6px row padding, plus
                   // the 14px status slot and its 6px gap when rows show it.
                   className={cn(
-                    "ws-amber-text w-full rounded-md py-0.5 pr-2 text-left text-[12px] transition-[padding] duration-[180ms] ease-out hover:bg-sidebar-accent/60 motion-reduce:transition-none",
+                    "ws-amber-text w-full cursor-pointer rounded-md py-0.5 pr-2 text-left text-[12px] transition-[padding] duration-[180ms] ease-out hover:bg-sidebar-accent/60 motion-reduce:transition-none",
                     needsMarks ? "pl-[26px]" : "pl-1.5",
                   )}
                 >
