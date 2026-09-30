@@ -528,8 +528,13 @@ restores the previous title while it is still the one Workstreams wrote.
      organizing review, generated descriptions, Overview rows, and the sidebar
      row menu. The Activity log lists each call in place among the changes, with
      a one-line summary of what the model decided (or why it failed) and a
-     "Model calls" filter. The page adds a Debug tab listing every call, and
-     `bb workstreams trace` prints them.
+     "Model calls" filter. Debug-only Activity controls filter calls by kind and
+     failures, show the count and cost of visible calls, load older traces, and
+     clear traces without deleting journal entries. Internal call rows use a
+     muted, dashed treatment and show model, duration, usage, cost, and replay
+     details. Journal entries expose expandable internal details. There is no
+     separate Debug tab; `debug` page links open Activity.
+     `bb workstreams trace` prints recorded calls.
    - "Run again" sends a recorded prompt to its model again and records the
      answer as a replay of the original. A replay changes nothing Workstreams
      stores.
