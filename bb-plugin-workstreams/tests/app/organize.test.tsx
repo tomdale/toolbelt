@@ -172,6 +172,23 @@ describe("Organize request freshness", () => {
     expect(slot.getByRole("alert").textContent).toContain("newest read failed");
   });
 
+  it("shows read failures after a successful command releases error ownership", async () => {
+    const command = deferred<RpcResult>();
+    const recovery = deferred<RpcResult>();
+    let gets = 0;
+    const slot = await mount(async (input) =>
+      (input as { action: string }).action === "get"
+        ? ++gets === 1 ? Promise.resolve({ state: null }) : recovery.promise
+        : command.promise,
+    );
+    await waitFor(() => expect(slot.getByRole("button", { name: "Organize…" })).toBeTruthy());
+    fireEvent.click(slot.getByRole("button", { name: "Organize…" }));
+    await act(async () => command.resolve({ state: snapshot(null, 2) }));
+    await waitFor(() => expect(gets).toBe(2));
+    await act(async () => recovery.reject(new Error("connection lost after command")));
+    await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("connection lost after command"));
+  });
+
   it("handles a read rejection and clears its error after retry succeeds", async () => {
     const retry = deferred<RpcResult>();
     let gets = 0;

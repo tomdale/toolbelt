@@ -393,6 +393,41 @@ describe("shared server state", () => {
     for (const value of consumers.values()) expect(value.server.snoozePrefs.morningHour).toBe(7);
   });
 
+  it("preserves an older pending preference on an independent field", async () => {
+    const older = deferred<{ prefs: ServerState["snoozePrefs"] }>();
+    const newer = deferred<{ prefs: ServerState["snoozePrefs"] }>();
+    let committed = state();
+    let writes = 0;
+    const { consumers, assertRevision } = mount({
+      read: vi.fn(async () => committed),
+      setSnoozePrefs: vi.fn(() => (++writes === 1 ? older : newer).promise),
+    });
+    await assertRevision(1);
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    act(() => {
+      first = consumers.get(0)!.saveSnoozePrefs({ default: "activity" });
+      second = consumers.get(1)!.saveSnoozePrefs({ morningHour: 7 });
+    });
+    await act(async () => {
+      newer.resolve({ prefs: { ...state().snoozePrefs, morningHour: 7 } });
+      await second;
+    });
+    for (const value of consumers.values()) {
+      expect(value.server.snoozePrefs.default).toBe("activity");
+      expect(value.server.snoozePrefs.morningHour).toBe(7);
+    }
+    committed = { ...state(2), snoozePrefs: { ...state().snoozePrefs, default: "activity", morningHour: 7 } };
+    await act(async () => {
+      older.resolve({ prefs: committed.snoozePrefs });
+      await first;
+    });
+    await waitFor(() => {
+      for (const value of consumers.values())
+        expect(value.server.snoozePrefs).toEqual(committed.snoozePrefs);
+    });
+  });
+
   it("registers one app-wide realtime bridge", async () => {
     const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
     expect(
