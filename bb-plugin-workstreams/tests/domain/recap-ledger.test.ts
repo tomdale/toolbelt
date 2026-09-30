@@ -16,3 +16,9 @@ it("parses headings followed by item lines", () => {
 it("rejects text that is not a ledger", () => {
   expect(parseRecapLedger("Just a sentence.")).toBeNull();
 });
+
+it("capitalizes items that start in lowercase", () => {
+  expect(parseRecapLedger("Goal: refining X.\nLatest: `npm test` passes\nOpen: merge it")).toEqual({
+    goal: "Refining X.", latest: ["`npm test` passes"], open: ["Merge it"], done: [],
+  });
+});
