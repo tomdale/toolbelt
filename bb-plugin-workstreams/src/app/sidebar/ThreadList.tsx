@@ -39,7 +39,7 @@ import { planDrop } from "./drop.ts";
 import { describeWake, shortWake, wakeTime } from "../../domain/snooze.ts";
 import { snoozeThread, wakeThread } from "../snooze/actions.ts";
 import { CustomSnoozeDialog } from "../snooze/CustomSnoozeDialog.tsx";
-import { SnoozeMenuItems } from "../snooze/SnoozeMenuItems.tsx";
+import { SnoozeMenuItems, plainMenuKit } from "../snooze/SnoozeMenuItems.tsx";
 
 type ThreadGroup = Group<PluginSidebarThread>;
 type ThreadRow = RowModel<PluginSidebarThread>;
@@ -185,7 +185,8 @@ export function WorkstreamsThreadList({
     customSnooze: (thread) => setCustomSnooze(thread),
     wake: (thread) => wakeThread(ws.setSnooze, thread),
   };
-  const defaultSnoozeTitle = `Snooze ${describeWake(wakeTime(ws.defaultSnooze, now), now)}`;
+  const snoozePrefs = ws.snoozePrefs;
+  const defaultSnoozeTitle = `Snooze ${describeWake(wakeTime(snoozePrefs.default, now, snoozePrefs.morningHour), now)}`;
   const renameWorkstream = (group: ThreadGroup) =>
     setNameRequest({
       title: "Rename workstream",
@@ -228,8 +229,11 @@ export function WorkstreamsThreadList({
     if (placement === "snoozed" && !snooze) return undefined;
     const menu = (
       <SnoozeMenuItems
+        kit={plainMenuKit}
         now={now}
-        preset={ws.defaultSnooze}
+        preset={snoozePrefs.default}
+        morningHour={snoozePrefs.morningHour}
+        only={snoozePrefs.quick}
         snooze={snooze}
         onSnooze={(until) => handlers.snooze(row.thread, until)}
         onWake={() => handlers.wake(row.thread)}
@@ -241,7 +245,10 @@ export function WorkstreamsThreadList({
         kind: "snooze" as const,
         title: defaultSnoozeTitle,
         run: () =>
-          handlers.snooze(row.thread, wakeTime(ws.defaultSnooze, Date.now())),
+          handlers.snooze(
+            row.thread,
+            wakeTime(snoozePrefs.default, Date.now(), snoozePrefs.morningHour),
+          ),
         menu,
       };
     return {
@@ -283,6 +290,7 @@ export function WorkstreamsThreadList({
       sections={sections}
       handlers={handlers}
       snooze={ws.snoozeOf(row.thread)}
+      morningHour={snoozePrefs.morningHour}
     >
       <li ref={handle?.ref} {...handle?.listeners} className="list-none">
         <Row

@@ -1,0 +1,80 @@
+// @vitest-environment jsdom
+import { afterEach, expect, it } from "vitest";
+import { cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { emptyState } from "./fixtures.ts";
+
+afterEach(cleanup);
+
+async function mount(snoozePrefs: Record<string, unknown> = {}) {
+  let prefs = {
+    default: "tomorrow",
+    quick: ["1h", "tomorrow", "next-week", "activity"],
+    morningHour: 9,
+    ...snoozePrefs,
+  };
+  const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
+  const section = app.settingsSections.find((s) => s.id === "snooze")!;
+  return renderSlot(
+    section,
+    {},
+    {
+      rpc: {
+        state: () => ({ ...emptyState(), snoozes: {}, snoozePrefs: prefs }),
+        setSnoozePrefs: (input: unknown) => {
+          prefs = { ...prefs, ...(input as { patch: object }).patch };
+          return { prefs };
+        },
+      },
+    },
+  );
+}
+
+const lastPatch = (slot: Awaited<ReturnType<typeof mount>>) =>
+  slot.inspection.rpcCalls.filter((c) => c.method === "setSnoozePrefs").at(-1)
+    ?.input;
+
+it("saves the click-to-snooze choice and the morning hour", async () => {
+  const slot = await mount();
+  const select = await slot.findByRole("combobox", { name: "Click to snooze" });
+  await waitFor(() =>
+    expect((select as HTMLSelectElement).value).toBe("tomorrow"),
+  );
+  fireEvent.change(select, { target: { value: "3h" } });
+  await waitFor(() =>
+    expect(lastPatch(slot)).toEqual({ patch: { default: "3h" } }),
+  );
+  fireEvent.change(slot.getByRole("combobox", { name: "Mornings start at" }), {
+    target: { value: "7" },
+  });
+  await waitFor(() =>
+    expect(lastPatch(slot)).toEqual({ patch: { morningHour: 7 } }),
+  );
+});
+
+it("picks up to four hover-menu choices, in menu order", async () => {
+  const slot = await mount({ quick: ["1h", "tomorrow", "activity"] });
+  const box = async (name: RegExp) =>
+    (await slot.findByRole("checkbox", { name })) as HTMLInputElement;
+  await waitFor(async () => expect((await box(/^1 hour/)).checked).toBe(true));
+  fireEvent.click(await box(/^30 minutes/));
+  await waitFor(() =>
+    expect(lastPatch(slot)).toEqual({
+      patch: { quick: ["1h", "tomorrow", "activity", "30m"] },
+    }),
+  );
+  // Four chosen: the rest can't be added until one is removed.
+  await waitFor(async () =>
+    expect((await box(/^3 hours/)).disabled).toBe(true),
+  );
+  fireEvent.click(await box(/^1 hour/));
+  await waitFor(() =>
+    expect(lastPatch(slot)).toEqual({
+      // Stored in menu order, so 30 minutes now leads.
+      patch: { quick: ["30m", "tomorrow", "activity"] },
+    }),
+  );
+  await waitFor(async () =>
+    expect((await box(/^3 hours/)).disabled).toBe(false),
+  );
+});

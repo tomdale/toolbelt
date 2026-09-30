@@ -2,6 +2,7 @@ import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { WORK_STATES } from "../domain/analysis.ts";
 import { recapPrefsSchema } from "../domain/recapPrefs.ts";
+import { snoozePrefsPatchSchema, snoozePrefsSchema } from "../domain/snooze.ts";
 import {
   HEX_COLOR,
   SPINNER_COLORS,
@@ -435,6 +436,8 @@ export const rpcContract = defineRpcContract({
       order: orderSchema,
       /** Snoozed threads, by id (see domain/snooze.ts). */
       snoozes: z.record(z.string(), snoozeSchema).default({}),
+      /** What a click snoozes for, the hover menu's choices, and morning. */
+      snoozePrefs: snoozePrefsSchema,
     }),
   },
   /**
@@ -447,6 +450,11 @@ export const rpcContract = defineRpcContract({
       until: z.number().int().positive().nullable(),
     }),
     output: z.object({ snooze: snoozeSchema }),
+  },
+  /** Saves the Snooze settings section's changes and tells every client. */
+  setSnoozePrefs: {
+    input: z.object({ patch: snoozePrefsPatchSchema }),
+    output: z.object({ prefs: snoozePrefsSchema }),
   },
   /** Wakes a snoozed thread now. */
   unsnooze: {

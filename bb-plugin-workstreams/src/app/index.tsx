@@ -21,6 +21,7 @@ import {
   SnoozeHeaderAction,
   headerSnoozers,
 } from "./snooze/SnoozeHeaderAction.tsx";
+import { SnoozeSettings } from "./snooze/SnoozeSettings.tsx";
 import "./styles.css";
 
 export default definePluginApp((app) => {
@@ -108,6 +109,13 @@ export default definePluginApp((app) => {
     description:
       "The recap card above each thread's composer: its layout and when it's written.",
     component: RecapSettings,
+  });
+  app.slots.settingsSection({
+    id: "snooze",
+    title: "Snooze",
+    description:
+      "What a click on a snooze button does, the sidebar's hover menu, and when morning is.",
+    component: SnoozeSettings,
   });
   app.slots.settingsSection({
     id: "spinner",

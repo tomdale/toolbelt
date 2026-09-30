@@ -3,10 +3,34 @@
  * `ws_meta` value, like the manual order: there are at most a few dozen, and
  * every read wants all of them.
  */
-import { isSnoozed, type ThreadSnooze } from "../domain/snooze.ts";
+import {
+  isSnoozed,
+  parseSnoozePrefs,
+  type SnoozePrefs,
+  type ThreadSnooze,
+} from "../domain/snooze.ts";
 import { getMeta, setMeta, type Database } from "./db.ts";
 
 const KEY = "thread-snoozes";
+const PREFS_KEY = "snooze-prefs";
+
+export function loadSnoozePrefs(db: Database): SnoozePrefs {
+  try {
+    return parseSnoozePrefs(JSON.parse(getMeta(db, PREFS_KEY) ?? "null"));
+  } catch {
+    return parseSnoozePrefs(null);
+  }
+}
+
+/** Merges `patch` into the stored preferences, dropping invalid values. */
+export function saveSnoozePrefs(
+  db: Database,
+  patch: Partial<SnoozePrefs>,
+): SnoozePrefs {
+  const saved = parseSnoozePrefs({ ...loadSnoozePrefs(db), ...patch });
+  setMeta(db, PREFS_KEY, JSON.stringify(saved));
+  return saved;
+}
 
 export type StoredSnoozes = Record<string, ThreadSnooze>;
 

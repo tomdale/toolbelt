@@ -37,6 +37,7 @@ export function RowMenu({
   sections,
   handlers,
   snooze,
+  morningHour,
   children,
 }: {
   thread: PluginSidebarThread;
@@ -46,6 +47,8 @@ export function RowMenu({
   handlers: RowMenuHandlers;
   /** The thread's snooze, while it holds. */
   snooze?: ThreadSnooze;
+  /** When "morning" choices wake (the Snooze settings). */
+  morningHour: number;
   children: ReactNode;
 }) {
   const actions = experimental_useSidebarThreadActions();
@@ -134,7 +137,7 @@ export function RowMenu({
                 {...portalScope}
                 className="z-50 min-w-56 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
               >
-                {snoozeChoices(Date.now()).map((choice) => (
+                {snoozeChoices(Date.now(), { morningHour }).map((choice) => (
                   <Item
                     key={choice.id}
                     onSelect={() => handlers.snooze(thread, choice.until)}

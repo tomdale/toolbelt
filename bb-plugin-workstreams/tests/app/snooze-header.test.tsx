@@ -22,10 +22,13 @@ async function mount({
     registration,
     { threadId: "t1", projectId: "proj_1", isCompactViewport: false },
     {
-      settings: { snoozeDefault: "Next week" },
       sidebarThreads: { threads },
       rpc: {
-        state: () => ({ ...emptyState(), snoozes }),
+        state: () => ({
+          ...emptyState(),
+          snoozes,
+          snoozePrefs: { default: "next-week" },
+        }),
         snooze: (raw: unknown) => ({
           snooze: {
             until: (raw as { until: number | null }).until,
@@ -68,9 +71,11 @@ it("offers every choice from the arrow", async () => {
   // The menu is portalled out of the slot.
   const menu = await screen.findByRole("menu", { name: "Snooze options" });
   for (const label of [
+    "30 minutes",
     "1 hour",
     "3 hours",
     "Tomorrow morning",
+    "This weekend",
     "Next week",
     "Until it updates",
     "Pick a date and time…",

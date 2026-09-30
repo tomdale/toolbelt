@@ -8,6 +8,7 @@
  * finishing overnight doesn't undo "tomorrow morning". Every snooze ends when
  * the user sends the thread a message (enforced by the server) or unsnoozes it.
  */
+import { z } from "zod";
 
 export type ThreadSnooze = {
   /** When the thread wakes; null waits for its next activity instead. */
@@ -17,50 +18,105 @@ export type ThreadSnooze = {
   readonly at: number;
 };
 
-/** The one-click and menu choices. Times are the user's local clock. */
+/**
+ * Every snooze choice, in menu order. Times are the user's local clock;
+ * "morning" is the `morningHour` preference.
+ */
 export const SNOOZE_PRESETS = [
+  { id: "30m", label: "30 minutes" },
   { id: "1h", label: "1 hour" },
   { id: "3h", label: "3 hours" },
   { id: "tomorrow", label: "Tomorrow morning" },
+  { id: "weekend", label: "This weekend" },
   { id: "next-week", label: "Next week" },
   { id: "activity", label: "Until it updates" },
 ] as const;
 
 export type SnoozePresetId = (typeof SNOOZE_PRESETS)[number]["id"];
+const PRESET_IDS = SNOOZE_PRESETS.map((p) => p.id) as [
+  SnoozePresetId,
+  ...SnoozePresetId[],
+];
 
-/** The `snoozeDefault` setting stores a preset's label. */
-export const SNOOZE_SETTING_OPTIONS = SNOOZE_PRESETS.map((p) => p.label);
-export const DEFAULT_SNOOZE: SnoozePresetId = "tomorrow";
+/** The sidebar's hover menu shows at most this many choices. */
+export const QUICK_SNOOZE_LIMIT = 4;
+export const MORNING_HOURS = { min: 5, max: 12 } as const;
 
-/** Mornings start at 9:00 local time. */
-const MORNING_HOUR = 9;
-const HOUR_MS = 60 * 60 * 1000;
+/**
+ * How snoozing behaves, chosen in the Snooze settings section: what a click
+ * does, which choices the sidebar's hover menu offers, and when morning is.
+ * Stored in plugin storage and shared by every client.
+ */
+export const snoozePrefsSchema = z.object({
+  /** What the snooze button does on click. */
+  default: z.enum(PRESET_IDS).catch("tomorrow"),
+  /** The hover menu's choices, kept in menu order. */
+  quick: z
+    .array(z.string())
+    .catch([])
+    .transform((ids) =>
+      PRESET_IDS.filter((id) => ids.includes(id)).slice(0, QUICK_SNOOZE_LIMIT),
+    ),
+  /** The hour (local, 24-hour) that "morning" choices wake at. */
+  morningHour: z
+    .number()
+    .int()
+    .catch(9)
+    .transform((hour) =>
+      Math.min(MORNING_HOURS.max, Math.max(MORNING_HOURS.min, hour)),
+    ),
+});
+export type SnoozePrefs = z.infer<typeof snoozePrefsSchema>;
 
-export function presetFromSetting(value: unknown): SnoozePresetId {
-  return (
-    SNOOZE_PRESETS.find((p) => p.label === value || p.id === value)?.id ??
-    DEFAULT_SNOOZE
-  );
+/**
+ * A change from the settings section. Unlike stored preferences, which are
+ * repaired as they're read, a bad change is rejected so it can't quietly
+ * replace a good value.
+ */
+export const snoozePrefsPatchSchema = z
+  .object({
+    default: z.enum(PRESET_IDS),
+    quick: z.array(z.enum(PRESET_IDS)).max(QUICK_SNOOZE_LIMIT),
+    morningHour: z.number().int().min(MORNING_HOURS.min).max(MORNING_HOURS.max),
+  })
+  .partial();
+
+export const DEFAULT_SNOOZE_PREFS: SnoozePrefs = {
+  default: "tomorrow",
+  quick: ["1h", "tomorrow", "next-week", "activity"],
+  morningHour: 9,
+};
+
+export function parseSnoozePrefs(raw: unknown): SnoozePrefs {
+  const value = raw && typeof raw === "object" ? raw : {};
+  return snoozePrefsSchema.parse({ ...DEFAULT_SNOOZE_PREFS, ...value });
 }
+
+const HOUR_MS = 60 * 60 * 1000;
 
 export function presetLabel(id: SnoozePresetId): string {
   return SNOOZE_PRESETS.find((p) => p.id === id)!.label;
 }
 
-/** When a preset chosen at `now` wakes the thread; null waits for activity. */
-export function wakeTime(preset: SnoozePresetId, now: number): number | null {
+/**
+ * When a preset chosen at `now` wakes the thread; null waits for activity.
+ * Day choices wake at `morningHour` and are never today: This weekend is the
+ * coming Saturday, Next week the coming Monday.
+ */
+export function wakeTime(
+  preset: SnoozePresetId,
+  now: number,
+  morningHour: number = DEFAULT_SNOOZE_PREFS.morningHour,
+): number | null {
   if (preset === "activity") return null;
+  if (preset === "30m") return now + HOUR_MS / 2;
   if (preset === "1h") return now + HOUR_MS;
   if (preset === "3h") return now + 3 * HOUR_MS;
   const date = new Date(now);
-  date.setHours(MORNING_HOUR, 0, 0, 0);
-  if (preset === "tomorrow") {
-    date.setDate(date.getDate() + 1);
-    return date.getTime();
-  }
-  // Next week: the coming Monday morning, never today.
-  const daysToMonday = (8 - date.getDay()) % 7 || 7;
-  date.setDate(date.getDate() + daysToMonday);
+  date.setHours(morningHour, 0, 0, 0);
+  const weekday = preset === "weekend" ? 6 : preset === "next-week" ? 1 : null;
+  const days = weekday === null ? 1 : (weekday - date.getDay() + 7) % 7 || 7;
+  date.setDate(date.getDate() + days);
   return date.getTime();
 }
 
@@ -122,10 +178,20 @@ export type SnoozeChoice = {
   readonly hint: string;
 };
 
-/** Every preset, resolved at `now`, in menu order. */
-export function snoozeChoices(now: number): SnoozeChoice[] {
-  return SNOOZE_PRESETS.map(({ id, label }) => {
-    const until = wakeTime(id, now);
+/**
+ * Presets resolved at `now`, in menu order: all of them, or only `only`
+ * (the hover menu's quick choices).
+ */
+export function snoozeChoices(
+  now: number,
+  prefs: Pick<SnoozePrefs, "morningHour"> & {
+    only?: readonly SnoozePresetId[];
+  } = DEFAULT_SNOOZE_PREFS,
+): SnoozeChoice[] {
+  return SNOOZE_PRESETS.filter(
+    ({ id }) => !prefs.only || prefs.only.includes(id),
+  ).map(({ id, label }) => {
+    const until = wakeTime(id, now, prefs.morningHour);
     return { id, label, until, hint: wakeHint(until, now) };
   });
 }
