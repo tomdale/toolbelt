@@ -176,7 +176,7 @@ export class Router {
         reason: "The destination was chosen explicitly.", subject: null, traceId: null,
       });
     }
-    if ((!intent?.action || intent.action === "new-thread") && destination?.kind === "none")
+    if ((!intent?.action || intent.action === "new-thread") && destination?.kind === "none" && explicitProject)
       return remember({
         id: randomUUID(), outcome: "new-thread", sectionId: "", workstream: "",
         title: "", placement: await this.placement(null, false, explicitProject, explicitEnvironment, true),
@@ -202,7 +202,12 @@ export class Router {
     const mention = options.workstreamId
       ? { sectionId: options.workstreamId }
       : mentionedTarget(text);
-    if (mention && "threadId" in mention && intent?.action !== "new-thread") {
+    if (
+      mention &&
+      "threadId" in mention &&
+      intent?.action !== "new-thread" &&
+      intent?.action !== "new-workstream"
+    ) {
       const target = threads.find((t) => t.id === mention.threadId);
       if (target && !excluded.has(target.id))
         return remember({
@@ -220,7 +225,12 @@ export class Router {
           traceId: null,
         });
     }
-    if (mention && "sectionId" in mention && nameOf.has(mention.sectionId))
+    if (
+      mention &&
+      "sectionId" in mention &&
+      nameOf.has(mention.sectionId) &&
+      intent?.action !== "new-workstream"
+    )
       return remember({
         id: randomUUID(),
         outcome: "new-thread",
@@ -291,7 +301,16 @@ export class Router {
     let decision: RouteDecision;
     if (raw.outcome === "continue") {
       const target = titleOf.get(raw.threadId)!;
-      decision = {
+      decision = intent?.action === "new-thread" || intent?.action === "new-workstream"
+        ? {
+            ...base,
+            outcome: "unsure",
+            reason: "The selected action cannot continue an existing thread.",
+            candidates: target.sectionId && nameOf.has(target.sectionId)
+              ? [{ kind: "workstream" as const, sectionId: target.sectionId, name: nameOf.get(target.sectionId)! }]
+              : [],
+          }
+        : {
         ...base,
         ...raw,
         threadTitle: target.title,
@@ -300,6 +319,10 @@ export class Router {
           : null,
         sectionId: target.sectionId,
       };
+    } else if (raw.outcome === "new-thread" && intent?.action === "send-message") {
+      decision = { ...base, outcome: "unsure", reason: "The selected action requires an existing thread.", candidates: [] };
+    } else if (raw.outcome === "new-workstream" && intent?.action === "send-message") {
+      decision = { ...base, outcome: "unsure", reason: "The selected action requires an existing thread.", candidates: [] };
     } else if (
       raw.outcome === "new-workstream" &&
       records.some((r) => r.name.toLowerCase() === raw.name.toLowerCase())
@@ -419,7 +442,10 @@ export class Router {
     if ((decision.outcome === "new-thread" || decision.outcome === "new-workstream") && !decision.placement)
       throw new UserError("Choose a project before creating this work.");
     const entry = this.decisions.get(decision.id);
-    if (entry?.intent && JSON.stringify(entry.intent) !== JSON.stringify(options.intent ?? null))
+    if (
+      entry &&
+      JSON.stringify(entry.intent) !== JSON.stringify(options.intent ?? null)
+    )
       throw new UserError("That preview changed; route it again.");
     if (entry) entry.used = true;
     if (decision.outcome === "unsure")
@@ -489,7 +515,7 @@ export class Router {
     );
     const logged = this.deps.service.recordCreated(
       thread.id,
-      actualSectionId ?? "",
+      actualSectionId,
       source,
       {
         title: decision.title || thread.title || "New thread",
