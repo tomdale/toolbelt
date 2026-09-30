@@ -56,8 +56,31 @@ export function buildConversationText(input: unknown[], maxChars = MAX_RECAP_TRA
 export function countUserTurns(input: unknown[], threadId?: string): number {
   return rows(input).filter((row) => row.kind === "conversation" && row.role === "user" && (!threadId || row.threadId === undefined || row.threadId === threadId)).length;
 }
+function normalizeJsonLedger(raw: string): string | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const record = asRecord(value);
+  if (!record) return null;
+  const labels = ["Goal", "Latest", "Open", "Done"] as const;
+  const lines: string[] = [];
+  for (const label of labels) {
+    const key = Object.keys(record).find((candidate) => candidate.toLowerCase() === label.toLowerCase());
+    if (!key) continue;
+    const values = Array.isArray(record[key]) ? record[key] : [record[key]];
+    for (const item of values) {
+      if (typeof item === "string" && item.trim()) lines.push(`${label}: ${item}`);
+    }
+  }
+  return lines.length ? lines.join("\\n") : null;
+}
+
 export function cleanRecapText(raw: string): string {
-  const lines = raw.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim().replace(/^[-*•]\s+/, "")).filter(Boolean);
+  const normalized = normalizeJsonLedger(raw.trim()) ?? raw;
+  const lines = normalized.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim().replace(/^[-*•]\s+/, "")).filter(Boolean);
   let result = lines.join("\n").replace(/^(?:Recap|Summary)\s*:\s*/i, "");
   return result.length > MAX_RECAP_CHARS ? `${result.slice(0, MAX_RECAP_CHARS - 1).trimEnd()}…` : result;
 }
@@ -71,8 +94,9 @@ type LedgerLabel = "goal" | "latest" | "open" | "done";
 
 export function parseRecapLedger(summary: string): RecapLedger | null {
   const ledger: RecapLedger = { goal: null, latest: [], open: [], done: [] };
+  const normalized = normalizeJsonLedger(summary.trim()) ?? summary;
   let section: LedgerLabel | null = null;
-  for (const raw of summary.split("\n")) {
+  for (const raw of normalized.split("\n")) {
     const line = raw.trim().replace(/^[-*•]\s+/, "");
     if (!line) continue;
     const match = /^(Goal|Latest|Open|Done):\s*(.*)$/i.exec(line);

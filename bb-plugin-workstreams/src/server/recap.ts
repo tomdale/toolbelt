@@ -16,6 +16,20 @@ export class RecapScheduler {
     const row = this.deps.db.prepare("SELECT thread_id, summary, generated_at, turns, model FROM ws_recap WHERE thread_id = ?").get(threadId) as { thread_id: string; summary: string; generated_at: number; turns: number; model: string } | undefined;
     return row ? { threadId: row.thread_id, summary: row.summary, generatedAt: row.generated_at, turns: row.turns, model: row.model } : null;
   }
+  /** Returns the stored recap only while it still covers the current thread. */
+  async getFresh(threadId: string): Promise<Recap | null> {
+    const recap = this.get(threadId);
+    if (!recap) return null;
+    const rows: unknown[] = [];
+    let before: { id: string; seq: number } | undefined;
+    for (let page = 0; page < 60; page++) {
+      const response = await this.deps.sdk().threads.timeline({ threadId, includeNestedRows: "true", ...(before ? { beforeAnchorId: before.id, beforeAnchorSeq: String(before.seq) } : {}) });
+      rows.unshift(...response.rows);
+      if (!response.timelinePage.hasOlderRows || !response.timelinePage.olderCursor) break;
+      before = { id: response.timelinePage.olderCursor.anchorId, seq: response.timelinePage.olderCursor.anchorSeq };
+    }
+    return recap.turns >= countUserTurns(rows, threadId) ? recap : null;
+  }
   onActive(threadId: string) { const timer = this.timers.get(threadId); if (timer) clearTimeout(timer); this.timers.delete(threadId); this.running.get(threadId)?.abort(); }
   onIdle(threadId: string) { this.onActive(threadId); this.timers.set(threadId, setTimeout(() => { this.timers.delete(threadId); void this.generate(threadId); }, this.deps.prefs().quietSeconds * 1000)); }
   /** True while a recap for the thread is being generated. */
