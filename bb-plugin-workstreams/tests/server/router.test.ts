@@ -1203,3 +1203,43 @@ for (const mention of ["@thread:a1", "@section:sec_1"]) {
     });
   });
 }
+
+it("uses an independent name override for an inferred new workstream during execution", async () => {
+  const { w } = await setup(rawOutcomes["new-workstream"]);
+  const prompt = "Start a new effort alongside Alpha";
+  const intent = { workstreamName: "Chosen effort" };
+  const decision = (await w.harness.behavior.callRpc("route", {
+    prompt,
+    intent,
+  })) as Decision;
+  expect(decision).toMatchObject({
+    outcome: "new-workstream",
+    name: "Chosen effort",
+  });
+  await w.harness.behavior.callRpc("routeExecute", {
+    decisionId: decision.id,
+    prompt,
+    intent,
+  });
+  expect(w.sections.some((s) => s.name === "Chosen effort")).toBe(true);
+  expect(w.sections.some((s) => s.name === "Gamma")).toBe(false);
+});
+
+it("an independent name override leaves other inferred actions unchanged", async () => {
+  const { w } = await setup(rawOutcomes.continue);
+  const prompt = "Continue the same effort";
+  const intent = { workstreamName: "Chosen effort" };
+  const decision = (await w.harness.behavior.callRpc("route", {
+    prompt,
+    intent,
+  })) as Decision;
+  expect(decision).toMatchObject({ outcome: "continue", threadId: "a1" });
+  await w.harness.behavior.callRpc("routeExecute", {
+    decisionId: decision.id,
+    prompt,
+    intent,
+  });
+  expect(w.sent).toHaveLength(1);
+  expect(w.spawned).toHaveLength(0);
+  expect(w.sections.some((s) => s.name === "Chosen effort")).toBe(false);
+});
