@@ -13,7 +13,7 @@ const now = 1000 * DAY;
 const workstreams = [
   { id: "plug", name: "BB & plugins", aliases: [] },
   { id: "recap", name: "BB Recap", aliases: ["Recap"] },
-  { id: "empty", name: "Dockside", aliases: [] },
+  { id: "empty", name: "Lighthouse", aliases: [] },
 ];
 const root = (
   id: string,
@@ -115,7 +115,7 @@ describe("move and merge", () => {
   });
 
   it("doesn't move into a workstream with no threads", () => {
-    expect(detect([...core, root("d1", "plug", "Dockside")])).toEqual([]);
+    expect(detect([...core, root("d1", "plug", "Lighthouse")])).toEqual([]);
   });
 
   it("merges when every active root of a workstream belongs elsewhere", () => {

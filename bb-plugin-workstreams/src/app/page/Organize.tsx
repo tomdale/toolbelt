@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import type { RpcContract } from "../../server/contract.ts";
 import type { BootstrapMove, BootstrapState } from "../../server/bootstrap.ts";
 import { InspectButton } from "../debug/InspectButton.tsx";
+import { WorkingMark } from "../sidebar/StatusMark.tsx";
 import { ghostButton, primaryButton, secondaryButton } from "./controls.ts";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
@@ -170,7 +171,7 @@ function Intro({
 function Working({ status }: { status: BootstrapState["status"] }) {
   return (
     <div className="flex items-center gap-2.5 px-4 py-3.5">
-      <span aria-hidden className="ws-mark ws-mark-working" />
+      <WorkingMark />
       <p role="status">{WORKING[status]}</p>
     </div>
   );

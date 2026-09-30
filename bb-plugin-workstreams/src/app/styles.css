@@ -12,16 +12,6 @@
   pointer-events: none;
   position: relative;
 }
-.ws-mark-working::before {
-  content: "";
-  width: 9px;
-  height: 9px;
-  border-radius: 9999px;
-  border: 1.5px solid currentColor;
-  border-top-color: transparent;
-  color: var(--success-foreground, var(--primary));
-  animation: ws-spin 0.9s linear infinite;
-}
 .ws-mark-waiting {
   color: var(--warning-text, #e0a84f);
 }
@@ -39,15 +29,151 @@
   color: var(--muted-foreground);
   font-weight: 400;
 }
+
+/* Working indicators: one class per shape (see SPINNER_SHAPES), colored by
+   --ws-spin-primary (the moving part) and --ws-spin-track (arc, orbit, and
+   ring tracks), which WorkingMark sets from the chosen style. */
+.ws-spin {
+  color: var(--ws-spin-primary);
+}
+.ws-spin-icon {
+  width: 14px;
+  height: 14px;
+  animation: ws-spin 1s linear infinite;
+}
+.ws-spin-bold-spokes path {
+  stroke-width: 2.5;
+}
+.ws-spin-arc::before,
+.ws-spin-ring::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+}
+.ws-spin-arc::before {
+  border: 1.25px solid var(--ws-spin-track);
+  border-top-color: var(--ws-spin-primary);
+  animation: ws-spin 1.1s linear infinite;
+}
+.ws-spin-ring::before {
+  border: 1.5px solid var(--ws-spin-primary);
+  border-top-color: var(--ws-spin-track);
+  animation: ws-spin 0.9s linear infinite;
+}
+.ws-spin-orbit::before {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  border: 1px solid var(--ws-spin-track);
+}
+.ws-spin-orbit::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: radial-gradient(
+    circle at 50% 0,
+    var(--ws-spin-primary) 0 1.6px,
+    transparent 2px
+  );
+  animation: ws-spin 1.4s linear infinite;
+}
+.ws-spin-braille::before {
+  content: "\280B";
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 400;
+  animation: ws-braille 0.8s steps(1) infinite;
+}
+.ws-spin-dots {
+  gap: 1.5px;
+}
+.ws-spin-dots i {
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 9999px;
+  background: var(--ws-spin-primary);
+  animation: ws-wave 1.2s ease-in-out infinite;
+}
+.ws-spin-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.ws-spin-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
 @keyframes ws-spin {
   to {
     transform: rotate(360deg);
   }
 }
+@keyframes ws-braille {
+  0% {
+    content: "\280B";
+  }
+  10% {
+    content: "\2819";
+  }
+  20% {
+    content: "\2839";
+  }
+  30% {
+    content: "\2838";
+  }
+  40% {
+    content: "\283C";
+  }
+  50% {
+    content: "\2834";
+  }
+  60% {
+    content: "\2826";
+  }
+  70% {
+    content: "\2827";
+  }
+  80% {
+    content: "\2807";
+  }
+  90% {
+    content: "\280F";
+  }
+}
+@keyframes ws-wave {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-1.5px);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .ws-mark-working::before {
+  .ws-spin,
+  .ws-spin *,
+  .ws-spin::before,
+  .ws-spin::after {
     animation: none;
   }
+}
+
+/* The Needs you block: a warm tint pulled most of the way toward the
+   foreground, so it reads as a quiet cream in dark themes and a warm gray in
+   light ones, and BB's blue unread dot doesn't clash with it. */
+.ws-needs {
+  --ws-needs-tone: color-mix(
+    in oklab,
+    var(--color-amber-500, oklch(76.9% 0.188 70.08)) 30%,
+    var(--foreground, #ededed)
+  );
+  background-color: color-mix(in oklab, var(--ws-needs-tone) 5%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklab, var(--ws-needs-tone) 14%, transparent);
 }
 
 /* Work state from analysis (see WORK_STATE). */
@@ -87,7 +213,7 @@
   color: var(--warning-text, #e0a84f);
 }
 
-/* Parent chip in a child thread's header (matches Dockside's). */
+/* Parent chip in a child thread's header. */
 .ws-parent-link {
   display: inline-flex;
   align-items: center;

@@ -54,7 +54,8 @@ export function relativeAge(at: number, now: number): string {
 
 /**
  * Work-state glyphs from per-thread analysis, drawn beside BB's own status
- * mark. `in_progress` draws nothing: it is the default and would be noise.
+ * mark. `in_progress` and `done` draw nothing: most threads are in one of
+ * those states, so a mark on them would be noise.
  */
 export const WORK_STATE: Record<
   "needs_decision" | "review" | "blocked" | "in_progress" | "done",
@@ -65,5 +66,5 @@ export const WORK_STATE: Record<
   // U+FE0E keeps the pause sign from rendering as an emoji.
   blocked: { glyph: "\u23F8\uFE0E", label: "Blocked on something else" },
   in_progress: { glyph: null, label: "In progress" },
-  done: { glyph: "✓", label: "Done" },
+  done: { glyph: null, label: "Done" },
 };

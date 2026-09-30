@@ -1,6 +1,6 @@
 /**
- * The Workstreams sidebar thread list: Needs you and Recent overlays, then one
- * group per workstream (BB section, in the user's drag-and-drop order, else
+ * The Workstreams sidebar thread list: the Needs you section and the Recent
+ * band as overlays, then one group per workstream (BB section, in the user's drag-and-drop order, else
  * BB's), Unsorted, and a Dormant fold. Every visible thread appears in exactly
  * one group (SPEC I1).
  */
@@ -38,6 +38,8 @@ import { planDrop } from "./drop.ts";
 
 type ThreadGroup = Group<PluginSidebarThread>;
 type ThreadRow = RowModel<PluginSidebarThread>;
+/** Where a row is drawn: its workstream group, or one of the overlays. */
+type Placement = "group" | "needs-you" | "recent";
 
 const groupKey = (id: string) => `ws:${id}`;
 const treeKey = (id: string) => `t:${id}`;
@@ -126,12 +128,13 @@ export function WorkstreamsThreadList({
       },
     });
 
-  const bandContext = (row: ThreadRow) => {
-    const via = projection.needsYouVia.get(row.thread.id);
-    if (via?.length) return `via ${via[0]!.displayTitle}`;
-    return row.workstreamId ? nameOf.get(row.workstreamId) : "Unsorted";
-  };
-  const renderRow = (row: ThreadRow, band?: boolean, handle?: DragHandle) => (
+  const workstreamName = (row: ThreadRow) =>
+    row.workstreamId ? nameOf.get(row.workstreamId) : "Unsorted";
+  const renderRow = (
+    row: ThreadRow,
+    placement: Placement,
+    handle?: DragHandle,
+  ) => (
     <RowMenu
       key={row.thread.id}
       thread={row.thread}
@@ -143,10 +146,11 @@ export function WorkstreamsThreadList({
       <li ref={handle?.ref} {...handle?.listeners} className="list-none">
         <Row
           thread={row.thread}
-          depth={band ? 0 : row.depth}
+          depth={placement === "group" ? row.depth : 0}
           active={row.thread.id === activeThreadId}
           now={now}
-          context={band ? bandContext(row) : undefined}
+          context={placement === "group" ? undefined : workstreamName(row)}
+          attention={placement === "needs-you"}
           work={ws.work(row.thread)}
           proposal={ws.proposalOf.get(row.thread.id)?.text}
           onNavigate={onNavigate}
@@ -172,7 +176,7 @@ export function WorkstreamsThreadList({
               <li ref={ref} style={style} className="list-none">
                 <ul>
                   {tree.map((row, index) =>
-                    renderRow(row, false, index === 0 ? handle : undefined),
+                    renderRow(row, "group", index === 0 ? handle : undefined),
                   )}
                 </ul>
               </li>
@@ -243,11 +247,11 @@ export function WorkstreamsThreadList({
           <Band
             title="Needs you"
             count={projection.needsYou.length}
-            tone="attention"
+            boxed
             collapsed={isCollapsed("__needs")}
             toggle={() => toggle("__needs")}
           >
-            {projection.needsYou.map((row) => renderRow(row, true))}
+            {projection.needsYou.map((row) => renderRow(row, "needs-you"))}
           </Band>
         ) : null}
         {ws.showRecent && projection.recent.length > 0 ? (
@@ -256,7 +260,7 @@ export function WorkstreamsThreadList({
             collapsed={isCollapsed("__recent")}
             toggle={() => toggle("__recent")}
           >
-            {projection.recent.map((row) => renderRow(row, true))}
+            {projection.recent.map((row) => renderRow(row, "recent"))}
           </Band>
         ) : null}
         <SortableContext
@@ -336,32 +340,33 @@ export function WorkstreamsThreadList({
   );
 }
 
+/**
+ * A collapsible overlay band. `boxed` draws its rows in the tinted Needs you
+ * block (`.ws-needs`) with extra space around it, so threads waiting on Tom
+ * stand apart from the list below.
+ */
 function Band({
   title,
   count,
-  tone,
+  boxed,
   collapsed,
   toggle,
   children,
 }: {
   title: string;
   count?: number;
-  tone?: "attention";
+  boxed?: boolean;
   collapsed: boolean;
   toggle: () => void;
   children: ReactNode;
 }) {
   return (
-    <section aria-label={title} className="px-1">
+    <section aria-label={title} className={cn("px-1", boxed && "my-1")}>
       <button
         type="button"
         aria-expanded={!collapsed}
         onClick={toggle}
-        className={cn(
-          "flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
-          tone === "attention" ? "text-amber-500" : "text-muted-foreground",
-          "hover:bg-sidebar-accent/60",
-        )}
+        className="flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-sidebar-accent/60"
       >
         <Icon
           name={collapsed ? "ChevronRight" : "ChevronDown"}
@@ -372,7 +377,16 @@ function Band({
           <span className="tabular-nums">{count}</span>
         ) : null}
       </button>
-      {collapsed ? null : <ul className="mt-0.5">{children}</ul>}
+      {collapsed ? null : (
+        <ul
+          className={cn(
+            "mt-0.5",
+            boxed && "ws-needs mx-0.5 rounded-lg px-0.5 py-1.5",
+          )}
+        >
+          {children}
+        </ul>
+      )}
     </section>
   );
 }

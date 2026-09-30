@@ -27,6 +27,7 @@ async function mount(
   ],
   options: {
     settings?: Record<string, boolean>;
+    spinner?: unknown;
     onNavigate?: () => void;
     analysis?: Record<string, unknown>;
     order?: { workstreams: string[]; threads: Record<string, string[]> };
@@ -53,6 +54,13 @@ async function mount(
           order: options.order ?? { workstreams: [], threads: {} },
         }),
         moveThread: () => ({ entry: null }),
+        spinner: () => ({
+          spinner: options.spinner ?? {
+            shape: "spokes",
+            primary: "subtle",
+            secondary: "auto",
+          },
+        }),
         reorder: (raw: unknown) => {
           const input = raw as {
             kind: string;
@@ -224,17 +232,128 @@ describe("thread list", () => {
       { analysis: { fresh: result(100), stale: result(150) } },
     );
     const band = await slot.findByRole("region", { name: "Needs you" });
+    // The section implies the decision, so its rows leave the mark out.
     expect(
       within(band)
         .getAllByRole("link")
         .map((a) => a.getAttribute("aria-label")),
-    ).toEqual(["Fresh ask, Needs your decision"]);
+    ).toEqual(["Fresh ask"]);
+    expect(
+      within(band).queryAllByRole("img", { name: "Needs your decision" }),
+    ).toHaveLength(0);
     expect(
       within(slot.getByRole("region", { name: "Unsorted" })).getAllByRole(
         "img",
         { name: "Needs your decision" },
       ),
     ).toHaveLength(1);
+    slot.lifecycle.unmount();
+  });
+
+  it("collapses Needs you and names each row's workstream", async () => {
+    const at = Date.now();
+    const asks = (revision: number) => ({
+      recap: "Asked whether to ship.",
+      state: "needs_decision",
+      needsYou: "Ship it?",
+      subject: null,
+      drift: null,
+      driftSectionId: null,
+      revision,
+      at,
+      model: "m",
+    });
+    // The delegate's older question folds into its manager's newer one.
+    const slot = await mount(
+      [
+        sidebarThread("manager", {
+          sectionId: "sec_a",
+          title: "Manager",
+          latestAttentionAt: 200,
+        }),
+        sidebarThread("delegate", {
+          parentThreadId: "manager",
+          sectionId: "sec_a",
+          title: "Delegate",
+          latestAttentionAt: 100,
+        }),
+      ],
+      {
+        settings: { showRecent: false },
+        analysis: { manager: asks(200), delegate: asks(100) },
+      },
+    );
+    const band = await slot.findByRole("region", { name: "Needs you" });
+    expect(within(band).getByText("Alpha")).toBeTruthy();
+    fireEvent.click(within(band).getByRole("button", { name: /Needs you/ }));
+    expect(within(band).queryAllByRole("link")).toHaveLength(0);
+    fireEvent.click(within(band).getByRole("button", { name: /Needs you/ }));
+    expect(within(band).getByText("Alpha")).toBeTruthy();
+    expect(within(band).queryByText(/via/)).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("draws the working indicator chosen in settings, and follows changes", async () => {
+    const working = [
+      sidebarThread("busy", { title: "Busy", indicator: "runtime" }),
+    ];
+    const markOf = (slot: Awaited<ReturnType<typeof mount>>) =>
+      within(slot.getByRole("region", { name: "Unsorted" })).getByRole("img", {
+        name: "Working",
+      });
+    const byDefault = await mount(working, {
+      settings: { showRecent: false },
+    });
+    expect(markOf(byDefault).className).toContain("ws-spin-spokes");
+    byDefault.lifecycle.unmount();
+    const picked = await mount(working, {
+      settings: { showRecent: false },
+      spinner: { shape: "orbit", primary: "green", secondary: "none" },
+    });
+    await waitFor(() =>
+      expect(markOf(picked).className).toContain("ws-spin-orbit"),
+    );
+    expect(markOf(picked).style.getPropertyValue("--ws-spin-track")).toBe(
+      "transparent",
+    );
+    await picked.behavior.emitRealtime("spinner", {
+      spinner: { shape: "dots", primary: "#ff0000", secondary: "auto" },
+    });
+    expect(markOf(picked).className).toContain("ws-spin-dots");
+    expect(markOf(picked).style.getPropertyValue("--ws-spin-primary")).toBe(
+      "#ff0000",
+    );
+    picked.lifecycle.unmount();
+  });
+
+  it("draws no mark for a finished thread", async () => {
+    const slot = await mount(
+      [
+        sidebarThread("finished", {
+          title: "Finished",
+          latestAttentionAt: 100,
+        }),
+      ],
+      {
+        settings: { showRecent: false },
+        analysis: {
+          finished: {
+            recap: "Shipped it.",
+            state: "done",
+            needsYou: null,
+            subject: null,
+            drift: null,
+            driftSectionId: null,
+            revision: 100,
+            at: Date.now(),
+            model: "m",
+          },
+        },
+      },
+    );
+    const row = within(slot.getByRole("region", { name: "Unsorted" }));
+    expect(row.getByRole("link").getAttribute("aria-label")).toBe("Finished");
+    expect(row.queryByText("✓")).toBeNull();
     slot.lifecycle.unmount();
   });
 
