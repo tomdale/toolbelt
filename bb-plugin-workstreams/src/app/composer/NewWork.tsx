@@ -1,10 +1,5 @@
 /** Workstreams intake keeps the draft and its destination in one composer. */
-import {
-  useCallback,
-  useEffect,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   experimental_NewThreadComposer as Composer,
   useBbNavigate,
@@ -107,82 +102,62 @@ function NewWork({
   const message = error ?? routeError;
   useEffect(() => () => intake.dispose(), [intake]);
 
-  const submit = useCallback(async (request: NewThreadRequest) => {
-    setError(null);
-    setAttempt((n) => n + 1);
-    const prompt = extractPrompt(request);
-    let executing = false;
-    try {
-      const { decision, choice, intent } = await intake.forSubmit(prompt);
-      executing = true;
-      const result = await rpc.call("routeExecute", {
-        decisionId: decision.id,
-        prompt,
-        choice,
-        intent,
-        execution: JSON.parse(
-          JSON.stringify({
-            providerId: request.providerId,
-            model: request.model,
-            reasoningLevel: request.reasoningLevel,
-            permissionMode: request.permissionMode,
-            serviceTier: request.serviceTier,
-            executionInputSources: request.executionInputSources,
-            input: request.input,
-            ...(decision.outcome !== "continue"
-              ? {
-                  projectId: intake.snapshot().project.value,
-                  environment: intake.snapshot().environment.value,
-                }
-              : {}),
-          }),
-        ),
-      });
-      intake.completeSubmit();
-      onClose();
-      if (result.threadId) navigate.toThread(result.threadId);
-    } catch (cause) {
-      if (executing) {
-        intake.retry();
+  const submit = useCallback(
+    async (request: NewThreadRequest) => {
+      setError(null);
+      setAttempt((n) => n + 1);
+      const prompt = extractPrompt(request);
+      let executing = false;
+      try {
+        const { decision, choice, intent } = await intake.forSubmit(prompt);
+        executing = true;
+        const result = await rpc.call("routeExecute", {
+          decisionId: decision.id,
+          prompt,
+          choice,
+          intent,
+          execution: JSON.parse(
+            JSON.stringify({
+              providerId: request.providerId,
+              model: request.model,
+              reasoningLevel: request.reasoningLevel,
+              permissionMode: request.permissionMode,
+              serviceTier: request.serviceTier,
+              executionInputSources: request.executionInputSources,
+              input: request.input,
+              ...(decision.outcome !== "continue"
+                ? {
+                    projectId: intake.snapshot().project.value,
+                    environment: intake.snapshot().environment.value,
+                  }
+                : {}),
+            }),
+          ),
+        });
+        intake.completeSubmit();
+        onClose();
+        if (result.threadId) navigate.toThread(result.threadId);
+      } catch (cause) {
+        if (executing) intake.retry();
         setError(cause instanceof Error ? cause.message : String(cause));
+        intake.completeSubmit();
+        // Rejection tells the host to preserve attachments, mentions, and text.
+        throw cause;
       }
-      intake.completeSubmit();
-      // Rejection tells the host to preserve attachments, mentions, and text.
-      throw cause;
-    }
-  }, [intake, navigate, onClose, rpc]);
-
+    },
+    [intake, navigate, onClose, rpc],
+  );
   return (
     <IntakeContext.Provider value={intake}>
-      <div className="ws-intake">
+      {/* The intake banner owns placement and readiness; styles.css hides
+          BB's own project and environment pickers inside `.ws-intake` and
+          dims its submit button while the draft can't be sent yet. */}
+      <div className="ws-intake" data-ready={intake.canSubmit()}>
         <Composer
           layout="document"
           draftKey={`workstreams-new:${workstreamId ?? "auto"}`}
           placeholder="What's the work?"
           onSubmit={submit}
-          experimental_submitLabel={
-            intake.effectiveAction() === "send-message"
-              ? "Send message"
-              : intake.effectiveAction() === "new-workstream"
-                ? "Create workstream"
-                : "Create thread"
-          }
-          experimental_submitDisabled={!intake.canSubmit()}
-          experimental_onBeforeSubmit={async (request: NewThreadRequest) => {
-            try {
-              await intake.forSubmit(extractPrompt(request));
-              return true;
-            } catch (cause) {
-              intake.completeSubmit();
-              setAttempt((n) => n + 1);
-              setError(cause instanceof Error ? cause.message : String(cause));
-              return false;
-            }
-          }}
-          experimental_placementVisibility="hidden"
-          experimental_executionControlsVisibility={
-            intake.effectiveAction() === "send-message" ? "hidden" : "visible"
-          }
         />
         <IntakeStatus intake={intake} />
         {message ? (
