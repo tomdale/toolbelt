@@ -205,16 +205,16 @@
   pointer-events: none;
   background-repeat: no-repeat;
   background-size: 300% 100%;
-  animation: ws-needs-shimmer 8s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  animation: ws-needs-shimmer 12s cubic-bezier(0.45, 0, 0.25, 1) infinite;
 }
 .ws-needs::after {
   z-index: -1;
   background-image: linear-gradient(
     110deg,
     transparent 30%,
-    color-mix(in oklab, var(--ws-needs-tone) 3%, transparent) 40%,
-    color-mix(in oklab, var(--ws-needs-tone) 9%, transparent) 50%,
-    color-mix(in oklab, var(--ws-needs-tone) 3%, transparent) 60%,
+    color-mix(in oklab, var(--ws-needs-tone) 2%, transparent) 40%,
+    color-mix(in oklab, var(--ws-needs-tone) 7%, transparent) 50%,
+    color-mix(in oklab, var(--ws-needs-tone) 2%, transparent) 60%,
     transparent 70%
   );
 }
@@ -224,7 +224,7 @@
   background-image: linear-gradient(
     110deg,
     transparent 38%,
-    color-mix(in oklab, var(--ws-needs-tone) 55%, transparent) 50%,
+    color-mix(in oklab, var(--ws-needs-tone) 40%, transparent) 50%,
     transparent 62%
   );
   -webkit-mask:
@@ -239,7 +239,7 @@
   0% {
     background-position: 125% 0;
   }
-  40%,
+  35%,
   100% {
     background-position: -25% 0;
   }
