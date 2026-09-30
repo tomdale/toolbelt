@@ -55,6 +55,14 @@ type Base = {
   traceId: string | null;
 };
 
+export type NewThreadDecision = Base & {
+  outcome: "new-thread";
+  sectionId: string | null;
+  workstream: string | null;
+  title: string;
+  placement: Placement | null;
+};
+
 export type RouteDecision =
   | (Base & {
       outcome: "continue";
@@ -63,14 +71,15 @@ export type RouteDecision =
       workstream: string | null;
       /** The target thread's workstream; callers that can't continue fall back to it. */
       sectionId: string | null;
+      /**
+       * The new thread this work would start instead, present when the caller
+       * asked for it with `offerNewThread`. It is remembered as its own
+       * decision for the same prompt and intent, so New work can default to it
+       * and offer the continuation as a suggestion.
+       */
+      alternative?: NewThreadDecision;
     })
-  | (Base & {
-      outcome: "new-thread";
-      sectionId: string | null;
-      workstream: string | null;
-      title: string;
-      placement: Placement | null;
-    })
+  | NewThreadDecision
   | (Base & {
       outcome: "new-workstream";
       placement: Placement | null;
@@ -143,6 +152,12 @@ export class Router {
       workstreamId?: string | null;
       /** Explicit New-work intent from the focused composer. */
       intent?: RouteIntent | null;
+      /**
+       * Also preview the new thread an inferred continuation would otherwise
+       * start, as the decision's `alternative`. Ignored when the intent fixes
+       * the action or destination.
+       */
+      offerNewThread?: boolean;
       /** The unsure decision `workstreamId` was picked from; keeps its trace. */
       fromDecisionId?: string | null;
       /** The thread asking (a handoff's caller), for its debug trace. */
@@ -160,8 +175,25 @@ export class Router {
     const explicitProject = intent?.placement?.projectId;
     const explicitEnvironment = intent?.placement?.environment;
     const selectedProject = explicitProject ?? options.pickedProjectId ?? null;
-    const remember = (decision: RouteDecision) =>
-      this.remember(text, this.constrain(decision, intent), intent);
+    const offerNewThread =
+      !!options.offerNewThread && !intent?.action && !destination;
+    const remember = async (decision: RouteDecision) => {
+      let constrained = this.constrain(decision, intent);
+      if (constrained.outcome === "continue" && offerNewThread)
+        constrained = {
+          ...constrained,
+          alternative: this.remember(
+            text,
+            await this.newThreadInstead(
+              constrained,
+              selectedProject,
+              explicitEnvironment,
+            ),
+            intent,
+          ),
+        };
+      return this.remember(text, constrained, intent);
+    };
     const analysis = this.deps.analyzer.all();
     const forest = buildForest(threads);
     const nameOf = new Map(records.map((r) => [r.sectionId, r.name]));
@@ -535,6 +567,42 @@ export class Router {
         claim.intent?.placement?.projectId,
         claim.intent?.placement?.environment,
       ),
+    };
+  }
+
+  /**
+   * The new thread to start instead of continuing `continued`: in the
+   * target's workstream, or unfiled in the target's project when the target
+   * has no workstream.
+   */
+  private async newThreadInstead(
+    continued: Extract<RouteDecision, { outcome: "continue" }>,
+    picked: string | null,
+    environment: Environment | undefined,
+  ): Promise<NewThreadDecision> {
+    const target = this.deps.service
+      .threads()
+      .find((t) => t.id === continued.threadId);
+    const sectionId =
+      continued.sectionId && this.deps.map.get(continued.sectionId)
+        ? continued.sectionId
+        : null;
+    return {
+      id: randomUUID(),
+      outcome: "new-thread",
+      sectionId,
+      workstream: sectionId ? continued.workstream : null,
+      title: "",
+      placement: await this.placement(
+        sectionId,
+        true,
+        picked ?? (sectionId ? null : (target?.projectId ?? null)),
+        environment,
+      ),
+      confidence: continued.confidence,
+      reason: `Started instead of continuing ${continued.threadTitle}.`,
+      subject: continued.subject,
+      traceId: continued.traceId,
     };
   }
 
@@ -986,11 +1054,11 @@ export class Router {
     return this.personal;
   }
 
-  private remember(
+  private remember<T extends RouteDecision>(
     prompt: string,
-    decision: RouteDecision,
+    decision: T,
     intent: RouteIntent | null = null,
-  ): RouteDecision {
+  ): T {
     this.prune();
     this.decisions.set(decision.id, {
       decision,

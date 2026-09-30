@@ -4,7 +4,11 @@ import type {
   NewThreadRequest,
   PluginBrowserBbSdk,
 } from "@get-bb/plugin-sdk/app";
-import type { RouteDecision, RouteIntent } from "../../server/router.ts";
+import type {
+  NewThreadDecision,
+  RouteDecision,
+  RouteIntent,
+} from "../../server/router.ts";
 import { routeDelay } from "./timing.ts";
 export type Environment = NonNullable<NewThreadRequest["environment"]>;
 export type IntakeAction =
@@ -108,6 +112,47 @@ export type CatalogThread = {
   providerId?: string;
 };
 export type CatalogEnvironment = { id: string; name: string | null };
+type ContinueDecision = Extract<RouteDecision, { outcome: "continue" }>;
+/**
+ * A continuation the router inferred for an automatic draft. The draft still
+ * starts a new thread; accepting the suggestion sends it to the thread
+ * instead, and declining returns to the new thread.
+ */
+export type Suggestion = {
+  continuation: ContinueDecision;
+  /**
+   * The new-thread default previewed with the continuation. Null after the
+   * draft was rerouted while the suggestion was accepted, so declining then
+   * routes again.
+   */
+  newThread: NewThreadDecision | null;
+};
+type ExecutionSettings = Pick<
+  ComposerSelection,
+  "providerId" | "model" | "reasoningLevel" | "serviceTier" | "permissionMode"
+>;
+function executionOf(selection: ComposerSelection): ExecutionSettings {
+  const settings: ExecutionSettings = {};
+  if (selection.providerId) settings.providerId = selection.providerId;
+  if (selection.model) settings.model = selection.model;
+  if (selection.reasoningLevel)
+    settings.reasoningLevel = selection.reasoningLevel;
+  if (selection.serviceTier) settings.serviceTier = selection.serviceTier;
+  if (selection.permissionMode)
+    settings.permissionMode = selection.permissionMode;
+  return settings;
+}
+/** Whether the draft goes to the suggested thread rather than a new one. */
+export function suggestionAccepted(state: IntakeState): boolean {
+  const destination = state.destination.value;
+  return (
+    !!state.suggestion &&
+    state.action.source === "manual" &&
+    state.action.value === "send-message" &&
+    destination.kind === "thread" &&
+    destination.id === state.suggestion.continuation.threadId
+  );
+}
 export type IntakeState = {
   text: string;
   action: Field<IntakeAction>;
@@ -134,7 +179,7 @@ export type IntakeState = {
   synchronizedThread: string | null;
   synchronizedPlacement: string | null;
   selectionRevision: number;
-  redirectPending: boolean;
+  suggestion: Suggestion | null;
 };
 let sessions = 0;
 /** The dialog owns selections and catalogs because the host remounts banners on project changes. */
@@ -161,9 +206,19 @@ export class Intake {
   private selectionThread: string | null = null;
   private selectionGeneration = 0;
   private selectionRequests = new WeakMap<ComposerSelection, number>();
-  private routingRevision = 0;
-  private redirectRevision: number | null = null;
+  /** The suggestion's decisions belong to the current draft and intent. */
+  private suggestionFresh = false;
+  /**
+   * The execution settings the composer had before an accepted suggestion
+   * applied the thread's own; declining puts them back once.
+   */
+  private restoreExecution: ExecutionSettings | null = null;
   private decisionIntent: RouteIntent = {};
+  /**
+   * `route` previews the draft. It should ask the router to `offerNewThread`,
+   * so an inferred continuation arrives with the new thread New work defaults
+   * to.
+   */
   constructor(
     private route: (options: {
       prompt: string;
@@ -200,7 +255,7 @@ export class Intake {
       synchronizedThread: null,
       synchronizedPlacement: null,
       selectionRevision: 0,
-      redirectPending: false,
+      suggestion: null,
     };
   }
   snapshot = () => this.state;
@@ -362,79 +417,57 @@ export class Intake {
     return request;
   }
   effectiveAction(): IntakeAction {
-    if (this.state.redirectPending) return "automatic";
     if (this.state.action.source === "manual") return this.state.action.value;
     if (this.state.destination.source === "manual")
       return this.state.destination.value.kind === "thread"
         ? "send-message"
         : "new-thread";
-    // A classifier suggestion is only a proposal. It becomes a continuation
-    // after the user explicitly accepts it; dismissing it keeps the composer
-    // on the create-thread path.
     return this.state.action.value;
   }
-  acceptRedirect() {
-    const decision = this.state.decision;
-    if (
-      !this.state.redirectPending ||
-      this.redirectRevision !== this.routingRevision ||
-      decision?.outcome !== "continue"
-    )
-      return;
-    this.redirectRevision = null;
-    const destination: IntakeDestination = {
-      kind: "thread",
-      id: decision.threadId,
-      title: decision.threadTitle,
-    };
+  /**
+   * Sends the draft to the suggested thread. `current` is the composer's
+   * selection, whose execution settings declining restores.
+   */
+  acceptSuggestion(current: ComposerSelection | null = null) {
+    const suggestion = this.state.suggestion;
+    if (!suggestion || suggestionAccepted(this.state)) return;
+    const { continuation } = suggestion;
+    this.restoreExecution = current ? executionOf(current) : null;
     this.selectionKey = "";
     this.selectionThread = null;
     this.set({
-      redirectPending: false,
       action: manual("send-message"),
-      destination: manual(destination),
+      destination: manual({
+        kind: "thread",
+        id: continuation.threadId,
+        title: continuation.threadTitle,
+      }),
       synchronizedThread: null,
       synchronizedPlacement: null,
       selectionRevision: this.state.selectionRevision + 1,
+      ...(this.suggestionFresh ? { decision: continuation, error: null } : {}),
     });
+    // A suggestion shown while the draft reroutes is for older text.
+    if (!this.suggestionFresh) this.schedule();
+    this.set({ announcement: `Sending to ${continuation.threadTitle}` });
   }
-  dismissRedirect() {
-    if (
-      !this.state.redirectPending ||
-      this.redirectRevision !== this.routingRevision ||
-      this.state.decision?.outcome !== "continue"
-    )
-      return;
-    this.redirectRevision = null;
-    const destination = this.state.destination.value;
-    const thread = destination.kind === "thread" ? destination : null;
-    const decision = this.state.decision;
-    const workstream =
-      decision?.outcome === "continue" && decision.sectionId
-        ? {
-            kind: "workstream" as const,
-            id: decision.sectionId,
-            name: decision.workstream ?? decision.sectionId,
-          }
-        : { kind: "automatic" as const };
-    const fallbackDestination: IntakeDestination =
-      workstream.kind === "workstream"
-        ? {
-            kind: "workstream",
-            id: workstream.id,
-            name: workstream.name,
-          }
-        : { kind: "unassigned" };
+  /** Returns an accepted suggestion's draft to the new-thread default. */
+  declineSuggestion() {
+    const suggestion = this.state.suggestion;
+    if (!suggestion || !suggestionAccepted(this.state)) return;
+    const newThread = this.suggestionFresh ? suggestion.newThread : null;
+    this.selectionKey = "";
+    this.selectionThread = null;
     this.set({
-      redirectPending: false,
-      action: manual("new-thread"),
-      destination: manual(fallbackDestination),
-      decision: null,
-      // The project and environment fields were never changed by a proposed
-      // redirect, so leaving them untouched restores the create intent.
-      announcement: thread ? "New thread" : "",
+      action: auto(this.autoAction),
+      destination: auto(this.autoDestination),
+      synchronizedThread: null,
+      synchronizedPlacement: null,
+      selectionRevision: this.state.selectionRevision + 1,
+      ...(newThread ? { decision: newThread, error: null } : {}),
     });
-    this.schedule();
+    if (!newThread) this.schedule();
+    this.set({ announcement: "New thread" });
   }
   lockedThread() {
     const destination = this.state.destination.value;
@@ -489,6 +522,8 @@ export class Intake {
     this.schedule();
   }
   selectAction(value: Exclude<IntakeAction, "automatic">) {
+    if (value === "new-thread" && suggestionAccepted(this.state))
+      return this.declineSuggestion();
     const destination = this.state.destination.value;
     let next = this.state.destination;
     if (value === "new-thread" && destination.kind === "thread") {
@@ -511,11 +546,7 @@ export class Intake {
     this.schedule();
   }
   selectDestination(value: IntakeDestination) {
-    this.set({
-      destination: manual(value),
-      error: null,
-      redirectPending: false,
-    });
+    this.set({ destination: manual(value), error: null });
     this.schedule();
   }
   selectWorkstream(id: string | null, name: string | null) {
@@ -560,6 +591,12 @@ export class Intake {
   revertField(
     field: "action" | "destination" | "project" | "environment" | "name",
   ) {
+    // Automatic action and destination are the new-thread default.
+    if (
+      (field === "action" || field === "destination") &&
+      suggestionAccepted(this.state)
+    )
+      return this.declineSuggestion();
     if (field === "action") this.set({ action: auto(this.autoAction) });
     if (field === "destination")
       this.set({ destination: auto(this.autoDestination) });
@@ -614,6 +651,7 @@ export class Intake {
           },
         }
       : {
+          ...this.restoreExecution,
           projectId: this.state.project.value!,
           environment: this.state.environment.value!,
         };
@@ -675,6 +713,14 @@ export class Intake {
         environment: applied.environment,
       });
     }
+    if (this.restoreExecution) {
+      // Restored once; later placement changes leave the user's pickers alone.
+      this.restoreExecution = null;
+      this.selectionKey = JSON.stringify({
+        projectId: this.state.project.value,
+        environment: this.state.environment.value,
+      });
+    }
     this.set({
       selectionError: null,
       synchronizedPlacement: JSON.stringify([
@@ -702,11 +748,12 @@ export class Intake {
   }
   private schedule() {
     this.invalidate();
-    this.routingRevision++;
-    this.redirectRevision = null;
+    this.suggestionFresh = false;
     this.set({
       decision: null,
-      redirectPending: false,
+      // A suggestion stays up while the draft reroutes, so it doesn't flicker
+      // with each typing pause. The next result replaces or removes it.
+      ...(this.state.text ? {} : { suggestion: null }),
       error: null,
       announcement: "",
       loading: !!this.state.text,
@@ -731,33 +778,55 @@ export class Intake {
     this.set({ loading: true, error: null });
     const intent = this.intent();
     this.pending = this.route({ prompt: text, intent }).then(
-      (decision) => {
+      (routed) => {
         if (mine !== this.generation) return null;
         this.pending = null;
         this.decisionIntent = intent;
-        const resolvedAction =
-          decision.outcome === "continue"
+        // An inferred continuation is only offered: until the user accepts
+        // it, the draft starts the new thread previewed alongside it.
+        const offered =
+          routed.outcome === "continue" &&
+          this.state.action.source === "automatic" &&
+          this.state.destination.source === "automatic";
+        const suggestion: Suggestion | null =
+          routed.outcome !== "continue"
+            ? null
+            : offered
+              ? { continuation: routed, newThread: routed.alternative ?? null }
+              : suggestionAccepted(this.state) &&
+                  this.state.suggestion?.continuation.threadId ===
+                    routed.threadId
+                ? { continuation: routed, newThread: null }
+                : null;
+        this.suggestionFresh = !!suggestion;
+        const decision = offered ? (suggestion?.newThread ?? null) : routed;
+        const resolvedAction: IntakeAction = offered
+          ? "new-thread"
+          : routed.outcome === "continue"
             ? "send-message"
-            : decision.outcome === "new-thread"
+            : routed.outcome === "new-thread"
               ? "new-thread"
-              : decision.outcome === "new-workstream"
+              : routed.outcome === "new-workstream"
                 ? "new-workstream"
                 : "automatic";
         const resolvedDestination: IntakeDestination =
-          decision.outcome === "continue"
+          decision?.outcome === "continue"
             ? {
                 kind: "thread",
                 id: decision.threadId,
                 title: decision.threadTitle,
               }
-            : decision.outcome === "new-thread" && decision.sectionId
-              ? {
-                  kind: "workstream",
-                  id: decision.sectionId,
-                  name: decision.workstream ?? decision.sectionId,
-                }
+            : decision?.outcome === "new-thread"
+              ? decision.sectionId
+                ? {
+                    kind: "workstream",
+                    id: decision.sectionId,
+                    name: decision.workstream ?? decision.sectionId,
+                  }
+                : { kind: "unassigned" }
               : { kind: "automatic" };
-        const placement = "placement" in decision ? decision.placement : null;
+        const placement =
+          decision && "placement" in decision ? decision.placement : null;
         if (
           this.state.action.source === "automatic" &&
           this.state.destination.source === "automatic"
@@ -767,8 +836,8 @@ export class Intake {
           this.autoDestination = resolvedDestination;
         if (this.state.name.source === "automatic")
           this.autoName =
-            decision.outcome === "new-workstream" ? decision.name : "";
-        if ("placement" in decision) {
+            decision?.outcome === "new-workstream" ? decision.name : "";
+        if (decision && "placement" in decision) {
           if (this.state.project.source === "automatic")
             this.autoProject = placement?.projectId ?? null;
           if (this.state.environment.source === "automatic") {
@@ -778,19 +847,14 @@ export class Intake {
             this.autoEnvironmentLabel = placement?.label ?? "";
           }
         }
-        const redirectPending =
-          decision.outcome === "continue" &&
-          this.state.action.source === "automatic" &&
-          this.state.destination.source === "automatic";
-        if (redirectPending) this.redirectRevision = this.routingRevision;
         this.set({
           decision,
+          suggestion,
           loading: false,
-          redirectPending,
-          ...(this.state.action.source === "automatic" && !redirectPending
+          ...(this.state.action.source === "automatic"
             ? { action: auto(resolvedAction) }
             : {}),
-          ...(this.state.destination.source === "automatic" && !redirectPending
+          ...(this.state.destination.source === "automatic"
             ? { destination: auto(this.autoDestination) }
             : {}),
           ...(this.state.project.source === "automatic"
@@ -829,7 +893,6 @@ export class Intake {
       !s.selectionError &&
       !!s.decision &&
       s.decision.outcome !== "unsure" &&
-      !s.redirectPending &&
       (s.decision.outcome === "continue"
         ? s.synchronizedThread === s.decision.threadId
         : !!s.project.value &&

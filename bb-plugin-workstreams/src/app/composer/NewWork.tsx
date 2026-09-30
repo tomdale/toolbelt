@@ -78,7 +78,11 @@ function NewWork({
     const draftKey = crypto.randomUUID();
     return new Intake(
       async (options) =>
-        (await rpc.call("route", { ...options, draftKey })) as RouteDecision,
+        (await rpc.call("route", {
+          ...options,
+          offerNewThread: true,
+          draftKey,
+        })) as RouteDecision,
       workstreamId,
       workstreamName,
       () => {

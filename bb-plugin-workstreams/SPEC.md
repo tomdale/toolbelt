@@ -240,17 +240,23 @@ One router serves four entry points:
    `experimental_NewThreadComposer` and previews server routing while the draft
    stays editable. Submitting acts on the current preview in the same composer.
    A workstream's ＋ explicitly selects that workstream and skips
-   classification. Compact action and labelled destination controls allow
-   correction of either choice; labelled Project and Environment controls stay
-   visible. Each automatic field carries a solid yellow star. Manual fields
-   survive edits and have an individual hollow-star revert, including keyboard
-   Delete/Backspace and an Automatic menu option. No workstream is a deliberate
-   unassigned destination, distinct from unresolved routing; creation requires a
-   chosen or confidently inferred project. Existing-thread placement is locked
-   and its execution settings apply; ignored creation controls are hidden.
-   Pending, ambiguous and failed routes disable submission before draft
-   clearing. The submit label names the current action: Create thread, Send
-   message or Create workstream.
+   classification. An inferred continuation is only a suggestion: the draft
+   still starts a new thread, previewed by the same routing call in the target's
+   workstream (or in its project when it has none). A dashed chip at the end of
+   the route row offers the continuation; once accepted, the same chip offers
+   the new thread back. Swapping between the two uses both previews without
+   routing again, and returning to the new thread restores the execution
+   settings the thread's own replaced. Compact action and labelled destination
+   controls allow correction of either choice; labelled Project and Environment
+   controls stay visible. Each automatic field carries a solid yellow star.
+   Manual fields survive edits and have an individual hollow-star revert,
+   including keyboard Delete/Backspace and an Automatic menu option. No
+   workstream is a deliberate unassigned destination, distinct from unresolved
+   routing; creation requires a chosen or confidently inferred project.
+   Existing-thread placement is locked and its execution settings apply; ignored
+   creation controls are hidden. Pending, ambiguous and failed routes disable
+   submission before draft clearing. The submit label names the current action:
+   Create thread, Send message or Create workstream.
 3. **`bb workstreams handoff`**, called by agents (§5).
 4. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
 
