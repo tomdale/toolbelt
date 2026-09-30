@@ -3,7 +3,14 @@
  * "Reorganize…": propose a map, review it, file threads, review the moves,
  * apply. The server persists each step, so a reload resumes where it stopped.
  */
-import { useEffect, useId, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   useBbNavigate,
   useRealtime,
@@ -44,22 +51,28 @@ export function Organize({
   const [state, setState] = useState<BootstrapState | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const call = async (input: { action: string } & Record<string, unknown>) => {
-    setError(null);
-    try {
-      const result = await rpc.call("bootstrap", input as never);
-      setState(result.state as BootstrapState | null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setLoaded(true);
-    }
-  };
+  const requestGeneration = useRef(0);
+  const call = useCallback(
+    async (input: { action: string } & Record<string, unknown>) => {
+      const generation = ++requestGeneration.current;
+      setError(null);
+      try {
+        const result = await rpc.call("bootstrap", input as never);
+        if (generation !== requestGeneration.current) return;
+        setState(result.state as BootstrapState | null);
+      } catch (cause) {
+        if (generation !== requestGeneration.current) return;
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        if (generation === requestGeneration.current) setLoaded(true);
+      }
+    },
+    [rpc],
+  );
   const send: Call = (input) => void call(input);
   useEffect(() => {
     void call({ action: "get" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [call]);
   useRealtime("changed", () => void call({ action: "get" }));
   // Model steps report progress through realtime "changed"; poll lightly too.
   const working = state ? state.status in WORKING : false;
@@ -67,8 +80,7 @@ export function Organize({
     if (!working) return;
     const timer = setInterval(() => void call({ action: "get" }), 1000);
     return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [working]);
+  }, [call, working]);
 
   // Nothing until the first read, so a run in progress never flashes the
   // intro first.

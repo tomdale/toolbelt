@@ -2,6 +2,7 @@
 // thread header actions (parent link, proposal, recap, snooze), and the
 // settings sections.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
+import { ServerStateRealtime } from "./serverState.ts";
 import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { ProposalBanner } from "./header/ProposalBanner.tsx";
@@ -25,6 +26,10 @@ import { SnoozeSettings } from "./snooze/SnoozeSettings.tsx";
 import "./styles.css";
 
 export default definePluginApp((app) => {
+  app.slots.experimental_appOverlay({
+    id: "server-state",
+    component: ServerStateRealtime,
+  });
   app.composer.customize({
     id: "automatic-filing",
     scopes: ["thread"],

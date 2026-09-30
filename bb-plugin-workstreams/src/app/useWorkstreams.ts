@@ -6,26 +6,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   experimental_useSidebarThreads,
-  useRealtime,
-  useRpc,
   useSettings,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
-import type { RpcContract } from "../server/contract.ts";
 import type { Placement } from "../server/service.ts";
 import type { MapRecord } from "../server/map.ts";
 import type { ProposalView } from "../server/evolution.ts";
 import { projectWorkstreams, type Projection } from "../domain/project.ts";
 import { isCurrent, needsYou } from "../domain/analysis.ts";
-import { EMPTY_ORDER, type ManualOrder } from "../domain/order.ts";
+import type { ManualOrder } from "../domain/order.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
-import {
-  DEFAULT_SNOOZE_PREFS,
-  isSnoozed,
-  parseSnoozePrefs,
-  type SnoozePrefs,
-  type ThreadSnooze,
-} from "../domain/snooze.ts";
+import { isSnoozed, type SnoozePrefs, type ThreadSnooze } from "../domain/snooze.ts";
+import { useSharedServerState } from "./serverState.ts";
 
 export type ServerState = {
   workstreams: Record<string, MapRecord>;
@@ -44,120 +36,9 @@ export type ReorderChange =
   | { kind: "workstreams"; ids: string[] }
   | { kind: "threads"; groupId: string; ids: string[] };
 
-const EMPTY: ServerState = {
-  workstreams: {},
-  placements: {},
-  analysis: {},
-  proposals: [],
-  driftDismissed: {},
-  bootstrapped: false,
-  lastReconciledAt: null,
-  order: EMPTY_ORDER,
-  snoozes: {},
-  snoozePrefs: DEFAULT_SNOOZE_PREFS,
-};
-
-/**
- * The plugin's own state, refetched whenever the server publishes a change.
- * The sidebar, the page, and each thread header's banner share this shape.
- */
+/** Shared plugin state and optimistic actions for every UI consumer. */
 export function useServerState() {
-  const rpc = useRpc<RpcContract>();
-  const [server, setServer] = useState<ServerState>(EMPTY);
-  const refresh = useCallback(async () => {
-    try {
-      const state = await rpc.call("state", null);
-      setServer({
-        ...EMPTY,
-        ...state,
-        snoozePrefs: parseSnoozePrefs(state.snoozePrefs),
-      });
-    } catch {
-      // Everything still renders from live BB data without plugin state.
-    }
-  }, [rpc]);
-  useRealtime("changed", refresh);
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-  /** Applies a manual order locally at once, so a drop never snaps back. */
-  const reorder = useCallback(
-    async (change: ReorderChange) => {
-      setServer((prev) => ({
-        ...prev,
-        order: applyChange(prev.order, change),
-      }));
-      try {
-        const { order } = await rpc.call("reorder", change);
-        setServer((prev) => ({ ...prev, order }));
-      } catch (cause) {
-        await refresh();
-        throw cause;
-      }
-    },
-    [rpc, refresh],
-  );
-  /**
-   * Snoozes (`until: null` waits for activity) or wakes a thread, applied
-   * locally at once so the row moves before the round trip.
-   */
-  const setSnooze = useCallback(
-    async (
-      thread: { id: string; latestAttentionAt?: number },
-      until: number | null | "wake",
-    ) => {
-      setServer((prev) => {
-        const snoozes = { ...prev.snoozes };
-        if (until === "wake") delete snoozes[thread.id];
-        else
-          snoozes[thread.id] = {
-            until,
-            attentionAt: thread.latestAttentionAt ?? Date.now(),
-            at: Date.now(),
-          };
-        return { ...prev, snoozes };
-      });
-      try {
-        if (until === "wake")
-          await rpc.call("unsnooze", { threadId: thread.id });
-        else await rpc.call("snooze", { threadId: thread.id, until });
-      } catch (cause) {
-        await refresh();
-        throw cause;
-      }
-    },
-    [rpc, refresh],
-  );
-  /** Saves Snooze settings, applied locally at once. */
-  const saveSnoozePrefs = useCallback(
-    async (patch: Partial<SnoozePrefs>) => {
-      setServer((prev) => ({
-        ...prev,
-        snoozePrefs: parseSnoozePrefs({ ...prev.snoozePrefs, ...patch }),
-      }));
-      try {
-        const { prefs } = await rpc.call("setSnoozePrefs", { patch });
-        setServer((prev) => ({
-          ...prev,
-          snoozePrefs: parseSnoozePrefs(prefs),
-        }));
-      } catch (cause) {
-        await refresh();
-        throw cause;
-      }
-    },
-    [rpc, refresh],
-  );
-  return { rpc, server, refresh, reorder, setSnooze, saveSnoozePrefs };
-}
-
-function applyChange(order: ManualOrder, change: ReorderChange): ManualOrder {
-  if (change.kind === "workstreams")
-    return { ...order, workstreams: change.ids };
-  return {
-    ...order,
-    threads: { ...order.threads, [change.groupId]: change.ids },
-  };
+  return useSharedServerState();
 }
 
 /** Pending or just-applied proposals that involve each thread. */

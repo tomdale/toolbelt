@@ -1,5 +1,10 @@
 /** Workstreams intake keeps the draft and its destination in one composer. */
-import { useEffect, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   experimental_NewThreadComposer as Composer,
   useBbNavigate,
@@ -102,7 +107,7 @@ function NewWork({
   const message = error ?? routeError;
   useEffect(() => () => intake.dispose(), [intake]);
 
-  const submit = async (request: NewThreadRequest) => {
+  const submit = useCallback(async (request: NewThreadRequest) => {
     setError(null);
     setAttempt((n) => n + 1);
     const prompt = extractPrompt(request);
@@ -145,7 +150,7 @@ function NewWork({
       // Rejection tells the host to preserve attachments, mentions, and text.
       throw cause;
     }
-  };
+  }, [intake, navigate, onClose, rpc]);
 
   return (
     <IntakeContext.Provider value={intake}>
