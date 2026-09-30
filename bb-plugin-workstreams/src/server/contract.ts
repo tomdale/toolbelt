@@ -184,6 +184,19 @@ const placementSchema2 = z.object({
   environment: z.record(z.string(), z.unknown()),
   label: z.string(),
 });
+const routeIntentSchema = z.object({
+  action: z.enum(["new-thread", "send-message", "new-workstream"]).optional(),
+  destination: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("workstream"), id: z.string() }),
+    z.object({ kind: z.literal("thread"), id: z.string() }),
+    z.object({ kind: z.literal("none") }),
+  ]).optional(),
+  placement: z.object({
+    projectId: z.string().optional(),
+    environment: z.record(z.string(), z.unknown()).optional(),
+  }).optional(),
+  workstreamName: z.string().optional(),
+});
 export const routeSchema = z.discriminatedUnion("outcome", [
   z.object({
     ...routeBase,
@@ -199,7 +212,7 @@ export const routeSchema = z.discriminatedUnion("outcome", [
     sectionId: z.string(),
     workstream: z.string(),
     title: z.string(),
-    placement: placementSchema2,
+    placement: placementSchema2.nullable(),
   }),
   z.object({
     ...routeBase,
@@ -207,7 +220,7 @@ export const routeSchema = z.discriminatedUnion("outcome", [
     name: z.string(),
     description: z.string(),
     title: z.string(),
-    placement: placementSchema2,
+    placement: placementSchema2.nullable(),
   }),
   z.object({
     ...routeBase,
@@ -236,6 +249,7 @@ export const rpcContract = defineRpcContract({
       prompt: z.string().min(1).max(20_000),
       pickedProjectId: z.string().nullable().optional(),
       workstreamId: z.string().nullable().optional(),
+      intent: routeIntentSchema.nullable().optional(),
       /**
        * The unsure decision whose candidate `workstreamId` is: its routing
        * call keeps explaining the result (SPEC §11.6).
@@ -274,6 +288,7 @@ export const rpcContract = defineRpcContract({
         .nullable()
         .optional(),
       execution: z.record(z.string(), z.unknown()).nullable().optional(),
+      intent: routeIntentSchema.nullable().optional(),
     }),
     output: z.object({
       threadId: z.string().nullable(),
