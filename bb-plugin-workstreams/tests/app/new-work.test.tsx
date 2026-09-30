@@ -307,6 +307,10 @@ it("continuation locks placement and hides ignored settings, then New thread res
   });
   const { execute } = mount(route);
   await type();
+  await waitFor(() =>
+    expect(screen.getByRole("group", { name: "Suggested existing thread" })).toBeTruthy(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await ready();
   expect(button().textContent).toBe("Send message");
   expect(

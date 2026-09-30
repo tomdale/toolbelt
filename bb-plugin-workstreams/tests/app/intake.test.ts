@@ -80,6 +80,9 @@ it("switches existing thread to new thread and preserves explicitly selected act
   });
   const intake = new Intake(route, null, null);
   await ready(intake);
+  expect(intake.snapshot().redirectPending).toBe(true);
+  expect(intake.effectiveAction()).toBe("automatic");
+  intake.acceptRedirect();
   expect(intake.effectiveAction()).toBe("send-message");
   intake.selectAction("new-thread");
   expect(intake.snapshot().destination.value).toEqual({
@@ -295,6 +298,115 @@ it("new workstream name is independently editable and revertible", async () => {
     source: "automatic",
   });
 });
+it("editing or clearing a proposed redirect invalidates its actions", async () => {
+  const route = vi.fn().mockResolvedValue({
+    ...base,
+    outcome: "continue",
+    threadId: "thr_a",
+    threadTitle: "Parser",
+    sectionId: "sec_a",
+    workstream: "Alpha",
+  });
+  const intake = new Intake(route, null, null);
+  await ready(intake);
+  expect(intake.snapshot().redirectPending).toBe(true);
+  intake.observe("A different request");
+  expect(intake.snapshot().redirectPending).toBe(false);
+  expect(intake.effectiveAction()).toBe("automatic");
+  intake.acceptRedirect();
+  expect(intake.snapshot().redirectPending).toBe(false);
+  intake.dispose();
+});
+
+it("dismissed redirects preserve an explicit fallback destination through rerouting", async () => {
+  const route = vi.fn().mockResolvedValue({
+    ...base,
+    outcome: "continue",
+    threadId: "thr_a",
+    threadTitle: "Parser",
+    sectionId: "sec_a",
+    workstream: "Alpha",
+  });
+  const intake = new Intake(route, null, null);
+  await ready(intake);
+  intake.dismissRedirect();
+  expect(intake.snapshot().destination).toEqual({
+    source: "manual",
+    value: { kind: "workstream", id: "sec_a", name: "Alpha" },
+  });
+  expect(intake.intent()).toEqual({
+    action: "new-thread",
+    destination: { kind: "workstream", id: "sec_a" },
+  });
+  intake.dispose();
+});
+
+it("a pending redirect gates submit until it is accepted", async () => {
+  const intake = new Intake(
+    vi.fn().mockResolvedValue({
+      ...base,
+      outcome: "continue",
+      threadId: "thr_a",
+      threadTitle: "Parser",
+      sectionId: "sec_a",
+      workstream: "Alpha",
+    }),
+    null,
+    null,
+  );
+  await ready(intake);
+  expect(intake.snapshot().redirectPending).toBe(true);
+  expect(intake.effectiveAction()).toBe("automatic");
+  expect(intake.lockedThread()).toBeUndefined();
+  expect(intake.canSubmit()).toBe(false);
+  intake.acceptRedirect();
+  expect(intake.snapshot().redirectPending).toBe(false);
+  intake.dispose();
+});
+
+it("dismissed redirects restore manual placement and create-thread intent", async () => {
+  const intake = new Intake(
+    vi.fn().mockResolvedValue({
+      ...base,
+      outcome: "continue",
+      threadId: "thr_a",
+      threadTitle: "Parser",
+      sectionId: "sec_a",
+      workstream: "Alpha",
+    }),
+    null,
+    null,
+  );
+  intake.selectProject("mine");
+  const environment: Environment = {
+    type: "reuse",
+    environmentId: "mine_env",
+  };
+  intake.selectEnvironment(environment);
+  await ready(intake);
+  expect(intake.effectiveAction()).toBe("automatic");
+  intake.dismissRedirect();
+  expect(intake.effectiveAction()).toBe("new-thread");
+  expect(intake.snapshot().environment).toEqual({
+    source: "manual",
+    value: environment,
+  });
+  intake.dispose();
+});
+
+it("invalidates a manual reuse environment atomically when the project changes", async () => {
+  const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
+  intake.selectProject("a");
+  intake.selectEnvironment({ type: "reuse", environmentId: "old" });
+  intake.selectProject("b");
+  expect(intake.snapshot().environment).toEqual({
+    source: "automatic",
+    value: { type: "project-default" },
+  });
+  expect(intake.snapshot().announcement).toContain("reset");
+  intake.dispose();
+});
+
 it("old A acknowledgements cannot enable the final A in an A to B to A selection queue", async () => {
   const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
   await ready(intake);
@@ -522,19 +634,12 @@ it("identical native settings still acknowledge the current thread target indepe
   await intake.loadThread(sdk, "A");
   const first = intake.selection()!;
   intake.reconcileSelection(first, first);
+  expect(intake.snapshot().redirectPending).toBe(true);
+  intake.acceptRedirect();
+  const accepted = intake.selection()!;
+  intake.reconcileSelection(accepted, accepted);
   expect(intake.canSubmit()).toBe(true);
-  target = "B";
-  intake.observe("Continue B");
-  await intake.resolve();
-  await intake.loadThread(sdk, "B");
-  const second = intake.selection();
-  expect(second).toEqual(first);
-  expect(second).not.toBeNull();
-  intake.reconcileSelection(first, first);
-  expect(intake.canSubmit()).toBe(false);
-  intake.reconcileSelection(second!, second!);
-  expect(intake.canSubmit()).toBe(true);
-  expect(intake.snapshot().synchronizedThread).toBe("B");
+  expect(intake.snapshot().synchronizedThread).toBe("A");
   intake.dispose();
 });
 
