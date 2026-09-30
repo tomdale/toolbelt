@@ -13,7 +13,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { AnalysisInput, ThreadAnalysis } from "../domain/analysis.ts";
 import type { Database } from "./db.ts";
 import { displayTitle, type InventoryThread } from "./inventory.ts";
-import type { Inference } from "./model.ts";
+import { traceIdOf, type Inference } from "./model.ts";
 
 type Sdk = BbPluginApi["sdk"];
 
@@ -79,6 +79,14 @@ export class Analyzer {
       db: Database;
       inference: Inference;
       model: () => Promise<string>;
+      /** Incremental evidence is optional; failure leaves triage available. */
+      observe?: (threadId: string) => Promise<void>;
+      context?: (query: string, threadId: string) => string;
+      retrieval?: (
+        query: string,
+        threadId: string,
+      ) => { context: string; id: string };
+      attachRetrieval?: (id: string, traceId: string | null) => void;
       onChange: () => void;
       /** A new result was stored for the thread's current turn. */
       onResult?: (threadId: string, result: StoredAnalysis) => void;
@@ -248,6 +256,7 @@ export class Analyzer {
     this.running.set(threadId, (this.running.get(threadId) ?? 0) + 1);
     this.inFlight++;
     let revision = -1;
+    let retrievalId: string | null = null;
     try {
       const sdk = this.deps.sdk();
       const thread = await sdk.threads.get({ threadId });
@@ -262,7 +271,14 @@ export class Analyzer {
       if (!force && previous && previous.revision >= revision) return previous;
 
       const started = this.now();
+      // Evidence collection has its own bounded queue. Triage must remain
+      // responsive even while a historical conversation is being indexed.
+      void this.deps.observe?.(threadId).catch((error) => {
+        this.deps.log(`Understanding failed for ${threadId}: ${String(error)}`);
+      });
+      if (this.disposed || this.forgotten.has(threadId)) return null;
       const input = await this.input(thread);
+      retrievalId = input.retrievalId;
       const model = await this.deps.model();
       const asked = this.now();
       const { value: output, traceId } = await this.deps.inference.run(
@@ -274,6 +290,8 @@ export class Analyzer {
           links: [{ kind: "thread", ref: threadId }],
         },
       );
+      if (retrievalId && !this.disposed && !this.forgotten.has(threadId))
+        this.deps.attachRetrieval?.(retrievalId, traceId);
       this.deps.info?.(
         `Analyzed ${threadId}: context ${asked - started} ms, model ${this.now() - asked} ms`,
       );
@@ -319,6 +337,8 @@ export class Analyzer {
       this.deps.onResult?.(threadId, result);
       return result;
     } catch (error) {
+      if (retrievalId && !this.disposed && !this.forgotten.has(threadId))
+        this.deps.attachRetrieval?.(retrievalId, traceIdOf(error));
       const previous = this.failures.get(threadId);
       this.failures.set(threadId, {
         revision,
@@ -342,6 +362,7 @@ export class Analyzer {
     thread: Awaited<ReturnType<Sdk["threads"]["get"]>>,
   ): Promise<{
     prompt: AnalysisInput;
+    retrievalId: string | null;
     sectionByName: Map<string, string>;
     sectionNameById: Map<string, string>;
   }> {
@@ -396,7 +417,16 @@ export class Analyzer {
           .prepare("SELECT description FROM ws_workstream WHERE section_id = ?")
           .get(own.section_id) as { description: string | null } | undefined)
       : undefined;
+    const query = [
+      displayTitle(thread),
+      own?.name,
+      ...requests.map((r) => r.text),
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const retrieval = this.deps.retrieval?.(query, thread.id);
     return {
+      retrievalId: retrieval?.id ?? null,
       sectionByName,
       sectionNameById: new Map(sections.map((s) => [s.section_id, s.name])),
       prompt: {
@@ -416,6 +446,8 @@ export class Analyzer {
           : null,
         requests,
         lastAssistantText,
+        understanding:
+          retrieval?.context ?? this.deps.context?.(query, thread.id),
       },
     };
   }

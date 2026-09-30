@@ -21,6 +21,7 @@ import {
 } from "../../domain/trace.ts";
 import type { RpcContract } from "../../server/contract.ts";
 import { traceIdsOf, type InspectTarget } from "./debug.ts";
+import { RetrievalLineage } from "./RetrievalLineage.tsx";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 
@@ -380,7 +381,7 @@ function TraceDetail({
           type="button"
           onClick={() => void replay()}
           disabled={replaying}
-          title="Send the same prompt to the same model again. Nothing Workstreams stores changes."
+          title="Makes a paid model call using the recorded prompt. Stores a comparison trace without changing memory or placements."
           className={smallButton}
         >
           <Icon
@@ -437,11 +438,45 @@ function TraceDetail({
         </p>
       ) : null}
 
+      {(trace.kind === "route" || trace.kind === "analysis") &&
+      !trace.replayOf ? (
+        <RetrievalLineage rpc={rpc} traceId={trace.id} close={close} />
+      ) : null}
+      {trace.links.some(
+        (l) => l.kind === "account" || l.kind === "observation",
+      ) ? (
+        <div
+          className="mt-3 flex flex-wrap gap-2 text-xs"
+          aria-label="Memory provenance"
+        >
+          {trace.links
+            .filter((l) => l.kind === "account" || l.kind === "observation")
+            .slice(0, 30)
+            .map((link) => (
+              <button
+                key={`${link.kind}:${link.ref}`}
+                type="button"
+                className={smallButton}
+                onClick={() => {
+                  navigate.toPluginPanel("home", {
+                    subPath: `understanding/${link.kind === "account" ? "accounts" : "evidence"}/${encodeURIComponent(link.ref)}`,
+                  });
+                  close();
+                }}
+              >
+                {link.kind === "account"
+                  ? "Explore account"
+                  : "Explore evidence"}{" "}
+                · {link.ref.slice(0, 8)}
+              </button>
+            ))}
+        </div>
+      ) : null}
       <div className="mt-4 flex flex-col gap-1">
         {trace.parsed !== null ? (
           <Section
             title="Result"
-            hint="The validated output Workstreams used"
+            hint="The validated model response; application is recorded separately"
             open
           >
             <Code content={json(trace.parsed)} label="Result" />

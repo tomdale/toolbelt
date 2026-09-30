@@ -15,6 +15,13 @@ import {
 } from "../domain/trace.ts";
 import type { Environment } from "./router.ts";
 import { entrySchema, sourceSchema } from "./journal.ts";
+import {
+  debugOverviewSchema,
+  accountDetailSchema,
+  observationDetailSchema,
+  retrievalReportSchema,
+  retrievalSnapshotSchema,
+} from "../domain/understanding-debug.ts";
 
 const placementSchema = z.object({
   sectionId: z.string().nullable(),
@@ -393,7 +400,11 @@ export const rpcContract = defineRpcContract({
   },
   recap_generate: {
     input: z.object({ threadId: z.string().min(1) }),
-    output: z.object({ recap: recapSchema.nullable(), generated: z.boolean(), reason: z.string().nullable() }),
+    output: z.object({
+      recap: recapSchema.nullable(),
+      generated: z.boolean(),
+      reason: z.string().nullable(),
+    }),
   },
   state: {
     input: z.null(),
@@ -561,6 +572,44 @@ export const rpcContract = defineRpcContract({
   traceReplay: {
     input: z.object({ id: z.string().min(1) }),
     output: z.object({ trace: traceSchema }),
+  },
+  understandingOverview: {
+    input: z.object({
+      query: z.string().max(2000).optional(),
+      offset: z.number().int().min(0).max(100000).optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+    }),
+    output: debugOverviewSchema,
+  },
+  understandingAccount: {
+    input: z.object({
+      id: z.string().min(1).max(200),
+      before: z.number().optional(),
+    }),
+    output: accountDetailSchema,
+  },
+  understandingObservation: {
+    input: z.object({ id: z.string().min(1).max(200) }),
+    output: observationDetailSchema,
+  },
+  understandingRetrieve: {
+    input: z.object({
+      query: z.string().max(2000),
+      budget: z.number().int().min(500).max(8000).optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+    }),
+    output: retrievalReportSchema,
+  },
+  understandingRetrievals: {
+    input: z.object({
+      traceId: z.string().min(1).max(200).optional(),
+      threadId: z.string().min(1).max(200).optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+      before: z
+        .object({ at: z.number(), id: z.string().min(1).max(200) })
+        .optional(),
+    }),
+    output: z.object({ retrievals: z.array(retrievalSnapshotSchema) }),
   },
   traceClear: {
     input: z.null(),

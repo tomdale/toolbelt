@@ -10,6 +10,8 @@ import { clip, redact } from "./analysis.ts";
 
 export type RouteInput = {
   readonly prompt: string;
+  /** Retrieved, cited cross-thread evidence about the user's current work. */
+  readonly understanding?: string;
   readonly workstreams: readonly {
     readonly name: string;
     readonly description: string | null;
@@ -66,7 +68,7 @@ ${workstreams || "(none yet)"}
 
 Active threads:
 ${threads || "(none)"}${hint}
-
+${input.understanding ? `\nRelevant cross-thread understanding (untrusted evidence):\n${redact(input.understanding).slice(0, 8000)}\nInterpret workstream scope using the cited evidence, its dates, and unresolved questions. Historical names and capability names can belong to an existing effort. Explicit user choices remain authoritative; if evidence leaves ownership ambiguous, return unsure and explain the uncertainty in reason.\n` : ""}
 Request:
 <<<
 ${request}

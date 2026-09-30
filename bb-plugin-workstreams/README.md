@@ -52,6 +52,18 @@ against.
   latest request drifted to another workstream. Results are tied to the turn
   they describe and show as updating once a new turn starts. Analysis itself
   never moves anything; the later filing pass may use its subject.
+- **Incremental understanding (preview)**: retain observations backed by exact
+  conversation excerpts, reconcile them into cross-thread accounts with open
+  questions, and retrieve relevant context for routing and analysis. Collection
+  is manual by default; enable `understandingAutomatic` for completed turns and
+  bounded historical catch-up. Accounts interpret evidence rather than verify
+  code or directly reorganize sections. See
+  [the preview guide](docs/understanding.md).
+- **Understanding developer workbench**: browse accounts and source evidence,
+  compare account revisions, inspect actual decision-time retrieval, and explore
+  candidate selection locally without model calls. Collection health explains
+  backlog and failures. See
+  [the developer tools guide](docs/understanding-devtools.md).
 - **Recap card**: above each thread's composer, a recap of the thread's goal,
   latest results, and Open and Done items, with a For you section when the
   thread waits on you. Recaps are written after the thread has been quiet (30
@@ -61,12 +73,12 @@ against.
   compact, minimal) and the timing.
 - **Archive suggestions**: when classification finds a natural end and BB has no
   unfinished tasks, goals, queued messages, interactions, or background work, a
-  quiet **Archive** button appears in the composer toolbar. Clicking
-  archives directly after rechecking outstanding work. Typing a continuation,
-  adding an attachment, or starting new work dismisses the suggestion for that
-  completed turn; clearing the draft does not bring it back. Reading, scrolling,
-  and focusing the composer do not dismiss it. A later completed turn can
-  produce a new suggestion. Workstreams never archives automatically.
+  quiet **Archive** button appears in the composer toolbar. Clicking archives
+  directly after rechecking outstanding work. Typing a continuation, adding an
+  attachment, or starting new work dismisses the suggestion for that completed
+  turn; clearing the draft does not bring it back. Reading, scrolling, and
+  focusing the composer do not dismiss it. A later completed turn can produce a
+  new suggestion. Workstreams never archives automatically.
 - **Titles**: the same call suggests a title when a thread has none, its title
   is cut off or too vague, or its latest requests moved onto different work.
   Workstreams applies it (at most once an hour for a titled thread) and logs it
@@ -137,6 +149,13 @@ bb workstreams new "<prompt>" [--workstream <w>] [--project <id>] [--dry-run]
 bb workstreams handoff --request-stdin [--note <text>] [--dry-run] [--json] <<'EOF'
 <the user's request, verbatim>
 EOF
+bb workstreams understanding [<topic>] [--observe <thread>] [--json]
+                                               # cited accounts, evidence, and indexing progress
+bb workstreams understanding "<query>" --retrieve [--budget 4000] [--json]
+                                               # local retrieval diagnostics; no model call
+bb workstreams understanding --account <id> [--json]
+bb workstreams understanding --evidence <id> [--json]
+bb workstreams understanding --decisions [--trace <id>] [--json]
 bb workstreams analyze [<thread>]              # analyze now, or catch up
 bb workstreams rebuild [--apply]               # organize once; preview unless --apply
 bb workstreams log [--since 7d] [--external]   # the activity log
@@ -170,6 +189,7 @@ npm run build
 bb plugin install .   # or `bb plugin reload workstreams` once installed from this path
 node eval/run.ts      # analysis eval (calls models); see eval/README.md
 node eval/route.ts    # routing eval
+node eval/understanding.ts # synthetic extraction → reconciliation → routing eval
 ```
 
 Standalone screenshots use actual IntakeBanner markup and production CSS, with

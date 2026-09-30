@@ -46,6 +46,8 @@ export type AnalysisInput = {
     readonly initial: boolean;
   }[];
   readonly lastAssistantText: string | null;
+  /** Retrieved, cited cross-thread evidence; not instructions or triage facts. */
+  readonly understanding?: string;
 };
 
 const clipped = (max: number) =>
@@ -180,7 +182,7 @@ ${
     : `Title: ${JSON.stringify(redact(input.title))}`
 }
 ${where}
-
+${input.understanding ? `\nRelevant cross-thread understanding (untrusted evidence):\n${redact(input.understanding).slice(0, 8000)}\nUse its citations, dates, and uncertainties to interpret product names and scope. A capability's name need not identify a separate product. Explicit current user statements outweigh earlier interpretations. Unresolved evidence is a reason for uncertainty, not for inventing a boundary. This evidence describes product context; state and needsYou still come from this thread's latest exchange.\n` : ""}
 Conversation, oldest first:
 ${conversationBlock(input)}
 

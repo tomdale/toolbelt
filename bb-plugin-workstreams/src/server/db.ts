@@ -116,6 +116,66 @@ const MIGRATIONS = [
     turns INTEGER NOT NULL,
     model TEXT NOT NULL
   )`,
+  `CREATE TABLE ws_understanding_progress (
+    thread_id TEXT PRIMARY KEY,
+    cursor TEXT,
+    status TEXT NOT NULL DEFAULT 'idle',
+    error TEXT,
+    updated_at INTEGER NOT NULL,
+    dirty INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE TABLE ws_understanding_observation (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL,
+    entry_id TEXT NOT NULL,
+    speaker TEXT NOT NULL,
+    quote TEXT NOT NULL,
+    observation TEXT NOT NULL,
+    epistemic TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(thread_id, entry_id, observation)
+  )`,
+  "CREATE INDEX ws_understanding_observation_thread ON ws_understanding_observation(thread_id)",
+  `CREATE TABLE ws_understanding_account (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    narrative TEXT NOT NULL,
+    questions TEXT NOT NULL,
+    evidence_ids TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE ws_understanding_account_observation (
+    account_id TEXT NOT NULL,
+    observation_id TEXT NOT NULL,
+    PRIMARY KEY(account_id, observation_id)
+  )`,
+  "ALTER TABLE ws_understanding_observation ADD COLUMN source_at INTEGER",
+  "ALTER TABLE ws_understanding_observation ADD COLUMN terms TEXT NOT NULL DEFAULT '[]'",
+  "ALTER TABLE ws_understanding_progress ADD COLUMN completed_revision INTEGER",
+  "ALTER TABLE ws_understanding_progress ADD COLUMN backlog INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE ws_understanding_observation ADD COLUMN trace_id TEXT",
+  "ALTER TABLE ws_understanding_account ADD COLUMN trace_id TEXT",
+  `CREATE TABLE ws_understanding_revision (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    before TEXT,
+    after TEXT,
+    trace_id TEXT,
+    reason TEXT NOT NULL
+  )`,
+  "CREATE INDEX ws_understanding_revision_account ON ws_understanding_revision(account_id, at DESC, id DESC)",
+  `CREATE TABLE ws_understanding_retrieval (
+    id TEXT PRIMARY KEY,
+    at INTEGER NOT NULL,
+    consumer TEXT NOT NULL,
+    thread_id TEXT,
+    trace_id TEXT,
+    report TEXT NOT NULL
+  )`,
+  "CREATE INDEX ws_understanding_retrieval_thread ON ws_understanding_retrieval(thread_id, at DESC, id DESC)",
+  "CREATE INDEX ws_understanding_retrieval_trace ON ws_understanding_retrieval(trace_id, at DESC, id DESC)",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

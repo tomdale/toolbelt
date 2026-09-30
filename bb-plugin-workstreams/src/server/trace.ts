@@ -302,6 +302,36 @@ export class TraceStore {
       .run(JSON.stringify(boundedJson(merged)), traceId);
   }
 
+  /** Removes selected calls and every replay derived from their prompts. */
+  remove(ids: readonly string[], links: readonly TraceLink[] = []): number {
+    const targets = new Set(ids);
+    for (const link of links)
+      for (const id of this.idsFor(link.kind, [link.ref]).get(link.ref) ?? [])
+        targets.add(id);
+    if (!targets.size) return 0;
+    return this.db.transaction(() => {
+      let removed = 0;
+      for (const id of targets) {
+        const rows = this.db
+          .prepare(
+            `WITH RECURSIVE descendants(id) AS (
+          SELECT id FROM ws_trace WHERE id=? UNION SELECT t.id FROM ws_trace t JOIN descendants d ON t.replay_of=d.id
+        ) SELECT id FROM descendants`,
+          )
+          .all(id) as { id: string }[];
+        for (const row of rows) {
+          this.db
+            .prepare("DELETE FROM ws_trace_link WHERE trace_id=?")
+            .run(row.id);
+          removed += this.db
+            .prepare("DELETE FROM ws_trace WHERE id=?")
+            .run(row.id).changes;
+        }
+      }
+      return removed;
+    })();
+  }
+
   clear(): number {
     const removed = this.db.prepare("DELETE FROM ws_trace").run().changes;
     this.db.prepare("DELETE FROM ws_trace_link").run();
