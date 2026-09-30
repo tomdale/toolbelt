@@ -743,6 +743,28 @@ describe("row hover buttons", () => {
     slot.lifecycle.unmount();
   });
 
+  it("never shows the chevron's tooltip over its open menu", async () => {
+    const slot = await mount(undefined, { settings: { showRecent: false } });
+    const row = await rowOf(slot);
+    const chevron = within(row).getByRole("button", {
+      name: "More snooze options",
+    });
+    fireEvent.pointerMove(chevron, { pointerType: "mouse" });
+    await screen.findByRole("tooltip", {}, { timeout: 2000 });
+    fireEvent.pointerDown(chevron, { button: 0, ctrlKey: false });
+    await screen.findByRole("menu");
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    // Moving over the trigger again with the menu open stays quiet too.
+    fireEvent.pointerMove(chevron, { pointerType: "mouse" });
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    // Closing the menu doesn't bring the old tooltip back.
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
   it("names the snooze, chevron, and archive buttons in tooltips", async () => {
     const slot = await mount(undefined, { settings: { showRecent: false } });
     const row = await rowOf(slot);
