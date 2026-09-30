@@ -270,7 +270,8 @@ describe("shared server state", () => {
     act(() => {
       pending = consumers.get(0)!.saveSnoozePrefs({ morningHour: 22 });
     });
-    expect(consumers.get(0)!.server.snoozePrefs.morningHour).toBe(22);
+    // Preference parsing clamps invalid hours before the RPC starts.
+    expect(consumers.get(0)!.server.snoozePrefs.morningHour).toBe(12);
     write.reject(failure);
     await expect(pending).rejects.toBe(failure);
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
