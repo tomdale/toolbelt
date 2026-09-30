@@ -144,10 +144,13 @@ describe("shared server state", () => {
     read.mockImplementation(() =>
       refreshReads[read.mock.calls.length - 2]!.promise,
     );
-    const pending = consumers.get(0)!.reorder({
-      kind: "threads",
-      groupId: "a",
-      ids: ["t1"],
+    let pending!: Promise<void>;
+    act(() => {
+      pending = consumers.get(0)!.reorder({
+        kind: "threads",
+        groupId: "a",
+        ids: ["t1"],
+      });
     });
     expect(consumers.get(1)!.server.order.threads.a).toEqual(["t1"]);
     await act(async () => {
@@ -172,7 +175,10 @@ describe("shared server state", () => {
     const read = vi.fn(async () => state(1));
     const { consumers } = mount({ read, reorder: vi.fn(() => write.promise) });
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
-    const pending = consumers.get(0)!.reorder({ kind: "workstreams", ids: ["a"] });
+    let pending!: Promise<void>;
+    act(() => {
+      pending = consumers.get(0)!.reorder({ kind: "workstreams", ids: ["a"] });
+    });
     expect(consumers.get(0)!.server.order.workstreams).toEqual(["a"]);
     write.reject(failure);
     await expect(pending).rejects.toBe(failure);
@@ -258,7 +264,10 @@ describe("shared server state", () => {
       setSnoozePrefs: vi.fn(() => write.promise),
     });
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
-    const pending = consumers.get(0)!.saveSnoozePrefs({ morningHour: 22 });
+    let pending!: Promise<void>;
+    act(() => {
+      pending = consumers.get(0)!.saveSnoozePrefs({ morningHour: 22 });
+    });
     expect(consumers.get(0)!.server.snoozePrefs.morningHour).toBe(22);
     write.reject(failure);
     await expect(pending).rejects.toBe(failure);
