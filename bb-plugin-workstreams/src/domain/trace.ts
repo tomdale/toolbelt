@@ -13,6 +13,7 @@ export type Usage = z.infer<typeof usageSchema>;
 
 export const TRACE_KINDS = [
   "analysis",
+  "recap",
   "route",
   "organize-map",
   "organize-assign",
@@ -91,6 +92,7 @@ export type NewTrace = Omit<
 /** How the inspector and the CLI name each kind of call. */
 export const TRACE_KIND_TITLE: Record<TraceKind, string> = {
   analysis: "Thread analysis",
+  recap: "Thread recap",
   route: "Routing",
   "organize-map": "Organize: map proposal",
   "organize-assign": "Organize: filing",
@@ -101,6 +103,7 @@ export const TRACE_KIND_TITLE: Record<TraceKind, string> = {
 /** Compact labels for narrow columns, such as the Activity log's. */
 export const TRACE_KIND_SHORT: Record<TraceKind, string> = {
   analysis: "Analysis",
+  recap: "Recap",
   route: "Routing",
   "organize-map": "Organize map",
   "organize-assign": "Organize filing",

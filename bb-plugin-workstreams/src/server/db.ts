@@ -109,6 +109,13 @@ const MIGRATIONS = [
   )`,
   "CREATE INDEX ws_trace_link_trace ON ws_trace_link (trace_id)",
   "CREATE TABLE ws_archive_dismissed (thread_id TEXT PRIMARY KEY, revision INTEGER NOT NULL)",
+  `CREATE TABLE ws_recap (
+    thread_id TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    generated_at INTEGER NOT NULL,
+    turns INTEGER NOT NULL,
+    model TEXT NOT NULL
+  )`,
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {
