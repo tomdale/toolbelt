@@ -270,7 +270,7 @@ export function WorkstreamsThreadList({
           </p>
         ) : null}
         {projection.needsYou.length > 0 ? (
-          <Band title="For you" boxed>
+          <Band title="For you" box="attention">
             {needsRows.map((row) =>
               renderRow(row, "needs-you", undefined, needsMarks),
             )}
@@ -295,11 +295,7 @@ export function WorkstreamsThreadList({
           </Band>
         ) : null}
         {ws.showRecent && projection.recent.length > 0 ? (
-          <Band
-            title="Recent"
-            collapsed={isCollapsed("__recent")}
-            toggle={() => toggle("__recent")}
-          >
+          <Band title="Recent" box="neutral">
             {projection.recent.map((row) =>
               renderRow(
                 row,
@@ -391,56 +387,71 @@ export function WorkstreamsThreadList({
 const NEEDS_YOU_LIMIT = 5;
 
 /**
- * An overlay band. A plain band collapses from its header. `boxed` draws the
- * header and rows inside the tinted For you block (`.ws-needs`), always open
- * and with extra space around it, so threads waiting on Tom stand apart from
- * the list below.
+ * An overlay band. A plain band collapses from its header. A boxed band is an
+ * always-open block spanning the column, with its header inside: `attention`
+ * is the amber For you block (`.ws-needs`, with its shimmer), `neutral` the
+ * quieter Recent block (`.ws-band-neutral`). Both set their rows apart from
+ * the workstream list below.
  */
 function Band({
   title,
   count,
-  boxed,
+  box,
   collapsed,
   toggle,
   children,
 }: {
   title: string;
   count?: number;
-  boxed?: boolean;
+  box?: "attention" | "neutral";
   collapsed?: boolean;
   toggle?: () => void;
   children: ReactNode;
 }) {
-  const open = boxed || !collapsed;
-  return (
-    <section aria-label={title} className={cn("px-1", boxed && "my-1")}>
-      <div className={cn(boxed && "ws-needs mx-0.5 rounded-lg px-0.5 py-1")}>
-        {boxed ? (
-          <h2 className="ws-amber-text flex w-full items-center gap-1 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide">
-            <span className="flex-1 text-left">{title}</span>
-            {count !== undefined ? (
-              <span className="tabular-nums">{count}</span>
-            ) : null}
-          </h2>
-        ) : (
-          <button
-            type="button"
-            aria-expanded={!collapsed}
-            onClick={toggle}
-            className="flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-sidebar-accent/60"
-          >
-            <Icon
-              name={collapsed ? "ChevronRight" : "ChevronDown"}
-              className="size-3"
-            />
-            <span className="flex-1 text-left">{title}</span>
-            {count !== undefined ? (
-              <span className="tabular-nums">{count}</span>
-            ) : null}
-          </button>
+  const heading = (
+    <>
+      <span className="flex-1 text-left">{title}</span>
+      {count !== undefined ? (
+        <span className="tabular-nums">{count}</span>
+      ) : null}
+    </>
+  );
+  if (box) {
+    return (
+      <section
+        aria-label={title}
+        className={cn(
+          "my-1 px-2 py-1",
+          box === "attention" ? "ws-needs" : "ws-band-neutral",
         )}
-        {open ? <ul className="mt-0.5">{children}</ul> : null}
-      </div>
+      >
+        <h2
+          className={cn(
+            "flex w-full items-center gap-1 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
+            box === "attention" ? "ws-amber-text" : "text-muted-foreground",
+          )}
+        >
+          {heading}
+        </h2>
+        <ul className="mt-0.5">{children}</ul>
+      </section>
+    );
+  }
+  return (
+    <section aria-label={title} className="px-1">
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        onClick={toggle}
+        className="flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-sidebar-accent/60"
+      >
+        <Icon
+          name={collapsed ? "ChevronRight" : "ChevronDown"}
+          className="size-3"
+        />
+        {heading}
+      </button>
+      {collapsed ? null : <ul className="mt-0.5">{children}</ul>}
     </section>
   );
 }
