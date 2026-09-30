@@ -14,7 +14,7 @@ import { useArchiveSuggestion } from "../archive/useArchiveSuggestion.ts";
 import {
   animateCardIn,
   animateCardOut,
-  collapseSlot,
+  makeRoomBelow,
   crossfadeIn,
   followResizes,
   growSlot,
@@ -448,8 +448,10 @@ function FrameBody({
 
 /**
  * The slot a hidden card leaves behind. `ghost` is the card as last shown,
- * dissolving inside the slot; `dismissed` eases the slot shut rather than
- * holding it for new content.
+ * dissolving inside the slot. `dismissed` means Generate Recap takes the
+ * card's place below the slot: the slot gives up that much of its space at
+ * once, and the ghost stays where the card was, dissolving over the button
+ * as it fades in.
  */
 type Hold = {
   /** Unique per exit, so a new exit never resumes an earlier one's effect. */
@@ -472,14 +474,16 @@ const FIRST = { order: -1 } as const;
 const ENTRANCE_AFTER_MS = 1_000;
 
 /**
- * Runs one hold: dissolves the ghost, eases the slot shut for a dismissal,
- * and otherwise keeps the slot's space until new timeline content has used
- * it (see recapMotion.ts). Clears the hold once the slot is gone.
+ * Runs one hold: dissolves the ghost and keeps the slot's space until new
+ * timeline content has used it (see recapMotion.ts), so nothing above the
+ * card moves. For a dismissal, `belowRef` is Generate Recap, which takes its
+ * share of the space first. Clears the hold once the slot is gone.
  */
 function useHold(
   hold: Hold | null,
   slotRef: RefObject<HTMLDivElement | null>,
   ghostRef: RefObject<HTMLDivElement | null>,
+  belowRef: RefObject<HTMLDivElement | null>,
   setHold: Dispatch<SetStateAction<Hold | null>>,
 ) {
   const id = hold?.id ?? null;
@@ -507,12 +511,9 @@ function useHold(
       clearIfUnheld();
     };
 
+    if (dismissed && belowRef.current) makeRoomBelow(slot, belowRef.current);
     const out = ghostRef.current ? animateCardOut(ghostRef.current) : null;
-    const collapse = dismissed
-      ? collapseSlot(slot, slot.getBoundingClientRect().height)
-      : null;
-    if (collapse) void collapse.finished.then(ready);
-    else ready();
+    ready();
     void (out?.finished ?? Promise.resolve()).then(() => {
       if (!live) return;
       dissolving = false;
@@ -528,7 +529,6 @@ function useHold(
     return () => {
       live = false;
       out?.cancel();
-      collapse?.cancel();
       space?.dispose();
     };
     // One id is one exit; later updates to the same hold must not restart it.
@@ -570,6 +570,7 @@ export function RecapCard() {
   const markerRef = useRef<HTMLDivElement>(null);
   const slotRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
+  const belowRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const shownHeight = useRef(0);
@@ -627,6 +628,7 @@ export function RecapCard() {
           hold?.dismissed && "ws-fade-in",
         )}
         style={FIRST}
+        ref={belowRef}
       >
         <button
           type="button"
@@ -686,7 +688,7 @@ export function RecapCard() {
       });
   } else if (hold && content !== null && !hold.dismissed) setHold(null);
 
-  useHold(hold, slotRef, ghostRef, setHold);
+  useHold(hold, slotRef, ghostRef, belowRef, setHold);
 
   // What a hold keeps: the card as last committed, and its slot's height
   // including the card's margin.
@@ -769,14 +771,22 @@ export function RecapCard() {
           style={{
             ...FIRST,
             height: hold.height,
-            clipPath: "inset(0 -3rem -3rem -3rem)",
+            // A dismissed card also hangs over Generate Recap below.
+            clipPath: hold.dismissed
+              ? "inset(0 -3rem -50vh -3rem)"
+              : "inset(0 -3rem -3rem -3rem)",
           }}
         >
           {hold.ghost ? (
             <div
               ref={ghostRef}
               inert
-              className="pointer-events-none absolute inset-x-0 bottom-0"
+              className={cn(
+                "pointer-events-none absolute inset-x-0",
+                // Where the card was: over Generate Recap for a dismissal,
+                // else against the slot's bottom as it gives space back.
+                hold.dismissed ? "top-0" : "bottom-0",
+              )}
             >
               <div className={CARD_CLASS}>
                 <FrameBody frame={hold.ghost} />

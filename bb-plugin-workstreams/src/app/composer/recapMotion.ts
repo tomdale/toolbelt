@@ -13,7 +13,6 @@
 
 const EXIT_MS = 420;
 const ENTER_MS = 360;
-const COLLAPSE_MS = 420;
 const RESIZE_MS = 380;
 const CROSSFADE_MS = 300;
 const REDUCED_MS = 150;
@@ -182,19 +181,6 @@ export function crossfadeIn(body: HTMLElement) {
 }
 
 /**
- * Eases the slot's height to zero, for a dismissal: the user asked for the
- * space back, so the thread may settle into it, just not all at once.
- */
-export function collapseSlot(slot: HTMLElement, from: number) {
-  slot.style.height = "0px";
-  if (reducedMotion()) return { finished: Promise.resolve(), cancel() {} };
-  return run(slot, [{ height: `${from}px` }, { height: "0px" }], {
-    duration: COLLAPSE_MS,
-    easing: EASE_IN_OUT,
-  });
-}
-
-/**
  * The gap the stack's grid places beside the slot. It outlasts the slot's
  * height (a zero-height grid item still has gaps), so it is part of the
  * space held.
@@ -216,6 +202,18 @@ function gridGap(slot: HTMLElement): number {
     return count;
   };
   return items(grid) > 1 ? Number.parseFloat(style.rowGap) || 0 : 0;
+}
+
+/**
+ * Shortens a hold's `slot` by what `below` adds to the stack (its height and
+ * the grid gap between them), so the stack's total height doesn't change
+ * when `below` appears in the same commit as the slot. For Generate Recap
+ * taking a dismissed card's place.
+ */
+export function makeRoomBelow(slot: HTMLElement, below: HTMLElement) {
+  const height = slot.getBoundingClientRect().height;
+  const taken = below.getBoundingClientRect().height + gridGap(slot);
+  slot.style.height = `${Math.max(0, height - taken)}px`;
 }
 
 export type HeldSpace = {

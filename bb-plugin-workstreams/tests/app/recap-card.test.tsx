@@ -206,21 +206,29 @@ it("resizes the generating card into the recap rather than replacing it", async 
   );
 });
 
-it("offers Generate Recap after the recap is dismissed", async () => {
+it("keeps the dismissed card's space while Generate Recap fades in below", async () => {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function (this: HTMLElement) {
-      return {
-        height: this.classList.contains("flow-root") ? 120 : 0,
-      } as DOMRect;
+      const height = this.classList.contains("flow-root")
+        ? 120
+        : this.classList.contains("ws-fade-in")
+          ? 40
+          : 0;
+      return { height } as DOMRect;
     },
   );
   const slot = await mount({});
   await slot.findByRole("region", { name: "Latest recap" });
-  // The dismissed card eases out in its slot while the button fades in below.
+  // The dismissed card eases out in its slot while the button fades in
+  // below, and the slot gives the button its share of the space at once.
   let together = false;
+  const heights: string[] = [];
   const observer = new MutationObserver(() => {
-    const held = slot.container.querySelector('[aria-hidden="true"].flow-root');
+    const held = slot.container.querySelector<HTMLElement>(
+      '[aria-hidden="true"].flow-root',
+    );
     const fading = slot.container.querySelector(".ws-fade-in");
+    if (held) heights.push(held.style.height);
     if (
       held &&
       fading &&
@@ -237,6 +245,8 @@ it("offers Generate Recap after the recap is dismissed", async () => {
   const button = await slot.findByRole("button", { name: "Generate Recap" });
   observer.disconnect();
   expect(together).toBe(true);
+  expect(heights).toContain("80px");
+  expect(heights).not.toContain("0px");
   fireEvent.click(button);
   await waitFor(() =>
     expect(
