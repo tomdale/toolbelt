@@ -37,6 +37,8 @@ class ServerStore {
   private mutationNeedsReconcile = false;
   private pendingReorders = new Map<number, ReorderChange>();
   private pendingPrefs = new Map<number, Partial<SnoozePrefs>>();
+  private latestReorderResponse = 0;
+  private latestPrefsResponse = 0;
 
   constructor(readonly rpc: Rpc) {}
 
@@ -79,15 +81,11 @@ class ServerStore {
         }
         if (!this.dirty && this.activeMutations === 0) {
           this.loaded = true;
-          this.publish({
-            ...emptyState(),
-            ...state,
-            order: this.overlayReorders(state.order),
-            snoozePrefs: this.overlayPrefs(state.snoozePrefs),
-          });
-          // Keep overlays through the publication above. The read is the
-          // authoritative acknowledgement boundary; clearing earlier lets a
-          // late write response or the next render erase optimistic state.
+          // This read is the acknowledgement boundary. Publish its complete
+          // result without overlays so failed writes roll back and server-side
+          // normalization is visible; responses keep overlays only while a
+          // newer write is still pending.
+          this.publish({ ...emptyState(), ...state, snoozePrefs: parseSnoozePrefs(state.snoozePrefs) });
           this.pendingReorders.clear();
           this.pendingPrefs.clear();
         }
@@ -127,22 +125,26 @@ class ServerStore {
     });
     try {
       const { order } = await this.rpc.call("reorder", change);
-      this.publish({
-        ...this.value,
-        order: this.overlayReorders(applyChange(order, change)),
-      });
+      if (mutationVersion >= this.latestReorderResponse) {
+        this.latestReorderResponse = mutationVersion;
+        this.publish({
+          ...this.value,
+          order: this.overlayReorders(order),
+        });
+      }
     } catch (cause) {
+      this.pendingReorders.delete(mutationVersion);
       this.mutationNeedsReconcile = true;
       throw cause;
     } finally {
-      // The overlay is cleared only by the authoritative reconciliation read.
       this.endMutation();
     }
   };
 
-  private overlayReorders(order: ManualOrder): ManualOrder {
+  private overlayReorders(order: ManualOrder, afterVersion = 0): ManualOrder {
     let next = order;
-    for (const change of this.pendingReorders.values()) next = applyChange(next, change);
+    for (const [version, change] of this.pendingReorders)
+      if (version > afterVersion) next = applyChange(next, change);
     return next;
   }
 
@@ -189,19 +191,21 @@ class ServerStore {
     });
     try {
       const { prefs } = await this.rpc.call("setSnoozePrefs", { patch });
-      let merged = { ...prefs, ...this.pendingPrefs.get(mutationVersion) };
-      for (const [version, pending] of this.pendingPrefs)
-        if (version !== mutationVersion) merged = { ...merged, ...pending };
-      this.publish({ ...this.value, snoozePrefs: parseSnoozePrefs(merged) });
+      if (mutationVersion >= this.latestPrefsResponse) {
+        this.latestPrefsResponse = mutationVersion;
+        let merged = prefs;
+        for (const pending of this.pendingPrefs.values())
+          merged = { ...merged, ...pending };
+        this.publish({ ...this.value, snoozePrefs: parseSnoozePrefs(merged) });
+      }
     } catch (cause) {
+      this.pendingPrefs.delete(mutationVersion);
       this.mutationNeedsReconcile = true;
       throw cause;
     } finally {
-      // The overlay is cleared only by the authoritative reconciliation read.
       this.endMutation();
     }
   };
-
 
 }
 
