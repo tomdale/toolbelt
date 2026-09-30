@@ -126,39 +126,37 @@ function mount({
 }
 
 describe("shared server state", () => {
-  it("does not let an in-flight read clobber optimistic mutations", async () => {
-    const first = deferred<ServerState>();
-    const second = deferred<ServerState>();
-    const read = vi.fn(() =>
-      read.mock.calls.length === 1 ? first.promise : second.promise,
-    );
+  it("keeps optimistic state until a deferred write is reconciled", async () => {
+    const read = vi.fn(async () => state(1));
     const reordered = deferred<{ order: ServerState["order"] }>();
-    const { consumers, assertRevision } = mount({
+    const { consumers } = mount({
       read,
       reorder: vi.fn(() => reordered.promise),
     });
-    const refresh = consumers.get(0)!.refresh();
-    act(() => {
-      void consumers.get(0)!.reorder({
-        kind: "threads",
-        groupId: "a",
-        ids: ["t1"],
-      });
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    const refreshReads = [deferred<ServerState>(), deferred<ServerState>()];
+    read.mockImplementation(() =>
+      refreshReads[read.mock.calls.length - 2]!.promise,
+    );
+    const pending = consumers.get(0)!.reorder({
+      kind: "threads",
+      groupId: "a",
+      ids: ["t1"],
     });
     expect(consumers.get(1)!.server.order.threads.a).toEqual(["t1"]);
     await act(async () => {
-      first.resolve(state(1));
+      refreshReads[0]!.resolve(state(2));
       await Promise.resolve();
     });
     expect(consumers.get(1)!.server.order.threads.a).toEqual(["t1"]);
     await act(async () => {
-      second.resolve(state(2));
-      reordered.resolve({ order: { workstreams: [], threads: { a: ["t1"] } } });
-      await refresh;
+      refreshReads[1]!.resolve(state(3));
+      await Promise.resolve();
     });
-    await assertRevision(2);
     expect(consumers.get(1)!.server.order.threads.a).toEqual(["t1"]);
-    expect(read).toHaveBeenCalledTimes(2);
+    reordered.resolve({ order: { workstreams: [], threads: { a: ["t1"] } } });
+    await pending;
+    expect(consumers.get(1)!.server.order.threads.a).toEqual(["t1"]);
   });
 
   it("registers one app-wide realtime bridge", async () => {
