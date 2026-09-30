@@ -115,8 +115,8 @@ function LedgerList({
             key={index}
             className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${LEDGER_CLASS} ${
               done
-                ? "text-sky-900/45 dark:text-sky-200/35 [&_p]:line-through [&_p]:decoration-sky-900/25 [&_p]:decoration-1 dark:[&_p]:decoration-sky-200/25"
-                : "text-sky-900/70 dark:text-sky-200/65"
+                ? "text-slate-500/70 dark:text-slate-400/55 [&_p]:line-through [&_p]:decoration-slate-500/40 [&_p]:decoration-1 dark:[&_p]:decoration-slate-400/35"
+                : "text-slate-600 dark:text-slate-300/80"
             }`}
           >
             {done ? <DoneMark /> : <OpenMark />}
@@ -168,7 +168,7 @@ function RecapSummary({
         <div
           role="heading"
           aria-level={2}
-          className="pr-24 font-medium tracking-[-0.006em] text-sky-950 dark:text-sky-50"
+          className="pr-24 font-medium tracking-[-0.006em] text-sky-700 dark:text-sky-300"
         >
           <RecapText
             text={ledger.goal}
