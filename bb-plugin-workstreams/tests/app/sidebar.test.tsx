@@ -723,6 +723,26 @@ describe("row hover buttons", () => {
     slot.lifecycle.unmount();
   });
 
+  it("puts archive, snooze, and its chevron left of the age", async () => {
+    const slot = await mount(undefined, { settings: { showRecent: false } });
+    const row = await rowOf(slot);
+    const buttons = within(row)
+      .getAllByRole("button")
+      .map((b) => b.getAttribute("aria-label"));
+    expect(buttons).toEqual([
+      "Archive",
+      expect.stringMatching(/^Snooze until/),
+      "More snooze options",
+    ]);
+    // The age is the row's last element and stays out of the hover group.
+    const age = row.lastElementChild!;
+    expect(age.textContent).toBe("now");
+    expect(
+      age.contains(within(row).getByRole("button", { name: "Archive" })),
+    ).toBe(false);
+    slot.lifecycle.unmount();
+  });
+
   it("names the snooze, chevron, and archive buttons in tooltips", async () => {
     const slot = await mount(undefined, { settings: { showRecent: false } });
     const row = await rowOf(slot);
