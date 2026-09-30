@@ -18,7 +18,7 @@ const LABEL_CLASS =
 const BODY_CLASS =
   "text-[clamp(0.625rem,calc(0.4375rem+0.9375cqi),0.8125rem)] leading-[1.5] [text-wrap:pretty]";
 const GOAL_CLASS =
-  "text-[clamp(0.625rem,calc(0.375rem+1.25cqi),0.875rem)] leading-[1.43] [text-wrap:wrap]";
+  "text-[clamp(0.75rem,calc(0.5rem+1.5cqi),1rem)] leading-[1.4] [text-wrap:wrap]";
 
 /**
  * One recap line through BB's markdown, so inline code, emphasis, and links
@@ -62,12 +62,16 @@ function LedgerList({ items, label, done = false }: { items: string[]; label: st
   if (items.length === 0) return null;
   return (
     <section>
-      <h3 className={LABEL_CLASS}>{label}</h3>
+      <h3 className="sr-only">{label}</h3>
       <ul className="space-y-1">
         {items.map((item, index) => (
           <li
             key={index}
-            className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${BODY_CLASS} ${done ? "opacity-70" : ""}`}
+            className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${BODY_CLASS} ${
+              done
+                ? "opacity-60 [&_p]:line-through [&_p]:decoration-current/40"
+                : "text-sky-950 dark:text-sky-50"
+            }`}
           >
             {done ? <DoneMark /> : <OpenMark />}
             <RecapText text={item} />
@@ -128,7 +132,7 @@ function RecapSummary({
         ) : null}
         {ledger.latest.length > 0 ? (
           <section>
-            <h3 className={LABEL_CLASS}>Latest</h3>
+            <h3 className="sr-only">Latest</h3>
             {ledger.latest.length === 1 ? (
               <RecapText text={ledger.latest[0]!} className="text-sky-950/90 dark:text-sky-100/90" />
             ) : (
@@ -148,7 +152,7 @@ function RecapSummary({
         ) : null}
         </div>
         {hasLedger ? (
-          <div className="space-y-2.5 border-sky-900/10 @lg/recap:border-l @lg/recap:pl-6 dark:border-sky-200/10">
+          <div className="space-y-1 border-sky-900/10 @lg/recap:border-l @lg/recap:pl-6 dark:border-sky-200/10">
             <LedgerList items={ledger.open} label="Open" />
             <LedgerList items={ledger.done} label="Done" done />
           </div>
