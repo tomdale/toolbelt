@@ -240,7 +240,7 @@ export default async function plugin(bb: BbPluginApi) {
   // A thread the native composer just created from a previewed prompt is
   // filed where the preview said: via the banner's submit data, or, for a
   // plain Enter, by matching the prompt. The hook itself always proceeds.
-  bb.experimental_hooks.on("message.dispatch", (ctx) => {
+  bb.experimental_hooks.on("message.dispatch", async (ctx) => {
     // A thread's first message has an origin; follow-ups, steers, and retries
     // don't. Queued re-attempts of a first message still count.
     const fresh =
@@ -250,6 +250,10 @@ export default async function plugin(bb: BbPluginApi) {
       !ctx.parentThreadId &&
       Date.now() - ctx.thread.createdAt < 10 * 60_000;
     if (fresh) {
+      const metadata = await bb.sdk.threads.getPluginMetadata({
+        threadId: ctx.thread.id,
+      });
+      if (metadata.unassignedByRouter === true) return { action: "proceed" };
       const data =
         ctx.experimental_submission?.pluginId === bb.pluginId
           ? (ctx.experimental_submission.data as { routeId?: string } | null)
@@ -296,11 +300,7 @@ export default async function plugin(bb: BbPluginApi) {
           sectionId: picked.sectionId,
           workstream: picked.name,
           title: "",
-          placement: {
-            projectId: "",
-            environment: { type: "project-default" },
-            label: "",
-          },
+          placement: null,
         };
   };
   let evolveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -356,12 +356,16 @@ export default async function plugin(bb: BbPluginApi) {
       notify();
       reconcileSoon();
     });
-  bb.events.on("thread.created", ({ thread }) => {
-    const metadata = (thread as unknown as { pluginMetadata?: unknown }).pluginMetadata;
-    const unassigned =
-      metadata && typeof metadata === "object" &&
-      (metadata as { unassignedByRouter?: unknown }).unassignedByRouter === true;
-    if (thread.visibility !== "hidden" && thread.archivedAt === null && !unassigned)
+  bb.events.on("thread.created", async ({ thread }) => {
+    const metadata = await bb.sdk.threads.getPluginMetadata({
+      threadId: thread.id,
+    });
+    const unassigned = metadata.unassignedByRouter === true;
+    if (
+      thread.visibility !== "hidden" &&
+      thread.archivedAt === null &&
+      !unassigned
+    )
       service.seeThread(
         thread.id,
         thread.sectionId ?? null,
@@ -437,27 +441,19 @@ export default async function plugin(bb: BbPluginApi) {
     }),
     routeExecute: ({ decisionId, prompt, choice, execution, intent }) =>
       userFacing(async () => {
-        const remembered = router.recall({ id: decisionId, prompt });
-        if (!remembered)
-          throw new UserError("That preview expired; route it again.");
-        let decision = choose(remembered, choice);
-        if (decision.outcome === "new-thread" && !decision.placement?.projectId && intent?.destination?.kind === "none")
-          throw new UserError("Choose a project before creating an unassigned thread.");
-        // `execute` claims the decision synchronously before any side effect.
-        // Keep it in the cache until then so its intent snapshot is checked.
-        // An unsure choice of workstream still needs a real placement; the
-        // routing call behind the choice still explains it.
-        if (decision.outcome === "new-thread" && !decision.placement?.projectId) {
-          const originalId = decision.id;
-          decision = {
-            ...(await router.route(`@section:${decision.sectionId} ${prompt}`)),
-            traceId: decision.traceId,
-          };
-          router.forget(originalId);
-        }
+        const claim = router.claim({ id: decisionId, prompt, intent });
+        let decision = choose(claim.decision, choice);
+        if (
+          claim.decision.outcome === "unsure" &&
+          decision.outcome === "new-thread" &&
+          decision.sectionId
+        )
+          decision = await router.resolveCandidate(claim, decision.sectionId);
         return router.execute(decision, prompt, "router", {
-          execution: (execution ?? undefined) as never,
-          intent: intent ?? null,
+          execution: (execution ?? undefined) as NonNullable<
+            Parameters<Router["execute"]>[3]
+          >["execution"],
+          claim,
         });
       }),
     state: async () => ({
