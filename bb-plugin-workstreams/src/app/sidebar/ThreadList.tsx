@@ -273,9 +273,10 @@ export function WorkstreamsThreadList({
     handle?: DragHandle,
     showStatusSlot = true,
     depth = isOverlay(placement) ? 0 : row.depth,
+    key = row.thread.id,
   ) => (
     <RowMenu
-      key={row.thread.id}
+      key={key}
       thread={row.thread}
       isRoot={isRoot(row, placement)}
       workstreamId={row.workstreamId}
@@ -332,6 +333,8 @@ export function WorkstreamsThreadList({
             undefined,
             marks,
             child.depth - row.depth,
+            // A child can also be a row of its own in the same band.
+            `${row.thread.id}/${child.thread.id}`,
           ),
         )),
   ];
