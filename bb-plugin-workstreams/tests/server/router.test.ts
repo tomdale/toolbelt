@@ -12,6 +12,7 @@ afterEach(async () => {
 type Decision = {
   id: string;
   outcome: string;
+  alternative?: unknown;
   sectionId?: string | null;
   threadId?: string;
   placement?: { projectId: string; environment: unknown; label: string };
@@ -479,6 +480,75 @@ it("honors an explicit project override outside the workstream's project map", a
       placement: { projectId: pickedProjectId },
     });
   }
+});
+
+describe("New work continuation suggestions", () => {
+  const continueA1 = {
+    outcome: "continue",
+    threadId: "a1",
+    confidence: "high",
+    reason: "Same task",
+  };
+  type Suggested = Decision & { alternative?: Decision };
+  const suggest = (w: World, prompt: string, intent: object = {}) =>
+    w.harness.behavior.callRpc("route", {
+      prompt,
+      intent,
+      offerNewThread: true,
+    }) as Promise<Suggested>;
+
+  it("previews the new thread a continuation would otherwise start", async () => {
+    const { w, alpha } = await setup(continueA1);
+    const prompt = "Also handle CRLF line endings in that fix";
+    const decision = await suggest(w, prompt);
+    expect(decision).toMatchObject({
+      outcome: "continue",
+      threadId: "a1",
+      alternative: {
+        outcome: "new-thread",
+        sectionId: alpha.id,
+        placement: { projectId: "proj_1" },
+      },
+    });
+    await w.harness.behavior.callRpc("routeExecute", {
+      decisionId: decision.alternative!.id,
+      prompt,
+      intent: {},
+    });
+    expect(w.sent).toHaveLength(0);
+    expect(w.spawned[0]).toMatchObject({
+      sectionId: alpha.id,
+      projectId: "proj_1",
+    });
+    // One routing call serves both choices.
+    expect(routePrompts(w)).toHaveLength(1);
+  });
+
+  it("places the alternative to an unfiled thread in that thread's project", async () => {
+    const { w } = await setup({ ...continueA1, threadId: "b1" });
+    w.addThread("b1", { projectId: "proj_other", title: "Loose end" });
+    await w.harness.behavior.callRpc("refresh", null);
+    const decision = await suggest(w, "Keep going on the loose end");
+    expect(decision.alternative).toMatchObject({
+      outcome: "new-thread",
+      sectionId: null,
+      placement: { projectId: "proj_other" },
+    });
+  });
+
+  it("offers an alternative only for inferred continuations the caller asked about", async () => {
+    const { w } = await setup(continueA1);
+    expect((await route(w, "Also handle CRLF")).alternative).toBeUndefined();
+    const mentioned = await suggest(w, "Follow up on @thread:a1");
+    expect(mentioned).toMatchObject({ outcome: "continue", threadId: "a1" });
+    expect(mentioned.alternative).toMatchObject({ outcome: "new-thread" });
+    const fixed = await suggest(w, "Also handle CRLF", {
+      action: "send-message",
+      destination: { kind: "thread", id: "a1" },
+    });
+    expect(fixed).toMatchObject({ outcome: "continue", threadId: "a1" });
+    expect(fixed.alternative).toBeUndefined();
+  });
 });
 
 describe("explicit New work intent", () => {

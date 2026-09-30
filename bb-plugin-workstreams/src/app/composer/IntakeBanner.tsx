@@ -2,7 +2,12 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useComposer, useSdk } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { useServerState } from "../useWorkstreams.ts";
-import type { Environment, Intake, IntakeState } from "./intake.ts";
+import {
+  suggestionAccepted,
+  type Environment,
+  type Intake,
+  type IntakeState,
+} from "./intake.ts";
 
 export function statusText(state: IntakeState): string {
   if (!state.text) return "";
@@ -16,10 +21,15 @@ export function statusText(state: IntakeState): string {
     !state.project.value
   )
     return "Pick a project";
-  if (state.decision)
-    return state.destination.source === "manual"
-      ? "Chosen manually"
-      : "Filled automatically";
+  if (state.decision) {
+    const status =
+      state.destination.source === "manual"
+        ? "Chosen manually"
+        : "Filled automatically";
+    return state.suggestion && !suggestionAccepted(state)
+      ? `${status}. Suggested: continue ${state.suggestion.continuation.threadTitle}`
+      : status;
+  }
   return "";
 }
 export function IntakeStatus({ intake }: { intake: Intake }) {
@@ -296,6 +306,11 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
   useEffect(() => {
     if (selectedThreadId) void intake.loadThread(sdk, selectedThreadId);
   }, [intake, sdk, selectedThreadId]);
+  // Loading the suggested thread early lets accepting it apply at once.
+  const suggestedThreadId = state.suggestion?.continuation.threadId ?? null;
+  useEffect(() => {
+    if (suggestedThreadId) void intake.loadThread(sdk, suggestedThreadId);
+  }, [intake, sdk, suggestedThreadId]);
   useEffect(() => {
     const selection = intake.selection();
     if (selection)
@@ -365,6 +380,24 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
   };
   const projectName = (id: string | null | undefined) =>
     state.projects.find((p) => p.id === id)?.name ?? id ?? "";
+  const suggestion = state.suggestion;
+  const accepted = suggestionAccepted(state);
+  const suggestionButton = useRef<HTMLButtonElement>(null);
+  // Accepting can switch the project, which remounts this banner and drops
+  // focus to the body. Focus that moved elsewhere stays where it is.
+  useEffect(() => {
+    const active = document.activeElement;
+    if (
+      intake.focused === "suggestion" &&
+      (!active || active === document.body)
+    )
+      suggestionButton.current?.focus();
+  }, [intake, suggestion]);
+  const suggestionLabel = !suggestion
+    ? ""
+    : accepted
+      ? "Start a new thread instead"
+      : `Continue ${suggestion.continuation.threadTitle} instead`;
   return (
     <div className="ws-intake-controls">
       <div className="ws-intake-row ws-intake-route-row">
@@ -466,6 +499,46 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
             onPick={pickDestination}
           />
         )}
+        {suggestion ? (
+          // Offers whichever of the two routes the draft isn't taking, in the
+          // same place, so accepting and declining never move the control.
+          <button
+            ref={suggestionButton}
+            key={suggestion.continuation.threadId}
+            type="button"
+            className="ws-intake-suggestion"
+            onFocus={() => {
+              intake.focused = "suggestion";
+            }}
+            onBlur={(event) => {
+              // No related target: the banner remounted or the window blurred.
+              if (event.relatedTarget) intake.focused = null;
+            }}
+            aria-label={suggestionLabel}
+            title={suggestionLabel}
+            onClick={() =>
+              accepted
+                ? intake.declineSuggestion()
+                : intake.acceptSuggestion(composer.selection)
+            }
+          >
+            <Icon
+              name={accepted ? "Plus" : "CornerDownRight"}
+              className="size-3.5 shrink-0"
+              aria-hidden
+            />
+            {accepted ? (
+              <span className="ws-intake-value">New thread</span>
+            ) : (
+              <>
+                <span className="ws-intake-type">Continue</span>
+                <span className="ws-intake-value">
+                  {suggestion.continuation.threadTitle}
+                </span>
+              </>
+            )}
+          </button>
+        ) : null}
       </div>
       <div className="ws-intake-row ws-intake-placement-row">
         {locked ? (
@@ -544,15 +617,8 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
           }
         />
       </div>
-      {state.redirectPending && state.decision?.outcome === "continue" ? (
-        <div className="ws-intake-redirect" role="group" aria-label="Suggested existing thread">
-          <span>Continue in {state.decision.threadTitle}?</span>
-          <button type="button" onClick={() => intake.acceptRedirect()}>Continue</button>
-          <button type="button" onClick={() => intake.dismissRedirect()}>New thread</button>
-        </div>
-      ) : null}
       <p className="ws-intake-status sr-only" aria-live="polite">
-        {state.redirectPending ? "Suggested existing thread" : statusText(state)}
+        {statusText(state)}
       </p>
       {state.error || state.selectionError || state.catalogError ? (
         <div

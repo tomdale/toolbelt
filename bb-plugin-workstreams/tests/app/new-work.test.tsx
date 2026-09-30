@@ -296,21 +296,27 @@ it("wrong-workstream override is used by route and execute after prompt edits", 
     intent: { destination: { kind: "workstream", id: "sec_b" } },
   });
 });
-it("continuation locks placement and hides ignored settings, then New thread restores them", async () => {
+it("an inferred continuation keeps Enter on the new thread, and its suggestion swaps both ways", async () => {
   const route = vi.fn().mockResolvedValue({
     ...base,
+    id: "d_continue",
     outcome: "continue",
     threadId: "thr_a",
     threadTitle: "Spacing fix",
     sectionId: "sec_a",
     workstream: "Alpha",
+    alternative: { ...decision, id: "d_new", title: "" },
   });
-  const { execute } = mount(route);
+  const { slot, execute } = mount(route);
   await type();
-  await waitFor(() =>
-    expect(screen.getByRole("group", { name: "Suggested existing thread" })).toBeTruthy(),
+  await ready();
+  expect(route).toHaveBeenCalledWith(
+    expect.objectContaining({ offerNewThread: true }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  expect(button().textContent).toBe("Create thread");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Continue Spacing fix instead" }),
+  );
   await ready();
   expect(button().textContent).toBe("Send message");
   expect(
@@ -320,20 +326,25 @@ it("continuation locks placement and hides ignored settings, then New thread res
   expect(
     screen.getByRole("button", { name: /^Project:/ }).textContent,
   ).toContain("sideshow");
-  route.mockResolvedValue(decision);
-  await choose("Action", "New thread");
-  await choose("Workstream", "Beta");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Start a new thread instead" }),
+  );
   await ready();
   expect(
     screen.getByTestId("bb-new-thread-composer").dataset
       .executionControlsVisibility,
   ).toBe("visible");
   expect(button().textContent).toBe("Create thread");
-  fireEvent.click(button());
+  expect(slot.inspection.composer.selections.at(-1)).toMatchObject({
+    projectId: "proj_a",
+  });
+  expect(route).toHaveBeenCalledTimes(1);
+  fireEvent.keyDown(input(), { key: "Enter" });
   await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
-  expect(execute.mock.calls[0]![0].intent).toEqual({
-    action: "new-thread",
-    destination: { kind: "workstream", id: "sec_b" },
+  expect(execute.mock.calls[0]![0]).toMatchObject({
+    decisionId: "d_new",
+    intent: {},
+    execution: { projectId: "proj_a" },
   });
 });
 it("same-project manual environment is used instead of stale host environment", async () => {

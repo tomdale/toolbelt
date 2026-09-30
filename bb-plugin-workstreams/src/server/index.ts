@@ -553,6 +553,7 @@ export default async function plugin(bb: BbPluginApi) {
       pickedProjectId,
       workstreamId,
       intent,
+      offerNewThread,
       fromDecisionId,
       draftKey,
     }) =>
@@ -562,6 +563,7 @@ export default async function plugin(bb: BbPluginApi) {
             pickedProjectId,
             workstreamId,
             intent,
+            offerNewThread,
             fromDecisionId,
           });
         cancelPreview(draftKey);
@@ -572,6 +574,7 @@ export default async function plugin(bb: BbPluginApi) {
             pickedProjectId,
             workstreamId,
             intent,
+            offerNewThread,
             fromDecisionId,
             signal: controller.signal,
           });

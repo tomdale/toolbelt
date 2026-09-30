@@ -23,6 +23,17 @@ const decision: RouteDecision = {
     label: "checkout",
   },
 };
+/** An inferred continuation with the new thread New work defaults to. */
+const continuation: RouteDecision = {
+  ...base,
+  id: "d_continue",
+  outcome: "continue",
+  threadId: "thr_a",
+  threadTitle: "Parser",
+  workstream: "Alpha",
+  sectionId: "sec_a",
+  alternative: { ...decision, id: "d_new", title: "" },
+};
 const unsure: RouteDecision = {
   ...base,
   outcome: "unsure",
@@ -69,21 +80,15 @@ it("fixes a wrong workstream and keeps only that override across prompt edits", 
   await vi.runAllTimersAsync();
   expect(intake.snapshot().destination.source).toBe("automatic");
 });
-it("switches existing thread to new thread and preserves explicitly selected action", async () => {
-  const route = vi.fn().mockResolvedValue({
-    ...base,
-    outcome: "continue",
-    threadId: "thr_a",
-    threadTitle: "Parser",
-    workstream: "Alpha",
-    sectionId: "sec_a",
-  });
+it("switches a chosen thread to a new thread and preserves the explicitly selected action", async () => {
+  const route = vi.fn().mockResolvedValue(unsure);
   const intake = new Intake(route, null, null);
   await ready(intake);
-  expect(intake.snapshot().redirectPending).toBe(true);
-  expect(intake.effectiveAction()).toBe("automatic");
-  intake.acceptRedirect();
+  route.mockResolvedValue({ ...continuation, alternative: undefined });
+  intake.selectDestination({ kind: "thread", id: "thr_a", title: "Parser" });
+  await vi.runAllTimersAsync();
   expect(intake.effectiveAction()).toBe("send-message");
+  expect(intake.snapshot().suggestion).toBeNull();
   intake.selectAction("new-thread");
   expect(intake.snapshot().destination.value).toEqual({
     kind: "workstream",
@@ -298,82 +303,131 @@ it("new workstream name is independently editable and revertible", async () => {
     source: "automatic",
   });
 });
-it("editing or clearing a proposed redirect invalidates its actions", async () => {
-  const route = vi.fn().mockResolvedValue({
-    ...base,
-    outcome: "continue",
-    threadId: "thr_a",
-    threadTitle: "Parser",
-    sectionId: "sec_a",
-    workstream: "Alpha",
-  });
+it("an inferred continuation is a suggestion beside a ready new thread", async () => {
+  const route = vi.fn().mockResolvedValue(continuation);
   const intake = new Intake(route, null, null);
   await ready(intake);
-  expect(intake.snapshot().redirectPending).toBe(true);
-  intake.observe("A different request");
-  expect(intake.snapshot().redirectPending).toBe(false);
-  expect(intake.effectiveAction()).toBe("automatic");
-  intake.acceptRedirect();
-  expect(intake.snapshot().redirectPending).toBe(false);
+  expect(intake.snapshot().suggestion?.continuation.threadId).toBe("thr_a");
+  expect(intake.effectiveAction()).toBe("new-thread");
+  expect(intake.snapshot()).toMatchObject({
+    action: { value: "new-thread", source: "automatic" },
+    destination: {
+      value: { kind: "workstream", id: "sec_a", name: "Alpha" },
+      source: "automatic",
+    },
+    project: { value: "proj_a", source: "automatic" },
+  });
+  expect(intake.lockedThread()).toBeUndefined();
+  expect(intake.canSubmit()).toBe(true);
+  expect((await intake.forSubmit(prompt)).decision.id).toBe("d_new");
   intake.dispose();
 });
 
-it("dismissed redirects preserve an explicit fallback destination through rerouting", async () => {
-  const route = vi.fn().mockResolvedValue({
-    ...base,
-    outcome: "continue",
-    threadId: "thr_a",
-    threadTitle: "Parser",
-    sectionId: "sec_a",
-    workstream: "Alpha",
-  });
+it("accepting and declining a current suggestion swap decisions without routing again", async () => {
+  const route = vi.fn().mockResolvedValue(continuation);
   const intake = new Intake(route, null, null);
   await ready(intake);
-  intake.dismissRedirect();
-  expect(intake.snapshot().destination).toEqual({
-    source: "manual",
-    value: { kind: "workstream", id: "sec_a", name: "Alpha" },
+  intake.acceptSuggestion({
+    projectId: "proj_a",
+    providerId: "codex",
+    model: "gpt-5",
   });
-  expect(intake.intent()).toEqual({
-    action: "new-thread",
-    destination: { kind: "workstream", id: "sec_a" },
+  expect(intake.effectiveAction()).toBe("send-message");
+  expect(intake.snapshot().decision?.id).toBe("d_continue");
+  expect(intake.canSubmit()).toBe(false);
+  intake.declineSuggestion();
+  expect(intake.effectiveAction()).toBe("new-thread");
+  expect(intake.snapshot()).toMatchObject({
+    action: { source: "automatic" },
+    destination: { source: "automatic" },
+    decision: { id: "d_new" },
   });
+  expect(route).toHaveBeenCalledTimes(1);
+  // The pickers the thread's settings replaced come back with the placement.
+  const restored = intake.selection()!;
+  expect(restored).toMatchObject({
+    providerId: "codex",
+    model: "gpt-5",
+    projectId: "proj_a",
+  });
+  intake.reconcileSelection(restored, restored);
+  expect(intake.selection()).toBeNull();
+  expect(intake.canSubmit()).toBe(true);
+  expect((await intake.forSubmit(prompt)).intent).toEqual({});
   intake.dispose();
 });
 
-it("a pending redirect gates submit until it is accepted", async () => {
+it("the New thread action and field reverts decline an accepted suggestion", async () => {
+  const route = vi.fn().mockResolvedValue(continuation);
+  const intake = new Intake(route, null, null);
+  await ready(intake);
+  intake.acceptSuggestion();
+  intake.selectAction("new-thread");
+  expect(intake.snapshot().action).toEqual({
+    value: "new-thread",
+    source: "automatic",
+  });
+  intake.acceptSuggestion();
+  intake.revertField("destination");
+  expect(intake.effectiveAction()).toBe("new-thread");
+  intake.acceptSuggestion();
+  intake.revertField("action");
+  expect(intake.snapshot().decision?.id).toBe("d_new");
+  expect(route).toHaveBeenCalledTimes(1);
+  intake.dispose();
+});
+
+it("a suggestion stays up while the draft reroutes, and acting on it then routes again", async () => {
+  const route = vi.fn().mockResolvedValue(continuation);
+  const intake = new Intake(route, null, null);
+  await ready(intake);
+  intake.observe("Fix the parser for tabs");
+  expect(intake.snapshot().loading).toBe(true);
+  expect(intake.snapshot().suggestion?.continuation.threadId).toBe("thr_a");
+  route.mockResolvedValue({ ...continuation, alternative: undefined });
+  intake.acceptSuggestion();
+  await vi.runAllTimersAsync();
+  expect(route).toHaveBeenLastCalledWith({
+    prompt: "Fix the parser for tabs",
+    intent: {
+      action: "send-message",
+      destination: { kind: "thread", id: "thr_a" },
+    },
+  });
+  expect(intake.snapshot().suggestion).toMatchObject({ newThread: null });
+  route.mockResolvedValue(continuation);
+  intake.declineSuggestion();
+  expect(intake.effectiveAction()).toBe("new-thread");
+  await vi.runAllTimersAsync();
+  expect(route).toHaveBeenLastCalledWith({
+    prompt: "Fix the parser for tabs",
+    intent: {},
+  });
+  expect(intake.snapshot().decision?.id).toBe("d_new");
+  route.mockResolvedValue(decision);
+  intake.observe("Something unrelated");
+  await vi.runAllTimersAsync();
+  expect(intake.snapshot().suggestion).toBeNull();
+  intake.dispose();
+});
+
+it("clearing the draft removes the suggestion", async () => {
   const intake = new Intake(
-    vi.fn().mockResolvedValue({
-      ...base,
-      outcome: "continue",
-      threadId: "thr_a",
-      threadTitle: "Parser",
-      sectionId: "sec_a",
-      workstream: "Alpha",
-    }),
+    vi.fn().mockResolvedValue(continuation),
     null,
     null,
   );
   await ready(intake);
-  expect(intake.snapshot().redirectPending).toBe(true);
-  expect(intake.effectiveAction()).toBe("automatic");
-  expect(intake.lockedThread()).toBeUndefined();
-  expect(intake.canSubmit()).toBe(false);
-  intake.acceptRedirect();
-  expect(intake.snapshot().redirectPending).toBe(false);
+  intake.observe("");
+  expect(intake.snapshot().suggestion).toBeNull();
+  intake.acceptSuggestion();
+  expect(intake.effectiveAction()).toBe("new-thread");
   intake.dispose();
 });
 
-it("dismissed redirects restore manual placement and create-thread intent", async () => {
+it("manual placement survives accepting and declining a suggestion", async () => {
   const intake = new Intake(
-    vi.fn().mockResolvedValue({
-      ...base,
-      outcome: "continue",
-      threadId: "thr_a",
-      threadTitle: "Parser",
-      sectionId: "sec_a",
-      workstream: "Alpha",
-    }),
+    vi.fn().mockResolvedValue(continuation),
     null,
     null,
   );
@@ -384,8 +438,9 @@ it("dismissed redirects restore manual placement and create-thread intent", asyn
   };
   intake.selectEnvironment(environment);
   await ready(intake);
-  expect(intake.effectiveAction()).toBe("automatic");
-  intake.dismissRedirect();
+  expect(intake.effectiveAction()).toBe("new-thread");
+  intake.acceptSuggestion();
+  intake.declineSuggestion();
   expect(intake.effectiveAction()).toBe("new-thread");
   expect(intake.snapshot().environment).toEqual({
     source: "manual",
@@ -635,8 +690,8 @@ it("identical native settings still acknowledge the current thread target indepe
   await intake.loadThread(sdk, "A");
   const first = intake.selection()!;
   intake.reconcileSelection(first, first);
-  expect(intake.snapshot().redirectPending).toBe(true);
-  intake.acceptRedirect();
+  expect(intake.snapshot().suggestion?.continuation.threadId).toBe("A");
+  intake.acceptSuggestion();
   const accepted = intake.selection()!;
   intake.reconcileSelection(accepted, accepted);
   expect(intake.canSubmit()).toBe(true);

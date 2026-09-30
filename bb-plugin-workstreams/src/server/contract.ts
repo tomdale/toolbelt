@@ -275,6 +275,14 @@ export const routeIntentSchema = z.object({
     .optional(),
   workstreamName: z.string().optional(),
 });
+const newThreadRouteSchema = z.object({
+  ...routeBase,
+  outcome: z.literal("new-thread"),
+  sectionId: z.string().nullable(),
+  workstream: z.string().nullable(),
+  title: z.string(),
+  placement: placementSchema2.nullable(),
+});
 export const routeSchema = z.discriminatedUnion("outcome", [
   z.object({
     ...routeBase,
@@ -283,15 +291,9 @@ export const routeSchema = z.discriminatedUnion("outcome", [
     threadTitle: z.string(),
     workstream: z.string().nullable(),
     sectionId: z.string().nullable(),
+    alternative: newThreadRouteSchema.optional(),
   }),
-  z.object({
-    ...routeBase,
-    outcome: z.literal("new-thread"),
-    sectionId: z.string().nullable(),
-    workstream: z.string().nullable(),
-    title: z.string(),
-    placement: placementSchema2.nullable(),
-  }),
+  newThreadRouteSchema,
   z.object({
     ...routeBase,
     outcome: z.literal("new-workstream"),
@@ -328,6 +330,11 @@ export const rpcContract = defineRpcContract({
       pickedProjectId: z.string().nullable().optional(),
       workstreamId: z.string().nullable().optional(),
       intent: routeIntentSchema.nullable().optional(),
+      /**
+       * When the route continues an inferred thread, also preview the new
+       * thread the work would start instead, as its `alternative`.
+       */
+      offerNewThread: z.boolean().optional(),
       /**
        * The unsure decision whose candidate `workstreamId` is: its routing
        * call keeps explaining the result (SPEC §11.6).

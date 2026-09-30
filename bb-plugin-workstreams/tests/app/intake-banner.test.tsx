@@ -8,7 +8,10 @@ import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { Intake, IntakeContext } from "../../src/app/composer/intake.ts";
 import { IntakeStatus } from "../../src/app/composer/IntakeBanner.tsx";
 import type { PluginBrowserBbSdk } from "@get-bb/plugin-sdk/app";
-import type { RouteDecision } from "../../src/server/router.ts";
+import type {
+  NewThreadDecision,
+  RouteDecision,
+} from "../../src/server/router.ts";
 import { emptyState } from "./fixtures.ts";
 afterEach(cleanup);
 const base = {
@@ -18,7 +21,7 @@ const base = {
   subject: null,
   traceId: null,
 };
-const decision: RouteDecision = {
+const decision: NewThreadDecision = {
   ...base,
   outcome: "new-thread",
   sectionId: "sec_a",
@@ -31,6 +34,16 @@ const decision: RouteDecision = {
   },
 };
 const PROMPT = "Fix the parser so it handles tabs";
+const continuation: RouteDecision = {
+  ...base,
+  id: "d_continue",
+  outcome: "continue",
+  threadId: "thr_p",
+  threadTitle: "Parser tabs",
+  sectionId: "sec_a",
+  workstream: "Alpha",
+  alternative: { ...decision, id: "d_new", title: "" },
+};
 async function mount(
   first: RouteDecision = decision,
   text = PROMPT,
@@ -171,24 +184,31 @@ it("wrong-workstream correction persists across edits and destination revert has
   );
   intake.dispose();
 });
-it("thread menu shows accurate locked placement then restores editable creation fields", async () => {
+it("an inferred continuation is an inline suggestion that swaps with the new thread in place", async () => {
   const { slot, intake, route } = await mount();
   await waitFor(() => expect(intake.canSubmit()).toBe(true), { timeout: 2000 });
-  route.mockResolvedValue({
-    ...base,
-    outcome: "continue",
-    threadId: "thr_p",
-    threadTitle: "Parser tabs",
-    sectionId: "sec_a",
-    workstream: "Alpha",
-  });
+  route.mockResolvedValue(continuation);
   await slot.behavior.setComposerText("Continue with parser tabs");
-  await waitFor(() =>
-    expect(slot.getByRole("group", { name: "Suggested existing thread" })).toBeTruthy(),
+  const suggest = await slot.findByRole(
+    "button",
+    { name: "Continue Parser tabs instead" },
+    { timeout: 2000 },
   );
-  expect(slot.getByRole("group", { name: "Suggested existing thread" }).textContent).toContain("Parser tabs");
-  fireEvent.click(slot.getByRole("button", { name: "Continue" }));
-  await waitFor(() => expect(intake.snapshot().loading).toBe(false));
+  // The suggestion sits in the route row, so it adds no row of its own.
+  expect(suggest.closest(".ws-intake-route-row")).toBeTruthy();
+  await waitFor(() => expect(intake.canSubmit()).toBe(true));
+  expect(slot.getByRole("button", { name: /^Action:/ }).textContent).toContain(
+    "New thread",
+  );
+  expect(
+    slot.getByRole("button", { name: /^Workstream:/ }).textContent,
+  ).toContain("Alpha");
+  expect(slot.container.querySelector(".ws-intake-status")?.textContent).toBe(
+    "Filled automatically. Suggested: continue Parser tabs",
+  );
+  const routed = route.mock.calls.length;
+  fireEvent.click(suggest);
+  await waitFor(() => expect(intake.canSubmit()).toBe(true));
   expect(slot.getByRole("button", { name: /^Project:/ }).textContent).toContain(
     "dotfiles",
   );
@@ -200,19 +220,43 @@ it("thread menu shows accurate locked placement then restores editable creation 
       .getByRole("button", { name: /^Project:/ })
       .getAttribute("aria-haspopup"),
   ).toBeNull();
-  route.mockResolvedValue(decision);
-  await choose(slot, "Action", "New thread");
-  await choose(slot, "Workstream", "Beta");
+  fireEvent.click(
+    slot.getByRole("button", { name: "Start a new thread instead" }),
+  );
   await waitFor(() => expect(intake.canSubmit()).toBe(true));
-  expect(intake.intent()).toMatchObject({
-    action: "new-thread",
-    destination: { kind: "workstream", id: "sec_b" },
-  });
   expect(
     slot
       .getByRole("button", { name: /^Project:/ })
       .getAttribute("aria-haspopup"),
   ).toBe("menu");
+  expect(intake.snapshot().decision?.id).toBe("d_new");
+  expect(route.mock.calls.length).toBe(routed);
+  fireEvent.click(
+    slot.getByRole("button", { name: "Continue Parser tabs instead" }),
+  );
+  route.mockResolvedValue(decision);
+  await choose(slot, "Action", "New thread");
+  expect(intake.effectiveAction()).toBe("new-thread");
+  await choose(slot, "Workstream", "Beta");
+  await waitFor(() => expect(intake.canSubmit()).toBe(true));
+  expect(intake.intent()).toEqual({
+    destination: { kind: "workstream", id: "sec_b" },
+  });
+  intake.dispose();
+});
+it("the suggestion keeps keyboard focus across the remount accepting it causes", async () => {
+  const { slot, intake, remount } = await mount(continuation);
+  const suggest = await slot.findByRole(
+    "button",
+    { name: "Continue Parser tabs instead" },
+    { timeout: 2000 },
+  );
+  suggest.focus();
+  fireEvent.click(suggest);
+  remount();
+  expect(document.activeElement).toBe(
+    slot.getByRole("button", { name: "Start a new thread instead" }),
+  );
   intake.dispose();
 });
 it("manual placement, focus and catalog survive host banner remount; Delete reverts one field", async () => {
@@ -351,18 +395,20 @@ it("opens the action menu on its first item so arrow keys can select an action",
 });
 it("a routed thread outside the initial catalog gets accurate placement and execution settings", async () => {
   const { slot, intake } = await mount({
-    ...base,
-    outcome: "continue",
+    ...continuation,
     threadId: "thr_outside",
     threadTitle: "Outside catalog",
     sectionId: null,
     workstream: null,
   });
   // mount's SDK get fixture is the authoritative target rather than a list guess.
-  await waitFor(() =>
-    expect(slot.getByRole("group", { name: "Suggested existing thread" })).toBeTruthy(),
+  fireEvent.click(
+    await slot.findByRole(
+      "button",
+      { name: "Continue Outside catalog instead" },
+      { timeout: 2000 },
+    ),
   );
-  fireEvent.click(slot.getByRole("button", { name: "Continue" }));
   await waitFor(() =>
     expect(
       slot.inspection.composer.selections.some(
@@ -412,18 +458,32 @@ it.skipIf(!process.env.NEW_WORK_CAPTURE_DIR)(
     await capture("manual", fixture.slot);
     fixture.intake.dispose();
     fixture.slot.lifecycle.unmount();
-    fixture = await mount({
-      ...base,
-      outcome: "continue",
-      threadId: "thr_p",
-      threadTitle: "Parser tabs",
-      sectionId: "sec_a",
-      workstream: "Alpha",
+    fixture = await mount(continuation);
+    await waitFor(() => expect(fixture.intake.canSubmit()).toBe(true), {
+      timeout: 2000,
     });
+    await capture("suggestion", fixture.slot);
+    fireEvent.click(
+      fixture.slot.getByRole("button", {
+        name: "Continue Parser tabs instead",
+      }),
+    );
     await waitFor(() => expect(fixture.intake.canSubmit()).toBe(true), {
       timeout: 2000,
     });
     await capture("thread", fixture.slot);
+    fixture.intake.dispose();
+    fixture.slot.lifecycle.unmount();
+    fixture = await mount({
+      ...continuation,
+      threadTitle:
+        "Understanding workbench UI integration and the long tail of its follow-ups",
+      alternative: { ...decision, id: "d_new", workstream: "Workforest" },
+    });
+    await waitFor(() => expect(fixture.intake.canSubmit()).toBe(true), {
+      timeout: 2000,
+    });
+    await capture("long-suggestion", fixture.slot);
     fixture.intake.dispose();
     fixture.slot.lifecycle.unmount();
     fixture = await mount({

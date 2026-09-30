@@ -742,24 +742,46 @@
   font-size: 12.5px;
   color: var(--muted-foreground);
 }
-.ws-intake-redirect {
-  display: flex;
+/* The other route for the draft: a quieter, dashed chip at the row's end.
+   A zero basis makes it take only the space the chosen route leaves, so its
+   title truncates before the destination does. */
+.ws-intake-suggestion {
+  display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 12.5px;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 7rem;
+  max-width: max-content;
+  height: 30px;
+  margin-left: auto;
+  padding: 0 9px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 13px;
   color: var(--muted-foreground);
-}
-.ws-intake-redirect button {
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  white-space: nowrap;
   cursor: pointer;
+  animation: ws-intake-suggestion-in 160ms ease-out;
 }
-.ws-intake-redirect button:hover,
-.ws-intake-redirect button:focus-visible {
+.ws-intake-suggestion:hover,
+.ws-intake-suggestion:focus-visible {
+  border-style: solid;
   background: var(--accent);
-  outline: 1px solid var(--ring);
+  color: var(--foreground);
+}
+.ws-intake-suggestion:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+@keyframes ws-intake-suggestion-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-intake-suggestion {
+    animation: none;
+  }
 }
 .ws-intake-recovery {
   display: flex;
@@ -883,8 +905,14 @@
   .ws-intake-placement-row .ws-intake-field:not(:last-child) {
     flex: 1 1 0;
   }
-  .ws-intake-chip {
+  .ws-intake-chip,
+  .ws-intake-suggestion {
     height: 36px;
+  }
+  .ws-intake-suggestion {
+    flex: 0 1 auto;
+    max-width: 100%;
+    margin-left: 0;
   }
   .ws-intake-revert {
     width: 34px;
