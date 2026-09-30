@@ -83,8 +83,15 @@ class ServerStore {
     } while (this.dirty);
   }
 
+  private invalidateFetch(): void {
+    // Any response already in flight predates this optimistic mutation. Force
+    // the fetch loop to reconcile it instead of publishing stale server data.
+    this.dirty = true;
+  }
+
   /** Applies manual order to every consumer before the round trip. */
   reorder = async (change: ReorderChange): Promise<void> => {
+    this.invalidateFetch();
     this.publish({
       ...this.value,
       order: applyChange(this.value.order, change),
@@ -103,6 +110,7 @@ class ServerStore {
     thread: { id: string; latestAttentionAt?: number },
     until: number | null | "wake",
   ): Promise<void> => {
+    this.invalidateFetch();
     const snoozes = { ...this.value.snoozes };
     if (until === "wake") delete snoozes[thread.id];
     else
@@ -124,6 +132,7 @@ class ServerStore {
 
   /** Saves Snooze settings for every consumer with immediate local feedback. */
   saveSnoozePrefs = async (patch: Partial<SnoozePrefs>): Promise<void> => {
+    this.invalidateFetch();
     this.publish({
       ...this.value,
       snoozePrefs: parseSnoozePrefs({ ...this.value.snoozePrefs, ...patch }),

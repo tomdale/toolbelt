@@ -126,6 +126,41 @@ function mount({
 }
 
 describe("shared server state", () => {
+  it("does not let an in-flight read clobber optimistic mutations", async () => {
+    const first = deferred<ServerState>();
+    const second = deferred<ServerState>();
+    const read = vi.fn(() =>
+      read.mock.calls.length === 1 ? first.promise : second.promise,
+    );
+    const reordered = deferred<{ order: ServerState["order"] }>();
+    const { consumers, assertRevision } = mount({
+      read,
+      reorder: vi.fn(() => reordered.promise),
+    });
+    const refresh = consumers.get(0)!.refresh();
+    act(() => {
+      void consumers.get(0)!.reorder({
+        kind: "threads",
+        groupId: "a",
+        ids: ["t1"],
+      });
+    });
+    expect(consumers.get(1)!.server.order.threads.a).toEqual(["t1"]);
+    await act(async () => {
+      first.resolve(state(1));
+      await Promise.resolve();
+    });
+    expect(consumers.get(1)!.server.order.threads.a).toEqual(["t1"]);
+    await act(async () => {
+      second.resolve(state(2));
+      reordered.resolve({ order: { workstreams: [], threads: { a: ["t1"] } } });
+      await refresh;
+    });
+    await assertRevision(2);
+    expect(consumers.get(1)!.server.order.threads.a).toEqual(["t1"]);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it("registers one app-wide realtime bridge", async () => {
     const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
     expect(
