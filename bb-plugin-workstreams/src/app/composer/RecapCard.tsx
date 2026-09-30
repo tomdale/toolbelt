@@ -52,7 +52,7 @@ function OpenMark() {
 
 function DoneMark() {
   return (
-    <svg aria-hidden="true" viewBox="0 0 12 12" className="mt-[4px] h-3 w-3 opacity-60" fill="none">
+    <svg aria-hidden="true" viewBox="0 0 12 12" className="mt-[4px] h-3 w-3 text-sky-950 opacity-60 dark:text-sky-50" fill="none">
       <path d="M2.5 6.25 4.9 8.5 9.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
