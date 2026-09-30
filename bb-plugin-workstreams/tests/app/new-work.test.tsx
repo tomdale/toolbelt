@@ -150,7 +150,23 @@ function mount(
           ],
         },
         system: { config: async () => ({ primaryHostId: "host_a" }) },
-        environments: { list: async () => [] },
+        environments: {
+          list: async () => [],
+          listProviders: async () => [
+            {
+              id: "project-checkout",
+              displayName: "Project checkout",
+              availability: { status: "available" },
+              acceptsEmptyInputs: true,
+            },
+            {
+              id: "git-worktree",
+              displayName: "New worktree",
+              availability: { status: "available" },
+              acceptsEmptyInputs: true,
+            },
+          ],
+        },
         threads: {
           get: async () => ({
             id: "thr_a",

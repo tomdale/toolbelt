@@ -10,7 +10,16 @@ import type {
   RouteIntent,
 } from "../../server/router.ts";
 import { routeDelay } from "./timing.ts";
+import {
+  hostWorkspaceProviderId,
+  isPersonalEnvironment,
+  isProviderAvailable,
+  type CatalogEnvironment,
+  type CatalogProvider,
+  type CatalogThread,
+} from "./environment-labels.ts";
 export type Environment = NonNullable<NewThreadRequest["environment"]>;
+export type CatalogStatus = "idle" | "loading" | "ready" | "error";
 export type IntakeAction =
   "automatic" | "new-thread" | "send-message" | "new-workstream";
 export type IntakeDestination =
@@ -102,16 +111,11 @@ function environmentAcknowledged(
   }
   return sameJson(equivalent, applied);
 }
-export type CatalogThread = {
-  id: string;
-  title: string;
-  sectionId: string | null;
-  projectId: string;
-  environmentId: string | null;
-  environmentName: string | null;
-  providerId?: string;
-};
-export type CatalogEnvironment = { id: string; name: string | null };
+export type {
+  CatalogEnvironment,
+  CatalogProvider,
+  CatalogThread,
+} from "./environment-labels.ts";
 type ContinueDecision = Extract<RouteDecision, { outcome: "continue" }>;
 /**
  * A continuation the router inferred for an automatic draft. The draft still
@@ -168,10 +172,13 @@ export type IntakeState = {
   projects: readonly {
     id: string;
     name: string;
+    kind?: "personal" | "standard";
     hostId: string | null;
     hostIds: string[];
   }[];
   environments: readonly CatalogEnvironment[];
+  environmentProviders: readonly CatalogProvider[];
+  environmentsStatus: CatalogStatus;
   threads: readonly CatalogThread[];
   catalogError: string | null;
   hostId: string | null;
@@ -248,6 +255,8 @@ export class Intake {
       announcement: "",
       projects: [],
       environments: [],
+      environmentProviders: [],
+      environmentsStatus: "idle",
       threads: [],
       catalogError: null,
       hostId: null,
@@ -292,9 +301,10 @@ export class Intake {
       .then(([projects, result, config]) => {
         if (mine !== this.catalogGeneration) return;
         this.set({
-          projects: projects.map(({ id, name, sources }) => ({
+          projects: projects.map(({ id, name, kind, sources }) => ({
             id,
             name,
+            kind,
             hostIds: sources?.map((s) => s.hostId) ?? [],
             hostId:
               sources?.find((s) => s.isDefault)?.hostId ??
@@ -329,43 +339,109 @@ export class Intake {
   }
   async loadEnvironments(sdk: PluginBrowserBbSdk, projectId: string | null) {
     const mine = ++this.environmentGeneration;
-    this.set({ environments: [] });
+    this.set({
+      environments: [],
+      environmentProviders: [],
+      environmentsStatus: projectId ? "loading" : "idle",
+    });
     if (!projectId) return;
+    const project = this.state.projects.find((p) => p.id === projectId);
+    const hostId = project?.hostId ?? this.state.hostId;
     try {
-      const environments = await sdk.environments.list({
+      const listPromise = sdk.environments.list({
         projectId,
         status: "ready",
       });
+      const providersPromise = sdk.environments.listProviders({
+        projectId,
+        ...(hostId ? { hostId } : {}),
+      });
+      const [environments, providers] = await Promise.all([
+        listPromise,
+        providersPromise,
+      ]);
       if (
         mine !== this.environmentGeneration ||
         projectId !== this.state.project.value
       )
         return;
-      this.set({ environments });
+      const catalogEnvs: CatalogEnvironment[] = environments.map((e) => ({
+        id: e.id,
+        name: e.name ?? null,
+        ...(e.path !== undefined ? { path: e.path } : {}),
+        ...(e.branchName !== undefined ? { branchName: e.branchName } : {}),
+        ...(e.environmentProviderId !== undefined
+          ? { environmentProviderId: e.environmentProviderId }
+          : {}),
+        ...(e.isWorktree !== undefined ? { isWorktree: e.isWorktree } : {}),
+        ...(e.isGitRepo !== undefined ? { isGitRepo: e.isGitRepo } : {}),
+      }));
+      const catalogProviders: CatalogProvider[] = providers.map((p) => ({
+        id: p.id,
+        displayName: p.displayName,
+        description: p.description,
+        availability: p.availability,
+        machineAvailability: p.machineAvailability,
+        requires: p.requires,
+        acceptsEmptyInputs: p.acceptsEmptyInputs,
+      }));
+      this.set({
+        environments: catalogEnvs,
+        environmentProviders: catalogProviders,
+        environmentsStatus: "ready",
+      });
       const env = this.state.environment.value;
-      const sourceHosts =
-        this.state.projects.find((p) => p.id === projectId)?.hostIds ?? [];
-      const invalidReuse =
-        env?.type === "reuse" &&
-        !environments.some((e) => e.id === env.environmentId);
-      const invalidHost =
-        env?.type === "host" &&
-        env.hostId &&
-        sourceHosts.length > 0 &&
-        !sourceHosts.includes(env.hostId);
-      if (
-        this.state.environment.source === "manual" &&
-        (invalidReuse || invalidHost)
-      ) {
-        this.set({ environment: auto({ type: "project-default" }) });
-        this.schedule();
-        this.set({
-          announcement: "Environment reset to the project's default.",
-        });
+      const sourceHosts = project?.hostIds ?? [];
+      const isPersonal =
+        project?.kind === "personal" ||
+        projectId === "personal" ||
+        projectId === "proj_personal";
+      if (this.state.environment.source === "manual" && env) {
+        let invalid = false;
+        if (env.type === "reuse") {
+          invalid = !catalogEnvs.some((e) => e.id === env.environmentId);
+        } else if (env.type === "host") {
+          const invalidHost =
+            !!env.hostId &&
+            sourceHosts.length > 0 &&
+            !sourceHosts.includes(env.hostId);
+          const mappedProviderId = hostWorkspaceProviderId(env.workspace.type);
+          const mappedProvider = catalogProviders.find(
+            (p) => p.id === mappedProviderId,
+          );
+          const ineligibleProvider =
+            !mappedProvider || !isProviderAvailable(mappedProvider, hostId);
+          const invalidPersonal =
+            isPersonal && env.workspace.type !== "personal";
+          const invalidProjectWorkspace =
+            !isPersonal && env.workspace.type === "personal";
+          invalid =
+            invalidHost ||
+            ineligibleProvider ||
+            invalidPersonal ||
+            invalidProjectWorkspace;
+        } else if (env.type === "provider") {
+          const matched = catalogProviders.find(
+            (p) => p.id === env.environmentProviderId,
+          );
+          invalid = !matched || !isProviderAvailable(matched, hostId);
+        }
+        if (invalid) {
+          this.schedule();
+          this.set({
+            environment: auto({ type: "project-default" }),
+            selectionError: null,
+            announcement: "Environment reset to the project's default.",
+          });
+        }
       }
     } catch (error) {
-      if (mine === this.environmentGeneration)
-        this.set({ catalogError: String(error) });
+      if (mine === this.environmentGeneration) {
+        this.set({
+          catalogError: String(error),
+          environmentsStatus: "error",
+        });
+      }
     }
   }
   async loadThread(sdk: PluginBrowserBbSdk, threadId: string) {
@@ -560,20 +636,54 @@ export class Intake {
   selectProject(value: string) {
     const old = this.state.project.value;
     const environment = this.state.environment.value;
-    const sourceHosts =
-      this.state.projects.find((project) => project.id === value)?.hostIds ?? [];
-    const incompatible =
+    const oldProject = this.state.projects.find(
+      (project) => project.id === old,
+    );
+    const newProject = this.state.projects.find(
+      (project) => project.id === value,
+    );
+    const sourceHosts = newProject?.hostIds ?? [];
+    const oldIsPersonal =
+      oldProject?.kind === "personal" ||
+      old === "personal" ||
+      old === "proj_personal";
+    const newIsPersonal =
+      newProject?.kind === "personal" ||
+      value === "personal" ||
+      value === "proj_personal";
+
+    let incompatible = false;
+    if (
       old !== value &&
       this.state.environment.source === "manual" &&
-      (environment?.type === "reuse" ||
-        (environment?.type === "host" &&
-          !!environment.hostId &&
-          sourceHosts.length > 0 &&
-          !sourceHosts.includes(environment.hostId)));
+      environment
+    ) {
+      if (oldIsPersonal !== newIsPersonal) {
+        incompatible = true;
+      } else if (environment.type === "reuse") {
+        incompatible = true;
+      } else if (
+        environment.type === "host" &&
+        environment.hostId &&
+        sourceHosts.length > 0 &&
+        !sourceHosts.includes(environment.hostId)
+      ) {
+        incompatible = true;
+      } else if (newIsPersonal && !isPersonalEnvironment(environment)) {
+        incompatible = true;
+      } else if (!newIsPersonal && isPersonalEnvironment(environment)) {
+        incompatible = true;
+      }
+    }
+
     this.set({
       project: manual(value),
-      ...(old !== value && (this.state.environment.source === "automatic" || incompatible)
-        ? { environment: auto({ type: "project-default" }) }
+      ...(old !== value &&
+      (this.state.environment.source === "automatic" || incompatible)
+        ? {
+            environment: auto({ type: "project-default" }),
+            selectionError: null,
+          }
         : {}),
     });
     this.schedule();
@@ -641,7 +751,8 @@ export class Intake {
     const selection = thread
       ? {
           ...this.state.threadExecution[thread.id],
-          ...(this.state.threadExecution[thread.id]!.providerId || !thread.providerId
+          ...(this.state.threadExecution[thread.id]!.providerId ||
+          !thread.providerId
             ? {}
             : { providerId: thread.providerId }),
           projectId: thread.projectId,
@@ -739,10 +850,37 @@ export class Intake {
     this.selectionKey = "";
     this.set({ selectionError: String(error) });
   }
+  recoverSelection() {
+    const isProjectError =
+      this.state.selectionError?.includes("Choose a project");
+    this.schedule();
+    this.set({
+      selectionError: null,
+      error: null,
+      selectionRevision: this.state.selectionRevision + 1,
+      ...(isProjectError && this.state.project.source === "manual"
+        ? { project: auto(this.autoProject) }
+        : {}),
+      ...(this.state.environment.source === "manual" || isProjectError
+        ? { environment: auto({ type: "project-default" }) }
+        : {}),
+      announcement: isProjectError
+        ? "Project and environment reset to automatic."
+        : "Environment reset to automatic.",
+    });
+  }
   retry() {
+    const isInvalidSelection =
+      this.state.selectionError?.includes("Choose an environment") ||
+      this.state.selectionError?.includes("Choose a project");
+    if (isInvalidSelection) {
+      this.recoverSelection();
+      return;
+    }
     this.set({
       selectionRevision: this.state.selectionRevision + 1,
       selectionError: null,
+      error: null,
     });
     this.schedule();
   }
