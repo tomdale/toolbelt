@@ -387,7 +387,10 @@ function Band({
           type="button"
           aria-expanded={!collapsed}
           onClick={toggle}
-          className="flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-sidebar-accent/60"
+          className={cn(
+            "flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide hover:bg-sidebar-accent/60",
+            boxed ? "ws-needs-title" : "text-muted-foreground",
+          )}
         >
           <Icon
             name={collapsed ? "ChevronRight" : "ChevronDown"}
