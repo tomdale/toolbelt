@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { emptyState } from "./fixtures.ts";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 const SUMMARY =
   "Goal: Building the card.\nLatest: Card renders\nOpen: Add layouts\nDone: Ported styles";
@@ -14,6 +17,7 @@ async function mount(options: {
   recap?: string | null;
   needsInput?: string | null;
   generate?: () => unknown;
+  get?: () => unknown;
 }) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   const banner = app.composerCustomizations.find((c) => c.id === "recap")!
@@ -46,11 +50,13 @@ async function mount(options: {
         }),
         state: () => emptyState(),
         archiveStatus: () => ({ revision: null }),
-        recap_get: () => ({
-          recap,
-          generating: false,
-          needsInput: options.needsInput ?? null,
-        }),
+        recap_get:
+          options.get ??
+          (() => ({
+            recap,
+            generating: false,
+            needsInput: options.needsInput ?? null,
+          })),
         recap_generate:
           options.generate ??
           (() => ({ recap, generated: true, reason: null })),
@@ -112,4 +118,63 @@ it("drops an Open item that repeats the For you ask", async () => {
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(region.textContent?.match(/Pick A or B\?/g)).toHaveLength(1);
   expect(region.textContent).toContain("Write docs");
+});
+
+it("holds the card's space the moment typing hides it", async () => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      return {
+        height: this.classList.contains("flow-root") ? 120 : 0,
+      } as DOMRect;
+    },
+  );
+  const slot = await mount({});
+  await slot.findByRole("region", { name: "Latest recap" });
+  const heights: string[] = [];
+  const observer = new MutationObserver(() => {
+    const held = slot.container.querySelector<HTMLElement>(
+      "[aria-hidden='true'].flow-root",
+    );
+    if (held) heights.push(held.style.height);
+  });
+  observer.observe(slot.container, { childList: true, subtree: true });
+  await slot.setComposerText("Next, ");
+  observer.disconnect();
+  expect(slot.queryByRole("region", { name: "Latest recap" })).toBeNull();
+  // The slot arrived with the card's height, in place of the card.
+  expect(heights[0]).toBe("120px");
+  // Outside BB's thread scroller the slot goes once the card has dissolved.
+  await waitFor(() =>
+    expect(slot.container.querySelector("[aria-hidden='true']")).toBeNull(),
+  );
+});
+
+it("resizes the generating card into the recap rather than replacing it", async () => {
+  let generating = true;
+  const slot = await mount({
+    settings: { recapAutomatic: false },
+    get: () =>
+      generating
+        ? { recap: null, generating: true, needsInput: null }
+        : {
+            recap: {
+              threadId: "t1",
+              summary: SUMMARY,
+              generatedAt: 1,
+              turns: 3,
+              model: "m",
+            },
+            generating: false,
+            needsInput: null,
+          },
+  });
+  const skeleton = await slot.findByRole("status", {
+    name: "Generating recap",
+  });
+  generating = false;
+  await slot.emitRealtime("changed", {});
+  // The same element carries the recap, so it can ease to the new size.
+  expect(await slot.findByRole("region", { name: "Latest recap" })).toBe(
+    skeleton,
+  );
 });
