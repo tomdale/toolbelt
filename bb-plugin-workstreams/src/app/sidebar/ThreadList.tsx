@@ -22,7 +22,7 @@ import type { Group, Row as RowModel } from "../../domain/project.ts";
 import { useWorkstreams } from "../useWorkstreams.ts";
 import { useCollapsed } from "./useCollapsed.ts";
 import { NameDialog, type NameRequest } from "./NameDialog.tsx";
-import { Row } from "./Row.tsx";
+import { Row, hasStatusMark } from "./Row.tsx";
 import { RowMenu, type RowMenuHandlers } from "./RowMenu.tsx";
 import { GroupMenu } from "./GroupMenu.tsx";
 import { NewWorkDialog } from "../composer/NewWork.tsx";
@@ -131,10 +131,20 @@ export function WorkstreamsThreadList({
 
   const workstreamName = (row: ThreadRow) =>
     row.workstreamId ? nameOf.get(row.workstreamId) : "Unsorted";
+  /** Whether any of these rows draws a status mark (see `hasStatusMark`). */
+  const anyMark = (rows: readonly ThreadRow[], placement: Placement) =>
+    rows.some((row) =>
+      hasStatusMark(row.thread, ws.work(row.thread), placement === "needs-you"),
+    );
+  const needsRows = showAllNeeds
+    ? projection.needsYou
+    : projection.needsYou.slice(0, NEEDS_YOU_LIMIT);
+  const needsMarks = anyMark(needsRows, "needs-you");
   const renderRow = (
     row: ThreadRow,
     placement: Placement,
     handle?: DragHandle,
+    showStatusSlot = true,
   ) => (
     <RowMenu
       key={row.thread.id}
@@ -154,39 +164,48 @@ export function WorkstreamsThreadList({
           attention={placement === "needs-you"}
           work={ws.work(row.thread)}
           proposal={ws.proposalOf.get(row.thread.id)?.text}
+          showStatusSlot={showStatusSlot}
           onNavigate={onNavigate}
         />
       </li>
     </RowMenu>
   );
   /** A group's rows as sortable trees; the root row drags the whole tree. */
-  const renderTrees = (group: ThreadGroup) => (
-    <SortableContext
-      items={treesOf(group.rows).map((tree) => treeKey(tree[0]!.thread.id))}
-      strategy={verticalListSortingStrategy}
-    >
-      {treesOf(group.rows).map((tree) => {
-        const root = tree[0]!.thread;
-        return (
-          <Sortable
-            key={root.id}
-            id={treeKey(root.id)}
-            data={{ type: "thread", threadId: root.id, groupId: group.id }}
-          >
-            {({ ref, style, handle }) => (
-              <li ref={ref} style={style} className="list-none">
-                <ul>
-                  {tree.map((row, index) =>
-                    renderRow(row, "group", index === 0 ? handle : undefined),
-                  )}
-                </ul>
-              </li>
-            )}
-          </Sortable>
-        );
-      })}
-    </SortableContext>
-  );
+  const renderTrees = (group: ThreadGroup) => {
+    const marks = anyMark(group.rows, "group");
+    return (
+      <SortableContext
+        items={treesOf(group.rows).map((tree) => treeKey(tree[0]!.thread.id))}
+        strategy={verticalListSortingStrategy}
+      >
+        {treesOf(group.rows).map((tree) => {
+          const root = tree[0]!.thread;
+          return (
+            <Sortable
+              key={root.id}
+              id={treeKey(root.id)}
+              data={{ type: "thread", threadId: root.id, groupId: group.id }}
+            >
+              {({ ref, style, handle }) => (
+                <li ref={ref} style={style} className="list-none">
+                  <ul>
+                    {tree.map((row, index) =>
+                      renderRow(
+                        row,
+                        "group",
+                        index === 0 ? handle : undefined,
+                        marks,
+                      ),
+                    )}
+                  </ul>
+                </li>
+              )}
+            </Sortable>
+          );
+        })}
+      </SortableContext>
+    );
+  };
   const renderSortableGroup = (
     group: ThreadGroup,
     props: Omit<GroupProps, "group" | "children">,
@@ -245,22 +264,21 @@ export function WorkstreamsThreadList({
           </p>
         ) : null}
         {projection.needsYou.length > 0 ? (
-          <Band
-            title="For you"
-            boxed
-          >
-            {(showAllNeeds
-              ? projection.needsYou
-              : projection.needsYou.slice(0, NEEDS_YOU_LIMIT)
-            ).map((row) => renderRow(row, "needs-you"))}
+          <Band title="For you" boxed>
+            {needsRows.map((row) =>
+              renderRow(row, "needs-you", undefined, needsMarks),
+            )}
             {projection.needsYou.length > NEEDS_YOU_LIMIT ? (
               <li>
                 <button
                   type="button"
                   onClick={() => setShowAllNeeds((all) => !all)}
-                  // Left edge matches the row titles: 6px row padding, the
-                  // 14px status slot, and its 6px gap.
-                  className="ws-amber-text w-full rounded-md py-0.5 pl-[26px] pr-2 text-left text-[12px] hover:bg-sidebar-accent/60"
+                  // Left edge matches the row titles: 6px row padding, plus
+                  // the 14px status slot and its 6px gap when rows show it.
+                  className={cn(
+                    "ws-amber-text w-full rounded-md py-0.5 pr-2 text-left text-[12px] transition-[padding] duration-[180ms] ease-out hover:bg-sidebar-accent/60 motion-reduce:transition-none",
+                    needsMarks ? "pl-[26px]" : "pl-1.5",
+                  )}
                 >
                   {showAllNeeds
                     ? "Show less"
@@ -276,7 +294,14 @@ export function WorkstreamsThreadList({
             collapsed={isCollapsed("__recent")}
             toggle={() => toggle("__recent")}
           >
-            {projection.recent.map((row) => renderRow(row, "recent"))}
+            {projection.recent.map((row) =>
+              renderRow(
+                row,
+                "recent",
+                undefined,
+                anyMark(projection.recent, "recent"),
+              ),
+            )}
           </Band>
         ) : null}
         <SortableContext

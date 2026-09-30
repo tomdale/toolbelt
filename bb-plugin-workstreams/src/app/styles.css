@@ -7,6 +7,24 @@
   flex: 0 0 14px;
   align-items: center;
   justify-content: center;
+  transition:
+    width 180ms ease-out,
+    flex-basis 180ms ease-out,
+    margin-right 180ms ease-out,
+    opacity 120ms ease-out;
+}
+/* No row in the list has a mark: the slot and the row's 6px gap after it
+   fold away so titles sit flush left. The row's gap is `gap-1.5`. */
+.ws-status-slot[data-collapsed] {
+  width: 0;
+  flex-basis: 0;
+  margin-right: -6px;
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-status-slot {
+    transition: none;
+  }
 }
 .ws-status-slot > .ws-mark,
 .ws-status-slot > .ws-work {
