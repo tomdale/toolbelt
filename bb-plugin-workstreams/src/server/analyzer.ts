@@ -10,23 +10,12 @@
  * retitle policy (SPEC §10).
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import {
-  analysisPrompt,
-  parseAnalysis,
-  type AnalysisInput,
-  type ThreadAnalysis,
-} from "../domain/analysis.ts";
+import type { AnalysisInput, ThreadAnalysis } from "../domain/analysis.ts";
 import type { Database } from "./db.ts";
 import { displayTitle, type InventoryThread } from "./inventory.ts";
+import type { Inference } from "./model.ts";
 
 type Sdk = BbPluginApi["sdk"];
-type Complete = (
-  prompt: string,
-  model: string,
-) => Promise<{
-  text: string;
-  usage: { input: number; output: number; cost: number };
-}>;
 
 export const DEBOUNCE_MS = 5_000;
 const CONCURRENCY = 4;
@@ -38,6 +27,8 @@ const SYSTEM_PREFIX = "[bb system]";
 /** The stored result plus a drift target resolved to a section id. */
 export type StoredAnalysis = ThreadAnalysis & {
   readonly driftSectionId: string | null;
+  /** The debug trace of the call that produced it (SPEC §11.6). */
+  readonly traceId?: string | null;
 };
 
 type InputPart = { type: string; text?: string };
@@ -86,7 +77,7 @@ export class Analyzer {
     private readonly deps: {
       sdk: () => Sdk;
       db: Database;
-      complete: Complete;
+      inference: Inference;
       model: () => Promise<string>;
       onChange: () => void;
       /** A new result was stored for the thread's current turn. */
@@ -274,14 +265,18 @@ export class Analyzer {
       const input = await this.input(thread);
       const model = await this.deps.model();
       const asked = this.now();
-      const { text } = await this.deps.complete(
-        analysisPrompt(input.prompt),
-        model,
+      const { value: output, traceId } = await this.deps.inference.run(
+        "analysis",
+        input.prompt,
+        {
+          model,
+          label: input.prompt.title,
+          links: [{ kind: "thread", ref: threadId }],
+        },
       );
       this.deps.info?.(
         `Analyzed ${threadId}: context ${asked - started} ms, model ${this.now() - asked} ms`,
       );
-      const output = parseAnalysis(text, input.prompt);
       const driftSectionId =
         output.drift?.workstream != null
           ? (input.sectionByName.get(output.drift.workstream.toLowerCase()) ??
@@ -293,16 +288,29 @@ export class Analyzer {
         revision,
         at: this.now(),
         model,
+        traceId,
       };
       if (this.disposed || this.forgotten.has(threadId)) return null;
       // Never let a slower run for an older turn replace a newer result.
-      this.deps.db
+      const stored = this.deps.db
         .prepare(
           `INSERT INTO ws_analysis (thread_id, revision, at, result) VALUES (?, ?, ?, ?)
            ON CONFLICT(thread_id) DO UPDATE SET revision = excluded.revision, at = excluded.at, result = excluded.result
            WHERE excluded.revision >= ws_analysis.revision`,
         )
         .run(threadId, revision, result.at, JSON.stringify(result));
+      this.deps.inference.annotate(
+        traceId,
+        stored.changes > 0
+          ? {
+              storedForRevision: revision,
+              driftSectionId,
+              driftTarget: driftSectionId
+                ? (input.sectionNameById.get(driftSectionId) ?? null)
+                : (output.drift?.newName ?? null),
+            }
+          : { stored: "no: a newer turn's analysis was already stored" },
+      );
       this.failures.delete(threadId);
       if ((this.lastText.get(threadId)?.revision ?? Infinity) <= revision)
         this.lastText.delete(threadId);
@@ -332,7 +340,11 @@ export class Analyzer {
   /** Bounded model input for one thread; the BB project name is never included. */
   private async input(
     thread: Awaited<ReturnType<Sdk["threads"]["get"]>>,
-  ): Promise<{ prompt: AnalysisInput; sectionByName: Map<string, string> }> {
+  ): Promise<{
+    prompt: AnalysisInput;
+    sectionByName: Map<string, string>;
+    sectionNameById: Map<string, string>;
+  }> {
     const sdk = this.deps.sdk();
     const [history, first] = await Promise.all([
       sdk.threads.promptHistory({ threadId: thread.id, limit: "6" }),
@@ -386,6 +398,7 @@ export class Analyzer {
       : undefined;
     return {
       sectionByName,
+      sectionNameById: new Map(sections.map((s) => [s.section_id, s.name])),
       prompt: {
         title: displayTitle(thread),
         untitled: !thread.title,

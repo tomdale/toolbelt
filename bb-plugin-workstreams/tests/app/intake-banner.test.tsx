@@ -18,6 +18,7 @@ const decision: RouteDecision = {
   confidence: "high",
   reason: "Same project",
   subject: null,
+  traceId: null,
   placement: {
     projectId: "proj_a",
     environment: { type: "project-default" },
@@ -192,6 +193,7 @@ it("leaves an ambiguous destination unchosen until the user picks one", async ()
     confidence: "low",
     reason: "",
     subject: null,
+    traceId: null,
     candidates: [
       { kind: "thread", threadId: "thr_p", title: "Parser tabs" },
       { kind: "workstream", sectionId: "sec_b", name: "Beta" },
@@ -229,6 +231,8 @@ it("leaves an ambiguous destination unchosen until the user picks one", async ()
       prompt: PROMPT,
       workstreamId: "sec_b",
       pickedProjectId: null,
+      // The unsure decision's routing call keeps explaining the choice.
+      fromDecisionId: "d2",
     }),
   );
   expect(slot.getByRole("status").textContent).toBe("New thread in Beta");

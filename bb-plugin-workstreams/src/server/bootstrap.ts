@@ -22,20 +22,15 @@ import {
 } from "../domain/evolution.ts";
 import {
   ASSIGN_BATCH,
-  assignPrompt,
-  mapPrompt,
-  parseAssignments,
-  parseMapProposal,
   type Assignment,
   type MapChange,
 } from "../domain/organize.ts";
 import type { Analyzer } from "./analyzer.ts";
 import { getMeta, setMeta, type Database } from "./db.ts";
 import type { WorkstreamMap } from "./map.ts";
+import { traceIdOf, type Inference } from "./model.ts";
 import type { BatchPlan, WorkstreamService } from "./service.ts";
 import { UserError } from "./service.ts";
-
-type Complete = (prompt: string, model: string) => Promise<{ text: string }>;
 
 export type Provenance = "user" | "auto" | "unfiled";
 
@@ -54,6 +49,8 @@ export type BootstrapMove = {
   /** Set for moves from the evolution engine: snoozed if left unchecked. */
   key?: string;
   evidenceCount?: number;
+  /** The debug trace of the assignment call that proposed it (SPEC §11.6). */
+  traceId?: string | null;
 };
 
 export type BootstrapState = {
@@ -84,6 +81,10 @@ export type BootstrapState = {
   } | null;
   entryId: string | null;
   seconds: { intake: number; map: number; assign: number; apply: number };
+  /** Debug traces of this run's model calls, oldest first (SPEC §11.6). */
+  traceIds?: string[];
+  /** The map proposal's trace, which also explains its descriptions. */
+  mapTraceId?: string | null;
 };
 
 const KEY = "bootstrap";
@@ -99,7 +100,7 @@ export class Bootstrap {
       service: WorkstreamService;
       analyzer: Analyzer;
       map: WorkstreamMap;
-      complete: Complete;
+      inference: Inference;
       model: () => Promise<string>;
       onChange: () => void;
       now?: () => number;
@@ -155,6 +156,7 @@ export class Bootstrap {
       preview: null,
       entryId: null,
       seconds: { intake: 0, map: 0, assign: 0, apply: 0 },
+      traceIds: [],
     });
     try {
       await this.deps.service.reconcile();
@@ -173,28 +175,39 @@ export class Bootstrap {
       const records = this.deps.map.list();
       const subject = (id: string) => analysis[id]?.subject ?? null;
       const titled = new Map(roots.map((r) => [r.id, r.title]));
-      const prompt = mapPrompt({
-        workstreams: records.map((record) => ({
-          name: record.name,
-          description: record.description,
-          roots: roots
-            .filter((r) => r.sectionId === record.sectionId)
-            .map((r) => ({ title: titled.get(r.id)!, subject: subject(r.id) })),
-        })),
-        unfiled: roots
-          .filter((r) => r.provenance !== "user")
-          .map((r) => ({ title: r.title, subject: subject(r.id) })),
-      });
-      const { text } = await this.deps.complete(
-        prompt,
-        await this.deps.model(),
-      );
-      const proposal = parseMapProposal(
-        text,
-        records.map((r) => r.name),
-      );
+      const { value: proposal, traceId } = await this.deps.inference
+        .run(
+          "organize-map",
+          {
+            workstreams: records.map((record) => ({
+              name: record.name,
+              description: record.description,
+              roots: roots
+                .filter((r) => r.sectionId === record.sectionId)
+                .map((r) => ({
+                  title: titled.get(r.id)!,
+                  subject: subject(r.id),
+                })),
+            })),
+            unfiled: roots
+              .filter((r) => r.provenance !== "user")
+              .map((r) => ({ title: r.title, subject: subject(r.id) })),
+          },
+          {
+            model: await this.deps.model(),
+            label: `${roots.length} threads, ${records.length} workstreams`,
+            links: [this.runLink(startedAt)],
+          },
+        )
+        .catch((error: unknown) => {
+          const failed = traceIdOf(error);
+          if (failed) state = { ...state, traceIds: [failed] };
+          throw error;
+        });
       state = this.save({
         ...state,
+        traceIds: traceId ? [traceId] : [],
+        mapTraceId: traceId,
         status: "review",
         descriptions: proposal.descriptions,
         changes: proposal.changes.map((change, i) => ({
@@ -314,6 +327,8 @@ export class Bootstrap {
         batches.push(pending.slice(i, i + ASSIGN_BATCH));
       const model = await this.deps.model();
       const results: Assignment[] = [];
+      const traceOf = new Map<string, string>();
+      const traceIds: string[] = [];
       let next = 0;
       await Promise.all(
         Array.from(
@@ -322,9 +337,15 @@ export class Bootstrap {
             while (next < batches.length) {
               const batch = batches[next++]!;
               const ids = batch.map((r) => r.id);
+              const noteTrace = (traceId: string | null) => {
+                if (!traceId) return;
+                traceIds.push(traceId);
+                for (const id of ids) traceOf.set(id, traceId);
+              };
               try {
-                const { text } = await this.deps.complete(
-                  assignPrompt({
+                const { value, traceId } = await this.deps.inference.run(
+                  "organize-assign",
+                  {
                     workstreams: options,
                     threads: batch.map((r) => ({
                       id: r.id,
@@ -332,17 +353,23 @@ export class Bootstrap {
                       subject: analysis[r.id]?.subject ?? null,
                       recap: analysis[r.id]?.recap ?? null,
                     })),
-                  }),
-                  model,
+                  },
+                  {
+                    model,
+                    label: batch.map((r) => r.title).join(" · "),
+                    links: [
+                      this.runLink(state.startedAt),
+                      ...ids.map((id) => ({
+                        kind: "thread" as const,
+                        ref: id,
+                      })),
+                    ],
+                  },
                 );
-                results.push(
-                  ...parseAssignments(
-                    text,
-                    ids,
-                    options.map((o) => o.name),
-                  ),
-                );
-              } catch {
+                noteTrace(traceId);
+                results.push(...value);
+              } catch (error) {
+                noteTrace(traceIdOf(error));
                 results.push(
                   ...ids.map((id): Assignment => ({
                     id,
@@ -401,6 +428,7 @@ export class Bootstrap {
           reason: `${a.confidence} confidence`,
           accepted: a.confidence !== "low",
           confidence: a.confidence,
+          traceId: traceOf.get(a.id) ?? null,
         });
       }
       // Roots in a merged-away workstream follow the merge.
@@ -473,6 +501,7 @@ export class Bootstrap {
           m.accepted = false;
       state = this.save({
         ...state,
+        traceIds: [...(state.traceIds ?? []), ...traceIds],
         status: "preview",
         preview: {
           creates: [...creates.values()],
@@ -563,6 +592,19 @@ export class Bootstrap {
             )
             .run(snoozeKey(move.key), move.evidenceCount ?? 1, this.now());
       }
+      if (entry)
+        this.deps.inference.copyLinks(this.runLink(current.startedAt), {
+          kind: "entry",
+          ref: entry.id,
+        });
+      // The map proposal wrote these descriptions.
+      this.deps.inference.link(
+        current.mapTraceId,
+        ...(plan.descriptions ?? []).map(([sectionId]) => ({
+          kind: "section" as const,
+          ref: sectionId,
+        })),
+      );
       setMeta(this.deps.db, "bootstrapped", "1");
       state = this.save({
         ...state,
@@ -577,6 +619,11 @@ export class Bootstrap {
     } catch (error) {
       return this.save({ ...state, status: "failed", error: String(error) });
     }
+  }
+
+  /** Links a run's model calls together, keyed by when the run started. */
+  private runLink(startedAt: number) {
+    return { kind: "organize" as const, ref: String(startedAt) };
   }
 
   /** Turns on evolution without reorganizing anything. */

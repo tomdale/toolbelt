@@ -21,19 +21,14 @@ import {
   type Sensitivity,
 } from "../domain/evolution.ts";
 import { isCurrent } from "../domain/analysis.ts";
-import {
-  ASSIGN_BATCH,
-  assignPrompt,
-  describePrompt,
-  parseAssignments,
-  parseDescriptions,
-} from "../domain/organize.ts";
+import { ASSIGN_BATCH } from "../domain/organize.ts";
 import { buildForest } from "../domain/tree.ts";
 import type { Analyzer } from "./analyzer.ts";
 import type { Bootstrap } from "./bootstrap.ts";
 import type { Database } from "./db.ts";
 import type { Journal } from "./journal.ts";
 import type { WorkstreamMap } from "./map.ts";
+import type { Inference } from "./model.ts";
 import {
   UserError,
   type BatchPlan,
@@ -68,6 +63,11 @@ export type ProposalView = {
   text: string;
   accept: string;
   updatedAt: number;
+  /**
+   * Debug traces of the model calls behind it (SPEC §11.6): the analyses that
+   * named the shared subject, or the assignment call that filed the thread.
+   */
+  traceIds: string[];
 };
 
 type Row = {
@@ -111,7 +111,7 @@ export class Evolution {
       map: WorkstreamMap;
       analyzer: Analyzer;
       bootstrap: Bootstrap;
-      complete: (prompt: string, model: string) => Promise<{ text: string }>;
+      inference: Inference;
       model: () => Promise<string>;
       settings: () => Promise<{ evolution: string; sensitivity: string }>;
       onChange: () => void;
@@ -147,18 +147,21 @@ export class Evolution {
 
   proposals(): ProposalView[] {
     const cutoff = this.now() - APPLIED_BANNER_MS;
-    return this.rows()
-      .filter(
-        (row) =>
-          row.status === "pending" ||
-          ((row.status === "applied" || row.status === "partial") &&
-            !row.acknowledged &&
-            row.updated_at >= cutoff &&
-            // Undone from the banner or Activity: gone before the next pass.
-            (!row.entry_id ||
-              this.deps.journal.get(row.entry_id)?.status !== "undone")),
-      )
-      .map((row) => this.view(row));
+    const rows = this.rows().filter(
+      (row) =>
+        row.status === "pending" ||
+        ((row.status === "applied" || row.status === "partial") &&
+          !row.acknowledged &&
+          row.updated_at >= cutoff &&
+          // Undone from the banner or Activity: gone before the next pass.
+          (!row.entry_id ||
+            this.deps.journal.get(row.entry_id)?.status !== "undone")),
+    );
+    const traces = this.deps.inference.linked(
+      "proposal",
+      rows.map((row) => row.id),
+    );
+    return rows.map((row) => this.view(row, traces.get(row.id) ?? []));
   }
 
   async accept(id: string): Promise<ProposalView> {
@@ -187,7 +190,11 @@ export class Evolution {
         this.expire(row);
         throw new UserError("This no longer applies; nothing changed.");
       }
-      return this.view(await this.apply(row, threadIds));
+      const applied = await this.apply(row, threadIds);
+      return this.view(
+        applied,
+        this.deps.inference.linked("proposal", [row.id]).get(row.id) ?? [],
+      );
     } catch (error) {
       if (this.row(id)?.status === "applying") this.setStatus(row, "pending");
       throw error;
@@ -216,6 +223,7 @@ export class Evolution {
     const settings = await this.deps.settings();
     for (const candidate of await this.candidates({ capped: true })) {
       const row = this.insert(candidate);
+      this.linkEvidence(row.id, candidate.threadIds);
       if (settings.evolution === "ask") {
         const entry = this.deps.journal.add({
           action: "proposal",
@@ -229,9 +237,21 @@ export class Evolution {
         this.deps.db
           .prepare("UPDATE ws_proposal SET entry_id = ? WHERE id = ?")
           .run(entry.id, row.id);
+        this.deps.inference.copyLinks(
+          { kind: "proposal", ref: row.id },
+          { kind: "entry", ref: entry.id },
+        );
         this.deps.onChange();
       } else await this.apply(row, candidate.threadIds);
     }
+  }
+
+  /** Links the analyses whose subjects raised a proposal to it. */
+  private linkEvidence(proposalId: string, threadIds: readonly string[]) {
+    this.deps.inference.link(
+      threadIds.map((id) => this.deps.analyzer.get(id)?.traceId),
+      { kind: "proposal", ref: proposalId },
+    );
   }
 
   /**
@@ -365,6 +385,10 @@ export class Evolution {
       this.expire(row);
       return this.row(row.id)!;
     }
+    this.deps.inference.copyLinks(
+      { kind: "proposal", ref: row.id },
+      { kind: "entry", ref: entry.id },
+    );
     const target =
       row.kind === "spin-out"
         ? (created.get("new") ?? null)
@@ -442,20 +466,24 @@ export class Evolution {
         ? records.find((r) => r.sectionId === sourceSection)
         : undefined;
       if (home) {
-        await this.fileOne(thread.id, home.sectionId, home.name);
+        await this.fileOne(thread.id, home.sectionId, home.name, []);
         continue;
       }
       const subject = analysis[thread.id]?.subject;
       const target = subject ? byName.get(normalize(subject)) : undefined;
-      if (target) await this.fileOne(thread.id, target.sectionId, target.name);
+      if (target)
+        await this.fileOne(thread.id, target.sectionId, target.name, [
+          analysis[thread.id]?.traceId,
+        ]);
       else if (this.assignedAt.get(thread.id) !== thread.latestAttentionAt)
         toAssign.push(thread);
     }
     if (!toAssign.length || !records.length) return;
     const batch = toAssign.slice(0, ASSIGN_BATCH);
     for (const t of batch) this.assignedAt.set(t.id, t.latestAttentionAt);
-    const { text } = await this.deps.complete(
-      assignPrompt({
+    const { value: assignments, traceId } = await this.deps.inference.run(
+      "file-unsorted",
+      {
         workstreams: records.map((r) => ({
           name: r.name,
           description: r.description,
@@ -466,23 +494,37 @@ export class Evolution {
           subject: analysis[t.id]?.subject ?? null,
           recap: analysis[t.id]?.recap ?? null,
         })),
-      }),
-      await this.deps.model(),
+      },
+      {
+        model: await this.deps.model(),
+        label: batch.map((t) => t.title).join(" · "),
+        links: batch.map((t) => ({ kind: "thread", ref: t.id })),
+      },
     );
-    const assignments = parseAssignments(
-      text,
-      batch.map((t) => t.id),
-      records.map((r) => r.name),
-    );
+    const filed: string[] = [];
     for (const a of assignments) {
       if (a.target.kind !== "existing" || a.confidence !== "high") continue;
       const name = a.target.name;
       const record = records.find((r) => r.name === name);
-      if (record) await this.fileOne(a.id, record.sectionId, record.name);
+      if (!record) continue;
+      await this.fileOne(a.id, record.sectionId, record.name, [
+        traceId,
+        analysis[a.id]?.traceId,
+      ]);
+      filed.push(a.id);
     }
+    this.deps.inference.annotate(traceId, {
+      filed,
+      rule: "Only high-confidence picks of an existing workstream are filed.",
+    });
   }
 
-  private async fileOne(threadId: string, sectionId: string, name: string) {
+  private async fileOne(
+    threadId: string,
+    sectionId: string,
+    name: string,
+    traceIds: readonly (string | null | undefined)[],
+  ) {
     const row = this.insert({
       key: `move:${UNSORTED}:${threadId}`,
       kind: "move",
@@ -493,6 +535,7 @@ export class Evolution {
       threadIds: [threadId],
       evidenceCount: 1,
     });
+    this.deps.inference.link(traceIds, { kind: "proposal", ref: row.id });
     await this.apply(row, [threadId]);
   }
 
@@ -525,15 +568,17 @@ export class Evolution {
     if (!missing.length) return;
     for (const m of missing)
       this.describedAt.set(m.record.sectionId, this.now());
-    const { text } = await this.deps.complete(
-      describePrompt(
-        missing.map((m) => ({ name: m.record.name, roots: m.roots })),
-      ),
-      await this.deps.model(),
-    );
-    const descriptions = parseDescriptions(
-      text,
-      missing.map((m) => m.record.name),
+    const { value: descriptions } = await this.deps.inference.run(
+      "describe",
+      missing.map((m) => ({ name: m.record.name, roots: m.roots })),
+      {
+        model: await this.deps.model(),
+        label: missing.map((m) => m.record.name).join(", "),
+        links: missing.map((m) => ({
+          kind: "section",
+          ref: m.record.sectionId,
+        })),
+      },
     );
     for (const m of missing) {
       const description = descriptions[m.record.name];
@@ -667,7 +712,7 @@ export class Evolution {
       .map((id) => ({ id, name: this.nameOf(id) }));
   }
 
-  private view(row: Row): ProposalView {
+  private view(row: Row, traceIds: string[]): ProposalView {
     const threadIds = JSON.parse(row.thread_ids) as string[];
     const sourceName = this.nameOf(row.source_section_id || null);
     const targetName =
@@ -698,6 +743,7 @@ export class Evolution {
           : appliedCopy(sourceName, targetName),
       accept: pending.accept,
       updatedAt: row.updated_at,
+      traceIds,
     };
   }
 }

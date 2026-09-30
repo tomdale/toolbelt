@@ -26,6 +26,13 @@ import {
 } from "./inventory.ts";
 import type { Journal, JournalEntry } from "./journal.ts";
 import { UserError, type WorkstreamService } from "./service.ts";
+import {
+  TRACE_KINDS,
+  TRACE_KIND_TITLE,
+  type Trace,
+  type TraceSummary,
+} from "../domain/trace.ts";
+import type { TraceStore } from "./trace.ts";
 
 const TITLE_MAX = 80;
 const clip = (text: string) =>
@@ -77,14 +84,60 @@ function analysisLine(
   return isCurrent(analysis, thread) ? where : `pending (was: ${where})`;
 }
 
+function traceLine(trace: TraceSummary): string {
+  const status = trace.status === "ok" ? "" : ` [${trace.status}]`;
+  const seconds = `${(trace.durationMs / 1000).toFixed(1)}s`;
+  return `${localMinute(trace.at)}  ${trace.kind.padEnd(15)} ${seconds.padStart(6)}  ${clip(trace.label)}${status}  (${trace.id})`;
+}
+
+const json = (value: unknown) => JSON.stringify(value, null, 2);
+
+/** A whole trace as plain text, in the order a reader debugs it. */
+function traceText(trace: Trace): string {
+  const section = (title: string, body: string | null) =>
+    body ? [`── ${title} ──`, body, ""] : [];
+  return [
+    `${TRACE_KIND_TITLE[trace.kind]}: ${trace.label}`,
+    `${localMinute(trace.at)} · ${trace.model} · ${(trace.durationMs / 1000).toFixed(1)}s · ${trace.status}${
+      trace.usage
+        ? ` · ${trace.usage.input} in / ${trace.usage.output} out · $${trace.usage.cost.toFixed(4)}`
+        : ""
+    }${trace.replayOf ? ` · replay of ${trace.replayOf}` : ""}`,
+    "",
+    ...section("Error", trace.error),
+    ...section("Parsed", trace.parsed === null ? null : json(trace.parsed)),
+    ...section("Outcome", trace.outcome === null ? null : json(trace.outcome)),
+    ...section("Reasoning", trace.reasoning ?? "(none returned)"),
+    ...section("Response", trace.response),
+    ...section("System prompt", trace.system),
+    ...section("Prompt", trace.prompt),
+    ...section(
+      "Links",
+      trace.links.map((l) => `${l.kind} ${l.ref}`).join("\n") || null,
+    ),
+    ...section("Replays", trace.replays.map(traceLine).join("\n") || null),
+  ].join("\n");
+}
+
 export function registerCli(
   bb: BbPluginApi,
-  service: WorkstreamService,
-  journal: Journal,
-  analyzer: Analyzer,
-  bootstrap: Bootstrap,
-  map: WorkstreamMap,
-  router: Router,
+  {
+    service,
+    journal,
+    analyzer,
+    bootstrap,
+    map,
+    router,
+    traces,
+  }: {
+    service: WorkstreamService;
+    journal: Journal;
+    analyzer: Analyzer;
+    bootstrap: Bootstrap;
+    map: WorkstreamMap;
+    router: Router;
+    traces: TraceStore;
+  },
 ): void {
   const load = async () => {
     const [threads, sections] = await Promise.all([
@@ -510,6 +563,7 @@ export function registerCli(
                 // Never back to the caller, or to the thread that handed the
                 // caller its work: a handoff doesn't bounce.
                 exclude: [caller, ...(await handedOffFrom(bb, caller))],
+                about: caller,
               })
               .catch(fail);
             const note = options.note
@@ -630,6 +684,77 @@ export function registerCli(
             };
           },
         }),
+        trace: cliCommand({
+          summary:
+            "Show recorded model calls (Debug mode): one in full, or the latest",
+          positionals: [
+            {
+              name: "id",
+              description: "Trace id; omit to list the latest calls",
+            },
+          ],
+          options: {
+            thread: {
+              type: "string",
+              description: "Only calls about this thread",
+            },
+            entry: {
+              type: "string",
+              description: "Only calls behind this activity log entry",
+            },
+            kind: {
+              type: "string",
+              description: `Only this kind: ${TRACE_KINDS.join(", ")}`,
+            },
+            limit: {
+              type: "integer",
+              min: 1,
+              max: 500,
+              default: 20,
+              description: "Calls to list (1-500)",
+            },
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ positionals, options }) {
+            if (positionals.id) {
+              const trace = traces.get(positionals.id);
+              if (!trace)
+                throw new PluginCliError("No model call with that id.", {
+                  code: "trace_not_found",
+                  hint: "Run `bb workstreams trace` to list recorded calls.",
+                });
+              return {
+                exitCode: 0,
+                stdout: options.json ? json(trace) : traceText(trace),
+              };
+            }
+            const kind = options.kind
+              ? TRACE_KINDS.find((k) => k === options.kind)
+              : undefined;
+            if (options.kind && !kind)
+              throw new PluginCliError(`Unknown kind "${options.kind}".`, {
+                code: "unknown_kind",
+                hint: `Kinds: ${TRACE_KINDS.join(", ")}`,
+              });
+            const list = traces.list({
+              kind,
+              limit: options.limit,
+              link: options.thread
+                ? { kind: "thread", ref: options.thread }
+                : options.entry
+                  ? { kind: "entry", ref: options.entry }
+                  : undefined,
+            });
+            return {
+              exitCode: 0,
+              stdout: options.json
+                ? json({ traces: list })
+                : list.length
+                  ? list.map(traceLine).join("\n")
+                  : "No model calls recorded. Debug mode records them: `bb plugin config workstreams set debug true`.",
+            };
+          },
+        }),
         undo: cliCommand({
           summary: "Undo a logged change, where BB state still allows it",
           positionals: [
@@ -659,6 +784,11 @@ export type Acted = {
   workstream: string | null;
   reason: string;
   candidates?: string[];
+  /**
+   * The routing call's debug trace (`bb workstreams trace <id>`); present
+   * only when Debug mode recorded one.
+   */
+  traceId?: string;
 };
 
 /**
@@ -683,10 +813,14 @@ export async function actOn(
     (final.confidence !== "high" || final.threadId === options.spawnedFrom)
   )
     final = final.sectionId
-      ? await router.route(prompt, {
-          workstreamId: final.sectionId,
-          exclude: options.spawnedFrom ?? null,
-        })
+      ? {
+          ...(await router.route(prompt, {
+            workstreamId: final.sectionId,
+            exclude: options.spawnedFrom ?? null,
+          })),
+          // The routing call that picked the thread still explains this.
+          traceId: final.traceId,
+        }
       : ({ ...final, outcome: "unsure", candidates: [] } as RouteDecision);
   const workstream =
     final.outcome === "new-thread"
@@ -708,6 +842,7 @@ export async function actOn(
       link: null,
       workstream: null,
       reason: final.reason,
+      ...(final.traceId ? { traceId: final.traceId } : {}),
       candidates:
         "candidates" in final
           ? final.candidates.map((c) =>
@@ -726,6 +861,7 @@ export async function actOn(
     link: result.threadId ? `@thread:${result.threadId}` : null,
     workstream,
     reason: final.reason,
+    ...(final.traceId ? { traceId: final.traceId } : {}),
   };
 }
 

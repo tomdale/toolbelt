@@ -1,6 +1,7 @@
 // Workstreams frontend entry: the sidebar thread list, the Workstreams page,
 // and the optional parent link in thread headers.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
+import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { ProposalBanner } from "./header/ProposalBanner.tsx";
 import { RouteBanner } from "./composer/RouteBanner.tsx";
@@ -23,6 +24,12 @@ export default definePluginApp((app) => {
     id: "workstream-proposal",
     title: "Workstream proposal",
     component: ProposalBanner,
+  });
+  // Renders only in Debug mode (SPEC §11.6).
+  app.slots.experimental_threadHeaderAction({
+    id: "debug",
+    title: "Workstreams model calls",
+    component: ThreadDebugButton,
   });
   // Slot and panel ids match v1 so the sidebar selection and page URL
   // (/plugins/workstreams/home) carry over.

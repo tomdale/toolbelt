@@ -22,6 +22,7 @@ const proposal = (status: string, text: string) => ({
   text,
   accept: "Spin out",
   updatedAt: 1,
+  traceIds: [],
 });
 const PENDING =
   "This thread and 2 others look like BB Recap work. Spin out a BB Recap workstream?";

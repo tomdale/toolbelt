@@ -14,7 +14,13 @@ export const hostContract = defineRpcContract({
           .max(100),
       })
       .strict(),
-    output: z.object({ text: z.string().max(200_000), usage: usageSchema }),
+    output: z.object({
+      text: z.string().max(200_000),
+      usage: usageSchema,
+      // Optional so a host bundle built before reasoning capture still answers.
+      reasoning: z.string().max(200_000).nullable().optional(),
+      stopReason: z.string().max(100).nullable().optional(),
+    }),
   },
   /** What a project root is on disk: a repository, or a directory of them. */
   probe: {

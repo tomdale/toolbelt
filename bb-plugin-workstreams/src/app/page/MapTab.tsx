@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { useRpc } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import type { MapRecord } from "../../server/map.ts";
+import { InspectButton } from "../debug/InspectButton.tsx";
 import { primaryButton, secondaryButton } from "./controls.ts";
 import { Organize } from "./Organize.tsx";
 
@@ -134,6 +135,14 @@ function MapRow({ rpc, record }: { rpc: Rpc; record: MapRecord }) {
           <p className="text-xs text-muted-foreground">
             {record.description ?? "No description yet."}
             {record.descriptionSource === "user" ? " (yours)" : ""}
+            {record.description && record.descriptionSource === "generated" ? (
+              <InspectButton
+                target={{ link: { kind: "section", ref: record.sectionId } }}
+                title={`Model calls for ${record.name}`}
+                label="Inspect the model calls that described this workstream"
+                className="ml-1 align-middle"
+              />
+            ) : null}
           </p>
           {record.subjects.length || record.aliases.length ? (
             <p className="mt-0.5 text-xs text-muted-foreground/80">

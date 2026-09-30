@@ -493,7 +493,7 @@ restores the previous title while it is still the one Workstreams wrote.
 3. **Thread header:** a parent link (setting), the proposal pill, and the
    floating banner.
 4. **CLI:**
-   `bb workstreams list | show | edit | new | handoff | file | log | analyze | rebuild`,
+   `bb workstreams list | show | edit | new | handoff | file | log | analyze | rebuild | trace`,
    built with `defineCli`.
 5. **Activity log** (page tab and `bb workstreams log`):
    - Covers every change and proposal, newest first, grouped by day.
@@ -504,14 +504,38 @@ restores the previous title while it is still the one Workstreams wrote.
    - Filters by workstream, action, and needs-review.
    - Retention: 90 days or 2,000 entries.
    - Moves the reconciler detects appear behind a toggle.
+6. **Debug mode** (the `debug` setting, off by default):
+   - Every model call records a trace: kind, model, timing, token usage, the
+     system prompt and prompt exactly as sent, the structured input (redacted,
+     long strings bounded), the model's reasoning summary when it returns one,
+     the raw response, the parsed result, and what Workstreams did with it. A
+     response that fails to parse is recorded as invalid, and a failed call as
+     failed. Pi still runs with thinking off; Gemini 3.1 Flash-Lite returns a
+     reasoning summary at that level.
+   - Links tie traces to what they explain: threads, journal entries, proposals,
+     workstream descriptions, and organizing runs. Analysis results and routing
+     decisions carry their own trace id, and a proposal links the analyses whose
+     subjects raised it.
+   - Each surface that shows a model's decision gets a small inspect button that
+     opens a side pane with those calls: the thread header, the drift and
+     proposal banners, the routing banner and New work, Activity entries, the
+     organizing review, generated descriptions, Overview rows, and the sidebar
+     row menu. The page adds a Debug tab listing every call, and
+     `bb workstreams trace` prints them.
+   - "Run again" sends a recorded prompt to its model again and records the
+     answer as a replay of the original. A replay changes nothing Workstreams
+     stores.
+   - Tracing never changes behavior: the same prompt goes to the same model
+     either way. Nothing is recorded while the setting is off. Retention: 7 days
+     or 1,000 traces.
 
 ## 12. Storage
 
-| Data                                                                                                    | Store                                                                    |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Workstream map, analysis cache, title ownership, journal and Activity log, proposals, reconciler cursor | Plugin SQLite (`bb.storage.database()`) with migrations                  |
-| Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }`              | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
-| Collapse state and UI preferences                                                                       | Client local storage                                                     |
+| Data                                                                                                                  | Store                                                                    |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Workstream map, analysis cache, title ownership, journal and Activity log, proposals, reconciler cursor, debug traces | Plugin SQLite (`bb.storage.database()`) with migrations                  |
+| Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }`                            | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
+| Collapse state and UI preferences                                                                                     | Client local storage                                                     |
 
 v1 tables are left untouched until cutover and are not read after bootstrap.
 

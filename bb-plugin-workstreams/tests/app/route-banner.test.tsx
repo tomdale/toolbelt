@@ -82,6 +82,7 @@ it("sends a continue to its thread and clears the draft", async () => {
     confidence: "high",
     reason: "Same task",
     subject: null,
+    traceId: null,
   });
   const send = await slot.findByRole(
     "button",

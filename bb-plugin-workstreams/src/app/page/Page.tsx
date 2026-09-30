@@ -17,19 +17,27 @@ import { useWorkstreams, type WorkView } from "../useWorkstreams.ts";
 import { Activity } from "./Activity.tsx";
 import { MapTab } from "./MapTab.tsx";
 import { NewWorkDialog } from "../composer/NewWork.tsx";
+import { DebugTab } from "../debug/DebugTab.tsx";
+import { InspectButton } from "../debug/InspectButton.tsx";
+import { useDebugMode } from "../debug/debug.ts";
 
-type Tab = "overview" | "map" | "activity";
+type Tab = "overview" | "map" | "activity" | "debug";
 const TAB_LABEL: Record<Tab, string> = {
   overview: "Overview",
   map: "Map",
   activity: "Activity",
+  debug: "Debug",
 };
 
-/** `subPath` deep links: `map`, `activity`, or `activity/<proposal id>`. */
+/**
+ * `subPath` deep links: `map`, `activity`, `activity/<proposal id>`, or
+ * `debug`.
+ */
 function tabOf(subPath: string): { tab: Tab; focus: string | null } {
   const [head, rest] = subPath.split("/");
   if (head === "map") return { tab: "map", focus: null };
   if (head === "activity") return { tab: "activity", focus: rest || null };
+  if (head === "debug") return { tab: "debug", focus: null };
   return { tab: "overview", focus: null };
 }
 
@@ -37,8 +45,14 @@ export function WorkstreamsPage({
   subPath = "",
 }: Partial<PluginNavPanelProps>) {
   const ws = useWorkstreams();
+  const debug = useDebugMode();
   const linked = tabOf(subPath);
-  const [tab, setTab] = useState<Tab>(linked.tab);
+  const [chosen, setTab] = useState<Tab>(linked.tab);
+  // The Debug tab exists only in Debug mode.
+  const tab = chosen === "debug" && !debug ? "overview" : chosen;
+  const tabs: Tab[] = debug
+    ? ["overview", "map", "activity", "debug"]
+    : ["overview", "map", "activity"];
   const [newWork, setNewWork] = useState(false);
   useEffect(() => setTab(tabOf(subPath).tab), [subPath]);
   const [query, setQuery] = useState("");
@@ -100,7 +114,7 @@ export function WorkstreamsPage({
           </button>
           <NewWorkDialog open={newWork} onClose={() => setNewWork(false)} />
           <div role="tablist" className="flex gap-1 text-sm">
-            {(["overview", "map", "activity"] as const).map((id) => (
+            {tabs.map((id) => (
               <button
                 key={id}
                 role="tab"
@@ -184,6 +198,8 @@ export function WorkstreamsPage({
             records={Object.values(ws.server.workstreams)}
             bootstrapped={ws.server.bootstrapped}
           />
+        ) : tab === "debug" ? (
+          <DebugTab rpc={ws.rpc} />
         ) : (
           <Activity
             rpc={ws.rpc}
@@ -262,11 +278,14 @@ function WorkstreamCard({
             view.kind === "current" ? WORK_STATE[view.analysis.state] : null;
           const folded = via.get(row.thread.id);
           return (
-            <li key={row.thread.id}>
+            <li
+              key={row.thread.id}
+              className="group/row flex items-center gap-1"
+            >
               <button
                 type="button"
                 onClick={() => navigate.toThread(row.thread.id)}
-                className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm hover:bg-state-hover"
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm hover:bg-state-hover"
               >
                 <StatusMark
                   indicator={row.thread.indicator}
@@ -309,6 +328,12 @@ function WorkstreamCard({
                   {relativeAge(row.thread.latestAttentionAt, now)}
                 </span>
               </button>
+              <InspectButton
+                target={{ link: { kind: "thread", ref: row.thread.id } }}
+                title={`Model calls for ${row.thread.displayTitle}`}
+                label={`Inspect model calls for ${row.thread.displayTitle}`}
+                className="text-muted-foreground opacity-0 group-hover/row:opacity-55 focus-visible:opacity-100"
+              />
             </li>
           );
         })}

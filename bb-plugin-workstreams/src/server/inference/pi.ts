@@ -4,9 +4,16 @@
  * so a prompt built from thread content can only produce text.
  */
 import { z } from "zod";
+import type { Usage } from "../../domain/trace.ts";
 
 export const SYSTEM_PROMPT =
   "Classify supplied data. Return only the requested JSON. Never take actions.";
+export const PROVIDER = "vercel-ai-gateway";
+/**
+ * Pi's thinking level for every call. Some models (Gemini 3.1 Flash-Lite)
+ * still return a reasoning summary at this level; debug traces keep it.
+ */
+export const THINKING = "off";
 
 export function piArgs(model: string): string[] {
   return [
@@ -14,11 +21,11 @@ export function piArgs(model: string): string[] {
     "--mode",
     "json",
     "--provider",
-    "vercel-ai-gateway",
+    PROVIDER,
     "--model",
     model,
     "--thinking",
-    "off",
+    THINKING,
     "--no-tools",
     "--no-extensions",
     "--no-skills",
@@ -31,19 +38,18 @@ export function piArgs(model: string): string[] {
   ];
 }
 
-export const usageSchema = z.object({
-  input: z.number(),
-  output: z.number(),
-  cost: z.number(),
-});
-export type Usage = z.infer<typeof usageSchema>;
+export { usageSchema, type Usage } from "../../domain/trace.ts";
 
 const messageEnd = z.object({
   type: z.literal("message_end"),
   message: z.object({
     role: z.string(),
     content: z.array(
-      z.object({ type: z.string(), text: z.string().optional() }),
+      z.object({
+        type: z.string(),
+        text: z.string().optional(),
+        thinking: z.string().optional(),
+      }),
     ),
     usage: z
       .object({
@@ -56,9 +62,17 @@ const messageEnd = z.object({
   }),
 });
 
-/** Final assistant text and token usage from Pi's JSON event stream. */
-export function parsePiJson(stdout: string): { text: string; usage: Usage } {
-  let result: { text: string; usage: Usage } | null = null;
+export type PiCompletion = {
+  text: string;
+  usage: Usage;
+  /** The model's reasoning summary, when it returned one. */
+  reasoning: string | null;
+  stopReason: string | null;
+};
+
+/** Final assistant text, reasoning, and token usage from Pi's JSON event stream. */
+export function parsePiJson(stdout: string): PiCompletion {
+  let result: PiCompletion | null = null;
   for (const line of stdout.split("\n")) {
     if (!line.trim()) continue;
     let event: unknown;
@@ -71,6 +85,11 @@ export function parsePiJson(stdout: string): { text: string; usage: Usage } {
     if (!parsed.success || parsed.data.message.role !== "assistant") continue;
     const { content, usage, stopReason } = parsed.data.message;
     if (stopReason === "error") throw new Error("Model request failed.");
+    const reasoning = content
+      .filter((c) => c.type === "thinking")
+      .map((c) => c.thinking ?? "")
+      .join("\n\n")
+      .trim();
     result = {
       text: content
         .filter((c) => c.type === "text")
@@ -82,6 +101,10 @@ export function parsePiJson(stdout: string): { text: string; usage: Usage } {
         output: usage?.output ?? 0,
         cost: usage?.cost?.total ?? 0,
       },
+      // Bounded under the host contract's limit so long thinking never
+      // fails the call.
+      reasoning: reasoning ? reasoning.slice(0, 100_000) : null,
+      stopReason: stopReason ?? null,
     };
   }
   if (!result) throw new Error("Model returned no response.");
