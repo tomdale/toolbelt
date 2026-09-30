@@ -671,7 +671,8 @@
  * the draft.
  */
 .ws-intake[data-ready="false"] [data-promptbox-submit-action] {
-  opacity: 0.5;
+  /* BB forces the button's opacity from an ancestor utility; filter isn't. */
+  filter: opacity(0.5);
   pointer-events: none;
 }
 .ws-intake-controls {
