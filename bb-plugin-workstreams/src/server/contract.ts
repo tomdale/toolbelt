@@ -21,6 +21,14 @@ const placementSchema = z.object({
   entryId: z.string().nullable(),
 });
 
+const recapSchema = z.object({
+  threadId: z.string(),
+  summary: z.string(),
+  generatedAt: z.number(),
+  turns: z.number(),
+  model: z.string(),
+});
+
 const analysisSchema = z.object({
   recap: z.string(),
   state: z.enum(WORK_STATES),
@@ -281,6 +289,14 @@ export const rpcContract = defineRpcContract({
     }),
   },
   /** Plugin-side facts the live sidebar hook doesn't carry. */
+  recap_get: {
+    input: z.object({ threadId: z.string().min(1) }),
+    output: z.object({ recap: recapSchema.nullable(), generating: z.boolean() }),
+  },
+  recap_generate: {
+    input: z.object({ threadId: z.string().min(1) }),
+    output: z.object({ recap: recapSchema.nullable(), generated: z.boolean(), reason: z.string().nullable() }),
+  },
   state: {
     input: z.null(),
     output: z.object({
