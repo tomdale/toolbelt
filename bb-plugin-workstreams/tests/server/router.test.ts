@@ -480,3 +480,77 @@ it("honors an explicit project override outside the workstream's project map", a
     });
   }
 });
+
+describe("explicit New work intent", () => {
+  it("keeps an explicit destination ahead of mentions and classification", async () => {
+    const { w, alpha } = await setup({
+      outcome: "continue",
+      threadId: "a1",
+      confidence: "high",
+      reason: "model target",
+    });
+    const decision = await w.harness.behavior.callRpc("route", {
+      prompt: "Continue with @thread:a1 but start a fresh task",
+      intent: { action: "new-thread", destination: { kind: "workstream", id: alpha.id } },
+    }) as Decision;
+    expect(decision).toMatchObject({ outcome: "new-thread", sectionId: alpha.id });
+    expect(w.completions.filter((c) => c.prompt.includes("Someone is starting new work"))).toHaveLength(0);
+  });
+
+  it("supports a manual destination with automatic action", async () => {
+    const { w, alpha } = await setup({ outcome: "unsure", candidates: [], reason: "" });
+    const decision = await w.harness.behavior.callRpc("route", {
+      prompt: "Send this to Alpha",
+      intent: { destination: { kind: "workstream", id: alpha.id } },
+    }) as Decision;
+    expect(decision).toMatchObject({ outcome: "new-thread", sectionId: alpha.id });
+  });
+
+  it("creates an explicitly unassigned thread without filing it", async () => {
+    const { w } = await setup({ outcome: "continue", threadId: "a1", confidence: "high", reason: "ignored" });
+    const prompt = "Write an unassigned checklist";
+    const intent = { action: "new-thread" as const, destination: { kind: "none" as const }, placement: { projectId: "proj_personal" } };
+    const decision = await w.harness.behavior.callRpc("route", { prompt, intent }) as Decision;
+    expect(decision).toMatchObject({ outcome: "new-thread", sectionId: "", placement: { projectId: "proj_personal" } });
+    await w.harness.behavior.callRpc("routeExecute", { decisionId: decision.id, prompt, intent, execution: { input: [{ type: "text", text: prompt, mentions: [] }] } });
+    expect(w.spawned[0]).toMatchObject({ sectionId: null, pluginMetadata: { unassignedByRouter: true } });
+    expect(w.threads.get("spawn1")?.sectionId).toBeNull();
+  });
+
+  it("rejects a changed intent and permits only one execute", async () => {
+    const { w, alpha } = await setup({ outcome: "unsure", candidates: [], reason: "" });
+    const prompt = "Fix Alpha manually";
+    const intent = { action: "new-thread" as const, destination: { kind: "workstream" as const, id: alpha.id } };
+    const decision = await w.harness.behavior.callRpc("route", { prompt, intent }) as Decision;
+    await expect(w.harness.behavior.callRpc("routeExecute", {
+      decisionId: decision.id, prompt, intent: { ...intent, destination: { kind: "none" } },
+    })).rejects.toThrow("preview changed");
+    await w.harness.behavior.callRpc("routeExecute", { decisionId: decision.id, prompt, intent });
+    await expect(w.harness.behavior.callRpc("routeExecute", { decisionId: decision.id, prompt, intent })).rejects.toThrow("preview expired");
+    expect(w.spawned).toHaveLength(1);
+  });
+
+  it("preserves structured input and validates an explicit thread target", async () => {
+    const { w } = await setup({ outcome: "unsure", candidates: [], reason: "" });
+    const prompt = "Send an image to the existing task";
+    const input = [{ type: "text", text: prompt, mentions: [] }, { type: "image", path: "uploads/x.png" }];
+    const intent = { action: "send-message" as const, destination: { kind: "thread" as const, id: "a1" } };
+    const decision = await w.harness.behavior.callRpc("route", { prompt, intent }) as Decision;
+    await w.harness.behavior.callRpc("routeExecute", { decisionId: decision.id, prompt, intent, execution: { input } });
+    expect(w.sent[0]).toMatchObject({ threadId: "a1", input });
+    await expect(w.harness.behavior.callRpc("route", { prompt, intent: { ...intent, destination: { kind: "thread", id: "missing" } } })).rejects.toThrow("no longer exists");
+  });
+
+  it("lets an explicit new-workstream action infer its name", async () => {
+    const { w } = await setup({
+      outcome: "new-workstream", name: "Offline sync", description: "", title: "Sync", code: true,
+      confidence: "high", reason: "new effort",
+    });
+    const decision = await w.harness.behavior.callRpc("route", {
+      prompt: "Start a spike on offline sync",
+      intent: { action: "new-workstream" },
+    }) as Decision;
+    expect(decision).toMatchObject({ outcome: "new-workstream", name: "Offline sync" });
+    expect(routePrompts(w)).toHaveLength(1);
+  });
+});

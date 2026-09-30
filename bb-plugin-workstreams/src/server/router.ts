@@ -66,11 +66,11 @@ export type RouteDecision =
       sectionId: string;
       workstream: string;
       title: string;
-      placement: Placement;
+      placement: Placement | null;
     })
   | (Base & {
       outcome: "new-workstream";
-      placement: Placement;
+      placement: Placement | null;
       name: string;
       description: string;
       title: string;
@@ -142,6 +142,7 @@ export class Router {
     const destination = intent?.destination;
     const explicitProject = intent?.placement?.projectId;
     const explicitEnvironment = intent?.placement?.environment;
+    const selectedProject = explicitProject ?? options.pickedProjectId ?? null;
     const remember = (decision: RouteDecision) => this.remember(text, decision, intent);
     const analysis = this.deps.analyzer.all();
     const forest = buildForest(threads);
@@ -161,7 +162,8 @@ export class Router {
       );
     // Explicit destinations are authoritative: mentions and the classifier
     // must never redirect a preview the user reviewed.
-    if (intent?.action === "send-message" && destination) {
+    if ((intent?.action === "send-message" ||
+      (!intent?.action && destination?.kind === "thread")) && destination) {
       if (destination.kind !== "thread")
         throw new UserError("Choose an existing thread to send a message.");
       const target = threads.find((t) => t.id === destination.id);
@@ -174,34 +176,33 @@ export class Router {
         reason: "The destination was chosen explicitly.", subject: null, traceId: null,
       });
     }
-    if (intent?.action === "new-thread" && destination?.kind === "none")
+    if ((!intent?.action || intent.action === "new-thread") && destination?.kind === "none")
       return remember({
         id: randomUUID(), outcome: "new-thread", sectionId: "", workstream: "",
-        title: "", placement: (await this.placement(null, false, explicitProject, explicitEnvironment, true)) as Placement,
+        title: "", placement: await this.placement(null, false, explicitProject, explicitEnvironment, true),
         confidence: "high", reason: "No workstream was chosen explicitly.", subject: null, traceId: null,
       });
-    if (intent?.action === "new-thread" && destination?.kind === "workstream") {
+    if ((!intent?.action || intent.action === "new-thread") && destination?.kind === "workstream") {
       if (!nameOf.has(destination.id)) throw new UserError("That workstream no longer exists.");
       return remember({
         id: randomUUID(), outcome: "new-thread", sectionId: destination.id,
         workstream: nameOf.get(destination.id)!, title: "",
-        placement: (await this.placement(destination.id, true, explicitProject, explicitEnvironment, false)) as Placement,
+        placement: await this.placement(destination.id, true, explicitProject, explicitEnvironment, false),
         confidence: "high", reason: "The destination was chosen explicitly.", subject: null, traceId: null,
       });
     }
-    if (intent?.action === "new-workstream") {
-      const name = intent.workstreamName?.trim();
-      if (!name) throw new UserError("Name the new workstream first.");
+    if (intent?.action === "new-workstream" && intent.workstreamName?.trim()) {
+      const name = intent.workstreamName.trim();
       return remember({
         id: randomUUID(), outcome: "new-workstream", name, description: "", title: "",
-        placement: (await this.placement(null, true, explicitProject, explicitEnvironment, true)) as Placement,
+        placement: await this.placement(null, true, explicitProject, explicitEnvironment, true),
         confidence: "high", reason: "The workstream name was chosen explicitly.", subject: null, traceId: null,
       });
     }
     const mention = options.workstreamId
       ? { sectionId: options.workstreamId }
       : mentionedTarget(text);
-    if (mention && "threadId" in mention) {
+    if (mention && "threadId" in mention && intent?.action !== "new-thread") {
       const target = threads.find((t) => t.id === mention.threadId);
       if (target && !excluded.has(target.id))
         return remember({
@@ -226,11 +227,11 @@ export class Router {
         sectionId: mention.sectionId,
         workstream: nameOf.get(mention.sectionId)!,
         title: "",
-        placement: await this.placement(
+        placement: (await this.placement(
           mention.sectionId,
           true,
-          options.pickedProjectId,
-        ) as Placement,
+          selectedProject,
+        )) ?? (await this.placement(null, false, selectedProject))!,
         confidence: "high",
         reason: "The request mentions this workstream.",
         subject: null,
@@ -239,7 +240,7 @@ export class Router {
           : null,
       });
 
-    const picked = options.pickedProjectId ?? null;
+    const picked = selectedProject;
     const input: RouteInput = {
       prompt: text,
       workstreams: records
@@ -317,7 +318,7 @@ export class Router {
         confidence: raw.confidence,
         reason: raw.reason,
         subject: raw.subject,
-        placement: (await this.placement(record.sectionId, raw.code, picked)) as Placement,
+        placement: (await this.placement(record.sectionId, raw.code, picked)) ?? (await this.placement(null, false, picked))!
       };
     } else if (raw.outcome === "new-thread") {
       const sectionId = idOf.get(raw.workstream)!;
@@ -325,7 +326,7 @@ export class Router {
         ...base,
         ...raw,
         sectionId,
-        placement: (await this.placement(sectionId, raw.code, picked)) as Placement,
+        placement: (await this.placement(sectionId, raw.code, picked)) ?? (await this.placement(null, false, picked))!
       };
     } else if (raw.outcome === "new-workstream") {
       const like = raw.projectLike ? idOf.get(raw.projectLike) : undefined;
@@ -338,7 +339,7 @@ export class Router {
         confidence: raw.confidence,
         reason: raw.reason,
         subject: raw.subject,
-        placement: (await this.placement(like ?? null, raw.code, picked)) as Placement,
+        placement: (await this.placement(like ?? null, raw.code, picked)) ?? (await this.placement(null, false, picked))!
       };
     } else
       decision = {

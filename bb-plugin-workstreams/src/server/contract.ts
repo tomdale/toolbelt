@@ -193,7 +193,7 @@ const routeIntentSchema = z.object({
   ]).optional(),
   placement: z.object({
     projectId: z.string().optional(),
-    environment: z.record(z.string(), z.unknown()).optional(),
+    environment: z.any().optional(),
   }).optional(),
   workstreamName: z.string().optional(),
 });
