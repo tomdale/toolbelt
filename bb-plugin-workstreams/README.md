@@ -62,11 +62,11 @@ against.
   latest request drifted to another workstream. Results are tied to the turn
   they describe and show as updating once a new turn starts. Analysis itself
   never moves anything; the later filing pass may use its subject.
-- **Understanding**: a tool-using learner reads conversations, follows connections,
-  and writes freeform thread notebooks plus a shared brief. Routing and analysis
-  read that brief; the learner does not move threads or edit code. Read notes,
-  explore learning runs, or ask it a question in the Understanding tab.
-  See [the guide](docs/understanding.md).
+- **Understanding**: a tool-using learner reads conversations, follows
+  connections, and writes freeform thread notebooks plus a shared brief. Routing
+  and analysis read that brief; the learner does not move threads or edit code.
+  Read notes, explore learning runs, or ask it a question in the Understanding
+  tab. See [the guide](docs/understanding.md).
 - **Archive suggestions**: when classification finds a natural end and BB has no
   unfinished tasks, goals, queued messages, interactions, or background work, a
   quiet **Archive** button appears in the composer toolbar. Clicking archives
@@ -84,10 +84,12 @@ against.
   (renames, merges, new workstreams, descriptions), lets you review it, files
   unfiled and automatically filed threads, and previews the result before
   applying it as one undoable change. Threads you filed stay put.
-- **Evolution**, after that: when a subject collects two or more threads in a
-  workstream, Workstreams spins it out, moves threads to the workstream their
-  subject names, or merges a workstream into another, with a yellow banner under
-  the thread header to Undo (or, with `evolution = ask`, to accept first).
+- **Notebook supervisor**, after that: periodically considers changed notebooks,
+  the shared brief, and active work. It can spin out coherent recurring efforts
+  within one product, move work to an existing effort, or merge overlapping
+  efforts. Changes retain a yellow Undo banner (or, with `evolution = ask`, wait
+  for acceptance). User placement decisions and user-written scope remain
+  authoritative; unchanged or dismissed suggestions do not recur every minute.
   Unsorted threads it can place confidently are filed the same way. A
   high-confidence `new: <subject>` assignment creates that workstream and files
   the thread in the same pass; lower-confidence assignments remain Unsorted.
@@ -154,7 +156,6 @@ bb workstreams log [--since 7d] [--external]   # the activity log
 bb workstreams undo <entry-id>
 bb workstreams trace [<id>] [--thread <id>] [--entry <id>] [--kind <kind>] [--json]
                                                # Debug mode: recorded model calls
-bb workstreams cutover                         # after organizing: drop v1's leftover data
 ```
 
 A workstream argument is a section id or its name (case-insensitive). `new` and
@@ -198,9 +199,9 @@ node scripts/capture-new-work.mjs /tmp/new-work-shots
 - `src/server/`: `service.ts` (mutations, batches, undo, reconciler),
   `analyzer.ts`, `bootstrap.ts`, `evolution.ts`, `router.ts`, `agents.ts`
   (`configure`), `map.ts`, `journal.ts`, `db.ts` (append-only migrations; the
-  first two are v1's), `cli.ts`, `contract.ts`, `model.ts` (every model call's
-  prompt and parser, and Debug mode's recording), `trace.ts` (the trace store),
-  `inference/` (the host entry that runs Pi).
+  existing migration IDs remain append-only), `cli.ts`, `contract.ts`,
+  `model.ts` (every model call's prompt and parser, and Debug mode's recording),
+  `trace.ts` (the trace store), `inference/` (the host entry that runs Pi).
 - `src/app/`: the sidebar list, the page, the header parent link and proposal
   banner, the composer routing banner, and `debug/` (inspect buttons, the
   inspector pane), fed by `useWorkstreams.ts`.

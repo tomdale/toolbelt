@@ -21,6 +21,11 @@ import {
 } from "../domain/organize.ts";
 import { parseRoute, routePrompt, type RouteInput } from "../domain/router.ts";
 import {
+  buildSupervisionPrompt,
+  parseSupervision,
+  type SupervisionInput,
+} from "../domain/supervision.ts";
+import {
   TRACE_KIND_TITLE,
   type Trace,
   type TraceKind,
@@ -45,6 +50,11 @@ const assign = {
       text,
       input.threads.map((t) => t.id),
       input.workstreams.map((w) => w.name),
+      new Map(
+        input.workstreams.flatMap((w) =>
+          (w.aliases ?? []).map((alias) => [alias, w.name] as const),
+        ),
+      ),
     ),
 };
 
@@ -78,6 +88,11 @@ export const MODEL_CALLS = {
         text,
         input.map((w) => w.name),
       ),
+  },
+  supervision: {
+    prompt: (input: SupervisionInput) => buildSupervisionPrompt(input),
+    parse: (text: string, input: SupervisionInput) =>
+      parseSupervision(text, input),
   },
 } satisfies Record<
   TraceKind,
@@ -159,6 +174,10 @@ export function summarize(
     case "describe": {
       const n = Object.keys(value as OutputOf<"describe">).length;
       return `${n} description${n === 1 ? "" : "s"}`;
+    }
+    case "supervision": {
+      const actions = value as OutputOf<"supervision">;
+      return counted(actions.map((action) => action.kind));
     }
   }
 }

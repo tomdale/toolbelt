@@ -129,7 +129,7 @@ export default async function plugin(bb: BbPluginApi) {
       type: "select",
       label: "Workstream changes",
       description:
-        "When threads show a workstream should split, merge, or move: apply the change with an Undo banner, or ask first.",
+        "When the notebook supervisor finds a useful regrouping: apply it with an Undo banner, or ask first.",
       options: ["auto", "ask"],
       default: "auto",
     },
@@ -144,7 +144,7 @@ export default async function plugin(bb: BbPluginApi) {
       type: "select",
       label: "Change sensitivity",
       description:
-        "How much shared work proposes a new workstream: responsive (2 threads), balanced (3), or conservative (4).",
+        "How readily the supervisor proposes regrouping, and how often it considers changed notebooks: responsive, balanced, or conservative.",
       options: ["responsive", "balanced", "conservative"],
       default: "responsive",
     },
@@ -210,10 +210,17 @@ export default async function plugin(bb: BbPluginApi) {
   // Retention also applies while Debug mode is off and nothing is recorded.
   traces.prune({ force: true });
   const notebooks = new Notebooks({
-    sdk: () => bb.sdk, db,
-    turn: async (request, signal) => hostRpc.call("agentTurn", request, { hostId: await analysisHost(), timeoutMs: 95000, signal }),
+    sdk: () => bb.sdk,
+    db,
+    turn: async (request, signal) =>
+      hostRpc.call("agentTurn", request, {
+        hostId: await analysisHost(),
+        timeoutMs: 95000,
+        signal,
+      }),
     model: async () => (await settings.get()).model,
-    onChange: notify, log: message => bb.log.warn(message),
+    onChange: notify,
+    log: (message) => bb.log.warn(message),
   });
   bb.onDispose(() => notebooks.dispose());
   let evolveSoon = () => {};
@@ -292,6 +299,8 @@ export default async function plugin(bb: BbPluginApi) {
     map,
     inference,
     model: async () => (await settings.get()).organizeModel,
+    context: () => notebooks.context(),
+    notebook: (threadId) => notebooks.get(threadId),
     onChange: notify,
   });
   const evolution = new Evolution({
@@ -304,6 +313,8 @@ export default async function plugin(bb: BbPluginApi) {
     bootstrap,
     inference,
     model: async () => (await settings.get()).model,
+    context: () => notebooks.context(),
+    notebook: (threadId) => notebooks.get(threadId),
     settings: async () => {
       const values = await settings.get();
       return { evolution: values.evolution, sensitivity: values.sensitivity };
@@ -311,6 +322,7 @@ export default async function plugin(bb: BbPluginApi) {
     onChange: notify,
     log: (message) => bb.log.warn(message),
   });
+  bb.onDispose(() => evolution.dispose());
   const router = new Router({
     sdk: () => bb.sdk,
     service,
@@ -856,10 +868,18 @@ export default async function plugin(bb: BbPluginApi) {
     trace: async ({ id }) => ({ trace: traces.get(id) }),
     traceReplay: ({ id }) =>
       userFacing(async () => ({ trace: await inference.replay(id) })),
-    notebookOverview: async ({ query, offset }) => notebooks.overview(query, offset),
-    notebook: async ({ threadId }) => ({ notebook: notebooks.get(threadId), versions: notebooks.versions(threadId) }),
+    notebookOverview: async ({ query, offset }) =>
+      notebooks.overview(query, offset),
+    notebook: async ({ threadId }) => ({
+      notebook: notebooks.get(threadId),
+      versions: notebooks.versions(threadId),
+    }),
     notebookBriefVersions: async () => ({ versions: notebooks.versions(null) }),
-    notebookLearn: ({ threadId }) => userFacing(async () => { await notebooks.observe(threadId); return notebooks.overview(); }),
+    notebookLearn: ({ threadId }) =>
+      userFacing(async () => {
+        await notebooks.observe(threadId);
+        return notebooks.overview();
+      }),
     notebookAsk: ({ question }) => userFacing(() => notebooks.ask(question)),
     notebookRun: async ({ id }) => ({ run: notebooks.run(id) }),
     notebookCancel: async ({ id }) => ({ cancelled: notebooks.cancel(id) }),

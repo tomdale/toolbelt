@@ -77,10 +77,10 @@ ${request}
 Return exactly one of:
 {"outcome": "continue", "threadId": "<id from the list>", "confidence": "high"|"medium"|"low", "reason": "<at most 120 characters>", "subject": "<product>"}
 {"outcome": "new-thread", "workstream": "<exact name from the list>", "title": "<3-8 words>", "code": true|false, "confidence": ..., "reason": ..., "subject": ...}
-{"outcome": "new-workstream", "name": "<product name>", "description": "<one line>", "title": "<3-8 words>", "code": true|false, "projectLike": "<workstream name whose code this changes, or null>", "confidence": ..., "reason": ..., "subject": ...}
+{"outcome": "new-workstream", "name": "<effort name>", "description": "<one line>", "title": "<3-8 words>", "code": true|false, "projectLike": "<workstream name whose code this changes, or null>", "confidence": ..., "reason": ..., "subject": ...}
 {"outcome": "unsure", "candidates": [{"threadId": "<id>"} | {"workstream": "<name>"}] (at most 3), "reason": ...}
 - continue only when the request plainly carries on that thread's own task (a follow-up, a fix to what it just did). New work in the same area is a new thread.
-- new-workstream only for a product or effort none of the workstreams covers.
+- new-workstream only for a coherent ongoing effort none of the workstreams covers. Several efforts may belong to the same product; prefer an existing specific effort over its broad product bucket when the request fits.
 - code: true when the work changes code or files in a repository.
 - unsure when two or more options fit about equally.`;
 }

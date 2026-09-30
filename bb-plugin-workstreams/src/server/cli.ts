@@ -175,24 +175,59 @@ export function registerCli(
         "List workstreams, file threads into them, and read the activity log",
       commands: {
         understanding: cliCommand({
-          summary: "Read the learner's notebooks and shared brief, learn from a thread, or ask a question",
-          positionals: [{ name: "query", description: "Optional notebook search" }],
+          summary:
+            "Read the learner's notebooks and shared brief, learn from a thread, or ask a question",
+          positionals: [
+            { name: "query", description: "Optional notebook search" },
+          ],
           options: {
-            json: { type: "boolean", description: "Print notebook state or learning run as JSON" },
-            learn: { type: "string", description: "Read new conversation and update notes for this thread (paid model calls)" },
-            ask: { type: "string", description: "Ask the learner to investigate a question without changing notes (paid model calls)" },
+            json: {
+              type: "boolean",
+              description: "Print notebook state or learning run as JSON",
+            },
+            learn: {
+              type: "string",
+              description:
+                "Read new conversation and update notes for this thread (paid model calls)",
+            },
+            ask: {
+              type: "string",
+              description:
+                "Ask the learner to investigate a question without changing notes (paid model calls)",
+            },
           },
           async run({ positionals, options }) {
             try {
-              if (options.learn && options.ask) throw new UserError("Choose --learn or --ask.");
+              if (options.learn && options.ask)
+                throw new UserError("Choose --learn or --ask.");
               if (options.learn) await notebooks.observe(options.learn);
               if (options.ask) {
                 const run = await notebooks.ask(options.ask);
-                return { exitCode: run.status === "done" ? 0 : 1, stdout: options.json ? json(run) : run.summary || run.error || run.status };
+                return {
+                  exitCode: run.status === "done" ? 0 : 1,
+                  stdout: options.json
+                    ? json(run)
+                    : run.summary || run.error || run.status,
+                };
               }
               const overview = notebooks.overview(positionals.query ?? "");
-              return { exitCode: 0, stdout: options.json ? json(overview) : ["Shared understanding", overview.brief.text || "The learner has not written a brief yet.", ...overview.notebooks.map(n => `\n${n.title} (${n.threadId})\n${n.text}${n.error ? `\nLearning error: ${n.error}` : ""}`)].join("\n\n") };
-            } catch (error) { return fail(error); }
+              return {
+                exitCode: 0,
+                stdout: options.json
+                  ? json(overview)
+                  : [
+                      "Shared understanding",
+                      overview.brief.text ||
+                        "The learner has not written a brief yet.",
+                      ...overview.notebooks.map(
+                        (n) =>
+                          `\n${n.title} (${n.threadId})\n${n.text}${n.error ? `\nLearning error: ${n.error}` : ""}`,
+                      ),
+                    ].join("\n\n"),
+              };
+            } catch (error) {
+              return fail(error);
+            }
           },
         }),
         list: cliCommand({
@@ -670,48 +705,6 @@ export function registerCli(
                   ]),
             ];
             return { exitCode: 0, stdout: lines.join("\n") };
-          },
-        }),
-        cutover: cliCommand({
-          summary:
-            "After organizing, remove the data Workstreams v1 left behind (its key-value state and banner images)",
-          options: {
-            yes: {
-              type: "boolean",
-              description: "Remove it (default: show what would be removed)",
-            },
-          },
-          async run({ options }) {
-            if (!bootstrap.isDone())
-              throw new PluginCliError(
-                "Organize first (Workstreams → Map, or `bb workstreams rebuild`): it reads v1's change log to tell your filings from v1's.",
-                { code: "not_organized" },
-              );
-            const db = bb.storage.database();
-            const count = (table: string) => {
-              try {
-                return (
-                  db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as {
-                    n: number;
-                  }
-                ).n;
-              } catch {
-                return 0;
-              }
-            };
-            const found = { state: count("state"), banners: count("banners") };
-            if (!options.yes)
-              return {
-                exitCode: 0,
-                stdout: `Would remove v1 data: ${found.state} state rows, ${found.banners} banner images. Rerun with --yes. Rolling back to v1 afterwards starts it with no history or analysis.`,
-              };
-            // Emptied, not dropped: v1's migration ledger still lists them.
-            for (const table of ["banners", "state"])
-              if (count(table) > 0) db.exec(`DELETE FROM ${table}`);
-            return {
-              exitCode: 0,
-              stdout: `Removed v1 data (${found.state} state rows, ${found.banners} banner images). v1's settings (organize, diagnostics) have no effect in v2; clear them with \`bb plugin config workstreams unset <key>\` if you like.`,
-            };
           },
         }),
         trace: cliCommand({
