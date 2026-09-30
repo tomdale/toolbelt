@@ -620,6 +620,7 @@ it("identical native settings still acknowledge the current thread target indepe
         title: threadId,
         sectionId: null,
         projectId: "proj_a",
+        providerId: "pi",
         environmentId: "same_env",
         environment: { name: "Same checkout" },
       }),
