@@ -54,7 +54,7 @@ export default async function plugin(bb: BbPluginApi) {
       type: "boolean",
       label: "Show the Recent band in the sidebar",
       description:
-        "The five most recently active threads, excluding ones already in Needs you.",
+        "The five most recently active threads, excluding ones already in For you.",
       default: true,
     },
     model: {

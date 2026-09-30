@@ -13,8 +13,8 @@ const CARD_CLASS =
 
 // Both columns share one body size and line height so their labels and first
 // lines sit on the same baselines; hierarchy comes from weight and opacity.
-const LABEL_CLASS =
-  "mb-1 text-[10.5px] font-semibold uppercase leading-4 tracking-[0.08em] text-sky-900/50 dark:text-sky-200/45";
+const LABEL_BASE =
+  "mb-1 text-[10.5px] font-semibold uppercase leading-4 tracking-[0.08em]";
 const BODY_CLASS =
   "text-[clamp(0.625rem,calc(0.4375rem+0.9375cqi),0.8125rem)] leading-[1.5] [text-wrap:pretty]";
 const GOAL_CLASS =
@@ -126,7 +126,7 @@ function RecapSummary({
         <div className="space-y-2.5">
         {needsInput ? (
           <section>
-            <h3 className={`${LABEL_CLASS} !text-amber-700 dark:!text-amber-300/90`}>Needs input</h3>
+            <h3 className={`${LABEL_BASE} ws-amber-text`}>For you</h3>
             <RecapText text={needsInput} className="font-medium text-sky-950/90 dark:text-sky-100/90" />
           </section>
         ) : null}

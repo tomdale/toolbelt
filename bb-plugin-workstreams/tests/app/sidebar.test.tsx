@@ -127,7 +127,7 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
-  it("shows Needs you and Recent as overlays without removing group rows", async () => {
+  it("shows For you and Recent as overlays without removing group rows", async () => {
     const slot = await mount([
       sidebarThread("ask", {
         sectionId: "sec_a",
@@ -137,12 +137,12 @@ describe("thread list", () => {
       }),
       sidebarThread("other", { sectionId: "sec_b", title: "Other task" }),
     ]);
-    expect(groupRows(slot, "Needs you")).toEqual(["Asking task"]);
+    expect(groupRows(slot, "For you")).toEqual(["Asking task"]);
     expect(groupRows(slot, "Recent")).toEqual(["Other task"]);
     expect(groupRows(slot, "Alpha")).toEqual(["Asking task"]);
     expect(
       within(slot.getByRole("region", { name: "Alpha" })).getByTitle(
-        "1 needs you",
+        "1 for you",
       ),
     ).toBeTruthy();
     slot.lifecycle.unmount();
@@ -211,7 +211,7 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
-  it("caps Needs you at five threads with a way to show the rest", async () => {
+  it("caps For you at five threads with a way to show the rest", async () => {
     const at = Date.now();
     const ids = ["a", "b", "c", "d", "e", "f", "g"];
     const slot = await mount(
@@ -237,7 +237,7 @@ describe("thread list", () => {
         ),
       },
     );
-    const band = await slot.findByRole("region", { name: "Needs you" });
+    const band = await slot.findByRole("region", { name: "For you" });
     expect(within(band).getAllByRole("link")).toHaveLength(5);
     fireEvent.click(within(band).getByRole("button", { name: "Show 2 more" }));
     expect(within(band).getAllByRole("link")).toHaveLength(7);
@@ -246,7 +246,7 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
-  it("lists a current needs-decision result in Needs you, but not a stale one", async () => {
+  it("lists a current needs-decision result in For you, but not a stale one", async () => {
     const at = Date.now();
     const result = (revision: number) => ({
       recap: "Asked whether to ship.",
@@ -266,7 +266,7 @@ describe("thread list", () => {
       ],
       { analysis: { fresh: result(100), stale: result(150) } },
     );
-    const band = await slot.findByRole("region", { name: "Needs you" });
+    const band = await slot.findByRole("region", { name: "For you" });
     // The section implies the decision, so its rows leave the mark out.
     expect(
       within(band)
@@ -285,7 +285,7 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
-  it("collapses Needs you and names each row's workstream", async () => {
+  it("keeps For you open and names each row's workstream", async () => {
     const at = Date.now();
     const asks = (revision: number) => ({
       recap: "Asked whether to ship.",
@@ -318,12 +318,11 @@ describe("thread list", () => {
         analysis: { manager: asks(200), delegate: asks(100) },
       },
     );
-    const band = await slot.findByRole("region", { name: "Needs you" });
+    const band = await slot.findByRole("region", { name: "For you" });
     expect(within(band).getByText("Alpha")).toBeTruthy();
-    fireEvent.click(within(band).getByRole("button", { name: /Needs you/ }));
-    expect(within(band).queryAllByRole("link")).toHaveLength(0);
-    fireEvent.click(within(band).getByRole("button", { name: /Needs you/ }));
-    expect(within(band).getByText("Alpha")).toBeTruthy();
+    // The section is always open: its header is a heading, not a toggle.
+    expect(within(band).getByRole("heading", { name: /For you/ })).toBeTruthy();
+    expect(within(band).queryByRole("button", { name: /For you/ })).toBeNull();
     expect(within(band).queryByText(/via/)).toBeNull();
     slot.lifecycle.unmount();
   });

@@ -191,7 +191,7 @@ export function registerCli(
                 ),
               };
             const line = (g: ReturnType<typeof groupJson>) =>
-              `${g.name.padEnd(36)} ${plural(g.threads, "thread").padStart(11)}${g.needsYou ? ` · ${g.needsYou} need you` : ""}${g.lastActive ? ` · ${g.lastActive}` : ""}  (${g.id})`;
+              `${g.name.padEnd(36)} ${plural(g.threads, "thread").padStart(11)}${g.needsYou ? ` · ${g.needsYou} for you` : ""}${g.lastActive ? ` · ${g.lastActive}` : ""}  (${g.id})`;
             const lines = [
               ...active.map(line),
               line(unsorted),
@@ -386,7 +386,7 @@ export function registerCli(
                       `${result.state.replace("_", " ")} · ${result.subject ?? "no subject"} · ${seconds}s · ${result.model}`,
                       result.recap,
                       ...(result.needsYou
-                        ? [`Needs you: ${result.needsYou}`]
+                        ? [`For you: ${result.needsYou}`]
                         : []),
                       ...(result.drift
                         ? [

@@ -1,5 +1,5 @@
 /**
- * The Workstreams sidebar thread list: the Needs you section and the Recent
+ * The Workstreams sidebar thread list: the For you section and the Recent
  * band as overlays, then one group per workstream (BB section, in the user's drag-and-drop order, else
  * BB's), Unsorted, and a Dormant fold. Every visible thread appears in exactly
  * one group (SPEC I1).
@@ -246,11 +246,9 @@ export function WorkstreamsThreadList({
         ) : null}
         {projection.needsYou.length > 0 ? (
           <Band
-            title="Needs you"
+            title="For you"
             count={projection.needsYou.length}
             boxed
-            collapsed={isCollapsed("__needs")}
-            toggle={() => toggle("__needs")}
           >
             {(showAllNeeds
               ? projection.needsYou
@@ -261,7 +259,9 @@ export function WorkstreamsThreadList({
                 <button
                   type="button"
                   onClick={() => setShowAllNeeds((all) => !all)}
-                  className="w-full rounded-md px-2 py-0.5 text-left text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+                  // Left edge matches the row titles: 6px row padding, the
+                  // 14px status slot, and its 6px gap.
+                  className="ws-amber-text w-full rounded-md py-0.5 pl-[26px] pr-2 text-left text-[12px] hover:bg-sidebar-accent/60"
                 >
                   {showAllNeeds
                     ? "Show less"
@@ -357,13 +357,14 @@ export function WorkstreamsThreadList({
   );
 }
 
-/** Needs you shows this many rows until the user asks for the rest. */
+/** For you shows this many rows until the user asks for the rest. */
 const NEEDS_YOU_LIMIT = 5;
 
 /**
- * A collapsible overlay band. `boxed` draws the header and rows inside the
- * tinted Needs you block (`.ws-needs`) with extra space around it, so threads
- * waiting on Tom stand apart from the list below.
+ * An overlay band. A plain band collapses from its header. `boxed` draws the
+ * header and rows inside the tinted For you block (`.ws-needs`), always open
+ * and with extra space around it, so threads waiting on Tom stand apart from
+ * the list below.
  */
 function Band({
   title,
@@ -376,32 +377,39 @@ function Band({
   title: string;
   count?: number;
   boxed?: boolean;
-  collapsed: boolean;
-  toggle: () => void;
+  collapsed?: boolean;
+  toggle?: () => void;
   children: ReactNode;
 }) {
+  const open = boxed || !collapsed;
   return (
     <section aria-label={title} className={cn("px-1", boxed && "my-1")}>
       <div className={cn(boxed && "ws-needs mx-0.5 rounded-lg px-0.5 py-1")}>
-        <button
-          type="button"
-          aria-expanded={!collapsed}
-          onClick={toggle}
-          className={cn(
-            "flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide hover:bg-sidebar-accent/60",
-            boxed ? "ws-needs-title" : "text-muted-foreground",
-          )}
-        >
-          <Icon
-            name={collapsed ? "ChevronRight" : "ChevronDown"}
-            className="size-3"
-          />
-          <span className="flex-1 text-left">{title}</span>
-          {count !== undefined ? (
-            <span className="tabular-nums">{count}</span>
-          ) : null}
-        </button>
-        {collapsed ? null : <ul className="mt-0.5">{children}</ul>}
+        {boxed ? (
+          <h2 className="ws-amber-text flex w-full items-center gap-1 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide">
+            <span className="flex-1 text-left">{title}</span>
+            {count !== undefined ? (
+              <span className="tabular-nums">{count}</span>
+            ) : null}
+          </h2>
+        ) : (
+          <button
+            type="button"
+            aria-expanded={!collapsed}
+            onClick={toggle}
+            className="flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-sidebar-accent/60"
+          >
+            <Icon
+              name={collapsed ? "ChevronRight" : "ChevronDown"}
+              className="size-3"
+            />
+            <span className="flex-1 text-left">{title}</span>
+            {count !== undefined ? (
+              <span className="tabular-nums">{count}</span>
+            ) : null}
+          </button>
+        )}
+        {open ? <ul className="mt-0.5">{children}</ul> : null}
       </div>
     </section>
   );
@@ -486,8 +494,8 @@ function WorkstreamGroup({
           ) : null}
           {group.needsYou > 0 ? (
             <span
-              className="rounded-full bg-amber-500/20 px-1.5 text-[11px] font-medium tabular-nums text-amber-500"
-              title={`${group.needsYou} need${group.needsYou === 1 ? "s" : ""} you`}
+              className="ws-amber-pill rounded-full px-1.5 text-[11px] font-medium tabular-nums"
+              title={`${group.needsYou} for you`}
             >
               {group.needsYou}
             </span>
