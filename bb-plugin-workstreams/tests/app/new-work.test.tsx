@@ -35,20 +35,19 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
     ...actual,
     useComposer: () => {
       const composer = actual.useComposer();
-      return useMemo(
-        () => ({
-          ...composer,
-          setSelection: (
-            selection: import("@get-bb/plugin-sdk/app").ComposerSelection,
-          ) =>
-            selectionBehavior.apply
-              ? selectionBehavior.apply(selection, (next) =>
-                  composer.setSelection(next),
-                )
-              : composer.setSelection(selection),
-        }),
-        [composer],
-      );
+      return useMemo(() => {
+        // Inherit the native reactive getters rather than snapshotting them.
+        const adapter = Object.create(composer) as typeof composer;
+        adapter.setSelection = (
+          selection: import("@get-bb/plugin-sdk/app").ComposerSelection,
+        ) =>
+          selectionBehavior.apply
+            ? selectionBehavior.apply(selection, (next) =>
+                composer.setSelection(next),
+              )
+            : composer.setSelection(selection);
+        return adapter;
+      }, [composer]);
     },
     experimental_NewThreadComposer: function HostComposer(
       props: import("@get-bb/plugin-sdk/app").NewThreadComposerProps,
@@ -226,6 +225,22 @@ it("automatic journey submits routed placement and preserves the native request 
   });
   expect(onClose).toHaveBeenCalledTimes(1);
   expect(slot.inspection.navigateCalls).toHaveLength(1);
+});
+it("native composer API draft updates trigger routing through reactive getters", async () => {
+  const route = vi.fn().mockResolvedValue(decision);
+  const { slot } = mount(route);
+  await slot.behavior.setComposerText(
+    "Changed through the public composer API",
+  );
+  await waitFor(
+    () =>
+      expect(route).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prompt: "Changed through the public composer API",
+        }),
+      ),
+    { timeout: 2000 },
+  );
 });
 it("an enabled native snapshot rejected by the pre-clear guard retains its draft", async () => {
   const { execute } = mount();
