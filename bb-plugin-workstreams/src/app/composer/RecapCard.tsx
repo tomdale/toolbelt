@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   Markdown,
+  experimental_useSidebarThreads,
   useComposer,
   useRealtime,
   useRpc,
@@ -552,6 +553,10 @@ export function RecapCard() {
   const { scope, isEmpty, attachmentCount, isRunning, isSubmitting } =
     useComposer();
   const threadId = scope.kind === "thread" ? scope.threadId : null;
+  const { threads } = experimental_useSidebarThreads();
+  const hasPendingInteraction = threads.some(
+    (thread) => thread.id === threadId && thread.hasPendingInteraction,
+  );
   // Archive is no suggestion for a thread the user is writing into, but the
   // recap stays readable until the message goes out.
   const continuing = useContinuing({
@@ -595,7 +600,9 @@ export function RecapCard() {
     );
   });
 
-  const available = threadId !== null && !sending && !inlineEditor;
+  // The live interaction form owns the ask until it is resolved or cancelled.
+  const available =
+    threadId !== null && !sending && !inlineEditor && !hasPendingInteraction;
   const dismissedRecap = recap !== null && recap.generatedAt === dismissedAt;
   const visible = available && recap !== null && !dismissedRecap;
 
