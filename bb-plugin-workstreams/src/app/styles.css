@@ -231,6 +231,17 @@
   );
 }
 
+/* The Recent block: the For you block's shape and wash in the foreground
+   color instead of amber, and without the shimmer. */
+.ws-band-neutral {
+  background-image: linear-gradient(
+    160deg,
+    color-mix(in oklab, var(--foreground, #ededed) 6%, transparent) 0%,
+    color-mix(in oklab, var(--foreground, #ededed) 3%, transparent) 45%,
+    transparent 100%
+  );
+}
+
 /* The shimmer: a wide, feathered band of light that drifts across the
    block. */
 .ws-needs::after {
