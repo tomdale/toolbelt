@@ -232,6 +232,7 @@ it("stale environment catalogs cannot validate or overwrite a new project", asyn
             }),
         )
         .mockResolvedValueOnce([{ id: "env_b", name: "B" }]),
+      listProviders: vi.fn().mockResolvedValue([]),
     },
   } as unknown as PluginBrowserBbSdk;
   const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
@@ -247,7 +248,7 @@ it("stale environment catalogs cannot validate or overwrite a new project", asyn
 });
 it("invalid reuse environment resets automatically with an announcement", async () => {
   const sdk = {
-    environments: { list: async () => [] },
+    environments: { list: async () => [], listProviders: async () => [] },
   } as unknown as PluginBrowserBbSdk;
   const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
   intake.selectProject("a");
@@ -717,7 +718,7 @@ it("a project on another host resets an incompatible manual new worktree and ann
     },
     threads: { list: async () => [] },
     system: { config: async () => ({ primaryHostId: "host_a" }) },
-    environments: { list: async () => [] },
+    environments: { list: async () => [], listProviders: async () => [] },
   } as unknown as PluginBrowserBbSdk;
   const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
   await intake.loadCatalogs(sdk);
@@ -760,5 +761,451 @@ it("Automatic menu previews retain inferred values instead of echoing forced man
   expect(intake.automaticPreview("environment")).toBe("checkout");
   intake.revertField("project");
   expect(intake.snapshot().project.value).toBe("proj_a");
+  intake.dispose();
+});
+
+it("BUG-1: invalidates manual personal environment atomically when switching to a standard project", async () => {
+  const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
+  const sdk = {
+    projects: {
+      list: async () => [
+        {
+          id: "proj_personal",
+          name: "Personal",
+          kind: "personal",
+          sources: [{ hostId: "host_local" }],
+        },
+        {
+          id: "proj_workstreams",
+          name: "Workstreams",
+          kind: "standard",
+          sources: [{ hostId: "host_local" }],
+        },
+      ],
+    },
+    threads: { list: async () => [] },
+    system: { config: async () => ({ primaryHostId: "host_local" }) },
+  } as unknown as PluginBrowserBbSdk;
+
+  await intake.loadCatalogs(sdk);
+  intake.selectProject("proj_personal");
+  intake.selectEnvironment({
+    type: "host",
+    hostId: "host_local",
+    workspace: { type: "personal" },
+  });
+  expect(intake.snapshot().environment.source).toBe("manual");
+  expect(intake.snapshot().environment.value).toEqual({
+    type: "host",
+    hostId: "host_local",
+    workspace: { type: "personal" },
+  });
+
+  intake.selectProject("proj_workstreams");
+  expect(intake.snapshot().environment).toEqual({
+    source: "automatic",
+    value: { type: "project-default" },
+  });
+  expect(intake.snapshot().announcement).toContain("Environment reset");
+  intake.dispose();
+});
+
+it("BUG-1: preserves compatible manual environment when switching between standard projects on same host", async () => {
+  const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
+  const sdk = {
+    projects: {
+      list: async () => [
+        {
+          id: "proj_1",
+          name: "Project 1",
+          kind: "standard",
+          sources: [{ hostId: "host_local" }],
+        },
+        {
+          id: "proj_2",
+          name: "Project 2",
+          kind: "standard",
+          sources: [{ hostId: "host_local" }],
+        },
+      ],
+    },
+    threads: { list: async () => [] },
+    system: { config: async () => ({ primaryHostId: "host_local" }) },
+  } as unknown as PluginBrowserBbSdk;
+
+  await intake.loadCatalogs(sdk);
+  intake.selectProject("proj_1");
+  const manualWorktree: Environment = {
+    type: "host",
+    hostId: "host_local",
+    workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
+  };
+  intake.selectEnvironment(manualWorktree);
+  expect(intake.snapshot().environment.source).toBe("manual");
+
+  intake.selectProject("proj_2");
+  expect(intake.snapshot().environment).toEqual({
+    source: "manual",
+    value: manualWorktree,
+  });
+  intake.dispose();
+});
+
+it("BUG-2: loadEnvironments queries listProviders with projectId and hostId, populating eligible providers", async () => {
+  const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
+  const listProvidersMock = vi.fn().mockResolvedValue([
+    {
+      id: "project-checkout",
+      displayName: "Project checkout",
+      availability: { status: "available" },
+      requires: {
+        gitCheckout: false,
+        projectCheckout: true,
+        projectless: false,
+        gitRemote: false,
+      },
+    },
+    {
+      id: "git-worktree",
+      displayName: "New worktree",
+      availability: { status: "available" },
+      requires: {
+        gitCheckout: true,
+        projectCheckout: false,
+        projectless: false,
+        gitRemote: false,
+      },
+    },
+  ]);
+  const sdk = {
+    projects: {
+      list: async () => [
+        {
+          id: "proj_a",
+          name: "Project A",
+          kind: "standard",
+          sources: [{ hostId: "host_main" }],
+        },
+      ],
+    },
+    threads: { list: async () => [] },
+    system: { config: async () => ({ primaryHostId: "host_main" }) },
+    environments: {
+      list: async () => [
+        { id: "env_1", name: "Checkout 1", branchName: "main" },
+      ],
+      listProviders: listProvidersMock,
+    },
+  } as unknown as PluginBrowserBbSdk;
+
+  await intake.loadCatalogs(sdk);
+  intake.selectProject("proj_a");
+  await intake.loadEnvironments(sdk, "proj_a");
+
+  expect(listProvidersMock).toHaveBeenCalledWith({
+    projectId: "proj_a",
+    hostId: "host_main",
+  });
+  expect(intake.snapshot().environmentProviders).toHaveLength(2);
+  expect(intake.snapshot().environmentProviders[0]?.displayName).toBe(
+    "Project checkout",
+  );
+  intake.dispose();
+});
+
+it("BUG-2: resets manual environment when provider becomes unavailable in loadEnvironments", async () => {
+  const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
+  const sdk = {
+    projects: {
+      list: async () => [
+        {
+          id: "proj_a",
+          name: "Project A",
+          kind: "standard",
+          sources: [{ hostId: "host_main" }],
+        },
+      ],
+    },
+    threads: { list: async () => [] },
+    system: { config: async () => ({ primaryHostId: "host_main" }) },
+    environments: {
+      list: async () => [],
+      listProviders: async () => [
+        {
+          id: "project-checkout",
+          displayName: "Project checkout",
+          availability: { status: "available" },
+        },
+        {
+          id: "git-worktree",
+          displayName: "New worktree",
+          availability: { status: "unavailable", message: "git not found" },
+        },
+      ],
+    },
+  } as unknown as PluginBrowserBbSdk;
+
+  await intake.loadCatalogs(sdk);
+  intake.selectProject("proj_a");
+  intake.selectEnvironment({
+    type: "provider",
+    environmentProviderId: "git-worktree",
+    machine: { type: "existing", hostId: "host_main" },
+    inputs: null,
+  });
+  expect(intake.snapshot().environment.source).toBe("manual");
+
+  await intake.loadEnvironments(sdk, "proj_a");
+  expect(intake.snapshot().environment).toEqual({
+    source: "automatic",
+    value: { type: "project-default" },
+  });
+  intake.dispose();
+});
+
+it("BUG-3: retry distinguishes invalid selection recovery from transient failures", () => {
+  const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
+  intake.selectProject("proj_a");
+  intake.selectEnvironment({
+    type: "host",
+    hostId: "host_a",
+    workspace: { type: "unmanaged", path: null },
+  });
+  expect(intake.snapshot().environment.source).toBe("manual");
+
+  // Case 1: Invalid selection error ("Choose an environment the composer can use.")
+  intake.selectionFailed("Choose an environment the composer can use.");
+  expect(intake.snapshot().selectionError).toBe(
+    "Choose an environment the composer can use.",
+  );
+  intake.retry();
+  // Recovers by resetting incompatible manual environment to project-default and clearing error
+  expect(intake.snapshot().selectionError).toBeNull();
+  expect(intake.snapshot().environment).toEqual({
+    source: "automatic",
+    value: { type: "project-default" },
+  });
+
+  // Case 2: Transient error ("Error: host unavailable")
+  intake.selectEnvironment({
+    type: "host",
+    hostId: "host_a",
+    workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
+  });
+  intake.selectionFailed("Error: host unavailable");
+  expect(intake.snapshot().selectionError).toBe("Error: host unavailable");
+  intake.retry();
+  // Transient retry clears the error but PRESERVES the user's manual environment
+  expect(intake.snapshot().selectionError).toBeNull();
+  expect(intake.snapshot().environment.source).toBe("manual");
+  expect(intake.snapshot().environment.value).toEqual({
+    type: "host",
+    hostId: "host_a",
+    workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
+  });
+  intake.dispose();
+});
+
+it("revision guards discard out-of-order catalog responses", async () => {
+  let resolveA!: (val: unknown) => void;
+  const sdk = {
+    projects: {
+      list: async () => [
+        { id: "proj_a", name: "A", kind: "standard", sources: [] },
+        { id: "proj_b", name: "B", kind: "standard", sources: [] },
+      ],
+    },
+    threads: { list: async () => [] },
+    system: { config: async () => ({ primaryHostId: "host_1" }) },
+    environments: {
+      list: vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((res) => {
+              resolveA = res;
+            }),
+        )
+        .mockResolvedValueOnce([{ id: "env_b", name: "B env" }]),
+      listProviders: vi
+        .fn()
+        .mockResolvedValueOnce([
+          { id: "project-checkout", displayName: "Checkout" },
+        ])
+        .mockResolvedValueOnce([
+          { id: "project-checkout", displayName: "Checkout" },
+        ]),
+    },
+  } as unknown as PluginBrowserBbSdk;
+
+  const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
+  await intake.loadCatalogs(sdk);
+  intake.selectProject("proj_a");
+  const pendingA = intake.loadEnvironments(sdk, "proj_a");
+
+  // Project switched to B before A resolves
+  intake.selectProject("proj_b");
+  await intake.loadEnvironments(sdk, "proj_b");
+  expect(intake.snapshot().environments).toEqual([
+    { id: "env_b", name: "B env" },
+  ]);
+
+  // Late resolution of A
+  resolveA([{ id: "env_a", name: "A env" }]);
+  await pendingA;
+  // B's environments were NOT overwritten by late A
+  expect(intake.snapshot().environments).toEqual([
+    { id: "env_b", name: "B env" },
+  ]);
+  intake.dispose();
+});
+
+it("non-git project: resets manual worktree when git-worktree is ineligible on the new project", async () => {
+  const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
+  const sdk = {
+    projects: {
+      list: async () => [
+        {
+          id: "proj_git",
+          name: "Git Repo",
+          kind: "standard",
+          sources: [{ hostId: "host_local" }],
+        },
+        {
+          id: "proj_nongit",
+          name: "Non-Git Folder",
+          kind: "standard",
+          sources: [{ hostId: "host_local" }],
+        },
+      ],
+    },
+    threads: { list: async () => [] },
+    system: { config: async () => ({ primaryHostId: "host_local" }) },
+    environments: {
+      list: async () => [],
+      listProviders: async ({ projectId }: { projectId: string }) =>
+        projectId === "proj_git"
+          ? [
+              {
+                id: "project-checkout",
+                displayName: "Project checkout",
+                availability: { status: "available" },
+              },
+              {
+                id: "git-worktree",
+                displayName: "New worktree",
+                availability: { status: "available" },
+              },
+            ]
+          : [
+              // Non-git folder only has checkout, git-worktree is absent!
+              {
+                id: "project-checkout",
+                displayName: "Project checkout",
+                availability: { status: "available" },
+              },
+            ],
+    },
+  } as unknown as PluginBrowserBbSdk;
+
+  await intake.loadCatalogs(sdk);
+  intake.selectProject("proj_git");
+  await intake.loadEnvironments(sdk, "proj_git");
+
+  intake.selectEnvironment({
+    type: "host",
+    hostId: "host_local",
+    workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
+  });
+  expect(intake.snapshot().environment.source).toBe("manual");
+
+  // Switch to non-git project
+  intake.selectProject("proj_nongit");
+  await intake.loadEnvironments(sdk, "proj_nongit");
+
+  // Worktree must be reset to project-default because git-worktree is ineligible!
+  expect(intake.snapshot().environment).toEqual({
+    source: "automatic",
+    value: { type: "project-default" },
+  });
+  expect(intake.snapshot().announcement).toContain("Environment reset");
+  intake.dispose();
+});
+
+it("recoverSelection: resets manual project when composer rejects project selection", () => {
+  const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
+  intake.selectProject("proj_invalid");
+  expect(intake.snapshot().project.source).toBe("manual");
+
+  intake.selectionFailed("Choose a project the composer can use.");
+  expect(intake.snapshot().selectionError).toBe(
+    "Choose a project the composer can use.",
+  );
+
+  intake.retry();
+  expect(intake.snapshot().selectionError).toBeNull();
+  expect(intake.snapshot().project.source).toBe("automatic");
+  expect(intake.snapshot().announcement).toContain(
+    "Project and environment reset",
+  );
+  intake.dispose();
+});
+
+it("catalog failure sets environmentsStatus to error and does not retain stale providers", async () => {
+  const sdk = {
+    environments: {
+      list: vi.fn().mockRejectedValue(new Error("Network disconnect")),
+      listProviders: vi.fn().mockRejectedValue(new Error("Network disconnect")),
+    },
+  } as unknown as PluginBrowserBbSdk;
+
+  const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
+  intake.selectProject("proj_fail");
+  await intake.loadEnvironments(sdk, "proj_fail");
+
+  expect(intake.snapshot().environmentsStatus).toBe("error");
+  expect(intake.snapshot().catalogError).toContain("Network disconnect");
+  expect(intake.snapshot().environmentProviders).toEqual([]);
+  expect(intake.snapshot().environments).toEqual([]);
+  intake.dispose();
+});
+
+it("empty eligible provider catalog resets manual worktree or provider environment", async () => {
+  const intake = new Intake(vi.fn().mockResolvedValue(decision), null, null);
+  const sdk = {
+    projects: {
+      list: async () => [
+        {
+          id: "proj_restricted",
+          name: "Restricted Project",
+          kind: "standard",
+          sources: [{ hostId: "host_local" }],
+        },
+      ],
+    },
+    threads: { list: async () => [] },
+    system: { config: async () => ({ primaryHostId: "host_local" }) },
+    environments: {
+      list: async () => [],
+      listProviders: async () => [],
+    },
+  } as unknown as PluginBrowserBbSdk;
+
+  await intake.loadCatalogs(sdk);
+  intake.selectProject("proj_restricted");
+  intake.selectEnvironment({
+    type: "host",
+    hostId: "host_local",
+    workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
+  });
+  expect(intake.snapshot().environment.source).toBe("manual");
+
+  await intake.loadEnvironments(sdk, "proj_restricted");
+  expect(intake.snapshot().environmentsStatus).toBe("ready");
+  expect(intake.snapshot().environment).toEqual({
+    source: "automatic",
+    value: { type: "project-default" },
+  });
+  expect(intake.snapshot().announcement).toContain("Environment reset");
   intake.dispose();
 });

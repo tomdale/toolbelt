@@ -8,6 +8,11 @@ import {
   type Intake,
   type IntakeState,
 } from "./intake.ts";
+import {
+  buildEnvironmentOptions,
+  formatEnvironmentLabel,
+  isProviderAvailable,
+} from "./environment-labels.ts";
 
 export function statusText(state: IntakeState): string {
   if (!state.text) return "";
@@ -258,7 +263,12 @@ function Field({
             </div>
           ))}
           {!visible.length ? (
-            <p className="text-xs text-muted-foreground">No matches</p>
+            <p className="text-xs text-muted-foreground">
+              {field === "environment" &&
+              intake.snapshot().environmentsStatus === "loading"
+                ? "Loading environments…"
+                : "No matches"}
+            </p>
           ) : null}
         </div>
       ) : null}
@@ -270,11 +280,14 @@ export function environmentLabel(
   state: IntakeState,
 ): string {
   if (!environment) return "";
-  if (environment.type === "reuse")
-    return (
-      state.environments.find((e) => e.id === environment.environmentId)
-        ?.name ?? "Unnamed environment"
+  if (environment.type === "reuse") {
+    const found = state.environments.find(
+      (e) => e.id === environment.environmentId,
     );
+    return found
+      ? formatEnvironmentLabel(found, state.threads, state.environmentProviders)
+      : "Environment";
+  }
   if (environment.type === "project-default") return "Project default";
   if (environment.type === "host")
     return environment.workspace.type === "managed-worktree"
@@ -282,7 +295,13 @@ export function environmentLabel(
       : environment.workspace.type === "personal"
         ? "Personal workspace"
         : "Project checkout";
-  return environment.type === "provider" ? "New environment" : "Environment";
+  if (environment.type === "provider") {
+    const p = state.environmentProviders.find(
+      (provider) => provider.id === environment.environmentProviderId,
+    );
+    return p?.displayName ?? "New environment";
+  }
+  return "Environment";
 }
 export function IntakeBanner({ intake }: { intake: Intake }) {
   const state = useSyncExternalStore(intake.subscribe, intake.snapshot);
@@ -334,6 +353,53 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
   const workstreams = Object.values(server.workstreams);
   const locked = action === "send-message" && destination.kind === "thread";
   const thread = intake.lockedThread();
+  const project = state.projects.find((p) => p.id === projectId);
+  const hostId = project?.hostId ?? state.hostId;
+  const isPersonal =
+    project?.kind === "personal" ||
+    projectId === "personal" ||
+    projectId === "proj_personal";
+
+  const providerOptions: Option[] = [];
+  for (const p of state.environmentProviders) {
+    if (!isProviderAvailable(p, hostId)) continue;
+    if (p.acceptsEmptyInputs === false) continue;
+
+    if (p.id === "personal-workspace") {
+      providerOptions.push({
+        value: "personal",
+        label: p.displayName || "Personal workspace",
+      });
+    } else if (p.id === "project-checkout") {
+      providerOptions.push({
+        value: "checkout",
+        label: p.displayName || "Project checkout",
+      });
+    } else if (p.id === "git-worktree") {
+      providerOptions.push({
+        value: "worktree",
+        label: p.displayName || "New worktree",
+      });
+    } else if (hostId) {
+      providerOptions.push({
+        value: `provider:${p.id}`,
+        label: p.displayName || p.id,
+      });
+    }
+  }
+
+  const existingProviderLabels = providerOptions.map((o) => o.label);
+
+  const environmentOptions: Option[] = [
+    ...providerOptions,
+    ...buildEnvironmentOptions(
+      state.environments,
+      state.threads,
+      state.environmentProviders,
+      existingProviderLabels,
+    ),
+  ];
+
   const destinationOptions: Option[] = [];
   if (state.action.source !== "manual" || action === "new-thread") {
     destinationOptions.push(
@@ -346,8 +412,6 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
     );
   }
   // Existing threads are classifier proposals, not a general message router.
-  const hostId =
-    state.projects.find((p) => p.id === projectId)?.hostId ?? state.hostId;
   const label =
     action === "send-message"
       ? "Thread"
@@ -568,27 +632,25 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
           waiting={!locked && !projectId}
           value={
             locked
-              ? (thread?.environmentName ?? thread?.environmentId ?? "Loading…")
+              ? (thread?.environmentName ??
+                (thread?.environmentId
+                  ? formatEnvironmentLabel(
+                      state.environments.find(
+                        (e) => e.id === thread.environmentId,
+                      ) ?? {
+                        id: thread.environmentId,
+                        name: null,
+                      },
+                      state.threads,
+                      state.environmentProviders,
+                    )
+                  : "Loading…"))
               : environmentLabel(state.environment.value, state)
           }
           automatic={state.environment.source === "automatic"}
           icon="Folder"
           locked={locked}
-          options={[
-            ...(hostId
-              ? [
-                  { value: "checkout", label: "Project checkout" },
-                  ...(state.environment.value?.type === "host" &&
-                  state.environment.value.workspace.type === "personal"
-                    ? [{ value: "personal", label: "Personal workspace" }]
-                    : [{ value: "worktree", label: "New worktree" }]),
-                ]
-              : []),
-            ...state.environments.map((e) => ({
-              value: e.id,
-              label: e.name ?? e.id,
-            })),
-          ]}
+          options={environmentOptions}
           onPick={(value) =>
             intake.selectEnvironment(
               value === "checkout"
@@ -604,15 +666,27 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
                       workspace: { type: "personal" },
                     }
                   : value === "worktree"
-                  ? {
-                      type: "host",
-                      hostId: hostId ?? undefined,
-                      workspace: {
-                        type: "managed-worktree",
-                        baseBranch: { kind: "default" },
-                      },
-                    }
-                  : { type: "reuse", environmentId: value },
+                    ? {
+                        type: "host",
+                        hostId: hostId ?? undefined,
+                        workspace: {
+                          type: "managed-worktree",
+                          baseBranch: { kind: "default" },
+                        },
+                      }
+                    : value.startsWith("provider:") && hostId
+                      ? {
+                          type: "provider",
+                          environmentProviderId: value.slice(
+                            "provider:".length,
+                          ),
+                          machine: {
+                            type: "existing",
+                            hostId,
+                          },
+                          inputs: null,
+                        }
+                      : { type: "reuse", environmentId: value },
             )
           }
         />
@@ -626,17 +700,31 @@ export function IntakeBanner({ intake }: { intake: Intake }) {
           role="alert"
           data-error={!!(state.error || state.selectionError)}
         >
-          <span>{state.error || state.selectionError || state.catalogError}</span>
-          <button type="button" onClick={() => intake.retry()}>
+          <span>
+            {state.error || state.selectionError || state.catalogError}
+          </span>
+          <button
+            type="button"
+            title={
+              state.selectionError?.includes("Choose a project")
+                ? "Reset to automatic project and retry"
+                : state.selectionError?.includes("Choose an environment")
+                  ? "Reset to automatic environment and retry"
+                  : "Retry"
+            }
+            onClick={() => intake.retry()}
+          >
             Retry
           </button>
           {state.catalogError ? (
             <button
               type="button"
+              title="Retry loading choices"
               onClick={() => {
                 void intake.loadCatalogs(sdk);
                 void intake.loadEnvironments(sdk, projectId);
-                if (selectedThreadId) void intake.loadThread(sdk, selectedThreadId);
+                if (selectedThreadId)
+                  void intake.loadThread(sdk, selectedThreadId);
               }}
             >
               Retry choices

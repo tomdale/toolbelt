@@ -79,8 +79,30 @@ async function mount(
       sdk: {
         projects: {
           list: async () => [
-            { id: "proj_a", name: "bb" },
-            { id: "proj_b", name: "dotfiles" },
+            {
+              id: "proj_a",
+              name: "bb",
+              kind: "standard",
+              sources: [{ hostId: "host_a" }],
+            },
+            {
+              id: "proj_b",
+              name: "dotfiles",
+              kind: "standard",
+              sources: [{ hostId: "host_a" }],
+            },
+            {
+              id: "proj_personal",
+              name: "Personal",
+              kind: "personal",
+              sources: [{ hostId: "host_a" }],
+            },
+            {
+              id: "proj_nongit",
+              name: "NonGitProject",
+              kind: "standard",
+              sources: [{ hostId: "host_a" }],
+            },
           ],
         },
         system: { config: async () => ({ primaryHostId: "host_a" }) },
@@ -113,8 +135,62 @@ async function mount(
         environments: {
           list: async ({ projectId }: { projectId: string }) =>
             projectId === "proj_a"
-              ? [{ id: "env_a", name: "Alpha checkout", status: "ready" }]
-              : [],
+              ? [
+                  { id: "env_a", name: "Alpha checkout", status: "ready" },
+                  {
+                    id: "env_branch",
+                    name: null,
+                    branchName: "feat/parser",
+                    isWorktree: true,
+                    status: "ready",
+                  },
+                ]
+              : projectId === "proj_personal"
+                ? [
+                    {
+                      id: "env_pers_1",
+                      name: null,
+                      environmentProviderId: "personal-workspace",
+                      path: "/workspaces/thr_trip",
+                      status: "ready",
+                    },
+                  ]
+                : [],
+          listProviders: async ({ projectId }: { projectId: string }) =>
+            projectId === "proj_personal"
+              ? [
+                  {
+                    id: "personal-workspace",
+                    displayName: "Personal workspace",
+                    availability: { status: "available" },
+                  },
+                ]
+              : projectId === "proj_nongit"
+                ? [
+                    {
+                      id: "project-checkout",
+                      displayName: "Project checkout",
+                      availability: { status: "available" },
+                    },
+                    {
+                      id: "custom-container",
+                      displayName: "Docker container",
+                      acceptsEmptyInputs: false,
+                      availability: { status: "available" },
+                    },
+                  ]
+                : [
+                    {
+                      id: "project-checkout",
+                      displayName: "Project checkout",
+                      availability: { status: "available" },
+                    },
+                    {
+                      id: "git-worktree",
+                      displayName: "New worktree",
+                      availability: { status: "available" },
+                    },
+                  ],
         },
       } as unknown as PluginBrowserBbSdk,
       rpc: {
@@ -510,3 +586,131 @@ it.skipIf(!process.env.NEW_WORK_CAPTURE_DIR)(
     fixture.slot.lifecycle.unmount();
   },
 );
+
+it("BUG-2: Personal project offers Personal workspace and excludes Project checkout / New worktree", async () => {
+  const { slot, intake } = await mount();
+  await waitFor(() => expect(intake.canSubmit()).toBe(true), { timeout: 2000 });
+  await choose(slot, "Project", "Personal");
+  await waitFor(() =>
+    expect(intake.snapshot().project.value).toBe("proj_personal"),
+  );
+
+  fireEvent.click(slot.getByRole("button", { name: /^Environment:/ }));
+
+  expect(
+    slot.getByRole("menuitem", { name: "Personal workspace" }),
+  ).toBeTruthy();
+  expect(slot.queryByRole("menuitem", { name: "Project checkout" })).toBeNull();
+  expect(slot.queryByRole("menuitem", { name: "New worktree" })).toBeNull();
+
+  expect(
+    slot.getByRole("menuitem", {
+      name: "Personal workspace (thr_trip)",
+    }),
+  ).toBeTruthy();
+  expect(slot.queryByRole("menuitem", { name: /env_pers_1/ })).toBeNull();
+  expect(
+    slot.queryByRole("menuitem", { name: "Unnamed environment" }),
+  ).toBeNull();
+
+  intake.dispose();
+});
+
+it("BUG-5: Standard project environment menu displays derived metadata labels without raw env IDs", async () => {
+  const { slot, intake } = await mount();
+  await waitFor(() => expect(intake.canSubmit()).toBe(true), { timeout: 2000 });
+
+  fireEvent.click(slot.getByRole("button", { name: /^Environment:/ }));
+
+  expect(slot.getByRole("menuitem", { name: "Project checkout" })).toBeTruthy();
+  expect(slot.getByRole("menuitem", { name: "New worktree" })).toBeTruthy();
+  expect(
+    slot.queryByRole("menuitem", { name: "Personal workspace" }),
+  ).toBeNull();
+
+  expect(
+    slot.getByRole("menuitem", { name: "Worktree (feat/parser)" }),
+  ).toBeTruthy();
+  expect(slot.queryByRole("menuitem", { name: /env_branch/ })).toBeNull();
+  expect(
+    slot.queryByRole("menuitem", { name: "Unnamed environment" }),
+  ).toBeNull();
+
+  intake.dispose();
+});
+
+it("BUG-3: recovery button recovers from invalid selection by resetting to automatic", async () => {
+  const { slot, intake } = await mount();
+  await waitFor(() => expect(intake.canSubmit()).toBe(true), { timeout: 2000 });
+
+  intake.selectEnvironment({
+    type: "host",
+    hostId: "host_a",
+    workspace: { type: "unmanaged", path: null },
+  });
+  expect(intake.snapshot().environment.source).toBe("manual");
+
+  act(() => {
+    intake.selectionFailed("Choose an environment the composer can use.");
+  });
+  expect(intake.snapshot().selectionError).toBe(
+    "Choose an environment the composer can use.",
+  );
+
+  const retryBtn = slot.getByRole("button", { name: "Retry" });
+  expect(retryBtn.getAttribute("title")).toBe(
+    "Reset to automatic environment and retry",
+  );
+
+  fireEvent.click(retryBtn);
+  expect(intake.snapshot().selectionError).toBeNull();
+  expect(intake.snapshot().environment.source).toBe("automatic");
+
+  intake.dispose();
+});
+
+it("non-git project: excludes New worktree and input-requiring providers from choices", async () => {
+  const { slot, intake } = await mount();
+  await waitFor(() => expect(intake.canSubmit()).toBe(true), { timeout: 2000 });
+  await choose(slot, "Project", "NonGitProject");
+  await waitFor(() =>
+    expect(intake.snapshot().project.value).toBe("proj_nongit"),
+  );
+
+  fireEvent.click(slot.getByRole("button", { name: /^Environment:/ }));
+
+  expect(slot.getByRole("menuitem", { name: "Project checkout" })).toBeTruthy();
+  // Non-git project must NOT offer New worktree
+  expect(slot.queryByRole("menuitem", { name: "New worktree" })).toBeNull();
+  // Provider requiring input (acceptsEmptyInputs: false) must NOT be offered
+  expect(slot.queryByRole("menuitem", { name: "Docker container" })).toBeNull();
+
+  intake.dispose();
+});
+
+it("recovers from project selection error with project reset tooltip and clears manual project", async () => {
+  const { slot, intake } = await mount();
+  await waitFor(() => expect(intake.canSubmit()).toBe(true), { timeout: 2000 });
+
+  intake.selectProject("proj_bad");
+  expect(intake.snapshot().project.source).toBe("manual");
+
+  act(() => {
+    intake.selectionFailed("Choose a project the composer can use.");
+  });
+  expect(intake.snapshot().selectionError).toBe(
+    "Choose a project the composer can use.",
+  );
+
+  const retryBtn = slot.getByRole("button", { name: "Retry" });
+  expect(retryBtn.getAttribute("title")).toBe(
+    "Reset to automatic project and retry",
+  );
+
+  fireEvent.click(retryBtn);
+  expect(intake.snapshot().selectionError).toBeNull();
+  expect(intake.snapshot().project.source).toBe("automatic");
+  expect(intake.snapshot().environment.source).toBe("automatic");
+
+  intake.dispose();
+});
