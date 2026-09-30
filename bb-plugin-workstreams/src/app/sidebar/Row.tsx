@@ -33,6 +33,43 @@ function prTone(pr: PluginSidebarPullRequest): string {
   return "ws-pr-open";
 }
 
+/** The work state the row shows as a mark, if any. */
+function shownWorkState(
+  work: WorkView | undefined,
+  attention: boolean | undefined,
+) {
+  return work?.kind === "current" &&
+    !(attention && work.analysis.state === "needs_decision")
+    ? work.analysis.state
+    : null;
+}
+
+/**
+ * BB's own status is the primary mark: working, unread, waiting, error.
+ * Workstreams' assessed state is only shown when BB has none to report.
+ */
+function hasNativeStatus(thread: PluginSidebarThread): boolean {
+  return (
+    Boolean(statusRole(thread.indicator)) ||
+    thread.hasPendingInteraction ||
+    thread.isUnread
+  );
+}
+
+/**
+ * Whether the row draws anything in its status slot. A list whose rows all
+ * draw nothing hides the slot, so titles sit flush left.
+ */
+export function hasStatusMark(
+  thread: PluginSidebarThread,
+  work: WorkView | undefined,
+  attention?: boolean,
+): boolean {
+  if (hasNativeStatus(thread)) return true;
+  const state = shownWorkState(work, attention);
+  return Boolean(state && WORK_STATE[state].glyph);
+}
+
 export function Row({
   thread,
   depth,
@@ -42,6 +79,7 @@ export function Row({
   attention,
   work,
   proposal,
+  showStatusSlot = true,
   onNavigate,
 }: {
   thread: PluginSidebarThread;
@@ -59,13 +97,14 @@ export function Row({
   work?: WorkView;
   /** Banner text of a proposal that involves this thread. */
   proposal?: string;
+  /**
+   * False when no row in this list has a status mark: the slot collapses,
+   * animated, so titles sit flush left.
+   */
+  showStatusSlot?: boolean;
   onNavigate: () => void;
 }) {
-  const shownState =
-    work?.kind === "current" &&
-    !(attention && work.analysis.state === "needs_decision")
-      ? work.analysis.state
-      : null;
+  const shownState = shownWorkState(work, attention);
   const state = shownState ? WORK_STATE[shownState] : null;
   const recap =
     work?.kind === "current"
@@ -78,12 +117,7 @@ export function Row({
   const { hasUnsubmittedDraft } = useSidebarThreadDraft(thread.id);
   const rowStatus = useSidebarThreadRowStatus(thread.id);
   const shortcut = useSidebarThreadShortcut(thread.id);
-  // BB's own status is the primary pill. Workstreams' assessed state is only
-  // shown when BB has no active/unread/draft/error/waiting status to report.
-  const nativeStatus =
-    Boolean(statusRole(thread.indicator)) ||
-    thread.hasPendingInteraction ||
-    thread.isUnread;
+  const nativeStatus = hasNativeStatus(thread);
   const { pullRequest } = experimental_useSidebarThreadPullRequest(thread.id);
 
   return (
@@ -122,7 +156,10 @@ export function Row({
           {recap}
         </span>
       ) : null}
-      <span className="ws-status-slot">
+      <span
+        className="ws-status-slot"
+        data-collapsed={!showStatusSlot || undefined}
+      >
         {nativeStatus ? (
           <StatusMark
             indicator={thread.indicator}

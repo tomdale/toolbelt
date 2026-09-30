@@ -211,12 +211,44 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
+  it("folds the status slot away only when no row in the group has a mark", async () => {
+    const slots = (slot: Awaited<ReturnType<typeof mount>>, name: string) =>
+      [
+        ...slot
+          .getByRole("region", { name })
+          .querySelectorAll(".ws-status-slot"),
+      ].map((el) => el.hasAttribute("data-collapsed"));
+    const quiet = await mount(
+      [
+        sidebarThread("a", { sectionId: "sec_a", title: "A" }),
+        sidebarThread("b", { sectionId: "sec_a", title: "B" }),
+      ],
+      { settings: { showRecent: false } },
+    );
+    await quiet.findByRole("region", { name: "Alpha" });
+    expect(slots(quiet, "Alpha")).toEqual([true, true]);
+    quiet.lifecycle.unmount();
+    const marked = await mount(
+      [
+        sidebarThread("a", { sectionId: "sec_a", title: "A", isUnread: true }),
+        sidebarThread("b", { sectionId: "sec_a", title: "B" }),
+      ],
+      { settings: { showRecent: false } },
+    );
+    await marked.findByRole("region", { name: "Alpha" });
+    expect(slots(marked, "Alpha")).toEqual([false, false]);
+    marked.lifecycle.unmount();
+  });
+
   it("caps For you at five threads with a way to show the rest", async () => {
     const at = Date.now();
     const ids = ["a", "b", "c", "d", "e", "f", "g"];
     const slot = await mount(
       ids.map((id, index) =>
-        sidebarThread(id, { title: `Ask ${id}`, latestAttentionAt: 100 + index }),
+        sidebarThread(id, {
+          title: `Ask ${id}`,
+          latestAttentionAt: 100 + index,
+        }),
       ),
       {
         analysis: Object.fromEntries(
