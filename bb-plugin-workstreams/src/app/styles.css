@@ -193,6 +193,12 @@
   box-shadow: inset 0 0 0 1px
     color-mix(in oklab, var(--ws-needs-tone) 30%, transparent);
 }
+/* The header takes the block's amber, a little stronger than the outline so
+   it reads as text. */
+.ws-needs-title {
+  color: color-mix(in oklab, var(--ws-needs-tone) 90%, transparent);
+}
+
 /* The shimmer: a wide, feathered band of light that drifts across the fill,
    with a brighter glint riding along the outline at the same moment. Both
    layers share one animation, so they stay in step. */
