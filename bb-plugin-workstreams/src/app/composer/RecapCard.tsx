@@ -69,7 +69,7 @@ function LedgerList({ items, label, done = false }: { items: string[]; label: st
             key={index}
             className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${BODY_CLASS} ${
               done
-                ? "text-sky-900/45 dark:text-sky-200/40 [&_p]:line-through [&_p]:decoration-sky-900/70 dark:[&_p]:decoration-sky-700"
+                ? "text-sky-900/45 dark:text-sky-200/40 [&_p]:line-through [&_p]:decoration-sky-950 dark:[&_p]:decoration-sky-950"
                 : "text-sky-950 dark:text-sky-50"
             }`}
           >
