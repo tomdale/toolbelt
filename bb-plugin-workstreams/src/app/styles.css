@@ -193,32 +193,59 @@
   box-shadow: inset 0 0 0 1px
     color-mix(in oklab, var(--ws-needs-tone) 30%, transparent);
 }
+/* The shimmer: a wide, feathered band of light that drifts across the fill,
+   with a brighter glint riding along the outline at the same moment. Both
+   layers share one animation, so they stay in step. */
+.ws-needs::before,
 .ws-needs::after {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: -1;
+  border-radius: inherit;
   pointer-events: none;
-  background: linear-gradient(
-    105deg,
-    transparent 35%,
-    color-mix(in oklab, var(--ws-needs-tone) 14%, transparent) 50%,
-    transparent 65%
-  );
-  background-size: 250% 100%;
   background-repeat: no-repeat;
-  animation: ws-needs-shimmer 7s ease-in-out infinite;
+  background-size: 300% 100%;
+  animation: ws-needs-shimmer 8s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+.ws-needs::after {
+  z-index: -1;
+  background-image: linear-gradient(
+    110deg,
+    transparent 30%,
+    color-mix(in oklab, var(--ws-needs-tone) 3%, transparent) 40%,
+    color-mix(in oklab, var(--ws-needs-tone) 9%, transparent) 50%,
+    color-mix(in oklab, var(--ws-needs-tone) 3%, transparent) 60%,
+    transparent 70%
+  );
+}
+/* The outline glint: the same sweep, masked to the 1px border ring. */
+.ws-needs::before {
+  padding: 1px;
+  background-image: linear-gradient(
+    110deg,
+    transparent 38%,
+    color-mix(in oklab, var(--ws-needs-tone) 55%, transparent) 50%,
+    transparent 62%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
 }
 @keyframes ws-needs-shimmer {
   0% {
-    background-position: 150% 0;
+    background-position: 125% 0;
   }
-  35%,
+  40%,
   100% {
-    background-position: -50% 0;
+    background-position: -25% 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .ws-needs::before,
   .ws-needs::after {
     animation: none;
     display: none;
