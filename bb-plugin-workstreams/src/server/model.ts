@@ -85,6 +85,76 @@ export const MODEL_CALLS = {
 type Calls = typeof MODEL_CALLS;
 export type InputOf<K extends TraceKind> = Parameters<Calls[K]["prompt"]>[0];
 export type OutputOf<K extends TraceKind> = ReturnType<Calls[K]["parse"]>;
+
+const counted = (labels: readonly string[]) => {
+  const counts = new Map<string, number>();
+  for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
+  return [...counts]
+    .map(([label, n]) => (n === 1 ? label : `${label} ×${n}`))
+    .join(" · ");
+};
+
+/**
+ * One line of what a call decided, for lists: the Activity log, the Debug
+ * tab, and `bb workstreams trace`.
+ */
+export function summarize(
+  kind: TraceKind,
+  value: unknown,
+  input: unknown,
+): string | null {
+  switch (kind) {
+    case "analysis": {
+      const a = value as OutputOf<"analysis">;
+      return [
+        a.state.replace("_", " "),
+        a.subject,
+        a.drift
+          ? `drift → ${a.drift.workstream ?? a.drift.newName} (${a.drift.confidence})`
+          : null,
+        a.title ? `new title “${a.title}”` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    }
+    case "route": {
+      const r = value as OutputOf<"route">;
+      if (r.outcome === "unsure") return `unsure: ${r.reason}`;
+      const sure = ` (${r.confidence})`;
+      if (r.outcome === "continue") {
+        const title = (input as RouteInput).threads.find(
+          (t) => t.id === r.threadId,
+        )?.title;
+        return `continue ${title ? `“${title}”` : r.threadId}${sure}`;
+      }
+      return r.outcome === "new-thread"
+        ? `new thread in ${r.workstream}${sure}`
+        : `new workstream ${r.name}${sure}`;
+    }
+    case "organize-map": {
+      const m = value as OutputOf<"organize-map">;
+      return counted([
+        ...m.changes.map((c) => c.kind),
+        ...Object.keys(m.descriptions).map(() => "description"),
+      ]);
+    }
+    case "organize-assign":
+    case "file-unsorted":
+      return counted(
+        (value as OutputOf<"organize-assign">).map((a) =>
+          a.target.kind === "unsure"
+            ? "unsure"
+            : a.target.kind === "new"
+              ? `new: ${a.target.name}`
+              : a.target.name,
+        ),
+      );
+    case "describe": {
+      const n = Object.keys(value as OutputOf<"describe">).length;
+      return `${n} description${n === 1 ? "" : "s"}`;
+    }
+  }
+}
 type Spec = {
   prompt: (input: unknown) => string;
   parse: (text: string, input: unknown) => unknown;
@@ -277,6 +347,12 @@ export class Inference {
                   fields.parsed === undefined
                     ? null
                     : boundedJson(fields.parsed),
+                summary:
+                  fields.parsed === undefined
+                    ? null
+                    : this.safely(() =>
+                        summarize(kind, fields.parsed, request.input),
+                      ),
                 outcome: null,
                 error:
                   fields.error === undefined ? null : message(fields.error),

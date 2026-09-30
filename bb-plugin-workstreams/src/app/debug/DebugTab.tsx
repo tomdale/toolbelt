@@ -168,7 +168,14 @@ export function DebugTab({ rpc }: { rpc: Rpc }) {
               <span className="w-40 shrink-0 truncate text-xs text-muted-foreground">
                 {TRACE_KIND_TITLE[trace.kind]}
               </span>
-              <span className="min-w-0 flex-1 truncate">{trace.label}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{trace.label}</span>
+                {trace.summary ? (
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {trace.summary}
+                  </span>
+                ) : null}
+              </span>
               <span
                 className={cn(
                   "shrink-0 text-xs",

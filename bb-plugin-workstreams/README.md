@@ -81,9 +81,10 @@ against.
   organizing review, generated descriptions, Overview rows, and the sidebar row
   menu (**Inspect model calls…**). It opens a side pane with those calls. **Run
   again** sends the same prompt to the same model to show whether the answer is
-  stable, without changing anything. The page's **Debug** tab lists every
-  recorded call. Records include redacted thread excerpts and are kept for 7
-  days (at most 1,000).
+  stable, without changing anything. Activity lists each model call among the
+  changes, with a one-line summary of what the model decided, and the page's
+  **Debug** tab lists every recorded call. Records include redacted thread
+  excerpts and are kept for 7 days (at most 1,000).
 
 Model calls run through Pi's AI Gateway on the analysis machine (`hostId`, blank
 for the only connected machine). The analysis and routing model is a setting

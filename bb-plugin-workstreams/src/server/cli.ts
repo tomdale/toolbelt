@@ -87,7 +87,9 @@ function analysisLine(
 function traceLine(trace: TraceSummary): string {
   const status = trace.status === "ok" ? "" : ` [${trace.status}]`;
   const seconds = `${(trace.durationMs / 1000).toFixed(1)}s`;
-  return `${localMinute(trace.at)}  ${trace.kind.padEnd(15)} ${seconds.padStart(6)}  ${clip(trace.label)}${status}  (${trace.id})`;
+  return `${localMinute(trace.at)}  ${trace.kind.padEnd(15)} ${seconds.padStart(6)}  ${clip(trace.label)}${
+    trace.summary ? ` — ${trace.summary}` : ""
+  }${status}  (${trace.id})`;
 }
 
 const json = (value: unknown) => JSON.stringify(value, null, 2);

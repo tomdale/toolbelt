@@ -20,6 +20,8 @@ const summary = (id: string, overrides: Record<string, unknown> = {}) => ({
   replayOf: null,
   usage: { input: 900, output: 120, cost: 0.0012 },
   error: null,
+  summary: "review · Alpha",
+  threads: ["t1"],
   ...overrides,
 });
 const full = (id: string, overrides: Record<string, unknown> = {}) => ({
@@ -241,4 +243,81 @@ it("shows the Debug tab on the page only in Debug mode", async () => {
     ),
   ).toBe("true");
   expect(await on.findByText("Invalid response")).toBeTruthy();
+});
+
+it("lists model calls in the Activity log in Debug mode", async () => {
+  const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
+  const now = Date.now();
+  const entry = {
+    id: "e1",
+    at: now - 120_000,
+    action: "move",
+    source: "user",
+    status: "applied",
+    rationale: "Moved from Unsorted to Beta",
+    threads: [{ id: "t1", name: "Alpha parser" }],
+    workstreams: [{ id: "sec_b", name: "Beta" }],
+    undo: null,
+    undoes: null,
+    undoneBy: null,
+    detail: null,
+    traceIds: [],
+  };
+  const page = (debug: boolean) =>
+    renderSlot(
+      app.navPanels[0]!,
+      { subPath: "activity" },
+      {
+        settings: { debug },
+        rpc: {
+          state: () => emptyState(),
+          journal: () => ({ entries: [entry] }),
+          traces: () => ({
+            traces: [
+              summary("tr1", {
+                at: now - 60_000,
+                summary: "review · Alpha · drift → Beta (high)",
+              }),
+              summary("tr2", {
+                at: now - 180_000,
+                kind: "route",
+                label: "Fix the parser",
+                status: "invalid",
+                error: "Unexpected token",
+              }),
+            ],
+          }),
+        } as never,
+      },
+    );
+  const off = page(false);
+  expect(await off.findByText("Moved from Unsorted to Beta")).toBeTruthy();
+  expect(off.queryByText("review · Alpha · drift → Beta (high)")).toBeNull();
+  off.unmount();
+
+  const on = page(true);
+  const summaryLine = await on.findByText(
+    "review · Alpha · drift → Beta (high)",
+  );
+  // Newest first: the analysis, the move, then the failed routing call.
+  const rows = on.getAllByRole("listitem").map((li) => li.textContent ?? "");
+  const order = ["drift → Beta", "Moved from Unsorted", "Fix the parser"].map(
+    (text) => rows.findIndex((row) => row.includes(text)),
+  );
+  expect(order).toEqual([...order].sort((a, b) => a - b));
+  expect(on.getByText("Unexpected token")).toBeTruthy();
+  expect(
+    within(summaryLine.closest("li")!).getByRole("button", {
+      name: "Inspect this model call",
+    }),
+  ).toBeTruthy();
+
+  // "Model calls" in the action filter shows only calls.
+  fireEvent.change(on.getByRole("combobox", { name: "Filter by action" }), {
+    target: { value: "model-call" },
+  });
+  await waitFor(() =>
+    expect(on.queryByText("Moved from Unsorted to Beta")).toBeNull(),
+  );
+  expect(on.getByText("Fix the parser")).toBeTruthy();
 });
