@@ -269,7 +269,7 @@ export function WorkstreamsThreadList({
             {error}
           </p>
         ) : null}
-        {projection.needsYou.length > 0 ? (
+        {ws.showForYou && projection.needsYou.length > 0 ? (
           <Band title="For you" box="attention">
             {needsRows.map((row) =>
               renderRow(row, "needs-you", undefined, needsMarks),

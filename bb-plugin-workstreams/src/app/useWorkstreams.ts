@@ -205,6 +205,7 @@ export function useWorkstreams() {
     refresh,
     reorder,
     moveThread,
+    showForYou: values.showForYou !== false,
     showRecent: values.showRecent !== false,
     showParentThreadLink: values.showParentThreadLink === true,
   };

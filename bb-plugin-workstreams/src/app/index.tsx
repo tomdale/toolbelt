@@ -10,6 +10,11 @@ import { AutomaticFilingCard } from "./composer/AutomaticFilingCard.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
 import { SpinnerSettings } from "./settings/SpinnerSettings.tsx";
 import { WorkstreamsThreadList } from "./sidebar/ThreadList.tsx";
+import { RecapSettings } from "./recap/RecapSettings.tsx";
+import {
+  RecapHeaderAction,
+  headerGenerators,
+} from "./recap/RecapHeaderAction.tsx";
 import "./styles.css";
 
 export default definePluginApp((app) => {
@@ -38,6 +43,20 @@ export default definePluginApp((app) => {
     title: "Workstream proposal",
     component: ProposalBanner,
   });
+  app.slots.experimental_threadHeaderAction({
+    id: "recap",
+    title: "Recap",
+    component: RecapHeaderAction,
+  });
+  app.slots.commandPaletteAction({
+    id: "generate-recap",
+    title: "Workstreams: recap this thread",
+    isAvailable: ({ threadId }) =>
+      threadId !== null && headerGenerators.has(threadId),
+    run: ({ threadId }) => {
+      if (threadId !== null) headerGenerators.get(threadId)?.();
+    },
+  });
   // Renders only in Debug mode (SPEC §11.6).
   app.slots.experimental_threadHeaderAction({
     id: "debug",
@@ -52,6 +71,13 @@ export default definePluginApp((app) => {
     description:
       "Threads grouped by workstream (BB section), with For you and Recent at the top.",
     component: WorkstreamsThreadList,
+  });
+  app.slots.settingsSection({
+    id: "recap",
+    title: "Recap",
+    description:
+      "The recap card above each thread's composer: its layout and when it's written.",
+    component: RecapSettings,
   });
   app.slots.settingsSection({
     id: "spinner",

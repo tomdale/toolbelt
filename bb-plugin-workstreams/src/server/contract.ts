@@ -1,6 +1,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { WORK_STATES } from "../domain/analysis.ts";
+import { recapPrefsSchema } from "../domain/recapPrefs.ts";
 import {
   HEX_COLOR,
   SPINNER_COLORS,
@@ -381,6 +382,14 @@ export const rpcContract = defineRpcContract({
       /** The analysis's ask when the thread needs a decision from the user. */
       needsInput: z.string().nullable(),
     }),
+  },
+  recapPrefs: {
+    input: z.null(),
+    output: z.object({ prefs: recapPrefsSchema }),
+  },
+  setRecapPrefs: {
+    input: z.object({ patch: recapPrefsSchema.partial() }),
+    output: z.object({ prefs: recapPrefsSchema }),
   },
   recap_generate: {
     input: z.object({ threadId: z.string().min(1) }),
