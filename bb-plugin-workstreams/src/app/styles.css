@@ -626,17 +626,33 @@
 .ws-recap-card {
   margin: 8px 12px;
   padding: 10px 12px;
-  border: 1px solid var(--border, rgba(128,128,128,.25));
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
   border-radius: 8px;
-  background: var(--muted, rgba(128,128,128,.06));
+  background: var(--muted, rgba(128, 128, 128, 0.06));
   font-size: 12px;
   line-height: 1.45;
 }
-.ws-recap-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.ws-recap-header h3 { margin: 0; font-weight: 600; }
-.ws-recap-body { margin-top: 6px; display: grid; gap: 4px; }
-.ws-recap-body p { margin: 0; }
-.ws-recap-done { opacity: .7; }
+.ws-recap-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ws-recap-header h3 {
+  margin: 0;
+  font-weight: 600;
+}
+.ws-recap-body {
+  margin-top: 6px;
+  display: grid;
+  gap: 4px;
+}
+.ws-recap-body p {
+  margin: 0;
+}
+.ws-recap-done {
+  opacity: 0.7;
+}
 
 .ws-intake-controls {
   display: flex;
@@ -888,4 +904,22 @@
 .ws-intake-menu button:hover .ws-intake-hollow,
 .ws-intake-menu button:focus .ws-intake-hollow {
   color: #e3b84a;
+}
+
+/* Generate Recap appearing under a dismissed recap card. */
+.ws-fade-in {
+  animation: ws-fade-in 240ms ease-out 80ms both;
+}
+@keyframes ws-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-fade-in {
+    animation: none;
+  }
 }
