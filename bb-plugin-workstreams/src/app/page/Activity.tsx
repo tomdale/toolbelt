@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ThreadTitle,
   useBbNavigate,
@@ -9,9 +9,11 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
+  TRACE_KINDS,
   TRACE_KIND_SHORT,
   TRACE_KIND_TITLE,
   TRACE_STATUS_TITLE,
+  type TraceKind,
   type TraceSummary,
 } from "../../domain/trace.ts";
 import type { RpcContract } from "../../server/contract.ts";
@@ -19,6 +21,9 @@ import type { ProposalView } from "../../server/evolution.ts";
 import type { JournalEntry as Entry } from "../../server/journal.ts";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { useDebugMode } from "../debug/debug.ts";
+import { ghostButton, secondaryButton } from "./controls.ts";
+
+const TRACE_PAGE = 100;
 
 /** An entry with the debug traces of the model calls behind it. */
 type JournalEntry = Entry & { traceIds?: string[] };
@@ -94,30 +99,78 @@ export function Activity({
   const [action, setAction] = useState("");
   const [needsReview, setNeedsReview] = useState(focus !== null);
   const [showCalls, setShowCalls] = useState(true);
+  const [callKind, setCallKind] = useState<TraceKind | "">("");
+  const [failuresOnly, setFailuresOnly] = useState(false);
+  const [traceLimit, setTraceLimit] = useState(TRACE_PAGE);
+  const [moreCalls, setMoreCalls] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const proposalOf = new Map(
     proposals.filter((p) => p.entryId).map((p) => [p.entryId!, p]),
   );
   const [entries, setEntries] = useState<JournalEntry[] | null>(null);
   const [calls, setCalls] = useState<TraceSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const request = useRef(0);
   const load = useCallback(async () => {
-    const report = (cause: unknown) =>
-      setError(cause instanceof Error ? cause.message : String(cause));
+    const generation = ++request.current;
+    setError(null);
+    const report = (cause: unknown) => {
+      if (generation === request.current)
+        setError(cause instanceof Error ? cause.message : String(cause));
+    };
     await Promise.all([
-      rpc
-        .call("journal", { limit: 300, external })
-        .then((result) => setEntries(result.entries), report),
-      debug
-        ? rpc
-            .call("traces", { limit: 300 })
-            .then((result) => setCalls(result.traces), report)
-        : Promise.resolve(setCalls([])),
+      rpc.call("journal", { limit: 300, external }).then((result) => {
+        if (generation === request.current) setEntries(result.entries);
+      }, report),
+      (async () => {
+        const traces: TraceSummary[] = [];
+        let more = false;
+        let before: { at: number; id: string } | undefined;
+        // Refresh loaded history from the top so realtime updates cannot leave
+        // duplicates or retained-but-deleted traces in older pages.
+        if (debug) {
+          do {
+            const result = await rpc.call("traces", {
+              limit: TRACE_PAGE,
+              ...(callKind ? { kind: callKind } : {}),
+              ...(before ? { before } : {}),
+            });
+            if (generation !== request.current) return;
+            traces.push(...result.traces);
+            more = result.traces.length === TRACE_PAGE;
+            const last = result.traces.at(-1);
+            before = last ? { at: last.at, id: last.id } : undefined;
+          } while (more && traces.length < traceLimit);
+        }
+        if (generation === request.current) {
+          setCalls(traces);
+          setMoreCalls(more);
+        }
+      })().catch(report),
     ]);
-  }, [rpc, external, debug]);
+  }, [rpc, external, debug, traceLimit, callKind]);
   useRealtime("changed", load);
   useEffect(() => {
     void load();
+    return () => {
+      request.current++;
+    };
   }, [load]);
+
+  const clearTraces = async () => {
+    setClearing(true);
+    setError(null);
+    try {
+      await rpc.call("traceClear", null);
+      setConfirmClear(false);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setClearing(false);
+    }
+  };
 
   const undo = async (entry: JournalEntry) => {
     setError(null);
@@ -141,19 +194,24 @@ export function Activity({
 
   const shownEntries = (entries ?? []).filter(
     (entry) =>
-      action !== MODEL_CALLS &&
+      !(debug && (action === MODEL_CALLS || failuresOnly || callKind)) &&
       (!workstream || entry.workstreams.some((w) => w.id === workstream)) &&
-      (!action || entry.action === action) &&
+      (!action ||
+        (!debug && action === MODEL_CALLS) ||
+        entry.action === action) &&
       (!needsReview || entry.status === "pending"),
   );
   const shownCalls =
     debug && showCalls && !needsReview && (!action || action === MODEL_CALLS)
       ? calls.filter(
           (trace) =>
-            !workstream ||
-            trace.threads.some((id) => workstreamOf?.(id) === workstream),
+            (!callKind || trace.kind === callKind) &&
+            (!failuresOnly || trace.status !== "ok") &&
+            (!workstream ||
+              trace.threads.some((id) => workstreamOf?.(id) === workstream)),
         )
       : [];
+  const callCost = shownCalls.reduce((sum, t) => sum + (t.usage?.cost ?? 0), 0);
   const items: Item[] = [
     ...shownEntries.map((entry) => ({
       kind: "entry" as const,
@@ -193,7 +251,15 @@ export function Activity({
         <select
           aria-label="Filter by action"
           value={action}
-          onChange={(event) => setAction(event.target.value)}
+          onChange={(event) => {
+            setAction(event.target.value);
+            setCallKind("");
+            setFailuresOnly(false);
+            if (event.target.value === MODEL_CALLS) {
+              setShowCalls(true);
+              setNeedsReview(false);
+            }
+          }}
           className="h-7 rounded-md border border-input bg-transparent px-1"
         >
           <option value="">All actions</option>
@@ -208,7 +274,14 @@ export function Activity({
           <input
             type="checkbox"
             checked={needsReview}
-            onChange={(event) => setNeedsReview(event.target.checked)}
+            onChange={(event) => {
+              setNeedsReview(event.target.checked);
+              if (event.target.checked) {
+                setCallKind("");
+                setFailuresOnly(false);
+                if (action === MODEL_CALLS) setAction("");
+              }
+            }}
           />
           Needs review
         </label>
@@ -225,18 +298,104 @@ export function Activity({
             <input
               type="checkbox"
               checked={showCalls}
-              onChange={(event) => setShowCalls(event.target.checked)}
+              onChange={(event) => {
+                setShowCalls(event.target.checked);
+                if (!event.target.checked) {
+                  setCallKind("");
+                  setFailuresOnly(false);
+                  if (action === MODEL_CALLS) setAction("");
+                }
+              }}
             />
             Model calls
           </label>
         ) : null}
       </div>
+      {debug ? (
+        <div className="mt-3 rounded-md border border-dashed border-border bg-state-hover/30 p-3 text-xs text-muted-foreground">
+          <p className="flex items-center gap-1.5">
+            <Icon name="Bug" aria-hidden className="size-3" />
+            Debug mode: internal model calls appear alongside changes, even when
+            they made no change. Inspect a call for prompts, responses, results,
+            and replay. Traces are kept for 7 days (up to 1,000).
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <select
+              aria-label="Filter by model call kind"
+              value={callKind}
+              onChange={(event) => {
+                setCallKind(event.target.value as TraceKind | "");
+                setTraceLimit(TRACE_PAGE);
+                setShowCalls(true);
+                setAction(MODEL_CALLS);
+                setNeedsReview(false);
+              }}
+              className="h-7 rounded-md border border-input bg-transparent px-1"
+            >
+              <option value="">All model call kinds</option>
+              {TRACE_KINDS.map((kind) => (
+                <option key={kind} value={kind}>
+                  {TRACE_KIND_TITLE[kind]}
+                </option>
+              ))}
+            </select>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={failuresOnly}
+                onChange={(event) => {
+                  setFailuresOnly(event.target.checked);
+                  if (event.target.checked) {
+                    setShowCalls(true);
+                    setAction(MODEL_CALLS);
+                    setNeedsReview(false);
+                  }
+                }}
+              />
+              Failures only
+            </label>
+            <span className="flex-1" />
+            <span className="tabular-nums">
+              {shownCalls.length} model calls shown · ${callCost.toFixed(4)}
+            </span>
+            {confirmClear ? (
+              <span className="flex items-center gap-1.5">
+                Delete all model-call traces? Activity changes are kept.
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  disabled={clearing}
+                  onClick={() => void clearTraces()}
+                >
+                  Delete traces
+                </button>
+                <button
+                  type="button"
+                  className={ghostButton}
+                  disabled={clearing}
+                  onClick={() => setConfirmClear(false)}
+                >
+                  Cancel
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                className={ghostButton}
+                onClick={() => setConfirmClear(true)}
+              >
+                Clear traces…
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
       {error ? (
         <p role="alert" className="mt-3 text-xs text-destructive">
           {error}
         </p>
       ) : null}
-      {entries && entries.length === 0 ? (
+      {entries && items.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">No activity yet.</p>
       ) : null}
       {days.map(({ label, items: list }) => (
@@ -300,6 +459,16 @@ export function Activity({
                         {entry.detail}
                       </span>
                     ) : null}
+                    {debug ? (
+                      <details className="mt-1 text-xs text-muted-foreground">
+                        <summary className="cursor-pointer">
+                          Internal event details
+                        </summary>
+                        <pre className="mt-1 max-w-full overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-state-hover p-2">
+                          {JSON.stringify(entry, null, 2)}
+                        </pre>
+                      </details>
+                    ) : null}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {SOURCE_LABEL[entry.source]}
@@ -350,6 +519,19 @@ export function Activity({
           </ul>
         </section>
       ))}
+      {debug &&
+      showCalls &&
+      !needsReview &&
+      (!action || action === MODEL_CALLS) &&
+      moreCalls ? (
+        <button
+          type="button"
+          className={cn(secondaryButton, "mt-3")}
+          onClick={() => setTraceLimit((limit) => limit + TRACE_PAGE)}
+        >
+          Load older model calls
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -364,7 +546,7 @@ function CallRow({ trace }: { trace: TraceSummary }) {
   // An analysis is labeled with its thread's title already.
   const threads = trace.kind === "analysis" ? [] : trace.threads.slice(0, 3);
   return (
-    <li className="flex items-baseline gap-3 py-1.5 text-sm text-muted-foreground">
+    <li className="flex items-baseline gap-3 border-l-2 border-dashed border-border bg-state-hover/30 pl-2 py-1.5 text-sm text-muted-foreground">
       <time
         className="w-16 shrink-0 whitespace-nowrap text-xs tabular-nums"
         dateTime={new Date(trace.at).toISOString()}
@@ -403,6 +585,13 @@ function CallRow({ trace }: { trace: TraceSummary }) {
         {ok && trace.summary ? (
           <span className="block text-xs">{trace.summary}</span>
         ) : null}
+        <span className="block text-xs tabular-nums">
+          Internal · {trace.model} · {(trace.durationMs / 1000).toFixed(1)}s
+          {trace.usage
+            ? ` · ${trace.usage.input} in / ${trace.usage.output} out · $${trace.usage.cost.toFixed(4)}`
+            : ""}
+          {trace.replayOf ? " · Replay" : ""}
+        </span>
         {!ok && trace.error ? (
           <span className="block truncate text-xs text-destructive">
             {trace.error}

@@ -217,7 +217,7 @@ it("adds an inspect button to the drift banner", async () => {
   ).toBeTruthy();
 });
 
-it("shows the Debug tab on the page only in Debug mode", async () => {
+it("opens Activity for debug links and shows debug controls only in Debug mode", async () => {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   const page = (debug: boolean) =>
     renderSlot(
@@ -227,6 +227,7 @@ it("shows the Debug tab on the page only in Debug mode", async () => {
         settings: { debug },
         rpc: {
           state: () => emptyState(),
+          journal: () => ({ entries: [] }),
           traces: () => ({
             traces: [summary("tr1", { status: "invalid", error: "bad JSON" })],
           }),
@@ -235,14 +236,24 @@ it("shows the Debug tab on the page only in Debug mode", async () => {
     );
   const off = page(false);
   expect(off.queryByRole("tab", { name: "Debug" })).toBeNull();
+  expect(
+    off.getByRole("tab", { name: "Activity" }).getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(off.queryByRole("checkbox", { name: "Failures only" })).toBeNull();
+  expect(off.queryByRole("button", { name: "Clear traces…" })).toBeNull();
+  await off.findByText("No activity yet.");
+  expect(off.inspection.rpcCalls.some((call) => call.method === "traces")).toBe(
+    false,
+  );
   off.unmount();
   const on = page(true);
+  expect(on.queryByRole("tab", { name: "Debug" })).toBeNull();
   expect(
-    (await on.findByRole("tab", { name: "Debug" })).getAttribute(
-      "aria-selected",
-    ),
+    on.getByRole("tab", { name: "Activity" }).getAttribute("aria-selected"),
   ).toBe("true");
   expect(await on.findByText("Invalid response")).toBeTruthy();
+  expect(on.getByRole("checkbox", { name: "Failures only" })).toBeTruthy();
+  expect(on.queryByText("No activity yet.")).toBeNull();
 });
 
 it("lists model calls in the Activity log in Debug mode", async () => {

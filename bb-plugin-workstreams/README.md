@@ -85,9 +85,13 @@ against.
   menu (**Inspect model calls…**). It opens a side pane with those calls. **Run
   again** sends the same prompt to the same model to show whether the answer is
   stable, without changing anything. Activity lists each model call among the
-  changes, with a one-line summary of what the model decided, and the page's
-  **Debug** tab lists every recorded call. Records include redacted thread
-  excerpts and are kept for 7 days (at most 1,000).
+  changes, including calls that made no change. Internal calls have a muted,
+  dashed treatment with model, timing, token usage, cost, and replay details.
+  Debug controls in **Activity** filter by call kind and failures, show the
+  count and cost of visible calls, load older calls, and clear traces without
+  deleting activity changes. Journal entries also expose expandable internal
+  details. Records include redacted thread excerpts and are kept for 7 days (at
+  most 1,000).
 
 Model calls go straight to AI Gateway from the analysis machine (`hostId`, blank
 for the only connected machine), with the AI Gateway key Pi has there. They
@@ -140,7 +144,7 @@ node eval/route.ts    # routing eval
   `inference/` (the host entry that runs Pi).
 - `src/app/`: the sidebar list, the page, the header parent link and proposal
   banner, the composer routing banner, and `debug/` (inspect buttons, the
-  inspector pane, the Debug tab), fed by `useWorkstreams.ts`.
+  inspector pane), fed by `useWorkstreams.ts`.
 
 To check the exact-once guarantee against real data, export a snapshot to
 private storage (it contains thread titles) and point the test at it:
