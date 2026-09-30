@@ -74,7 +74,7 @@ async function mount() {
   );
 }
 
-it("ranks workstreams by needs-you first and lists roots with delegated counts", async () => {
+it("ranks workstreams by needs-you first and lists roots with child thread counts", async () => {
   const slot = await mount();
   const headings = slot
     .getAllByRole("heading", { level: 2 })
@@ -82,7 +82,7 @@ it("ranks workstreams by needs-you first and lists roots with delegated counts",
   expect(headings).toEqual(["Beta", "Alpha"]);
   const alpha = slot.getByRole("region", { name: "Alpha" });
   expect(within(alpha).getByText("Alpha work")).toBeTruthy();
-  expect(within(alpha).getByText("+1 delegated")).toBeTruthy();
+  expect(within(alpha).getByText("+1 child thread")).toBeTruthy();
   expect(within(alpha).queryByText("Alpha child")).toBeNull();
   fireEvent.click(within(alpha).getByText("Alpha work"));
   expect(slot.inspection.navigateCalls).toEqual([

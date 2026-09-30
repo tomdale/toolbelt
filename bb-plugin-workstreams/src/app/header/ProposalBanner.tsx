@@ -98,7 +98,17 @@ export function ProposalBanner({
   };
 
   let notice: Notice | null = null;
-  if (proposal) {
+  // Initial automatic filing is shown inline in the thread composer rather
+  // than as a floating header popover. Other applied moves remain visible so
+  // the user can undo them.
+  if (
+    proposal &&
+    !(
+      proposal.status !== "pending" &&
+      proposal.kind === "move" &&
+      proposal.sourceSectionId === null
+    )
+  ) {
     const review = () =>
       navigate.toPluginPanel("home", { subPath: `activity/${proposal.id}` });
     const pending = proposal.status === "pending";

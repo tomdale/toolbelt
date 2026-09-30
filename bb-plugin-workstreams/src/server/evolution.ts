@@ -478,7 +478,7 @@ export class Evolution {
       else if (this.assignedAt.get(thread.id) !== thread.latestAttentionAt)
         toAssign.push(thread);
     }
-    if (!toAssign.length || !records.length) return;
+    if (!toAssign.length) return;
     const batch = toAssign.slice(0, ASSIGN_BATCH);
     for (const t of batch) this.assignedAt.set(t.id, t.latestAttentionAt);
     const { value: assignments, traceId } = await this.deps.inference.run(
@@ -502,12 +502,33 @@ export class Evolution {
       },
     );
     const filed: string[] = [];
+    const created: string[] = [];
+    const createdSections = new Map<string, { sectionId: string; name: string }>();
     for (const a of assignments) {
-      if (a.target.kind !== "existing" || a.confidence !== "high") continue;
-      const name = a.target.name;
-      const record = records.find((r) => r.name === name);
-      if (!record) continue;
-      await this.fileOne(a.id, record.sectionId, record.name, [
+      const assignment = a.target;
+      if (a.confidence !== "high" || assignment.kind === "unsure") continue;
+      let target: { sectionId: string; name: string } | undefined;
+      if (assignment.kind === "existing") {
+        const record = records.find((r) => r.name === assignment.name);
+        target = record
+          ? { sectionId: record.sectionId, name: record.name }
+          : undefined;
+      }
+      if (assignment.kind === "new") {
+        const key = normalize(assignment.name);
+        target = createdSections.get(key);
+        if (!target) {
+          const made = await this.deps.service.createWorkstream(
+            assignment.name,
+            "auto",
+          );
+          target = { sectionId: made.sectionId, name: assignment.name };
+          createdSections.set(key, target);
+          created.push(assignment.name);
+        }
+      }
+      if (!target) continue;
+      await this.fileOne(a.id, target.sectionId, target.name, [
         traceId,
         analysis[a.id]?.traceId,
       ]);
@@ -515,7 +536,8 @@ export class Evolution {
     }
     this.deps.inference.annotate(traceId, {
       filed,
-      rule: "Only high-confidence picks of an existing workstream are filed.",
+      created,
+      rule: "High-confidence picks are filed; high-confidence new picks create a workstream and file the thread.",
     });
   }
 

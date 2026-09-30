@@ -11,11 +11,18 @@ import { useSpinner } from "../spinner.ts";
 export function StatusMark({
   indicator,
   label,
+  hasPendingInteraction = false,
+  isUnread = false,
 }: {
   indicator: string;
   label: string | null;
+  /** BB sometimes exposes these facts separately from its indicator kind. */
+  hasPendingInteraction?: boolean;
+  isUnread?: boolean;
 }) {
-  const role = statusRole(indicator);
+  const role =
+    statusRole(indicator) ??
+    (hasPendingInteraction ? "waiting" : isUnread ? "unread" : null);
   if (!role) return <span className="ws-mark" aria-hidden="true" />;
   const text = label ?? STATUS_LABEL[role];
   if (role === "working") return <WorkingMark label={text} />;

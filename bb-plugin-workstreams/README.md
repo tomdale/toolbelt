@@ -44,8 +44,16 @@ against.
 - **Analysis**: a few seconds after each turn, one small model call records the
   thread's recap, work state, subject, and (for top-level threads) whether its
   latest request drifted to another workstream. Results are tied to the turn
-  they describe and show as updating once a new turn starts. Analysis never
-  moves anything.
+  they describe and show as updating once a new turn starts. Analysis itself
+  never moves anything; the later filing pass may use its subject.
+- **Archive suggestions**: when classification finds a natural end and BB has no
+  unfinished tasks, goals, queued messages, interactions, or background work, a
+  quiet **Archive** button appears in the composer toolbar. Clicking
+  archives directly after rechecking outstanding work. Typing a continuation,
+  adding an attachment, or starting new work dismisses the suggestion for that
+  completed turn; clearing the draft does not bring it back. Reading, scrolling,
+  and focusing the composer do not dismiss it. A later completed turn can
+  produce a new suggestion. Workstreams never archives automatically.
 - **Titles**: the same call suggests a title when a thread has none, its title
   is cut off or too vague, or its latest requests moved onto different work.
   Workstreams applies it (at most once an hour for a titled thread) and logs it
@@ -59,7 +67,9 @@ against.
   workstream, Workstreams spins it out, moves threads to the workstream their
   subject names, or merges a workstream into another, with a yellow banner under
   the thread header to Undo (or, with `evolution = ask`, to accept first).
-  Unsorted threads it can place confidently are filed the same way.
+  Unsorted threads it can place confidently are filed the same way. A
+  high-confidence `new: <subject>` assignment creates that workstream and files
+  the thread in the same pass; lower-confidence assignments remain Unsorted.
 - **Routing**: in BB's new-thread composer a banner shows where the draft goes
   (continue a thread, a new thread in a workstream, or a new workstream) and
   presets the project and environment; Enter or Start creates the thread and
@@ -85,9 +95,18 @@ against.
   menu (**Inspect model calls…**). It opens a side pane with those calls. **Run
   again** sends the same prompt to the same model to show whether the answer is
   stable, without changing anything. Activity lists each model call among the
-  changes, with a one-line summary of what the model decided, and the page's
-  **Debug** tab lists every recorded call. Records include redacted thread
-  excerpts and are kept for 7 days (at most 1,000).
+  changes, including calls that made no change. Model rows use a quiet surface
+  tint and a Model badge, and prioritize the event, subject, and labeled
+  assessment. Related threads use BB-style thread-reference pills on an aligned
+  row, with host-owned link navigation. Small information buttons explain event
+  names and lifecycle terms on hover or keyboard focus. **Technical details**
+  reveals labeled model, duration, token usage, and cost measurements plus
+  prompt inspection; these measurements stay collapsed by default. Debug
+  controls in **Activity** filter by call kind and failures, show the count and
+  cost of visible calls, load older calls, and clear traces without deleting
+  activity changes. Journal entries also expose expandable internal details.
+  Records include redacted thread excerpts and are kept for 7 days (at most
+  1,000).
 
 Model calls go straight to AI Gateway from the analysis machine (`hostId`, blank
 for the only connected machine), with the AI Gateway key Pi has there. They
@@ -140,7 +159,7 @@ node eval/route.ts    # routing eval
   `inference/` (the host entry that runs Pi).
 - `src/app/`: the sidebar list, the page, the header parent link and proposal
   banner, the composer routing banner, and `debug/` (inspect buttons, the
-  inspector pane, the Debug tab), fed by `useWorkstreams.ts`.
+  inspector pane), fed by `useWorkstreams.ts`.
 
 To check the exact-once guarantee against real data, export a snapshot to
 private storage (it contains thread titles) and point the test at it:
