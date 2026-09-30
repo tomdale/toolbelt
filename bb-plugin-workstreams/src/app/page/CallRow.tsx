@@ -18,6 +18,16 @@ const EVENT: Record<TraceKind, { label: string; description: string }> = {
     label: "Thread recap",
     description: "The model produced the returning developer's thread recap.",
   },
+  "understanding-extract": {
+    label: "Evidence extraction",
+    description:
+      "The model extracted observations grounded in conversation excerpts. Reported outcomes are evidence, not independent verification.",
+  },
+  "understanding-synthesis": {
+    label: "Understanding reconciliation",
+    description:
+      "The model reconciled cited observations across threads into a revisable account with unresolved questions.",
+  },
   route: {
     label: "Destination selection",
     description:

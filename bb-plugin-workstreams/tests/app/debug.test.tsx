@@ -61,6 +61,7 @@ async function header(
           ],
         }),
         trace: ({ id }: { id: string }) => ({ trace: full(id) }),
+        understandingRetrievals: () => ({ retrievals: [] }),
         ...rpc,
       } as never,
     },
@@ -115,6 +116,57 @@ it("opens the thread's model calls with reasoning, result, and prompt", async ()
       within(pane).getByRole("article", { name: "Thread analysis" }),
     ).toBeTruthy(),
   );
+});
+
+it("exposes actual retrieval and links its evidence into the workbench", async () => {
+  const slot = await header({ debug: true }, {
+    understandingRetrievals: () => ({
+      retrievals: [
+        {
+          id: "r1",
+          at: 1,
+          consumer: "analysis",
+          threadId: "t1",
+          traceId: "tr1",
+          report: {
+            query: "Recap spacing",
+            terms: ["recap", "spacing"],
+            budget: 8000,
+            usedChars: 17,
+            context: "Exact old context",
+            accountIds: ["a1"],
+            observationIds: ["o1"],
+            candidates: [
+              {
+                kind: "account",
+                id: "a1",
+                title: "Recap capability",
+                score: 2,
+                matchedTerms: ["recap"],
+                disposition: "included",
+                chars: 17,
+              },
+            ],
+          },
+        },
+      ],
+    }),
+  } as never);
+  fireEvent.click(
+    await slot.findByRole("button", {
+      name: "Inspect Workstreams model calls for this thread",
+    }),
+  );
+  const pane = await body().findByRole("dialog");
+  expect(await within(pane).findByText("Query: Recap spacing")).toBeTruthy();
+  fireEvent.click(
+    within(pane).getByRole("button", { name: "Account: Recap capability" }),
+  );
+  expect(slot.inspection.navigateCalls).toContainEqual({
+    method: "toPluginPanel",
+    path: "home",
+    options: { subPath: "understanding/accounts/a1" },
+  });
 });
 
 it("runs a call again and lists the replay under it", async () => {

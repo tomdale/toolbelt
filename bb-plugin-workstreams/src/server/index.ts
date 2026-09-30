@@ -24,6 +24,7 @@ import { UserError, WorkstreamService } from "./service.ts";
 import { TraceStore } from "./trace.ts";
 import { RecapScheduler } from "./recap.ts";
 import { loadRecapPrefs, saveRecapPrefs } from "./recapPrefs.ts";
+import { Understanding } from "./understanding.ts";
 
 export { rpcContract } from "./contract.ts";
 
@@ -71,6 +72,13 @@ export default async function plugin(bb: BbPluginApi) {
       description: "Summarizes each thread after every turn.",
       options: [...MODELS],
       default: MODELS[0],
+    },
+    understandingAutomatic: {
+      type: "boolean",
+      label: "Incremental understanding (preview)",
+      description:
+        "Extract cited observations from completed conversations and reconcile cross-thread accounts. Adds model calls and stores redacted evidence; routing and analysis can use this context. Historical conversations are processed incrementally.",
+      default: false,
     },
     recapModel: {
       type: "select",
@@ -169,12 +177,32 @@ export default async function plugin(bb: BbPluginApi) {
   });
   // Retention also applies while Debug mode is off and nothing is recorded.
   traces.prune({ force: true });
+  const understanding = new Understanding({
+    sdk: () => bb.sdk,
+    db,
+    inference,
+    model: async () => (await settings.get()).model,
+    onChange: notify,
+    log: (message) => bb.log.warn(message),
+  });
+  bb.onDispose(() => understanding.dispose());
   let evolveSoon = () => {};
   const analyzer = new Analyzer({
     sdk: () => bb.sdk,
     db,
     model: async () => (await settings.get()).model,
     inference,
+    observe: async (threadId) => {
+      if ((await settings.get()).understandingAutomatic)
+        await understanding.observe(threadId);
+    },
+    retrieval: (query, threadId) => {
+      const report = understanding.retrieve(query);
+      const id = understanding.recordRetrieval(report, "analysis", threadId);
+      return { context: report.context, id };
+    },
+    attachRetrieval: (id, traceId) =>
+      understanding.attachRetrieval(id, traceId),
     onChange: () => {
       notify();
       evolveSoon();
@@ -217,7 +245,9 @@ export default async function plugin(bb: BbPluginApi) {
     prefs: () => loadRecapPrefs(db),
     triage: (threadId) => {
       const result = analyzer.get(threadId);
-      return result ? { state: result.state, needsYou: result.needsYou } : undefined;
+      return result
+        ? { state: result.state, needsYou: result.needsYou }
+        : undefined;
     },
     onChange: notify,
     log: (message) => bb.log.warn(message),
@@ -266,6 +296,13 @@ export default async function plugin(bb: BbPluginApi) {
     inference,
     model: async () => (await settings.get()).model,
     homeProjectId: async () => (await settings.get()).homeProjectId ?? "",
+    retrieval: (query, threadId) => {
+      const report = understanding.retrieve(query);
+      const id = understanding.recordRetrieval(report, "route", threadId);
+      return { context: report.context, id };
+    },
+    attachRetrieval: (id, traceId) =>
+      understanding.attachRetrieval(id, traceId),
   });
   // A thread the native composer just created from a previewed prompt is
   // filed where the preview said: via the banner's submit data, or, for a
@@ -366,11 +403,50 @@ export default async function plugin(bb: BbPluginApi) {
         );
     }, delay);
   };
+  // Rotate through historical threads so bounded extraction can finish even
+  // when no further turns occur. One catch-up pass at a time, two threads per
+  // minute; Understanding serializes model work and backs off failed scans.
+  let understandingOffset = 0;
+  let understandingCatchingUp = false;
+  let disposed = false;
+  const catchUpUnderstanding = async () => {
+    if (disposed || understandingCatchingUp) return;
+    understandingCatchingUp = true;
+    try {
+      if (!(await settings.get()).understandingAutomatic || disposed) return;
+      const eligible = service
+        .threads()
+        .filter(
+          (thread) =>
+            thread.status === "idle" &&
+            understanding.needsObservation(thread.id, thread.latestAttentionAt),
+        )
+        .sort((a, b) => a.id.localeCompare(b.id));
+      for (let i = 0; i < Math.min(2, eligible.length); i++) {
+        if (disposed) return;
+        const thread = eligible[understandingOffset % eligible.length]!;
+        understandingOffset++;
+        try {
+          await understanding.observe(thread.id);
+        } catch (error) {
+          bb.log.warn(
+            `Understanding catch-up failed for ${thread.id}: ${String(error)}`,
+          );
+        }
+      }
+    } finally {
+      understandingCatchingUp = false;
+    }
+  };
   const interval = setInterval(() => {
     reconcileSoon(0);
     traces.prune();
+    void catchUpUnderstanding().catch((error) =>
+      bb.log.warn(`Understanding catch-up failed: ${String(error)}`),
+    );
   }, RECONCILE_EVERY_MS);
   bb.onDispose(() => {
+    disposed = true;
     clearInterval(interval);
     if (timer) clearTimeout(timer);
   });
@@ -406,6 +482,7 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.events.on("thread.deleted", ({ thread }) => {
     analyzer.forget(thread.id);
+    understanding.forget(thread.id);
     archives.forget(thread.id);
     service.forget(thread.id);
   });
@@ -502,7 +579,11 @@ export default async function plugin(bb: BbPluginApi) {
     },
     recap_generate: async ({ threadId }) => {
       const recap = await recaps.generate(threadId, { onDemand: true });
-      return { recap, generated: recap !== null, reason: recap ? null : "not_generated" };
+      return {
+        recap,
+        generated: recap !== null,
+        reason: recap ? null : "not_generated",
+      };
     },
     state: async () => ({
       ...service.state(),
@@ -718,6 +799,16 @@ export default async function plugin(bb: BbPluginApi) {
     trace: async ({ id }) => ({ trace: traces.get(id) }),
     traceReplay: ({ id }) =>
       userFacing(async () => ({ trace: await inference.replay(id) })),
+    understandingOverview: async (input) => understanding.debugOverview(input),
+    understandingAccount: async ({ id, before }) =>
+      understanding.accountDetail(id, before),
+    understandingObservation: async ({ id }) =>
+      understanding.observationDetail(id),
+    understandingRetrieve: async ({ query, budget, limit }) =>
+      understanding.retrieve(query, { budget, limit }),
+    understandingRetrievals: async (input) => ({
+      retrievals: understanding.retrievals(input),
+    }),
     traceClear: async () => ({ removed: traces.clear() }),
   });
 
@@ -729,5 +820,6 @@ export default async function plugin(bb: BbPluginApi) {
     map,
     router,
     traces,
+    understanding,
   });
 }
