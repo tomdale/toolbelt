@@ -35,6 +35,8 @@ class ServerStore {
   private activeMutations = 0;
   private mutationVersion = 0;
   private mutationNeedsReconcile = false;
+  private pendingReorders = new Map<number, ReorderChange>();
+  private pendingPrefs = new Map<number, Partial<SnoozePrefs>>();
 
   constructor(readonly rpc: Rpc) {}
 
@@ -72,6 +74,9 @@ class ServerStore {
         const state = await this.rpc.call("state", null);
         // A change arriving during the request needs a fresh read. Publishing
         // that older response would briefly undo a shared optimistic update.
+        if (this.activeMutations > 0) {
+          this.mutationNeedsReconcile = true;
+        }
         if (!this.dirty && this.activeMutations === 0) {
           this.loaded = true;
           this.publish({
@@ -89,6 +94,9 @@ class ServerStore {
   private beginMutation(): number {
     this.activeMutations += 1;
     this.mutationVersion += 1;
+    // A read already in flight, or a refresh requested before this write,
+    // needs to be repeated after the write settles. Reads that begin during
+    // the mutation mark this flag when their response is suppressed.
     this.mutationNeedsReconcile ||= this.pending !== null || this.dirty;
     this.dirty = true;
     return this.mutationVersion;
@@ -105,21 +113,31 @@ class ServerStore {
   /** Applies manual order to every consumer before the round trip. */
   reorder = async (change: ReorderChange): Promise<void> => {
     const mutationVersion = this.beginMutation();
+    this.pendingReorders.set(mutationVersion, change);
     this.publish({
       ...this.value,
       order: applyChange(this.value.order, change),
     });
     try {
       const { order } = await this.rpc.call("reorder", change);
-      if (mutationVersion === this.mutationVersion)
-        this.publish({ ...this.value, order });
+      this.publish({
+        ...this.value,
+        order: this.overlayReorders(applyChange(order, change)),
+      });
     } catch (cause) {
       this.mutationNeedsReconcile = true;
       throw cause;
     } finally {
+      this.pendingReorders.delete(mutationVersion);
       this.endMutation();
     }
   };
+
+  private overlayReorders(order: ManualOrder): ManualOrder {
+    let next = order;
+    for (const change of this.pendingReorders.values()) next = applyChange(next, change);
+    return next;
+  }
 
   /** `until: null` waits for activity; `wake` removes the snooze at once. */
   setSnooze = async (
@@ -150,21 +168,28 @@ class ServerStore {
 
   /** Saves Snooze settings for every consumer with immediate local feedback. */
   saveSnoozePrefs = async (patch: Partial<SnoozePrefs>): Promise<void> => {
-    this.beginMutation();
+    const mutationVersion = this.beginMutation();
+    this.pendingPrefs.set(mutationVersion, patch);
     this.publish({
       ...this.value,
       snoozePrefs: parseSnoozePrefs({ ...this.value.snoozePrefs, ...patch }),
     });
     try {
       const { prefs } = await this.rpc.call("setSnoozePrefs", { patch });
-      this.publish({ ...this.value, snoozePrefs: parseSnoozePrefs(prefs) });
+      let merged = { ...prefs, ...this.pendingPrefs.get(mutationVersion) };
+      for (const [version, pending] of this.pendingPrefs)
+        if (version !== mutationVersion) merged = { ...merged, ...pending };
+      this.publish({ ...this.value, snoozePrefs: parseSnoozePrefs(merged) });
     } catch (cause) {
       this.mutationNeedsReconcile = true;
       throw cause;
     } finally {
+      this.pendingPrefs.delete(mutationVersion);
       this.endMutation();
     }
   };
+
+
 }
 
 function applyChange(order: ManualOrder, change: ReorderChange): ManualOrder {
