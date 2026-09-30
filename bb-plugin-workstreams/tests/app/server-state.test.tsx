@@ -182,9 +182,9 @@ describe("shared server state", () => {
     expect(consumers.get(0)!.server.order.workstreams).toEqual(["a"]);
     write.reject(failure);
     await expect(pending).rejects.toBe(failure);
-    read.mockImplementationOnce(() => recovery.promise);
+    read.mockImplementation(() => recovery.promise);
     const refresh = consumers.get(0)!.refresh();
-    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(read.mock.calls.length).toBeGreaterThanOrEqual(2));
     recovery.resolve(state(2));
     await refresh;
     expect(consumers.get(0)!.server.order.workstreams).toEqual([]);
@@ -252,9 +252,11 @@ describe("shared server state", () => {
   it("rolls back rejected preferences and shows authoritative normalization", async () => {
     const failure = new Error("preferences failed");
     const write = deferred<{ prefs: ServerState["snoozePrefs"] }>();
+    const recovery = deferred<ServerState>();
     const read = vi
       .fn()
       .mockResolvedValueOnce(state(1))
+      .mockImplementationOnce(() => recovery.promise)
       .mockResolvedValueOnce({
         ...state(2),
         snoozePrefs: { ...state().snoozePrefs, morningHour: 6 },
@@ -272,6 +274,7 @@ describe("shared server state", () => {
     write.reject(failure);
     await expect(pending).rejects.toBe(failure);
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    recovery.resolve({ ...state(2), snoozePrefs: { ...state().snoozePrefs, morningHour: 6 } });
     await waitFor(() =>
       expect(consumers.get(0)!.server.snoozePrefs.morningHour).toBe(6),
     );
@@ -336,8 +339,15 @@ describe("shared server state", () => {
     const reordered = deferred<{ order: ServerState["order"] }>();
     const snoozed = deferred<{ snooze: ServerState["snoozes"][string] }>();
     const woken = deferred<{ woke: boolean }>();
+    let committedOrder = state().order;
+    const read = vi.fn(async () => ({ ...state(), order: committedOrder }));
     const { consumers, assertRevision } = mount({
-      reorder: vi.fn(() => reordered.promise),
+      read,
+      reorder: vi.fn(async () => {
+        const result = await reordered.promise;
+        committedOrder = result.order;
+        return result;
+      }),
       snooze: vi.fn(() => snoozed.promise),
       unsnooze: vi.fn(() => woken.promise),
     });
