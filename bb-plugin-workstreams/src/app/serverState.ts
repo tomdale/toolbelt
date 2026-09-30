@@ -201,8 +201,17 @@ class ServerStore {
       if (mutationVersion >= this.latestPrefsResponse) {
         this.latestPrefsResponse = mutationVersion;
         let merged = prefs;
-        for (const [version, pending] of this.pendingPrefs)
-          if (version > mutationVersion) merged = { ...merged, ...pending };
+        for (const [version, pending] of this.pendingPrefs) {
+          if (version === mutationVersion) continue;
+          // A whole-settings response may predate another pending field.
+          // Preserve it, but never let an older edit replace this write's keys.
+          const overlay = Object.fromEntries(
+            Object.entries(pending).filter(
+              ([key]) => version > mutationVersion || !Object.hasOwn(patch, key),
+            ),
+          );
+          merged = { ...merged, ...overlay };
+        }
         this.publish({ ...this.value, snoozePrefs: parseSnoozePrefs(merged) });
       }
     } catch (cause) {

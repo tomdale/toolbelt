@@ -96,6 +96,10 @@ export function Organize({
       try {
         const result = await rpc.call("bootstrap", input as never);
         if (generation !== commandGeneration.current) return;
+        // Successful commands release error ownership before their recovery
+        // read, so subsequent connection failures can be shown normally.
+        errorOwner.current = null;
+        setError(null);
         if (request >= settledGeneration.current) {
           settledGeneration.current = request;
           publishedGeneration.current = request;
