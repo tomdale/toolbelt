@@ -32,6 +32,8 @@ class ServerStore {
   private pending: Promise<void> | null = null;
   private dirty = false;
   private loaded = false;
+  private activeMutations = 0;
+  private mutationVersion = 0;
 
   constructor(readonly rpc: Rpc) {}
 
@@ -69,7 +71,7 @@ class ServerStore {
         const state = await this.rpc.call("state", null);
         // A change arriving during the request needs a fresh read. Publishing
         // that older response would briefly undo a shared optimistic update.
-        if (!this.dirty) {
+        if (!this.dirty && this.activeMutations === 0) {
           this.loaded = true;
           this.publish({
             ...emptyState(),
@@ -83,25 +85,33 @@ class ServerStore {
     } while (this.dirty);
   }
 
-  private invalidateFetch(): void {
-    // Any response already in flight predates this optimistic mutation. Force
-    // the fetch loop to reconcile it instead of publishing stale server data.
+  private beginMutation(): number {
+    this.activeMutations += 1;
+    this.mutationVersion += 1;
     this.dirty = true;
+    return this.mutationVersion;
+  }
+
+  private endMutation(): void {
+    this.activeMutations -= 1;
+    if (this.activeMutations === 0) void this.refresh();
   }
 
   /** Applies manual order to every consumer before the round trip. */
   reorder = async (change: ReorderChange): Promise<void> => {
-    this.invalidateFetch();
+    const mutationVersion = this.beginMutation();
     this.publish({
       ...this.value,
       order: applyChange(this.value.order, change),
     });
     try {
       const { order } = await this.rpc.call("reorder", change);
-      this.publish({ ...this.value, order });
+      if (mutationVersion === this.mutationVersion)
+        this.publish({ ...this.value, order });
     } catch (cause) {
-      await this.refresh();
       throw cause;
+    } finally {
+      this.endMutation();
     }
   };
 
@@ -110,7 +120,7 @@ class ServerStore {
     thread: { id: string; latestAttentionAt?: number },
     until: number | null | "wake",
   ): Promise<void> => {
-    this.invalidateFetch();
+    this.beginMutation();
     const snoozes = { ...this.value.snoozes };
     if (until === "wake") delete snoozes[thread.id];
     else
@@ -125,14 +135,15 @@ class ServerStore {
         await this.rpc.call("unsnooze", { threadId: thread.id });
       else await this.rpc.call("snooze", { threadId: thread.id, until });
     } catch (cause) {
-      await this.refresh();
       throw cause;
+    } finally {
+      this.endMutation();
     }
   };
 
   /** Saves Snooze settings for every consumer with immediate local feedback. */
   saveSnoozePrefs = async (patch: Partial<SnoozePrefs>): Promise<void> => {
-    this.invalidateFetch();
+    this.beginMutation();
     this.publish({
       ...this.value,
       snoozePrefs: parseSnoozePrefs({ ...this.value.snoozePrefs, ...patch }),
@@ -141,8 +152,9 @@ class ServerStore {
       const { prefs } = await this.rpc.call("setSnoozePrefs", { patch });
       this.publish({ ...this.value, snoozePrefs: parseSnoozePrefs(prefs) });
     } catch (cause) {
-      await this.refresh();
       throw cause;
+    } finally {
+      this.endMutation();
     }
   };
 }
