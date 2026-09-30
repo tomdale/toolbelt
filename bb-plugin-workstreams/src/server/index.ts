@@ -22,6 +22,7 @@ import { loadOrder, saveOrder } from "./order.ts";
 import { loadSpinner, saveSpinner } from "./spinner.ts";
 import { UserError, WorkstreamService } from "./service.ts";
 import { TraceStore } from "./trace.ts";
+import { RecapScheduler } from "./recap.ts";
 
 export { rpcContract } from "./contract.ts";
 
@@ -193,6 +194,14 @@ export default async function plugin(bb: BbPluginApi) {
     info: (message) => bb.log.info(message),
   });
   bb.onDispose(() => analyzer.dispose());
+  const recaps = new RecapScheduler({
+    sdk: () => bb.sdk,
+    db,
+    model: async () => (await settings.get()).model,
+    onChange: notify,
+    log: (message) => bb.log.warn(message),
+  });
+  bb.onDispose(() => recaps.dispose());
   const archives = new ArchiveSuggestions({
     sdk: () => bb.sdk,
     db,
@@ -372,10 +381,15 @@ export default async function plugin(bb: BbPluginApi) {
     service.forget(thread.id);
   });
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
-    if (thread.visibility !== "hidden")
+    if (thread.visibility !== "hidden") {
       analyzer.onIdle(thread, lastAssistantText);
+      recaps.onIdle(thread.id);
+    }
   });
-  bb.events.on("thread.active", ({ thread }) => analyzer.onActive(thread.id));
+  bb.events.on("thread.active", ({ thread }) => {
+    analyzer.onActive(thread.id);
+    recaps.onActive(thread.id);
+  });
 
   const userFacing = async <T>(work: () => Promise<T>): Promise<T> => {
     try {
@@ -448,6 +462,11 @@ export default async function plugin(bb: BbPluginApi) {
           execution: (execution ?? undefined) as never,
         });
       }),
+    recap_get: async ({ threadId }) => ({ recap: recaps.get(threadId), generating: false }),
+    recap_generate: async ({ threadId }) => {
+      const recap = await recaps.generate(threadId);
+      return { recap, generated: recap !== null, reason: recap ? null : "not_generated" };
+    },
     state: async () => ({
       ...service.state(),
       workstreams: Object.fromEntries(map.list().map((r) => [r.sectionId, r])),

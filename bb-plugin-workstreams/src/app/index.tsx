@@ -5,6 +5,7 @@ import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { ProposalBanner } from "./header/ProposalBanner.tsx";
 import { RouteBanner } from "./composer/RouteBanner.tsx";
+import { RecapCard } from "./composer/RecapCard.tsx";
 import { ArchiveCard } from "./composer/ArchiveCard.tsx";
 import { AutomaticFilingCard } from "./composer/AutomaticFilingCard.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
@@ -18,6 +19,12 @@ export default definePluginApp((app) => {
     scopes: ["thread"],
     banners: [{ id: "filing", chrome: "bare", component: AutomaticFilingCard }],
   });
+  app.composer.customize({
+    id: "recap",
+    scopes: ["thread"],
+    banners: [{ id: "recap", chrome: "bare", component: RecapCard }],
+  });
+  // Kept as a compatibility registration while clients migrate to the recap header.
   app.composer.customize({
     id: "archive-suggestion",
     scopes: ["thread"],
