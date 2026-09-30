@@ -167,6 +167,33 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
+  it("collapses a parent's children in its group", async () => {
+    const slot = await mount();
+    expect(groupRows(slot, "Alpha")).toEqual(["Root task", "Kid task"]);
+    const alpha = within(slot.getByRole("region", { name: "Alpha" }));
+    fireEvent.click(alpha.getByRole("button", { name: "Hide child threads" }));
+    expect(groupRows(slot, "Alpha")).toEqual(["Root task"]);
+    fireEvent.click(alpha.getByRole("button", { name: "Show child threads" }));
+    expect(groupRows(slot, "Alpha")).toEqual(["Root task", "Kid task"]);
+    slot.lifecycle.unmount();
+  });
+
+  it("shows an overlay row's children only once expanded", async () => {
+    const slot = await mount();
+    const kids = () =>
+      groupRows(slot, "Recent").filter((title) => title === "Kid task").length;
+    expect(kids()).toBe(1);
+    const recent = within(slot.getByRole("region", { name: "Recent" }));
+    fireEvent.click(recent.getByRole("button", { name: "Show child threads" }));
+    const rows = groupRows(slot, "Recent");
+    expect(
+      rows.slice(rows.indexOf("Root task"), rows.indexOf("Root task") + 2),
+    ).toEqual(["Root task", "Kid task"]);
+    expect(kids()).toBe(2);
+    expect(groupRows(slot, "Alpha")).toEqual(["Root task", "Kid task"]);
+    slot.lifecycle.unmount();
+  });
+
   it("persists collapse state per group", async () => {
     const first = await mount(undefined, { settings: { showRecent: false } });
     fireEvent.click(
@@ -728,7 +755,8 @@ describe("row hover buttons", () => {
     const row = await rowOf(slot);
     const buttons = within(row)
       .getAllByRole("button")
-      .map((b) => b.getAttribute("aria-label"));
+      .map((b) => b.getAttribute("aria-label"))
+      .filter((label) => label !== "Hide child threads");
     expect(buttons).toEqual([
       "Archive",
       expect.stringMatching(/^Snooze until/),

@@ -92,6 +92,7 @@ export function Row({
   showStatusSlot = true,
   subtitle,
   snoozeAction,
+  disclosure,
   onNavigate,
 }: {
   thread: PluginSidebarThread;
@@ -127,6 +128,8 @@ export function Row({
     run: () => void;
     menu?: ReactNode;
   };
+  /** Present when the row has child threads: the expand/collapse toggle. */
+  disclosure?: { expanded: boolean; toggle: () => void };
   onNavigate: () => void;
 }) {
   const shownState = shownWorkState(work, attention);
@@ -186,7 +189,10 @@ export function Row({
         </span>
       ) : null}
       <span
-        className="ws-status-slot"
+        className={cn(
+          "ws-status-slot",
+          disclosure && (nativeStatus || state?.glyph) && "ws-has-disclosure",
+        )}
         data-collapsed={!showStatusSlot || undefined}
       >
         {nativeStatus ? (
@@ -206,6 +212,31 @@ export function Row({
           >
             {state.glyph}
           </span>
+        ) : null}
+        {disclosure ? (
+          // Sits in the status slot: always shown when the slot is otherwise
+          // empty, and swapped in for the status mark on hover.
+          <button
+            type="button"
+            aria-label={
+              disclosure.expanded ? "Hide child threads" : "Show child threads"
+            }
+            aria-expanded={disclosure.expanded}
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              disclosure.toggle();
+            }}
+            className="ws-disclosure absolute inset-0 z-10 flex cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-foreground"
+          >
+            <Icon
+              name={disclosure.expanded ? "ChevronDown" : "ChevronRight"}
+              className="size-3"
+            />
+          </button>
         ) : null}
       </span>
       <span

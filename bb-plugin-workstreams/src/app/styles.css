@@ -951,3 +951,17 @@
     animation: none;
   }
 }
+
+/* A row with children and a status mark shows the disclosure chevron in
+   place of the mark while hovered or focused. */
+.ws-has-disclosure > .ws-disclosure {
+  opacity: 0;
+}
+.ws-row:hover .ws-has-disclosure > .ws-disclosure,
+.ws-has-disclosure > .ws-disclosure:focus-visible {
+  opacity: 1;
+}
+.ws-row:hover .ws-has-disclosure > :not(.ws-disclosure),
+.ws-has-disclosure:has(> .ws-disclosure:focus-visible) > :not(.ws-disclosure) {
+  opacity: 0;
+}
