@@ -269,3 +269,17 @@ it("keeps the dismissed card's space while Generate Recap fades in below", async
     ).toBe(true),
   );
 });
+
+it("shows the generating card as soon as Generate Recap is pressed", async () => {
+  let finish: (value: unknown) => void = () => {};
+  const slot = await mount({
+    generate: () => new Promise((resolve) => (finish = resolve)),
+  });
+  await slot.findByRole("region", { name: "Latest recap" });
+  fireEvent.click(slot.getByRole("button", { name: "Dismiss recap" }));
+  fireEvent.click(await slot.findByRole("button", { name: "Generate Recap" }));
+  expect(
+    await slot.findByRole("status", { name: "Generating recap" }),
+  ).toBeTruthy();
+  finish({ recap: null, generated: false, reason: "not_generated" });
+});
