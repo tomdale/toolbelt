@@ -205,14 +205,19 @@ function gridGap(slot: HTMLElement): number {
 }
 
 /**
- * Shortens a hold's `slot` by what `below` adds to the stack (its height and
- * the grid gap between them), so the stack's total height doesn't change
+ * Shortens a hold's `slot` by what `below` adds to the stack (its height,
+ * its margins, and the grid gap between them), so the stack's total height doesn't change
  * when `below` appears in the same commit as the slot. For Generate Recap
  * taking a dismissed card's place.
  */
 export function makeRoomBelow(slot: HTMLElement, below: HTMLElement) {
   const height = slot.getBoundingClientRect().height;
-  const taken = below.getBoundingClientRect().height + gridGap(slot);
+  // Margins count too: the stack's grid lays items out by their margin box.
+  const style = getComputedStyle(below);
+  const margins =
+    (Number.parseFloat(style.marginTop) || 0) +
+    (Number.parseFloat(style.marginBottom) || 0);
+  const taken = below.getBoundingClientRect().height + margins + gridGap(slot);
   slot.style.height = `${Math.max(0, height - taken)}px`;
 }
 
