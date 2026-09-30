@@ -49,6 +49,38 @@ type Placement = "group" | "needs-you" | "recent" | "snoozed";
 const groupKey = (id: string) => `ws:${id}`;
 const treeKey = (id: string) => `t:${id}`;
 
+/** Each row's descendants, in tree order, across these tree-ordered lists. */
+function descendantsOf(
+  lists: readonly (readonly ThreadRow[])[],
+): Map<string, ThreadRow[]> {
+  const out = new Map<string, ThreadRow[]>();
+  for (const rows of lists)
+    rows.forEach((row, index) => {
+      const below: ThreadRow[] = [];
+      for (const next of rows.slice(index + 1)) {
+        if (next.depth <= row.depth) break;
+        below.push(next);
+      }
+      if (below.length > 0) out.set(row.thread.id, below);
+    });
+  return out;
+}
+
+/**
+ * Collapse-state key for a parent row. Overlay copies of a thread fold
+ * independently of its place in its group.
+ */
+const foldKey = (placement: Placement, id: string) =>
+  placement === "group" ? `thread:${id}` : `${placement}:thread:${id}`;
+/**
+ * Parents start expanded where they are drawn as trees (groups, Snoozed)
+ * and collapsed in the For you and Recent overlays.
+ */
+const foldDefault = (placement: Placement) =>
+  placement === "needs-you" || placement === "recent";
+/** Overlays draw a row flat, with its children only when expanded. */
+const isOverlay = foldDefault;
+
 /** A group's rows split into trees, each led by its root. */
 function treesOf(rows: readonly ThreadRow[]): ThreadRow[][] {
   const trees: ThreadRow[][] = [];
@@ -81,6 +113,28 @@ export function WorkstreamsThreadList({
   );
   const { projection, sections, now } = ws;
   const nameOf = new Map(sections.map((s) => [s.id, s.name]));
+
+  const descendants = descendantsOf([
+    ...[...projection.groups, projection.unsorted, ...projection.dormant].map(
+      (group) => group.rows,
+    ),
+    projection.snoozed,
+  ]);
+  const folded = (placement: Placement, id: string) =>
+    isCollapsed(foldKey(placement, id), foldDefault(placement));
+  /** Drops rows beneath a folded ancestor; `rows` must be in tree order. */
+  const unfolded = (rows: readonly ThreadRow[], placement: Placement) => {
+    const out: ThreadRow[] = [];
+    let hideBelow: number | null = null;
+    for (const row of rows) {
+      if (hideBelow !== null && row.depth > hideBelow) continue;
+      hideBelow = null;
+      out.push(row);
+      if (descendants.has(row.thread.id) && folded(placement, row.thread.id))
+        hideBelow = row.depth;
+    }
+    return out;
+  };
 
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -151,8 +205,14 @@ export function WorkstreamsThreadList({
   };
   /** Whether any of these rows draws a status mark (see `hasStatusMark`). */
   const anyMark = (rows: readonly ThreadRow[], placement: Placement) =>
-    rows.some((row) =>
-      hasStatusMark(row.thread, ws.work(row.thread), placement === "needs-you"),
+    rows.some(
+      (row) =>
+        descendants.has(row.thread.id) ||
+        hasStatusMark(
+          row.thread,
+          ws.work(row.thread),
+          placement === "needs-you",
+        ),
     );
   const needsRows = showAllNeeds
     ? projection.needsYou
@@ -212,6 +272,7 @@ export function WorkstreamsThreadList({
     placement: Placement,
     handle?: DragHandle,
     showStatusSlot = true,
+    depth = isOverlay(placement) ? 0 : row.depth,
   ) => (
     <RowMenu
       key={row.thread.id}
@@ -225,9 +286,7 @@ export function WorkstreamsThreadList({
       <li ref={handle?.ref} {...handle?.listeners} className="list-none">
         <Row
           thread={row.thread}
-          depth={
-            placement === "group" || placement === "snoozed" ? row.depth : 0
-          }
+          depth={depth}
           active={row.thread.id === activeThreadId}
           now={now}
           context={contextOf(row, placement)}
@@ -237,11 +296,45 @@ export function WorkstreamsThreadList({
           showStatusSlot={showStatusSlot}
           subtitle={placement === "needs-you" ? askOf(row) : null}
           snoozeAction={snoozeActionOf(row, placement)}
+          disclosure={
+            descendants.has(row.thread.id)
+              ? {
+                  expanded: !folded(placement, row.thread.id),
+                  toggle: () =>
+                    toggle(
+                      foldKey(placement, row.thread.id),
+                      foldDefault(placement),
+                    ),
+                }
+              : undefined
+          }
           onNavigate={onNavigate}
         />
       </li>
     </RowMenu>
   );
+  /**
+   * An overlay row followed, when expanded, by its visible descendants,
+   * indented relative to it.
+   */
+  const renderOverlayTree = (
+    row: ThreadRow,
+    placement: Placement,
+    marks: boolean,
+  ) => [
+    renderRow(row, placement, undefined, marks),
+    ...(folded(placement, row.thread.id)
+      ? []
+      : unfolded(descendants.get(row.thread.id) ?? [], placement).map((child) =>
+          renderRow(
+            child,
+            placement,
+            undefined,
+            marks,
+            child.depth - row.depth,
+          ),
+        )),
+  ];
   /** A group's rows as sortable trees; the root row drags the whole tree. */
   const renderTrees = (group: ThreadGroup) => {
     const marks = anyMark(group.rows, "group");
@@ -261,7 +354,7 @@ export function WorkstreamsThreadList({
               {({ ref, style, handle }) => (
                 <li ref={ref} style={style} className="list-none">
                   <ul>
-                    {tree.map((row, index) =>
+                    {unfolded(tree, "group").map((row, index) =>
                       renderRow(
                         row,
                         "group",
@@ -337,8 +430,8 @@ export function WorkstreamsThreadList({
         ) : null}
         {ws.showForYou && projection.needsYou.length > 0 ? (
           <Band title="For you" box="attention">
-            {needsRows.map((row) =>
-              renderRow(row, "needs-you", undefined, needsMarks),
+            {needsRows.flatMap((row) =>
+              renderOverlayTree(row, "needs-you", needsMarks),
             )}
             {projection.needsYou.length > NEEDS_YOU_LIMIT ? (
               <li>
@@ -362,11 +455,10 @@ export function WorkstreamsThreadList({
         ) : null}
         {ws.showRecent && projection.recent.length > 0 ? (
           <Band title="Recent" box="neutral">
-            {projection.recent.map((row) =>
-              renderRow(
+            {projection.recent.flatMap((row) =>
+              renderOverlayTree(
                 row,
                 "recent",
-                undefined,
                 anyMark(projection.recent, "recent"),
               ),
             )}
@@ -439,7 +531,7 @@ export function WorkstreamsThreadList({
             collapsed={isCollapsed("__snoozed", true)}
             toggle={() => toggle("__snoozed", true)}
           >
-            {projection.snoozed.map((row) =>
+            {unfolded(projection.snoozed, "snoozed").map((row) =>
               renderRow(
                 row,
                 "snoozed",
