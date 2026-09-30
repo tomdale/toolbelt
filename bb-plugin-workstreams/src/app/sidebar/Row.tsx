@@ -117,7 +117,7 @@ export function Row({
   /** A second line under the title, such as what the thread asks of Tom. */
   subtitle?: string | null;
   /**
-   * The hover button beside Archive: snooze with the default choice, or wake
+   * The hover button after Archive: snooze with the default choice, or wake
    * a snoozed thread. `title` names what a click does; `menu` holds the other
    * choices, opened from a chevron beside the button.
    */
@@ -227,18 +227,8 @@ export function Row({
           </span>
         ) : null}
       </span>
-      <span
-        className={cn(
-          "pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70 group-hover/row:opacity-0 group-has-[button:focus-visible]/row:opacity-0",
-          // Hidden while a hover menu is open, too.
-          "group-has-[[data-state=open]]/row:opacity-0",
-          // Room for the hover buttons, so they never cover the title.
-          snoozeAction?.menu
-            ? "group-hover/row:min-w-[58px] group-has-[button:focus-visible]/row:min-w-[58px] group-has-[[data-state=open]]/row:min-w-[58px] pointer-coarse:min-w-0"
-            : snoozeAction &&
-                "group-hover/row:min-w-11 group-has-[button:focus-visible]/row:min-w-11 pointer-coarse:min-w-0",
-        )}
-      >
+      {/* Shown until the hover buttons take their place, as in BB's row. */}
+      <span className="pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70 empty:hidden group-hover/row:hidden group-has-[:focus-visible]/row:hidden group-has-[[data-state=open]]/row:hidden">
         {proposal ? (
           <span className="ws-proposal-dot" role="img" aria-label={proposal} />
         ) : null}
@@ -259,40 +249,41 @@ export function Row({
             #{pullRequest.number}
           </span>
         ) : null}
+      </span>
+      {/* Archive, then snooze and its chevron, left of the age. Collapsed
+          rather than display:none, so keyboard focus can reach them;
+          focusing one opens the group, and so does an open menu. The
+          negative margin cancels the row's gap while collapsed. */}
+      <span className="relative -ml-1.5 flex max-w-0 shrink-0 items-center overflow-hidden opacity-0 group-hover/row:ml-0 group-has-[:focus-visible]/row:ml-0 group-has-[[data-state=open]]/row:ml-0 group-hover/row:max-w-24 group-hover/row:opacity-100 group-has-[:focus-visible]/row:max-w-24 group-has-[:focus-visible]/row:opacity-100 group-has-[[data-state=open]]/row:max-w-24 group-has-[[data-state=open]]/row:opacity-100 pointer-coarse:hidden">
+        <HoverAction label="Archive" onClick={() => actions.archive(thread.id)}>
+          <Icon name="Archive" className="size-3.5" />
+        </HoverAction>
+        {snoozeAction ? (
+          <HoverAction label={snoozeAction.title} onClick={snoozeAction.run}>
+            {snoozeAction.kind === "wake" ? (
+              <WakeIcon className="size-3.5" />
+            ) : (
+              <SnoozeIcon className="size-3.5" />
+            )}
+          </HoverAction>
+        ) : null}
+        {snoozeAction?.menu ? (
+          <SnoozeChevron>{snoozeAction.menu}</SnoozeChevron>
+        ) : null}
+      </span>
+      {/* A fixed-width column, so ages line up down the list; only a
+          four-digit age like "100w" widens it. */}
+      <span className="pointer-events-none relative min-w-6 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground/70">
         {shortcut ? (
           <span className="rounded border border-border px-1 text-[10px]">
             {shortcut.label}
           </span>
         ) : context ? (
-          <span className="max-w-24 truncate">{context}</span>
+          <span className="block max-w-24 truncate">{context}</span>
         ) : (
-          <span>{relativeAge(thread.latestAttentionAt, now)}</span>
+          relativeAge(thread.latestAttentionAt, now)
         )}
       </span>
-      {/* Replace the trailing details on hover, as in BB's own row. */}
-      {snoozeAction ? (
-        <HoverAction
-          label={snoozeAction.title}
-          onClick={snoozeAction.run}
-          className={snoozeAction.menu ? "right-[42px]" : "right-7"}
-        >
-          {snoozeAction.kind === "wake" ? (
-            <WakeIcon className="size-3.5" />
-          ) : (
-            <SnoozeIcon className="size-3.5" />
-          )}
-        </HoverAction>
-      ) : null}
-      {snoozeAction?.menu ? (
-        <SnoozeChevron>{snoozeAction.menu}</SnoozeChevron>
-      ) : null}
-      <HoverAction
-        label="Archive"
-        onClick={() => actions.archive(thread.id)}
-        className="right-1"
-      >
-        <Icon name="Archive" className="size-3.5" />
-      </HoverAction>
     </div>
   );
 }
@@ -302,11 +293,7 @@ function SnoozeChevron({ children }: { children: ReactNode }) {
   const portalScope = usePortalScopeProps();
   return (
     <DropdownMenu.Root>
-      <HoverAction
-        label="More snooze options"
-        className="right-7 w-3.5"
-        trigger
-      >
+      <HoverAction label="More snooze options" className="w-3.5" trigger>
         <Icon name="ChevronDown" className="size-3" />
       </HoverAction>
       <DropdownMenu.Portal>
@@ -324,8 +311,7 @@ function SnoozeChevron({ children }: { children: ReactNode }) {
 }
 
 /**
- * A row button shown on hover, on keyboard focus, and while its menu is
- * open, with a tooltip naming it. It stops pointer and mouse downs so it
+ * A row button (see the hover group in `Row`), with a tooltip naming it. It stops pointer and mouse downs so it
  * never starts a drag, and clicks so it never opens the row. With `trigger`
  * it opens the enclosing dropdown menu instead of running `onClick`.
  */
@@ -338,7 +324,7 @@ function HoverAction({
 }: {
   label: string;
   onClick?: () => void;
-  className: string;
+  className?: string;
   trigger?: boolean;
   children: ReactNode;
 }) {
@@ -382,7 +368,7 @@ const HoverButton = forwardRef<
         onRun?.();
       }}
       className={cn(
-        "absolute top-1/2 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 group-has-[[data-state=open]]/row:opacity-100 data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground pointer-coarse:hidden",
+        "flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground",
         className,
       )}
     >
