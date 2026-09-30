@@ -21,7 +21,8 @@ against.
     asks you to decide something. These rows sit at the top in an amber block
     with a slow shimmer, under an always-open header, each naming its
     workstream. The block shows five rows, with Show more for the rest. A
-    delegate's question folds into its parent's newer one.
+    delegate's question folds into its parent's newer one. It's hidden when
+    nothing is waiting on you (the `showForYou` setting turns it off).
   - **Recent**: the five most recently active threads not already in For you
     (the `showRecent` setting).
   - **One group per workstream**, in BB's section order until you drag a header
@@ -51,6 +52,13 @@ against.
   latest request drifted to another workstream. Results are tied to the turn
   they describe and show as updating once a new turn starts. Analysis itself
   never moves anything; the later filing pass may use its subject.
+- **Recap card**: above each thread's composer, a recap of the thread's goal,
+  latest results, and Open and Done items, with a For you section when the
+  thread waits on you. Recaps are written after the thread has been quiet (30
+  seconds and 3 of your messages by default) or on demand from the thread
+  header's **Recap** button, the command palette, or **Generate Recap** when
+  automatic recaps are off. Settings → Recap picks the layout (detailed,
+  compact, minimal) and the timing.
 - **Archive suggestions**: when classification finds a natural end and BB has no
   unfinished tasks, goals, queued messages, interactions, or background work, a
   quiet **Archive** button appears in the composer toolbar. Clicking

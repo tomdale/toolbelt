@@ -23,6 +23,7 @@ import { loadSpinner, saveSpinner } from "./spinner.ts";
 import { UserError, WorkstreamService } from "./service.ts";
 import { TraceStore } from "./trace.ts";
 import { RecapScheduler } from "./recap.ts";
+import { loadRecapPrefs, saveRecapPrefs } from "./recapPrefs.ts";
 
 export { rpcContract } from "./contract.ts";
 
@@ -50,6 +51,13 @@ export default async function plugin(bb: BbPluginApi) {
         "Show a link to the parent thread in the header of child threads.",
       default: false,
     },
+    showForYou: {
+      type: "boolean",
+      label: "Show the For you section in the sidebar",
+      description:
+        "Threads waiting on you: an open approval or question, or a decision the thread asked for.",
+      default: true,
+    },
     showRecent: {
       type: "boolean",
       label: "Show the Recent band in the sidebar",
@@ -70,21 +78,6 @@ export default async function plugin(bb: BbPluginApi) {
       description: "Generates the full thread recap after it is quiet.",
       options: [...MODELS],
       default: MODELS[0],
-    },
-    recapAutomatic: {
-      type: "boolean",
-      label: "Automatic recaps",
-      description:
-        "Recap a thread after it has been quiet for 30 seconds. When off, the recap card offers Generate Recap instead.",
-      default: true,
-    },
-    recapLayout: {
-      type: "select",
-      label: "Recap layout",
-      description:
-        "detailed: goal, latest, and the Open/Done list. compact: goal and latest. minimal: latest only.",
-      options: ["detailed", "compact", "minimal"],
-      default: "detailed",
     },
     autoTitle: {
       type: "boolean",
@@ -221,6 +214,7 @@ export default async function plugin(bb: BbPluginApi) {
     db,
     model: async () => (await settings.get()).recapModel,
     inference,
+    prefs: () => loadRecapPrefs(db),
     triage: (threadId) => {
       const result = analyzer.get(threadId);
       return result ? { state: result.state, needsYou: result.needsYou } : undefined;
@@ -418,9 +412,7 @@ export default async function plugin(bb: BbPluginApi) {
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
     if (thread.visibility !== "hidden") {
       analyzer.onIdle(thread, lastAssistantText);
-      void settings.get().then((values) => {
-        if (values.recapAutomatic !== false) recaps.onIdle(thread.id);
-      });
+      if (loadRecapPrefs(db).automatic) recaps.onIdle(thread.id);
     }
   });
   bb.events.on("thread.active", ({ thread }) => {
@@ -531,6 +523,12 @@ export default async function plugin(bb: BbPluginApi) {
       const order = saveOrder(db, change);
       notify();
       return { order };
+    },
+    recapPrefs: async () => ({ prefs: loadRecapPrefs(db) }),
+    setRecapPrefs: async ({ patch }) => {
+      const prefs = saveRecapPrefs(db, patch);
+      bb.realtime.publish("recapPrefs", { prefs });
+      return { prefs };
     },
     spinner: async () => ({ spinner: loadSpinner(db) }),
     setSpinner: async ({ spinner }) => {

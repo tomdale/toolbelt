@@ -5,10 +5,10 @@ import {
   useComposer,
   useRealtime,
   useRpc,
-  useSettings,
 } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import { parseRecapLedger } from "../../domain/recap.ts";
+import { useRecapPrefs } from "../recap/prefs.ts";
 import { useArchiveSuggestion } from "../archive/useArchiveSuggestion.ts";
 
 type Recap = { summary: string; generatedAt: number };
@@ -342,9 +342,9 @@ export function RecapCard() {
   const continuing =
     !isEmpty || attachmentCount > 0 || isRunning || isSubmitting;
   const { recap, generating, needsInput, error, generate } = useRecap(threadId);
-  const { values } = useSettings();
-  const layout = (values?.recapLayout as Layout | undefined) ?? "detailed";
-  const automatic = values?.recapAutomatic !== false;
+  const { prefs } = useRecapPrefs();
+  const layout: Layout = prefs?.layout ?? "detailed";
+  const automatic = prefs?.automatic ?? true;
   const settled = useSettled(isRunning || isSubmitting);
   const archive = useArchiveSuggestion(threadId, continuing);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);

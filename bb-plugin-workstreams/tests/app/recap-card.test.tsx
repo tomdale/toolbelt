@@ -16,27 +16,58 @@ async function mount(options: {
   generate?: () => unknown;
 }) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
-  const banner = app.composerCustomizations.find((c) => c.id === "recap")!.banners![0]!;
+  const banner = app.composerCustomizations.find((c) => c.id === "recap")!
+    .banners![0]!;
   const recap =
     options.recap === null
       ? null
-      : { threadId: "t1", summary: options.recap ?? SUMMARY, generatedAt: 1, turns: 3, model: "m" };
-  return renderSlot(banner, {}, {
-    composer: { scope: { kind: "thread", threadId: "t1" } },
-    settings: options.settings ?? {},
-    rpc: {
-      state: () => emptyState(),
-      archiveStatus: () => ({ revision: null }),
-      recap_get: () => ({ recap, generating: false, needsInput: options.needsInput ?? null }),
-      recap_generate: options.generate ?? (() => ({ recap, generated: true, reason: null })),
+      : {
+          threadId: "t1",
+          summary: options.recap ?? SUMMARY,
+          generatedAt: 1,
+          turns: 3,
+          model: "m",
+        };
+  return renderSlot(
+    banner,
+    {},
+    {
+      composer: { scope: { kind: "thread", threadId: "t1" } },
+      rpc: {
+        recapPrefs: () => ({
+          prefs: {
+            automatic: options.settings?.recapAutomatic !== false,
+            layout:
+              (options.settings?.recapLayout as string | undefined) ??
+              "detailed",
+            quietSeconds: 30,
+            minTurns: 3,
+          },
+        }),
+        state: () => emptyState(),
+        archiveStatus: () => ({ revision: null }),
+        recap_get: () => ({
+          recap,
+          generating: false,
+          needsInput: options.needsInput ?? null,
+        }),
+        recap_generate:
+          options.generate ??
+          (() => ({ recap, generated: true, reason: null })),
+      },
     },
-  });
+  );
 }
 
 it("renders the detailed layout by default", async () => {
   const slot = await mount({});
   const region = await slot.findByRole("region", { name: "Latest recap" });
-  for (const text of ["Building the card.", "Card renders", "Add layouts", "Ported styles"])
+  for (const text of [
+    "Building the card.",
+    "Card renders",
+    "Add layouts",
+    "Ported styles",
+  ])
     expect(region.textContent).toContain(text);
 });
 
@@ -60,16 +91,22 @@ it("shows what the thread needs from the user", async () => {
 });
 
 it("offers Generate Recap when automatic recaps are off", async () => {
-  const slot = await mount({ settings: { recapAutomatic: false }, recap: null });
+  const slot = await mount({
+    settings: { recapAutomatic: false },
+    recap: null,
+  });
   fireEvent.click(await slot.findByRole("button", { name: "Generate Recap" }));
   await waitFor(() =>
-    expect(slot.inspection.rpcCalls.some((c) => c.method === "recap_generate")).toBe(true),
+    expect(
+      slot.inspection.rpcCalls.some((c) => c.method === "recap_generate"),
+    ).toBe(true),
   );
 });
 
 it("drops an Open item that repeats the For you ask", async () => {
   const slot = await mount({
-    recap: "Goal: Building.\nLatest: Done a thing\nOpen: Pick A or B?\nOpen: Write docs",
+    recap:
+      "Goal: Building.\nLatest: Done a thing\nOpen: Pick A or B?\nOpen: Write docs",
     needsInput: "Pick A or B?",
   });
   const region = await slot.findByRole("region", { name: "Latest recap" });
