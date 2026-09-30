@@ -4,11 +4,7 @@ import type {
   NewThreadRequest,
   PluginBrowserBbSdk,
 } from "@get-bb/plugin-sdk/app";
-import type {
-  NewThreadDecision,
-  RouteDecision,
-  RouteIntent,
-} from "../../server/router.ts";
+import type { RouteDecision, RouteIntent } from "../../server/router.ts";
 import { routeDelay } from "./timing.ts";
 import {
   hostWorkspaceProviderId,
@@ -117,46 +113,8 @@ export type {
   CatalogThread,
 } from "./environment-labels.ts";
 type ContinueDecision = Extract<RouteDecision, { outcome: "continue" }>;
-/**
- * A continuation the router inferred for an automatic draft. The draft still
- * starts a new thread; accepting the suggestion sends it to the thread
- * instead, and declining returns to the new thread.
- */
-export type Suggestion = {
-  continuation: ContinueDecision;
-  /**
-   * The new-thread default previewed with the continuation. Null after the
-   * draft was rerouted while the suggestion was accepted, so declining then
-   * routes again.
-   */
-  newThread: NewThreadDecision | null;
-};
-type ExecutionSettings = Pick<
-  ComposerSelection,
-  "providerId" | "model" | "reasoningLevel" | "serviceTier" | "permissionMode"
->;
-function executionOf(selection: ComposerSelection): ExecutionSettings {
-  const settings: ExecutionSettings = {};
-  if (selection.providerId) settings.providerId = selection.providerId;
-  if (selection.model) settings.model = selection.model;
-  if (selection.reasoningLevel)
-    settings.reasoningLevel = selection.reasoningLevel;
-  if (selection.serviceTier) settings.serviceTier = selection.serviceTier;
-  if (selection.permissionMode)
-    settings.permissionMode = selection.permissionMode;
-  return settings;
-}
-/** Whether the draft goes to the suggested thread rather than a new one. */
-export function suggestionAccepted(state: IntakeState): boolean {
-  const destination = state.destination.value;
-  return (
-    !!state.suggestion &&
-    state.action.source === "manual" &&
-    state.action.value === "send-message" &&
-    destination.kind === "thread" &&
-    destination.id === state.suggestion.continuation.threadId
-  );
-}
+/** Which route the next submit takes. */
+export type SubmitTarget = "new-thread" | "suggestion";
 export type IntakeState = {
   text: string;
   action: Field<IntakeAction>;
@@ -186,7 +144,16 @@ export type IntakeState = {
   synchronizedThread: string | null;
   synchronizedPlacement: string | null;
   selectionRevision: number;
-  suggestion: Suggestion | null;
+  /**
+   * A continuation the router inferred for an automatic draft. It is only
+   * offered: the draft still starts the new thread in `decision` unless the
+   * user sends it to the suggested thread instead.
+   */
+  suggestion: ContinueDecision | null;
+  /** "suggestion" only while the composer's continue action submits. */
+  submitTarget: SubmitTarget;
+  /** Why the last attempt to continue the suggested thread failed. */
+  submitError: string | null;
 };
 let sessions = 0;
 /** The dialog owns selections and catalogs because the host remounts banners on project changes. */
@@ -213,13 +180,13 @@ export class Intake {
   private selectionThread: string | null = null;
   private selectionGeneration = 0;
   private selectionRequests = new WeakMap<ComposerSelection, number>();
-  /** The suggestion's decisions belong to the current draft and intent. */
+  /** The suggestion belongs to the current draft and intent. */
   private suggestionFresh = false;
-  /**
-   * The execution settings the composer had before an accepted suggestion
-   * applied the thread's own; declining puts them back once.
-   */
-  private restoreExecution: ExecutionSettings | null = null;
+  /** The continuation the next submit executes when it targets the suggestion. */
+  private continuation: {
+    decision: ContinueDecision;
+    intent: RouteIntent;
+  } | null = null;
   private decisionIntent: RouteIntent = {};
   /**
    * `route` previews the draft. It should ask the router to `offerNewThread`,
@@ -265,6 +232,8 @@ export class Intake {
       synchronizedPlacement: null,
       selectionRevision: 0,
       suggestion: null,
+      submitTarget: "new-thread",
+      submitError: null,
     };
   }
   snapshot = () => this.state;
@@ -501,49 +470,47 @@ export class Intake {
     return this.state.action.value;
   }
   /**
-   * Sends the draft to the suggested thread. `current` is the composer's
-   * selection, whose execution settings declining restores.
+   * Makes the next submit send the draft to the suggested thread. A
+   * suggestion shown while the draft reroutes belongs to older text, so this
+   * first routes the current text straight to that thread, without
+   * classifying it again. The caller then submits through the composer,
+   * whose guard reads the target, and reports a failure to
+   * `continuationFailed`.
    */
-  acceptSuggestion(current: ComposerSelection | null = null) {
+  async continueSuggestion(): Promise<void> {
     const suggestion = this.state.suggestion;
-    if (!suggestion || suggestionAccepted(this.state)) return;
-    const { continuation } = suggestion;
-    this.restoreExecution = current ? executionOf(current) : null;
-    this.selectionKey = "";
-    this.selectionThread = null;
-    this.set({
-      action: manual("send-message"),
-      destination: manual({
-        kind: "thread",
-        id: continuation.threadId,
-        title: continuation.threadTitle,
-      }),
-      synchronizedThread: null,
-      synchronizedPlacement: null,
-      selectionRevision: this.state.selectionRevision + 1,
-      ...(this.suggestionFresh ? { decision: continuation, error: null } : {}),
-    });
-    // A suggestion shown while the draft reroutes is for older text.
-    if (!this.suggestionFresh) this.schedule();
-    this.set({ announcement: `Sending to ${continuation.threadTitle}` });
+    const prompt = this.state.text;
+    if (!suggestion || !prompt)
+      throw new Error("There's no thread to continue.");
+    this.set({ submitError: null });
+    if (this.suggestionFresh) {
+      this.continuation = { decision: suggestion, intent: this.decisionIntent };
+    } else {
+      const intent: RouteIntent = {
+        action: "send-message",
+        destination: { kind: "thread", id: suggestion.threadId },
+      };
+      // The automatic preview in flight would share this draft's routing key.
+      this.invalidate();
+      const decision = await this.route({ prompt, intent });
+      if (decision.outcome !== "continue")
+        throw new Error(`${suggestion.threadTitle} can't take this draft.`);
+      this.continuation = { decision, intent };
+    }
+    this.set({ submitTarget: "suggestion" });
   }
-  /** Returns an accepted suggestion's draft to the new-thread default. */
-  declineSuggestion() {
-    const suggestion = this.state.suggestion;
-    if (!suggestion || !suggestionAccepted(this.state)) return;
-    const newThread = this.suggestionFresh ? suggestion.newThread : null;
-    this.selectionKey = "";
-    this.selectionThread = null;
+  /**
+   * Records why continuing the suggested thread failed. The next submit
+   * creates the new thread again, and a preview that continuing replaced is
+   * routed again.
+   */
+  continuationFailed(error: unknown) {
+    const rerouting = !this.suggestionFresh;
+    this.completeSubmit();
+    if (rerouting) this.schedule();
     this.set({
-      action: auto(this.autoAction),
-      destination: auto(this.autoDestination),
-      synchronizedThread: null,
-      synchronizedPlacement: null,
-      selectionRevision: this.state.selectionRevision + 1,
-      ...(newThread ? { decision: newThread, error: null } : {}),
+      submitError: error instanceof Error ? error.message : String(error),
     });
-    if (!newThread) this.schedule();
-    this.set({ announcement: "New thread" });
   }
   lockedThread() {
     const destination = this.state.destination.value;
@@ -598,8 +565,6 @@ export class Intake {
     this.schedule();
   }
   selectAction(value: Exclude<IntakeAction, "automatic">) {
-    if (value === "new-thread" && suggestionAccepted(this.state))
-      return this.declineSuggestion();
     const destination = this.state.destination.value;
     let next = this.state.destination;
     if (value === "new-thread" && destination.kind === "thread") {
@@ -701,12 +666,6 @@ export class Intake {
   revertField(
     field: "action" | "destination" | "project" | "environment" | "name",
   ) {
-    // Automatic action and destination are the new-thread default.
-    if (
-      (field === "action" || field === "destination") &&
-      suggestionAccepted(this.state)
-    )
-      return this.declineSuggestion();
     if (field === "action") this.set({ action: auto(this.autoAction) });
     if (field === "destination")
       this.set({ destination: auto(this.autoDestination) });
@@ -762,7 +721,6 @@ export class Intake {
           },
         }
       : {
-          ...this.restoreExecution,
           projectId: this.state.project.value!,
           environment: this.state.environment.value!,
         };
@@ -824,14 +782,6 @@ export class Intake {
         environment: applied.environment,
       });
     }
-    if (this.restoreExecution) {
-      // Restored once; later placement changes leave the user's pickers alone.
-      this.restoreExecution = null;
-      this.selectionKey = JSON.stringify({
-        projectId: this.state.project.value,
-        environment: this.state.environment.value,
-      });
-    }
     this.set({
       selectionError: null,
       synchronizedPlacement: JSON.stringify([
@@ -889,6 +839,7 @@ export class Intake {
     this.suggestionFresh = false;
     this.set({
       decision: null,
+      submitError: null,
       // A suggestion stays up while the draft reroutes, so it doesn't flicker
       // with each typing pause. The next result replaces or removes it.
       ...(this.state.text ? {} : { suggestion: null }),
@@ -920,24 +871,15 @@ export class Intake {
         if (mine !== this.generation) return null;
         this.pending = null;
         this.decisionIntent = intent;
-        // An inferred continuation is only offered: until the user accepts
-        // it, the draft starts the new thread previewed alongside it.
+        // An inferred continuation is only offered: the draft starts the new
+        // thread previewed alongside it unless the user continues instead.
         const offered =
           routed.outcome === "continue" &&
           this.state.action.source === "automatic" &&
           this.state.destination.source === "automatic";
-        const suggestion: Suggestion | null =
-          routed.outcome !== "continue"
-            ? null
-            : offered
-              ? { continuation: routed, newThread: routed.alternative ?? null }
-              : suggestionAccepted(this.state) &&
-                  this.state.suggestion?.continuation.threadId ===
-                    routed.threadId
-                ? { continuation: routed, newThread: null }
-                : null;
-        this.suggestionFresh = !!suggestion;
-        const decision = offered ? (suggestion?.newThread ?? null) : routed;
+        const suggestion = offered ? routed : null;
+        this.suggestionFresh = offered;
+        const decision = offered ? (routed.alternative ?? null) : routed;
         const resolvedAction: IntakeAction = offered
           ? "new-thread"
           : routed.outcome === "continue"
@@ -1024,6 +966,7 @@ export class Intake {
   }
   canSubmit() {
     const s = this.state;
+    if (s.submitTarget === "suggestion") return !!s.text && !!this.continuation;
     return (
       !!s.text &&
       !s.loading &&
@@ -1042,6 +985,10 @@ export class Intake {
   }
   async forSubmit(text: string) {
     if (text.trim() !== this.state.text) this.observe(text);
+    if (this.state.submitTarget === "suggestion" && this.continuation) {
+      this.submitting = true;
+      return { ...this.continuation, choice: null };
+    }
     if (!this.canSubmit())
       throw new Error(
         this.state.error || this.state.selectionError
@@ -1059,6 +1006,9 @@ export class Intake {
   }
   completeSubmit() {
     this.submitting = false;
+    this.continuation = null;
+    if (this.state.submitTarget !== "new-thread")
+      this.set({ submitTarget: "new-thread" });
   }
 }
 export const IntakeContext = createContext<Intake | null>(null);

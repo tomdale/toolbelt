@@ -260,18 +260,15 @@ it("wrong-workstream correction persists across edits and destination revert has
   );
   intake.dispose();
 });
-it("an inferred continuation is an inline suggestion that swaps with the new thread in place", async () => {
+it("an inferred continuation keeps the new thread's fields and adds no route-row control", async () => {
   const { slot, intake, route } = await mount();
   await waitFor(() => expect(intake.canSubmit()).toBe(true), { timeout: 2000 });
   route.mockResolvedValue(continuation);
   await slot.behavior.setComposerText("Continue with parser tabs");
-  const suggest = await slot.findByRole(
-    "button",
-    { name: "Continue Parser tabs instead" },
+  await waitFor(
+    () => expect(intake.snapshot().suggestion?.threadId).toBe("thr_p"),
     { timeout: 2000 },
   );
-  // The suggestion sits in the route row, so it adds no row of its own.
-  expect(suggest.closest(".ws-intake-route-row")).toBeTruthy();
   await waitFor(() => expect(intake.canSubmit()).toBe(true));
   expect(slot.getByRole("button", { name: /^Action:/ }).textContent).toContain(
     "New thread",
@@ -279,59 +276,10 @@ it("an inferred continuation is an inline suggestion that swaps with the new thr
   expect(
     slot.getByRole("button", { name: /^Workstream:/ }).textContent,
   ).toContain("Alpha");
+  // The composer's own action row offers the continuation.
+  expect(slot.queryByRole("button", { name: /^Continue/ })).toBeNull();
   expect(slot.container.querySelector(".ws-intake-status")?.textContent).toBe(
     "Filled automatically. Suggested: continue Parser tabs",
-  );
-  const routed = route.mock.calls.length;
-  fireEvent.click(suggest);
-  await waitFor(() => expect(intake.canSubmit()).toBe(true));
-  expect(slot.getByRole("button", { name: /^Project:/ }).textContent).toContain(
-    "dotfiles",
-  );
-  expect(
-    slot.getByRole("button", { name: /^Environment:/ }).textContent,
-  ).toContain("Parser worktree");
-  expect(
-    slot
-      .getByRole("button", { name: /^Project:/ })
-      .getAttribute("aria-haspopup"),
-  ).toBeNull();
-  fireEvent.click(
-    slot.getByRole("button", { name: "Start a new thread instead" }),
-  );
-  await waitFor(() => expect(intake.canSubmit()).toBe(true));
-  expect(
-    slot
-      .getByRole("button", { name: /^Project:/ })
-      .getAttribute("aria-haspopup"),
-  ).toBe("menu");
-  expect(intake.snapshot().decision?.id).toBe("d_new");
-  expect(route.mock.calls.length).toBe(routed);
-  fireEvent.click(
-    slot.getByRole("button", { name: "Continue Parser tabs instead" }),
-  );
-  route.mockResolvedValue(decision);
-  await choose(slot, "Action", "New thread");
-  expect(intake.effectiveAction()).toBe("new-thread");
-  await choose(slot, "Workstream", "Beta");
-  await waitFor(() => expect(intake.canSubmit()).toBe(true));
-  expect(intake.intent()).toEqual({
-    destination: { kind: "workstream", id: "sec_b" },
-  });
-  intake.dispose();
-});
-it("the suggestion keeps keyboard focus across the remount accepting it causes", async () => {
-  const { slot, intake, remount } = await mount(continuation);
-  const suggest = await slot.findByRole(
-    "button",
-    { name: "Continue Parser tabs instead" },
-    { timeout: 2000 },
-  );
-  suggest.focus();
-  fireEvent.click(suggest);
-  remount();
-  expect(document.activeElement).toBe(
-    slot.getByRole("button", { name: "Start a new thread instead" }),
   );
   intake.dispose();
 });
@@ -478,12 +426,12 @@ it("a routed thread outside the initial catalog gets accurate placement and exec
     workstream: null,
   });
   // mount's SDK get fixture is the authoritative target rather than a list guess.
-  fireEvent.click(
-    await slot.findByRole(
-      "button",
-      { name: "Continue Outside catalog instead" },
-      { timeout: 2000 },
-    ),
+  act(() =>
+    intake.selectDestination({
+      kind: "thread",
+      id: "thr_outside",
+      title: "Outside catalog",
+    }),
   );
   await waitFor(() =>
     expect(
@@ -539,27 +487,21 @@ it.skipIf(!process.env.NEW_WORK_CAPTURE_DIR)(
       timeout: 2000,
     });
     await capture("suggestion", fixture.slot);
-    fireEvent.click(
-      fixture.slot.getByRole("button", {
-        name: "Continue Parser tabs instead",
+    fixture.route.mockResolvedValue({
+      ...continuation,
+      alternative: undefined,
+    });
+    act(() =>
+      fixture.intake.selectDestination({
+        kind: "thread",
+        id: "thr_p",
+        title: "Parser tabs",
       }),
     );
     await waitFor(() => expect(fixture.intake.canSubmit()).toBe(true), {
       timeout: 2000,
     });
     await capture("thread", fixture.slot);
-    fixture.intake.dispose();
-    fixture.slot.lifecycle.unmount();
-    fixture = await mount({
-      ...continuation,
-      threadTitle:
-        "Understanding workbench UI integration and the long tail of its follow-ups",
-      alternative: { ...decision, id: "d_new", workstream: "Workforest" },
-    });
-    await waitFor(() => expect(fixture.intake.canSubmit()).toBe(true), {
-      timeout: 2000,
-    });
-    await capture("long-suggestion", fixture.slot);
     fixture.intake.dispose();
     fixture.slot.lifecycle.unmount();
     fixture = await mount({

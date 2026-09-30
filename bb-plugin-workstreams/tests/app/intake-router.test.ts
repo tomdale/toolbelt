@@ -116,8 +116,7 @@ it("real inferred continuation keeps the exact preview intent after manual creat
   await intake.loadThread(sdk, "a1");
   synchronize(intake);
   expect(intake.effectiveAction()).toBe("new-thread");
-  intake.acceptSuggestion();
-  synchronize(intake);
+  await intake.continueSuggestion();
   await expect(execute("Continue the Alpha parser fix")).resolves.toMatchObject(
     { threadId: "a1" },
   );
@@ -125,7 +124,7 @@ it("real inferred continuation keeps the exact preview intent after manual creat
   expect(w.spawned).toHaveLength(0);
   intake.dispose();
 });
-it("real inferred continuation creates its previewed new thread unless accepted", async () => {
+it("real inferred continuation creates its previewed new thread unless continued", async () => {
   const { intake, execute, w, section } = await setup({
     outcome: "continue",
     threadId: "a1",
@@ -135,13 +134,31 @@ it("real inferred continuation creates its previewed new thread unless accepted"
   intake.observe("Continue the Alpha parser fix");
   await intake.resolve();
   synchronize(intake);
-  expect(intake.snapshot().suggestion?.continuation.threadId).toBe("a1");
+  expect(intake.snapshot().suggestion?.threadId).toBe("a1");
   await execute("Continue the Alpha parser fix");
   expect(w.sent).toHaveLength(0);
   expect(w.spawned[0]).toMatchObject({
     sectionId: section.id,
     projectId: "proj_1",
   });
+  intake.dispose();
+});
+it("real continuation of a suggestion for older text sends the current text", async () => {
+  const { intake, execute, w } = await setup({
+    outcome: "continue",
+    threadId: "a1",
+    confidence: "high",
+    reason: "Same task",
+  });
+  intake.observe("Continue the Alpha parser fix");
+  await intake.resolve();
+  intake.observe("Continue the Alpha parser fix for tabs");
+  await intake.continueSuggestion();
+  await execute("Continue the Alpha parser fix for tabs");
+  expect(w.spawned).toHaveLength(0);
+  expect(w.sent).toEqual([
+    expect.objectContaining({ threadId: "a1", mode: "queue-if-active" }),
+  ]);
   intake.dispose();
 });
 it("real route/execute applies an independent inferred workstream name edit", async () => {
@@ -224,7 +241,7 @@ it("real automatic continuation then creation retains independent manual placeme
   });
   intake.observe("Continue the existing parser fix");
   await intake.resolve();
-  expect(intake.snapshot().suggestion?.continuation.threadId).toBe("a1");
+  expect(intake.snapshot().suggestion?.threadId).toBe("a1");
   // The new thread offered beside the suggestion keeps the manual placement.
   expect(intake.snapshot().decision).toMatchObject({
     outcome: "new-thread",
