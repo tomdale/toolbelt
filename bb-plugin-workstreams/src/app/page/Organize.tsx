@@ -51,36 +51,53 @@ export function Organize({
   const [state, setState] = useState<BootstrapState | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const requestGeneration = useRef(0);
+  const readGeneration = useRef(0);
+  const commandGeneration = useRef(0);
+  const read = useCallback(async () => {
+    const generation = ++readGeneration.current;
+    try {
+      const result = await rpc.call("bootstrap", { action: "get" } as never);
+      if (generation !== readGeneration.current) return;
+      setState(result.state as BootstrapState | null);
+    } finally {
+      if (generation === readGeneration.current) setLoaded(true);
+    }
+  }, [rpc]);
   const call = useCallback(
     async (input: { action: string } & Record<string, unknown>) => {
-      const generation = ++requestGeneration.current;
+      const generation = ++commandGeneration.current;
+      // A command owns the next visible error. Invalidate reads issued before
+      // it so a late snapshot cannot erase its result or failure.
+      readGeneration.current += 1;
       setError(null);
       try {
         const result = await rpc.call("bootstrap", input as never);
-        if (generation !== requestGeneration.current) return;
+        if (generation !== commandGeneration.current) return;
         setState(result.state as BootstrapState | null);
       } catch (cause) {
-        if (generation !== requestGeneration.current) return;
+        if (generation !== commandGeneration.current) return;
         setError(cause instanceof Error ? cause.message : String(cause));
       } finally {
-        if (generation === requestGeneration.current) setLoaded(true);
+        if (generation === commandGeneration.current) {
+          setLoaded(true);
+          void read();
+        }
       }
     },
-    [rpc],
+    [read, rpc],
   );
   const send: Call = (input) => void call(input);
   useEffect(() => {
-    void call({ action: "get" });
-  }, [call]);
-  useRealtime("changed", () => void call({ action: "get" }));
+    void read();
+  }, [read]);
+  useRealtime("changed", () => void read());
   // Model steps report progress through realtime "changed"; poll lightly too.
   const working = state ? state.status in WORKING : false;
   useEffect(() => {
     if (!working) return;
-    const timer = setInterval(() => void call({ action: "get" }), 1000);
+    const timer = setInterval(() => void read(), 1000);
     return () => clearInterval(timer);
-  }, [call, working]);
+  }, [read, working]);
 
   // Nothing until the first read, so a run in progress never flashes the
   // intro first.
