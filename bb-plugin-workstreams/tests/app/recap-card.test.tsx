@@ -55,7 +55,7 @@ it("drops Open and Done in the compact layout, and the goal in minimal", async (
 it("shows what the thread needs from the user", async () => {
   const slot = await mount({ needsInput: "Pick A or B" });
   const region = await slot.findByRole("region", { name: "Latest recap" });
-  expect(region.textContent).toContain("Needs input");
+  expect(region.textContent).toContain("For you");
   expect(region.textContent).toContain("Pick A or B");
 });
 

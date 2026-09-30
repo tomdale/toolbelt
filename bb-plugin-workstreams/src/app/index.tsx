@@ -50,7 +50,7 @@ export default definePluginApp((app) => {
     id: "sidebar",
     title: "Workstreams",
     description:
-      "Threads grouped by workstream (BB section), with Needs you and Recent at the top.",
+      "Threads grouped by workstream (BB section), with For you and Recent at the top.",
     component: WorkstreamsThreadList,
   });
   app.slots.settingsSection({

@@ -17,11 +17,12 @@ against.
     requires a chosen or confidently inferred project. Existing threads show
     locked placement and use their existing execution settings. Pending routing
     blocks Enter and click before the native composer clears the draft.
-  - **Needs you**: a pending approval or question, or a thread whose latest turn
-    asks you to decide something. These rows sit at the top in a tinted block
-    under a collapsible header, each naming its workstream. A delegate's
-    question folds into its parent's newer one.
-  - **Recent**: the five most recently active threads not already in Needs you
+  - **For you**: a pending approval or question, or a thread whose latest turn
+    asks you to decide something. These rows sit at the top in an amber block
+    with a slow shimmer, under an always-open header, each naming its
+    workstream. The block shows five rows, with Show more for the rest. A
+    delegate's question folds into its parent's newer one.
+  - **Recent**: the five most recently active threads not already in For you
     (the `showRecent` setting).
   - **One group per workstream**, in BB's section order until you drag a header
     to reorder them. Each thread tree is filed under its root thread's section,

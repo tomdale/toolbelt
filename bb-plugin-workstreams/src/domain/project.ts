@@ -4,7 +4,7 @@
  * A workstream is a native BB section. Threads are grouped the way BB's own
  * sidebar groups them: build the complete parent/child forest first, then file
  * each tree under its root's section (SPEC I2). Every visible, non-archived
- * thread appears in exactly one group row (SPEC I1). Needs you and Recent are
+ * thread appears in exactly one group row (SPEC I1). For you and Recent are
  * overlays that reference those rows; they never replace them.
  */
 import { applyOrder, type ManualOrder } from "./order.ts";
@@ -59,7 +59,7 @@ export type Projection<T extends WorkstreamThread> = {
   readonly rowOf: ReadonlyMap<string, Row<T>>;
   /**
    * Children whose question folded into their parent's newer one, keyed by
-   * parent id. Folded children stay in their group but leave the Needs you
+   * parent id. Folded children stay in their group but leave the For you
    * band and counts, so one decision isn't counted twice.
    */
   readonly needsYouVia: ReadonlyMap<string, readonly T[]>;

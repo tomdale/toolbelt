@@ -176,27 +176,36 @@
   }
 }
 
-/* The Needs you block: the most timely threads, so it gets a clear amber
-   tint and outline plus a slow, faint shimmer that sweeps across every few
-   seconds. The tint stays soft enough that BB's blue unread dot doesn't clash
-   with it. */
-.ws-needs {
-  --ws-needs-tone: color-mix(
+/* The For you amber. Every surface that means "this thread is waiting on
+   you" uses it: the For you block, its header and Show more, the group count
+   pill, the decision mark, and the recap card's For you section. It is
+   amber pulled a quarter of the way toward the foreground, soft enough that
+   BB's blue unread dot doesn't clash with it. */
+:root {
+  --ws-amber: color-mix(
     in oklab,
     var(--color-amber-500, oklch(76.9% 0.188 70.08)) 75%,
     var(--foreground, #ededed)
   );
+}
+.ws-amber-text {
+  color: color-mix(in oklab, var(--ws-amber) 90%, transparent);
+}
+.ws-amber-pill {
+  color: var(--ws-amber);
+  background-color: color-mix(in oklab, var(--ws-amber) 20%, transparent);
+}
+
+/* The For you block: the most timely threads, so it gets an amber tint and
+   outline plus a slow, faint shimmer that sweeps across every few seconds. */
+.ws-needs {
+  --ws-needs-tone: var(--ws-amber);
   position: relative;
   isolation: isolate;
   overflow: hidden;
   background-color: color-mix(in oklab, var(--ws-needs-tone) 9%, transparent);
   box-shadow: inset 0 0 0 1px
     color-mix(in oklab, var(--ws-needs-tone) 30%, transparent);
-}
-/* The header takes the block's amber, a little stronger than the outline so
-   it reads as text. */
-.ws-needs-title {
-  color: color-mix(in oklab, var(--ws-needs-tone) 90%, transparent);
 }
 
 /* The shimmer: a wide, feathered band of light that drifts across the fill,
@@ -265,7 +274,7 @@
   line-height: 1;
 }
 .ws-work-needs_decision {
-  color: var(--warning-text, #e0a84f);
+  color: var(--ws-amber);
 }
 .ws-work-review {
   color: var(--primary, #3e63dd);
