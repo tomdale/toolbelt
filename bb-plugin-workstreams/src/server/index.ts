@@ -444,6 +444,7 @@ export default async function plugin(bb: BbPluginApi) {
       prompt,
       pickedProjectId,
       workstreamId,
+      intent,
       fromDecisionId,
       draftKey,
     }) =>
@@ -452,6 +453,7 @@ export default async function plugin(bb: BbPluginApi) {
           return router.route(prompt, {
             pickedProjectId,
             workstreamId,
+            intent: intent as never,
             fromDecisionId,
           });
         cancelPreview(draftKey);
@@ -461,6 +463,7 @@ export default async function plugin(bb: BbPluginApi) {
           return await router.route(prompt, {
             pickedProjectId,
             workstreamId,
+            intent: intent as never,
             fromDecisionId,
             signal: controller.signal,
           });
@@ -471,7 +474,7 @@ export default async function plugin(bb: BbPluginApi) {
     routeCancel: async ({ draftKey }) => ({
       canceled: cancelPreview(draftKey),
     }),
-    routeExecute: ({ decisionId, prompt, choice, execution }) =>
+    routeExecute: ({ decisionId, prompt, choice, execution, intent }) =>
       userFacing(async () => {
         const remembered = router.recall({ id: decisionId, prompt });
         if (!remembered)
@@ -482,13 +485,14 @@ export default async function plugin(bb: BbPluginApi) {
         router.forget(decisionId);
         // An unsure choice of workstream still needs a real placement; the
         // routing call behind the choice still explains it.
-        if (decision.outcome === "new-thread" && !decision.placement.projectId)
+        if (decision.outcome === "new-thread" && !decision.placement?.projectId)
           decision = {
             ...(await router.route(`@section:${decision.sectionId} ${prompt}`)),
             traceId: decision.traceId,
           };
         return router.execute(decision, prompt, "router", {
           execution: (execution ?? undefined) as never,
+          intent: (intent ?? null) as never,
         });
       }),
     recap_get: async ({ threadId }) => {
