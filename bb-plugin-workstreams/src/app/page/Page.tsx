@@ -17,27 +17,24 @@ import { useWorkstreams, type WorkView } from "../useWorkstreams.ts";
 import { Activity } from "./Activity.tsx";
 import { MapTab } from "./MapTab.tsx";
 import { NewWorkDialog } from "../composer/NewWork.tsx";
-import { DebugTab } from "../debug/DebugTab.tsx";
 import { InspectButton } from "../debug/InspectButton.tsx";
-import { useDebugMode } from "../debug/debug.ts";
 
-type Tab = "overview" | "map" | "activity" | "debug";
+type Tab = "overview" | "map" | "activity";
 const TAB_LABEL: Record<Tab, string> = {
   overview: "Overview",
   map: "Map",
   activity: "Activity",
-  debug: "Debug",
 };
 
 /**
- * `subPath` deep links: `map`, `activity`, `activity/<proposal id>`, or
- * `debug`.
+ * `subPath` deep links: `map`, `activity`, or `activity/<proposal id>`.
+ * Model-call inspection lives in Activity, including links to `debug`.
  */
 function tabOf(subPath: string): { tab: Tab; focus: string | null } {
   const [head, rest] = subPath.split("/");
   if (head === "map") return { tab: "map", focus: null };
   if (head === "activity") return { tab: "activity", focus: rest || null };
-  if (head === "debug") return { tab: "debug", focus: null };
+  if (head === "debug") return { tab: "activity", focus: null };
   return { tab: "overview", focus: null };
 }
 
@@ -45,14 +42,9 @@ export function WorkstreamsPage({
   subPath = "",
 }: Partial<PluginNavPanelProps>) {
   const ws = useWorkstreams();
-  const debug = useDebugMode();
   const linked = tabOf(subPath);
-  const [chosen, setTab] = useState<Tab>(linked.tab);
-  // The Debug tab exists only in Debug mode.
-  const tab = chosen === "debug" && !debug ? "overview" : chosen;
-  const tabs: Tab[] = debug
-    ? ["overview", "map", "activity", "debug"]
-    : ["overview", "map", "activity"];
+  const [tab, setTab] = useState<Tab>(linked.tab);
+  const tabs: Tab[] = ["overview", "map", "activity"];
   const [newWork, setNewWork] = useState(false);
   useEffect(() => setTab(tabOf(subPath).tab), [subPath]);
   const [query, setQuery] = useState("");
@@ -198,8 +190,6 @@ export function WorkstreamsPage({
             records={Object.values(ws.server.workstreams)}
             bootstrapped={ws.server.bootstrapped}
           />
-        ) : tab === "debug" ? (
-          <DebugTab rpc={ws.rpc} />
         ) : (
           <Activity
             rpc={ws.rpc}
