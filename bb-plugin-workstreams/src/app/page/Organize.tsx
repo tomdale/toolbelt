@@ -51,37 +51,52 @@ export function Organize({
   const [state, setState] = useState<BootstrapState | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const readGeneration = useRef(0);
+  const requestGeneration = useRef(0);
+  const publishedGeneration = useRef(0);
   const commandGeneration = useRef(0);
+  const errorOwner = useRef<"command" | "read" | null>(null);
   const read = useCallback(async () => {
-    const generation = ++readGeneration.current;
+    const generation = ++requestGeneration.current;
     try {
       const result = await rpc.call("bootstrap", { action: "get" } as never);
-      if (generation !== readGeneration.current) return;
+      // A response is allowed to publish only if no newer request has
+      // published. This covers a background snapshot overtaking a command and
+      // an old command response arriving after a newer realtime read.
+      if (generation < publishedGeneration.current) return;
+      publishedGeneration.current = generation;
       setState(result.state as BootstrapState | null);
+      if (errorOwner.current === "read") {
+        errorOwner.current = null;
+        setError(null);
+      }
     } catch (cause) {
-      // Background reads must not become unhandled rejections or erase a
-      // command failure. Keep the last usable snapshot and surface a read
-      // error only when no command owns the current error message.
-      if (generation === readGeneration.current && !commandGeneration.current)
+      if (generation < publishedGeneration.current) return;
+      if (errorOwner.current !== "command") {
+        errorOwner.current = "read";
         setError(cause instanceof Error ? cause.message : String(cause));
+      }
     } finally {
-      if (generation === readGeneration.current) setLoaded(true);
+      if (generation >= publishedGeneration.current) setLoaded(true);
     }
   }, [rpc]);
   const call = useCallback(
     async (input: { action: string } & Record<string, unknown>) => {
       const generation = ++commandGeneration.current;
+      const request = ++requestGeneration.current;
       // A command owns the next visible error. Invalidate reads issued before
       // it so a late snapshot cannot erase its result or failure.
-      readGeneration.current += 1;
+      errorOwner.current = null;
       setError(null);
       try {
         const result = await rpc.call("bootstrap", input as never);
         if (generation !== commandGeneration.current) return;
-        setState(result.state as BootstrapState | null);
+        if (request >= publishedGeneration.current) {
+          publishedGeneration.current = request;
+          setState(result.state as BootstrapState | null);
+        }
       } catch (cause) {
         if (generation !== commandGeneration.current) return;
+        errorOwner.current = "command";
         setError(cause instanceof Error ? cause.message : String(cause));
       } finally {
         if (generation === commandGeneration.current) {
