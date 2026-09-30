@@ -441,15 +441,20 @@ export default async function plugin(bb: BbPluginApi) {
         if (!remembered)
           throw new UserError("That preview expired; route it again.");
         let decision = choose(remembered, choice);
+        if (decision.outcome === "new-thread" && !decision.placement?.projectId && intent?.destination?.kind === "none")
+          throw new UserError("Choose a project before creating an unassigned thread.");
         // `execute` claims the decision synchronously before any side effect.
         // Keep it in the cache until then so its intent snapshot is checked.
         // An unsure choice of workstream still needs a real placement; the
         // routing call behind the choice still explains it.
-        if (decision.outcome === "new-thread" && !decision.placement?.projectId)
+        if (decision.outcome === "new-thread" && !decision.placement?.projectId) {
+          const originalId = decision.id;
           decision = {
             ...(await router.route(`@section:${decision.sectionId} ${prompt}`)),
             traceId: decision.traceId,
           };
+          router.forget(originalId);
+        }
         return router.execute(decision, prompt, "router", {
           execution: (execution ?? undefined) as never,
           intent: intent ?? null,
