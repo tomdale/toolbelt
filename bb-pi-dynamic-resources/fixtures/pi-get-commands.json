@@ -1,0 +1,28 @@
+{
+  "commands": [
+    {
+      "name": "skill:package-skill",
+      "description": "A skill contributed by an installed Pi package.",
+      "source": "skill",
+      "sourceInfo": {
+        "path": "/home/test/.pi/agent/npm/node_modules/example-pi-package/skills/package-skill/SKILL.md",
+        "source": "npm:example-pi-package",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "/home/test/.pi/agent/npm/node_modules/example-pi-package"
+      }
+    },
+    {
+      "name": "skill:dynamic-skill",
+      "description": "A skill returned by an extension's resources_discover handler.",
+      "source": "skill",
+      "sourceInfo": {
+        "path": "/opt/example-extension/resources/dynamic-skill/SKILL.md",
+        "source": "extension:index",
+        "scope": "temporary",
+        "origin": "top-level",
+        "baseDir": "/opt/example-extension"
+      }
+    }
+  ]
+}
