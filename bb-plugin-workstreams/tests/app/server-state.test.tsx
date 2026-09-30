@@ -78,9 +78,10 @@ function mount({
     }),
   ),
   unsnooze = vi.fn(async () => ({ woke: true })),
-  setSnoozePrefs = vi.fn(async ({ patch }: { patch: Partial<ServerState["snoozePrefs"]> }) => ({
-    prefs: { ...state().snoozePrefs, ...patch },
-  })),
+  setSnoozePrefs = vi.fn(async (input: unknown) => {
+    const { patch } = input as { patch: Partial<ServerState["snoozePrefs"]> };
+    return { prefs: { ...state().snoozePrefs, ...patch } };
+  }),
   strict = false,
 } = {}) {
   const consumers = new Map<number, ReturnType<typeof useServerState>>();
@@ -166,7 +167,7 @@ describe("shared server state", () => {
 
   it("rolls back a rejected reorder after the recovery read", async () => {
     const failure = new Error("reorder failed");
-    const write = deferred<void>();
+    const write = deferred<{ order: ServerState["order"] }>();
     const recovery = deferred<ServerState>();
     const read = vi.fn(async () => state(1));
     const { consumers } = mount({ read, reorder: vi.fn(() => write.promise) });
