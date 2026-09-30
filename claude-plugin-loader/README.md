@@ -64,8 +64,12 @@ Inside a pi session:
 /claude-plugin remove tdx
 ```
 
-`install` clones the plugin, records what it found, and reloads the session so
+`install` resolves the plugin, records what it found, and reloads the session so
 the new skills are available immediately (as `/skill:<name>` and to the model).
+Local plugin sources are re-discovered and re-staged automatically during Pi
+startup and reload, so edits in a local checkout are reflected without running
+`install` again. Remote plugin clones remain unchanged until an explicit install
+or update.
 
 The same operations are available headless via the bundled CLI, which shares one
 registry with the extension:

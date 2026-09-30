@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { fetchSource, parseSource, type ResolvedSource } from "./source.ts";
-import { upsertPlugin } from "./registry.ts";
+import { readRegistry, upsertPlugin } from "./registry.ts";
 import { stageNamespacedSkills } from "./skills.ts";
 import type {
   ClaudeMarketplaceManifest,
@@ -40,6 +40,33 @@ export function installFromSource(spec: string): InstalledPlugin[] {
   return installed;
 }
 
+/**
+ * Re-discover registered local plugins so Pi sessions see edits in their
+ * source repositories without requiring an explicit reinstall. Remote plugins
+ * remain unchanged until the user explicitly installs or updates them.
+ */
+export function refreshLocalPlugins(): void {
+  for (const plugin of readRegistry().plugins) {
+    let source: ResolvedSource;
+    try {
+      source = parseSource(plugin.source);
+    } catch {
+      continue;
+    }
+    if (source.kind !== "local") continue;
+
+    try {
+      installFromSource(source.path);
+    } catch (error) {
+      console.warn(`Could not refresh local Claude plugin ${plugin.name}: ${(error as Error).message}`);
+    }
+  }
+}
+
+function registrySource(source: ResolvedSource, spec: string): string {
+  return source.kind === "local" ? source.path : source.label ?? spec;
+}
+
 function discoverPlugins(repoRoot: string, source: ResolvedSource, spec: string): InstalledPlugin[] {
   const marketplace = readJson<ClaudeMarketplaceManifest>(
     join(repoRoot, ".claude-plugin", "marketplace.json"),
@@ -56,7 +83,7 @@ function discoverPlugins(repoRoot: string, source: ResolvedSource, spec: string)
           fallbackName: entry.name,
           description: entry.description,
           marketplace: marketplace.name,
-          source: source.label ?? spec,
+          source: registrySource(source, spec),
         }),
       );
     }
@@ -68,7 +95,7 @@ function discoverPlugins(repoRoot: string, source: ResolvedSource, spec: string)
     buildInstalledPlugin({
       root: repoRoot,
       fallbackName: undefined,
-      source: source.label ?? spec,
+      source: registrySource(source, spec),
     }),
   ];
 }
