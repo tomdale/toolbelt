@@ -8,6 +8,7 @@ import {
   parseAnalysis,
   type AnalysisInput,
 } from "../../src/domain/analysis.ts";
+import { routePrompt } from "../../src/domain/router.ts";
 
 const input = (overrides: Partial<AnalysisInput> = {}): AnalysisInput => ({
   title: "Fix cache invalidation",
@@ -15,6 +16,7 @@ const input = (overrides: Partial<AnalysisInput> = {}): AnalysisInput => ({
     name: "Lumen",
     description: "The Lumen build tool",
     subjects: ["Lumen"],
+    concepts: [{ name: "cache invalidation", terms: ["lockfile", "regression test"] }],
   },
   otherWorkstreams: ["BB Recap", "Workstreams"],
   requests: [
@@ -114,6 +116,9 @@ describe("analysisPrompt", () => {
   it("includes known subjects, and never a project field", () => {
     const prompt = analysisPrompt(input());
     expect(prompt).toContain('Known subjects in this workstream: ["Lumen"]');
+    expect(prompt).toContain('Known product concepts in this workstream');
+    expect(prompt).toContain('cache invalidation');
+    expect(prompt).toContain('explicit and confidence is high');
     expect(prompt).not.toMatch(/project:/i);
   });
 
@@ -142,6 +147,28 @@ describe("analysisPrompt", () => {
       }),
     );
     expect(prompt).not.toContain("bbbbbbbbbbbb");
+  });
+});
+
+describe("routing concepts", () => {
+  it("renders concrete concepts with sourced terms and caps the evidence", () => {
+    const prompt = routePrompt({
+      prompt: "add routing",
+      workstreams: [
+        {
+          name: "Workstreams",
+          description: "Routing",
+          subjects: ["Workstreams"],
+          concepts: [
+            { name: "thread routing", terms: ["routePrompt", "workstream map"] },
+          ],
+        },
+      ],
+      threads: [],
+      pickedProjectHosts: null,
+    });
+    expect(prompt).toContain("concepts: thread routing (routePrompt, workstream map)");
+    expect(prompt).not.toContain("projectId");
   });
 });
 

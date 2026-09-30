@@ -8,6 +8,7 @@ import type { StoredAnalysis } from "./analyzer.ts";
 import type { Database } from "./db.ts";
 import type { InventoryThread } from "./inventory.ts";
 import { buildForest } from "../domain/tree.ts";
+import type { ProductConcept } from "../domain/analysis.ts";
 
 export type MapProject = {
   projectId: string;
@@ -22,6 +23,8 @@ export type MapRecord = {
   descriptionSource: "generated" | "user";
   aliases: string[];
   subjects: string[];
+  /** Bounded, concrete product concepts supporting routing evidence. */
+  concepts: ProductConcept[];
   projects: MapProject[];
   evidence: { threadCount: number; lastActiveAt: number };
   createdBy: "user" | "workstreams";
@@ -35,6 +38,7 @@ type Row = {
   description_source: MapRecord["descriptionSource"];
   aliases: string;
   subjects: string;
+  concepts: string;
   projects: string;
   evidence: string;
   created_by: MapRecord["createdBy"];
@@ -73,6 +77,7 @@ export class WorkstreamMap {
       descriptionSource: row.description_source,
       aliases: parse(row.aliases, []),
       subjects: parse(row.subjects, []),
+      concepts: parse(row.concepts, []),
       projects: parse(row.projects, []),
       evidence: {
         threadCount: 0,
@@ -160,6 +165,9 @@ export class WorkstreamMap {
         const subjects = rank(
           roots.map((root) => analysis[root.id]?.subject ?? null),
         ).slice(0, SUBJECTS_MAX);
+        const concepts = rankConcepts(
+          roots.flatMap((root) => analysis[root.id]?.concepts ?? []),
+        );
         // Delegates count too: a coordinating root often runs in one project
         // while the code work its children do runs in another.
         const projects = rank(members.map((thread) => thread.projectId)).map(
@@ -177,6 +185,7 @@ export class WorkstreamMap {
         update.run({
           id: record.sectionId,
           subjects: JSON.stringify(subjects),
+          concepts: JSON.stringify(concepts),
           projects: JSON.stringify(projects),
           evidence: JSON.stringify({
             threadCount: members.length,
@@ -200,4 +209,30 @@ function rank(values: readonly (string | null)[]): string[] {
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([value]) => value);
+}
+
+const CONCEPTS_MAX = 8;
+const CONCEPT_TERMS_MAX = 4;
+
+function rankConcepts(values: readonly ProductConcept[]): ProductConcept[] {
+  const counts = new Map<string, { concept: ProductConcept; count: number }>();
+  for (const concept of values) {
+    const name = concept.name.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    const current = counts.get(key);
+    const terms = [...new Set(concept.terms.map((term) => term.trim()).filter(Boolean))].slice(0, CONCEPT_TERMS_MAX);
+    if (!current) counts.set(key, { concept: { name, terms }, count: 1 });
+    else {
+      current.count++;
+      current.concept = {
+        name: current.concept.name,
+        terms: [...new Set([...current.concept.terms, ...terms])].slice(0, CONCEPT_TERMS_MAX),
+      };
+    }
+  }
+  return [...counts.values()]
+    .sort((a, b) => b.count - a.count || a.concept.name.localeCompare(b.concept.name))
+    .slice(0, CONCEPTS_MAX)
+    .map(({ concept }) => concept);
 }

@@ -116,6 +116,7 @@ const MIGRATIONS = [
     turns INTEGER NOT NULL,
     model TEXT NOT NULL
   )`,
+  "ALTER TABLE ws_workstream ADD COLUMN concepts TEXT NOT NULL DEFAULT '[]'",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

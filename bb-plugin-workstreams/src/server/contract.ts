@@ -57,6 +57,9 @@ const recordSchema = z.object({
   descriptionSource: z.enum(["generated", "user"]),
   aliases: z.array(z.string()),
   subjects: z.array(z.string()),
+  concepts: z.array(
+    z.object({ name: z.string(), terms: z.array(z.string()) }),
+  ),
   projects: z.array(
     z.object({
       projectId: z.string(),

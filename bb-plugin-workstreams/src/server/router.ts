@@ -192,6 +192,7 @@ export class Router {
           name: r.name,
           description: r.description,
           subjects: r.subjects,
+          concepts: r.concepts,
         })),
       threads: tasks.map((t) => {
         const a = analysis[t.id];

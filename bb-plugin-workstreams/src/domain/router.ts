@@ -14,6 +14,10 @@ export type RouteInput = {
     readonly name: string;
     readonly description: string | null;
     readonly subjects: readonly string[];
+    readonly concepts?: readonly {
+      readonly name: string;
+      readonly terms: readonly string[];
+    }[];
   }[];
   /** Active task threads, most recent first. */
   readonly threads: readonly {
@@ -38,7 +42,14 @@ export function routePrompt(input: RouteInput): string {
     .map(
       (ws) =>
         `- ${JSON.stringify(ws.name)}${ws.description ? `: ${ws.description}` : ""}${
-          ws.subjects.length ? ` [${ws.subjects.slice(0, 6).join(", ")}]` : ""
+          ws.subjects.length ? ` [subjects: ${ws.subjects.slice(0, 6).join(", ")}]` : ""
+        }${
+          ws.concepts?.length
+            ? ` [concepts: ${ws.concepts
+                .slice(0, 6)
+                .map((c) => `${c.name} (${c.terms.slice(0, 4).join(", ")})`)
+                .join("; ")}]`
+            : ""
         }`,
     )
     .join("\n");
