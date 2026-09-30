@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import { z } from "zod";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
   hostContract,
@@ -8,6 +9,32 @@ import {
   type Detail,
 } from "./contracts.js";
 import { isWithin, resolveCheckout } from "./workforest.js";
+
+import { WORKFOREST_ENVIRONMENT_PROVIDER_ID } from "./provider-id.js";
+export { WORKFOREST_ENVIRONMENT_PROVIDER_ID } from "./provider-id.js";
+
+/** A Workforest source is either a configured template or one repository. */
+export const workforestEnvironmentInputs = z.discriminatedUnion("mode", [
+  z
+    .object({
+      mode: z.literal("new"),
+      source: z.string().min(1).max(200),
+      name: z
+        .string()
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+        .max(80),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal("existing"),
+      selector: z.string().min(1).max(200),
+      path: z.string().startsWith("/").max(16384),
+    })
+    .strict(),
+]);
+type WorkforestEnvironmentInputs = z.infer<typeof workforestEnvironmentInputs>;
+
 export { rpcContract } from "./contracts.js";
 
 export function ensureReady(detail: Detail, path: string) {
@@ -35,6 +62,68 @@ export function ensureReady(detail: Detail, path: string) {
 
 export default function plugin(bb: BbPluginApi) {
   const host = bb.hosts.experimental_client({ contract: hostContract });
+
+  bb.experimental_environments.register({
+    id: WORKFOREST_ENVIRONMENT_PROVIDER_ID,
+    displayName: "Workforest workspace",
+    description:
+      "Create or attach a Workforest worktree or multi-repository workspace.",
+    icon: "GitBranch",
+    requires: { projectCheckout: true },
+    inputs: workforestEnvironmentInputs,
+    availability(context) {
+      return context.projectCheckout === null
+        ? {
+            status: "unavailable",
+            message: "Select a Workforest template or repository project.",
+          }
+        : { status: "available" };
+    },
+    policy: { retireGraceMs: null },
+    experimental_existingPath: (inputs) =>
+      inputs.mode === "existing" ? inputs.path : null,
+    async validate(context) {
+      if (context.inputs.mode === "existing") return { action: "accept" };
+      if (!context.inputs.source.startsWith("@")) return { action: "accept" };
+      return { action: "accept" };
+    },
+    async create(context) {
+      if (context.inputs.mode === "existing") {
+        if (!(await context.experimental_claimPath(context.inputs.path))) {
+          return {
+            status: "failed",
+            message: "That Workforest checkout is already in use.",
+          };
+        }
+        return {
+          status: "created",
+          path: context.inputs.path,
+          ownsPath: false,
+        };
+      }
+      context.report.step(`Creating Workforest ${context.inputs.source}…`);
+      try {
+        const created = await host.call(
+          "createEnvironment",
+          { name: context.inputs.name, source: context.inputs.source },
+          { hostId: context.host.id, signal: context.signal },
+        );
+        return { status: "created", path: created.path, ownsPath: true };
+      } catch (error) {
+        if (context.signal.aborted) throw error;
+        return {
+          status: "failed",
+          message: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+    async remove() {
+      // Workforest deliberately owns workspace deletion. BB must not run `wf delete`
+      // when a thread is archived because other tools or threads may still use it.
+      return { status: "removed" };
+    },
+  });
+
   const connecting = new Map<string, Promise<{ projectId: string }>>();
   const launchLocks = new Set<string>();
   const inventoryCache = new Map<

@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk";
+import { z } from "zod";
 import { hostContract, type Job } from "./contracts.js";
-import { buildOperation, createWorkforest, runCommand } from "./workforest.js";
+import {
+  buildOperation,
+  createWorkforest,
+  parseEnvelope,
+  runCommand,
+} from "./workforest.js";
 
 const jobs = new Map<string, Job>();
 let running: Promise<void> | null = null;
@@ -10,6 +16,21 @@ export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
     inventory: (_, context) => createWorkforest(context.signal).inventory(),
+    createEnvironment: async ({ name, source }, context) => {
+      const output = await runCommand(["new", name, source, "--json"], {
+        signal: context.signal,
+        timeoutMs: 15 * 60 * 1000,
+      });
+      const result = parseEnvelope(
+        output,
+        z.object({
+          targetPath: z.string().startsWith("/"),
+          selector: z.string().min(1),
+          outcome: z.string(),
+        }),
+      );
+      return { path: result.targetPath, selector: result.selector };
+    },
     templates: (_, context) => createWorkforest(context.signal).templates(),
     detail: ({ selector }, context) =>
       createWorkforest(context.signal).detail(selector),

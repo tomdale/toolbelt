@@ -112,6 +112,15 @@ export const previewSchema = z.object({
 });
 export const hostContract = defineRpcContract({
   inventory: { input: z.null(), output: inventorySchema },
+  createEnvironment: {
+    input: z
+      .object({
+        name: slug,
+        source: z.string().min(1).max(200),
+      })
+      .strict(),
+    output: z.object({ path: absolutePath, selector }),
+  },
   templates: { input: z.null(), output: z.array(templateSchema) },
   detail: { input: z.object({ selector }), output: detailSchema },
   logs: {
