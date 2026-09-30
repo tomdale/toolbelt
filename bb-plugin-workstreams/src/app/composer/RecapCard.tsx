@@ -52,7 +52,7 @@ function OpenMark() {
 
 function DoneMark() {
   return (
-    <svg aria-hidden="true" viewBox="0 0 12 12" className="mt-[4px] h-3 w-3 opacity-60" fill="none">
+    <svg aria-hidden="true" viewBox="0 0 12 12" className="mt-[4px] h-3 w-3 text-sky-950 opacity-60 dark:text-sky-50" fill="none">
       <path d="M2.5 6.25 4.9 8.5 9.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -69,7 +69,7 @@ function LedgerList({ items, label, done = false }: { items: string[]; label: st
             key={index}
             className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${BODY_CLASS} ${
               done
-                ? "text-sky-900/60 dark:text-sky-200/60 [&_p]:line-through [&_p]:decoration-neutral-800 dark:[&_p]:decoration-neutral-900"
+                ? "text-slate-600/70 dark:text-slate-300/60 [&_p]:line-through [&_p]:decoration-slate-400/60 dark:[&_p]:decoration-neutral-900"
                 : "text-sky-950 dark:text-sky-50"
             }`}
           >
