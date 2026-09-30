@@ -286,12 +286,11 @@ describe("shared server state", () => {
     const secondWrite = deferred<{ order: ServerState["order"] }>();
     const recovery = deferred<ServerState>();
     let committed = state(1);
+    const writes = [firstWrite, secondWrite];
     const read = vi.fn(async () => committed);
     const { consumers } = mount({
       read,
-      reorder: vi.fn((change: unknown) =>
-        ((change as { ids: string[] }).ids[0] === "a1" ? firstWrite : secondWrite).promise,
-      ),
+      reorder: vi.fn(() => writes.shift()!.promise),
     });
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     let first!: Promise<void>;
