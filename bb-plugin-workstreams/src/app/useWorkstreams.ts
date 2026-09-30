@@ -6,19 +6,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   experimental_useSidebarThreads,
-  useRealtime,
-  useRpc,
   useSettings,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
-import type { RpcContract } from "../server/contract.ts";
 import type { Placement } from "../server/service.ts";
 import type { MapRecord } from "../server/map.ts";
 import type { ProposalView } from "../server/evolution.ts";
 import { projectWorkstreams, type Projection } from "../domain/project.ts";
 import { isCurrent, needsYou } from "../domain/analysis.ts";
-import { EMPTY_ORDER, type ManualOrder } from "../domain/order.ts";
+import type { ManualOrder } from "../domain/order.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
+import {
+  isSnoozed,
+  presetFromSetting,
+  type ThreadSnooze,
+} from "../domain/snooze.ts";
+import { useSharedServerState } from "./serverState.ts";
 
 export type ServerState = {
   workstreams: Record<string, MapRecord>;
@@ -29,68 +32,19 @@ export type ServerState = {
   bootstrapped: boolean;
   lastReconciledAt: number | null;
   order: ManualOrder;
+  snoozes: Record<string, ThreadSnooze>;
 };
 
 export type ReorderChange =
   | { kind: "workstreams"; ids: string[] }
   | { kind: "threads"; groupId: string; ids: string[] };
 
-const EMPTY: ServerState = {
-  workstreams: {},
-  placements: {},
-  analysis: {},
-  proposals: [],
-  driftDismissed: {},
-  bootstrapped: false,
-  lastReconciledAt: null,
-  order: EMPTY_ORDER,
-};
-
 /**
- * The plugin's own state, refetched whenever the server publishes a change.
- * The sidebar, the page, and each thread header's banner share this shape.
+ * The plugin's state, shared by the sidebar, page, and thread banners.
+ * The app-wide realtime bridge refetches it when the server publishes a change.
  */
 export function useServerState() {
-  const rpc = useRpc<RpcContract>();
-  const [server, setServer] = useState<ServerState>(EMPTY);
-  const refresh = useCallback(async () => {
-    try {
-      setServer({ ...EMPTY, ...(await rpc.call("state", null)) });
-    } catch {
-      // Everything still renders from live BB data without plugin state.
-    }
-  }, [rpc]);
-  useRealtime("changed", refresh);
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-  /** Applies a manual order locally at once, so a drop never snaps back. */
-  const reorder = useCallback(
-    async (change: ReorderChange) => {
-      setServer((prev) => ({
-        ...prev,
-        order: applyChange(prev.order, change),
-      }));
-      try {
-        const { order } = await rpc.call("reorder", change);
-        setServer((prev) => ({ ...prev, order }));
-      } catch (cause) {
-        await refresh();
-        throw cause;
-      }
-    },
-    [rpc, refresh],
-  );
-  return { rpc, server, refresh, reorder };
-}
-
-function applyChange(order: ManualOrder, change: ReorderChange): ManualOrder {
-  if (change.kind === "workstreams")
-    return { ...order, workstreams: change.ids };
-  return {
-    ...order,
-    threads: { ...order.threads, [change.groupId]: change.ids },
-  };
+  return useSharedServerState();
 }
 
 /** Pending or just-applied proposals that involve each thread. */
@@ -136,7 +90,7 @@ export function useWorkstreams() {
     experimental_useSidebarThreads();
   const settings = useSettings();
   const now = useNow();
-  const { rpc, server, refresh, reorder } = useServerState();
+  const { rpc, server, refresh, reorder, setSnooze } = useServerState();
 
   // Moves in flight, by thread: the section the thread is headed to. The row
   // shows there until BB's live list catches up, or the move fails.
@@ -180,15 +134,19 @@ export function useWorkstreams() {
     [threads, moving],
   );
 
-  const { analysis, order } = server;
+  const { analysis, order, snoozes } = server;
   const projection: Projection<PluginSidebarThread> = useMemo(
     () =>
       projectWorkstreams(placed, sections, {
         now,
         needsYou: (thread) => needsYou(thread, analysis[thread.id]),
         order,
+        snoozedUntil: (thread) => {
+          const snooze = snoozes[thread.id];
+          return isSnoozed(snooze, thread, now) ? snooze!.until : undefined;
+        },
       }),
-    [placed, sections, now, analysis, order],
+    [placed, sections, now, analysis, order, snoozes],
   );
   const values = (settings.values ?? {}) as Record<string, unknown>;
   return {
@@ -205,6 +163,13 @@ export function useWorkstreams() {
     refresh,
     reorder,
     moveThread,
+    setSnooze,
+    snoozeOf: (thread: PluginSidebarThread) => {
+      const snooze = snoozes[thread.id];
+      return isSnoozed(snooze, thread, now) ? snooze : undefined;
+    },
+    defaultSnooze: presetFromSetting(values.snoozeDefault),
+    showForYou: values.showForYou !== false,
     showRecent: values.showRecent !== false,
     showParentThreadLink: values.showParentThreadLink === true,
   };

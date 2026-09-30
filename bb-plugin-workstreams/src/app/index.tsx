@@ -1,6 +1,7 @@
 // Workstreams frontend entry: the sidebar thread list, the Workstreams page,
 // the optional parent link in thread headers, and the settings section.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
+import { ServerStateRealtime } from "./serverState.ts";
 import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { ProposalBanner } from "./header/ProposalBanner.tsx";
@@ -12,6 +13,10 @@ import { WorkstreamsThreadList } from "./sidebar/ThreadList.tsx";
 import "./styles.css";
 
 export default definePluginApp((app) => {
+  app.slots.experimental_appOverlay({
+    id: "server-state",
+    component: ServerStateRealtime,
+  });
   app.composer.customize({
     id: "automatic-filing",
     scopes: ["thread"],
