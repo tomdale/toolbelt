@@ -273,11 +273,11 @@ export function WorkstreamsThreadList({
                 <button
                   type="button"
                   onClick={() => setShowAllNeeds((all) => !all)}
-                  // Left edge matches the row titles: 6px row padding, plus
-                  // the 14px status slot and its 6px gap when rows show it.
+                  // Left edge matches the row titles: 26px with the status
+                  // slot, 14px when the rows fold it away (see styles.css).
                   className={cn(
                     "ws-amber-text w-full cursor-pointer rounded-md py-0.5 pr-2 text-left text-[12px] transition-[padding] duration-[180ms] ease-out hover:bg-sidebar-accent/60 motion-reduce:transition-none",
-                    needsMarks ? "pl-[26px]" : "pl-1.5",
+                    needsMarks ? "pl-[26px]" : "pl-[14px]",
                   )}
                 >
                   {showAllNeeds
