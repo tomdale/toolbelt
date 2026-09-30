@@ -55,6 +55,10 @@ export const traceSummarySchema = z.object({
   replayOf: z.string().nullable(),
   usage: usageSchema.nullable(),
   error: z.string().nullable(),
+  /** One line of what the model decided, e.g. "review · Workstreams". */
+  summary: z.string().nullable(),
+  /** Threads the call is about. */
+  threads: z.array(z.string()),
 });
 export type TraceSummary = z.infer<typeof traceSummarySchema>;
 
@@ -77,7 +81,10 @@ export const traceSchema = traceSummarySchema.extend({
 });
 export type Trace = z.infer<typeof traceSchema>;
 
-export type NewTrace = Omit<Trace, "id" | "at" | "links" | "replays"> & {
+export type NewTrace = Omit<
+  Trace,
+  "id" | "at" | "links" | "replays" | "threads"
+> & {
   at: number;
 };
 
@@ -89,6 +96,16 @@ export const TRACE_KIND_TITLE: Record<TraceKind, string> = {
   "organize-assign": "Organize: filing",
   "file-unsorted": "Filing Unsorted threads",
   describe: "Workstream descriptions",
+};
+
+/** Compact labels for narrow columns, such as the Activity log's. */
+export const TRACE_KIND_SHORT: Record<TraceKind, string> = {
+  analysis: "Analysis",
+  route: "Routing",
+  "organize-map": "Organize map",
+  "organize-assign": "Organize filing",
+  "file-unsorted": "Filing",
+  describe: "Descriptions",
 };
 
 export const TRACE_STATUS_TITLE: Record<TraceStatus, string> = {

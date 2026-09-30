@@ -520,7 +520,9 @@ restores the previous title while it is still the one Workstreams wrote.
      opens a side pane with those calls: the thread header, the drift and
      proposal banners, the routing banner and New work, Activity entries, the
      organizing review, generated descriptions, Overview rows, and the sidebar
-     row menu. The page adds a Debug tab listing every call, and
+     row menu. The Activity log lists each call in place among the changes, with
+     a one-line summary of what the model decided (or why it failed) and a
+     "Model calls" filter. The page adds a Debug tab listing every call, and
      `bb workstreams trace` prints them.
    - "Run again" sends a recorded prompt to its model again and records the
      answer as a replay of the original. A replay changes nothing Workstreams

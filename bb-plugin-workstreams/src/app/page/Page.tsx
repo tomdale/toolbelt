@@ -206,6 +206,9 @@ export function WorkstreamsPage({
             proposals={ws.server.proposals}
             focus={linked.tab === "activity" ? linked.focus : null}
             sections={ws.sections}
+            workstreamOf={(id) =>
+              ws.projection.rowOf.get(id)?.workstreamId ?? null
+            }
           />
         )}
       </div>

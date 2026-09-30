@@ -28,6 +28,7 @@ const RETAIN_MS = 7 * 24 * 60 * 60 * 1000;
 const RETAIN_TRACES = 1000;
 const PRUNE_EVERY_MS = 60_000;
 const LABEL_MAX = 120;
+const SUMMARY_MAX = 200;
 const ERROR_MAX = 2000;
 const INPUT_STRING_MAX = 4000;
 
@@ -64,10 +65,15 @@ type Row = {
   replay_of: string | null;
   usage: string | null;
   error: string | null;
+  summary: string | null;
+  threads: string | null;
 };
 
 const SUMMARY_COLUMNS = `t.id, t.at, t.kind, t.status, t.label, t.model, t.duration_ms, t.replay_of,
-  json_extract(t.data, '$.usage') AS usage, json_extract(t.data, '$.error') AS error`;
+  json_extract(t.data, '$.usage') AS usage, json_extract(t.data, '$.error') AS error,
+  json_extract(t.data, '$.summary') AS summary,
+  (SELECT json_group_array(ref) FROM ws_trace_link
+     WHERE trace_id = t.id AND kind = 'thread') AS threads`;
 
 function summaryOf(row: Row): TraceSummary {
   let usage: Usage | null = null;
@@ -87,6 +93,8 @@ function summaryOf(row: Row): TraceSummary {
     replayOf: row.replay_of,
     usage,
     error: row.error,
+    summary: row.summary,
+    threads: row.threads ? (JSON.parse(row.threads) as string[]) : [],
   };
 }
 
@@ -119,6 +127,9 @@ export class TraceStore {
         JSON.stringify({
           ...data,
           error: data.error ? clipText(data.error, ERROR_MAX) : null,
+          summary: data.summary
+            ? clipText(redact(data.summary), SUMMARY_MAX)
+            : null,
         }),
       );
     this.link(id, links);
@@ -157,6 +168,7 @@ export class TraceStore {
       outcome: null,
       usage: null,
       error: null,
+      summary: null,
       ...data,
       id: row.id,
       at: row.at,
@@ -167,6 +179,7 @@ export class TraceStore {
       durationMs: row.duration_ms,
       replayOf: row.replay_of,
       links,
+      threads: links.filter((l) => l.kind === "thread").map((l) => l.ref),
       replays,
     });
   }

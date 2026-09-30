@@ -15,6 +15,8 @@ type Summary = {
   label: string;
   replayOf: string | null;
   error: string | null;
+  summary: string | null;
+  threads: string[];
 };
 type Trace = Summary & {
   prompt: string;
@@ -100,6 +102,8 @@ describe("debug mode on", () => {
       kind: "analysis",
       status: "ok",
       label: "Alpha parser",
+      summary: "review · Alpha",
+      threads: ["t1"],
     });
     const state = await rpc<{
       analysis: Record<string, { traceId: string | null }>;
@@ -149,7 +153,11 @@ describe("debug mode on", () => {
       prompt: "Fix the Alpha parser's handling of nested blocks",
     });
     const full = (await trace(w, decision.traceId!))!;
-    expect(full).toMatchObject({ kind: "route", status: "ok" });
+    expect(full).toMatchObject({
+      kind: "route",
+      status: "ok",
+      summary: "new thread in Alpha (high)",
+    });
     expect(full.outcome).toMatchObject({
       decision: { outcome: "new-thread", workstream: "Alpha" },
     });
