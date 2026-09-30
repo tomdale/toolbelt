@@ -30,7 +30,7 @@ it("normalizes a JSON recap into ledger lines", () => {
     Done: ["Added the recap card."],
   });
   expect(parseRecap(raw).summary).toBe(
-    "Goal: Testing the user interface.\nLatest: The recap card renders.\nDone: Added the recap card.",
+    "Goal: Testing the user interface\nLatest: The recap card renders\nDone: Added the recap card",
   );
   expect(parseRecapLedger(raw)).toEqual({
     goal: "Testing the user interface.",
