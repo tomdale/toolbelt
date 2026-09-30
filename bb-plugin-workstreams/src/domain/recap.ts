@@ -67,20 +67,23 @@ export type RecapLedger = { goal: string | null; latest: string[]; open: string[
  * since models produce both. Returns null for any other shape so the card can
  * fall back to plain text.
  */
+type LedgerLabel = "goal" | "latest" | "open" | "done";
+
 export function parseRecapLedger(summary: string): RecapLedger | null {
   const ledger: RecapLedger = { goal: null, latest: [], open: [], done: [] };
-  let section: "goal" | "latest" | "open" | "done" | null = null;
+  let section: LedgerLabel | null = null;
   for (const raw of summary.split("\n")) {
     const line = raw.trim().replace(/^[-*•]\s+/, "");
     if (!line) continue;
     const match = /^(Goal|Latest|Open|Done):\s*(.*)$/i.exec(line);
     if (match) {
-      section = match[1]!.toLowerCase() as typeof section;
-      if (match[2]) add(section!, match[2]);
+      const label = match[1]!.toLowerCase() as LedgerLabel;
+      section = label;
+      if (match[2]) add(label, match[2]);
     } else if (section) add(section, line);
     else return null;
   }
-  function add(label: "goal" | "latest" | "open" | "done", text: string) {
+  function add(label: LedgerLabel, text: string) {
     if (label === "goal") ledger.goal = ledger.goal ? `${ledger.goal} ${text}` : text;
     else ledger[label].push(text);
   }
