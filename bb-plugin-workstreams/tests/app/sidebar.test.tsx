@@ -305,6 +305,8 @@ describe("thread list", () => {
         .getAllByRole("link")
         .map((a) => a.getAttribute("aria-label")),
     ).toEqual(["Fresh ask"]);
+    // Each row carries what it asks, under the title.
+    expect(band.textContent).toContain("Ship it?");
     expect(
       within(band).queryAllByRole("img", { name: "Needs your decision" }),
     ).toHaveLength(0);

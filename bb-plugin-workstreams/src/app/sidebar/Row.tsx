@@ -80,6 +80,7 @@ export function Row({
   work,
   proposal,
   showStatusSlot = true,
+  subtitle,
   onNavigate,
 }: {
   thread: PluginSidebarThread;
@@ -102,6 +103,8 @@ export function Row({
    * animated, so titles sit flush left.
    */
   showStatusSlot?: boolean;
+  /** A second line under the title, such as what the thread asks of Tom. */
+  subtitle?: string | null;
   onNavigate: () => void;
 }) {
   const shownState = shownWorkState(work, attention);
@@ -123,7 +126,11 @@ export function Row({
   return (
     <div
       className={cn(
-        "ws-row group/row relative flex h-7 items-center gap-1.5 rounded-md pr-2 text-[13px]",
+        "ws-row group/row relative flex gap-1.5 rounded-md pr-2 text-[13px]",
+        // Two-line rows align their marks and details with the title line.
+        subtitle
+          ? "items-start py-1 [&>*]:mt-[2px] [&>a]:mt-0"
+          : "h-7 items-center",
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
       )}
       style={{ paddingLeft: 6 + Math.min(depth, MAX_INDENT) * INDENT_PX }}
@@ -181,7 +188,7 @@ export function Row({
       </span>
       <span
         className={cn(
-          "pointer-events-none relative min-w-0 flex-1 truncate",
+          "pointer-events-none relative flex min-w-0 flex-1 flex-col",
           thread.isUnread || active
             ? "font-medium text-foreground"
             : attention
@@ -189,7 +196,14 @@ export function Row({
               : "text-muted-foreground group-hover/row:text-foreground",
         )}
       >
-        <ThreadTitle threadId={thread.id} />
+        <span className="truncate">
+          <ThreadTitle threadId={thread.id} />
+        </span>
+        {subtitle ? (
+          <span className="truncate text-[11.5px] leading-4 text-muted-foreground">
+            {subtitle}
+          </span>
+        ) : null}
       </span>
       <span className="pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70 group-hover/row:opacity-0 group-has-[button:focus-visible]/row:opacity-0">
         {proposal ? (
