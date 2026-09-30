@@ -1,13 +1,21 @@
 /**
- * The working indicator's settings: an animation shape, its color, and the
- * track's color (used by shapes with a track). Every choice is a native radio
+ * The working indicator's settings: an animation shape, its color, and, for
+ * shapes that draw a track, the track's color. Every choice is a native radio
  * button (arrow keys move within a group), and every preview is the live
  * spinner in the current colors. Each label is `relative` so its visually
  * hidden input stays inside it: an input positioned against an outer BB
  * container overflows it, and focusing the input then scrolls that container
  * and clips the settings page.
  */
-import { useCallback, useId, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { cn } from "@/lib/utils";
 import {
   COLOR_LABEL,
@@ -36,10 +44,21 @@ export function SpinnerSettings() {
     [],
   );
   const save = useSetSpinner(onError);
+  const trackRef = useRef<HTMLFieldSetElement>(null);
+  // Set when a pick makes the track group appear, so it can be revealed.
+  const revealTrack = useRef(false);
   const change = (patch: Partial<SpinnerStyle>) => {
     setError(null);
+    if (patch.shape && hasTrack(patch.shape) && !hasTrack(style.shape))
+      revealTrack.current = true;
     save(patch);
   };
+  const showTrack = hasTrack(style.shape);
+  useLayoutEffect(() => {
+    if (!showTrack || !revealTrack.current || !trackRef.current) return;
+    revealTrack.current = false;
+    revealInScroller(trackRef.current);
+  }, [showTrack]);
 
   return (
     <div className="flex min-w-0 flex-col gap-5">
@@ -53,27 +72,23 @@ export function SpinnerSettings() {
           customLabel="Custom color"
         />
       </Group>
-      <Group
-        legend="Track"
-        hint={
-          hasTrack(style.shape) ? undefined : "For Arc, Orbit, and Ring only"
-        }
-        disabled={!hasTrack(style.shape)}
-      >
-        <Swatches
-          value={style.secondary}
-          onPick={(secondary) => change({ secondary })}
-          customLabel="Custom track color"
-          extra={[
-            {
-              value: "auto",
-              label: "Faded color",
-              fill: trackCss({ ...style, secondary: "auto" }),
-            },
-            { value: "none", label: "No track", fill: null },
-          ]}
-        />
-      </Group>
+      {showTrack ? (
+        <Group legend="Track" groupRef={trackRef}>
+          <Swatches
+            value={style.secondary}
+            onPick={(secondary) => change({ secondary })}
+            customLabel="Custom track color"
+            extra={[
+              {
+                value: "auto",
+                label: "Faded color",
+                fill: trackCss({ ...style, secondary: "auto" }),
+              },
+              { value: "none", label: "No track", fill: null },
+            ]}
+          />
+        </Group>
+      ) : null}
       {error ? (
         <p role="alert" className="text-xs text-destructive">
           {error}
@@ -83,39 +98,44 @@ export function SpinnerSettings() {
   );
 }
 
-/**
- * A labeled group of choices. A disabled group stays visible, dimmed, with a
- * hint saying when it applies, so the option is discoverable.
- */
 function Group({
   legend,
-  hint,
-  disabled,
+  groupRef,
   children,
 }: {
   legend: string;
-  hint?: string;
-  disabled?: boolean;
+  groupRef?: Ref<HTMLFieldSetElement>;
   children: ReactNode;
 }) {
-  const hintId = useId();
   return (
-    <fieldset
-      disabled={disabled}
-      aria-describedby={hint ? hintId : undefined}
-      className="min-w-0 disabled:opacity-50"
-    >
+    <fieldset ref={groupRef} className="min-w-0">
       <legend className="mb-2 text-xs font-medium text-muted-foreground">
         {legend}
       </legend>
-      {hint ? (
-        <p id={hintId} className="-mt-1 mb-2 text-xs text-muted-foreground">
-          {hint}
-        </p>
-      ) : null}
       {children}
     </fieldset>
   );
+}
+
+/**
+ * Scrolls the nearest scrolling ancestor just enough to show `element`.
+ * `scrollIntoView` isn't used because it also scrolls BB's `overflow-hidden`
+ * layout containers, shifting the whole settings page.
+ */
+function revealInScroller(element: HTMLElement): void {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if (overflowY !== "auto" && overflowY !== "scroll") continue;
+    const box = node.getBoundingClientRect();
+    const target = element.getBoundingClientRect();
+    const margin = 16;
+    if (target.bottom + margin > box.bottom)
+      node.scrollTop += Math.min(
+        target.bottom + margin - box.bottom,
+        target.top - box.top - margin,
+      );
+    return;
+  }
 }
 
 function ShapeGrid({
