@@ -34,6 +34,7 @@ class ServerStore {
   private loaded = false;
   private activeMutations = 0;
   private mutationVersion = 0;
+  private mutationNeedsReconcile = false;
 
   constructor(readonly rpc: Rpc) {}
 
@@ -88,13 +89,17 @@ class ServerStore {
   private beginMutation(): number {
     this.activeMutations += 1;
     this.mutationVersion += 1;
+    this.mutationNeedsReconcile ||= this.pending !== null || this.dirty;
     this.dirty = true;
     return this.mutationVersion;
   }
 
   private endMutation(): void {
     this.activeMutations -= 1;
-    if (this.activeMutations === 0) void this.refresh();
+    if (this.activeMutations === 0 && this.mutationNeedsReconcile) {
+      this.mutationNeedsReconcile = false;
+      void this.refresh();
+    }
   }
 
   /** Applies manual order to every consumer before the round trip. */
@@ -109,6 +114,7 @@ class ServerStore {
       if (mutationVersion === this.mutationVersion)
         this.publish({ ...this.value, order });
     } catch (cause) {
+      this.mutationNeedsReconcile = true;
       throw cause;
     } finally {
       this.endMutation();
@@ -135,6 +141,7 @@ class ServerStore {
         await this.rpc.call("unsnooze", { threadId: thread.id });
       else await this.rpc.call("snooze", { threadId: thread.id, until });
     } catch (cause) {
+      this.mutationNeedsReconcile = true;
       throw cause;
     } finally {
       this.endMutation();
@@ -152,6 +159,7 @@ class ServerStore {
       const { prefs } = await this.rpc.call("setSnoozePrefs", { patch });
       this.publish({ ...this.value, snoozePrefs: parseSnoozePrefs(prefs) });
     } catch (cause) {
+      this.mutationNeedsReconcile = true;
       throw cause;
     } finally {
       this.endMutation();
