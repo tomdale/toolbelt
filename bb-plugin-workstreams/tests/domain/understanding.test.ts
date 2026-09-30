@@ -65,6 +65,11 @@ describe("understanding evidence contracts", () => {
     ).toBeNull();
     expect(sourceQuote("**Recap** and **Recap**", "Recap ")).toBeNull();
     expect(sourceQuote("one\n  two", "one two")).toBe("one\n  two");
+    expect(sourceQuote("2 * 3", "2 3")).toBeNull();
+    expect(sourceQuote("unmatched ` token", "unmatched token")).toBeNull();
+    expect(sourceQuote("**One** and *two*", "One and two")).toBe(
+      "One** and *two",
+    );
   });
   it("downgrades assistant statements even when the model labels them explicit", () => {
     const entries = [
