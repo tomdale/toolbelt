@@ -97,7 +97,8 @@ class ServerStore {
     // A read already in flight, or a refresh requested before this write,
     // needs to be repeated after the write settles. Reads that begin during
     // the mutation mark this flag when their response is suppressed.
-    this.mutationNeedsReconcile ||= this.pending !== null || this.dirty;
+    const refreshAlreadyNeeded = this.pending !== null || this.dirty;
+    this.mutationNeedsReconcile ||= refreshAlreadyNeeded;
     this.dirty = true;
     return this.mutationVersion;
   }
