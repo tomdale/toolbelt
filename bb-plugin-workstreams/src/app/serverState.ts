@@ -129,8 +129,9 @@ class ServerStore {
         this.latestReorderResponse = mutationVersion;
         this.publish({
           ...this.value,
-          order: this.overlayReorders(order),
+          order: this.overlayReorders(order, mutationVersion),
         });
+        this.pendingReorders.delete(mutationVersion);
       }
     } catch (cause) {
       this.pendingReorders.delete(mutationVersion);
@@ -141,10 +142,15 @@ class ServerStore {
     }
   };
 
-  private overlayReorders(order: ManualOrder, afterVersion = 0): ManualOrder {
+  private overlayReorders(order: ManualOrder, responseVersion = 0): ManualOrder {
     let next = order;
-    for (const [version, change] of this.pendingReorders)
-      if (version > afterVersion) next = applyChange(next, change);
+    const response = this.pendingReorders.get(responseVersion);
+    for (const [version, change] of this.pendingReorders) {
+      if (version === responseVersion) continue;
+      const sameGroup = response && change.kind === response.kind &&
+        (change.kind === "workstreams" || change.groupId === response.groupId);
+      if (!sameGroup || version > responseVersion) next = applyChange(next, change);
+    }
     return next;
   }
 
@@ -194,8 +200,8 @@ class ServerStore {
       if (mutationVersion >= this.latestPrefsResponse) {
         this.latestPrefsResponse = mutationVersion;
         let merged = prefs;
-        for (const pending of this.pendingPrefs.values())
-          merged = { ...merged, ...pending };
+        for (const [version, pending] of this.pendingPrefs)
+          if (version > mutationVersion) merged = { ...merged, ...pending };
         this.publish({ ...this.value, snoozePrefs: parseSnoozePrefs(merged) });
       }
     } catch (cause) {
