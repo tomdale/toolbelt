@@ -46,6 +46,16 @@ against.
   latest request drifted to another workstream. Results are tied to the turn
   they describe and show as updating once a new turn starts. Analysis never
   moves anything.
+- **Archive suggestions**: when classification finds a natural end and BB has no
+  unfinished tasks, goals, queued messages, interactions, or background work, an
+  inline notice above the composer offers **Archive thread** or dismiss (×).
+  Choose **Archive suggestion presentation** in Workstreams settings to compare
+  the inline notice, a **Finished** header chip, an archive icon in expanded
+  composer controls, the floating card, or no suggestion. The header chip and
+  composer icon open a review dialog; inline and floating buttons archive
+  directly. Dismiss keeps the thread open and suppresses the suggestion for that
+  completed turn. Typing a continuation hides the suggestion. Archiving is
+  always your choice; Workstreams rechecks outstanding work when you click.
 - **Titles**: the same call suggests a title when a thread has none, its title
   is cut off or too vague, or its latest requests moved onto different work.
   Workstreams applies it (at most once an hour for a titled thread) and logs it

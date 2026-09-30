@@ -337,6 +337,18 @@ export const rpcContract = defineRpcContract({
     }),
     output: z.object({ threadId: z.string().nullable() }),
   },
+  archiveStatus: {
+    input: z.object({ threadId: z.string().min(1) }),
+    output: z.object({ revision: z.number().nullable() }),
+  },
+  archiveSuggestion: {
+    input: z.object({
+      threadId: z.string().min(1),
+      revision: z.number(),
+      action: z.enum(["archive", "dismiss"]),
+    }),
+    output: z.object({ ok: z.literal(true) }),
+  },
   proposal: {
     input: z.object({
       id: z.string().min(1),

@@ -454,6 +454,148 @@
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+
+.ws-archive-review-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ws-archive-review-panel h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.ws-archive-inline {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  min-height: 26px;
+  padding: 2px 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.ws-archive-inline button {
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.ws-archive-inline button:hover {
+  color: var(--foreground);
+}
+.ws-archive-inline .ws-archive-dismiss {
+  font-size: 16px;
+  padding: 0 4px;
+}
+.ws-archive-chip,
+.ws-archive-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.ws-archive-chip {
+  height: 24px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+.ws-archive-icon {
+  width: 28px;
+  height: 28px;
+}
+.ws-archive-chip:hover,
+.ws-archive-icon:hover {
+  color: var(--foreground);
+  background: var(--muted);
+}
+.ws-archive-inline button:focus-visible,
+.ws-archive-chip:focus-visible,
+.ws-archive-icon:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.ws-archive-inline button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Composer anchoring keeps the floating card inside its thread's split pane. */
+.ws-archive-anchor {
+  position: relative;
+  height: 0;
+  z-index: 20;
+}
+.ws-archive-card {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, calc(100% - 16px));
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+.ws-archive-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.ws-archive-copy strong {
+  font-size: 13px;
+  color: var(--foreground);
+}
+.ws-archive-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+.ws-archive-actions button {
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ws-archive-actions button:hover {
+  background: var(--muted);
+}
+.ws-archive-actions .ws-archive-primary {
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+.ws-archive-actions .ws-archive-primary:hover {
+  opacity: 0.9;
+  background: var(--primary);
+}
+.ws-archive-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ws-archive-actions button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+@media (max-width: 600px) {
+  .ws-archive-card {
+    flex-wrap: wrap;
+  }
+  .ws-archive-actions {
+    margin-left: auto;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .ws-check,
   .ws-check::before {

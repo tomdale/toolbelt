@@ -8,6 +8,7 @@ import { actOn, registerCli } from "./cli.ts";
 import { isCurrent } from "../domain/analysis.ts";
 import { refreshShapes, registerAgentInstructions } from "./agents.ts";
 import { Analyzer } from "./analyzer.ts";
+import { ArchiveSuggestions } from "./archive.ts";
 import { Bootstrap } from "./bootstrap.ts";
 import { Evolution } from "./evolution.ts";
 import { WorkstreamMap } from "./map.ts";
@@ -41,6 +42,14 @@ const EVOLVE_DEBOUNCE_MS = 15_000;
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
+    archiveSuggestionStyle: {
+      type: "select",
+      label: "Archive suggestion presentation",
+      description:
+        "Compare archive affordances: inline notice, header chip, composer action (expanded layout only), floating card, or off. All use the same completion checks.",
+      options: ["inline", "header", "action", "floating", "off"],
+      default: "inline",
+    },
     showParentThreadLink: {
       type: "boolean",
       label: "Show parent thread link in thread header",
@@ -192,6 +201,12 @@ export default async function plugin(bb: BbPluginApi) {
     info: (message) => bb.log.info(message),
   });
   bb.onDispose(() => analyzer.dispose());
+  const archives = new ArchiveSuggestions({
+    sdk: () => bb.sdk,
+    db,
+    analyzer,
+    onChange: notify,
+  });
   registerAgentInstructions(bb, db);
   const map = new WorkstreamMap(db);
   const bootstrap = new Bootstrap({
@@ -361,6 +376,7 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.events.on("thread.deleted", ({ thread }) => {
     analyzer.forget(thread.id);
+    archives.forget(thread.id);
     service.forget(thread.id);
   });
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
@@ -564,6 +580,9 @@ export default async function plugin(bb: BbPluginApi) {
         dismiss();
         return { threadId: acted.threadId };
       }),
+    archiveStatus: ({ threadId }) => archives.status(threadId),
+    archiveSuggestion: ({ threadId, revision, action }) =>
+      userFacing(() => archives.decide(threadId, revision, action)),
     proposal: ({ id, action }) =>
       userFacing(async () => {
         if (action === "accept") await evolution.accept(id);
