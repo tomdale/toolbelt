@@ -1,98 +1,29 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useSyncExternalStore,
-  type FocusEvent,
-} from "react";
-import { useComposer, useComposerView } from "@get-bb/plugin-sdk/app";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useComposer, useSdk } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
-import { InspectButton } from "../debug/InspectButton.tsx";
 import { useServerState } from "../useWorkstreams.ts";
-import type { Intake, IntakeState } from "./intake.ts";
+import type { Environment, Intake, IntakeState } from "./intake.ts";
 
-type Mark = "auto" | "busy" | "workstream" | "new" | "continue";
-
-/** What the destination control shows, and what it announces. */
-type Destination = {
-  mark: Mark;
-  /** Muted lead-in when the work doesn't start a thread in a workstream. */
-  verb?: string;
-  name: string;
-  /** Placeholders are muted so a chosen destination reads as the value. */
-  muted?: boolean;
-  status: string;
-};
-
-/**
- * Reads only `Intake` state, whose `text` tracks the draft except while the
- * host has cleared the editor for a submit, when it keeps the submitted text.
- */
-function destinationOf(route: IntakeState): Destination {
-  if (route.workstreamId) {
-    const name = route.workstreamName ?? "Selected workstream";
-    return { mark: "workstream", name, status: `New thread in ${name}` };
-  }
-  if (!route.text)
-    return { mark: "auto", name: "Automatic", muted: true, status: "" };
-  if (route.loading)
-    return {
-      mark: "busy",
-      name: "Choosing…",
-      muted: true,
-      // Announcing every typing pause is noise; the result is announced.
-      status: "",
-    };
-  const decision = route.decision;
-  if (!decision && route.error)
-    return { mark: "auto", name: "Automatic", muted: true, status: "" };
-  if (decision?.outcome === "new-thread")
-    return {
-      mark: "auto",
-      name: decision.workstream,
-      status: `New thread in ${decision.workstream}`,
-    };
-  if (decision?.outcome === "new-workstream")
-    return {
-      mark: "new",
-      verb: "New workstream",
-      name: decision.name,
-      status: `New workstream ${decision.name}`,
-    };
-  const chosen =
-    decision?.outcome === "unsure"
-      ? decision.candidates.find(
-          (c) => c.kind === "thread" && c.threadId === route.choice?.threadId,
-        )
-      : undefined;
-  const continued =
-    decision?.outcome === "continue"
-      ? decision.threadTitle
-      : chosen?.kind === "thread"
-        ? chosen.title
-        : null;
-  if (continued !== null)
-    return {
-      mark: "continue",
-      verb: "Continue",
-      name: continued,
-      status: `Continue ${continued}`,
-    };
-  return {
-    mark: "auto",
-    name: "Choose where this goes",
-    status: "Choose where this goes",
-  };
+export function statusText(state: IntakeState): string {
+  if (!state.text) return "";
+  if (state.selectionError) return "Couldn't apply placement";
+  if (state.error) return "Couldn't choose a destination";
+  if (state.loading) return "Choosing where this goes";
+  if (state.decision?.outcome === "unsure") return "Pick a destination";
+  if (
+    state.decision &&
+    state.decision.outcome !== "continue" &&
+    !state.project.value
+  )
+    return "Pick a project";
+  if (state.decision)
+    return state.destination.source === "manual"
+      ? "Chosen manually"
+      : "Filled automatically";
+  return "";
 }
-
-/**
- * Announces the destination. It renders outside the banner because the host
- * remounts banners on every project change, and a replaced live region can
- * drop the announcement it was about to make.
- */
 export function IntakeStatus({ intake }: { intake: Intake }) {
-  const route = useSyncExternalStore(intake.subscribe, intake.snapshot);
+  const state = useSyncExternalStore(intake.subscribe, intake.snapshot);
   return (
     <p
       id={intake.statusId}
@@ -100,232 +31,565 @@ export function IntakeStatus({ intake }: { intake: Intake }) {
       aria-live="polite"
       className="sr-only"
     >
-      {destinationOf(route).status}
+      {state.announcement || statusText(state)}
     </p>
   );
 }
-
-function DestinationMark({ mark }: { mark: Mark }) {
-  if (mark === "auto")
-    return (
-      <span
-        aria-hidden="true"
-        className="w-3.5 shrink-0 text-center text-xs leading-none text-muted-foreground"
-      >
-        ✦
-      </span>
-    );
-  const name = {
-    busy: "Loading",
-    workstream: "Layers",
-    new: "Plus",
-    continue: "CornerDownRight",
-  }[mark];
-  return (
-    <Icon
-      name={name}
-      aria-hidden
-      className={cn(
-        "size-3.5 shrink-0 text-muted-foreground",
-        mark === "busy" && "animate-spin motion-reduce:animate-none",
-      )}
-    />
+type Option = { value: string; label: string; group?: string };
+function Field({
+  intake,
+  field,
+  label,
+  value,
+  automatic,
+  implied = false,
+  icon,
+  options,
+  onPick,
+  locked = false,
+  need = false,
+  waiting = false,
+}: {
+  intake: Intake;
+  field: "action" | "destination" | "project" | "environment";
+  label?: string;
+  value: string;
+  automatic: boolean;
+  implied?: boolean;
+  icon: "Plus" | "Folder" | "Layers" | "MessageSquare" | "CircleDashed";
+  options: Option[];
+  onPick: (value: string) => void;
+  locked?: boolean;
+  need?: boolean;
+  waiting?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const anchor = useRef<HTMLDivElement>(null);
+  const preview = intake.automaticPreview(field);
+  const revertLabel = `Use automatic ${field}${preview ? `: ${preview}` : ""}`;
+  const visible = options.filter((o) =>
+    `${o.label} ${o.value === "none" ? "unassigned" : ""}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
   );
-}
-
-/**
- * The destination row above the New work prompt: where the draft will go, a
- * native workstream select over it, and the toggle for the host's placement
- * row. The host remounts this banner when the project changes, so all state,
- * including which of its controls had focus, lives in the dialog's `Intake`.
- */
-export function IntakeBanner({ intake }: { intake: Intake }) {
-  const route = useSyncExternalStore(intake.subscribe, intake.snapshot);
-  const composer = useComposer();
-  const view = useComposerView();
-  const { server } = useServerState();
-  const select = useRef<HTMLSelectElement>(null);
-  const settings = useRef<HTMLButtonElement>(null);
-  const projectId =
-    view.scope.kind === "new-thread" ? view.scope.projectId : null;
-  const text = view.draft.text;
-  useEffect(() => intake.observe(text, projectId), [intake, text, projectId]);
-  useLayoutEffect(() => {
-    // Removing the previous banner dropped focus to the body. The desktop host
-    // may then move focus to its editor after the project change.
-    if (document.activeElement && document.activeElement !== document.body)
-      return;
-    const target =
-      intake.focused === "workstream"
-        ? select
-        : intake.focused === "settings"
-          ? settings
-          : null;
-    target?.current?.focus();
-  }, [intake]);
-  const decision = route.decision;
+  const close = () => {
+    setOpen(false);
+    setQuery("");
+    trigger.current?.focus();
+  };
   useEffect(() => {
-    if (
-      !decision ||
-      (decision.outcome !== "new-thread" &&
-        decision.outcome !== "new-workstream") ||
-      !intake.shouldPreset(decision.id, decision.placement)
-    )
-      return;
-    void composer
-      .experimental_setSelection({
-        projectId: decision.placement.projectId,
-        environment: decision.placement.environment,
-      })
-      .catch(() => {
-        // The server uses the preview's placement even if a host picker cannot
-        // represent it. The native picker does not determine the destination.
-      });
-  }, [intake, decision, composer]);
-
-  const track = (control: NonNullable<Intake["focused"]>) => ({
-    onFocus: () => {
-      intake.focused = control;
-    },
-    // A null related target means the node was removed or focus left the
-    // document; either way this control should get focus back.
-    onBlur: (event: FocusEvent) => {
-      if (event.relatedTarget) intake.focused = null;
-    },
-  });
-  const workstreams = Object.values(server.workstreams);
-  const destination = destinationOf(route);
-  const candidates = decision?.outcome === "unsure" ? decision.candidates : [];
+    if (intake.focused === field) trigger.current?.focus();
+  }, [intake, field]);
+  useEffect(() => {
+    if (!open) return;
+    (
+      menu.current?.querySelector<HTMLInputElement>("input") ??
+      menu.current?.querySelector<HTMLButtonElement>('button[role="menuitem"]')
+    )?.focus();
+    const dismiss = (event: PointerEvent) => {
+      if (!anchor.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [open]);
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div
-          className={cn(
-            "relative inline-flex h-7 min-w-28 max-w-80 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] font-medium hover:bg-state-hover has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring max-md:pointer-coarse:h-9",
-            destination.muted ? "text-muted-foreground" : "text-foreground",
-          )}
+    <div ref={anchor} className={`ws-intake-field ws-intake-${field}`}>
+      <div className="ws-intake-chip" data-need={need} data-waiting={waiting}>
+        <button
+          ref={trigger}
+          type="button"
+          className="ws-intake-trigger"
+          title={`${label ? `${label}: ` : ""}${value}`}
+          aria-label={`${label ?? "Action"}: ${value || "unresolved"}, ${locked ? "locked" : automatic ? "automatic" : "chosen"}`}
+          aria-haspopup={locked ? undefined : "menu"}
+          aria-expanded={locked ? undefined : open}
+          aria-describedby={intake.statusId}
+          onFocus={() => {
+            intake.focused = field;
+          }}
+          onBlur={() => {
+            if (!open) intake.focused = null;
+          }}
+          onClick={() => !locked && setOpen(!open)}
+          onKeyDown={(event) => {
+            if (
+              !locked &&
+              (event.key === "Delete" || event.key === "Backspace") &&
+              !automatic &&
+              !implied
+            ) {
+              event.preventDefault();
+              intake.revertField(field);
+            }
+            if (!locked && event.key === "ArrowDown") {
+              event.preventDefault();
+              setOpen(true);
+            }
+          }}
         >
-          <DestinationMark mark={destination.mark} />
-          <span className="min-w-0 truncate">
-            {destination.verb ? (
-              <span className="text-muted-foreground">{destination.verb} </span>
-            ) : null}
-            {destination.name}
-          </span>
-          <Icon
-            name="ChevronDown"
-            aria-hidden
-            className="size-3 shrink-0 text-muted-foreground"
-          />
-          {/* The chip is visual only. This transparent native select covers
-              it for keyboard, screen reader, and platform picker behavior;
-              16px text keeps iOS from zooming on focus. */}
-          <select
-            ref={select}
-            aria-label="Workstream"
-            aria-describedby={intake.statusId}
-            title={destination.status || undefined}
-            className="absolute inset-0 size-full cursor-pointer appearance-none text-base opacity-0"
-            value={route.workstreamId ?? ""}
-            {...track("workstream")}
-            onChange={(event) => {
-              const id = event.target.value || null;
-              intake.selectWorkstream(
-                id,
-                workstreams.find((w) => w.sectionId === id)?.name ?? null,
-              );
+          {locked ? (
+            <Icon
+              name="Lock"
+              className="size-3.5 shrink-0 text-muted-foreground"
+              aria-hidden
+            />
+          ) : automatic ? (
+            <span className="ws-intake-star" aria-hidden>
+              ✦
+            </span>
+          ) : (
+            <Icon
+              name={icon}
+              className="size-3.5 shrink-0 text-muted-foreground"
+              aria-hidden
+            />
+          )}
+          {label ? <span className="ws-intake-type">{label}</span> : null}
+          {value ? <span className="ws-intake-value">{value}</span> : null}
+          {!locked ? (
+            <Icon
+              name="ChevronDown"
+              className="size-3 shrink-0 text-muted-foreground"
+              aria-hidden
+            />
+          ) : null}
+        </button>
+        {!automatic && !implied && !locked ? (
+          <button
+            type="button"
+            className="ws-intake-revert"
+            aria-label={revertLabel}
+            title={revertLabel}
+            onClick={() => {
+              intake.focused = field;
+              intake.revertField(field);
+              trigger.current?.focus();
             }}
           >
-            <option value="">Automatic</option>
-            {route.workstreamId &&
-            !workstreams.some((w) => w.sectionId === route.workstreamId) ? (
-              <option value={route.workstreamId}>{destination.name}</option>
-            ) : null}
-            {workstreams.map((w) => (
-              <option key={w.sectionId} value={w.sectionId}>
-                {w.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        {decision?.traceId ? (
-          <InspectButton
-            target={{ traceIds: [decision.traceId] }}
-            title="Why this destination"
-            label="Inspect the routing call"
-            className="-mr-1.5 ml-auto text-muted-foreground"
-          />
+            ✧
+          </button>
         ) : null}
-        <button
-          ref={settings}
-          type="button"
-          aria-expanded={route.settings}
-          {...track("settings")}
-          onClick={() => intake.toggleSettings()}
-          className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[12.5px] text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring aria-expanded:text-foreground max-md:pointer-coarse:h-9"
-        >
-          <Icon name="SlidersHorizontal" aria-hidden className="size-3.5" />
-          Settings
-          <Icon
-            name="ChevronDown"
-            aria-hidden
-            className={cn(
-              "size-3 transition-transform motion-reduce:transition-none",
-              route.settings && "rotate-180",
-            )}
-          />
-        </button>
       </div>
-      {candidates.length > 0 ? (
+      {open ? (
+        <div
+          ref={menu}
+          className="ws-intake-menu"
+          role="menu"
+          aria-label={`${label ?? "Action"} choices`}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" || event.key === "Tab") {
+              event.preventDefault();
+              close();
+              return;
+            }
+            const buttons = Array.from(
+              menu.current!.querySelectorAll<HTMLButtonElement>(
+                'button[role="menuitem"]',
+              ),
+            );
+            const index = buttons.indexOf(
+              document.activeElement as HTMLButtonElement,
+            );
+            const next =
+              event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? buttons.length - 1
+                  : event.key === "ArrowDown"
+                    ? (index + 1) % buttons.length
+                    : event.key === "ArrowUp"
+                      ? (index - 1 + buttons.length) % buttons.length
+                      : -1;
+            if (next >= 0) {
+              event.preventDefault();
+              buttons[next]?.focus();
+            }
+          }}
+        >
+          {field !== "action" ? (
+            <input
+              aria-label={`Search ${label?.toLowerCase()}`}
+              placeholder="Search…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          ) : null}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              intake.revertField(field);
+              close();
+            }}
+          >
+            <span className="ws-intake-hollow" aria-hidden>
+              ✧
+            </span>
+            <span>Automatic{preview ? <small>{preview}</small> : null}</span>
+          </button>
+          {visible.map((option, i) => (
+            <div key={option.value}>
+              {option.group && option.group !== visible[i - 1]?.group ? (
+                <div className="ws-intake-menu-group">{option.group}</div>
+              ) : null}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onPick(option.value);
+                  close();
+                }}
+              >
+                {option.label}
+              </button>
+            </div>
+          ))}
+          {!visible.length ? (
+            <p className="text-xs text-muted-foreground">No matches</p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+export function environmentLabel(
+  environment: Environment | null,
+  state: IntakeState,
+): string {
+  if (!environment) return "";
+  if (environment.type === "reuse")
+    return (
+      state.environments.find((e) => e.id === environment.environmentId)
+        ?.name ?? environment.environmentId
+    );
+  if (environment.type === "project-default") return "Project default";
+  if (environment.type === "host")
+    return environment.workspace.type === "managed-worktree"
+      ? "New worktree"
+      : "Project checkout";
+  return environment.type === "provider" ? "New environment" : "Environment";
+}
+export function IntakeBanner({ intake }: { intake: Intake }) {
+  const state = useSyncExternalStore(intake.subscribe, intake.snapshot);
+  const composer = useComposer();
+  const sdk = useSdk();
+  const { server } = useServerState();
+  const projectId = state.project.value;
+  useEffect(() => {
+    void intake.loadCatalogs(sdk);
+  }, [intake, sdk]);
+  useEffect(() => {
+    void intake.loadEnvironments(sdk, projectId);
+  }, [intake, sdk, projectId]);
+  useEffect(() => {
+    intake.observe(composer.text);
+  }, [intake, composer.text]);
+  const selectedThreadId =
+    state.destination.value.kind === "thread"
+      ? state.destination.value.id
+      : null;
+  useEffect(() => {
+    if (selectedThreadId) void intake.loadThread(sdk, selectedThreadId);
+  }, [intake, sdk, selectedThreadId]);
+  useEffect(() => {
+    const selection = intake.selection();
+    if (selection)
+      void composer.setSelection(selection).then(
+        (applied) => intake.reconcileSelection(selection, applied),
+        (error) => intake.selectionFailed(error, selection),
+      );
+  }, [
+    composer,
+    intake,
+    state.project,
+    state.environment,
+    state.action,
+    state.destination,
+    state.threads,
+    state.threadExecution,
+    state.selectionRevision,
+  ]);
+  const action = intake.effectiveAction();
+  const destination = state.destination.value;
+  const workstreams = Object.values(server.workstreams);
+  const locked = action === "send-message" && destination.kind === "thread";
+  const thread = intake.lockedThread();
+  const destinationOptions: Option[] = [];
+  if (state.action.source !== "manual" || action === "new-thread") {
+    destinationOptions.push(
+      ...workstreams.map((w) => ({
+        value: `workstream:${w.sectionId}`,
+        label: w.name,
+        group: "Workstreams",
+      })),
+      { value: "none", label: "No workstream", group: "Workstreams" },
+    );
+  }
+  if (state.action.source !== "manual" || action === "send-message")
+    destinationOptions.push(
+      ...state.threads.map((t) => ({
+        value: `thread:${t.id}`,
+        label: t.title,
+        group: "Threads",
+      })),
+    );
+  const hostId =
+    state.projects.find((p) => p.id === projectId)?.hostId ?? state.hostId;
+  const label =
+    action === "send-message"
+      ? "Thread"
+      : action === "new-thread"
+        ? "Workstream"
+        : "Destination";
+  const value =
+    destination.kind === "workstream"
+      ? destination.name
+      : destination.kind === "thread"
+        ? destination.title
+        : destination.kind === "unassigned"
+          ? "No workstream"
+          : state.loading
+            ? "Choosing…"
+            : state.text
+              ? "Choose one"
+              : "";
+  const pickDestination = (id: string) => {
+    if (id === "none") intake.selectUnassigned();
+    if (id.startsWith("workstream:")) {
+      const w = workstreams.find((w) => w.sectionId === id.slice(11));
+      if (w) intake.selectWorkstream(w.sectionId, w.name);
+    }
+    if (id.startsWith("thread:")) {
+      const t = state.threads.find((t) => t.id === id.slice(7));
+      if (t)
+        intake.selectDestination({ kind: "thread", id: t.id, title: t.title });
+    }
+  };
+  const projectName = (id: string | null | undefined) =>
+    state.projects.find((p) => p.id === id)?.name ?? id ?? "";
+  return (
+    <div className="ws-intake-controls">
+      <div className="ws-intake-row ws-intake-route-row">
+        <Field
+          intake={intake}
+          field="action"
+          value={
+            action === "automatic"
+              ? "Action"
+              : action === "new-thread"
+                ? "New thread"
+                : action === "send-message"
+                  ? "Send message"
+                  : "New workstream"
+          }
+          automatic={
+            state.action.source === "automatic" &&
+            state.destination.source === "automatic"
+          }
+          implied={
+            state.action.source === "automatic" &&
+            state.destination.source === "manual"
+          }
+          icon={
+            action === "send-message"
+              ? "MessageSquare"
+              : action === "new-workstream"
+                ? "Layers"
+                : "Plus"
+          }
+          options={[
+            { value: "new-thread", label: "New thread" },
+            { value: "send-message", label: "Send message" },
+            { value: "new-workstream", label: "New workstream" },
+          ]}
+          onPick={(value) =>
+            intake.selectAction(
+              value as "new-thread" | "send-message" | "new-workstream",
+            )
+          }
+        />
+        {action !== "new-workstream" && destination.kind !== "unassigned" ? (
+          <span className="ws-intake-connector">
+            {action === "send-message" ? "to" : "in"}
+          </span>
+        ) : null}
+        {action === "new-workstream" ? (
+          <div className="ws-intake-field ws-intake-destination">
+            <div className="ws-intake-chip ws-intake-name">
+              {state.name.source === "automatic" ? (
+                <span className="ws-intake-star" aria-hidden>
+                  ✦
+                </span>
+              ) : (
+                <Icon name="Layers" className="size-3.5 shrink-0" aria-hidden />
+              )}
+              <span className="ws-intake-type">Name</span>
+              <input
+                aria-label="Workstream name"
+                value={state.name.value}
+                onChange={(e) => intake.selectName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (
+                    (e.key === "Delete" || e.key === "Backspace") &&
+                    !state.name.value
+                  ) {
+                    e.preventDefault();
+                    intake.revertField("name");
+                  }
+                }}
+              />
+              {state.name.source === "manual" ? (
+                <button
+                  className="ws-intake-revert"
+                  type="button"
+                  aria-label={`Use automatic name: ${intake.automaticPreview("name")}`}
+                  onClick={() => intake.revertField("name")}
+                >
+                  ✧
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <Field
+            intake={intake}
+            field="destination"
+            label={label}
+            value={value}
+            automatic={state.destination.source === "automatic"}
+            icon={
+              destination.kind === "thread"
+                ? "MessageSquare"
+                : destination.kind === "unassigned"
+                  ? "CircleDashed"
+                  : "Layers"
+            }
+            need={state.decision?.outcome === "unsure"}
+            options={destinationOptions}
+            onPick={pickDestination}
+          />
+        )}
+      </div>
+      <div className="ws-intake-row ws-intake-placement-row">
+        {locked ? (
+          <span className="ws-intake-connector">Thread runs in</span>
+        ) : null}
+        <Field
+          intake={intake}
+          field="project"
+          label="Project"
+          need={!locked && !!state.decision && !projectId}
+          value={
+            locked
+              ? projectName(thread?.projectId) || "Loading…"
+              : projectName(projectId) ||
+                (state.text && !state.loading ? "Choose one" : "")
+          }
+          automatic={state.project.source === "automatic"}
+          icon="Folder"
+          locked={locked}
+          options={state.projects.map((p) => ({ value: p.id, label: p.name }))}
+          onPick={(value) => intake.selectProject(value)}
+        />
+        <Field
+          intake={intake}
+          field="environment"
+          label="Environment"
+          waiting={!locked && !projectId}
+          value={
+            locked
+              ? (thread?.environmentName ?? thread?.environmentId ?? "Loading…")
+              : environmentLabel(state.environment.value, state)
+          }
+          automatic={state.environment.source === "automatic"}
+          icon="Folder"
+          locked={locked}
+          options={[
+            ...(hostId
+              ? [
+                  { value: "checkout", label: "Project checkout" },
+                  { value: "worktree", label: "New worktree" },
+                ]
+              : []),
+            ...state.environments.map((e) => ({
+              value: e.id,
+              label: e.name ?? e.id,
+            })),
+          ]}
+          onPick={(value) =>
+            intake.selectEnvironment(
+              value === "checkout"
+                ? {
+                    type: "host",
+                    hostId: hostId ?? undefined,
+                    workspace: { type: "unmanaged", path: null },
+                  }
+                : value === "worktree"
+                  ? {
+                      type: "host",
+                      hostId: hostId ?? undefined,
+                      workspace: {
+                        type: "managed-worktree",
+                        baseBranch: { kind: "default" },
+                      },
+                    }
+                  : { type: "reuse", environmentId: value },
+            )
+          }
+        />
+      </div>
+      <div
+        className="ws-intake-status"
+        data-error={!!(state.error || state.selectionError)}
+      >
+        {statusText(state)}
+        {state.error || state.selectionError ? (
+          <button type="button" onClick={() => intake.retry()}>
+            Retry
+          </button>
+        ) : null}
+        {state.catalogError ? (
+          <button
+            type="button"
+            onClick={() => {
+              void intake.loadCatalogs(sdk);
+              void intake.loadEnvironments(sdk, projectId);
+              if (selectedThreadId)
+                void intake.loadThread(sdk, selectedThreadId);
+            }}
+          >
+            Retry choices
+          </button>
+        ) : null}
+      </div>
+      {state.decision?.outcome === "unsure" ? (
         <div
           role="group"
           aria-label="Possible destinations"
-          className="flex flex-wrap gap-1.5"
+          className="ws-intake-candidates"
         >
-          {candidates.map((candidate) => {
-            const label =
-              candidate.kind === "thread" ? candidate.title : candidate.name;
-            return (
-              <button
-                type="button"
-                title={label}
-                className="inline-flex h-6 min-w-0 max-w-60 cursor-pointer items-center gap-1 rounded-md border border-border px-2 text-xs text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring aria-pressed:bg-state-active aria-pressed:text-foreground max-md:pointer-coarse:h-9"
-                key={
-                  candidate.kind === "thread"
-                    ? candidate.threadId
-                    : candidate.sectionId
-                }
-                aria-pressed={
-                  candidate.kind === "thread"
-                    ? route.choice?.threadId === candidate.threadId
-                    : undefined
-                }
-                onClick={() => {
-                  if (candidate.kind === "thread") {
-                    intake.selectThread(candidate.threadId);
-                    return;
-                  }
-                  // The pills go away once the workstream routes; the select
-                  // now shows the choice.
-                  select.current?.focus();
-                  intake.selectWorkstream(
-                    candidate.sectionId,
-                    candidate.name,
-                    decision?.id ?? null,
-                  );
-                }}
-              >
-                <Icon
-                  name={
-                    candidate.kind === "thread" ? "CornerDownRight" : "Layers"
-                  }
-                  aria-hidden
-                  className="size-3 shrink-0"
-                />
-                <span className="truncate">{label}</span>
-              </button>
-            );
-          })}
+          {state.decision.candidates.map((c) => (
+            <button
+              type="button"
+              key={c.kind === "thread" ? c.threadId : c.sectionId}
+              onClick={() =>
+                c.kind === "thread"
+                  ? intake.selectDestination({
+                      kind: "thread",
+                      id: c.threadId,
+                      title: c.title,
+                    })
+                  : intake.selectWorkstream(c.sectionId, c.name)
+              }
+            >
+              {c.kind === "thread"
+                ? `Send message to ${c.title}`
+                : `New thread in ${c.name}`}
+            </button>
+          ))}
         </div>
       ) : null}
     </div>

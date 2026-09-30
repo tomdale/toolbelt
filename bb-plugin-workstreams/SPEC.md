@@ -239,10 +239,17 @@ One router serves four entry points:
    `experimental_NewThreadComposer` and previews server routing while the draft
    stays editable. Submitting acts on the current preview in the same composer.
    A workstream's ＋ explicitly selects that workstream and skips
-   classification; manual workstream changes persist through edits. Project
-   selection is automatic, with native controls available under Settings.
-   Destination copy names the workstream or thread without appended placement
-   metadata.
+   classification. Compact action and labelled destination controls allow
+   correction of either choice; labelled Project and Environment controls stay
+   visible. Each automatic field carries a solid yellow star. Manual fields
+   survive edits and have an individual hollow-star revert, including keyboard
+   Delete/Backspace and an Automatic menu option. No workstream is a deliberate
+   unassigned destination, distinct from unresolved routing; creation requires a
+   chosen or confidently inferred project. Existing-thread placement is locked
+   and its execution settings apply; ignored creation controls are hidden.
+   Pending, ambiguous and failed routes disable submission before draft
+   clearing. The submit label names the current action: Create thread, Send
+   message or Create workstream.
 3. **`bb workstreams handoff`**, called by agents (§5).
 4. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
 

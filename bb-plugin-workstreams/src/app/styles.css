@@ -416,12 +416,6 @@
   opacity: 0.6;
 }
 
-/* The host keeps placement and permissions in the row beneath its prompt.
-   Intake resolves placement automatically; Settings reveals the native row. */
-.ws-intake[data-settings="closed"] [data-app-composer] > div:last-child {
-  display: none;
-}
-
 /* Checkbox for the organizing flow's review lists: a quiet box that fills
    with the accent when checked, so a column of them reads as one control. */
 .ws-check {
@@ -552,3 +546,223 @@
 .ws-recap-body { margin-top: 6px; display: grid; gap: 4px; }
 .ws-recap-body p { margin: 0; }
 .ws-recap-done { opacity: .7; }
+
+.ws-intake-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ws-intake-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ws-intake-field {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+.ws-intake-action {
+  flex: none;
+}
+.ws-intake-placement-row .ws-intake-field {
+  max-width: calc(50% - 3px);
+}
+.ws-intake-chip {
+  display: inline-flex;
+  align-items: stretch;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.ws-intake-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  min-width: 0;
+  white-space: nowrap;
+  font-size: 13px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.ws-intake-trigger:hover,
+.ws-intake-revert:hover {
+  background: var(--accent);
+}
+.ws-intake-trigger:focus-visible,
+.ws-intake-revert:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.ws-intake-type {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.ws-intake-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-intake-action .ws-intake-value {
+  overflow: visible;
+}
+.ws-intake-star {
+  flex: none;
+  color: #e3b84a;
+}
+.ws-intake-revert {
+  flex: none;
+  width: 26px;
+  border-left: 1px solid var(--border);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.ws-intake-revert:hover,
+.ws-intake-hollow:hover {
+  color: #e3b84a;
+}
+.ws-intake-connector {
+  flex: none;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+}
+.ws-intake-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+}
+.ws-intake-status[data-error="true"] {
+  color: var(--destructive);
+}
+.ws-intake-status button {
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ws-intake-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  width: min(300px, calc(100vw - 40px));
+  max-height: 330px;
+  overflow: auto;
+  padding: 6px;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px #0006;
+}
+.ws-intake-menu input {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+}
+.ws-intake-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.ws-intake-menu button:hover,
+.ws-intake-menu button:focus {
+  background: var(--accent);
+  outline: 1px solid var(--ring);
+}
+.ws-intake-menu small {
+  display: block;
+  color: var(--muted-foreground);
+}
+.ws-intake-menu-group {
+  padding: 8px 8px 2px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.ws-intake-name {
+  align-items: center;
+  gap: 6px;
+  padding-left: 9px;
+}
+.ws-intake-name input {
+  min-width: 0;
+  width: 240px;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  padding: 0 8px 0 0;
+  font-size: 13px;
+}
+.ws-intake-name .ws-intake-revert {
+  align-self: stretch;
+}
+.ws-intake-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ws-intake-candidates button {
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+@media (max-width: 767px) {
+  .ws-intake-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .ws-intake-destination,
+  .ws-intake-placement-row .ws-intake-field:last-child {
+    flex-basis: 100%;
+  }
+  .ws-intake-placement-row .ws-intake-field {
+    max-width: 100%;
+  }
+  .ws-intake-placement-row .ws-intake-field:not(:last-child) {
+    flex: 1 1 0;
+  }
+  .ws-intake-chip {
+    height: 36px;
+  }
+  .ws-intake-revert {
+    width: 34px;
+  }
+}
+
+.ws-intake-chip[data-need="true"] {
+  border-color: #6a4a1e;
+}
+.ws-intake-chip[data-need="true"] .ws-intake-type,
+.ws-intake-chip[data-need="true"] .ws-intake-value {
+  color: var(--warning-text, #f0a95a);
+}
+.ws-intake-chip[data-waiting="true"] .ws-intake-type {
+  opacity: 0.55;
+}
+.ws-intake-menu button:hover .ws-intake-hollow,
+.ws-intake-menu button:focus .ws-intake-hollow {
+  color: #e3b84a;
+}

@@ -12,12 +12,7 @@
 import { useContext, useEffect, useSyncExternalStore } from "react";
 import { IntakeContext } from "./intake.ts";
 import { IntakeBanner } from "./IntakeBanner.tsx";
-import {
-  useBbNavigate,
-  useComposer,
-  useComposerView,
-  useRpc,
-} from "@get-bb/plugin-sdk/app";
+import { useBbNavigate, useComposer, useRpc } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import type { RouteDecision } from "../../server/router.ts";
 import { InspectButton } from "../debug/InspectButton.tsx";
@@ -188,13 +183,12 @@ export function RouteBanner() {
 
 function NativeRouteBanner() {
   const rpc = useRpc<RpcContract>();
-  const view = useComposerView();
   const composer = useComposer();
   const navigate = useBbNavigate();
   const route = useSyncExternalStore(subscribe, () => state);
   const projectId =
-    view.scope.kind === "new-thread" ? view.scope.projectId : null;
-  const text = view.draft.text;
+    composer.scope.kind === "new-thread" ? composer.scope.projectId : null;
+  const text = composer.text;
 
   useEffect(() => {
     // A project picked after the banner preset its own is the user's call:
@@ -229,10 +223,10 @@ function NativeRouteBanner() {
     )
       return;
     const { placement } = decision;
-    if (!placement.projectId) return;
+    if (!placement?.projectId) return;
     set({ preset: placement.projectId, presetFor: decision.id });
     void composer
-      .experimental_setSelection({
+      .setSelection({
         projectId: placement.projectId,
         environment: placement.environment as never,
       })
@@ -286,13 +280,13 @@ function NativeRouteBanner() {
         prompt: route.text,
         choice: threadId ? { threadId } : null,
       });
-      composer.clear();
+      composer.replace({ text: "", mentions: [] });
       resetRouteBanner();
       if (result.threadId) navigate.toThread(result.threadId);
     });
   const start = () =>
     act(async () => {
-      await composer.experimental_submit({
+      await composer.submit({
         experimental_data: { routeId: decision.id },
       });
       resetRouteBanner();

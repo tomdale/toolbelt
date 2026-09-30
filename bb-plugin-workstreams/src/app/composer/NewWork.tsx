@@ -55,6 +55,13 @@ export function NewWorkDialog({
   );
 }
 
+function extractPrompt(request: NewThreadRequest): string {
+  return request.input
+    .map((part) => ("text" in part ? part.text : ""))
+    .join("\n")
+    .trim();
+}
+
 function NewWork({
   onClose,
   workstreamId,
@@ -84,14 +91,8 @@ function NewWork({
   const [error, setError] = useState<string | null>(null);
   // Each send re-creates the alert so a repeated message is announced again.
   const [attempt, setAttempt] = useState(0);
-  const settings = useSyncExternalStore(
-    intake.subscribe,
-    () => intake.snapshot().settings,
-  );
-  const routeError = useSyncExternalStore(
-    intake.subscribe,
-    () => intake.snapshot().error,
-  );
+  const intakeState = useSyncExternalStore(intake.subscribe, intake.snapshot);
+  const routeError = intakeState.error ?? intakeState.selectionError;
   // A failed create outlives the preview retry that clears the route error.
   const message = error ?? routeError;
   useEffect(() => () => intake.dispose(), [intake]);
@@ -99,18 +100,16 @@ function NewWork({
   const submit = async (request: NewThreadRequest) => {
     setError(null);
     setAttempt((n) => n + 1);
-    const prompt = request.input
-      .map((part) => ("text" in part ? part.text : ""))
-      .join("\n")
-      .trim();
+    const prompt = extractPrompt(request);
     let executing = false;
     try {
-      const { decision, choice } = await intake.forSubmit(prompt);
+      const { decision, choice, intent } = await intake.forSubmit(prompt);
       executing = true;
       const result = await rpc.call("routeExecute", {
         decisionId: decision.id,
         prompt,
         choice,
+        intent,
         execution: JSON.parse(
           JSON.stringify({
             providerId: request.providerId,
@@ -120,18 +119,16 @@ function NewWork({
             serviceTier: request.serviceTier,
             executionInputSources: request.executionInputSources,
             input: request.input,
-            ...(intake.customizePlacement &&
-            (decision.outcome === "new-thread" ||
-              decision.outcome === "new-workstream") &&
-            request.projectId === decision.placement.projectId
+            ...(decision.outcome !== "continue"
               ? {
-                  projectId: request.projectId,
-                  environment: request.environment,
+                  projectId: intake.snapshot().project.value,
+                  environment: intake.snapshot().environment.value,
                 }
               : {}),
           }),
         ),
       });
+      intake.completeSubmit();
       onClose();
       if (result.threadId) navigate.toThread(result.threadId);
     } catch (cause) {
@@ -139,6 +136,7 @@ function NewWork({
         intake.retry();
         setError(cause instanceof Error ? cause.message : String(cause));
       }
+      intake.completeSubmit();
       // Rejection tells the host to preserve attachments, mentions, and text.
       throw cause;
     }
@@ -146,12 +144,35 @@ function NewWork({
 
   return (
     <IntakeContext.Provider value={intake}>
-      <div className="ws-intake" data-settings={settings ? "open" : "closed"}>
+      <div className="ws-intake">
         <Composer
           layout="document"
           draftKey={`workstreams-new:${workstreamId ?? "auto"}`}
           placeholder="What's the work?"
           onSubmit={submit}
+          experimental_submitLabel={
+            intake.effectiveAction() === "send-message"
+              ? "Send message"
+              : intake.effectiveAction() === "new-workstream"
+                ? "Create workstream"
+                : "Create thread"
+          }
+          experimental_submitDisabled={!intake.canSubmit()}
+          experimental_onBeforeSubmit={async (request: NewThreadRequest) => {
+            try {
+              await intake.forSubmit(extractPrompt(request));
+              return true;
+            } catch (cause) {
+              intake.completeSubmit();
+              setAttempt((n) => n + 1);
+              setError(cause instanceof Error ? cause.message : String(cause));
+              return false;
+            }
+          }}
+          experimental_placementVisibility="hidden"
+          experimental_executionControlsVisibility={
+            intake.effectiveAction() === "send-message" ? "hidden" : "visible"
+          }
         />
         <IntakeStatus intake={intake} />
         {message ? (
