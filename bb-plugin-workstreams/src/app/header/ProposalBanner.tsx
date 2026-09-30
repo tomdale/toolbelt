@@ -98,7 +98,18 @@ export function ProposalBanner({
   };
 
   let notice: Notice | null = null;
-  if (proposal) {
+  // Initial automatic filing is reconciliation, not a user decision. The
+  // thread was created without a section and Evolution immediately moved it
+  // to a confident destination; don't turn that bookkeeping into a header
+  // popover. Other applied moves remain visible so the user can undo them.
+  if (
+    proposal &&
+    !(
+      proposal.status !== "pending" &&
+      proposal.kind === "move" &&
+      proposal.sourceSectionId === null
+    )
+  ) {
     const review = () =>
       navigate.toPluginPanel("home", { subPath: `activity/${proposal.id}` });
     const pending = proposal.status === "pending";
