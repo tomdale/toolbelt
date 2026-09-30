@@ -22,6 +22,8 @@ type FakeAnswer = string | { text: string; reasoning: string };
 export type FakeCompletion = (call: {
   prompt: string;
   model: string;
+  /** The host call's abort signal. */
+  signal?: AbortSignal;
 }) => FakeAnswer | Promise<FakeAnswer>;
 
 const DEFAULT_ANSWER = JSON.stringify({
@@ -79,7 +81,10 @@ export async function fakeWorld(
     experimental_callHostRpc: async (call) => {
       const input = call.input as { prompt: string; model: string };
       completions.push(input);
-      const answer = await (options.complete?.(input) ?? DEFAULT_ANSWER);
+      const answer = await (options.complete?.({
+        ...input,
+        signal: call.signal,
+      }) ?? DEFAULT_ANSWER);
       const usage = { input: 100, output: 20, cost: 0.0001 };
       return typeof answer === "string"
         ? { text: answer, usage }

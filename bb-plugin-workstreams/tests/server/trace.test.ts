@@ -272,3 +272,79 @@ describe("debug mode on", () => {
     expect(shown.stdout).toContain("── Prompt ──");
   });
 });
+
+describe("routing previews", () => {
+  const prompt = "Fix the Alpha parser so it handles tab characters";
+  /** Route calls wait until the test answers them or the call is aborted. */
+  const pending = () => {
+    const calls: {
+      prompt: string;
+      signal?: AbortSignal;
+      answer: () => void;
+    }[] = [];
+    const complete: FakeCompletion = (call) =>
+      isRoute(call.prompt)
+        ? new Promise((resolve, reject) => {
+            call.signal?.addEventListener("abort", () =>
+              reject(call.signal!.reason),
+            );
+            calls.push({
+              prompt: call.prompt,
+              signal: call.signal,
+              answer: () => resolve(JSON.stringify(ROUTE)),
+            });
+          })
+        : JSON.stringify(ANALYSIS);
+    return { calls, complete };
+  };
+  const started = async (calls: unknown[], n: number) => {
+    for (let i = 0; i < 100 && calls.length < n; i++)
+      await new Promise((r) => setTimeout(r, 5));
+    expect(calls).toHaveLength(n);
+  };
+
+  it("aborts the model call of a draft's older preview and does not trace it", async () => {
+    const { calls, complete } = pending();
+    const w = await setup(true, complete);
+    const first = rpc(w, "route", { prompt, draftKey: "draft-1" });
+    const firstSettled = first.then(
+      () => "resolved",
+      (error: unknown) => String(error),
+    );
+    await started(calls, 1);
+    const second = rpc<{ outcome: string }>(w, "route", {
+      prompt: `${prompt} and spaces`,
+      draftKey: "draft-1",
+    });
+    await started(calls, 2);
+    expect(calls[0]!.signal?.aborted).toBe(true);
+    expect(await firstSettled).toContain("the draft changed");
+    calls[1]!.answer();
+    expect((await second).outcome).toBe("new-thread");
+    const routes = (await traces(w)).filter((t) => t.kind === "route");
+    expect(routes).toHaveLength(1);
+    expect(routes[0]).toMatchObject({ status: "ok" });
+  });
+
+  it("aborts a draft's preview on cancel, and leaves other drafts alone", async () => {
+    const { calls, complete } = pending();
+    const w = await setup(true, complete);
+    const mine = rpc(w, "route", { prompt, draftKey: "mine" }).catch(
+      () => "aborted",
+    );
+    const other = rpc<{ outcome: string }>(w, "route", {
+      prompt,
+      draftKey: "other",
+    });
+    await started(calls, 2);
+    expect(await rpc(w, "routeCancel", { draftKey: "mine" })).toEqual({
+      canceled: true,
+    });
+    expect(await mine).toBe("aborted");
+    expect(await rpc(w, "routeCancel", { draftKey: "mine" })).toEqual({
+      canceled: false,
+    });
+    calls[1]!.answer();
+    expect((await other).outcome).toBe("new-thread");
+  });
+});

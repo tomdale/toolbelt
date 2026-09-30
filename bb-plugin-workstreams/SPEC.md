@@ -221,8 +221,11 @@ One router serves four entry points:
 
 1. **BB's native New thread composer.** A banner added with
    `app.composer.customize({ scopes: ["new-thread"], banners })` shows the
-   proposed route while you type. Proposals are debounced about 600 ms and start
-   once the draft reaches about 20 characters.
+   proposed route while you type. A draft under about 20 characters is routed
+   once typing pauses (about 900 ms) and shows only the decision; a longer one
+   is routed on a 250 ms debounce. Every change cancels the routing call in
+   flight: the banner sends the draft's key with each `route`, and a newer
+   `route` or a `routeCancel` for that key aborts the model request.
    - `experimental_setSelection({ projectId, environment })` presets the
      pickers. _(spike: works)_
    - "Send there" sends the draft to the chosen thread, then calls
@@ -466,7 +469,10 @@ restores the previous title while it is still the one Workstreams wrote.
 ## 11. Surfaces
 
 1. **Sidebar thread list** (`experimental_threadList`):
-   - A Needs you band (exact-once, live).
+   - A Needs you section (exact-once, live), with a collapsible header and count
+     like Recent's, and its rows set apart in a tinted block. Its rows name
+     their workstream and omit the needs-decision mark the section already
+     implies.
    - An optional Recent band (de-duplicated against Needs you).
    - Workstream groups with plain headers: the name, a needs-you count only when
      above 0, and a total. Groups follow the user's manual order (drag a
@@ -479,10 +485,9 @@ restores the previous title while it is still the one Workstreams wrote.
      workstreams sit after placed ones.
    - An Unsorted band, a Dormant fold, and a yellow dot on rows affected by a
      proposal.
-   - Rows matching Dockside: BB `indicator` glyph plus a work-state glyph (with
-     a legend), provider icon, branch/PR, draft, shortcut pill, unread state,
-     nesting, split drag, the keyboard DOM attributes, and an Archive button on
-     hover.
+   - Rows show BB's `indicator` glyph plus a work-state glyph (with a legend),
+     provider icon, branch/PR, draft, shortcut pill, unread state, nesting,
+     split drag, the keyboard DOM attributes, and an Archive button on hover.
    - Context menu: Move to workstream… · Rename · Pin · Read/unread · Archive ·
      Delete · Open parent.
 2. **Workstreams page** (the Monday-morning view):
@@ -510,8 +515,9 @@ restores the previous title while it is still the one Workstreams wrote.
      long strings bounded), the model's reasoning summary when it returns one,
      the raw response, the parsed result, and what Workstreams did with it. A
      response that fails to parse is recorded as invalid, and a failed call as
-     failed. Pi still runs with thinking off; Gemini 3.1 Flash-Lite returns a
-     reasoning summary at that level.
+     failed. Calls never request reasoning; a model that returns a reasoning
+     summary anyway has it recorded. A call aborted because its draft changed is
+     not recorded.
    - Links tie traces to what they explain: threads, journal entries, proposals,
      workstream descriptions, and organizing runs. Analysis results and routing
      decisions carry their own trace id, and a proposal links the analyses whose
@@ -556,7 +562,10 @@ bb-plugin-workstreams/
 
 **Carried over from v1:**
 
-- the isolated Pi inference runner (`host.ts` / `pi.ts`);
+- the isolated inference runner (`host.ts`), now a direct AI Gateway call
+  (`gateway.ts`) with Pi's key: `pi --print --thinking off` sends
+  `thinking: disabled`, which the gateway turns into full reasoning for Gemini
+  3.1 Flash-Lite (3-10 s per routing call instead of ~1 s);
 - bounded context and redaction (`context.ts`);
 - the thread-tree builder (exact-once, orphans, cycles);
 - the eval harness, export and fixture replay, the 32-thread reference set, and

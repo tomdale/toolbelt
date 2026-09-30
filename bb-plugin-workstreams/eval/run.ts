@@ -8,9 +8,7 @@
  * Fixtures may carry a `project` field for provenance; it is never sent.
  * See README.md for fixtures, modes, and the pass bar.
  */
-import { execFile } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import {
@@ -19,7 +17,10 @@ import {
   type AnalysisInput,
   type AnalysisOutput,
 } from "../src/domain/analysis.ts";
-import { parsePiJson, piArgs } from "../src/server/inference/pi.ts";
+import {
+  gatewayComplete,
+  gatewayKey,
+} from "../src/server/inference/gateway.ts";
 
 type Case = {
   id: string;
@@ -105,30 +106,22 @@ export function toInput(
   };
 }
 
-function complete(model: string, prompt: string) {
-  return new Promise<{ text: string; cost: number }>((done, fail) => {
-    const child = execFile(
-      "pi",
-      piArgs(model),
-      {
-        cwd: tmpdir(),
-        timeout: 90_000,
-        maxBuffer: 4_000_000,
-        env: { ...env, PI_OFFLINE: "1" },
-      },
-      (error, stdout) => {
-        if (error) return fail(new Error(`Pi failed for ${model}`));
-        try {
-          const { text, usage } = parsePiJson(stdout);
-          done({ text, cost: usage.cost });
-        } catch (e) {
-          fail(e as Error);
-        }
-      },
-    );
-    child.stdin?.on("error", () => {});
-    child.stdin?.end(prompt);
+// The production transport (`src/server/inference/gateway.ts`).
+const key = await gatewayKey();
+if (!key)
+  throw new Error("No AI Gateway key: sign Pi in to Vercel AI Gateway.");
+const apiKey: string = key;
+
+/** `<model>:disabled` sends `thinking: disabled` (see `gatewayComplete`). */
+async function complete(spec: string, prompt: string) {
+  const [model, flag] = spec.split(":");
+  const { text, usage } = await gatewayComplete({
+    prompt,
+    model: model!,
+    apiKey,
+    disableThinking: flag === "disabled",
   });
+  return { text, cost: usage.cost };
 }
 
 async function mapLimit<T, R>(

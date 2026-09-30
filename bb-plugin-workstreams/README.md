@@ -14,8 +14,9 @@ against.
     selects that workstream explicitly and skips classification. The project is
     chosen automatically; **Settings** reveals project and execution controls.
   - **Needs you**: a pending approval or question, or a thread whose latest turn
-    asks you to decide something. A delegate's question folds into its parent's
-    newer one ("via …").
+    asks you to decide something. These rows sit at the top in a tinted block
+    under a collapsible header, each naming its workstream. A delegate's
+    question folds into its parent's newer one.
   - **Recent**: the five most recently active threads not already in Needs you
     (the `showRecent` setting).
   - **One group per workstream**, in BB's section order until you drag a header
@@ -27,10 +28,12 @@ against.
   - **Unsorted** and a collapsed **Dormant** fold (no threads, or none touched
     in 30 days).
   - Rows show BB's status, a work-state mark from analysis (◆ decision, ◇
-    review, ⏸ blocked, ✓ done; hover for where it stopped), unread state,
-    drafts, shortcuts, pull requests, and a yellow dot when a workstream change
-    involves the thread. Hover a row for its Archive button; right-click to
-    move, rename, pin, mark read, archive, or delete.
+    review, ⏸ blocked; hover for where it stopped), unread state, drafts,
+    shortcuts, pull requests, and a yellow dot when a workstream change involves
+    the thread. Pick the working thread's spinner animation and its colors under
+    **Working indicator** in the plugin's settings (BB's own by default). Hover
+    a row for its Archive button; right-click to move, rename, pin, mark read,
+    archive, or delete.
 - **Workstreams page** (`/plugins/workstreams/home`):
   - **Overview**: workstreams ranked by what needs you, each thread with where
     it stopped. Search with `/`.
@@ -86,9 +89,10 @@ against.
   **Debug** tab lists every recorded call. Records include redacted thread
   excerpts and are kept for 7 days (at most 1,000).
 
-Model calls run through Pi's AI Gateway on the analysis machine (`hostId`, blank
-for the only connected machine). The analysis and routing model is a setting
-limited to models that pass the eval (`eval/README.md`).
+Model calls go straight to AI Gateway from the analysis machine (`hostId`, blank
+for the only connected machine), with the AI Gateway key Pi has there. They
+never request reasoning. The analysis and routing model is a setting limited to
+models that pass the eval (`eval/README.md`).
 
 ## CLI
 

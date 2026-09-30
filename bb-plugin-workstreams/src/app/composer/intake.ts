@@ -1,5 +1,6 @@
 import { createContext } from "react";
 import type { Placement, RouteDecision } from "../../server/router.ts";
+import { routeDelay } from "./timing.ts";
 
 type RouteOptions = {
   prompt: string;
@@ -45,6 +46,8 @@ export class Intake {
     private route: (options: RouteOptions) => Promise<RouteDecision>,
     workstreamId: string | null,
     workstreamName: string | null,
+    /** Aborts the routing call in flight on the server; its answer is stale. */
+    private cancel: () => void = () => {},
   ) {
     this.state = {
       text: "",
@@ -74,6 +77,7 @@ export class Intake {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.generation++;
+    if (this.pending) this.cancel();
     this.pending = null;
   }
   presetProject(projectId: string) {
@@ -149,7 +153,7 @@ export class Intake {
       () => {
         void this.resolve();
       },
-      this.state.workstreamId ? 0 : 600,
+      this.state.workstreamId ? 0 : routeDelay(text),
     );
   }
 

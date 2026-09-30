@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { resetRouteBanner } from "../../src/app/composer/RouteBanner.tsx";
+import { DEBOUNCE_MS, SHORT_PAUSE_MS } from "../../src/app/composer/timing.ts";
 
 beforeEach(() => resetRouteBanner());
 afterEach(cleanup);
@@ -25,7 +26,11 @@ const newThread = {
 };
 const PROMPT = "Fix the Alpha parser so it handles tab characters";
 
-async function mount(decision: unknown, text = PROMPT) {
+async function mount(
+  decision: unknown,
+  text = PROMPT,
+  route: () => unknown = () => decision,
+) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   const custom = app.composerCustomizations.find((c) => c.id === "router")!;
   expect(custom.scopes).toEqual(["new-thread"]);
@@ -39,18 +44,51 @@ async function mount(decision: unknown, text = PROMPT) {
         scope: { kind: "new-thread", projectId: "proj_other" },
       },
       rpc: {
-        route: () => decision,
+        route,
+        routeCancel: () => ({ canceled: true }),
         routeExecute: () => ({ threadId: "thr_target", sectionId: null }),
       },
     },
   );
 }
 
-it("stays quiet for short drafts", async () => {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+it("routes a short draft only once typing pauses, and shows only its decision", async () => {
   const slot = await mount(newThread, "fix it");
-  await new Promise((r) => setTimeout(r, 700));
+  await sleep(SHORT_PAUSE_MS - 200);
   expect(slot.inspection.rpcCalls).toHaveLength(0);
   expect(slot.container.textContent).toBe("");
+  await slot.findByText("Alpha", {}, { timeout: 2000 });
+  expect(slot.inspection.rpcCalls.map((c) => c.method)).toEqual(["route"]);
+  slot.lifecycle.unmount();
+});
+
+it("cancels the routing call in flight as soon as the draft changes", async () => {
+  const slot = await mount(newThread, PROMPT, () => new Promise(() => {}));
+  await waitFor(
+    () =>
+      expect(slot.inspection.rpcCalls.map((c) => c.method)).toEqual(["route"]),
+    { timeout: DEBOUNCE_MS + 1000 },
+  );
+  await slot.behavior.setComposerText(`${PROMPT} and spaces`);
+  expect(slot.inspection.rpcCalls.map((c) => c.method)).toEqual([
+    "route",
+    "routeCancel",
+  ]);
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls.map((c) => c.method)).toEqual([
+      "route",
+      "routeCancel",
+      "route",
+    ]),
+  );
+  const [first, , second] = slot.inspection.rpcCalls;
+  expect(second!.input).toMatchObject({ prompt: `${PROMPT} and spaces` });
+  // Both calls name the same draft, so the server can abort the first.
+  expect((second!.input as { draftKey: string }).draftKey).toBe(
+    (first!.input as { draftKey: string }).draftKey,
+  );
   slot.lifecycle.unmount();
 });
 

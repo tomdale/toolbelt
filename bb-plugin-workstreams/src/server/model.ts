@@ -30,8 +30,8 @@ import {
   PROVIDER,
   SYSTEM_PROMPT,
   THINKING,
-  type PiCompletion,
-} from "./inference/pi.ts";
+  type Completion,
+} from "./inference/gateway.ts";
 import { UserError } from "./service.ts";
 import { boundedJson, type TraceStore } from "./trace.ts";
 
@@ -163,9 +163,10 @@ type Spec = {
 export type Complete = (
   prompt: string,
   model: string,
+  signal?: AbortSignal,
 ) => Promise<
-  Pick<PiCompletion, "text" | "usage"> &
-    Partial<Pick<PiCompletion, "reasoning" | "stopReason">>
+  Pick<Completion, "text" | "usage"> &
+    Partial<Pick<Completion, "reasoning" | "stopReason">>
 >;
 
 /** The trace behind a failed call, when debug mode recorded one. */
@@ -213,7 +214,16 @@ export class Inference {
   async run<K extends TraceKind>(
     kind: K,
     input: InputOf<K>,
-    options: { model: string; label?: string; links?: readonly TraceLink[] },
+    options: {
+      model: string;
+      label?: string;
+      links?: readonly TraceLink[];
+      /**
+       * Aborts the call when its answer stops mattering. An aborted call
+       * rejects with the abort reason and is not traced: it explains nothing.
+       */
+      signal?: AbortSignal;
+    },
   ): Promise<{ value: OutputOf<K>; traceId: string | null }> {
     const spec = MODEL_CALLS[kind] as unknown as Spec;
     const result = await this.call(kind, {
@@ -225,6 +235,7 @@ export class Inference {
       links: options.links ?? [],
       replayOf: null,
       record: await this.deps.debug(),
+      signal: options.signal,
     });
     if (!result.ok) throw withTrace(result.error, result.traceId);
     return { value: result.value as OutputOf<K>, traceId: result.traceId };
@@ -309,6 +320,7 @@ export class Inference {
       links: readonly TraceLink[];
       replayOf: string | null;
       record: boolean;
+      signal?: AbortSignal;
     },
   ): Promise<
     | { ok: true; value: unknown; traceId: string | null }
@@ -363,8 +375,13 @@ export class Inference {
         : null;
     let completion: Awaited<ReturnType<Complete>>;
     try {
-      completion = await this.deps.complete(request.prompt, request.model);
+      completion = await this.deps.complete(
+        request.prompt,
+        request.model,
+        request.signal,
+      );
     } catch (error) {
+      if (request.signal?.aborted) throw request.signal.reason;
       return { ok: false, error, traceId: record("failed", { error }) };
     }
     let value: unknown;

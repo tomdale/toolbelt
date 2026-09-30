@@ -99,22 +99,22 @@
     "expected": ["v0", "Vercel v0"]
   },
   {
-    "id": "dock1",
-    "title": "Fork Dockside",
+    "id": "lighthouse1",
+    "title": "Fork Lighthouse",
     "project": "Home",
     "repository": null,
-    "path": "/code/plugins/dockside",
-    "excerpts": "User: Fork the independently installed Dockside sidebar plugin. Assistant: Fork installed; sidebar selection conflict remains.",
-    "expected": ["Dockside"]
+    "path": "/code/plugins/lighthouse",
+    "excerpts": "User: Fork the independently installed Lighthouse sidebar plugin. Assistant: Fork installed; sidebar selection conflict remains.",
+    "expected": ["Lighthouse"]
   },
   {
-    "id": "dock2",
+    "id": "lighthouse2",
     "title": "Agent manager home base",
     "project": "Personal",
     "repository": null,
-    "path": "/code/plugins/dockside",
-    "excerpts": "User: Continue work on our Dockside fork, adding agent badges. Workstreams may integrate later but isn't being changed here. Assistant: Waiting on sidebar selection fix.",
-    "expected": ["Dockside"]
+    "path": "/code/plugins/lighthouse",
+    "excerpts": "User: Continue work on our Lighthouse fork, adding agent badges. Workstreams may integrate later but isn't being changed here. Assistant: Waiting on sidebar selection fix.",
+    "expected": ["Lighthouse"]
   },
   {
     "id": "empty",

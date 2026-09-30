@@ -1,7 +1,7 @@
 /**
  * Live evaluation of the intake router prompt (SPEC §6). Opt-in; calls models.
  *
- *   node eval/route.ts [model ...]
+ *   node eval/route.ts [model[:disabled] ...]
  *   EVAL_ROUTE=<private replay.json> EVAL_PRIVATE_ROOT=<dir> EVAL_OUTPUT=<dir>/out.json node eval/route.ts
  *
  * A fixture holds the workstreams, the active threads, and cases with the
@@ -10,9 +10,7 @@
  * as the server does. Threads listed in a case's `exclude` are hidden from
  * it (a replayed prompt can't continue a thread that didn't exist yet).
  */
-import { execFile } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import {
@@ -22,7 +20,10 @@ import {
   type RawRoute,
   type RouteInput,
 } from "../src/domain/router.ts";
-import { parsePiJson, piArgs } from "../src/server/inference/pi.ts";
+import {
+  gatewayComplete,
+  gatewayKey,
+} from "../src/server/inference/gateway.ts";
 
 type Expect = {
   outcome: string | string[];
@@ -54,30 +55,22 @@ const fixture: Fixture = JSON.parse(
   await readFile(privateFile ?? new URL("route.json", import.meta.url), "utf8"),
 );
 
-function complete(model: string, prompt: string) {
-  return new Promise<{ text: string; cost: number }>((done, fail) => {
-    const child = execFile(
-      "pi",
-      piArgs(model),
-      {
-        cwd: tmpdir(),
-        timeout: 90_000,
-        maxBuffer: 4_000_000,
-        env: { ...env, PI_OFFLINE: "1" },
-      },
-      (error, stdout) => {
-        if (error) return fail(new Error(`Pi failed for ${model}`));
-        try {
-          const { text, usage } = parsePiJson(stdout);
-          done({ text, cost: usage.cost });
-        } catch (e) {
-          fail(e as Error);
-        }
-      },
-    );
-    child.stdin?.on("error", () => {});
-    child.stdin?.end(prompt);
+// The production transport (`src/server/inference/gateway.ts`).
+const key = await gatewayKey();
+if (!key)
+  throw new Error("No AI Gateway key: sign Pi in to Vercel AI Gateway.");
+const apiKey: string = key;
+
+/** `<model>:disabled` sends `thinking: disabled` (see `gatewayComplete`). */
+async function complete(spec: string, prompt: string) {
+  const [model, flag] = spec.split(":");
+  const { text, usage } = await gatewayComplete({
+    prompt,
+    model: model!,
+    apiKey,
+    disableThinking: flag === "disabled",
   });
+  return { text, cost: usage.cost };
 }
 
 const workstreamOf = new Map(fixture.threads.map((t) => [t.id, t.workstream]));

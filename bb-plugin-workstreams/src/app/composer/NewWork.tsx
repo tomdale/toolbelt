@@ -66,14 +66,21 @@ function NewWork({
 }) {
   const rpc = useRpc<RpcContract>();
   const navigate = useBbNavigate();
-  const [intake] = useState(
-    () =>
-      new Intake(
-        async (options) => (await rpc.call("route", options)) as RouteDecision,
-        workstreamId,
-        workstreamName,
-      ),
-  );
+  const [intake] = useState(() => {
+    // One routing call per dialog draft; a newer one or a cancel aborts it.
+    const draftKey = crypto.randomUUID();
+    return new Intake(
+      async (options) =>
+        (await rpc.call("route", { ...options, draftKey })) as RouteDecision,
+      workstreamId,
+      workstreamName,
+      () => {
+        void rpc.call("routeCancel", { draftKey }).catch(() => {
+          // A cancel that can't reach the server only costs one wasted call.
+        });
+      },
+    );
+  });
   const [error, setError] = useState<string | null>(null);
   // Each send re-creates the alert so a repeated message is announced again.
   const [attempt, setAttempt] = useState(0);
