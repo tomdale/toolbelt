@@ -42,7 +42,7 @@ async function mount({
 it("snoozes with the default choice in one click", async () => {
   const slot = await mount();
   fireEvent.click(
-    await slot.findByRole("button", { name: "Snooze: next week" }),
+    await slot.findByRole("button", { name: /^Snooze until .*9 AM$/ }),
   );
   await waitFor(() =>
     expect(slot.inspection.rpcCalls.some((c) => c.method === "snooze")).toBe(
