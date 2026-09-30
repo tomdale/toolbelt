@@ -1,5 +1,10 @@
 import { Icon } from "@/components/ui/icon";
-import { useLayoutEffect, useRef, type CSSProperties } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  type AnimationEvent,
+  type CSSProperties,
+} from "react";
 import { STATUS_LABEL, statusRole } from "../../domain/presentation.ts";
 import { colorCss, trackCss, type SpinnerStyle } from "../../domain/spinner.ts";
 import { useSpinner } from "../spinner.ts";
@@ -48,7 +53,7 @@ export function StatusMark({
  * Put every CSS animation for a shape on the document timeline's zero point.
  * CSS animations otherwise use the element's insertion time as their start,
  * which makes rows mounted later visibly drift out of phase. The browser owns
- * all frame scheduling; this only adjusts Web Animations API metadata once.
+ * all frame scheduling; this only adjusts Web Animations API metadata.
  */
 export function synchronizeSpinnerAnimations(element: HTMLElement): void {
   if (typeof element.getAnimations !== "function") return;
@@ -79,11 +84,19 @@ export function WorkingMark({
   useLayoutEffect(() => {
     if (markRef.current) synchronizeSpinnerAnimations(markRef.current);
   }, [spinner.shape]);
+  // Moving a node in the DOM replaces its CSS animations with new ones that
+  // start at the move. The sidebar reorders rows by recency, and React moves
+  // them without remounting, so the mount-time sync alone would let busy rows
+  // drift apart. Every replacement fires `animationstart` (pseudo-element
+  // animations fire it on their host element), so resynchronize there.
+  const onAnimationStart = (event: AnimationEvent<HTMLSpanElement>) =>
+    synchronizeSpinnerAnimations(event.currentTarget);
   const a11y = label
     ? { role: "img", "aria-label": label, title: label }
     : { "aria-hidden": true };
   const props = {
     ref: markRef,
+    onAnimationStart,
     className: `ws-mark ws-spin ws-spin-${spinner.shape}`,
     style: {
       "--ws-spin-primary": colorCss(spinner.primary),
