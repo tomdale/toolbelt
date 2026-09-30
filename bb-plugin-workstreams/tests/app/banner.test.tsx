@@ -29,7 +29,17 @@ const PENDING =
 
 async function mount(
   status: "pending" | "applied",
-  { compact = false, threadId = "t1" } = {},
+  {
+    compact = false,
+    threadId = "t1",
+    sourceSectionId = "sec_a",
+    kind = "spin-out",
+  }: {
+    compact?: boolean;
+    threadId?: string;
+    sourceSectionId?: string | null;
+    kind?: "move" | "spin-out" | "merge";
+  } = {},
 ) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   const slot = app.threadHeaderActions.find(
@@ -43,12 +53,16 @@ async function mount(
         state: () => ({
           ...emptyState(),
           proposals: [
-            proposal(
-              status,
-              status === "pending"
-                ? PENDING
-                : "Moved from BB & plugins → BB Recap",
-            ),
+            {
+              ...proposal(
+                status,
+                status === "pending"
+                  ? PENDING
+                  : "Moved from BB & plugins → BB Recap",
+              ),
+              kind,
+              sourceSectionId,
+            },
           ],
         }),
         proposal: () => ({ ok: true }),
@@ -98,6 +112,54 @@ it("collapses to the pill, and shows only the pill on phones", async () => {
   await phone.findByRole("button", { name: /Show proposal/ });
   expect(document.querySelector("[data-workstreams-banner]")).toBeNull();
   phone.lifecycle.unmount();
+});
+
+it("does not show a popover for initial automatic filing", async () => {
+  const slot = await mount("applied", {
+    sourceSectionId: null,
+    kind: "move",
+  });
+  await new Promise((r) => setTimeout(r, 20));
+  expect(slot.queryByRole("button")).toBeNull();
+  expect(document.querySelector("[data-workstreams-banner]")).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+it("shows an inline automatic filing notice with Undo", async () => {
+  const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
+  const custom = app.composerCustomizations.find(
+    (c) => c.id === "automatic-filing",
+  )!;
+  const slot = renderSlot(
+    custom.banners![0]!,
+    {},
+    {
+      composer: { scope: { kind: "thread", threadId: "t1" } },
+      rpc: {
+        state: () => ({
+          ...emptyState(),
+          proposals: [
+            {
+              ...proposal("applied", "Moved from Unsorted → BB Recap"),
+              kind: "move",
+              sourceSectionId: null,
+            },
+          ],
+        }),
+        undo: () => ({ entry: {} }),
+      },
+    },
+  );
+  expect((await slot.findByRole("status")).textContent).toContain(
+    "Moved to the BB Recap workstream automatically",
+  );
+  fireEvent.click(slot.getByRole("button", { name: "Undo" }));
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls.some((c) => c.method === "undo")).toBe(
+      true,
+    ),
+  );
+  slot.lifecycle.unmount();
 });
 
 it("offers Undo and OK once applied, and hides for unaffected threads", async () => {

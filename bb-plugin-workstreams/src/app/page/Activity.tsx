@@ -1,17 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ThreadTitle,
-  useBbNavigate,
   useRealtime,
   useRpc,
   type PluginSidebarSection,
 } from "@get-bb/plugin-sdk/app";
-import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
-  TRACE_KIND_SHORT,
+  TRACE_KINDS,
   TRACE_KIND_TITLE,
-  TRACE_STATUS_TITLE,
+  type TraceKind,
   type TraceSummary,
 } from "../../domain/trace.ts";
 import type { RpcContract } from "../../server/contract.ts";
@@ -19,6 +16,12 @@ import type { ProposalView } from "../../server/evolution.ts";
 import type { JournalEntry as Entry } from "../../server/journal.ts";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { useDebugMode } from "../debug/debug.ts";
+import { ghostButton, secondaryButton } from "./controls.ts";
+import { CallRow } from "./CallRow.tsx";
+import { ActivityTerm } from "./ActivityTerm.tsx";
+import { ActivityThreadLink } from "./ActivityThreadLink.tsx";
+
+const TRACE_PAGE = 100;
 
 /** An entry with the debug traces of the model calls behind it. */
 type JournalEntry = Entry & { traceIds?: string[] };
@@ -33,7 +36,53 @@ const ACTION_LABEL: Record<Entry["action"], string> = {
   proposal: "Proposal",
   "edit-workstream": "Edit",
   route: "New work",
-  retitle: "Retitle",
+  retitle: "Updated title",
+};
+
+const ACTION_HELP: Record<Entry["action"], string> = {
+  move: "A thread was moved to another workstream.",
+  "create-workstream": "A workstream was created to group related threads.",
+  "rename-workstream": "A workstream’s name was changed.",
+  "delete-workstream": "A workstream was removed. Its threads are not deleted.",
+  undo: "A previous Workstreams change was reversed.",
+  batch: "Several organization changes were applied together.",
+  proposal: "Workstreams suggested an organization change for your decision.",
+  "edit-workstream": "A workstream’s description or settings were changed.",
+  route: "A new request was placed in a thread and workstream.",
+  retitle: "A thread title was updated to reflect its work.",
+};
+const ENTRY_STATUS: Record<
+  Entry["status"],
+  { label: string; description: string }
+> = {
+  applied: {
+    label: "Applied",
+    description:
+      "This organization change was applied. It does not mean the thread’s work is complete.",
+  },
+  pending: {
+    label: "Awaiting decision",
+    description:
+      "This proposed change has not been applied. It is waiting for your decision.",
+  },
+  partial: {
+    label: "Partially applied",
+    description:
+      "Some parts of this change were applied; others could not be completed. Check the event details.",
+  },
+  failed: {
+    label: "Failed",
+    description:
+      "This change could not be applied. Check the event details for the failure.",
+  },
+  undone: {
+    label: "Undone",
+    description: "This change was reversed by a later undo event.",
+  },
+  dismissed: {
+    label: "Dismissed",
+    description: "This proposal was declined without applying the change.",
+  },
 };
 
 const SOURCE_LABEL: Record<Entry["source"], string> = {
@@ -87,37 +136,84 @@ export function Activity({
   /** A thread's workstream, for filtering model calls by workstream. */
   workstreamOf?: (threadId: string) => string | null;
 }) {
-  const navigate = useBbNavigate();
   const debug = useDebugMode();
   const [external, setExternal] = useState(false);
   const [workstream, setWorkstream] = useState("");
   const [action, setAction] = useState("");
   const [needsReview, setNeedsReview] = useState(focus !== null);
   const [showCalls, setShowCalls] = useState(true);
+  const [callKind, setCallKind] = useState<TraceKind | "">("");
+  const [failuresOnly, setFailuresOnly] = useState(false);
+  const [traceLimit, setTraceLimit] = useState(TRACE_PAGE);
+  const [moreCalls, setMoreCalls] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const proposalOf = new Map(
     proposals.filter((p) => p.entryId).map((p) => [p.entryId!, p]),
   );
   const [entries, setEntries] = useState<JournalEntry[] | null>(null);
   const [calls, setCalls] = useState<TraceSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const request = useRef(0);
   const load = useCallback(async () => {
-    const report = (cause: unknown) =>
-      setError(cause instanceof Error ? cause.message : String(cause));
+    const generation = ++request.current;
+    setError(null);
+    const report = (cause: unknown) => {
+      if (generation === request.current)
+        setError(cause instanceof Error ? cause.message : String(cause));
+    };
     await Promise.all([
-      rpc
-        .call("journal", { limit: 300, external })
-        .then((result) => setEntries(result.entries), report),
-      debug
-        ? rpc
-            .call("traces", { limit: 300 })
-            .then((result) => setCalls(result.traces), report)
-        : Promise.resolve(setCalls([])),
+      rpc.call("journal", { limit: 300, external }).then((result) => {
+        if (generation === request.current) setEntries(result.entries);
+      }, report),
+      (async () => {
+        const traces: TraceSummary[] = [];
+        let more = false;
+        let before: { at: number; id: string } | undefined;
+        // Refresh loaded history from the top so realtime updates cannot leave
+        // duplicates or retained-but-deleted traces in older pages.
+        if (debug) {
+          do {
+            const result = await rpc.call("traces", {
+              limit: TRACE_PAGE,
+              ...(callKind ? { kind: callKind } : {}),
+              ...(before ? { before } : {}),
+            });
+            if (generation !== request.current) return;
+            traces.push(...result.traces);
+            more = result.traces.length === TRACE_PAGE;
+            const last = result.traces.at(-1);
+            before = last ? { at: last.at, id: last.id } : undefined;
+          } while (more && traces.length < traceLimit);
+        }
+        if (generation === request.current) {
+          setCalls(traces);
+          setMoreCalls(more);
+        }
+      })().catch(report),
     ]);
-  }, [rpc, external, debug]);
+  }, [rpc, external, debug, traceLimit, callKind]);
   useRealtime("changed", load);
   useEffect(() => {
     void load();
+    return () => {
+      request.current++;
+    };
   }, [load]);
+
+  const clearTraces = async () => {
+    setClearing(true);
+    setError(null);
+    try {
+      await rpc.call("traceClear", null);
+      setConfirmClear(false);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setClearing(false);
+    }
+  };
 
   const undo = async (entry: JournalEntry) => {
     setError(null);
@@ -141,19 +237,24 @@ export function Activity({
 
   const shownEntries = (entries ?? []).filter(
     (entry) =>
-      action !== MODEL_CALLS &&
+      !(debug && (action === MODEL_CALLS || failuresOnly || callKind)) &&
       (!workstream || entry.workstreams.some((w) => w.id === workstream)) &&
-      (!action || entry.action === action) &&
+      (!action ||
+        (!debug && action === MODEL_CALLS) ||
+        entry.action === action) &&
       (!needsReview || entry.status === "pending"),
   );
   const shownCalls =
     debug && showCalls && !needsReview && (!action || action === MODEL_CALLS)
       ? calls.filter(
           (trace) =>
-            !workstream ||
-            trace.threads.some((id) => workstreamOf?.(id) === workstream),
+            (!callKind || trace.kind === callKind) &&
+            (!failuresOnly || trace.status !== "ok") &&
+            (!workstream ||
+              trace.threads.some((id) => workstreamOf?.(id) === workstream)),
         )
       : [];
+  const callCost = shownCalls.reduce((sum, t) => sum + (t.usage?.cost ?? 0), 0);
   const items: Item[] = [
     ...shownEntries.map((entry) => ({
       kind: "entry" as const,
@@ -176,7 +277,11 @@ export function Activity({
 
   return (
     <div className="mt-5">
-      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+      <div
+        role="group"
+        aria-label="Activity filters"
+        className="grid grid-cols-1 items-center gap-3 text-xs text-muted-foreground sm:flex sm:flex-wrap"
+      >
         <select
           aria-label="Filter by workstream"
           value={workstream}
@@ -193,7 +298,15 @@ export function Activity({
         <select
           aria-label="Filter by action"
           value={action}
-          onChange={(event) => setAction(event.target.value)}
+          onChange={(event) => {
+            setAction(event.target.value);
+            setCallKind("");
+            setFailuresOnly(false);
+            if (event.target.value === MODEL_CALLS) {
+              setShowCalls(true);
+              setNeedsReview(false);
+            }
+          }}
           className="h-7 rounded-md border border-input bg-transparent px-1"
         >
           <option value="">All actions</option>
@@ -208,7 +321,14 @@ export function Activity({
           <input
             type="checkbox"
             checked={needsReview}
-            onChange={(event) => setNeedsReview(event.target.checked)}
+            onChange={(event) => {
+              setNeedsReview(event.target.checked);
+              if (event.target.checked) {
+                setCallKind("");
+                setFailuresOnly(false);
+                if (action === MODEL_CALLS) setAction("");
+              }
+            }}
           />
           Needs review
         </label>
@@ -225,18 +345,103 @@ export function Activity({
             <input
               type="checkbox"
               checked={showCalls}
-              onChange={(event) => setShowCalls(event.target.checked)}
+              onChange={(event) => {
+                setShowCalls(event.target.checked);
+                if (!event.target.checked) {
+                  setCallKind("");
+                  setFailuresOnly(false);
+                  if (action === MODEL_CALLS) setAction("");
+                }
+              }}
             />
             Model calls
           </label>
         ) : null}
       </div>
+      {debug ? (
+        <div className="mt-3 rounded-md border border-border bg-state-hover/30 p-3 text-xs text-muted-foreground">
+          <ActivityTerm
+            label="Debug events"
+            description="AI assessments appear alongside applied changes. An assessment may suggest a change without applying it. Expand Technical details for measurements and the full prompt. Traces are kept for 7 days, up to 1,000 records."
+          />
+          <div className="mt-2 grid grid-cols-1 items-center gap-3 sm:flex sm:flex-wrap">
+            <select
+              aria-label="Filter by model call kind"
+              value={callKind}
+              onChange={(event) => {
+                setCallKind(event.target.value as TraceKind | "");
+                setTraceLimit(TRACE_PAGE);
+                setShowCalls(true);
+                setAction(MODEL_CALLS);
+                setNeedsReview(false);
+              }}
+              className="h-7 rounded-md border border-input bg-transparent px-1"
+            >
+              <option value="">All model call kinds</option>
+              {TRACE_KINDS.map((kind) => (
+                <option key={kind} value={kind}>
+                  {TRACE_KIND_TITLE[kind]}
+                </option>
+              ))}
+            </select>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={failuresOnly}
+                onChange={(event) => {
+                  setFailuresOnly(event.target.checked);
+                  if (event.target.checked) {
+                    setShowCalls(true);
+                    setAction(MODEL_CALLS);
+                    setNeedsReview(false);
+                  }
+                }}
+              />
+              Failures only
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2">
+            <span className="tabular-nums">
+              {shownCalls.length} model calls shown · ${callCost.toFixed(4)}
+            </span>
+            {confirmClear ? (
+              <span className="flex items-center gap-1.5">
+                Delete all model-call traces? Activity changes are kept.
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  disabled={clearing}
+                  onClick={() => void clearTraces()}
+                >
+                  Delete traces
+                </button>
+                <button
+                  type="button"
+                  className={ghostButton}
+                  disabled={clearing}
+                  onClick={() => setConfirmClear(false)}
+                >
+                  Cancel
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                className={ghostButton}
+                onClick={() => setConfirmClear(true)}
+              >
+                Clear traces…
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
       {error ? (
         <p role="alert" className="mt-3 text-xs text-destructive">
           {error}
         </p>
       ) : null}
-      {entries && entries.length === 0 ? (
+      {entries && items.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">No activity yet.</p>
       ) : null}
       {days.map(({ label, items: list }) => (
@@ -253,7 +458,7 @@ export function Activity({
                 <li
                   key={entry.id}
                   className={cn(
-                    "flex items-baseline gap-3 py-1.5 text-sm",
+                    "grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 py-3 pl-2 text-sm sm:gap-x-3 sm:grid-cols-[4.5rem_minmax(0,1fr)_auto]",
                     (entry.status === "undone" ||
                       entry.status === "dismissed") &&
                       "opacity-60",
@@ -266,45 +471,88 @@ export function Activity({
                     className="w-16 shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground"
                     dateTime={new Date(entry.at).toISOString()}
                     title={new Date(entry.at).toLocaleString()}
+                    aria-label={new Date(entry.at).toLocaleString()}
                   >
                     {new Date(entry.at).toLocaleTimeString(undefined, {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}
                   </time>
-                  <span className="w-28 shrink-0 text-xs text-muted-foreground">
-                    {ACTION_LABEL[entry.action]}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span>{entry.rationale}</span>
-                    {entry.threads.map((thread) => (
-                      <button
-                        key={thread.id}
-                        type="button"
-                        onClick={() => navigate.toThread(thread.id)}
-                        className="ml-2 max-w-64 truncate align-bottom text-xs text-primary hover:underline"
-                      >
-                        {thread.name}
-                      </button>
-                    ))}
-                    {entry.traceIds?.length ? (
-                      <InspectButton
-                        target={{ link: { kind: "entry", ref: entry.id } }}
-                        title={`Model calls behind: ${entry.rationale}`}
-                        label="Inspect the model calls behind this change"
-                        className="ml-1 align-middle text-muted-foreground"
+                  <div className="col-start-2 row-start-1 min-w-0">
+                    <div className="mb-1 text-xs text-muted-foreground">
+                      <ActivityTerm
+                        label={ACTION_LABEL[entry.action]}
+                        description={ACTION_HELP[entry.action]}
                       />
-                    ) : null}
-                    {entry.detail ? (
-                      <span className="block text-xs text-muted-foreground">
-                        {entry.detail}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {SOURCE_LABEL[entry.source]}
-                  </span>
-                  <span className="w-24 shrink-0 text-right text-xs">
+                    </div>
+                    <div className="break-words">
+                      <span>{entry.rationale}</span>
+                      {entry.threads.length ? (
+                        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
+                          {entry.threads.map((thread) => (
+                            <ActivityThreadLink
+                              key={thread.id}
+                              threadId={thread.id}
+                              fallback={thread.name}
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {entry.detail ? (
+                        <span className="block text-xs text-muted-foreground">
+                          {entry.detail}
+                        </span>
+                      ) : null}
+                      {debug ? (
+                        <details className="mt-1 text-xs text-muted-foreground">
+                          <summary className="w-fit cursor-pointer rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+                            Technical details
+                          </summary>
+                          {entry.traceIds?.length ? (
+                            <div className="mt-2 flex items-center gap-1">
+                              <span>Inspect supporting model calls</span>
+                              <InspectButton
+                                target={{
+                                  link: { kind: "entry", ref: entry.id },
+                                }}
+                                title={`Model calls behind: ${entry.rationale}`}
+                                label="Inspect the model calls behind this change"
+                              />
+                            </div>
+                          ) : null}
+                          <dl className="my-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+                            <dt>Source</dt>
+                            <dd>{SOURCE_LABEL[entry.source]}</dd>
+                            <dt>Event ID</dt>
+                            <dd className="break-all" translate="no">
+                              {entry.id}
+                            </dd>
+                          </dl>
+                          <details>
+                            <summary className="cursor-pointer">
+                              Raw event JSON
+                            </summary>
+                            <pre className="mt-1 max-w-full overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-state-hover p-2">
+                              {JSON.stringify(entry, null, 2)}
+                            </pre>
+                          </details>
+                        </details>
+                      ) : null}
+                    </div>
+                  </div>
+                  <span className="col-start-2 mt-1 flex flex-wrap items-center gap-2 border-t border-border pt-1 text-xs sm:col-start-3 sm:row-start-1 sm:mt-0 sm:border-0 sm:pt-0 sm:flex-col sm:items-end">
+                    <span className="text-muted-foreground">Change status</span>
+                    <span
+                      className={cn(
+                        "text-muted-foreground",
+                        (entry.status === "failed" ||
+                          entry.status === "partial") &&
+                          "text-destructive",
+                      )}
+                    >
+                      <ActivityTerm {...ENTRY_STATUS[entry.status]} />
+                    </span>
                     {entry.status === "pending" && proposalOf.get(entry.id) ? (
                       <span className="flex justify-end gap-2">
                         <button
@@ -312,7 +560,7 @@ export function Activity({
                           onClick={() =>
                             void decide(proposalOf.get(entry.id)!.id, "accept")
                           }
-                          className="text-primary hover:underline"
+                          className="text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring"
                         >
                           {proposalOf.get(entry.id)!.accept}
                         </button>
@@ -321,27 +569,19 @@ export function Activity({
                           onClick={() =>
                             void decide(proposalOf.get(entry.id)!.id, "dismiss")
                           }
-                          className="text-muted-foreground hover:underline"
+                          className="text-muted-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
                         >
                           Not now
                         </button>
                       </span>
-                    ) : entry.status === "pending" ? (
-                      <span className="text-muted-foreground">pending</span>
-                    ) : entry.status === "dismissed" ? (
-                      <span className="text-muted-foreground">dismissed</span>
-                    ) : entry.status === "undone" ? (
-                      <span className="text-muted-foreground">undone</span>
-                    ) : entry.undo ? (
+                    ) : entry.undo && entry.status === "applied" ? (
                       <button
                         type="button"
                         onClick={() => void undo(entry)}
-                        className="text-primary hover:underline"
+                        className="text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring"
                       >
                         Undo
                       </button>
-                    ) : entry.status === "partial" ? (
-                      <span className="text-muted-foreground">partial</span>
                     ) : null}
                   </span>
                 </li>
@@ -350,76 +590,19 @@ export function Activity({
           </ul>
         </section>
       ))}
+      {debug &&
+      showCalls &&
+      !needsReview &&
+      (!action || action === MODEL_CALLS) &&
+      moreCalls ? (
+        <button
+          type="button"
+          className={cn(secondaryButton, "mt-3")}
+          onClick={() => setTraceLimit((limit) => limit + TRACE_PAGE)}
+        >
+          Load older model calls
+        </button>
+      ) : null}
     </div>
-  );
-}
-
-/**
- * A model call in the log (Debug mode): what it was about, what the model
- * decided, and the inspector. Muted, so the changes still stand out.
- */
-function CallRow({ trace }: { trace: TraceSummary }) {
-  const navigate = useBbNavigate();
-  const ok = trace.status === "ok";
-  // An analysis is labeled with its thread's title already.
-  const threads = trace.kind === "analysis" ? [] : trace.threads.slice(0, 3);
-  return (
-    <li className="flex items-baseline gap-3 py-1.5 text-sm text-muted-foreground">
-      <time
-        className="w-16 shrink-0 whitespace-nowrap text-xs tabular-nums"
-        dateTime={new Date(trace.at).toISOString()}
-        title={new Date(trace.at).toLocaleString()}
-      >
-        {new Date(trace.at).toLocaleTimeString(undefined, {
-          hour: "2-digit",
-          minute: "2-digit",
-        })}
-      </time>
-      <span
-        className="flex w-28 shrink-0 items-center gap-1 text-xs"
-        title={TRACE_KIND_TITLE[trace.kind]}
-      >
-        <Icon name="Bug" aria-hidden className="size-3 shrink-0" />
-        <span className="truncate">{TRACE_KIND_SHORT[trace.kind]}</span>
-      </span>
-      <span className="min-w-0 flex-1">
-        <span>{trace.label}</span>
-        {threads.map((id) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => navigate.toThread(id)}
-            className="ml-2 max-w-64 truncate align-bottom text-xs text-primary hover:underline"
-          >
-            <ThreadTitle threadId={id} />
-          </button>
-        ))}
-        <InspectButton
-          target={{ traceIds: [trace.id] }}
-          title={`${TRACE_KIND_TITLE[trace.kind]}: ${trace.label}`}
-          label="Inspect this model call"
-          className="ml-1 align-middle"
-        />
-        {ok && trace.summary ? (
-          <span className="block text-xs">{trace.summary}</span>
-        ) : null}
-        {!ok && trace.error ? (
-          <span className="block truncate text-xs text-destructive">
-            {trace.error}
-          </span>
-        ) : null}
-      </span>
-      <span className="shrink-0 text-xs">model</span>
-      <span
-        className={cn(
-          "w-24 shrink-0 text-right text-xs tabular-nums",
-          !ok && "font-medium text-destructive",
-        )}
-      >
-        {ok
-          ? `${(trace.durationMs / 1000).toFixed(1)}s`
-          : TRACE_STATUS_TITLE[trace.status]}
-      </span>
-    </li>
   );
 }

@@ -17,27 +17,24 @@ import { useWorkstreams, type WorkView } from "../useWorkstreams.ts";
 import { Activity } from "./Activity.tsx";
 import { MapTab } from "./MapTab.tsx";
 import { NewWorkDialog } from "../composer/NewWork.tsx";
-import { DebugTab } from "../debug/DebugTab.tsx";
 import { InspectButton } from "../debug/InspectButton.tsx";
-import { useDebugMode } from "../debug/debug.ts";
 
-type Tab = "overview" | "map" | "activity" | "debug";
+type Tab = "overview" | "map" | "activity";
 const TAB_LABEL: Record<Tab, string> = {
   overview: "Overview",
   map: "Map",
   activity: "Activity",
-  debug: "Debug",
 };
 
 /**
- * `subPath` deep links: `map`, `activity`, `activity/<proposal id>`, or
- * `debug`.
+ * `subPath` deep links: `map`, `activity`, or `activity/<proposal id>`.
+ * Model-call inspection lives in Activity, including links to `debug`.
  */
 function tabOf(subPath: string): { tab: Tab; focus: string | null } {
   const [head, rest] = subPath.split("/");
   if (head === "map") return { tab: "map", focus: null };
   if (head === "activity") return { tab: "activity", focus: rest || null };
-  if (head === "debug") return { tab: "debug", focus: null };
+  if (head === "debug") return { tab: "activity", focus: null };
   return { tab: "overview", focus: null };
 }
 
@@ -45,14 +42,9 @@ export function WorkstreamsPage({
   subPath = "",
 }: Partial<PluginNavPanelProps>) {
   const ws = useWorkstreams();
-  const debug = useDebugMode();
   const linked = tabOf(subPath);
-  const [chosen, setTab] = useState<Tab>(linked.tab);
-  // The Debug tab exists only in Debug mode.
-  const tab = chosen === "debug" && !debug ? "overview" : chosen;
-  const tabs: Tab[] = debug
-    ? ["overview", "map", "activity", "debug"]
-    : ["overview", "map", "activity"];
+  const [tab, setTab] = useState<Tab>(linked.tab);
+  const tabs: Tab[] = ["overview", "map", "activity"];
   const [newWork, setNewWork] = useState(false);
   useEffect(() => setTab(tabOf(subPath).tab), [subPath]);
   const [query, setQuery] = useState("");
@@ -198,8 +190,6 @@ export function WorkstreamsPage({
             records={Object.values(ws.server.workstreams)}
             bootstrapped={ws.server.bootstrapped}
           />
-        ) : tab === "debug" ? (
-          <DebugTab rpc={ws.rpc} />
         ) : (
           <Activity
             rpc={ws.rpc}
@@ -297,7 +287,7 @@ function WorkstreamCard({
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span
                     className={cn(
-                      "truncate",
+                      "flex min-w-0 items-center gap-1.5",
                       row.thread.isUnread
                         ? "font-medium"
                         : "text-foreground/90",
@@ -305,7 +295,7 @@ function WorkstreamCard({
                   >
                     {state?.glyph && view.kind === "current" ? (
                       <span
-                        className={`ws-work ws-work-${view.analysis.state} mr-1.5`}
+                        className={`ws-work ws-work-${view.analysis.state} inline-flex size-3.5 shrink-0 items-center justify-center`}
                         role="img"
                         aria-label={state.label}
                         title={state.label}
@@ -313,7 +303,9 @@ function WorkstreamCard({
                         {state.glyph}
                       </span>
                     ) : null}
-                    {row.thread.displayTitle}
+                    <span className="min-w-0 truncate">
+                      {row.thread.displayTitle}
+                    </span>
                   </span>
                   <WhereItStopped
                     view={view}
@@ -323,8 +315,9 @@ function WorkstreamCard({
                   />
                 </span>
                 {childCount.get(row.thread.id) ? (
-                  <span className="text-xs text-muted-foreground">
-                    +{childCount.get(row.thread.id)} delegated
+                  <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+                    +{childCount.get(row.thread.id)} child{" "}
+                    {childCount.get(row.thread.id) === 1 ? "thread" : "threads"}
                   </span>
                 ) : null}
                 <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">

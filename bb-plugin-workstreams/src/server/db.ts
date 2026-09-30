@@ -108,6 +108,7 @@ const MIGRATIONS = [
     PRIMARY KEY (kind, ref, trace_id)
   )`,
   "CREATE INDEX ws_trace_link_trace ON ws_trace_link (trace_id)",
+  "CREATE TABLE ws_archive_dismissed (thread_id TEXT PRIMARY KEY, revision INTEGER NOT NULL)",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

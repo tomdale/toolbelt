@@ -1,4 +1,18 @@
 /* Status marks: BB's resolved thread status, drawn by this plugin. */
+.ws-status-slot {
+  position: relative;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  align-items: center;
+  justify-content: center;
+}
+.ws-status-slot > .ws-mark,
+.ws-status-slot > .ws-work {
+  position: absolute;
+  inset: 0;
+}
 .ws-mark {
   display: inline-flex;
   width: 14px;
@@ -453,6 +467,69 @@
 .ws-check:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+.ws-filing-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.ws-filing-notice strong {
+  color: var(--foreground);
+  font-weight: 500;
+}
+.ws-filing-notice button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted-foreground);
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ws-filing-notice button:hover {
+  color: var(--foreground);
+}
+.ws-filing-notice button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.ws-filing-notice button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ws-archive-suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ws-archive-button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ws-archive-button:hover {
+  color: var(--foreground);
+  background: var(--muted);
+}
+.ws-archive-button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.ws-archive-button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 @media (prefers-reduced-motion: reduce) {
   .ws-check,
