@@ -61,10 +61,12 @@ function state(revision = 1): ServerState {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((yes) => {
+  let reject!: (cause: unknown) => void;
+  const promise = new Promise<T>((yes, no) => {
     resolve = yes;
+    reject = no;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function mount({
@@ -76,6 +78,9 @@ function mount({
     }),
   ),
   unsnooze = vi.fn(async () => ({ woke: true })),
+  setSnoozePrefs = vi.fn(async ({ patch }: { patch: Partial<ServerState["snoozePrefs"]> }) => ({
+    prefs: { ...state().snoozePrefs, ...patch },
+  })),
   strict = false,
 } = {}) {
   const consumers = new Map<number, ReturnType<typeof useServerState>>();
@@ -109,7 +114,7 @@ function mount({
     { component: Suite },
     {},
     {
-      rpc: { state: read, reorder, snooze, unsnooze },
+      rpc: { state: read, reorder, snooze, unsnooze, setSnoozePrefs },
     },
   );
   const assertRevision = async (revision: number, count = 3) => {
@@ -157,6 +162,55 @@ describe("shared server state", () => {
     reordered.resolve({ order: { workstreams: [], threads: { a: ["t1"] } } });
     await pending;
     expect(consumers.get(1)!.server.order.threads.a).toEqual(["t1"]);
+  });
+
+  it("rolls back a rejected reorder after the recovery read", async () => {
+    const failure = new Error("reorder failed");
+    const write = deferred<void>();
+    const recovery = deferred<ServerState>();
+    const read = vi.fn(async () => state(1));
+    const { consumers } = mount({ read, reorder: vi.fn(() => write.promise) });
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    const pending = consumers.get(0)!.reorder({ kind: "workstreams", ids: ["a"] });
+    expect(consumers.get(0)!.server.order.workstreams).toEqual(["a"]);
+    write.reject(failure);
+    await expect(pending).rejects.toBe(failure);
+    read.mockImplementationOnce(() => recovery.promise);
+    await act(async () => {
+      await consumers.get(0)!.refresh();
+    });
+    recovery.resolve(state(2));
+    await waitFor(() =>
+      expect(consumers.get(0)!.server.order.workstreams).toEqual([]),
+    );
+  });
+
+  it("keeps distinct concurrent reorder groups through reverse responses", async () => {
+    const firstWrite = deferred<{ order: ServerState["order"] }>();
+    const secondWrite = deferred<{ order: ServerState["order"] }>();
+    const writes = [firstWrite, secondWrite];
+    const { consumers } = mount({ reorder: vi.fn(() => writes.shift()!.promise) });
+    await waitFor(() => expect(consumers.get(0)!.server.bootstrapped).toBe(true));
+    const first = consumers.get(0)!.reorder({ kind: "threads", groupId: "a", ids: ["a1"] });
+    const second = consumers.get(0)!.reorder({ kind: "threads", groupId: "b", ids: ["b1"] });
+    secondWrite.resolve({ order: { workstreams: [], threads: { b: ["b1"] } } });
+    firstWrite.resolve({ order: { workstreams: [], threads: { a: ["a1"] } } });
+    await Promise.all([first, second]);
+    expect(consumers.get(0)!.server.order.threads).toMatchObject({ a: ["a1"], b: ["b1"] });
+  });
+
+  it("keeps the newer preference through reverse responses", async () => {
+    const firstWrite = deferred<{ prefs: ServerState["snoozePrefs"] }>();
+    const secondWrite = deferred<{ prefs: ServerState["snoozePrefs"] }>();
+    const writes = [firstWrite, secondWrite];
+    const { consumers } = mount({ setSnoozePrefs: vi.fn(() => writes.shift()!.promise) });
+    await waitFor(() => expect(consumers.get(0)!.server.bootstrapped).toBe(true));
+    const first = consumers.get(0)!.saveSnoozePrefs({ morningHour: 8 });
+    const second = consumers.get(0)!.saveSnoozePrefs({ morningHour: 10 });
+    secondWrite.resolve({ prefs: { ...state().snoozePrefs, morningHour: 10 } });
+    firstWrite.resolve({ prefs: { ...state().snoozePrefs, morningHour: 8 } });
+    await Promise.all([first, second]);
+    expect(consumers.get(0)!.server.snoozePrefs.morningHour).toBe(10);
   });
 
   it("registers one app-wide realtime bridge", async () => {
