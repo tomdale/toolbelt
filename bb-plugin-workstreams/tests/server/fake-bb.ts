@@ -49,6 +49,7 @@ export async function fakeWorld(
   const completions: { prompt: string; model: string }[] = [];
   const spawned: Record<string, unknown>[] = [];
   const sent: Record<string, unknown>[] = [];
+  const markedUnread: string[] = [];
   const sections: Section[] = [];
   let nextSection = 1;
   const addThread = (id: string, overrides: Partial<Thread> = {}) => {
@@ -144,6 +145,10 @@ export async function fakeWorld(
           return { status: "sent" };
         },
         timeline: async () => ({ goal: null, pendingTodos: null }),
+        markUnread: async ({ threadId }: { threadId: string }) => {
+          markedUnread.push(threadId);
+          return { id: threadId };
+        },
         archive: async ({ threadId }: { threadId: string }) => {
           const thread = threads.get(threadId);
           if (!thread) throw missing(threadId);
@@ -249,5 +254,6 @@ export async function fakeWorld(
     completions,
     spawned,
     sent,
+    markedUnread,
   };
 }

@@ -33,13 +33,23 @@ against.
     did.
   - **Unsorted** and a collapsed **Dormant** fold (no threads, or none touched
     in 30 days).
+  - A collapsed **Snoozed** fold. Snoozing a thread takes it (and its children)
+    out of For you, Recent, and its group until it wakes. Hover a row and click
+    its alarm clock to snooze with your default (the `snoozeDefault` setting;
+    Tomorrow morning unless changed), or right-click → **Snooze** for 1 hour, 3
+    hours, Tomorrow morning, Next week, Until it updates, or a date and time you
+    pick. The thread header has the same choices as a split button, and the
+    command palette has "Workstreams: snooze this thread". A timed snooze
+    returns the thread marked unread at its time; "Until it updates" returns it
+    at its next activity; sending the thread a message or **Wake now** ends any
+    snooze.
   - Rows show BB's status, a work-state mark from analysis (◆ decision, ◇
     review, ⏸ blocked; hover for where it stopped), unread state, drafts,
     shortcuts, pull requests, and a yellow dot when a workstream change involves
     the thread. Pick the working thread's spinner animation and its colors under
     **Working indicator** in the plugin's settings (BB's own by default). Hover
-    a row for its Archive button; right-click to move, rename, pin, mark read,
-    archive, or delete.
+    a row for its Snooze and Archive buttons; right-click to move, rename, pin,
+    mark read, snooze, archive, or delete.
 - **Workstreams page** (`/plugins/workstreams/home`):
   - **Overview**: workstreams ranked by what needs you, each thread with where
     it stopped. Search with `/`.

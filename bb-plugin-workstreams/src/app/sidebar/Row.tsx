@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   ThreadTitle,
   experimental_useSidebarThreadActions,
@@ -18,6 +19,7 @@ import {
 } from "../../domain/presentation.ts";
 import type { WorkView } from "../useWorkstreams.ts";
 import { StatusMark } from "./StatusMark.tsx";
+import { SnoozeIcon, WakeIcon } from "../snooze/icons.tsx";
 
 const INDENT_PX = 12;
 const MAX_INDENT = 4;
@@ -81,6 +83,7 @@ export function Row({
   proposal,
   showStatusSlot = true,
   subtitle,
+  snoozeAction,
   onNavigate,
 }: {
   thread: PluginSidebarThread;
@@ -105,6 +108,11 @@ export function Row({
   showStatusSlot?: boolean;
   /** A second line under the title, such as what the thread asks of Tom. */
   subtitle?: string | null;
+  /**
+   * The hover button beside Archive: snooze with the default choice, or wake
+   * a snoozed thread. `title` names what a click does.
+   */
+  snoozeAction?: { kind: "snooze" | "wake"; title: string; run: () => void };
   onNavigate: () => void;
 }) {
   const shownState = shownWorkState(work, attention);
@@ -205,7 +213,14 @@ export function Row({
           </span>
         ) : null}
       </span>
-      <span className="pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70 group-hover/row:opacity-0 group-has-[button:focus-visible]/row:opacity-0">
+      <span
+        className={cn(
+          "pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70 group-hover/row:opacity-0 group-has-[button:focus-visible]/row:opacity-0",
+          // Room for both hover buttons, so they never cover the title.
+          snoozeAction &&
+            "group-hover/row:min-w-11 group-has-[button:focus-visible]/row:min-w-11 pointer-coarse:min-w-0",
+        )}
+      >
         {proposal ? (
           <span className="ws-proposal-dot" role="img" aria-label={proposal} />
         ) : null}
@@ -236,24 +251,68 @@ export function Row({
           <span>{relativeAge(thread.latestAttentionAt, now)}</span>
         )}
       </span>
-      {/* Replaces the trailing details on hover, as in BB's own row. It
-            stops pointer and mouse downs so it never starts a drag. */}
-      <button
-        type="button"
-        aria-label="Archive thread"
+      {/* Replace the trailing details on hover, as in BB's own row. */}
+      {snoozeAction ? (
+        <HoverAction
+          label={snoozeAction.title}
+          onClick={snoozeAction.run}
+          className="right-7"
+        >
+          {snoozeAction.kind === "wake" ? (
+            <WakeIcon className="size-3.5" />
+          ) : (
+            <SnoozeIcon className="size-3.5" />
+          )}
+        </HoverAction>
+      ) : null}
+      <HoverAction
+        label="Archive thread"
         title="Archive"
-        onPointerDown={(event) => event.stopPropagation()}
-        onMouseDown={(event) => event.stopPropagation()}
-        onTouchStart={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          actions.archive(thread.id);
-        }}
-        className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 pointer-coarse:hidden"
+        onClick={() => actions.archive(thread.id)}
+        className="right-1"
       >
         <Icon name="Archive" className="size-3.5" />
-      </button>
+      </HoverAction>
     </div>
+  );
+}
+
+/**
+ * A row button shown on hover or keyboard focus. It stops pointer and mouse
+ * downs so it never starts a drag, and clicks so it never opens the row.
+ */
+function HoverAction({
+  label,
+  title = label,
+  onClick,
+  className,
+  children,
+}: {
+  label: string;
+  title?: string;
+  onClick: () => void;
+  className: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={title}
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onTouchStart={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClick();
+      }}
+      className={cn(
+        "absolute top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 pointer-coarse:hidden",
+        className,
+      )}
+    >
+      {children}
+    </button>
   );
 }

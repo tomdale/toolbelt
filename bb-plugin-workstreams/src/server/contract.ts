@@ -184,6 +184,12 @@ const spinnerSchema = z.object({
   secondary: z.union([spinnerColorSchema, z.enum(["auto", "none"])]),
 });
 
+const snoozeSchema = z.object({
+  until: z.number().nullable(),
+  attentionAt: z.number(),
+  at: z.number(),
+});
+
 const orderSchema = z.object({
   workstreams: z.array(z.string()),
   threads: z.record(z.string(), z.array(z.string())),
@@ -419,7 +425,25 @@ export const rpcContract = defineRpcContract({
       lastReconciledAt: z.number().nullable(),
       /** The sidebar's drag-and-drop order. */
       order: orderSchema,
+      /** Snoozed threads, by id (see domain/snooze.ts). */
+      snoozes: z.record(z.string(), snoozeSchema).default({}),
     }),
+  },
+  /**
+   * Snoozes a thread until a time, or (`until: null`) until its next
+   * activity. Snoozing again replaces the earlier snooze.
+   */
+  snooze: {
+    input: z.object({
+      threadId: z.string().min(1),
+      until: z.number().int().positive().nullable(),
+    }),
+    output: z.object({ snooze: snoozeSchema }),
+  },
+  /** Wakes a snoozed thread now. */
+  unsnooze: {
+    input: z.object({ threadId: z.string().min(1) }),
+    output: z.object({ woke: z.boolean() }),
   },
   /**
    * Stores the sidebar's manual order: every workstream, or one group's root

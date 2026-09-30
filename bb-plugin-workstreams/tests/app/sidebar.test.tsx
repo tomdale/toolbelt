@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { emptyState, section, sidebarThread } from "./fixtures.ts";
 
@@ -26,11 +32,15 @@ async function mount(
     sidebarThread("hidden", { isHidden: true, title: "Hidden helper" }),
   ],
   options: {
-    settings?: Record<string, boolean>;
+    settings?: Record<string, boolean | string>;
     spinner?: unknown;
     onNavigate?: () => void;
     analysis?: Record<string, unknown>;
     order?: { workstreams: string[]; threads: Record<string, string[]> };
+    snoozes?: Record<
+      string,
+      { until: number | null; attentionAt: number; at: number }
+    >;
   } = {},
 ) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
@@ -52,8 +62,17 @@ async function mount(
           ...emptyState(),
           analysis: options.analysis ?? {},
           order: options.order ?? { workstreams: [], threads: {} },
+          snoozes: options.snoozes ?? {},
         }),
         moveThread: () => ({ entry: null }),
+        snooze: (raw: unknown) => ({
+          snooze: {
+            until: (raw as { until: number | null }).until,
+            attentionAt: 0,
+            at: Date.now(),
+          },
+        }),
+        unsnooze: () => ({ woke: true }),
         spinner: () => ({
           spinner: options.spinner ?? {
             shape: "spokes",
@@ -542,3 +561,113 @@ function layoutByRows(): () => void {
     Element.prototype.getBoundingClientRect = original;
   };
 }
+
+describe("snoozing", () => {
+  const later = () => Date.now() + 3_600_000;
+  const threads = () => [
+    sidebarThread("ask", {
+      sectionId: "sec_a",
+      title: "Asking task",
+      hasPendingInteraction: true,
+      indicator: "waiting-for-input",
+    }),
+    sidebarThread("nap", { sectionId: "sec_a", title: "Napping task" }),
+    sidebarThread("other", { sectionId: "sec_b", title: "Other task" }),
+  ];
+
+  it("moves snoozed threads into a collapsed Snoozed fold", async () => {
+    const slot = await mount(threads(), {
+      snoozes: {
+        ask: { until: later(), attentionAt: 0, at: 0 },
+        nap: { until: null, attentionAt: Date.now() + 1, at: 0 },
+      },
+    });
+    await waitFor(() =>
+      expect(slot.getByRole("button", { name: /Snoozed/ })).toBeTruthy(),
+    );
+    expect(slot.queryByRole("region", { name: "For you" })).toBeNull();
+    expect(groupRows(slot, "Recent")).toEqual(["Other task"]);
+    expect(slot.queryByRole("region", { name: "Alpha" })).toBeNull();
+    const fold = slot.getByRole("button", { name: /Snoozed/ });
+    expect(fold.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(fold);
+    expect(groupRows(slot, "Snoozed")).toEqual(["Asking task", "Napping task"]);
+    expect(
+      within(slot.getByRole("region", { name: "Snoozed" })).getByText(
+        "On update",
+      ),
+    ).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
+  it("snoozes with the default choice from the row's hover button", async () => {
+    const slot = await mount(threads(), {
+      settings: { showRecent: false, snoozeDefault: "3 hours" },
+    });
+    const alpha = await waitFor(() =>
+      slot.getByRole("region", { name: "Alpha" }),
+    );
+    const before = Date.now();
+    fireEvent.click(
+      within(alpha).getAllByRole("button", { name: "Snooze: 3 hours" })[0]!,
+    );
+    await waitFor(() =>
+      expect(groupRows(slot, "Alpha")).toEqual(["Napping task"]),
+    );
+    const call = slot.inspection.rpcCalls.find((c) => c.method === "snooze")!;
+    const input = call.input as { threadId: string; until: number };
+    expect(input.threadId).toBe("ask");
+    expect(input.until - before).toBeGreaterThanOrEqual(3 * 3_600_000);
+    expect(input.until - before).toBeLessThan(3 * 3_600_000 + 5_000);
+    slot.lifecycle.unmount();
+  });
+
+  it("wakes a thread from the Snoozed fold", async () => {
+    const slot = await mount(threads(), {
+      settings: { showRecent: false },
+      snoozes: { nap: { until: later(), attentionAt: 0, at: 0 } },
+    });
+    fireEvent.click(
+      await waitFor(() => slot.getByRole("button", { name: /Snoozed/ })),
+    );
+    fireEvent.click(
+      within(slot.getByRole("region", { name: "Snoozed" })).getByRole(
+        "button",
+        { name: /^Wake now/ },
+      ),
+    );
+    await waitFor(() =>
+      expect(groupRows(slot, "Alpha")).toEqual(["Asking task", "Napping task"]),
+    );
+    expect(slot.inspection.rpcCalls.at(-1)).toMatchObject({
+      method: "unsnooze",
+      input: { threadId: "nap" },
+    });
+    slot.lifecycle.unmount();
+  });
+});
+
+it("keeps a snoozed child moving with its parent", async () => {
+  const slot = await mount(
+    [
+      sidebarThread("root", { sectionId: "sec_a", title: "Root task" }),
+      sidebarThread("kid", { parentThreadId: "root", title: "Kid task" }),
+    ],
+    {
+      settings: { showRecent: false },
+      snoozes: { kid: { until: Date.now() + 60_000, attentionAt: 0, at: 0 } },
+    },
+  );
+  fireEvent.click(
+    await waitFor(() => slot.getByRole("button", { name: /Snoozed/ })),
+  );
+  expect(groupRows(slot, "Alpha")).toEqual(["Root task"]);
+  fireEvent.contextMenu(
+    within(slot.getByRole("region", { name: "Snoozed" })).getByRole("link", {
+      name: "Kid task",
+    }),
+  );
+  expect(await screen.findByText("Moves with its parent")).toBeTruthy();
+  expect(screen.getByText("Wake now")).toBeTruthy();
+  slot.lifecycle.unmount();
+});

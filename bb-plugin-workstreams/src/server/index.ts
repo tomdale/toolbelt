@@ -25,6 +25,12 @@ import { TraceStore } from "./trace.ts";
 import { RecapScheduler } from "./recap.ts";
 import { loadRecapPrefs, saveRecapPrefs } from "./recapPrefs.ts";
 import { Understanding } from "./understanding.ts";
+import { ThreadSnoozes } from "./snooze.ts";
+import {
+  DEFAULT_SNOOZE,
+  SNOOZE_SETTING_OPTIONS,
+  presetLabel,
+} from "../domain/snooze.ts";
 
 export { rpcContract } from "./contract.ts";
 
@@ -42,6 +48,8 @@ export const ORGANIZE_MODELS = [
   "google/gemini-3.1-flash-lite",
 ] as const;
 const EVOLVE_DEBOUNCE_MS = 15_000;
+/** The furthest out a snooze can wake. */
+const MAX_SNOOZE_MS = 366 * 24 * 60 * 60 * 1000;
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
@@ -65,6 +73,14 @@ export default async function plugin(bb: BbPluginApi) {
       description:
         "The five most recently active threads, excluding ones already in For you.",
       default: true,
+    },
+    snoozeDefault: {
+      type: "select",
+      label: "Default snooze",
+      description:
+        "What the one-click snooze button does. Right-click a thread, or use the arrow beside the thread header's snooze button, for the other choices.",
+      options: [...SNOOZE_SETTING_OPTIONS],
+      default: presetLabel(DEFAULT_SNOOZE),
     },
     model: {
       type: "select",
@@ -145,6 +161,22 @@ export default async function plugin(bb: BbPluginApi) {
   const journal = new Journal(db);
   const notify = () => bb.realtime.publish("changed", {});
   const service = new WorkstreamService(() => bb.sdk, db, journal, notify);
+  const snoozes = new ThreadSnoozes(db);
+  /**
+   * Drops snoozes that ended, against the reconciler's fresh thread list.
+   * A thread whose wake time came returns marked unread.
+   */
+  const sweepSnoozes = async () => {
+    const { ended, timed } = snoozes.sweep(service.threads(), Date.now());
+    if (!ended.length) return;
+    notify();
+    for (const threadId of timed)
+      await bb.sdk.threads
+        .markUnread({ threadId })
+        .catch((error: unknown) =>
+          bb.log.warn(`Marking ${threadId} unread failed: ${String(error)}`),
+        );
+  };
 
   const hostRpc = bb.hosts.experimental_client({ contract: hostContract });
   const analysisHost = async (): Promise<string> => {
@@ -308,6 +340,14 @@ export default async function plugin(bb: BbPluginApi) {
   // filed where the preview said: via the banner's submit data, or, for a
   // plain Enter, by matching the prompt. The hook itself always proceeds.
   bb.experimental_hooks.on("message.dispatch", async (ctx) => {
+    // Sending a snoozed thread a message means you're back on it.
+    if (
+      ctx.initiator === "user" &&
+      ctx.senderThreadId === null &&
+      ctx.queuedMessages.length === 0 &&
+      snoozes.clear(ctx.thread.id)
+    )
+      notify();
     // A thread's first message has an origin; follow-ups, steers, and retries
     // don't. Queued re-attempts of a first message still count.
     const fresh =
@@ -391,6 +431,7 @@ export default async function plugin(bb: BbPluginApi) {
         .reconcile()
         .then(() => {
           analyzer.catchUp(service.threads());
+          void sweepSnoozes();
           void refreshShapes(bb.sdk, db, async (hostId, path) =>
             hostRpc.call("probe", { path }, { hostId, timeoutMs: 15_000 }),
           ).catch((error: unknown) =>
@@ -480,7 +521,11 @@ export default async function plugin(bb: BbPluginApi) {
         true,
       );
   });
+  bb.events.on("thread.archived", ({ thread }) => {
+    if (snoozes.clear(thread.id)) notify();
+  });
   bb.events.on("thread.deleted", ({ thread }) => {
+    snoozes.clear(thread.id);
     analyzer.forget(thread.id);
     understanding.forget(thread.id);
     archives.forget(thread.id);
@@ -599,7 +644,29 @@ export default async function plugin(bb: BbPluginApi) {
       ),
       bootstrapped: bootstrap.isDone(),
       order: loadOrder(db),
+      snoozes: snoozes.all(),
     }),
+    snooze: ({ threadId, until }) =>
+      userFacing(async () => {
+        const now = Date.now();
+        if (until !== null && (until <= now || until > now + MAX_SNOOZE_MS))
+          throw new UserError("Pick a time in the next year.");
+        const thread = await bb.sdk.threads.get({ threadId });
+        if (thread.archivedAt !== null)
+          throw new UserError("Archived threads can't be snoozed.");
+        const snooze = snoozes.set(threadId, {
+          until,
+          attentionAt: thread.latestAttentionAt ?? thread.updatedAt,
+          at: now,
+        });
+        notify();
+        return { snooze };
+      }),
+    unsnooze: async ({ threadId }) => {
+      const woke = snoozes.clear(threadId);
+      if (woke) notify();
+      return { woke };
+    },
     reorder: async (change) => {
       const order = saveOrder(db, change);
       notify();
@@ -792,6 +859,7 @@ export default async function plugin(bb: BbPluginApi) {
       }),
     refresh: async () => {
       const changed = await service.reconcile();
+      await sweepSnoozes();
       await evolution.tick();
       return { changed };
     },

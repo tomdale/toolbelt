@@ -8,12 +8,18 @@ import {
 import { usePortalScopeProps } from "@/lib/portal-scope";
 import { cn } from "@/lib/utils";
 import { useDebugMode } from "../debug/debug.ts";
+import { snoozeChoices, type ThreadSnooze } from "../../domain/snooze.ts";
 
 export type RowMenuHandlers = {
   move: (thread: PluginSidebarThread, sectionId: string | null) => void;
   newWorkstream: (thread: PluginSidebarThread) => void;
   rename: (thread: PluginSidebarThread) => void;
   openParent: (thread: PluginSidebarThread) => void;
+  /** Snoozes until a time, or (null) until the thread's next activity. */
+  snooze: (thread: PluginSidebarThread, until: number | null) => void;
+  /** Opens the date-and-time picker. */
+  customSnooze: (thread: PluginSidebarThread) => void;
+  wake: (thread: PluginSidebarThread) => void;
   /** Debug mode: opens the thread's model calls. */
   inspect: (thread: PluginSidebarThread) => void;
 };
@@ -29,6 +35,7 @@ export function RowMenu({
   workstreamId,
   sections,
   handlers,
+  snooze,
   children,
 }: {
   thread: PluginSidebarThread;
@@ -36,6 +43,8 @@ export function RowMenu({
   workstreamId: string | null;
   sections: readonly PluginSidebarSection[];
   handlers: RowMenuHandlers;
+  /** The thread's snooze, while it holds. */
+  snooze?: ThreadSnooze;
   children: ReactNode;
 }) {
   const actions = experimental_useSidebarThreadActions();
@@ -116,6 +125,38 @@ export function RowMenu({
             </>
           ) : null}
           <Separator />
+          {snooze ? (
+            <Item onSelect={() => handlers.wake(thread)}>Wake now</Item>
+          ) : null}
+          <ContextMenu.Sub>
+            <ContextMenu.SubTrigger className={itemClass}>
+              {snooze ? "Snooze until…" : "Snooze"}
+            </ContextMenu.SubTrigger>
+            <ContextMenu.Portal>
+              <ContextMenu.SubContent
+                {...portalScope}
+                className="z-50 min-w-56 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
+              >
+                {snoozeChoices(Date.now()).map((choice) => (
+                  <Item
+                    key={choice.id}
+                    onSelect={() => handlers.snooze(thread, choice.until)}
+                  >
+                    <span className="flex-1">{choice.label}</span>
+                    {choice.hint ? (
+                      <span className="ml-4 text-xs text-muted-foreground">
+                        {choice.hint}
+                      </span>
+                    ) : null}
+                  </Item>
+                ))}
+                <Separator />
+                <Item onSelect={() => handlers.customSnooze(thread)}>
+                  Pick a date and time…
+                </Item>
+              </ContextMenu.SubContent>
+            </ContextMenu.Portal>
+          </ContextMenu.Sub>
           <Item onSelect={() => actions.archive(thread.id)}>Archive</Item>
           <Item destructive onSelect={() => actions.requestDelete(thread.id)}>
             Delete…

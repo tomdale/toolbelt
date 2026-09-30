@@ -1,8 +1,9 @@
 /**
  * The Workstreams sidebar thread list: the For you section and the Recent
- * band as overlays, then one group per workstream (BB section, in the user's drag-and-drop order, else
- * BB's), Unsorted, and a Dormant fold. Every visible thread appears in exactly
- * one group (SPEC I1).
+ * band as overlays, then one group per workstream (BB section, in the user's
+ * drag-and-drop order, else BB's), Unsorted, a Dormant fold, and a Snoozed
+ * fold. Every visible thread appears in exactly one group, or in Snoozed
+ * (SPEC I1).
  */
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { DndContext } from "@dnd-kit/core";
@@ -35,11 +36,19 @@ import {
   type Drop,
 } from "./dnd.tsx";
 import { planDrop } from "./drop.ts";
+import {
+  describeWake,
+  presetLabel,
+  shortWake,
+  wakeTime,
+} from "../../domain/snooze.ts";
+import { snoozeThread, wakeThread } from "../snooze/actions.ts";
+import { CustomSnoozeDialog } from "../snooze/CustomSnoozeDialog.tsx";
 
 type ThreadGroup = Group<PluginSidebarThread>;
 type ThreadRow = RowModel<PluginSidebarThread>;
 /** Where a row is drawn: its workstream group, or one of the overlays. */
-type Placement = "group" | "needs-you" | "recent";
+type Placement = "group" | "needs-you" | "recent" | "snoozed";
 
 const groupKey = (id: string) => `ws:${id}`;
 const treeKey = (id: string) => `t:${id}`;
@@ -69,6 +78,9 @@ export function WorkstreamsThreadList({
   const [error, setError] = useState<string | null>(null);
   const [showAllNeeds, setShowAllNeeds] = useState(false);
   const [inspecting, setInspecting] = useState<PluginSidebarThread | null>(
+    null,
+  );
+  const [customSnooze, setCustomSnooze] = useState<PluginSidebarThread | null>(
     null,
   );
   const { projection, sections, now } = ws;
@@ -118,7 +130,12 @@ export function WorkstreamsThreadList({
       }
     },
     inspect: (thread) => setInspecting(thread),
+    snooze: (thread, until) =>
+      snoozeThread(ws.setSnooze, thread, until, ws.snoozeOf(thread)),
+    customSnooze: (thread) => setCustomSnooze(thread),
+    wake: (thread) => wakeThread(ws.setSnooze, thread),
   };
+  const defaultSnoozeTitle = `Snooze: ${presetLabel(ws.defaultSnooze).toLowerCase()}`;
   const renameWorkstream = (group: ThreadGroup) =>
     setNameRequest({
       title: "Rename workstream",
@@ -145,6 +162,42 @@ export function WorkstreamsThreadList({
     ? projection.needsYou
     : projection.needsYou.slice(0, NEEDS_YOU_LIMIT);
   const needsMarks = anyMark(needsRows, "needs-you");
+  /**
+   * The row's hover snooze button. In Snoozed, a thread with its own snooze
+   * wakes; a descendant that is only there with its parent has none.
+   */
+  const snoozeActionOf = (row: ThreadRow, placement: Placement) => {
+    const snooze = ws.snoozeOf(row.thread);
+    if (placement !== "snoozed")
+      return {
+        kind: "snooze" as const,
+        title: defaultSnoozeTitle,
+        run: () =>
+          handlers.snooze(row.thread, wakeTime(ws.defaultSnooze, Date.now())),
+      };
+    if (!snooze) return undefined;
+    return {
+      kind: "wake" as const,
+      title: `Wake now (snoozed ${describeWake(snooze.until, now)})`,
+      run: () => handlers.wake(row.thread),
+    };
+  };
+  const contextOf = (row: ThreadRow, placement: Placement) => {
+    if (placement === "group") return undefined;
+    if (placement !== "snoozed") return workstreamName(row);
+    const snooze = ws.snoozeOf(row.thread);
+    return snooze ? shortWake(snooze.until, now) : undefined;
+  };
+  /**
+   * Whether the row leads its tree, so it can move between workstreams.
+   * Snoozed rows restart their depth at the snoozed thread, so there it's
+   * whether the thread's parent is in the list at all.
+   */
+  const isRoot = (row: ThreadRow, placement: Placement) =>
+    placement === "snoozed"
+      ? !row.thread.parentThreadId ||
+        !projection.rowOf.has(row.thread.parentThreadId)
+      : row.depth === 0;
   const renderRow = (
     row: ThreadRow,
     placement: Placement,
@@ -154,23 +207,27 @@ export function WorkstreamsThreadList({
     <RowMenu
       key={row.thread.id}
       thread={row.thread}
-      isRoot={row.depth === 0}
+      isRoot={isRoot(row, placement)}
       workstreamId={row.workstreamId}
       sections={sections}
       handlers={handlers}
+      snooze={ws.snoozeOf(row.thread)}
     >
       <li ref={handle?.ref} {...handle?.listeners} className="list-none">
         <Row
           thread={row.thread}
-          depth={placement === "group" ? row.depth : 0}
+          depth={
+            placement === "group" || placement === "snoozed" ? row.depth : 0
+          }
           active={row.thread.id === activeThreadId}
           now={now}
-          context={placement === "group" ? undefined : workstreamName(row)}
+          context={contextOf(row, placement)}
           attention={placement === "needs-you"}
           work={ws.work(row.thread)}
           proposal={ws.proposalOf.get(row.thread.id)?.text}
           showStatusSlot={showStatusSlot}
           subtitle={placement === "needs-you" ? askOf(row) : null}
+          snoozeAction={snoozeActionOf(row, placement)}
           onNavigate={onNavigate}
         />
       </li>
@@ -366,9 +423,33 @@ export function WorkstreamsThreadList({
             </SortableContext>
           </Band>
         ) : null}
+        {projection.snoozed.length > 0 ? (
+          <Band
+            title="Snoozed"
+            count={projection.snoozed.filter((row) => row.depth === 0).length}
+            collapsed={isCollapsed("__snoozed", true)}
+            toggle={() => toggle("__snoozed", true)}
+          >
+            {projection.snoozed.map((row) =>
+              renderRow(
+                row,
+                "snoozed",
+                undefined,
+                anyMark(projection.snoozed, "snoozed"),
+              ),
+            )}
+          </Band>
+        ) : null}
         <NameDialog
           request={nameRequest}
           onClose={() => setNameRequest(null)}
+        />
+        <CustomSnoozeDialog
+          open={customSnooze !== null}
+          onClose={() => setCustomSnooze(null)}
+          onSubmit={(until) => {
+            if (customSnooze) handlers.snooze(customSnooze, until);
+          }}
         />
         {inspecting ? (
           <TraceInspector

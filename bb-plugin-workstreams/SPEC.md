@@ -105,10 +105,11 @@ environments.
 **Invariants.** Tests enforce each one.
 
 - **I1. Exactly once.** Every visible, non-archived thread appears in exactly
-  one workstream group (Unsorted and Dormant included). It nests under its
-  parent when the parent is visible and active; otherwise it is a root. Orphans
-  and cycles render deterministically. Needs you and Recent are overlays that
-  repeat rows from the groups; they never replace them.
+  one workstream group (Unsorted and Dormant included), or in Snoozed (§11.1).
+  It nests under its parent when the parent is visible and active; otherwise it
+  is a root. Orphans and cycles render deterministically. Needs you and Recent
+  are overlays that repeat rows from the groups; they never replace them, and
+  never show snoozed threads.
 - **I2. Tree membership.** A tree's workstream is its root's section.
   Workstreams never writes `sectionId` on a child.
 - **I3. Explicit moves only.** A filed thread moves only through one of these:
@@ -490,20 +491,21 @@ restores the previous title while it is still the one Workstreams wrote.
      the context menu). Manual order is plugin state shared across clients;
      unplaced roots sit above placed ones in the default order, and unplaced
      workstreams sit after placed ones.
-   - An Unsorted band, a Dormant fold, and a yellow dot on rows affected by a
-     proposal.
+   - An Unsorted band, a Dormant fold, a Snoozed fold (collapsed by default,
+     §11.1), and a yellow dot on rows affected by a proposal.
    - Rows show BB's `indicator` glyph plus a work-state glyph (with a legend),
      provider icon, branch/PR, draft, shortcut pill, unread state, nesting,
-     split drag, the keyboard DOM attributes, and an Archive button on hover.
-   - Context menu: Move to workstream… · Rename · Pin · Read/unread · Archive ·
-     Delete · Open parent.
+     split drag, the keyboard DOM attributes, and Snooze and Archive buttons on
+     hover.
+   - Context menu: Move to workstream… · Rename · Pin · Read/unread · Snooze ›
+     (or Wake now) · Archive · Delete · Open parent.
 2. **Workstreams page** (the Monday-morning view):
    - Workstreams ranked by attention, then by recency.
    - Each workstream lists "pick back up" rows: title · where it stopped · age.
    - Search with `/`.
    - Tabs for Map (the workstream editor) and Activity.
-3. **Thread header:** a parent link (setting), the proposal pill, and the
-   floating banner.
+3. **Thread header:** a parent link (setting), the proposal pill, the floating
+   banner, and the snooze split button (§11.1).
 4. **CLI:**
    `bb workstreams list | show | edit | new | handoff | file | log | analyze | rebuild | trace`,
    built with `defineCli`.
@@ -553,12 +555,38 @@ restores the previous title while it is still the one Workstreams wrote.
      either way. Nothing is recorded while the setting is off. Retention: 7 days
      or 1,000 traces.
 
+### 11.1 Snooze
+
+Snoozing puts a thread away until later. A snoozed thread leaves For you,
+Recent, and its workstream group, taking its descendants with it, and is listed
+in the sidebar's Snoozed fold, soonest to wake first, with its wake time. Its
+workstream is unchanged.
+
+- **Choices:** 1 hour · 3 hours · Tomorrow morning (9:00) · Next week (Monday,
+  9:00) · Until it updates · Pick a date and time…. Times are the client's local
+  clock.
+- **One click** applies the `snoozeDefault` setting (default: Tomorrow morning):
+  the row's hover button, the face of the thread header's split button, and the
+  palette's "Workstreams: snooze this thread". The context menu's Snooze submenu
+  and the header button's arrow list every choice.
+- **Waking:** a timed snooze ends at its time, whatever the agent does in the
+  meantime, and the thread returns marked unread. "Until it updates" ends when
+  the thread's `latestAttentionAt` passes its value at snooze time. Every snooze
+  also ends when the user sends the thread a message, on Wake now, and on
+  archive or delete.
+- Snoozes are view state, like the manual order: shared across clients, not
+  journaled. The snooze toast's Undo and Wake now reverse them.
+
+BB's own thread menu (the header's `…`) takes no plugin items, so the header
+entry point is a Workstreams header action.
+
 ## 12. Storage
 
 | Data                                                                                                                  | Store                                                                    |
 | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | Workstream map, analysis cache, title ownership, journal and Activity log, proposals, reconciler cursor, debug traces | Plugin SQLite (`bb.storage.database()`) with migrations                  |
 | Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }`                            | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
+| Manual order and thread snoozes                                                                                       | Plugin SQLite, `ws_meta` values                                          |
 | Collapse state and UI preferences                                                                                     | Client local storage                                                     |
 
 v1 tables are left untouched until cutover and are not read after bootstrap.
