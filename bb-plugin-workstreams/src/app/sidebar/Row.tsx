@@ -382,7 +382,7 @@ const HoverButton = forwardRef<
         onRun?.();
       }}
       className={cn(
-        "absolute top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 group-has-[[data-state=open]]/row:opacity-100 data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground pointer-coarse:hidden",
+        "absolute top-1/2 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 group-has-[[data-state=open]]/row:opacity-100 data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground pointer-coarse:hidden",
         className,
       )}
     >
