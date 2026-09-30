@@ -1,5 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+// jsdom lacks AnimationEvent, which makes React listen for the prefixed
+// `webkitAnimationStart` instead of the `animationstart` browsers dispatch.
+// React picks the name when it loads, so this runs before any import.
+vi.hoisted(() => {
+  if (!("AnimationEvent" in globalThis))
+    Object.assign(globalThis, { AnimationEvent: class extends Event {} });
+});
+
+import { cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { synchronizeSpinnerAnimations } from "../../src/app/sidebar/StatusMark.tsx";
 
 type FakeAnimation = { startTime: number | null };
@@ -21,6 +31,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
   if (originalGetAnimations)
     Object.defineProperty(
       HTMLElement.prototype,
@@ -85,5 +96,36 @@ describe("synchronizeSpinnerAnimations", () => {
     expect(() =>
       synchronizeSpinnerAnimations(document.createElement("span")),
     ).not.toThrow();
+  });
+});
+
+describe("WorkingMark", () => {
+  it("resynchronizes when a moved mark's animation restarts", async () => {
+    const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
+    const section = app.settingsSections.find((s) => s.id === "spinner")!;
+    const slot = await renderSlot(
+      section,
+      {},
+      {
+        rpc: {
+          spinner: async () => ({
+            spinner: { shape: "arc", primary: "subtle", secondary: "auto" },
+          }),
+          setSpinner: (raw: unknown) => raw as { spinner: unknown },
+        },
+      },
+    );
+    await waitFor(() =>
+      expect(slot.container.querySelector(".ws-spin")).not.toBeNull(),
+    );
+    const mark = slot.container.querySelector<HTMLElement>(".ws-spin")!;
+    // Moving a node replaces its CSS animation with one that starts at the
+    // move, which the mount-time sync never sees.
+    const restarted = { startTime: 4_812 };
+    animations.set(mark, [restarted]);
+
+    fireEvent.animationStart(mark);
+
+    expect(restarted.startTime).toBe(0);
   });
 });
