@@ -516,6 +516,7 @@ export default async function plugin(bb: BbPluginApi) {
   bb.events.on("thread.deleted", ({ thread }) => {
     snoozes.clear(thread.id);
     analyzer.forget(thread.id);
+    recaps.disposeThread(thread.id);
     notebooks.forget(thread.id);
     archives.forget(thread.id);
     service.forget(thread.id);
@@ -608,7 +609,7 @@ export default async function plugin(bb: BbPluginApi) {
     recap_get: async ({ threadId }) => {
       const analysis = analyzer.get(threadId);
       return {
-        recap: recaps.get(threadId),
+        recap: await recaps.getFresh(threadId),
         generating: recaps.generating(threadId),
         needsInput:
           analysis?.state === "needs_decision" ? analysis.needsYou : null,
