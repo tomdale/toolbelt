@@ -1,4 +1,9 @@
-import type { ReactNode } from "react";
+import {
+  forwardRef,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+} from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   ThreadTitle,
   experimental_useSidebarThreadActions,
@@ -20,6 +25,9 @@ import {
 import type { WorkView } from "../useWorkstreams.ts";
 import { StatusMark } from "./StatusMark.tsx";
 import { SnoozeIcon, WakeIcon } from "../snooze/icons.tsx";
+import { snoozeMenuContentClass } from "../snooze/SnoozeMenuItems.tsx";
+import { Hint } from "../Hint.tsx";
+import { usePortalScopeProps } from "@/lib/portal-scope";
 
 const INDENT_PX = 12;
 const MAX_INDENT = 4;
@@ -110,9 +118,15 @@ export function Row({
   subtitle?: string | null;
   /**
    * The hover button beside Archive: snooze with the default choice, or wake
-   * a snoozed thread. `title` names what a click does.
+   * a snoozed thread. `title` names what a click does; `menu` holds the other
+   * choices, opened from a chevron beside the button.
    */
-  snoozeAction?: { kind: "snooze" | "wake"; title: string; run: () => void };
+  snoozeAction?: {
+    kind: "snooze" | "wake";
+    title: string;
+    run: () => void;
+    menu?: ReactNode;
+  };
   onNavigate: () => void;
 }) {
   const shownState = shownWorkState(work, attention);
@@ -216,9 +230,13 @@ export function Row({
       <span
         className={cn(
           "pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70 group-hover/row:opacity-0 group-has-[button:focus-visible]/row:opacity-0",
-          // Room for both hover buttons, so they never cover the title.
-          snoozeAction &&
-            "group-hover/row:min-w-11 group-has-[button:focus-visible]/row:min-w-11 pointer-coarse:min-w-0",
+          // Hidden while a hover menu is open, too.
+          "group-has-[[data-state=open]]/row:opacity-0",
+          // Room for the hover buttons, so they never cover the title.
+          snoozeAction?.menu
+            ? "group-hover/row:min-w-[58px] group-has-[button:focus-visible]/row:min-w-[58px] group-has-[[data-state=open]]/row:min-w-[58px] pointer-coarse:min-w-0"
+            : snoozeAction &&
+                "group-hover/row:min-w-11 group-has-[button:focus-visible]/row:min-w-11 pointer-coarse:min-w-0",
         )}
       >
         {proposal ? (
@@ -256,7 +274,7 @@ export function Row({
         <HoverAction
           label={snoozeAction.title}
           onClick={snoozeAction.run}
-          className="right-7"
+          className={snoozeAction.menu ? "right-[42px]" : "right-7"}
         >
           {snoozeAction.kind === "wake" ? (
             <WakeIcon className="size-3.5" />
@@ -265,9 +283,11 @@ export function Row({
           )}
         </HoverAction>
       ) : null}
+      {snoozeAction?.menu ? (
+        <SnoozeChevron>{snoozeAction.menu}</SnoozeChevron>
+      ) : null}
       <HoverAction
-        label="Archive thread"
-        title="Archive"
+        label="Archive"
         onClick={() => actions.archive(thread.id)}
         className="right-1"
       >
@@ -277,42 +297,96 @@ export function Row({
   );
 }
 
+/** The chevron beside the snooze button: every other snooze choice. */
+function SnoozeChevron({ children }: { children: ReactNode }) {
+  const portalScope = usePortalScopeProps();
+  return (
+    <DropdownMenu.Root>
+      <HoverAction
+        label="More snooze options"
+        className="right-7 w-3.5"
+        trigger
+      >
+        <Icon name="ChevronDown" className="size-3" />
+      </HoverAction>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          {...portalScope}
+          align="end"
+          sideOffset={4}
+          className={snoozeMenuContentClass}
+        >
+          {children}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
 /**
- * A row button shown on hover or keyboard focus. It stops pointer and mouse
- * downs so it never starts a drag, and clicks so it never opens the row.
+ * A row button shown on hover, on keyboard focus, and while its menu is
+ * open, with a tooltip naming it. It stops pointer and mouse downs so it
+ * never starts a drag, and clicks so it never opens the row. With `trigger`
+ * it opens the enclosing dropdown menu instead of running `onClick`.
  */
 function HoverAction({
   label,
-  title = label,
   onClick,
   className,
+  trigger = false,
   children,
 }: {
   label: string;
-  title?: string;
-  onClick: () => void;
+  onClick?: () => void;
   className: string;
+  trigger?: boolean;
   children: ReactNode;
 }) {
+  const button = (
+    <HoverButton label={label} onRun={onClick} className={className}>
+      {children}
+    </HoverButton>
+  );
+  return trigger ? (
+    <DropdownMenu.Trigger asChild>
+      <Hint label={label}>{button}</Hint>
+    </DropdownMenu.Trigger>
+  ) : (
+    <Hint label={label}>{button}</Hint>
+  );
+}
+
+const HoverButton = forwardRef<
+  HTMLButtonElement,
+  ComponentPropsWithoutRef<"button"> & { label: string; onRun?: () => void }
+>(function HoverButton(
+  { label, onRun, className, children, onPointerDown, onClick, ...rest },
+  ref,
+) {
   return (
     <button
+      {...rest}
+      ref={ref}
       type="button"
       aria-label={label}
-      title={title}
-      onPointerDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        onPointerDown?.(event);
+      }}
       onMouseDown={(event) => event.stopPropagation()}
       onTouchStart={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        onClick();
+        onClick?.(event);
+        onRun?.();
       }}
       className={cn(
-        "absolute top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 pointer-coarse:hidden",
+        "absolute top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 group-has-[[data-state=open]]/row:opacity-100 data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground pointer-coarse:hidden",
         className,
       )}
     >
       {children}
     </button>
   );
-}
+});

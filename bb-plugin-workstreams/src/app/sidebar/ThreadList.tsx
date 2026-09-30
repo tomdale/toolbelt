@@ -36,14 +36,10 @@ import {
   type Drop,
 } from "./dnd.tsx";
 import { planDrop } from "./drop.ts";
-import {
-  describeWake,
-  presetLabel,
-  shortWake,
-  wakeTime,
-} from "../../domain/snooze.ts";
+import { describeWake, shortWake, wakeTime } from "../../domain/snooze.ts";
 import { snoozeThread, wakeThread } from "../snooze/actions.ts";
 import { CustomSnoozeDialog } from "../snooze/CustomSnoozeDialog.tsx";
+import { SnoozeMenuItems } from "../snooze/SnoozeMenuItems.tsx";
 
 type ThreadGroup = Group<PluginSidebarThread>;
 type ThreadRow = RowModel<PluginSidebarThread>;
@@ -135,7 +131,7 @@ export function WorkstreamsThreadList({
     customSnooze: (thread) => setCustomSnooze(thread),
     wake: (thread) => wakeThread(ws.setSnooze, thread),
   };
-  const defaultSnoozeTitle = `Snooze: ${presetLabel(ws.defaultSnooze).toLowerCase()}`;
+  const defaultSnoozeTitle = `Snooze ${describeWake(wakeTime(ws.defaultSnooze, now), now)}`;
   const renameWorkstream = (group: ThreadGroup) =>
     setNameRequest({
       title: "Rename workstream",
@@ -163,23 +159,36 @@ export function WorkstreamsThreadList({
     : projection.needsYou.slice(0, NEEDS_YOU_LIMIT);
   const needsMarks = anyMark(needsRows, "needs-you");
   /**
-   * The row's hover snooze button. In Snoozed, a thread with its own snooze
-   * wakes; a descendant that is only there with its parent has none.
+   * The row's hover snooze button and the menu beside it. In Snoozed, a
+   * thread with its own snooze wakes; a descendant that is only there with
+   * its parent has none.
    */
   const snoozeActionOf = (row: ThreadRow, placement: Placement) => {
     const snooze = ws.snoozeOf(row.thread);
+    if (placement === "snoozed" && !snooze) return undefined;
+    const menu = (
+      <SnoozeMenuItems
+        now={now}
+        preset={ws.defaultSnooze}
+        snooze={snooze}
+        onSnooze={(until) => handlers.snooze(row.thread, until)}
+        onWake={() => handlers.wake(row.thread)}
+        onPick={() => handlers.customSnooze(row.thread)}
+      />
+    );
     if (placement !== "snoozed")
       return {
         kind: "snooze" as const,
         title: defaultSnoozeTitle,
         run: () =>
           handlers.snooze(row.thread, wakeTime(ws.defaultSnooze, Date.now())),
+        menu,
       };
-    if (!snooze) return undefined;
     return {
       kind: "wake" as const,
-      title: `Wake now (snoozed ${describeWake(snooze.until, now)})`,
+      title: `Wake now (snoozed ${describeWake(snooze!.until, now)})`,
       run: () => handlers.wake(row.thread),
+      menu,
     };
   };
   const contextOf = (row: ThreadRow, placement: Placement) => {

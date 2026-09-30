@@ -5,7 +5,7 @@
  * menu. BB's own thread menu takes no plugin items, so this is the header's
  * snooze entry point, alongside the command palette.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   experimental_useSidebarThreads,
@@ -19,15 +19,15 @@ import {
   describeWake,
   isSnoozed,
   presetFromSetting,
-  presetLabel,
   shortWake,
-  snoozeChoices,
   wakeTime,
 } from "../../domain/snooze.ts";
 import { useNow, useServerState } from "../useWorkstreams.ts";
 import { snoozeThread, wakeThread } from "./actions.ts";
 import { CustomSnoozeDialog } from "./CustomSnoozeDialog.tsx";
 import { SnoozeIcon } from "./icons.tsx";
+import { SnoozeMenuItems, snoozeMenuContentClass } from "./SnoozeMenuItems.tsx";
+import { Hint } from "../Hint.tsx";
 
 /**
  * Header snooze controls by thread, so the command palette acts on the same
@@ -79,45 +79,23 @@ export function SnoozeHeaderAction({
   // to snooze them out of.
   if (!thread) return null;
 
-  const defaultTitle = `Snooze: ${presetLabel(preset).toLowerCase()}`;
+  const defaultTitle = `Snooze ${describeWake(wakeTime(preset, now), now)}`;
   const menu = (
     <DropdownMenu.Portal>
       <DropdownMenu.Content
         {...portalScope}
         align="end"
         sideOffset={4}
-        className="z-50 min-w-60 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
+        className={snoozeMenuContentClass}
       >
-        {snooze ? (
-          <>
-            <DropdownMenu.Label className="px-2 py-1.5 text-xs text-muted-foreground">
-              Snoozed {describeWake(snooze.until, now)}
-            </DropdownMenu.Label>
-            <MenuItem onSelect={wake}>Wake now</MenuItem>
-            <DropdownMenu.Separator className="my-1 h-px bg-border" />
-          </>
-        ) : null}
-        {snoozeChoices(now).map((choice) => (
-          <MenuItem key={choice.id} onSelect={() => snoozeUntil(choice.until)}>
-            <span className="flex-1">
-              {choice.label}
-              {choice.id === preset && !snooze ? (
-                <span className="ml-1.5 text-xs text-muted-foreground">
-                  (default)
-                </span>
-              ) : null}
-            </span>
-            {choice.hint ? (
-              <span className="ml-4 text-xs text-muted-foreground">
-                {choice.hint}
-              </span>
-            ) : null}
-          </MenuItem>
-        ))}
-        <DropdownMenu.Separator className="my-1 h-px bg-border" />
-        <MenuItem onSelect={() => setPicking(true)}>
-          Pick a date and time…
-        </MenuItem>
+        <SnoozeMenuItems
+          now={now}
+          preset={preset}
+          snooze={snooze}
+          onSnooze={snoozeUntil}
+          onWake={wake}
+          onPick={() => setPicking(true)}
+        />
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
   );
@@ -126,13 +104,20 @@ export function SnoozeHeaderAction({
     <>
       {snooze ? (
         <DropdownMenu.Root>
-          <DropdownMenu.Trigger
-            className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md bg-foreground/[0.07] px-2 text-xs text-muted-foreground hover:bg-foreground/[0.12] hover:text-foreground data-[state=open]:bg-foreground/[0.12] data-[state=open]:text-foreground"
-            aria-label={`Snoozed ${describeWake(snooze.until, now)}. Snooze options`}
-            title={`Snoozed ${describeWake(snooze.until, now)}`}
-          >
-            <SnoozeIcon className="size-3.5" />
-            {isCompactViewport ? null : shortWake(snooze.until, now)}
+          <DropdownMenu.Trigger asChild>
+            <Hint
+              label={`Snoozed ${describeWake(snooze.until, now)}`}
+              side="bottom"
+            >
+              <button
+                type="button"
+                className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md bg-foreground/[0.07] px-2 text-xs text-muted-foreground hover:bg-foreground/[0.12] hover:text-foreground data-[state=open]:bg-foreground/[0.12] data-[state=open]:text-foreground"
+                aria-label={`Snoozed ${describeWake(snooze.until, now)}. Snooze options`}
+              >
+                <SnoozeIcon className="size-3.5" />
+                {isCompactViewport ? null : shortWake(snooze.until, now)}
+              </button>
+            </Hint>
           </DropdownMenu.Trigger>
           {menu}
         </DropdownMenu.Root>
@@ -141,7 +126,6 @@ export function SnoozeHeaderAction({
           <DropdownMenu.Trigger
             className={cn(buttonClass, "w-7 rounded-md")}
             aria-label="Snooze options"
-            title="Snooze"
           >
             <SnoozeIcon className="size-4" />
           </DropdownMenu.Trigger>
@@ -149,22 +133,27 @@ export function SnoozeHeaderAction({
         </DropdownMenu.Root>
       ) : (
         <div className="inline-flex items-center">
-          <button
-            type="button"
-            className={cn(buttonClass, "w-7 rounded-l-md")}
-            aria-label={defaultTitle}
-            title={defaultTitle}
-            onClick={snoozeDefault}
-          >
-            <SnoozeIcon className="size-4" />
-          </button>
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger
-              className={cn(buttonClass, "w-4 rounded-r-md")}
-              aria-label="Snooze options"
-              title="Snooze options"
+          <Hint label={defaultTitle} side="bottom">
+            <button
+              type="button"
+              className={cn(buttonClass, "w-7 rounded-l-md")}
+              aria-label={defaultTitle}
+              onClick={snoozeDefault}
             >
-              <Icon name="ChevronDown" className="size-3" />
+              <SnoozeIcon className="size-4" />
+            </button>
+          </Hint>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Hint label="More snooze options" side="bottom">
+                <button
+                  type="button"
+                  className={cn(buttonClass, "w-4 rounded-r-md")}
+                  aria-label="Snooze options"
+                >
+                  <Icon name="ChevronDown" className="size-3" />
+                </button>
+              </Hint>
             </DropdownMenu.Trigger>
             {menu}
           </DropdownMenu.Root>
@@ -181,20 +170,3 @@ export function SnoozeHeaderAction({
 
 const buttonClass =
   "inline-flex h-7 cursor-pointer items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground";
-
-function MenuItem({
-  children,
-  onSelect,
-}: {
-  children: ReactNode;
-  onSelect: () => void;
-}) {
-  return (
-    <DropdownMenu.Item
-      onSelect={onSelect}
-      className="flex cursor-pointer select-none items-center rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
-    >
-      {children}
-    </DropdownMenu.Item>
-  );
-}

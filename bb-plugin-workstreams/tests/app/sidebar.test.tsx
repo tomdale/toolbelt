@@ -453,9 +453,7 @@ describe("thread list", () => {
     const row = within(slot.getByRole("region", { name: "Beta" }))
       .getByRole("link", { name: "Beta task" })
       .closest("li")!;
-    fireEvent.click(
-      within(row).getByRole("button", { name: "Archive thread" }),
-    );
+    fireEvent.click(within(row).getByRole("button", { name: "Archive" }));
     expect(slot.inspection.sidebarActionCalls.at(-1)).toMatchObject({
       method: "archive",
     });
@@ -609,7 +607,9 @@ describe("snoozing", () => {
     );
     const before = Date.now();
     fireEvent.click(
-      within(alpha).getAllByRole("button", { name: "Snooze: 3 hours" })[0]!,
+      within(alpha).getAllByRole("button", {
+        name: /^Snooze until \d/,
+      })[0]!,
     );
     await waitFor(() =>
       expect(groupRows(slot, "Alpha")).toEqual(["Napping task"]),
@@ -690,4 +690,64 @@ it("marks the row menu's submenus with a chevron", async () => {
       .querySelector('[data-icon="ChevronRight"]'),
   ).toBeNull();
   slot.lifecycle.unmount();
+});
+
+describe("row hover buttons", () => {
+  const rowOf = async (slot: Awaited<ReturnType<typeof mount>>) =>
+    (
+      await waitFor(() =>
+        within(slot.getByRole("region", { name: "Alpha" })).getByRole("link", {
+          name: "Root task",
+        }),
+      )
+    ).parentElement!;
+
+  it("opens every snooze choice from the chevron beside the snooze button", async () => {
+    const slot = await mount(undefined, { settings: { showRecent: false } });
+    const row = await rowOf(slot);
+    const chevron = within(row).getByRole("button", {
+      name: "More snooze options",
+    });
+    fireEvent.pointerDown(chevron, { button: 0, ctrlKey: false });
+    const menu = await screen.findByRole("menu");
+    expect(chevron.getAttribute("data-state")).toBe("open");
+    for (const label of ["1 hour", "Next week", "Pick a date and time…"])
+      expect(menu.textContent).toContain(label);
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /^1 hour/ }));
+    await waitFor(() =>
+      expect(slot.inspection.rpcCalls.at(-1)).toMatchObject({
+        method: "snooze",
+        input: { threadId: "root" },
+      }),
+    );
+    slot.lifecycle.unmount();
+  });
+
+  it("names the snooze, chevron, and archive buttons in tooltips", async () => {
+    const slot = await mount(undefined, { settings: { showRecent: false } });
+    const row = await rowOf(slot);
+    for (const [name, tip] of [
+      [/^Snooze until/, /^Snooze until/],
+      ["More snooze options", "More snooze options"],
+      ["Archive", "Archive"],
+    ] as const) {
+      const button = within(row).getByRole("button", { name });
+      fireEvent.pointerMove(button, { pointerType: "mouse" });
+      await waitFor(
+        () =>
+          expect(
+            screen
+              .queryAllByRole("tooltip")
+              .some((tooltip) =>
+                typeof tip === "string"
+                  ? tooltip.textContent === tip
+                  : tip.test(tooltip.textContent ?? ""),
+              ),
+          ).toBe(true),
+        { timeout: 2000 },
+      );
+      fireEvent.pointerLeave(button, { pointerType: "mouse" });
+    }
+    slot.lifecycle.unmount();
+  });
 });
