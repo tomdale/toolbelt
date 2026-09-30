@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Markdown, useComposer, useRealtime, useRpc, useSettings } from "@get-bb/plugin-sdk/app";
+import {
+  Markdown,
+  useComposer,
+  useRealtime,
+  useRpc,
+  useSettings,
+} from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import { parseRecapLedger } from "../../domain/recap.ts";
 import { useArchiveSuggestion } from "../archive/useArchiveSuggestion.ts";
@@ -44,7 +50,12 @@ function RecapText({
 
 function OpenMark() {
   return (
-    <svg aria-hidden="true" viewBox="0 0 12 12" className="mt-[4px] h-3 w-3 opacity-60" fill="none">
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 12 12"
+      className="mt-[4px] h-3 w-3 opacity-60"
+      fill="none"
+    >
       <circle cx="6" cy="6" r="4.25" stroke="currentColor" strokeWidth="1.25" />
     </svg>
   );
@@ -52,13 +63,32 @@ function OpenMark() {
 
 function DoneMark() {
   return (
-    <svg aria-hidden="true" viewBox="0 0 12 12" className="mt-[4px] h-3 w-3 text-sky-950 opacity-60 dark:text-sky-50" fill="none">
-      <path d="M2.5 6.25 4.9 8.5 9.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 12 12"
+      className="mt-[4px] h-3 w-3 text-sky-950 opacity-60 dark:text-sky-50"
+      fill="none"
+    >
+      <path
+        d="M2.5 6.25 4.9 8.5 9.5 3.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
 
-function LedgerList({ items, label, done = false }: { items: string[]; label: string; done?: boolean }) {
+function LedgerList({
+  items,
+  label,
+  done = false,
+}: {
+  items: string[];
+  label: string;
+  done?: boolean;
+}) {
   if (items.length === 0) return null;
   return (
     <section>
@@ -99,7 +129,12 @@ function RecapSummary({
   const ledger = parsed && {
     ...parsed,
     goal: layout === "minimal" ? null : parsed.goal,
-    open: layout === "detailed" ? parsed.open : [],
+    // The For you ask is shown on its own; the model often repeats it as an
+    // Open item.
+    open:
+      layout === "detailed"
+        ? parsed.open.filter((item) => !sameText(item, needsInput))
+        : [],
     done: layout === "detailed" ? parsed.done : [],
   };
   if (!ledger) {
@@ -114,8 +149,16 @@ function RecapSummary({
   return (
     <div>
       {ledger.goal ? (
-        <div role="heading" aria-level={2} className="pr-24 font-medium tracking-[-0.006em] text-sky-950 dark:text-sky-50">
-          <RecapText text={ledger.goal} className="w-full max-w-none" typeClass={GOAL_CLASS} />
+        <div
+          role="heading"
+          aria-level={2}
+          className="pr-24 font-medium tracking-[-0.006em] text-sky-950 dark:text-sky-50"
+        >
+          <RecapText
+            text={ledger.goal}
+            className="w-full max-w-none"
+            typeClass={GOAL_CLASS}
+          />
         </div>
       ) : null}
       <div
@@ -124,32 +167,41 @@ function RecapSummary({
         }`}
       >
         <div className="space-y-2.5">
-        {needsInput ? (
-          <section>
-            <h3 className={`${LABEL_BASE} ws-amber-text`}>For you</h3>
-            <RecapText text={needsInput} className="font-medium text-sky-950/90 dark:text-sky-100/90" />
-          </section>
-        ) : null}
-        {ledger.latest.length > 0 ? (
-          <section>
-            <h3 className="sr-only">Latest</h3>
-            {ledger.latest.length === 1 ? (
-              <RecapText text={ledger.latest[0]!} className="text-sky-950/90 dark:text-sky-100/90" />
-            ) : (
-              <ul className="space-y-1">
-                {ledger.latest.map((item, index) => (
-                  <li
-                    key={index}
-                    className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${BODY_CLASS} text-sky-950/90 dark:text-sky-100/90`}
-                  >
-                    <span aria-hidden="true" className="ml-[4px] mt-[8px] h-1 w-1 rounded-full bg-current opacity-60" />
-                    <RecapText text={item} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        ) : null}
+          {needsInput ? (
+            <section>
+              <h3 className={`${LABEL_BASE} ws-amber-text`}>For you</h3>
+              {/* RecapText inherits its color, so the amber goes on a wrapper. */}
+              <div className="ws-amber-text font-medium">
+                <RecapText text={needsInput} />
+              </div>
+            </section>
+          ) : null}
+          {ledger.latest.length > 0 ? (
+            <section>
+              <h3 className="sr-only">Latest</h3>
+              {ledger.latest.length === 1 ? (
+                <RecapText
+                  text={ledger.latest[0]!}
+                  className="text-sky-950/90 dark:text-sky-100/90"
+                />
+              ) : (
+                <ul className="space-y-1">
+                  {ledger.latest.map((item, index) => (
+                    <li
+                      key={index}
+                      className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${BODY_CLASS} text-sky-950/90 dark:text-sky-100/90`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="ml-[4px] mt-[8px] h-1 w-1 rounded-full bg-current opacity-60"
+                      />
+                      <RecapText text={item} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
         </div>
         {hasLedger ? (
           <div className="space-y-1 border-sky-900/10 @lg/recap:border-l @lg/recap:pl-6 dark:border-sky-200/10">
@@ -162,8 +214,21 @@ function RecapSummary({
   );
 }
 
-type RecapState = { recap: Recap | null; generating: boolean; needsInput: string | null };
+type RecapState = {
+  recap: Recap | null;
+  generating: boolean;
+  needsInput: string | null;
+};
 const EMPTY: RecapState = { recap: null, generating: false, needsInput: null };
+
+function sameText(a: string, b: string | null): boolean {
+  const norm = (text: string) =>
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  return b !== null && norm(a) === norm(b);
+}
 
 function useRecap(threadId: string | null) {
   const rpc = useRpc<RpcContract>();
@@ -181,7 +246,8 @@ function useRecap(threadId: string | null) {
     setState((current) => ({ ...current, generating: true }));
     try {
       const result = await rpc.call("recap_generate", { threadId });
-      if (!result.generated) setError("Couldn't generate a recap for this thread yet.");
+      if (!result.generated)
+        setError("Couldn't generate a recap for this thread yet.");
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
     }
@@ -210,17 +276,43 @@ function useSettled(busy: boolean): boolean {
 function Skeleton({ layout }: { layout: Layout }) {
   const bar = "rounded-full bg-sky-900/10 dark:bg-sky-200/15";
   return (
-    <div className={CARD_CLASS} role="status" aria-live="polite" aria-label="Generating recap">
+    <div
+      className={CARD_CLASS}
+      role="status"
+      aria-live="polite"
+      aria-label="Generating recap"
+    >
       <div className="flex items-center gap-2 text-xs font-medium text-sky-900/70 dark:text-sky-200/70">
-        <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 animate-spin" fill="none">
-          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
-          <path d="M14 8a6 6 0 0 0-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 16 16"
+          className="h-3.5 w-3.5 animate-spin"
+          fill="none"
+        >
+          <circle
+            cx="8"
+            cy="8"
+            r="6"
+            stroke="currentColor"
+            strokeOpacity="0.25"
+            strokeWidth="2"
+          />
+          <path
+            d="M14 8a6 6 0 0 0-6-6"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
         </svg>
         Generating recap…
       </div>
       <div aria-hidden="true" className="mt-3 animate-pulse">
-        {layout !== "minimal" ? <div className={`mb-3.5 h-2.5 w-2/5 ${bar}`} /> : null}
-        <div className={`grid gap-x-6 gap-y-2 ${layout === "detailed" ? "@lg/recap:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""}`}>
+        {layout !== "minimal" ? (
+          <div className={`mb-3.5 h-2.5 w-2/5 ${bar}`} />
+        ) : null}
+        <div
+          className={`grid gap-x-6 gap-y-2 ${layout === "detailed" ? "@lg/recap:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""}`}
+        >
           <div className="space-y-2">
             <div className={`h-2 w-full ${bar}`} />
             <div className={`h-2 w-3/4 ${bar}`} />
@@ -244,12 +336,14 @@ function Skeleton({ layout }: { layout: Layout }) {
  * keyed by the recap's generation time, so a newer recap reappears.
  */
 export function RecapCard() {
-  const { scope, isEmpty, attachmentCount, isRunning, isSubmitting } = useComposer();
+  const { scope, isEmpty, attachmentCount, isRunning, isSubmitting } =
+    useComposer();
   const threadId = scope.kind === "thread" ? scope.threadId : null;
-  const continuing = !isEmpty || attachmentCount > 0 || isRunning || isSubmitting;
+  const continuing =
+    !isEmpty || attachmentCount > 0 || isRunning || isSubmitting;
   const { recap, generating, needsInput, error, generate } = useRecap(threadId);
   const { values } = useSettings();
-  const layout = ((values?.recapLayout as Layout | undefined) ?? "detailed");
+  const layout = (values?.recapLayout as Layout | undefined) ?? "detailed";
   const automatic = values?.recapAutomatic !== false;
   const settled = useSettled(isRunning || isSubmitting);
   const archive = useArchiveSuggestion(threadId, continuing);
@@ -260,14 +354,18 @@ export function RecapCard() {
   // BB exposes no inline-editor flag on the composer view; its frame marker is
   // the only signal.
   useLayoutEffect(() => {
-    setInlineEditor(Boolean(markerRef.current?.closest("[data-inline-message-editor-frame]")));
+    setInlineEditor(
+      Boolean(markerRef.current?.closest("[data-inline-message-editor-frame]")),
+    );
   });
 
   const available = threadId !== null && !continuing && !inlineEditor;
-  const visible = available && recap !== null && recap.generatedAt !== dismissedAt;
+  const visible =
+    available && recap !== null && recap.generatedAt !== dismissedAt;
 
   let content: ReactNode = null;
-  if (available && generating && (!recap || !automatic)) content = <Skeleton layout={layout} />;
+  if (available && generating && (!recap || !automatic))
+    content = <Skeleton layout={layout} />;
   else if (!visible && available && settled && (!automatic || !recap))
     content = (
       <div className="mx-auto mb-3 flex w-full min-w-0 max-w-4xl flex-col items-center gap-1">
@@ -278,48 +376,71 @@ export function RecapCard() {
         >
           Generate Recap
         </button>
-        {error ? <p role="alert" className="text-[11px] text-red-700 dark:text-red-300">{error}</p> : null}
+        {error ? (
+          <p
+            role="alert"
+            className="text-[11px] text-red-700 dark:text-red-300"
+          >
+            {error}
+          </p>
+        ) : null}
       </div>
     );
 
   return (
     <div ref={markerRef} className="contents">
-      {content ?? (visible ? (
-        <div className={CARD_CLASS} role="region" aria-label="Latest recap">
-          <div className="@max-[20rem]/recap:[&_*]:!text-[0.625rem] @max-[20rem]/recap:[&_*]:!font-normal @max-[20rem]/recap:[&_*]:!leading-[1.5] @max-[20rem]/recap:[&_*]:!tracking-normal">
-            <RecapSummary summary={recap.summary} layout={layout} needsInput={needsInput} />
-          </div>
-          <div className="absolute right-2.5 top-2.5 flex items-center gap-1">
-            {archive.visible ? (
+      {content ??
+        (visible ? (
+          <div className={CARD_CLASS} role="region" aria-label="Latest recap">
+            <div className="@max-[20rem]/recap:[&_*]:!text-[0.625rem] @max-[20rem]/recap:[&_*]:!font-normal @max-[20rem]/recap:[&_*]:!leading-[1.5] @max-[20rem]/recap:[&_*]:!tracking-normal">
+              <RecapSummary
+                summary={recap.summary}
+                layout={layout}
+                needsInput={needsInput}
+              />
+            </div>
+            <div className="absolute right-2.5 top-2.5 flex items-center gap-1">
+              {archive.visible ? (
+                <button
+                  type="button"
+                  aria-label="Archive thread"
+                  className="h-6 cursor-pointer rounded-md border border-sky-900/15 px-2 text-[11px] font-medium text-sky-900/70 transition-colors hover:bg-sky-900/10 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 disabled:cursor-default disabled:opacity-50 dark:border-sky-200/20 dark:text-sky-200/70 dark:hover:bg-sky-200/10 dark:hover:text-sky-100"
+                  disabled={archive.busy}
+                  onClick={() => void archive.decide("archive")}
+                >
+                  Archive
+                </button>
+              ) : null}
               <button
                 type="button"
-                aria-label="Archive thread"
-                className="h-6 cursor-pointer rounded-md border border-sky-900/15 px-2 text-[11px] font-medium text-sky-900/70 transition-colors hover:bg-sky-900/10 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 disabled:cursor-default disabled:opacity-50 dark:border-sky-200/20 dark:text-sky-200/70 dark:hover:bg-sky-200/10 dark:hover:text-sky-100"
-                disabled={archive.busy}
-                onClick={() => void archive.decide("archive")}
+                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-sky-900/50 transition-colors hover:bg-sky-900/10 hover:text-sky-900/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:text-sky-200/50 dark:hover:bg-sky-200/10 dark:hover:text-sky-200/80"
+                aria-label="Dismiss recap"
+                title="Dismiss recap"
+                onClick={() => setDismissedAt(recap.generatedAt)}
               >
-                Archive
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 16 16"
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                >
+                  <path d="M4 4l8 8M12 4l-8 8" />
+                </svg>
               </button>
+            </div>
+            {archive.error ? (
+              <p
+                role="alert"
+                className="mt-2 text-[11px] text-red-700 dark:text-red-300"
+              >
+                {archive.error}
+              </p>
             ) : null}
-            <button
-              type="button"
-              className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-sky-900/50 transition-colors hover:bg-sky-900/10 hover:text-sky-900/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:text-sky-200/50 dark:hover:bg-sky-200/10 dark:hover:text-sky-200/80"
-              aria-label="Dismiss recap"
-              title="Dismiss recap"
-              onClick={() => setDismissedAt(recap.generatedAt)}
-            >
-              <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M4 4l8 8M12 4l-8 8" />
-              </svg>
-            </button>
           </div>
-          {archive.error ? (
-            <p role="alert" className="mt-2 text-[11px] text-red-700 dark:text-red-300">
-              {archive.error}
-            </p>
-          ) : null}
-        </div>
-      ) : null)}
+        ) : null)}
     </div>
   );
 }

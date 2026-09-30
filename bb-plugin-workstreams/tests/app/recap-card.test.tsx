@@ -66,3 +66,13 @@ it("offers Generate Recap when automatic recaps are off", async () => {
     expect(slot.inspection.rpcCalls.some((c) => c.method === "recap_generate")).toBe(true),
   );
 });
+
+it("drops an Open item that repeats the For you ask", async () => {
+  const slot = await mount({
+    recap: "Goal: Building.\nLatest: Done a thing\nOpen: Pick A or B?\nOpen: Write docs",
+    needsInput: "Pick A or B?",
+  });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  expect(region.textContent?.match(/Pick A or B\?/g)).toHaveLength(1);
+  expect(region.textContent).toContain("Write docs");
+});

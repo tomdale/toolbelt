@@ -131,6 +131,11 @@ export function WorkstreamsThreadList({
 
   const workstreamName = (row: ThreadRow) =>
     row.workstreamId ? nameOf.get(row.workstreamId) : "Unsorted";
+  /** What a For you thread asks of Tom, from its current analysis. */
+  const askOf = (row: ThreadRow) => {
+    const work = ws.work(row.thread);
+    return work?.kind === "current" ? work.analysis.needsYou : null;
+  };
   /** Whether any of these rows draws a status mark (see `hasStatusMark`). */
   const anyMark = (rows: readonly ThreadRow[], placement: Placement) =>
     rows.some((row) =>
@@ -165,6 +170,7 @@ export function WorkstreamsThreadList({
           work={ws.work(row.thread)}
           proposal={ws.proposalOf.get(row.thread.id)?.text}
           showStatusSlot={showStatusSlot}
+          subtitle={placement === "needs-you" ? askOf(row) : null}
           onNavigate={onNavigate}
         />
       </li>
