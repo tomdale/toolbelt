@@ -5,6 +5,7 @@ import {
   type PluginSidebarSection,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
+import { Icon } from "@/components/ui/icon";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 import { cn } from "@/lib/utils";
 import { useDebugMode } from "../debug/debug.ts";
@@ -70,9 +71,7 @@ export function RowMenu({
           <Separator />
           {isRoot ? (
             <ContextMenu.Sub>
-              <ContextMenu.SubTrigger className={itemClass}>
-                Move to workstream
-              </ContextMenu.SubTrigger>
+              <SubTrigger>Move to workstream</SubTrigger>
               <ContextMenu.Portal>
                 <ContextMenu.SubContent
                   {...portalScope}
@@ -129,9 +128,7 @@ export function RowMenu({
             <Item onSelect={() => handlers.wake(thread)}>Wake now</Item>
           ) : null}
           <ContextMenu.Sub>
-            <ContextMenu.SubTrigger className={itemClass}>
-              {snooze ? "Snooze until…" : "Snooze"}
-            </ContextMenu.SubTrigger>
+            <SubTrigger>{snooze ? "Change snooze" : "Snooze"}</SubTrigger>
             <ContextMenu.Portal>
               <ContextMenu.SubContent
                 {...portalScope}
@@ -192,6 +189,25 @@ function Item({
     >
       {children}
     </ContextMenu.Item>
+  );
+}
+
+/** An item that opens a submenu, marked with a trailing chevron. */
+function SubTrigger({ children }: { children: ReactNode }) {
+  return (
+    <ContextMenu.SubTrigger
+      className={cn(
+        itemClass,
+        "gap-2 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
+      )}
+    >
+      <span className="flex-1">{children}</span>
+      <Icon
+        name="ChevronRight"
+        className="size-3.5 text-muted-foreground"
+        aria-hidden="true"
+      />
+    </ContextMenu.SubTrigger>
   );
 }
 

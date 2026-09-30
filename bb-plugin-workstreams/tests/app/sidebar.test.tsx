@@ -671,3 +671,23 @@ it("keeps a snoozed child moving with its parent", async () => {
   expect(screen.getByText("Wake now")).toBeTruthy();
   slot.lifecycle.unmount();
 });
+
+it("marks the row menu's submenus with a chevron", async () => {
+  const slot = await mount(undefined, { settings: { showRecent: false } });
+  fireEvent.contextMenu(
+    within(slot.getByRole("region", { name: "Alpha" })).getByRole("link", {
+      name: "Root task",
+    }),
+  );
+  for (const name of ["Move to workstream", "Snooze"]) {
+    const item = await screen.findByRole("menuitem", { name });
+    expect(item.getAttribute("aria-haspopup")).toBe("menu");
+    expect(item.querySelector('[data-icon="ChevronRight"]')).not.toBeNull();
+  }
+  expect(
+    screen
+      .getByRole("menuitem", { name: "Rename…" })
+      .querySelector('[data-icon="ChevronRight"]'),
+  ).toBeNull();
+  slot.lifecycle.unmount();
+});
