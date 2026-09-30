@@ -44,18 +44,16 @@ against.
 - **Analysis**: a few seconds after each turn, one small model call records the
   thread's recap, work state, subject, and (for top-level threads) whether its
   latest request drifted to another workstream. Results are tied to the turn
-  they describe and show as updating once a new turn starts. Analysis never
-  moves anything.
+  they describe and show as updating once a new turn starts. Analysis itself
+  never moves anything; the later filing pass may use its subject.
 - **Archive suggestions**: when classification finds a natural end and BB has no
-  unfinished tasks, goals, queued messages, interactions, or background work, an
-  inline notice above the composer offers **Archive thread** or dismiss (×).
-  Choose **Archive suggestion presentation** in Workstreams settings to compare
-  the inline notice, a **Finished** header chip, an archive icon in expanded
-  composer controls, the floating card, or no suggestion. The header chip and
-  composer icon open a review dialog; inline and floating buttons archive
-  directly. Dismiss keeps the thread open and suppresses the suggestion for that
-  completed turn. Typing a continuation hides the suggestion. Archiving is
-  always your choice; Workstreams rechecks outstanding work when you click.
+  unfinished tasks, goals, queued messages, interactions, or background work, a
+  quiet **Archive** button appears in the composer toolbar. Clicking
+  archives directly after rechecking outstanding work. Typing a continuation,
+  adding an attachment, or starting new work dismisses the suggestion for that
+  completed turn; clearing the draft does not bring it back. Reading, scrolling,
+  and focusing the composer do not dismiss it. A later completed turn can
+  produce a new suggestion. Workstreams never archives automatically.
 - **Titles**: the same call suggests a title when a thread has none, its title
   is cut off or too vague, or its latest requests moved onto different work.
   Workstreams applies it (at most once an hour for a titled thread) and logs it
@@ -69,7 +67,9 @@ against.
   workstream, Workstreams spins it out, moves threads to the workstream their
   subject names, or merges a workstream into another, with a yellow banner under
   the thread header to Undo (or, with `evolution = ask`, to accept first).
-  Unsorted threads it can place confidently are filed the same way.
+  Unsorted threads it can place confidently are filed the same way. A
+  high-confidence `new: <subject>` assignment creates that workstream and files
+  the thread in the same pass; lower-confidence assignments remain Unsorted.
 - **Routing**: in BB's new-thread composer a banner shows where the draft goes
   (continue a thread, a new thread in a workstream, or a new workstream) and
   presets the project and environment; Enter or Start creates the thread and

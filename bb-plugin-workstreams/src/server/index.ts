@@ -42,14 +42,6 @@ const EVOLVE_DEBOUNCE_MS = 15_000;
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
-    archiveSuggestionStyle: {
-      type: "select",
-      label: "Archive suggestion presentation",
-      description:
-        "Compare archive affordances: inline notice, header chip, composer action (expanded layout only), floating card, or off. All use the same completion checks.",
-      options: ["inline", "header", "action", "floating", "off"],
-      default: "inline",
-    },
     showParentThreadLink: {
       type: "boolean",
       label: "Show parent thread link in thread header",
