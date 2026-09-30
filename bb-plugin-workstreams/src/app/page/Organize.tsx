@@ -59,6 +59,12 @@ export function Organize({
       const result = await rpc.call("bootstrap", { action: "get" } as never);
       if (generation !== readGeneration.current) return;
       setState(result.state as BootstrapState | null);
+    } catch (cause) {
+      // Background reads must not become unhandled rejections or erase a
+      // command failure. Keep the last usable snapshot and surface a read
+      // error only when no command owns the current error message.
+      if (generation === readGeneration.current && !commandGeneration.current)
+        setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       if (generation === readGeneration.current) setLoaded(true);
     }
