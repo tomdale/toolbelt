@@ -82,8 +82,14 @@ class ServerStore {
           this.publish({
             ...emptyState(),
             ...state,
-            snoozePrefs: parseSnoozePrefs(state.snoozePrefs),
+            order: this.overlayReorders(state.order),
+            snoozePrefs: this.overlayPrefs(state.snoozePrefs),
           });
+          // Keep overlays through the publication above. The read is the
+          // authoritative acknowledgement boundary; clearing earlier lets a
+          // late write response or the next render erase optimistic state.
+          this.pendingReorders.clear();
+          this.pendingPrefs.clear();
         }
       } catch {
         // Live BB data still renders; retain the last plugin snapshot.
@@ -97,8 +103,8 @@ class ServerStore {
     // A read already in flight, or a refresh requested before this write,
     // needs to be repeated after the write settles. Reads that begin during
     // the mutation mark this flag when their response is suppressed.
-    const refreshAlreadyNeeded = this.pending !== null || this.dirty;
-    this.mutationNeedsReconcile ||= refreshAlreadyNeeded;
+    // Every write needs an authoritative read before its overlay is retired.
+    this.mutationNeedsReconcile = true;
     this.dirty = true;
     return this.mutationVersion;
   }
@@ -129,7 +135,7 @@ class ServerStore {
       this.mutationNeedsReconcile = true;
       throw cause;
     } finally {
-      this.pendingReorders.delete(mutationVersion);
+      // The overlay is cleared only by the authoritative reconciliation read.
       this.endMutation();
     }
   };
@@ -137,6 +143,12 @@ class ServerStore {
   private overlayReorders(order: ManualOrder): ManualOrder {
     let next = order;
     for (const change of this.pendingReorders.values()) next = applyChange(next, change);
+    return next;
+  }
+
+  private overlayPrefs(prefs: SnoozePrefs): SnoozePrefs {
+    let next = prefs;
+    for (const patch of this.pendingPrefs.values()) next = parseSnoozePrefs({ ...next, ...patch });
     return next;
   }
 
@@ -185,7 +197,7 @@ class ServerStore {
       this.mutationNeedsReconcile = true;
       throw cause;
     } finally {
-      this.pendingPrefs.delete(mutationVersion);
+      // The overlay is cleared only by the authoritative reconciliation read.
       this.endMutation();
     }
   };
