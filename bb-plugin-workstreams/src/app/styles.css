@@ -654,6 +654,26 @@
   opacity: 0.7;
 }
 
+/*
+ * New work's banner is the placement UI, so BB's own project and environment
+ * pickers (the start of the row under the prompt box) would duplicate it. BB
+ * gives plugins no prop for this; the selector follows the stock
+ * NewThreadPromptBox markup and, if that changes, degrades to showing both.
+ * The permission picker at the end of the row stays.
+ */
+.ws-intake [data-promptbox-shell] > [data-promptbox] + div > :first-child {
+  display: none;
+}
+/*
+ * BB gives plugins no way to disable its submit button either. While the
+ * draft routes or its placement settles, the button looks and acts disabled;
+ * Enter still submits, and the intake rejects it with the reason, which keeps
+ * the draft.
+ */
+.ws-intake[data-ready="false"] [data-promptbox-submit-action] {
+  opacity: 0.5;
+  pointer-events: none;
+}
 .ws-intake-controls {
   display: flex;
   flex-direction: column;

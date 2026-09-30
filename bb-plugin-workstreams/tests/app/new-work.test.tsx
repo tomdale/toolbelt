@@ -22,11 +22,19 @@ const selectionBehavior = vi.hoisted(() => ({
         ) => Promise<import("@get-bb/plugin-sdk/app").ComposerSelection>,
       ) => Promise<import("@get-bb/plugin-sdk/app").ComposerSelection>),
 }));
+// BB's submit button stays enabled while a draft routes, so tests read
+// readiness from the dialog's intake instead of the button.
+const harness = vi.hoisted(() => ({
+  intake: undefined as
+    undefined | import("../../src/app/composer/intake.ts").Intake,
+}));
 const submitLifecycle = vi.hoisted(() => ({
   beforeGuard: undefined as
     | undefined
     | ((intake: import("../../src/app/composer/intake.ts").Intake) => void),
   clearDraft: undefined as undefined | (() => void),
+  restoreDraft: undefined as undefined | ((draft: string) => void),
+  busy: false,
 }));
 vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
   const actual =
@@ -63,6 +71,7 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
       props: import("@get-bb/plugin-sdk/app").NewThreadComposerProps,
     ) {
       const intake = useContext(IntakeContext)!;
+      harness.intake = intake;
       return (
         <div
           onChangeCapture={(e) => {
@@ -90,14 +99,27 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
           <IntakeBanner intake={intake} />
           <Composer
             {...props}
-            experimental_onBeforeSubmit={async (request) => {
-              submitLifecycle.beforeGuard?.(intake);
-              return props.experimental_onBeforeSubmit?.(request);
-            }}
             onSubmit={async (request) => {
-              // Model the native host's clear after approval and before dispatch.
+              // Like BB: one submit at a time; the draft clears as onSubmit
+              // starts (BB's clear renders after onSubmit's synchronous part)
+              // and comes back if it rejects.
+              if (submitLifecycle.busy) return;
+              submitLifecycle.busy = true;
+              const draft = (
+                document.querySelector(
+                  '[data-testid="bb-new-thread-composer-input"]',
+                ) as HTMLTextAreaElement
+              ).value;
+              submitLifecycle.beforeGuard?.(intake);
+              const submitted = Promise.resolve(props.onSubmit(request));
               submitLifecycle.clearDraft?.();
-              return props.onSubmit(request);
+              try {
+                await submitted;
+              } catch {
+                submitLifecycle.restoreDraft?.(draft);
+              } finally {
+                submitLifecycle.busy = false;
+              }
             }}
           />
           <ContinueAction />
@@ -111,6 +133,9 @@ afterEach(() => {
   selectionBehavior.apply = undefined;
   submitLifecycle.beforeGuard = undefined;
   submitLifecycle.clearDraft = undefined;
+  submitLifecycle.restoreDraft = undefined;
+  submitLifecycle.busy = false;
+  harness.intake = undefined;
 });
 const base = {
   id: "d1",
@@ -228,7 +253,9 @@ async function type(text = "Fix the parser") {
   fireEvent.change(input(), { target: { value: text } });
 }
 async function ready() {
-  await waitFor(() => expect(button().disabled).toBe(false), { timeout: 2000 });
+  await waitFor(() => expect(harness.intake?.canSubmit()).toBe(true), {
+    timeout: 2000,
+  });
 }
 async function choose(field: string, option: string) {
   fireEvent.click(
@@ -269,28 +296,28 @@ it("native composer API draft updates trigger routing through reactive getters",
     { timeout: 2000 },
   );
 });
-it("an enabled native snapshot rejected by the pre-clear guard retains its draft", async () => {
-  const { execute } = mount();
+it("a submit that isn't ready is rejected, so BB restores its draft", async () => {
+  const route = vi.fn().mockResolvedValue(decision);
+  const { execute } = mount(route);
   await type();
   await ready();
-  const clear = vi.fn(() =>
-    fireEvent.change(input(), { target: { value: "" } }),
-  );
-  submitLifecycle.clearDraft = clear;
-  submitLifecycle.beforeGuard = (intake) => intake.selectProject("proj_b");
-  expect(button().disabled).toBe(false);
+  submitLifecycle.clearDraft = () =>
+    fireEvent.change(input(), { target: { value: "" } });
+  submitLifecycle.restoreDraft = (draft) =>
+    fireEvent.change(input(), { target: { value: draft } });
+  // The draft starts routing again just as it is sent.
+  submitLifecycle.beforeGuard = (intake) => intake.retry();
   fireEvent.click(button());
-  await screen.findByRole("alert");
-  expect(clear).not.toHaveBeenCalled();
-  expect(input().value).toBe("Fix the parser");
+  await screen.findAllByRole("alert");
+  await waitFor(() => expect(input().value).toBe("Fix the parser"));
   expect(execute).not.toHaveBeenCalled();
 });
-it("a valid native snapshot clears only after guard approval and before dispatch", async () => {
+it("a ready submit claims the draft before BB clears it and dispatches once", async () => {
   const { execute } = mount();
   await type();
   await ready();
   const order: string[] = [];
-  submitLifecycle.beforeGuard = () => order.push("guard");
+  submitLifecycle.beforeGuard = () => order.push("submit");
   submitLifecycle.clearDraft = () => {
     order.push("clear");
     fireEvent.change(input(), { target: { value: "" } });
@@ -300,8 +327,8 @@ it("a valid native snapshot clears only after guard approval and before dispatch
     return { threadId: "created", sectionId: "sec_a" };
   });
   fireEvent.click(button());
-  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
-  expect(order).toEqual(["guard", "clear", "dispatch"]);
+  await waitFor(() => expect(order).toEqual(["submit", "clear", "dispatch"]));
+  expect(execute).toHaveBeenCalledTimes(1);
   expect(input().value).toBe("");
 });
 it("wrong-workstream override is used by route and execute after prompt edits", async () => {
@@ -342,7 +369,6 @@ it("Enter creates the new thread while a continuation is only suggested", async 
   expect(route).toHaveBeenCalledWith(
     expect.objectContaining({ offerNewThread: true }),
   );
-  expect(button().textContent).toBe("Create thread");
   expect(
     screen.getByRole("button", { name: "Continue Spacing fix instead" }),
   ).toBeTruthy();
@@ -454,7 +480,7 @@ it("unassigned journey requires project and sends none with latest independent p
       expect(screen.getAllByText("Pick a project").length).toBeGreaterThan(0),
     { timeout: 2000 },
   );
-  expect(button().disabled).toBe(true);
+  expect(harness.intake!.canSubmit()).toBe(false);
   await choose("Project", "sideshow");
   await ready();
   await type("Write a contributor checklist");
@@ -466,7 +492,7 @@ it("unassigned journey requires project and sends none with latest independent p
     placement: { projectId: "proj_b" },
   });
 });
-it("new-workstream journey sends edited name and accurate submit label", async () => {
+it("new-workstream journey sends the edited name", async () => {
   const { execute } = mount(() => ({
     ...base,
     outcome: "new-workstream",
@@ -477,7 +503,6 @@ it("new-workstream journey sends edited name and accurate submit label", async (
   }));
   await type();
   await ready();
-  expect(button().textContent).toBe("Create workstream");
   fireEvent.change(screen.getByRole("textbox", { name: "Workstream name" }), {
     target: { value: "Sync spike" },
   });
@@ -498,9 +523,6 @@ it("sidebar + keeps explicit destination, Shift+Enter and composing Enter never 
   ).toMatchObject({
     intent: { destination: { kind: "workstream", id: "sec_a" } },
   });
-  expect(
-    screen.getByTestId("bb-new-thread-composer").dataset.placementVisibility,
-  ).toBe("hidden");
 });
 
 it("creation Enter waits for deferred native placement acknowledgement without clearing the draft", async () => {
@@ -512,7 +534,7 @@ it("creation Enter waits for deferred native placement acknowledgement without c
   const { execute } = mount();
   await type();
   await waitFor(() => expect(finish).toBeTypeOf("function"), { timeout: 2000 });
-  expect(button().disabled).toBe(true);
+  expect(harness.intake!.canSubmit()).toBe(false);
   fireEvent.keyDown(input(), { key: "Enter" });
   expect(execute).not.toHaveBeenCalled();
   expect(input().value).toBe("Fix the parser");
@@ -539,7 +561,7 @@ it("Retry reapplies a rejected native selection when every intent field is manua
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy(),
   );
-  expect(button().disabled).toBe(true);
+  expect(harness.intake!.canSubmit()).toBe(false);
   expect(execute).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   await ready();
