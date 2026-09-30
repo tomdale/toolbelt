@@ -55,6 +55,7 @@ export async function fakeWorld(
     const thread = makeThreadResponse({
       id,
       title: `Thread ${id}`,
+      projectId: "proj_1",
       sectionId: null,
       parentThreadId: null,
       archivedAt: null,
@@ -93,10 +94,25 @@ export async function fakeWorld(
     sdk: {
       projects: {
         // A distinctive name that must never reach a model prompt.
-        list: async () => [{ id: "proj_1", name: "Zebracorn" }],
+        list: async () =>
+          ["proj_1", "proj_home", "proj_other", "proj_personal"].map((id) => ({
+            id,
+            name: "Zebracorn",
+            sources: [],
+          })),
         get: async () => ({ id: "proj_1", name: "Zebracorn" }),
         sidebarBootstrap: async () => ({
           personalProject: { id: "proj_personal", name: "Personal" },
+        }),
+      },
+      environments: {
+        get: async ({ environmentId }: { environmentId: string }) => ({
+          id: environmentId,
+          hostId: "host_1",
+          projectId: "proj_1",
+          status: "ready",
+          hostLifecycle: "active",
+          lifecycle: { phase: "active" },
         }),
       },
       hosts: {
@@ -105,6 +121,7 @@ export async function fakeWorld(
         ],
       },
       threads: {
+        getPluginMetadata: async () => ({}),
         promptHistory: async ({ threadId }: { threadId: string }) =>
           [...(conversations.get(threadId)?.requests ?? [])]
             .reverse()

@@ -12,7 +12,7 @@ afterEach(async () => {
 type Decision = {
   id: string;
   outcome: string;
-  sectionId?: string;
+  sectionId?: string | null;
   threadId?: string;
   placement?: { projectId: string; environment: unknown; label: string };
   candidates?: unknown[];
@@ -489,68 +489,717 @@ describe("explicit New work intent", () => {
       confidence: "high",
       reason: "model target",
     });
-    const decision = await w.harness.behavior.callRpc("route", {
+    const decision = (await w.harness.behavior.callRpc("route", {
       prompt: "Continue with @thread:a1 but start a fresh task",
-      intent: { action: "new-thread", destination: { kind: "workstream", id: alpha.id } },
-    }) as Decision;
-    expect(decision).toMatchObject({ outcome: "new-thread", sectionId: alpha.id });
-    expect(w.completions.filter((c) => c.prompt.includes("Someone is starting new work"))).toHaveLength(0);
+      intent: {
+        action: "new-thread",
+        destination: { kind: "workstream", id: alpha.id },
+      },
+    })) as Decision;
+    expect(decision).toMatchObject({
+      outcome: "new-thread",
+      sectionId: alpha.id,
+    });
+    expect(
+      w.completions.filter((c) =>
+        c.prompt.includes("Someone is starting new work"),
+      ),
+    ).toHaveLength(0);
   });
 
   it("supports a manual destination with automatic action", async () => {
-    const { w, alpha } = await setup({ outcome: "unsure", candidates: [], reason: "" });
-    const decision = await w.harness.behavior.callRpc("route", {
+    const { w, alpha } = await setup({
+      outcome: "unsure",
+      candidates: [],
+      reason: "",
+    });
+    const decision = (await w.harness.behavior.callRpc("route", {
       prompt: "Send this to Alpha",
       intent: { destination: { kind: "workstream", id: alpha.id } },
-    }) as Decision;
-    expect(decision).toMatchObject({ outcome: "new-thread", sectionId: alpha.id });
+    })) as Decision;
+    expect(decision).toMatchObject({
+      outcome: "new-thread",
+      sectionId: alpha.id,
+    });
   });
 
   it("creates an explicitly unassigned thread without filing it", async () => {
-    const { w } = await setup({ outcome: "continue", threadId: "a1", confidence: "high", reason: "ignored" });
+    const { w } = await setup({
+      outcome: "continue",
+      threadId: "a1",
+      confidence: "high",
+      reason: "ignored",
+    });
     const prompt = "Write an unassigned checklist";
-    const intent = { action: "new-thread" as const, destination: { kind: "none" as const }, placement: { projectId: "proj_personal" } };
-    const decision = await w.harness.behavior.callRpc("route", { prompt, intent }) as Decision;
-    expect(decision).toMatchObject({ outcome: "new-thread", sectionId: "", placement: { projectId: "proj_personal" } });
-    await w.harness.behavior.callRpc("routeExecute", { decisionId: decision.id, prompt, intent, execution: { input: [{ type: "text", text: prompt, mentions: [] }] } });
-    expect(w.spawned[0]).toMatchObject({ sectionId: null, pluginMetadata: { unassignedByRouter: true } });
+    const intent = {
+      action: "new-thread" as const,
+      destination: { kind: "none" as const },
+      placement: { projectId: "proj_personal" },
+    };
+    const decision = (await w.harness.behavior.callRpc("route", {
+      prompt,
+      intent,
+    })) as Decision;
+    expect(decision).toMatchObject({
+      outcome: "new-thread",
+      sectionId: null,
+      placement: { projectId: "proj_personal" },
+    });
+    await w.harness.behavior.callRpc("routeExecute", {
+      decisionId: decision.id,
+      prompt,
+      intent,
+      execution: { input: [{ type: "text", text: prompt, mentions: [] }] },
+    });
+    expect(w.spawned[0]).toMatchObject({
+      sectionId: null,
+      pluginMetadata: { unassignedByRouter: true },
+    });
     expect(w.threads.get("spawn1")?.sectionId).toBeNull();
   });
 
   it("rejects a changed intent and permits only one execute", async () => {
-    const { w, alpha } = await setup({ outcome: "unsure", candidates: [], reason: "" });
+    const { w, alpha } = await setup({
+      outcome: "unsure",
+      candidates: [],
+      reason: "",
+    });
     const prompt = "Fix Alpha manually";
-    const intent = { action: "new-thread" as const, destination: { kind: "workstream" as const, id: alpha.id } };
-    const decision = await w.harness.behavior.callRpc("route", { prompt, intent }) as Decision;
-    await expect(w.harness.behavior.callRpc("routeExecute", {
-      decisionId: decision.id, prompt, intent: { ...intent, destination: { kind: "none" } },
-    })).rejects.toThrow("preview changed");
-    await w.harness.behavior.callRpc("routeExecute", { decisionId: decision.id, prompt, intent });
-    await expect(w.harness.behavior.callRpc("routeExecute", { decisionId: decision.id, prompt, intent })).rejects.toThrow("preview expired");
+    const intent = {
+      action: "new-thread" as const,
+      destination: { kind: "workstream" as const, id: alpha.id },
+    };
+    const decision = (await w.harness.behavior.callRpc("route", {
+      prompt,
+      intent,
+    })) as Decision;
+    await expect(
+      w.harness.behavior.callRpc("routeExecute", {
+        decisionId: decision.id,
+        prompt,
+        intent: { ...intent, destination: { kind: "none" } },
+      }),
+    ).rejects.toThrow("preview changed");
+    await w.harness.behavior.callRpc("routeExecute", {
+      decisionId: decision.id,
+      prompt,
+      intent,
+    });
+    await expect(
+      w.harness.behavior.callRpc("routeExecute", {
+        decisionId: decision.id,
+        prompt,
+        intent,
+      }),
+    ).rejects.toThrow("preview expired");
     expect(w.spawned).toHaveLength(1);
   });
 
   it("preserves structured input and validates an explicit thread target", async () => {
-    const { w } = await setup({ outcome: "unsure", candidates: [], reason: "" });
+    const { w } = await setup({
+      outcome: "unsure",
+      candidates: [],
+      reason: "",
+    });
     const prompt = "Send an image to the existing task";
-    const input = [{ type: "text", text: prompt, mentions: [] }, { type: "image", path: "uploads/x.png" }];
-    const intent = { action: "send-message" as const, destination: { kind: "thread" as const, id: "a1" } };
-    const decision = await w.harness.behavior.callRpc("route", { prompt, intent }) as Decision;
-    await w.harness.behavior.callRpc("routeExecute", { decisionId: decision.id, prompt, intent, execution: { input } });
+    const input = [
+      { type: "text", text: prompt, mentions: [] },
+      { type: "image", path: "uploads/x.png" },
+    ];
+    const intent = {
+      action: "send-message" as const,
+      destination: { kind: "thread" as const, id: "a1" },
+    };
+    const decision = (await w.harness.behavior.callRpc("route", {
+      prompt,
+      intent,
+    })) as Decision;
+    await w.harness.behavior.callRpc("routeExecute", {
+      decisionId: decision.id,
+      prompt,
+      intent,
+      execution: { input },
+    });
     expect(w.sent[0]).toMatchObject({ threadId: "a1", input });
-    await expect(w.harness.behavior.callRpc("route", { prompt, intent: { ...intent, destination: { kind: "thread", id: "missing" } } })).rejects.toThrow("no longer exists");
+    await expect(
+      w.harness.behavior.callRpc("route", {
+        prompt,
+        intent: { ...intent, destination: { kind: "thread", id: "missing" } },
+      }),
+    ).rejects.toThrow("no longer exists");
   });
 
   it("lets an explicit new-workstream action infer its name", async () => {
     const { w } = await setup({
-      outcome: "new-workstream", name: "Offline sync", description: "", title: "Sync", code: true,
-      confidence: "high", reason: "new effort",
+      outcome: "new-workstream",
+      name: "Offline sync",
+      description: "",
+      title: "Sync",
+      code: true,
+      confidence: "high",
+      reason: "new effort",
     });
-    const decision = await w.harness.behavior.callRpc("route", {
+    const decision = (await w.harness.behavior.callRpc("route", {
       prompt: "Start a spike on offline sync",
       intent: { action: "new-workstream" },
-    }) as Decision;
-    expect(decision).toMatchObject({ outcome: "new-workstream", name: "Offline sync" });
+    })) as Decision;
+    expect(decision).toMatchObject({
+      outcome: "new-workstream",
+      name: "Offline sync",
+    });
     expect(routePrompts(w)).toHaveLength(1);
   });
 });
+
+const rawOutcomes = {
+  continue: {
+    outcome: "continue",
+    threadId: "a1",
+    confidence: "high",
+    reason: "same task",
+  },
+  "new-thread": {
+    outcome: "new-thread",
+    workstream: "Alpha",
+    title: "Fix Alpha",
+    code: true,
+    confidence: "high",
+    reason: "Alpha work",
+  },
+  "new-workstream": {
+    outcome: "new-workstream",
+    name: "Gamma",
+    description: "",
+    title: "Start Gamma",
+    projectLike: "Alpha",
+    code: true,
+    confidence: "high",
+    reason: "new effort",
+  },
+  unsure: {
+    outcome: "unsure",
+    candidates: [{ threadId: "a1" }, { workstream: "Alpha" }],
+    reason: "uncertain",
+  },
+};
+
+describe("New work shipping regressions", () => {
+  for (const action of [
+    "new-thread",
+    "send-message",
+    "new-workstream",
+  ] as const) {
+    for (const [outcome, answer] of Object.entries(rawOutcomes)) {
+      it(`constrains ${action} against classifier ${outcome}`, async () => {
+        const { w } = await setup(answer);
+        const decision = (await w.harness.behavior.callRpc("route", {
+          prompt: "Investigate the task",
+          intent: { action },
+        })) as Decision;
+        const allowed = action === "send-message" ? "continue" : action;
+        expect([allowed, "unsure"]).toContain(decision.outcome);
+        if (decision.outcome === "unsure") {
+          for (const candidate of decision.candidates as { kind: string }[]) {
+            expect(candidate.kind).toBe(
+              action === "send-message"
+                ? "thread"
+                : action === "new-thread"
+                  ? "workstream"
+                  : "none",
+            );
+          }
+        }
+      });
+    }
+    for (const mention of ["@thread:a1", "section"]) {
+      it(`constrains ${action} against ${mention} shortcut`, async () => {
+        const { w, alpha } = await setup(rawOutcomes.continue);
+        const decision = (await w.harness.behavior.callRpc("route", {
+          prompt: `${mention === "section" ? `@section:${alpha.id}` : mention} investigate`,
+          intent: { action },
+        })) as Decision;
+        expect([
+          action === "send-message" ? "continue" : action,
+          "unsure",
+        ]).toContain(decision.outcome);
+      });
+    }
+  }
+
+  for (const [outcome, answer] of Object.entries(rawOutcomes)) {
+    it(`keeps explicit none unassigned for raw ${outcome}, inferring only placement`, async () => {
+      const { w } = await setup(answer);
+      const decision = await w.harness.behavior.callRpc("route", {
+        prompt: "Investigate Alpha",
+        intent: { destination: { kind: "none" } },
+      });
+      expect(decision).toMatchObject({
+        outcome: "new-thread",
+        sectionId: null,
+        workstream: null,
+        placement: { projectId: "proj_1" },
+      });
+    });
+  }
+
+  it("rejects unresolved unassigned execution without rerouting or side effects", async () => {
+    const { w } = await setup(
+      { outcome: "unsure", candidates: [], reason: "no evidence" },
+      { homeProjectId: "proj_home" },
+    );
+    const prompt = "Write a checklist";
+    const intent = { destination: { kind: "none" } };
+    const decision = (await w.harness.behavior.callRpc("route", {
+      prompt,
+      intent,
+    })) as Decision;
+    expect(decision).toMatchObject({
+      outcome: "new-thread",
+      sectionId: null,
+      workstream: null,
+      placement: null,
+    });
+    const before = routePrompts(w).length;
+    await expect(
+      w.harness.behavior.callRpc("routeExecute", {
+        decisionId: decision.id,
+        prompt,
+        intent,
+      }),
+    ).rejects.toThrow("Choose a project");
+    expect(routePrompts(w)).toHaveLength(before);
+    expect(w.spawned).toHaveLength(0);
+    expect(w.sent).toHaveLength(0);
+  });
+
+  it("claims a candidate preview before deferred SDK placement", async () => {
+    const { w, alpha } = await setup(rawOutcomes.unsure);
+    const prompt = "Investigate Alpha";
+    const decision = await route(w, prompt);
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    w.harness.inspection.sdk.stub("projects.list", async () => {
+      await blocked;
+      return [{ id: "proj_1", name: "Zebracorn", sources: [] }];
+    });
+    const args = {
+      decisionId: decision.id,
+      prompt,
+      choice: { sectionId: alpha.id },
+    };
+    const first = w.harness.behavior.callRpc("routeExecute", args);
+    const second = w.harness.behavior.callRpc("routeExecute", args);
+    const results = Promise.allSettled([first, second]);
+    release();
+    expect((await results).map((r) => r.status).sort()).toEqual([
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(w.spawned).toHaveLength(1);
+  });
+
+  for (const mention of [false, true]) {
+    it(`uses environment-only override with ${mention ? "mention" : "classifier"} project inference`, async () => {
+      const { w, alpha } = await setup(rawOutcomes["new-thread"]);
+      const environment = {
+        type: "host",
+        hostId: "host_1",
+        workspace: {
+          type: "managed-worktree",
+          baseBranch: { kind: "named", name: "main" },
+        },
+      };
+      const intent = { placement: { environment } };
+      const prompt = mention
+        ? `@section:${alpha.id} investigate`
+        : "Investigate Alpha";
+      const decision = (await w.harness.behavior.callRpc("route", {
+        prompt,
+        intent,
+      })) as Decision;
+      expect(decision.placement).toMatchObject({
+        projectId: "proj_1",
+        environment,
+      });
+      await w.harness.behavior.callRpc("routeExecute", {
+        decisionId: decision.id,
+        prompt,
+        intent,
+      });
+      expect(w.spawned[0]).toMatchObject({ environment });
+    });
+  }
+
+  it("rejects an invalid project and malformed environment at the boundary", async () => {
+    const { w, alpha } = await setup(rawOutcomes.unsure);
+    await expect(
+      w.harness.behavior.callRpc("route", {
+        prompt: "Alpha",
+        intent: {
+          destination: { kind: "workstream", id: alpha.id },
+          placement: { projectId: "missing" },
+        },
+      }),
+    ).rejects.toThrow("project");
+    await expect(
+      w.harness.behavior.callRpc("route", {
+        prompt: "Alpha",
+        intent: { placement: { environment: { type: "reuse" } } },
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+it("reads unassigned metadata on thread.created and suppresses composer refiling", async () => {
+  const { w, alpha } = await setup(rawOutcomes["new-thread"]);
+  const prompt = "Investigate Alpha";
+  await route(w, prompt);
+  w.harness.inspection.sdk.stub(
+    "threads.getPluginMetadata",
+    async ({ threadId }: { threadId: string }) =>
+      threadId === "unassigned-event" ? { unassignedByRouter: true } : {},
+  );
+  const thread = w.addThread("unassigned-event", { createdAt: Date.now() });
+  await w.harness.behavior.emitThreadEvent("thread.created", { thread });
+  const hook = w.harness.registrations.hooks["message.dispatch"]!;
+  await hook(
+    makeMessageDispatchHookContext({
+      thread,
+      input: { text: prompt },
+      origin: "plugin",
+    }),
+  );
+  await new Promise((r) => setTimeout(r, 20));
+  expect(w.threads.get(thread.id)?.sectionId).toBeNull();
+  expect(w.threads.get(thread.id)?.sectionId).not.toBe(alpha.id);
+});
+
+for (const [name, target] of [
+  [
+    "another project",
+    {
+      projectId: "proj_other",
+      status: "ready",
+      hostLifecycle: "active",
+      lifecycle: { phase: "active" },
+    },
+  ],
+  [
+    "destroyed",
+    {
+      projectId: "proj_1",
+      status: "destroyed",
+      hostLifecycle: "active",
+      lifecycle: { phase: "destroyed" },
+    },
+  ],
+  [
+    "offline lifecycle",
+    {
+      projectId: "proj_1",
+      status: "ready",
+      hostLifecycle: "removed",
+      lifecycle: { phase: "active" },
+    },
+  ],
+] as const) {
+  it(`rejects reuse environment from ${name} before any creation`, async () => {
+    const { w, alpha } = await setup(rawOutcomes.unsure);
+    w.harness.inspection.sdk.stub("environments.get", async () => target);
+    await expect(
+      w.harness.behavior.callRpc("route", {
+        prompt: "Alpha",
+        intent: {
+          destination: { kind: "workstream", id: alpha.id },
+          placement: {
+            environment: { type: "reuse", environmentId: "env_wrong" },
+          },
+        },
+      }),
+    ).rejects.toThrow(/another project|unavailable/);
+    expect(w.spawned).toHaveLength(0);
+  });
+}
+
+it("requires agreeing project evidence across all unassigned candidates", async () => {
+  const { w } = await setup(
+    {
+      outcome: "unsure",
+      candidates: [{ workstream: "Alpha" }, { workstream: "Beta" }],
+      reason: "both fit",
+    },
+    { homeProjectId: "proj_home" },
+  );
+  const beta = w.addSection("Beta");
+  w.addThread("b1", {
+    sectionId: beta.id,
+    projectId: "proj_other",
+    title: "Beta task",
+  });
+  await w.harness.behavior.callRpc("refresh", null);
+  const decision = await w.harness.behavior.callRpc("route", {
+    prompt: "Investigate the shared task",
+    intent: { destination: { kind: "none" } },
+  });
+  expect(decision).toMatchObject({
+    outcome: "new-thread",
+    sectionId: null,
+    workstream: null,
+    placement: null,
+  });
+});
+
+it("rejects contradictory explicit action and destination", async () => {
+  const { w, alpha } = await setup(rawOutcomes["new-thread"]);
+  for (const intent of [
+    { action: "new-thread", destination: { kind: "thread", id: "a1" } },
+    {
+      action: "send-message",
+      destination: { kind: "workstream", id: alpha.id },
+    },
+    {
+      action: "new-workstream",
+      destination: { kind: "workstream", id: alpha.id },
+    },
+  ])
+    await expect(
+      w.harness.behavior.callRpc("route", {
+        prompt: "Investigate Alpha",
+        intent,
+      }),
+    ).rejects.toThrow("incompatible");
+  expect(routePrompts(w)).toHaveLength(0);
+});
+
+it("claims concurrent sends once and preserves attachments and mentions", async () => {
+  const { w } = await setup(rawOutcomes.continue);
+  const prompt = "Investigate the attached example";
+  const intent = {
+    action: "send-message",
+    destination: { kind: "thread", id: "a1" },
+  };
+  const decision = (await w.harness.behavior.callRpc("route", {
+    prompt,
+    intent,
+  })) as Decision;
+  const input = [
+    { type: "text", text: prompt, mentions: [{ kind: "thread", id: "a1" }] },
+    { type: "image", path: "uploads/example.png" },
+  ];
+  let release!: () => void;
+  const block = new Promise<void>((r) => {
+    release = r;
+  });
+  w.harness.inspection.sdk.stub("threads.get", async () => {
+    await block;
+    return w.threads.get("a1")!;
+  });
+  const args = {
+    decisionId: decision.id,
+    prompt,
+    intent,
+    execution: { input },
+  };
+  const results = Promise.allSettled([
+    w.harness.behavior.callRpc("routeExecute", args),
+    w.harness.behavior.callRpc("routeExecute", args),
+  ]);
+  release();
+  expect((await results).map((r) => r.status).sort()).toEqual([
+    "fulfilled",
+    "rejected",
+  ]);
+  expect(w.sent).toHaveLength(1);
+  expect(w.sent[0]).toMatchObject({ threadId: "a1", input });
+});
+
+it("preserves attachments and mentions when spawning with a same-project override", async () => {
+  const { w } = await setup(rawOutcomes["new-thread"]);
+  const prompt = "Investigate the attachment";
+  const environment = { type: "reuse", environmentId: "env_mine" };
+  const intent = { placement: { projectId: "proj_1", environment } };
+  const input = [
+    { type: "text", text: prompt, mentions: [{ kind: "thread", id: "a1" }] },
+    { type: "localFile", path: "uploads/example.txt", mimeType: "text/plain" },
+  ];
+  const decision = (await w.harness.behavior.callRpc("route", {
+    prompt,
+    intent,
+  })) as Decision;
+  await w.harness.behavior.callRpc("routeExecute", {
+    decisionId: decision.id,
+    prompt,
+    intent,
+    execution: { input },
+  });
+  expect(w.spawned).toHaveLength(1);
+  expect(w.spawned[0]).toMatchObject({
+    input,
+    environment,
+    projectId: "proj_1",
+  });
+});
+
+it("validates a candidate intent snapshot before placement work", async () => {
+  const { w, alpha } = await setup(rawOutcomes.unsure);
+  const prompt = "Investigate Alpha";
+  const intent = {
+    action: "new-thread",
+    placement: { projectId: "proj_other" },
+  };
+  const decision = (await w.harness.behavior.callRpc("route", {
+    prompt,
+    intent,
+  })) as Decision;
+  w.harness.inspection.sdk.stub("projects.list", async () => {
+    throw new Error("Placement started before validating intent");
+  });
+  await expect(
+    w.harness.behavior.callRpc("routeExecute", {
+      decisionId: decision.id,
+      prompt,
+      choice: { sectionId: alpha.id },
+      intent: { ...intent, placement: { projectId: "proj_1" } },
+    }),
+  ).rejects.toThrow("preview changed");
+  w.harness.inspection.sdk.stub("projects.list", async () => [
+    { id: "proj_other", name: "Other", sources: [] },
+  ]);
+  await w.harness.behavior.callRpc("routeExecute", {
+    decisionId: decision.id,
+    prompt,
+    choice: { sectionId: alpha.id },
+    intent,
+  });
+  expect(w.spawned).toHaveLength(1);
+  expect(w.spawned[0]).toMatchObject({
+    projectId: "proj_other",
+    sectionId: alpha.id,
+  });
+});
+
+it("rejects unresolved new-workstream execution without rerouting", async () => {
+  const { w } = await setup(rawOutcomes.continue, {
+    homeProjectId: "proj_home",
+  });
+  const prompt = "Create Gamma";
+  const intent = { action: "new-workstream", workstreamName: "Gamma" };
+  const decision = (await w.harness.behavior.callRpc("route", {
+    prompt,
+    intent,
+  })) as Decision;
+  expect(decision).toMatchObject({
+    outcome: "new-workstream",
+    placement: null,
+  });
+  await expect(
+    w.harness.behavior.callRpc("routeExecute", {
+      decisionId: decision.id,
+      prompt,
+      intent,
+    }),
+  ).rejects.toThrow("Choose a project");
+  expect(routePrompts(w)).toHaveLength(0);
+  expect(w.spawned).toHaveLength(0);
+  expect(w.sections.some((s) => s.name === "Gamma")).toBe(false);
+});
+
+it("revalidates reuse availability before creating a workstream", async () => {
+  const { w } = await setup(rawOutcomes.unsure);
+  const prompt = "Create Gamma";
+  const intent = {
+    action: "new-workstream",
+    workstreamName: "Gamma",
+    placement: {
+      projectId: "proj_1",
+      environment: { type: "reuse", environmentId: "env_mine" },
+    },
+  };
+  const decision = (await w.harness.behavior.callRpc("route", {
+    prompt,
+    intent,
+  })) as Decision;
+  w.harness.inspection.sdk.stub("environments.get", async () => ({
+    projectId: "proj_1",
+    status: "destroyed",
+    hostLifecycle: "active",
+    lifecycle: { phase: "destroyed" },
+  }));
+  await expect(
+    w.harness.behavior.callRpc("routeExecute", {
+      decisionId: decision.id,
+      prompt,
+      intent,
+    }),
+  ).rejects.toThrow("unavailable");
+  expect(w.spawned).toHaveLength(0);
+  expect(w.sections.some((s) => s.name === "Gamma")).toBe(false);
+});
+
+it("validates execution environments and prevents replacing explicit placement", async () => {
+  const { w, alpha } = await setup(rawOutcomes.unsure);
+  const prompt = "Alpha task";
+  const intent = {
+    destination: { kind: "workstream", id: alpha.id },
+    placement: { environment: { type: "reuse", environmentId: "env_mine" } },
+  };
+  const decision = (await w.harness.behavior.callRpc("route", {
+    prompt,
+    intent,
+  })) as Decision;
+  await expect(
+    w.harness.behavior.callRpc("routeExecute", {
+      decisionId: decision.id,
+      prompt,
+      intent,
+      execution: { projectId: "proj_1", environment: { type: "unrecognized" } },
+    }),
+  ).rejects.toThrow();
+  await expect(
+    w.harness.behavior.callRpc("routeExecute", {
+      decisionId: decision.id,
+      prompt,
+      intent,
+      execution: {
+        projectId: "proj_1",
+        environment: { type: "reuse", environmentId: "env_changed" },
+      },
+    }),
+  ).rejects.toThrow("preview changed");
+  expect(w.spawned).toHaveLength(0);
+});
+
+it("keeps CLI workstream selection and original message after claiming previews", async () => {
+  const { w, alpha } = await setup(rawOutcomes.continue);
+  const prompt = "A fresh Alpha task";
+  const result = await w.harness.behavior.runCli([
+    "new",
+    prompt,
+    "--workstream",
+    "Alpha",
+    "--json",
+  ]);
+  expect(result.exitCode).toBe(0);
+  expect(w.spawned).toHaveLength(1);
+  expect(w.spawned[0]).toMatchObject({ prompt, sectionId: alpha.id });
+  expect(w.sent).toHaveLength(0);
+  expect(routePrompts(w)).toHaveLength(0);
+});
+
+for (const mention of ["@thread:a1", "@section:sec_1"]) {
+  it(`keeps explicit none ahead of ${mention}`, async () => {
+    const { w } = await setup(rawOutcomes.continue);
+    const decision = await w.harness.behavior.callRpc("route", {
+      prompt: `${mention} new task`,
+      intent: { destination: { kind: "none" } },
+    });
+    expect(decision).toMatchObject({
+      outcome: "new-thread",
+      sectionId: null,
+      workstream: null,
+      placement: { projectId: "proj_1" },
+    });
+  });
+}

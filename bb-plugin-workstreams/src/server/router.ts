@@ -11,7 +11,11 @@ import { createHash, randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { isCurrent } from "../domain/analysis.ts";
 import { relativeAge } from "../domain/presentation.ts";
-import { mentionedTarget, type RouteInput } from "../domain/router.ts";
+import {
+  mentionedTarget,
+  type RawRoute,
+  type RouteInput,
+} from "../domain/router.ts";
 import { buildForest } from "../domain/tree.ts";
 import type { Analyzer } from "./analyzer.ts";
 import type { Journal } from "./journal.ts";
@@ -26,7 +30,6 @@ export type Environment = NonNullable<SpawnArgs["environment"]>;
 export type Placement = {
   projectId: string;
   environment: Environment;
-  /** "checkout", "worktree", or "personal workspace". */
   label: string;
 };
 
@@ -63,8 +66,8 @@ export type RouteDecision =
     })
   | (Base & {
       outcome: "new-thread";
-      sectionId: string;
-      workstream: string;
+      sectionId: string | null;
+      workstream: string | null;
       title: string;
       placement: Placement | null;
     })
@@ -83,6 +86,12 @@ export type RouteDecision =
       )[];
     });
 
+export type RouteClaim = {
+  readonly decision: RouteDecision;
+  readonly prompt: string;
+  readonly intent: RouteIntent | null;
+};
+
 export type RouteSource = "router" | "handoff";
 
 const MEMORY_MS = 15 * 60_000;
@@ -93,8 +102,15 @@ const hash = (text: string) =>
 export class Router {
   private readonly decisions = new Map<
     string,
-    { decision: RouteDecision; prompt: string; intent: RouteIntent | null; at: number; used: boolean }
+    {
+      decision: RouteDecision;
+      prompt: string;
+      intent: RouteIntent | null;
+      at: number;
+      used: boolean;
+    }
   >();
+  private readonly claims = new WeakSet<RouteClaim>();
   private personal: string | null = null;
 
   constructor(
@@ -143,7 +159,8 @@ export class Router {
     const explicitProject = intent?.placement?.projectId;
     const explicitEnvironment = intent?.placement?.environment;
     const selectedProject = explicitProject ?? options.pickedProjectId ?? null;
-    const remember = (decision: RouteDecision) => this.remember(text, decision, intent);
+    const remember = (decision: RouteDecision) =>
+      this.remember(text, this.constrain(decision, intent), intent);
     const analysis = this.deps.analyzer.all();
     const forest = buildForest(threads);
     const nameOf = new Map(records.map((r) => [r.sectionId, r.name]));
@@ -160,49 +177,121 @@ export class Router {
       throw new UserError(
         "That workstream no longer exists. Choose another workstream.",
       );
-    // Explicit destinations are authoritative: mentions and the classifier
-    // must never redirect a preview the user reviewed.
-    if ((intent?.action === "send-message" ||
-      (!intent?.action && destination?.kind === "thread")) && destination) {
+    if (
+      destination &&
+      intent?.action &&
+      ((intent.action === "send-message" && destination.kind !== "thread") ||
+        (intent.action === "new-thread" && destination.kind === "thread") ||
+        intent.action === "new-workstream")
+    )
+      throw new UserError(
+        "That destination is incompatible with the selected action.",
+      );
+    if (explicitProject) await this.project(explicitProject);
+    // Explicit destinations remain authoritative over mentions and inference.
+    if (
+      (intent?.action === "send-message" ||
+        (!intent?.action && destination?.kind === "thread")) &&
+      destination
+    ) {
       if (destination.kind !== "thread")
         throw new UserError("Choose an existing thread to send a message.");
       const target = threads.find((t) => t.id === destination.id);
       if (!target) throw new UserError("That thread no longer exists.");
       return remember({
-        id: randomUUID(), outcome: "continue", threadId: target.id,
+        id: randomUUID(),
+        outcome: "continue",
+        threadId: target.id,
         threadTitle: target.title,
-        workstream: target.sectionId ? (nameOf.get(target.sectionId) ?? null) : null,
-        sectionId: target.sectionId, confidence: "high",
-        reason: "The destination was chosen explicitly.", subject: null, traceId: null,
+        workstream: target.sectionId
+          ? (nameOf.get(target.sectionId) ?? null)
+          : null,
+        sectionId: target.sectionId,
+        confidence: "high",
+        reason: "The destination was chosen explicitly.",
+        subject: null,
+        traceId: null,
       });
     }
-    if ((!intent?.action || intent.action === "new-thread") && destination?.kind === "none")
+    if (
+      (!intent?.action || intent.action === "new-thread") &&
+      destination?.kind === "none" &&
+      selectedProject
+    )
       return remember({
-        id: randomUUID(), outcome: "new-thread", sectionId: "", workstream: "",
-        title: "", placement: await this.placement(null, false, explicitProject, explicitEnvironment, true),
-        confidence: "high", reason: "No workstream was chosen explicitly.", subject: null, traceId: null,
+        id: randomUUID(),
+        outcome: "new-thread",
+        sectionId: null,
+        workstream: null,
+        title: "",
+        placement: await this.placement(
+          null,
+          false,
+          selectedProject,
+          explicitEnvironment,
+          true,
+        ),
+        confidence: "high",
+        reason: "No workstream was chosen explicitly.",
+        subject: null,
+        traceId: null,
       });
-    if ((!intent?.action || intent.action === "new-thread") && destination?.kind === "workstream") {
-      if (!nameOf.has(destination.id)) throw new UserError("That workstream no longer exists.");
+    if (
+      (!intent?.action || intent.action === "new-thread") &&
+      destination?.kind === "workstream"
+    ) {
+      if (!nameOf.has(destination.id))
+        throw new UserError("That workstream no longer exists.");
       return remember({
-        id: randomUUID(), outcome: "new-thread", sectionId: destination.id,
-        workstream: nameOf.get(destination.id)!, title: "",
-        placement: await this.placement(destination.id, true, explicitProject, explicitEnvironment, false),
-        confidence: "high", reason: "The destination was chosen explicitly.", subject: null, traceId: null,
+        id: randomUUID(),
+        outcome: "new-thread",
+        sectionId: destination.id,
+        workstream: nameOf.get(destination.id)!,
+        title: "",
+        placement: await this.placement(
+          destination.id,
+          true,
+          selectedProject,
+          explicitEnvironment,
+          false,
+        ),
+        confidence: "high",
+        reason: "The destination was chosen explicitly.",
+        subject: null,
+        traceId: null,
       });
     }
     if (intent?.action === "new-workstream" && intent.workstreamName?.trim()) {
       const name = intent.workstreamName.trim();
       return remember({
-        id: randomUUID(), outcome: "new-workstream", name, description: "", title: "",
-        placement: await this.placement(null, true, explicitProject, explicitEnvironment, true),
-        confidence: "high", reason: "The workstream name was chosen explicitly.", subject: null, traceId: null,
+        id: randomUUID(),
+        outcome: "new-workstream",
+        name,
+        description: "",
+        title: "",
+        placement: await this.placement(
+          null,
+          true,
+          selectedProject,
+          explicitEnvironment,
+          true,
+        ),
+        confidence: "high",
+        reason: "The workstream name was chosen explicitly.",
+        subject: null,
+        traceId: null,
       });
     }
     const mention = options.workstreamId
       ? { sectionId: options.workstreamId }
       : mentionedTarget(text);
-    if (mention && "threadId" in mention && intent?.action !== "new-thread") {
+    if (
+      destination?.kind !== "none" &&
+      mention &&
+      "threadId" in mention &&
+      intent?.action !== "new-thread" &&
+      intent?.action !== "new-workstream"
+    ) {
       const target = threads.find((t) => t.id === mention.threadId);
       if (target && !excluded.has(target.id))
         return remember({
@@ -220,18 +309,25 @@ export class Router {
           traceId: null,
         });
     }
-    if (mention && "sectionId" in mention && nameOf.has(mention.sectionId))
+    if (
+      destination?.kind !== "none" &&
+      mention &&
+      "sectionId" in mention &&
+      nameOf.has(mention.sectionId) &&
+      intent?.action !== "new-workstream"
+    )
       return remember({
         id: randomUUID(),
         outcome: "new-thread",
         sectionId: mention.sectionId,
         workstream: nameOf.get(mention.sectionId)!,
         title: "",
-        placement: (await this.placement(
+        placement: await this.placement(
           mention.sectionId,
           true,
           selectedProject,
-        )) ?? (await this.placement(null, false, selectedProject))!,
+          explicitEnvironment,
+        ),
         confidence: "high",
         reason: "The request mentions this workstream.",
         subject: null,
@@ -262,12 +358,11 @@ export class Router {
           age: relativeAge(t.latestAttentionAt, now),
         };
       }),
-      pickedProjectHosts:
-        picked && picked !== (await this.personalProjectId())
-          ? records
-              .filter((r) => r.projects.some((p) => p.projectId === picked))
-              .map((r) => r.name)
-          : null,
+      pickedProjectHosts: picked
+        ? records
+            .filter((r) => r.projects.some((p) => p.projectId === picked))
+            .map((r) => r.name)
+        : null,
     };
     const { value: raw, traceId } = await this.deps.inference.run(
       "route",
@@ -289,7 +384,24 @@ export class Router {
       traceId,
     };
     let decision: RouteDecision;
-    if (raw.outcome === "continue") {
+    if (destination?.kind === "none") {
+      const inferred = this.inferredProject(raw);
+      decision = {
+        ...base,
+        outcome: "new-thread",
+        sectionId: null,
+        workstream: null,
+        title: "title" in raw ? raw.title : "",
+        reason: "No workstream was chosen explicitly.",
+        placement: await this.placement(
+          null,
+          false,
+          selectedProject ?? inferred,
+          explicitEnvironment,
+          true,
+        ),
+      };
+    } else if (raw.outcome === "continue") {
       const target = titleOf.get(raw.threadId)!;
       decision = {
         ...base,
@@ -318,7 +430,12 @@ export class Router {
         confidence: raw.confidence,
         reason: raw.reason,
         subject: raw.subject,
-        placement: (await this.placement(record.sectionId, raw.code, picked)) ?? (await this.placement(null, false, picked))!
+        placement: await this.placement(
+          record.sectionId,
+          raw.code,
+          picked,
+          explicitEnvironment,
+        ),
       };
     } else if (raw.outcome === "new-thread") {
       const sectionId = idOf.get(raw.workstream)!;
@@ -326,7 +443,12 @@ export class Router {
         ...base,
         ...raw,
         sectionId,
-        placement: (await this.placement(sectionId, raw.code, picked)) ?? (await this.placement(null, false, picked))!
+        placement: await this.placement(
+          sectionId,
+          raw.code,
+          picked,
+          explicitEnvironment,
+        ),
       };
     } else if (raw.outcome === "new-workstream") {
       const like = raw.projectLike ? idOf.get(raw.projectLike) : undefined;
@@ -339,7 +461,13 @@ export class Router {
         confidence: raw.confidence,
         reason: raw.reason,
         subject: raw.subject,
-        placement: (await this.placement(like ?? null, raw.code, picked)) ?? (await this.placement(null, false, picked))!
+        placement: await this.placement(
+          like ?? null,
+          raw.code,
+          picked,
+          explicitEnvironment,
+          intent?.action === "new-workstream",
+        ),
       };
     } else
       decision = {
@@ -360,10 +488,139 @@ export class Router {
               },
         ),
       };
+    decision = this.constrain(decision, intent);
     this.deps.inference.annotate(traceId, {
       decision: { ...decision, traceId: undefined },
     });
     return remember(decision);
+  }
+
+  /** Validates the preview snapshot and consumes it synchronously, before SDK work. */
+  claim(options: {
+    id: string;
+    prompt: string;
+    intent?: RouteIntent | null;
+  }): RouteClaim {
+    const decision = this.recall(options);
+    if (!decision) throw new UserError("That preview expired; route it again.");
+    const entry = this.decisions.get(options.id)!;
+    if (JSON.stringify(entry.intent) !== JSON.stringify(options.intent ?? null))
+      throw new UserError("That preview changed; route it again.");
+    entry.used = true;
+    const claim = { decision, prompt: entry.prompt, intent: entry.intent };
+    this.claims.add(claim);
+    return claim;
+  }
+
+  /** Resolves only a reviewed unsure candidate; it never classifies the prompt again. */
+  async resolveCandidate(
+    claim: RouteClaim,
+    sectionId: string,
+  ): Promise<RouteDecision> {
+    if (
+      !this.claims.has(claim) ||
+      claim.decision.outcome !== "unsure" ||
+      !claim.decision.candidates.some(
+        (c) => c.kind === "workstream" && c.sectionId === sectionId,
+      )
+    )
+      throw new UserError("That choice isn't one of the candidates.");
+    const record = this.deps.map.get(sectionId);
+    if (!record) throw new UserError("That workstream no longer exists.");
+    return {
+      ...claim.decision,
+      outcome: "new-thread",
+      sectionId,
+      workstream: record.name,
+      title: "",
+      placement: await this.placement(
+        sectionId,
+        true,
+        claim.intent?.placement?.projectId,
+        claim.intent?.placement?.environment,
+      ),
+    };
+  }
+
+  /** Every exit, including mentions, offers only outcomes compatible with the chosen action. */
+  private constrain(
+    decision: RouteDecision,
+    intent: RouteIntent | null,
+  ): RouteDecision {
+    const action = intent?.action;
+    if (!action) return decision;
+    const allowed = action === "send-message" ? "continue" : action;
+    if (decision.outcome === allowed) return decision;
+    const candidates =
+      decision.outcome === "unsure"
+        ? decision.candidates
+        : decision.outcome === "continue" &&
+            decision.sectionId &&
+            decision.workstream
+          ? [
+              {
+                kind: "workstream" as const,
+                sectionId: decision.sectionId,
+                name: decision.workstream,
+              },
+            ]
+          : decision.outcome === "new-thread" &&
+              decision.sectionId &&
+              decision.workstream
+            ? [
+                {
+                  kind: "workstream" as const,
+                  sectionId: decision.sectionId,
+                  name: decision.workstream,
+                },
+              ]
+            : [];
+    return {
+      id: decision.id,
+      outcome: "unsure",
+      confidence: "low",
+      subject: decision.subject,
+      reason: "Choose a destination compatible with the selected action.",
+      traceId: decision.traceId,
+      candidates: candidates.filter((c) =>
+        action === "send-message"
+          ? c.kind === "thread"
+          : action === "new-thread"
+            ? c.kind === "workstream"
+            : false,
+      ),
+    };
+  }
+
+  /** Classification is placement evidence only for explicitly unassigned work. */
+  private inferredProject(raw: RawRoute): string | null {
+    const records = this.deps.map.list();
+    const threads = this.deps.service.threads();
+    const candidates =
+      raw.outcome === "unsure"
+        ? raw.candidates
+        : raw.outcome === "continue"
+          ? [{ threadId: raw.threadId }]
+          : raw.outcome === "new-thread"
+            ? [{ workstream: raw.workstream }]
+            : raw.projectLike
+              ? [{ workstream: raw.projectLike }]
+              : [];
+    if (!candidates.length) return null;
+    const evidence = candidates.map((c) => {
+      if ("threadId" in c) {
+        const thread = threads.find((t) => t.id === c.threadId);
+        return thread?.projectId ? [thread.projectId] : [];
+      }
+      return (
+        records
+          .find((r) => r.name === c.workstream)
+          ?.projects.map((p) => p.projectId) ?? []
+      );
+    });
+    if (evidence.some((ids) => ids.length !== 1)) return null;
+    const projects = new Set(evidence.flat());
+    return projects.size === 1 ? [...projects][0]! : null;
   }
 
   /** A remembered decision, by id or by the prompt it was made for. */
@@ -412,19 +669,22 @@ export class Router {
       /** Execution choices from the composer the user saw. */
       execution?: Partial<SpawnArgs>;
       intent?: RouteIntent | null;
+      claim?: RouteClaim;
     } = {},
   ): Promise<{ threadId: string | null; sectionId: string | null }> {
+    const claim =
+      options.claim ??
+      this.claim({ id: decision.id, prompt, intent: options.intent });
+    if (!this.claims.delete(claim) || claim.decision.id !== decision.id)
+      throw new UserError("That preview expired; route it again.");
     const sdk = this.deps.sdk();
     const text = options.message ?? prompt;
-    if ((decision.outcome === "new-thread" || decision.outcome === "new-workstream") && !decision.placement)
-      throw new UserError("Choose a project before creating this work.");
-    const entry = this.decisions.get(decision.id);
-    if (entry?.intent && JSON.stringify(entry.intent) !== JSON.stringify(options.intent ?? null))
-      throw new UserError("That preview changed; route it again.");
-    if (entry) entry.used = true;
     if (decision.outcome === "unsure")
       return { threadId: null, sectionId: null };
     if (decision.outcome === "continue") {
+      const target = await sdk.threads.get({ threadId: decision.threadId });
+      if (target.archivedAt !== null)
+        throw new UserError("That thread is archived.");
       await sdk.threads.send({
         threadId: decision.threadId,
         input: options.execution?.input ?? [
@@ -447,7 +707,30 @@ export class Router {
       );
       return { threadId: decision.threadId, sectionId: null };
     }
-    let sectionId: string;
+    const placement = decision.placement;
+    if (!placement)
+      throw new UserError("Choose a project before creating this work.");
+    const executionEnvironment =
+      options.execution?.projectId === placement.projectId
+        ? options.execution.environment
+        : undefined;
+    // An explicit intent is bound to the preview; execution cannot replace it.
+    if (
+      claim.intent?.placement?.environment &&
+      executionEnvironment &&
+      JSON.stringify(executionEnvironment) !==
+        JSON.stringify(placement.environment)
+    )
+      throw new UserError("That preview changed; route it again.");
+    const environment = executionEnvironment ?? placement.environment;
+    await this.validateEnvironment(placement.projectId, environment);
+    if (
+      decision.outcome === "new-thread" &&
+      decision.sectionId &&
+      !this.deps.map.get(decision.sectionId)
+    )
+      throw new UserError("That workstream no longer exists.");
+    let sectionId: string | null;
     if (decision.outcome === "new-workstream") {
       const created = await this.deps.service.createWorkstream(
         decision.name,
@@ -458,7 +741,7 @@ export class Router {
         this.deps.map.describe(sectionId, decision.description);
     } else sectionId = decision.sectionId;
     const at = this.now();
-    const actualSectionId = sectionId || null;
+    const actualSectionId = sectionId;
     // The composer's own input keeps attachments and mentions; otherwise send
     // the text.
     const body =
@@ -471,15 +754,14 @@ export class Router {
       sdk.threads.spawn({
         ...options.execution,
         ...body,
-        projectId: decision.placement!.projectId,
-        environment:
-          options.execution?.projectId === decision.placement!.projectId
-            ? (options.execution.environment ?? decision.placement!.environment)
-            : decision.placement!.environment,
+        projectId: placement.projectId,
+        environment,
         sectionId: actualSectionId,
         pluginMetadata: {
           kind: "task",
-          ...(actualSectionId ? { workstreamAtCreation: actualSectionId } : { unassignedByRouter: true }),
+          ...(actualSectionId
+            ? { workstreamAtCreation: actualSectionId }
+            : { unassignedByRouter: true }),
           filedBy: source,
           filedAt: at,
           filedSectionId: actualSectionId,
@@ -489,21 +771,23 @@ export class Router {
     );
     const logged = this.deps.service.recordCreated(
       thread.id,
-      actualSectionId ?? "",
+      actualSectionId,
       source,
       {
         title: decision.title || thread.title || "New thread",
         rationale:
           decision.outcome === "new-workstream"
             ? `Started in new workstream ${decision.name}: ${decision.reason}`
-            : `Started in ${decision.workstream}: ${decision.reason}`,
+            : decision.workstream
+              ? `Started in ${decision.workstream}: ${decision.reason}`
+              : `Started without a workstream: ${decision.reason}`,
       },
     );
     this.deps.inference.link(
       decision.traceId,
       { kind: "thread", ref: thread.id },
       { kind: "entry", ref: logged.id },
-      ...(decision.outcome === "new-workstream"
+      ...(decision.outcome === "new-workstream" && sectionId
         ? [{ kind: "section" as const, ref: sectionId }]
         : []),
     );
@@ -516,7 +800,8 @@ export class Router {
    */
   async fileComposed(threadId: string, decision: RouteDecision): Promise<void> {
     const entry = this.decisions.get(decision.id);
-    if (entry) entry.used = true;
+    if (!entry || entry.used) return;
+    entry.used = true;
     let sectionId: string | null = null;
     if (decision.outcome === "new-thread") {
       if (!decision.sectionId) return;
@@ -561,8 +846,8 @@ export class Router {
 
   /**
    * Project and environment for new work (SPEC §6 policy, I4: always
-   * explicit, never `project-default`). The host is the project's default
-   * source machine, so the composer can apply the selection as-is.
+   * explicit). Automatic placement uses the project's default source machine;
+   * an explicit environment selection is validated and kept as-is.
    */
   private async placement(
     sectionId: string | null,
@@ -571,40 +856,100 @@ export class Router {
     environment?: Environment,
     requireProject = false,
   ): Promise<Placement | null> {
-    const personal = await this.personalProjectId();
     const projects = sectionId
       ? (this.deps.map.get(sectionId)?.projects ?? [])
       : [];
-    if (picked) {
-      const configured = projects.find((p) => p.projectId === picked);
-      const placement = await this.on(
-        picked,
-        picked === personal
-          ? "personal workspace"
-          : configured?.environment === "worktree"
-            ? "worktree"
-            : "checkout",
-      );
-      return environment ? { ...placement, environment } : placement;
+    const chosen = code
+      ? projects.find((p) => p.role === "primary")
+      : undefined;
+    let projectId = picked ?? chosen?.projectId ?? null;
+    let label: Placement["label"] =
+      chosen?.environment === "worktree" ? "worktree" : "checkout";
+    if (!projectId) {
+      if (requireProject) return null;
+      projectId =
+        (await this.deps.homeProjectId()).trim() ||
+        (await this.personalProjectId());
     }
-    if (code) {
-      const chosen = projects.find((p) => p.role === "primary");
-      if (chosen)
-        return this.on(
-          chosen.projectId,
-          chosen.environment === "worktree" ? "worktree" : "checkout",
-        );
+    const personal = await this.personalProjectId();
+    if (projectId === personal) label = "personal workspace";
+    else if (picked)
+      label =
+        projects.find((p) => p.projectId === picked)?.environment === "worktree"
+          ? "worktree"
+          : "checkout";
+    if (environment) {
+      await this.validateEnvironment(projectId, environment);
+      return {
+        projectId,
+        environment,
+        label:
+          environment.type === "reuse"
+            ? "existing environment"
+            : environment.type === "host"
+              ? environment.workspace.type === "managed-worktree"
+                ? "worktree"
+                : environment.workspace.type === "personal"
+                  ? "personal workspace"
+                  : "checkout"
+              : environment.type === "provider"
+                ? "provider environment"
+                : "project default",
+      };
     }
-    if (requireProject) return null;
-    const home = (await this.deps.homeProjectId()).trim();
-    if (home) return this.on(home, "checkout");
-    return this.on(personal, "personal workspace");
+    return this.on(projectId, label);
   }
 
-  private async on(
+  private async project(projectId: string) {
+    const projects = await this.deps
+      .sdk()
+      .projects.list({ includePersonal: true });
+    const project = projects.find((p) => p.id === projectId);
+    if (!project)
+      throw new UserError(
+        "That project no longer exists. Choose another project.",
+      );
+    return project;
+  }
+
+  private async validateEnvironment(
     projectId: string,
-    label: "checkout" | "worktree" | "personal workspace",
-  ): Promise<Placement> {
+    environment: Environment,
+  ): Promise<void> {
+    await this.project(projectId);
+    const sdk = this.deps.sdk();
+    if (environment.type === "reuse") {
+      const target = await sdk.environments.get({
+        environmentId: environment.environmentId,
+      });
+      if (target.projectId !== projectId)
+        throw new UserError("That environment belongs to another project.");
+      if (
+        target.status !== "ready" ||
+        target.hostLifecycle !== "active" ||
+        (target.lifecycle.phase !== "active" &&
+          target.lifecycle.phase !== "retiring")
+      )
+        throw new UserError(
+          "That environment is unavailable. Choose another environment.",
+        );
+      const hosts = await sdk.hosts.list();
+      if (
+        !hosts.some((h) => h.id === target.hostId && h.status === "connected")
+      )
+        throw new UserError("That environment's machine is unavailable.");
+    } else if (environment.type === "host" && environment.hostId) {
+      const hosts = await sdk.hosts.list();
+      if (
+        !hosts.some(
+          (h) => h.id === environment.hostId && h.status === "connected",
+        )
+      )
+        throw new UserError("That machine is unavailable.");
+    }
+  }
+
+  private async on(projectId: string, label: string): Promise<Placement> {
     const hostId = await this.hostFor(projectId);
     const workspace =
       label === "worktree"
@@ -622,28 +967,16 @@ export class Router {
         type: "host",
         ...(hostId ? { hostId } : {}),
         workspace,
-      } as Environment,
+      },
     };
   }
 
   private async hostFor(projectId: string): Promise<string | null> {
     const sdk = this.deps.sdk();
-    try {
-      const projects = await sdk.projects.list({
-        includePersonal: true,
-      } as never);
-      const project = (
-        projects as {
-          id: string;
-          sources?: { hostId: string; isDefault?: boolean }[];
-        }[]
-      ).find((p) => p.id === projectId);
-      const source =
-        project?.sources?.find((s) => s.isDefault) ?? project?.sources?.[0];
-      if (source) return source.hostId;
-    } catch {
-      // Fall back to the only connected machine.
-    }
+    const project = await this.project(projectId);
+    const source =
+      project.sources.find((s) => s.isDefault) ?? project.sources[0];
+    if (source) return source.hostId;
     const hosts = (await sdk.hosts.list()).filter(
       (h) => h.status === "connected",
     );
@@ -666,7 +999,7 @@ export class Router {
     this.decisions.set(decision.id, {
       decision,
       prompt,
-      intent,
+      intent: intent ? structuredClone(intent) : null,
       at: this.now(),
       used: false,
     });
