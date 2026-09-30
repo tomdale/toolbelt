@@ -6,7 +6,6 @@ import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { ProposalBanner } from "./header/ProposalBanner.tsx";
 import { RouteBanner } from "./composer/RouteBanner.tsx";
 import { RecapCard } from "./composer/RecapCard.tsx";
-import { ArchiveCard } from "./composer/ArchiveCard.tsx";
 import { AutomaticFilingCard } from "./composer/AutomaticFilingCard.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
 import { SpinnerSettings } from "./settings/SpinnerSettings.tsx";
@@ -23,12 +22,6 @@ export default definePluginApp((app) => {
     id: "recap",
     scopes: ["thread"],
     banners: [{ id: "recap", chrome: "bare", component: RecapCard }],
-  });
-  // Kept as a compatibility registration while clients migrate to the recap header.
-  app.composer.customize({
-    id: "archive-suggestion",
-    scopes: ["thread"],
-    actions: [{ id: "archive", component: ArchiveCard }],
   });
   app.composer.customize({
     id: "router",
