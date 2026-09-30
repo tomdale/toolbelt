@@ -148,7 +148,8 @@ class ServerStore {
     for (const [version, change] of this.pendingReorders) {
       if (version === responseVersion) continue;
       const sameGroup = response && change.kind === response.kind &&
-        (change.kind === "workstreams" || change.groupId === response.groupId);
+        (change.kind === "workstreams" ||
+          (response.kind === "threads" && change.groupId === response.groupId));
       if (!sameGroup || version > responseVersion) next = applyChange(next, change);
     }
     return next;
