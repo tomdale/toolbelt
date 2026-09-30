@@ -247,7 +247,6 @@ export function WorkstreamsThreadList({
         {projection.needsYou.length > 0 ? (
           <Band
             title="For you"
-            count={projection.needsYou.length}
             boxed
           >
             {(showAllNeeds
