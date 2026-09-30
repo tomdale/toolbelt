@@ -1,0 +1,108 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, within } from "@testing-library/react";
+import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { emptyState } from "./fixtures.ts";
+beforeEach(() =>
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  ),
+);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+async function page(summary: string | null, overrides = {}) {
+  const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
+  return renderSlot(
+    app.navPanels[0]!,
+    { subPath: "activity" },
+    {
+      settings: { debug: true },
+      rpc: {
+        state: () => emptyState(),
+        journal: () => ({ entries: [] }),
+        traces: () => ({
+          traces: [
+            {
+              id: "t",
+              at: 1000,
+              kind: "analysis",
+              status: "ok",
+              label: "Fix parser",
+              model: "test/model",
+              durationMs: 1200,
+              replayOf: null,
+              usage: null,
+              error: null,
+              summary,
+              threads: [],
+              ...overrides,
+            },
+          ],
+        }),
+      } as never,
+    },
+  );
+}
+
+it("labels lifecycle and subject, explains review on focus, and hides metrics by default", async () => {
+  const slot = await page(
+    "review · BB · drift → Workstreams (high) · new title “Fix parser”",
+  );
+  const row = (await slot.findByText("Fix parser", { exact: true })).closest(
+    "li",
+  )!;
+  expect(within(row).getByText("Work status:")).toBeTruthy();
+  expect(within(row).getByText("Subject:")).toBeTruthy();
+  expect(within(row).queryByText("Workstream:")).toBeNull();
+  expect(
+    within(row).getByText(/Different workstream: Workstreams/),
+  ).toBeTruthy();
+  expect(
+    within(row).getByText("Technical details").closest("details")!.open,
+  ).toBe(false);
+  fireEvent.focus(
+    within(row).getByRole("button", { name: "About Ready for your review" }),
+  );
+  const tooltip = await within(document.body).findByRole("tooltip");
+  expect(tooltip.textContent).toBe(
+    "A deliverable is ready for you to review, test, merge, or ship.",
+  );
+  fireEvent.blur(
+    within(row).getByRole("button", { name: "About Ready for your review" }),
+  );
+  fireEvent.click(within(row).getByText("Technical details"));
+  expect(within(row).getAllByText("Not reported")).toHaveLength(3);
+  expect(within(row).getByText("Duration")).toBeTruthy();
+});
+
+it("does not mistake an optional title suggestion for a subject", async () => {
+  const slot = await page("done · new title “Parser complete”");
+  await slot.findByText("Done");
+  expect(slot.queryByText("Subject:")).toBeNull();
+  expect(slot.getByText("Title: “Parser complete”")).toBeTruthy();
+});
+
+it("preserves unknown summary formats as labeled model results", async () => {
+  const slot = await page("A future summary format");
+  expect(await slot.findByText("A future summary format")).toBeTruthy();
+  expect(slot.getByText("Model result:")).toBeTruthy();
+  expect(slot.queryByText("Work status:")).toBeNull();
+});
+
+it("keeps failed calls and their errors visible outside technical details", async () => {
+  const slot = await page(null, {
+    status: "failed",
+    error: "Model unavailable",
+  });
+  const error = await slot.findByText("Model unavailable");
+  expect(error.closest("details")).toBeNull();
+  expect(slot.getByText("Model call failed")).toBeTruthy();
+});

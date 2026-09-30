@@ -530,11 +530,15 @@ restores the previous title while it is still the one Workstreams wrote.
      a one-line summary of what the model decided (or why it failed) and a
      "Model calls" filter. Debug-only Activity controls filter calls by kind and
      failures, show the count and cost of visible calls, load older traces, and
-     clear traces without deleting journal entries. Internal call rows use a
-     muted, dashed treatment and show model, duration, usage, cost, and replay
-     details. Journal entries expose expandable internal details. There is no
-     separate Debug tab; `debug` page links open Activity.
-     `bb workstreams trace` prints recorded calls.
+     clear traces without deleting journal entries. Model rows use a quiet
+     surface tint and Model badge, and show an event name, subject, and labeled
+     assessment, distinct from applied changes. Related threads use BB-style
+     thread-reference pills with host-owned link navigation. Information buttons
+     explain event and lifecycle terms on hover and keyboard focus. Model,
+     duration, token usage, and cost appear under collapsed Technical details.
+     Journal change status is separate from assessed thread state; raw JSON is a
+     nested disclosure. There is no separate Debug tab; `debug` page links open
+     Activity. `bb workstreams trace` prints recorded calls.
    - "Run again" sends a recorded prompt to its model again and records the
      answer as a replay of the original. A replay changes nothing Workstreams
      stores.

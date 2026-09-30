@@ -287,7 +287,7 @@ function WorkstreamCard({
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span
                     className={cn(
-                      "truncate",
+                      "flex min-w-0 items-center gap-1.5",
                       row.thread.isUnread
                         ? "font-medium"
                         : "text-foreground/90",
@@ -295,7 +295,7 @@ function WorkstreamCard({
                   >
                     {state?.glyph && view.kind === "current" ? (
                       <span
-                        className={`ws-work ws-work-${view.analysis.state} mr-1.5`}
+                        className={`ws-work ws-work-${view.analysis.state} inline-flex size-3.5 shrink-0 items-center justify-center`}
                         role="img"
                         aria-label={state.label}
                         title={state.label}
@@ -303,7 +303,9 @@ function WorkstreamCard({
                         {state.glyph}
                       </span>
                     ) : null}
-                    {row.thread.displayTitle}
+                    <span className="min-w-0 truncate">
+                      {row.thread.displayTitle}
+                    </span>
                   </span>
                   <WhereItStopped
                     view={view}
@@ -313,8 +315,9 @@ function WorkstreamCard({
                   />
                 </span>
                 {childCount.get(row.thread.id) ? (
-                  <span className="text-xs text-muted-foreground">
-                    +{childCount.get(row.thread.id)} delegated
+                  <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+                    +{childCount.get(row.thread.id)} child{" "}
+                    {childCount.get(row.thread.id) === 1 ? "thread" : "threads"}
                   </span>
                 ) : null}
                 <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
