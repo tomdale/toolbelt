@@ -33,7 +33,7 @@ import {
   type TraceSummary,
 } from "../domain/trace.ts";
 import type { TraceStore } from "./trace.ts";
-import type { Understanding } from "./understanding.ts";
+import type { Notebooks } from "./notebooks.ts";
 
 const TITLE_MAX = 80;
 const clip = (text: string) =>
@@ -132,7 +132,7 @@ export function registerCli(
     map,
     router,
     traces,
-    understanding,
+    notebooks,
   }: {
     service: WorkstreamService;
     journal: Journal;
@@ -141,7 +141,7 @@ export function registerCli(
     map: WorkstreamMap;
     router: Router;
     traces: TraceStore;
-    understanding: Understanding;
+    notebooks: Notebooks;
   },
 ): void {
   const load = async () => {
@@ -175,148 +175,24 @@ export function registerCli(
         "List workstreams, file threads into them, and read the activity log",
       commands: {
         understanding: cliCommand({
-          summary:
-            "Inspect cited cross-thread understanding or learn from a conversation",
-          positionals: [
-            {
-              name: "query",
-              description: "Optional topic or product to retrieve",
-            },
-          ],
+          summary: "Read the learner's notebooks and shared brief, learn from a thread, or ask a question",
+          positionals: [{ name: "query", description: "Optional notebook search" }],
           options: {
-            json: {
-              type: "boolean",
-              description: "Print accounts, evidence, and progress as JSON",
-            },
-            retrieve: {
-              type: "boolean",
-              description:
-                "Explain local retrieval for the query; no model calls or memory changes",
-            },
-            budget: {
-              type: "integer",
-              description: "Retrieval character budget (500–8000)",
-              min: 500,
-              max: 8000,
-            },
-            account: {
-              type: "string",
-              description:
-                "Inspect an account and its revision/evidence lineage by ID",
-            },
-            evidence: {
-              type: "string",
-              description:
-                "Inspect an observation and the accounts and decisions using it",
-            },
-            decisions: {
-              type: "boolean",
-              description: "List retained actual retrieval snapshots",
-            },
-            before: {
-              type: "string",
-              description:
-                "With --decisions, page before this snapshot ID from the preceding page",
-            },
-            trace: {
-              type: "string",
-              description: "Filter decision snapshots to this model-call trace",
-            },
-            observe: {
-              type: "string",
-              description:
-                "Extract the next bounded batch from this thread; repeat to process historical turns",
-            },
+            json: { type: "boolean", description: "Print notebook state or learning run as JSON" },
+            learn: { type: "string", description: "Read new conversation and update notes for this thread (paid model calls)" },
+            ask: { type: "string", description: "Ask the learner to investigate a question without changing notes (paid model calls)" },
           },
           async run({ positionals, options }) {
             try {
-              const modes = [
-                options.retrieve,
-                options.account,
-                options.evidence,
-                options.decisions,
-                options.observe,
-              ].filter(Boolean);
-              if (modes.length > 1)
-                throw new UserError(
-                  "Choose one operation: --retrieve, --account, --evidence, --decisions, or --observe.",
-                );
-              if (options.budget !== undefined && !options.retrieve)
-                throw new UserError("--budget requires --retrieve.");
-              if (options.trace && !options.decisions)
-                throw new UserError("--trace requires --decisions.");
-              if (options.before && !options.decisions)
-                throw new UserError("--before requires --decisions.");
-              // Cursor IDs may live beyond the newest page; details are supplied
-              // by a bounded lookup rather than scanning every snapshot.
-              const before = options.before
-                ? understanding.retrievalCursor(options.before)
-                : undefined;
-              if (options.before && !before)
-                throw new UserError(
-                  "That snapshot cursor is no longer retained.",
-                );
-              if (options.retrieve) {
-                const report = understanding.retrieve(positionals.query ?? "", {
-                  budget: options.budget,
-                });
-                return {
-                  exitCode: 0,
-                  stdout: options.json
-                    ? json(report)
-                    : [
-                        `Local retrieval · ${report.usedChars} / ${report.budget} characters · no model call`,
-                        `Terms: ${report.terms.join(", ") || "none"}`,
-                        ...report.candidates.map(
-                          (c) =>
-                            `${c.disposition.padEnd(16)} ${c.kind} · score ${c.score} · ${c.title}`,
-                        ),
-                        "",
-                        report.context || "No context selected.",
-                      ].join("\n"),
-                };
+              if (options.learn && options.ask) throw new UserError("Choose --learn or --ask.");
+              if (options.learn) await notebooks.observe(options.learn);
+              if (options.ask) {
+                const run = await notebooks.ask(options.ask);
+                return { exitCode: run.status === "done" ? 0 : 1, stdout: options.json ? json(run) : run.summary || run.error || run.status };
               }
-              if (options.account || options.evidence || options.decisions) {
-                const detail = options.account
-                  ? understanding.accountDetail(options.account)
-                  : options.evidence
-                    ? understanding.observationDetail(options.evidence)
-                    : {
-                        retrievals: understanding.retrievals({
-                          traceId: options.trace,
-                          before,
-                          limit: 30,
-                        }),
-                      };
-                return { exitCode: 0, stdout: json(detail) };
-              }
-              if (options.observe) {
-                const thread = await bb.sdk.threads.get({
-                  threadId: options.observe,
-                });
-                if (
-                  thread.visibility === "hidden" ||
-                  thread.archivedAt !== null ||
-                  thread.status !== "idle"
-                )
-                  throw new UserError(
-                    "Choose a visible, unarchived, idle thread to observe.",
-                  );
-                await understanding.observe(thread.id);
-              }
-              const query = positionals.query ?? "";
-              const inspected = understanding.inspect(query);
-              const health = inspected.health;
-              const summary = `${health.threads} indexed threads · ${health.pending ?? 0} pending · ${health.failed ?? 0} failed`;
-              return {
-                exitCode: 0,
-                stdout: options.json
-                  ? json(inspected)
-                  : `${summary}\n\n${understanding.context(query) || "No grounded understanding yet. Use --observe <thread-id> or enable Incremental understanding in Workstreams settings."}`,
-              };
-            } catch (error) {
-              return fail(error);
-            }
+              const overview = notebooks.overview(positionals.query ?? "");
+              return { exitCode: 0, stdout: options.json ? json(overview) : ["Shared understanding", overview.brief.text || "The learner has not written a brief yet.", ...overview.notebooks.map(n => `\n${n.title} (${n.threadId})\n${n.text}${n.error ? `\nLearning error: ${n.error}` : ""}`)].join("\n\n") };
+            } catch (error) { return fail(error); }
           },
         }),
         list: cliCommand({

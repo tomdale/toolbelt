@@ -20,7 +20,7 @@ import { buildForest } from "../domain/tree.ts";
 import type { Analyzer } from "./analyzer.ts";
 import type { Journal } from "./journal.ts";
 import type { WorkstreamMap } from "./map.ts";
-import { traceIdOf, type Inference } from "./model.ts";
+import { type Inference } from "./model.ts";
 import { UserError, type WorkstreamService } from "./service.ts";
 
 type Sdk = BbPluginApi["sdk"];
@@ -124,11 +124,6 @@ export class Router {
       model: () => Promise<string>;
       homeProjectId: () => Promise<string>;
       context?: (query: string) => string;
-      retrieval?: (
-        query: string,
-        threadId: string | null,
-      ) => { context: string; id: string };
-      attachRetrieval?: (id: string, traceId: string | null) => void;
       now?: () => number;
     },
   ) {}
@@ -343,10 +338,9 @@ export class Router {
       });
 
     const picked = selectedProject;
-    const retrieval = this.deps.retrieval?.(text, options.about ?? null);
     const input: RouteInput = {
       prompt: text,
-      understanding: retrieval?.context ?? this.deps.context?.(text),
+      understanding: this.deps.context?.(text),
       workstreams: records
         .filter((r) => r.evidence.threadCount > 0 || r.description)
         .map((r) => ({
@@ -372,22 +366,10 @@ export class Router {
             .map((r) => r.name)
         : null,
     };
-    let completion;
-    try {
-      completion = await this.deps.inference.run("route", input, {
-        model: await this.deps.model(),
-        label: text.replace(/\s+/g, " "),
-        links: options.about ? [{ kind: "thread", ref: options.about }] : [],
-        signal: options.signal,
-      });
-      if (retrieval)
-        this.deps.attachRetrieval?.(retrieval.id, completion.traceId);
-    } catch (error) {
-      if (retrieval)
-        this.deps.attachRetrieval?.(retrieval.id, traceIdOf(error));
-      throw error;
-    }
-    const { value: raw, traceId } = completion;
+    const { value: raw, traceId } = await this.deps.inference.run("route", input, {
+      model: await this.deps.model(), label: text.replace(/\s+/g," "),
+      links: options.about ? [{ kind: "thread", ref: options.about }] : [], signal: options.signal,
+    });
     const idOf = new Map(records.map((r) => [r.name, r.sectionId]));
     const titleOf = new Map(threads.map((t) => [t.id, t]));
     const base = {

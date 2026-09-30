@@ -176,6 +176,62 @@ const MIGRATIONS = [
   )`,
   "CREATE INDEX ws_understanding_retrieval_thread ON ws_understanding_retrieval(thread_id, at DESC, id DESC)",
   "CREATE INDEX ws_understanding_retrieval_trace ON ws_understanding_retrieval(trace_id, at DESC, id DESC)",
+  `CREATE TABLE ws_notebook (
+    thread_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    text TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    cursor TEXT,
+    revision INTEGER,
+    error TEXT
+  )`,
+  `CREATE TABLE ws_notebook_brief (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    text TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE ws_notebook_run (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT,
+    question TEXT,
+    status TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    finished_at INTEGER,
+    summary TEXT NOT NULL,
+    error TEXT,
+    steps TEXT NOT NULL,
+    usage TEXT NOT NULL,
+    model TEXT NOT NULL
+  )`,
+  "CREATE INDEX ws_notebook_run_started ON ws_notebook_run(started_at DESC)",
+  `CREATE TABLE ws_notebook_version (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT,
+    text TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    run_id TEXT
+  )`,
+  "CREATE INDEX ws_notebook_version_doc ON ws_notebook_version(thread_id, at DESC)",
+  `CREATE TABLE ws_notebook_dependency (
+    doc_thread_id TEXT,
+    source_thread_id TEXT NOT NULL,
+    PRIMARY KEY(doc_thread_id, source_thread_id)
+  )`,
+  "CREATE INDEX ws_notebook_dependency_source ON ws_notebook_dependency(source_thread_id)",
+  `CREATE TABLE ws_notebook_run_dependency (
+    run_id TEXT NOT NULL,
+    source_thread_id TEXT NOT NULL,
+    PRIMARY KEY(run_id, source_thread_id)
+  )`,
+  "CREATE INDEX ws_notebook_run_dependency_source ON ws_notebook_run_dependency(source_thread_id)",
+  "DROP TABLE IF EXISTS ws_understanding_retrieval",
+  "DROP TABLE IF EXISTS ws_understanding_revision",
+  "DROP TABLE IF EXISTS ws_understanding_account_observation",
+  "DROP TABLE IF EXISTS ws_understanding_account",
+  "DROP TABLE IF EXISTS ws_understanding_observation",
+  "DROP TABLE IF EXISTS ws_understanding_progress",
+  "DELETE FROM ws_trace_link WHERE trace_id IN (SELECT id FROM ws_trace WHERE kind IN ('understanding-extract','understanding-synthesis'))",
+  "DELETE FROM ws_trace WHERE kind IN ('understanding-extract','understanding-synthesis')",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

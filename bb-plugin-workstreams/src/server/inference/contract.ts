@@ -1,9 +1,11 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { usageSchema } from "../../domain/trace.ts";
+import { agentRequestSchema, agentResponseSchema } from "../../domain/learner-protocol.ts";
 
 /** RPC between the plugin server and its `bb.host` entry on the machine. */
 export const hostContract = defineRpcContract({
+  agentTurn: { input: agentRequestSchema, output: agentResponseSchema },
   complete: {
     input: z
       .object({
