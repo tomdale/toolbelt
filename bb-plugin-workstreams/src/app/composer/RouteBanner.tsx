@@ -215,7 +215,10 @@ function NativeRouteBanner() {
   }, [rpc, text, projectId]);
 
   // Preset the pickers to the routed project and environment, once per
-  // decision, and say so if the composer settled on something else.
+  // decision. The composer may keep its own project: a fork draft locks it,
+  // and a pending attachment copy refuses the switch. Its choice is
+  // authoritative (Start submits through it and the thread is filed into the
+  // routed workstream either way), so adopt it silently.
   const decision = route.decision;
   useEffect(() => {
     if (
@@ -234,16 +237,10 @@ function NativeRouteBanner() {
         environment: placement.environment as never,
       })
       .then(
-        (applied) => {
-          // Environments come back in the composer's own shape, so only a
-          // different project is reliably a mismatch.
-          set({
-            note:
-              applied.projectId && applied.projectId !== placement.projectId
-                ? "the composer kept a different project; check the pickers"
-                : null,
-          });
-        },
+        (applied) =>
+          // Record the kept project as the banner's preset, so it is not
+          // later mistaken for the user's own pick.
+          set({ preset: applied.projectId ?? placement.projectId, note: null }),
         (error: unknown) =>
           set({
             preset: null,
