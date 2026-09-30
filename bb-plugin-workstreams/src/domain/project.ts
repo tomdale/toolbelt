@@ -4,8 +4,10 @@
  * A workstream is a native BB section. Threads are grouped the way BB's own
  * sidebar groups them: build the complete parent/child forest first, then file
  * each tree under its root's section (SPEC I2). Every visible, non-archived
- * thread appears in exactly one group row (SPEC I1). For you and Recent are
- * overlays that reference those rows; they never replace them.
+ * thread appears in exactly one group row (SPEC I1), or in Snoozed: a snoozed
+ * thread leaves its group, with its descendants, until it wakes. For you and
+ * Recent are overlays that reference the group rows; they never replace them,
+ * and never show snoozed threads.
  */
 import { applyOrder, type ManualOrder } from "./order.ts";
 import {
@@ -56,6 +58,13 @@ export type Projection<T extends WorkstreamThread> = {
   readonly unsorted: Group<T>;
   /** Workstreams with no visible threads, or none active within the window. */
   readonly dormant: readonly Group<T>[];
+  /**
+   * Snoozed subtrees, soonest to wake first (activity snoozes last). Depths
+   * start at 0 for each snoozed thread; `workstreamId` is still the group the
+   * thread returns to.
+   */
+  readonly snoozed: readonly Row<T>[];
+  /** Every row, snoozed ones included. */
   readonly rowOf: ReadonlyMap<string, Row<T>>;
   /**
    * Children whose question folded into their parent's newer one, keyed by
@@ -76,6 +85,11 @@ export type ProjectionOptions<T extends WorkstreamThread> = {
   readonly needsYou?: (thread: T) => boolean;
   /** The user's drag-and-drop order for workstreams and root threads. */
   readonly order?: ManualOrder;
+  /**
+   * A snoozed thread's wake time (null: until its next activity); undefined
+   * when the thread isn't snoozed.
+   */
+  readonly snoozedUntil?: (thread: T) => number | null | undefined;
 };
 
 const pinOrder = (a: WorkstreamThread, b: WorkstreamThread) =>
@@ -113,11 +127,31 @@ export function projectWorkstreams<T extends WorkstreamThread>(
     children: compareChildren,
   });
   const known = new Set(sections.map((section) => section.id));
+  const groupKeyOf = (root: T) =>
+    root.sectionId && known.has(root.sectionId) ? root.sectionId : UNSORTED_ID;
+
+  // Snoozed threads leave their trees with their whole subtree; what's left
+  // of each tree stays in its group.
+  const wakeOf = options.snoozedUntil ?? (() => undefined);
+  const snoozedNodes: TreeNode<T>[] = [];
+  const prune = (node: TreeNode<T>): TreeNode<T> => ({
+    ...node,
+    children: node.children
+      .filter((child) => {
+        if (wakeOf(child.thread) === undefined) return true;
+        snoozedNodes.push(child);
+        return false;
+      })
+      .map(prune),
+  });
+  const activeRoots: TreeNode<T>[] = [];
+  for (const root of forest.roots)
+    if (wakeOf(root.thread) === undefined) activeRoots.push(prune(root));
+    else snoozedNodes.push(root);
 
   const rootsBySection = new Map<string, TreeNode<T>[]>();
-  for (const root of forest.roots) {
-    const sectionId = root.thread.sectionId;
-    const key = sectionId && known.has(sectionId) ? sectionId : UNSORTED_ID;
+  for (const root of activeRoots) {
+    const key = groupKeyOf(root.thread);
     const roots = rootsBySection.get(key) ?? [];
     roots.push(root);
     rootsBySection.set(key, roots);
@@ -209,12 +243,34 @@ export function projectWorkstreams<T extends WorkstreamThread>(
     .sort(byAttention)
     .slice(0, recentLimit);
 
+  const wakeRank = (node: TreeNode<T>) =>
+    wakeOf(node.thread) ?? Number.POSITIVE_INFINITY;
+  const snoozed: Row<T>[] = [];
+  for (const node of snoozedNodes.sort(
+    (a, b) => wakeRank(a) - wakeRank(b) || compareRoots(a.thread, b.thread),
+  )) {
+    const root = forest.rootOf.get(node.thread.id) ?? node.thread;
+    const key = groupKeyOf(root);
+    for (const child of flatten(node)) {
+      const row: Row<T> = {
+        thread: child.thread,
+        depth: child.depth - node.depth,
+        hasChildren: child.children.length > 0,
+        workstreamId: key === UNSORTED_ID ? null : key,
+        needsYou: needsYou(child.thread),
+      };
+      snoozed.push(row);
+      rowOf.set(child.thread.id, row);
+    }
+  }
+
   return {
     needsYou: needsYouRows,
     recent,
     groups,
     unsorted: group(UNSORTED_ID, "Unsorted"),
     dormant,
+    snoozed,
     rowOf,
     needsYouVia,
   };

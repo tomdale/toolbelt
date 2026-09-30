@@ -1,5 +1,6 @@
 // Workstreams frontend entry: the sidebar thread list, the Workstreams page,
-// the optional parent link in thread headers, and the settings section.
+// thread header actions (parent link, proposal, recap, snooze), and the
+// settings sections.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
@@ -15,6 +16,10 @@ import {
   RecapHeaderAction,
   headerGenerators,
 } from "./recap/RecapHeaderAction.tsx";
+import {
+  SnoozeHeaderAction,
+  headerSnoozers,
+} from "./snooze/SnoozeHeaderAction.tsx";
 import "./styles.css";
 
 export default definePluginApp((app) => {
@@ -55,6 +60,29 @@ export default definePluginApp((app) => {
       threadId !== null && headerGenerators.has(threadId),
     run: ({ threadId }) => {
       if (threadId !== null) headerGenerators.get(threadId)?.();
+    },
+  });
+  app.slots.experimental_threadHeaderAction({
+    id: "snooze",
+    title: "Snooze",
+    component: SnoozeHeaderAction,
+  });
+  app.commands.register({
+    id: "snooze-thread",
+    title: "Workstreams: snooze this thread",
+    isAvailable: ({ threadId }) =>
+      threadId !== null && headerSnoozers.get(threadId)?.snoozed === false,
+    run: ({ threadId }) => {
+      if (threadId !== null) headerSnoozers.get(threadId)?.snooze();
+    },
+  });
+  app.commands.register({
+    id: "wake-thread",
+    title: "Workstreams: wake this snoozed thread",
+    isAvailable: ({ threadId }) =>
+      threadId !== null && headerSnoozers.get(threadId)?.snoozed === true,
+    run: ({ threadId }) => {
+      if (threadId !== null) headerSnoozers.get(threadId)?.wake();
     },
   });
   // Renders only in Debug mode (SPEC §11.6).

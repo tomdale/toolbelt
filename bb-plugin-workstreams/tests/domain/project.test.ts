@@ -271,3 +271,67 @@ describe("needs-you folding", () => {
     expect(p.needsYouVia.size).toBe(0);
   });
 });
+
+describe("snoozed threads", () => {
+  const threads = () => [
+    thread("root", { sectionId: "sec_a", latestAttentionAt: now }),
+    thread("kid", { parentThreadId: "root", latestAttentionAt: now }),
+    thread("grandkid", { parentThreadId: "kid", latestAttentionAt: now }),
+    thread("asks", {
+      sectionId: "sec_a",
+      latestAttentionAt: now - 5,
+      hasPendingInteraction: true,
+    }),
+    thread("beta", { sectionId: "sec_b", latestAttentionAt: now - 1 }),
+    thread("loose", { latestAttentionAt: now - 2 }),
+  ];
+  const project = (wake: Record<string, number | null>) =>
+    projectWorkstreams(threads(), sections, {
+      now,
+      snoozedUntil: (t) => wake[t.id],
+    });
+  const ids = (rows: readonly { thread: { id: string } }[]) =>
+    rows.map((r) => r.thread.id);
+
+  it("moves a snoozed thread out of its group, For you, and Recent", () => {
+    const p = project({ asks: now + 1000, beta: null });
+    expect(rowIds(p.groups[0]!)).toEqual(["root", "kid", "grandkid"]);
+    expect(p.groups[0]!.needsYou).toBe(0);
+    expect(p.needsYou).toEqual([]);
+    expect(ids(p.recent)).not.toContain("beta");
+    expect(p.dormant.map((g) => g.id)).toContain("sec_b");
+    expect(ids(p.snoozed)).toEqual(["asks", "beta"]);
+    expect(p.snoozed[0]!.workstreamId).toBe("sec_a");
+  });
+
+  it("takes a snoozed child's subtree along, with depths from the child", () => {
+    const p = project({ kid: now + 1000 });
+    expect(rowIds(p.groups[0]!)).toEqual(["root", "asks"]);
+    expect(p.snoozed.map((r) => [r.thread.id, r.depth])).toEqual([
+      ["kid", 0],
+      ["grandkid", 1],
+    ]);
+    expect(p.rowOf.get("grandkid")?.workstreamId).toBe("sec_a");
+  });
+
+  it("lists the soonest to wake first and activity snoozes last", () => {
+    const p = project({ loose: null, beta: now + 50, asks: now + 10 });
+    expect(ids(p.snoozed)).toEqual(["asks", "beta", "loose"]);
+    expect(p.unsorted.total).toBe(0);
+  });
+
+  it("still places every thread exactly once", () => {
+    const p = project({ kid: now + 1, beta: null });
+    const placed = [
+      ...p.groups.flatMap((g) => rowIds(g)),
+      ...p.dormant.flatMap((g) => rowIds(g)),
+      ...rowIds(p.unsorted),
+      ...ids(p.snoozed),
+    ].sort();
+    expect(placed).toEqual(
+      threads()
+        .map((t) => t.id)
+        .sort(),
+    );
+  });
+});

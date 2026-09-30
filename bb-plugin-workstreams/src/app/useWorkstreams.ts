@@ -19,6 +19,11 @@ import { projectWorkstreams, type Projection } from "../domain/project.ts";
 import { isCurrent, needsYou } from "../domain/analysis.ts";
 import { EMPTY_ORDER, type ManualOrder } from "../domain/order.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
+import {
+  isSnoozed,
+  presetFromSetting,
+  type ThreadSnooze,
+} from "../domain/snooze.ts";
 
 export type ServerState = {
   workstreams: Record<string, MapRecord>;
@@ -29,6 +34,7 @@ export type ServerState = {
   bootstrapped: boolean;
   lastReconciledAt: number | null;
   order: ManualOrder;
+  snoozes: Record<string, ThreadSnooze>;
 };
 
 export type ReorderChange =
@@ -44,6 +50,7 @@ const EMPTY: ServerState = {
   bootstrapped: false,
   lastReconciledAt: null,
   order: EMPTY_ORDER,
+  snoozes: {},
 };
 
 /**
@@ -81,7 +88,38 @@ export function useServerState() {
     },
     [rpc, refresh],
   );
-  return { rpc, server, refresh, reorder };
+  /**
+   * Snoozes (`until: null` waits for activity) or wakes a thread, applied
+   * locally at once so the row moves before the round trip.
+   */
+  const setSnooze = useCallback(
+    async (
+      thread: { id: string; latestAttentionAt?: number },
+      until: number | null | "wake",
+    ) => {
+      setServer((prev) => {
+        const snoozes = { ...prev.snoozes };
+        if (until === "wake") delete snoozes[thread.id];
+        else
+          snoozes[thread.id] = {
+            until,
+            attentionAt: thread.latestAttentionAt ?? Date.now(),
+            at: Date.now(),
+          };
+        return { ...prev, snoozes };
+      });
+      try {
+        if (until === "wake")
+          await rpc.call("unsnooze", { threadId: thread.id });
+        else await rpc.call("snooze", { threadId: thread.id, until });
+      } catch (cause) {
+        await refresh();
+        throw cause;
+      }
+    },
+    [rpc, refresh],
+  );
+  return { rpc, server, refresh, reorder, setSnooze };
 }
 
 function applyChange(order: ManualOrder, change: ReorderChange): ManualOrder {
@@ -136,7 +174,7 @@ export function useWorkstreams() {
     experimental_useSidebarThreads();
   const settings = useSettings();
   const now = useNow();
-  const { rpc, server, refresh, reorder } = useServerState();
+  const { rpc, server, refresh, reorder, setSnooze } = useServerState();
 
   // Moves in flight, by thread: the section the thread is headed to. The row
   // shows there until BB's live list catches up, or the move fails.
@@ -180,15 +218,19 @@ export function useWorkstreams() {
     [threads, moving],
   );
 
-  const { analysis, order } = server;
+  const { analysis, order, snoozes } = server;
   const projection: Projection<PluginSidebarThread> = useMemo(
     () =>
       projectWorkstreams(placed, sections, {
         now,
         needsYou: (thread) => needsYou(thread, analysis[thread.id]),
         order,
+        snoozedUntil: (thread) => {
+          const snooze = snoozes[thread.id];
+          return isSnoozed(snooze, thread, now) ? snooze!.until : undefined;
+        },
       }),
-    [placed, sections, now, analysis, order],
+    [placed, sections, now, analysis, order, snoozes],
   );
   const values = (settings.values ?? {}) as Record<string, unknown>;
   return {
@@ -205,6 +247,12 @@ export function useWorkstreams() {
     refresh,
     reorder,
     moveThread,
+    setSnooze,
+    snoozeOf: (thread: PluginSidebarThread) => {
+      const snooze = snoozes[thread.id];
+      return isSnoozed(snooze, thread, now) ? snooze : undefined;
+    },
+    defaultSnooze: presetFromSetting(values.snoozeDefault),
     showForYou: values.showForYou !== false,
     showRecent: values.showRecent !== false,
     showParentThreadLink: values.showParentThreadLink === true,
