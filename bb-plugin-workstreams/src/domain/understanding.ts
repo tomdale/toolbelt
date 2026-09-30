@@ -102,9 +102,25 @@ export function sourceQuote(source: string, quote: string): string | null {
   const project = (text: string) => {
     let plain = "";
     const offsets: number[] = [];
+    const delimiters = new Set<number>();
+    // Only paired inline delimiters are removable. A literal operator such
+    // as `2 * 3` must remain part of the quote's textual content.
+    for (const pattern of [
+      /(`+)([^`\n]+)\1/g,
+      /(\*\*|\*)(\S(?:[^*\n]*?\S)?)\1/g,
+    ]) {
+      for (const match of text.matchAll(pattern)) {
+        const width = match[1]!.length;
+        const start = match.index!;
+        for (let i = 0; i < width; i++) {
+          delimiters.add(start + i);
+          delimiters.add(start + match[0].length - width + i);
+        }
+      }
+    }
     for (let i = 0; i < text.length; i++) {
       const char = text[i]!;
-      if (char === "*" || char === "`") continue;
+      if (delimiters.has(i)) continue;
       if (/\s/u.test(char)) {
         if (!plain || plain.endsWith(" ")) continue;
         plain += " ";
