@@ -105,6 +105,7 @@ export type CatalogThread = {
   projectId: string;
   environmentId: string | null;
   environmentName: string | null;
+  providerId?: string;
 };
 export type CatalogEnvironment = { id: string; name: string | null };
 export type IntakeState = {
@@ -253,6 +254,7 @@ export class Intake {
               projectId: t.projectId,
               environmentId: t.environmentId,
               environmentName: t.environmentName,
+              providerId: t.providerId,
             })),
             ...this.state.threads.filter(
               (t) => !result.some((r) => r.id === t.id),
@@ -346,6 +348,7 @@ export class Intake {
               projectId: record.projectId,
               environmentId: record.environmentId,
               environmentName: environment?.name ?? environment?.path ?? null,
+              providerId: record.providerId,
             },
           ],
         });
@@ -601,6 +604,9 @@ export class Intake {
     const selection = thread
       ? {
           ...this.state.threadExecution[thread.id],
+          ...(this.state.threadExecution[thread.id]!.providerId || !thread.providerId
+            ? {}
+            : { providerId: thread.providerId }),
           projectId: thread.projectId,
           environment: {
             type: "reuse" as const,
@@ -640,10 +646,11 @@ export class Intake {
         applied.model === requested.model
       )
         this.set({ synchronizedThread: thread.id, selectionError: null });
-      else
+      else {
         this.selectionFailed(
           "The composer couldn't use the thread's settings. Retry choices.",
         );
+      }
       return;
     }
     if (applied.projectId && applied.projectId !== requested.projectId) {
