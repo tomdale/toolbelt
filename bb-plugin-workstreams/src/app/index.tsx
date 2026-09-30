@@ -5,7 +5,7 @@ import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { ProposalBanner } from "./header/ProposalBanner.tsx";
 import { RouteBanner } from "./composer/RouteBanner.tsx";
-import { ArchiveCard } from "./composer/ArchiveCard.tsx";
+import { RecapCard } from "./composer/RecapCard.tsx";
 import { AutomaticFilingCard } from "./composer/AutomaticFilingCard.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
 import { SpinnerSettings } from "./settings/SpinnerSettings.tsx";
@@ -19,9 +19,9 @@ export default definePluginApp((app) => {
     banners: [{ id: "filing", chrome: "bare", component: AutomaticFilingCard }],
   });
   app.composer.customize({
-    id: "archive-suggestion",
+    id: "recap",
     scopes: ["thread"],
-    actions: [{ id: "archive", component: ArchiveCard }],
+    banners: [{ id: "recap", chrome: "bare", component: RecapCard }],
   });
   app.composer.customize({
     id: "router",
