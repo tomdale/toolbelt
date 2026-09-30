@@ -387,4 +387,3 @@ export class Notebooks {
     this.deps.onChange();
   }
 }
-
