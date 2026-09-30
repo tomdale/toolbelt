@@ -455,7 +455,7 @@ export class Router {
       decision = {
         ...base,
         outcome: "new-workstream",
-        name: raw.name,
+        name: intent?.workstreamName?.trim() || raw.name,
         description: raw.description,
         title: raw.title,
         confidence: raw.confidence,
