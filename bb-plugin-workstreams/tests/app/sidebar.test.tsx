@@ -47,6 +47,7 @@ async function mount(
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   // Stateful like the server, so a refetch after a change never undoes it.
   const snoozes = { ...options.snoozes };
+  const order = options.order ?? { workstreams: [], threads: {} };
   const list = app.threadLists[0]!;
   return renderSlot(
     list,
@@ -64,7 +65,7 @@ async function mount(
         state: () => ({
           ...emptyState(),
           analysis: options.analysis ?? {},
-          order: options.order ?? { workstreams: [], threads: {} },
+          order: { workstreams: [...order.workstreams], threads: { ...order.threads } },
           snoozes: { ...snoozes },
           snoozePrefs: options.snoozePrefs ?? {},
         }),
@@ -91,17 +92,10 @@ async function mount(
           },
         }),
         reorder: (raw: unknown) => {
-          const input = raw as {
-            kind: string;
-            groupId?: string;
-            ids: string[];
-          };
-          return {
-            order:
-              input.kind === "workstreams"
-                ? { workstreams: input.ids, threads: {} }
-                : { workstreams: [], threads: { [input.groupId!]: input.ids } },
-          };
+          const input = raw as { kind: string; groupId?: string; ids: string[] };
+          if (input.kind === "workstreams") order.workstreams = input.ids;
+          else order.threads[input.groupId!] = input.ids;
+          return { order: { workstreams: [...order.workstreams], threads: { ...order.threads } } };
         },
       },
     },
@@ -682,10 +676,10 @@ describe("snoozing", () => {
     await waitFor(() =>
       expect(groupRows(slot, "Alpha")).toEqual(["Asking task", "Napping task"]),
     );
-    expect(slot.inspection.rpcCalls.at(-1)).toMatchObject({
-      method: "unsnooze",
-      input: { threadId: "nap" },
-    });
+    expect(slot.inspection.rpcCalls.some((call) =>
+      call.method === "unsnooze" &&
+      (call.input as { threadId?: string }).threadId === "nap",
+    )).toBe(true);
     slot.lifecycle.unmount();
   });
 });

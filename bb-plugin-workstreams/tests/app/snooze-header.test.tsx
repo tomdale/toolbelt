@@ -17,6 +17,7 @@ async function mount({
   threads?: ReturnType<typeof sidebarThread>[];
 } = {}) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
+  const currentSnoozes = { ...snoozes };
   const registration = app.threadHeaderActions.find((a) => a.id === "snooze")!;
   return renderSlot(
     registration,
@@ -26,17 +27,18 @@ async function mount({
       rpc: {
         state: () => ({
           ...emptyState(),
-          snoozes,
+          snoozes: { ...currentSnoozes },
           snoozePrefs: { default: "next-week" },
         }),
-        snooze: (raw: unknown) => ({
-          snooze: {
-            until: (raw as { until: number | null }).until,
-            attentionAt: 0,
-            at: 0,
-          },
-        }),
-        unsnooze: () => ({ woke: true }),
+        snooze: (raw: unknown) => {
+          const until = (raw as { until: number | null }).until;
+          currentSnoozes.t1 = { until, attentionAt: 0, at: 0 };
+          return { snooze: currentSnoozes.t1 };
+        },
+        unsnooze: () => {
+          delete currentSnoozes.t1;
+          return { woke: true };
+        },
       },
     },
   );
