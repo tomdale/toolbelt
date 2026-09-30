@@ -71,6 +71,21 @@ export default async function plugin(bb: BbPluginApi) {
       options: [...MODELS],
       default: MODELS[0],
     },
+    recapAutomatic: {
+      type: "boolean",
+      label: "Automatic recaps",
+      description:
+        "Recap a thread after it has been quiet for 30 seconds. When off, the recap card offers Generate Recap instead.",
+      default: true,
+    },
+    recapLayout: {
+      type: "select",
+      label: "Recap layout",
+      description:
+        "detailed: goal, latest, and the Open/Done list. compact: goal and latest. minimal: latest only.",
+      options: ["detailed", "compact", "minimal"],
+      default: "detailed",
+    },
     autoTitle: {
       type: "boolean",
       label: "Keep thread titles current",
@@ -395,7 +410,9 @@ export default async function plugin(bb: BbPluginApi) {
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
     if (thread.visibility !== "hidden") {
       analyzer.onIdle(thread, lastAssistantText);
-      recaps.onIdle(thread.id);
+      void settings.get().then((values) => {
+        if (values.recapAutomatic !== false) recaps.onIdle(thread.id);
+      });
     }
   });
   bb.events.on("thread.active", ({ thread }) => {
@@ -474,9 +491,17 @@ export default async function plugin(bb: BbPluginApi) {
           execution: (execution ?? undefined) as never,
         });
       }),
-    recap_get: async ({ threadId }) => ({ recap: recaps.get(threadId), generating: false }),
+    recap_get: async ({ threadId }) => {
+      const analysis = analyzer.get(threadId);
+      return {
+        recap: recaps.get(threadId),
+        generating: recaps.generating(threadId),
+        needsInput:
+          analysis?.state === "needs_decision" ? analysis.needsYou : null,
+      };
+    },
     recap_generate: async ({ threadId }) => {
-      const recap = await recaps.generate(threadId);
+      const recap = await recaps.generate(threadId, { onDemand: true });
       return { recap, generated: recap !== null, reason: recap ? null : "not_generated" };
     },
     state: async () => ({

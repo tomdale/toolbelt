@@ -291,7 +291,12 @@ export const rpcContract = defineRpcContract({
   /** Plugin-side facts the live sidebar hook doesn't carry. */
   recap_get: {
     input: z.object({ threadId: z.string().min(1) }),
-    output: z.object({ recap: recapSchema.nullable(), generating: z.boolean() }),
+    output: z.object({
+      recap: recapSchema.nullable(),
+      generating: z.boolean(),
+      /** The analysis's ask when the thread needs a decision from the user. */
+      needsInput: z.string().nullable(),
+    }),
   },
   recap_generate: {
     input: z.object({ threadId: z.string().min(1) }),
