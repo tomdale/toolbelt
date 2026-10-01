@@ -562,20 +562,21 @@ it.
      either way. Nothing is recorded while the setting is off. Retention: 7 days
      or 1,000 traces.
 
-7. **Recap card** (a composer banner): a state line (Ready for review or
+7. **Recap card** (a composer banner): a state line (Ready for Review or
    Complete), the Goal heading (Full layout only), then labeled rows: Done (the
-   Latest lines, check-marked), Review (tinted, the one thing asked of the
-   user), and Links (chips); labels stack above their rows on narrow cards. A
-   dismiss ✕ sits in the top-right corner, and Archive centered underneath when
-   it applies. It stays up while the user drafts and hides while a message sends
-   or the thread runs, while a question card is open, and in the inline message
-   editor; hiding never moves the thread. **Archive** shows when the server
-   confirms that the thread and every child and lifecycle dependent are idle
-   with no queued work, interactions, background work, unfinished goal or
-   pending todos, and that each dependent is complete (its own recap, else
-   current analysis); hidden dependents block it. Archiving a review recap
-   accepts its result. Continuing the thread withdraws Archive for that recap.
-   Workstreams never archives on its own.
+   Latest lines, check-marked) and Review (the one thing asked of the user, with
+   Links as chips under its steps; a complete recap shows them under Done);
+   labels stack above their rows on narrow cards. A dismiss ✕ sits in the
+   top-right corner, and Archive centered underneath when it applies. It stays
+   up while the user drafts and hides while a message sends or the thread runs,
+   while a question card is open, and in the inline message editor; hiding never
+   moves the thread. **Archive** shows when the server confirms that the thread
+   and every child and lifecycle dependent are idle with no queued work,
+   interactions, background work, unfinished goal or pending todos, and that
+   each dependent is complete (its own recap, else current analysis); hidden
+   dependents block it. Archiving a review recap accepts its result. Continuing
+   the thread withdraws Archive for that recap. Workstreams never archives on
+   its own.
 
 ### 11.1 Snooze
 
