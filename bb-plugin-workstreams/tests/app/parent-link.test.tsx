@@ -23,7 +23,7 @@ async function mount({
 } = {}) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   return renderSlot(
-    app.threadHeaderActions[0]!,
+    app.threadHeaderActions.find((action) => action.id === "parent-thread")!,
     { threadId: "child", projectId: "proj_1", isCompactViewport: compact },
     {
       settings: {},

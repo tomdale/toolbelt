@@ -280,6 +280,9 @@ const MIGRATIONS = [
   "ALTER TABLE ws_agent_recap ADD COLUMN proven INTEGER NOT NULL DEFAULT 0",
   `CREATE TABLE ws_question (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL)`,
   "CREATE UNIQUE INDEX ws_question_pending ON ws_question(thread_id) WHERE status IN ('pending', 'sending')",
+  "ALTER TABLE ws_question ADD COLUMN result TEXT",
+  "ALTER TABLE ws_question ADD COLUMN created_at INTEGER",
+  "ALTER TABLE ws_question ADD COLUMN outcome TEXT",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

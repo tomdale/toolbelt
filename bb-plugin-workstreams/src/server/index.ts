@@ -551,6 +551,7 @@ export default async function plugin(bb: BbPluginApi) {
           : null,
       };
     },
+    question_history: ({ threadId }) => questions.history(threadId),
     question_pending: ({ threadId }) => questions.pending(threadId),
     question_recover: async ({ threadId, id, value, dismiss }) => {
       await questions.recover(threadId, id, value, dismiss);
