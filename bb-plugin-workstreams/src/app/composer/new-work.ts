@@ -381,7 +381,13 @@ export class NewWork {
       let applied: ComposerSelection | null = null;
       if (suggestion.placement) {
         const { projectId, environment } = suggestion.placement;
+        const {
+          projectId: _projectId,
+          environment: _environment,
+          ...execution
+        } = composer.selection ?? {};
         requested = {
+          ...execution,
           projectId,
           ...(environment.type === "project-default" ? {} : { environment }),
         };
