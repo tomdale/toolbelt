@@ -1202,14 +1202,17 @@ function Band({
         data-flip-key={flipKey}
         className={cn(
           box === "attention"
-            ? "ws-needs mx-2 my-1.5 px-1 pt-1.5 pb-1"
+            ? "ws-needs mx-2 my-1.5 p-1"
             : "ws-band-neutral my-1 px-2 py-1",
         )}
       >
         <div className="flex items-center gap-1">
           <h2
             className={cn(
-              "flex min-w-0 flex-1 items-center gap-1 py-0.5 pr-1.5 text-[11px] font-semibold uppercase tracking-wide",
+              "flex min-w-0 flex-1 items-center gap-1 pr-1.5",
+              box === "attention"
+                ? "py-1 text-[12px] font-medium"
+                : "py-0.5 text-[11px] font-semibold uppercase tracking-wide",
               markless ? "pl-3.5" : "pl-1.5",
               box === "attention"
                 ? "ws-needs-heading"
