@@ -1,6 +1,11 @@
 import { buildForest, flatten } from "../domain/tree.ts";
 import type { OrganizeInput, OrganizeProposal } from "../domain/organize.ts";
 import type { Analyzer } from "./analyzer.ts";
+import {
+  cleanupCandidate,
+  type CleanupCandidate,
+  type CleanupMember,
+} from "./cleanup.ts";
 import { getMeta, setMeta, type Database } from "./db.ts";
 import type { WorkstreamMap } from "./map.ts";
 import { traceIdOf, type Inference } from "./model.ts";
@@ -39,6 +44,7 @@ export type BootstrapState = {
     renames: { sectionId: string; from: string; to: string }[];
     moves: BootstrapMove[];
     assignments: OrganizeProposal["assignments"];
+    removals: CleanupCandidate[];
   } | null;
   entryId: string | null;
   traceIds: string[];
@@ -60,6 +66,7 @@ export class Bootstrap {
       inference: Inference;
       model: () => Promise<string>;
       projects?: () => Promise<{ id: string; name: string }[]>;
+      members: (sectionId: string) => Promise<CleanupMember[]>;
       onChange: () => void;
       now?: () => number;
     },
@@ -81,7 +88,10 @@ export class Bootstrap {
   }
   state(): BootstrapState | null {
     const raw = getMeta(this.deps.db, KEY);
-    return raw ? (JSON.parse(raw) as BootstrapState) : null;
+    const state = raw ? (JSON.parse(raw) as BootstrapState) : null;
+    // An older saved preview has no reviewed cleanup plan; regenerate it.
+    if (state?.preview && !Array.isArray(state.preview.removals)) return null;
+    return state;
   }
   private save(state: BootstrapState) {
     const next = { ...state, updatedAt: this.now() };
@@ -134,6 +144,7 @@ export class Bootstrap {
           sectionId: root.thread.sectionId ?? null,
           project: projects.get(root.thread.projectId) ?? null,
           recap: analysis[root.thread.id]?.recap ?? null,
+          subject: analysis[root.thread.id]?.subject ?? null,
           children: flatten(root)
             .slice(1)
             .map((n) => n.thread.title),
@@ -199,6 +210,26 @@ export class Bootstrap {
               },
             ];
       });
+      const destinations = new Set(
+        proposal.workstreams.flatMap((w) => (w.sectionId ? [w.sectionId] : [])),
+      );
+      const movingAway = new Set(moves.map((m) => m.threadId));
+      const removals: CleanupCandidate[] = [];
+      for (const record of records) {
+        if (destinations.has(record.sectionId)) continue;
+        if (controller.signal.aborted || this.disposed)
+          throw new Error("Organizing cancelled.");
+        const members = await this.deps.members(record.sectionId);
+        const candidate = cleanupCandidate(
+          { id: record.sectionId, name: record.name },
+          members,
+          this.now(),
+          movingAway,
+        );
+        if (candidate) removals.push(candidate);
+      }
+      if (controller.signal.aborted || this.disposed)
+        throw new Error("Organizing cancelled.");
       return this.save({
         ...state,
         status: "preview",
@@ -221,6 +252,7 @@ export class Bootstrap {
           ),
           moves,
           assignments: proposal.assignments,
+          removals,
         },
       });
     } catch (error) {
@@ -291,12 +323,14 @@ export class Bootstrap {
             aliases: w.aliases,
           })),
         expectedMap: current.mapSnapshot,
+        removals: preview.removals,
       };
-      const { entry, skipped } = await this.deps.service.applyBatch(
-        plan,
-        "bootstrap",
-        `Organized ${moves.length} threads`,
-      );
+      const { entry, skipped, cleanupSkipped } =
+        await this.deps.service.applyBatch(
+          plan,
+          "bootstrap",
+          `Organized ${moves.length} threads`,
+        );
       if (entry)
         this.deps.inference.copyLinks(this.runLink(current.startedAt), {
           kind: "entry",
@@ -311,9 +345,17 @@ export class Bootstrap {
         ...state,
         status: "applied",
         entryId: entry?.id ?? null,
-        error: skipped.length
-          ? `${skipped.length} thread(s) changed since the preview and were left alone.`
-          : null,
+        error:
+          [
+            skipped.length
+              ? `${skipped.length} thread(s) changed since the preview and were left alone.`
+              : "",
+            cleanupSkipped.length
+              ? `${cleanupSkipped.length} workstream(s) no longer qualified for cleanup and were kept.`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ") || null,
       });
       return state;
     } catch (error) {

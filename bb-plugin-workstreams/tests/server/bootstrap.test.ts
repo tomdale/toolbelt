@@ -100,8 +100,10 @@ describe("explicit organizer", () => {
         .get(alpha.id),
     ).toEqual({ description: "Whole Alpha effort" });
     await w.harness.behavior.callRpc("undo", { entryId: applied.entryId });
-    expect(w.threads.get("mine")?.sectionId).toBe(beta.id);
-    expect(w.threads.get("stray")?.sectionId).toBe(beta.id);
+    const restoredBeta = w.sections.find((s) => s.name === "Beta")!;
+    expect(restoredBeta.id).not.toBe(beta.id);
+    expect(w.threads.get("mine")?.sectionId).toBe(restoredBeta.id);
+    expect(w.threads.get("stray")?.sectionId).toBe(restoredBeta.id);
     expect(w.threads.get("loose")?.sectionId).toBeNull();
     expect(w.sections.map((s) => s.name)).toEqual(["Alpha", "Beta"]);
     expect(
@@ -125,7 +127,7 @@ describe("explicit organizer", () => {
     await w.harness.behavior.runCli(["analyze", "loose"]);
     await w.harness.behavior.callRpc("refresh", null);
     expect(w.threads.get("loose")?.sectionId).toBeNull();
-    expect(w.sections.some((s) => s.id === beta.id)).toBe(true);
+    expect(w.sections.some((s) => s.id === beta.id)).toBe(false);
   });
   it("CLI apply consumes the saved preview without another model call", async () => {
     const { w } = await setup();
@@ -150,6 +152,20 @@ describe("explicit organizer", () => {
     expect(
       w.completions.filter((c) => c.prompt.includes("Snapshot:\n")),
     ).toHaveLength(1);
+  });
+  it("keeps a cleanup candidate occupied by an unchecked move", async () => {
+    const { w, beta } = await setup();
+    const preview = await call(w, { action: "start" });
+    expect(preview.preview!.removals.some((r) => r.sectionId === beta.id)).toBe(
+      true,
+    );
+    const result = await call(w, {
+      action: "apply",
+      overrides: [{ threadId: "mine", accepted: false }],
+    });
+    expect(w.sections.some((s) => s.id === beta.id)).toBe(true);
+    expect(w.threads.get("mine")?.sectionId).toBe(beta.id);
+    expect(result.error).toContain("no longer qualified");
   });
   it("cancel leaves the map unchanged", async () => {
     const { w } = await setup();

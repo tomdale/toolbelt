@@ -634,6 +634,10 @@ export function registerCli(
             const lines = [
               `${options.apply ? "Applied" : "Preview"}: ${plural(moves.length, "move")}, ${plural(p.creates.length, "new workstream")}, ${plural(p.renames.length, "rename")}`,
               `Run ID: ${state.startedAt}`,
+              ...p.removals.map(
+                (r) =>
+                  `  remove: ${r.name} (${r.archivedThreads.length} archived threads; threads preserved)`,
+              ),
               ...p.workstreams.map((w) => `  ${w.name}: ${w.description}`),
               ...p.moves.map(
                 (m) =>
