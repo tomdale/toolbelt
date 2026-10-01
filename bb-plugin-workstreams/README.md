@@ -63,10 +63,14 @@ design and the contract the code is checked against.
   latest request drifted to another workstream. Results are tied to the turn
   they describe and show as updating once a new turn starts. Analysis itself
   never moves anything.
-- **Archive suggestions**: when classification finds a natural end and BB has no
-  unfinished tasks, goals, queued messages, interactions, or background work, a
-  quiet **Archive** button appears in the composer toolbar. Clicking archives
-  directly after rechecking outstanding work. Typing a continuation, adding an
+- **Review recaps**: a **Review** instruction names what to inspect or try and
+  the expected result. It stays visible in detailed, compact, and minimal layouts.
+- **Archive suggestions**: when classification finds a natural end or a result
+  ready for review, and BB has no unfinished tasks, goals, queued messages,
+  interactions, or background work, an **Archive** button appears on the recap.
+  For review results, clicking accepts the result and closes the thread. Archive
+  rechecks outstanding work and requires completed children and lifecycle
+  dependents. Typing a continuation, adding an
   attachment, or starting new work dismisses the suggestion for that completed
   turn; clearing the draft does not bring it back. Reading, scrolling, and
   focusing the composer do not dismiss it. A later completed turn can produce a

@@ -4,7 +4,9 @@ import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { emptyState, sidebarThread } from "./fixtures.ts";
 
-const interactionOverride = vi.hoisted(() => ({ value: null as boolean | null }));
+const interactionOverride = vi.hoisted(() => ({
+  value: null as boolean | null,
+}));
 vi.mock("@get-bb/plugin-sdk/app", async (importActual) => {
   const actual = await importActual<typeof import("@get-bb/plugin-sdk/app")>();
   return {
@@ -17,7 +19,10 @@ vi.mock("@get-bb/plugin-sdk/app", async (importActual) => {
             ...state,
             threads: state.threads.map((thread) =>
               thread.id === "t1"
-                ? { ...thread, hasPendingInteraction: interactionOverride.value }
+                ? {
+                    ...thread,
+                    hasPendingInteraction: interactionOverride.value,
+                  }
                 : thread,
             ),
           };
@@ -56,6 +61,7 @@ async function mount(options: {
   settings?: Record<string, string | boolean>;
   recap?: string | null;
   needsInput?: string | null;
+  archiveRevision?: number;
   pendingThreadId?: string;
   generate?: () => unknown;
   get?: () => unknown;
@@ -80,8 +86,13 @@ async function mount(options: {
       composer: { scope: { kind: "thread", threadId: "t1" } },
       sidebarThreads: {
         threads: [
-          sidebarThread("t1", { hasPendingInteraction: options.pendingThreadId === "t1" }),
-          sidebarThread("other", { hasPendingInteraction: options.pendingThreadId === "other" }),
+          sidebarThread("t1", {
+            latestAttentionAt: 500,
+            hasPendingInteraction: options.pendingThreadId === "t1",
+          }),
+          sidebarThread("other", {
+            hasPendingInteraction: options.pendingThreadId === "other",
+          }),
         ],
       },
       rpc: {
@@ -95,8 +106,24 @@ async function mount(options: {
             minTurns: 3,
           },
         }),
-        state: () => emptyState(),
-        archiveStatus: () => ({ revision: null }),
+        state: () => ({
+          ...emptyState(),
+          analysis: options.archiveRevision
+            ? {
+                t1: {
+                  revision: options.archiveRevision,
+                  state: "review",
+                  recap: "Ready to review",
+                  needsYou: null,
+                  subject: null,
+                  drift: null,
+                  title: null,
+                },
+              }
+            : {},
+        }),
+        archiveStatus: () => ({ revision: options.archiveRevision ?? null }),
+        archiveSuggestion: () => ({ ok: true }),
         recap_get:
           options.get ??
           (() => ({
@@ -136,6 +163,46 @@ it("drops Open and Done in the compact layout, and the goal in minimal", async (
   expect(small.textContent).toContain("Card renders");
 });
 
+it.each(["detailed", "compact", "minimal"])(
+  "keeps the review check and archive acceptance visible in %s",
+  async (layout) => {
+    const slot = await mount({
+      settings: { recapLayout: layout },
+      recap:
+        "Goal: Filtering recent threads\nLatest: Filter deployed\nReview: Open Recent; confirm only top-level threads appear\nDone: Tests passed",
+      archiveRevision: 500,
+    });
+    const region = await slot.findByRole("region", { name: "Latest recap" });
+    expect(region.textContent).toContain(
+      "Open Recent; confirm only top-level threads appear",
+    );
+    const archive = await slot.findByRole("button", { name: "Archive thread" });
+    fireEvent.click(archive);
+    await waitFor(() =>
+      expect(slot.inspection.rpcCalls).toContainEqual({
+        method: "archiveSuggestion",
+        input: { threadId: "t1", revision: 500, action: "archive" },
+      }),
+    );
+  },
+);
+
+it("withdraws review acceptance when the user continues working", async () => {
+  const slot = await mount({ archiveRevision: 500 });
+  await slot.findByRole("button", { name: "Archive thread" });
+  sendingOverride.value = true;
+  await slot.setComposerText("Continue reviewing");
+  await waitFor(() =>
+    expect(slot.queryByRole("button", { name: "Archive thread" })).toBeNull(),
+  );
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls).toContainEqual({
+      method: "archiveSuggestion",
+      input: { threadId: "t1", revision: 500, action: "dismiss" },
+    }),
+  );
+});
+
 it("shows what the thread needs from the user", async () => {
   const slot = await mount({ needsInput: "Pick A or B" });
   const region = await slot.findByRole("region", { name: "Latest recap" });
@@ -144,16 +211,24 @@ it("shows what the thread needs from the user", async () => {
 });
 
 it("lets a live interaction supersede the recap even while idle", async () => {
-  const slot = await mount({ pendingThreadId: "t1", needsInput: "Pick A or B" });
+  const slot = await mount({
+    pendingThreadId: "t1",
+    needsInput: "Pick A or B",
+  });
   await waitFor(() =>
-    expect(slot.inspection.rpcCalls.some((call) => call.method === "recap_get")).toBe(true),
+    expect(
+      slot.inspection.rpcCalls.some((call) => call.method === "recap_get"),
+    ).toBe(true),
   );
   expect(slot.queryByRole("region", { name: "Latest recap" })).toBeNull();
   expect(slot.queryByRole("button", { name: "Generate Recap" })).toBeNull();
 });
 
 it("keeps the recap when only another thread needs input", async () => {
-  const slot = await mount({ pendingThreadId: "other", needsInput: "Pick A or B" });
+  const slot = await mount({
+    pendingThreadId: "other",
+    needsInput: "Pick A or B",
+  });
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(region.textContent).toContain("Pick A or B");
 });
@@ -173,7 +248,9 @@ it("hides on live input and restores the same recap when input clears", async ()
 it("does not offer recap generation during pending input", async () => {
   const slot = await mount({ pendingThreadId: "t1", recap: null });
   await waitFor(() =>
-    expect(slot.inspection.rpcCalls.some((call) => call.method === "recap_get")).toBe(true),
+    expect(
+      slot.inspection.rpcCalls.some((call) => call.method === "recap_get"),
+    ).toBe(true),
   );
   expect(slot.queryByRole("button", { name: "Generate Recap" })).toBeNull();
 });
@@ -185,7 +262,9 @@ it("hides the generating placeholder during pending input", async () => {
     get: () => ({ recap: null, generating: true, needsInput: null }),
   });
   await waitFor(() =>
-    expect(slot.inspection.rpcCalls.some((call) => call.method === "recap_get")).toBe(true),
+    expect(
+      slot.inspection.rpcCalls.some((call) => call.method === "recap_get"),
+    ).toBe(true),
   );
   expect(slot.queryByRole("status", { name: "Generating recap" })).toBeNull();
   expect(slot.queryByRole("button", { name: "Generate Recap" })).toBeNull();

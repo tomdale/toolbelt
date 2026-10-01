@@ -186,8 +186,18 @@ function RecapSummary({
           <RecapText text={needsInput} typeClass={ASK_CLASS} />
         </section>
       ) : null}
+      {ledger.review.length > 0 ? (
+        <section
+          className={`${ledger.goal || needsInput ? "mt-2" : "pr-24"} text-foreground`}
+        >
+          <h3 className={`${BODY_CLASS} font-medium`}>Review</h3>
+          {ledger.review.map((item, index) => (
+            <RecapText key={index} text={item} />
+          ))}
+        </section>
+      ) : null}
       <div
-        className={`${ledger.goal || needsInput ? "mt-2.5" : "pr-24"} grid gap-x-6 gap-y-3 ${
+        className={`${ledger.goal || needsInput || ledger.review.length ? "mt-2.5" : "pr-24"} grid gap-x-6 gap-y-3 ${
           hasLedger ? "@lg/recap:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""
         }`}
       >
@@ -378,6 +388,7 @@ function CardBody({
           <button
             type="button"
             aria-label="Archive thread"
+            title="Archive when the result looks good and you’re ready to move on"
             className="h-6 cursor-pointer rounded-md border border-sky-900/15 px-2 text-[11px] font-medium text-sky-900/70 transition-colors hover:bg-sky-900/10 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 disabled:cursor-default disabled:opacity-50 dark:border-sky-200/20 dark:text-sky-200/70 dark:hover:bg-sky-200/10 dark:hover:text-sky-100"
             disabled={archiveBusy}
             onClick={onArchive}
