@@ -18,6 +18,7 @@ import {
   type Recap,
   type RecapFiles,
   type RecapLink,
+  type ReviewStep,
 } from "../../domain/recap.ts";
 import type { RecapLayout } from "../../domain/recapPrefs.ts";
 import { useRecapPrefs } from "../recap/prefs.ts";
@@ -175,10 +176,29 @@ function Results({ items, accent }: { items: string[]; accent: string }) {
   );
 }
 
+function StepText({ item }: { item: ReviewStep }) {
+  if (typeof item === "string") return <RecapText text={item} />;
+  return (
+    <div className="min-w-0">
+      <RecapText text={item.step} />
+      {item.expect ? (
+        <div className="mt-0.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-1 text-muted-foreground">
+          <span className="font-medium">Expect</span>
+          <RecapText text={item.expect} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** Review steps: one reads as plain text, more as a list. */
-function Steps({ items }: { items: string[] }) {
+function Steps({ items }: { items: ReviewStep[] }) {
   if (items.length === 1)
-    return <RecapText text={items[0]!} className="text-foreground" />;
+    return (
+      <div className={`${BODY_CLASS} text-foreground`}>
+        <StepText item={items[0]!} />
+      </div>
+    );
   return (
     <ol className="m-0 list-none space-y-0.5 p-0">
       {items.map((item, index) => (
@@ -192,7 +212,7 @@ function Steps({ items }: { items: string[] }) {
           >
             {index + 1}.
           </span>
-          <RecapText text={item} />
+          <StepText item={item} />
         </li>
       ))}
     </ol>

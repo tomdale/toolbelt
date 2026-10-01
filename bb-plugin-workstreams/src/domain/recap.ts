@@ -24,6 +24,18 @@ const tidy = (text: string) =>
     .trim()
     .replace(/(?<!\.)\.$/, "");
 
+/** One review action, optionally with the result the user should see. */
+const reviewStepSchema = z.union([
+  line(160),
+  z
+    .object({
+      step: line(160).describe("What the user does or inspects"),
+      expect: line(160).optional().describe("The result the user should see"),
+    })
+    .strict(),
+]);
+export type ReviewStep = string | { step: string; expect?: string };
+
 export const linkSchema = z
   .object({
     title: line(80),
@@ -61,8 +73,14 @@ export const recapInputSchema = z
     latest: z.array(line(120)).min(1).max(3),
     // A string is one step, or a list some harnesses send JSON-encoded.
     review: z
-      .union([z.array(line(160)).min(1).max(3), z.string().trim().min(1)])
-      .optional(),
+      .union([
+        z.array(reviewStepSchema).min(1).max(3),
+        z.string().trim().min(1),
+      ])
+      .optional()
+      .describe(
+        "Required for review. Send each distinct action as its own array item; separate items render as a numbered list, while punctuation inside one item does not split it. Use { step, expect } when the expected result should appear separately.",
+      ),
     links: z
       .array(linkSchema)
       .max(8)
@@ -84,7 +102,14 @@ export const recapInputSchema = z
   .refine(
     (recap) => {
       const steps = reviewSteps(recap.review);
-      return steps.length <= 3 && steps.every((step) => step.length <= 160);
+      return (
+        steps.length <= 3 &&
+        steps.every((step) =>
+          typeof step === "string"
+            ? step.length <= 160
+            : step.step.length <= 160 && (step.expect?.length ?? 0) <= 160,
+        )
+      );
     },
     {
       message: "Review takes one to three steps of 160 characters or fewer.",
@@ -105,14 +130,19 @@ export const recapSchema = z.object({
   review: z.preprocess(
     (value) =>
       typeof value === "string" ? [value] : value === null ? [] : value,
-    z.array(z.string()),
+    z.array(
+      z.union([
+        z.string(),
+        z.object({ step: z.string(), expect: z.string().optional() }),
+      ]),
+    ),
   ),
   links: z.array(linkSchema),
 });
 export type Recap = z.infer<typeof recapSchema>;
 
 /** The review as steps, from a list, a single step, or a JSON-encoded list. */
-function reviewSteps(review: string | string[] | undefined): string[] {
+function reviewSteps(review: string | ReviewStep[] | undefined): ReviewStep[] {
   if (review === undefined) return [];
   if (Array.isArray(review)) return review;
   if (review.startsWith("[")) {
@@ -140,7 +170,17 @@ export function toRecap(
     state: input.state,
     goal: tidy(input.goal),
     latest: input.latest.map(tidy),
-    review: input.state === "review" ? reviewSteps(input.review).map(tidy) : [],
+    review:
+      input.state === "review"
+        ? reviewSteps(input.review).map((step) =>
+            typeof step === "string"
+              ? tidy(step)
+              : {
+                  step: tidy(step.step),
+                  ...(step.expect ? { expect: tidy(step.expect) } : {}),
+                },
+          )
+        : [],
     links:
       input.state === "review"
         ? input.links.map((item) => ({ ...item, title: tidy(item.title) }))
@@ -153,15 +193,21 @@ export function toRecap(
  * call's timeline row so the recap stays in the thread after the card is
  * gone. The agent reads it back as the call's result.
  */
+/** A review step as one Markdown line. */
+export function reviewStepText(step: ReviewStep): string {
+  if (typeof step === "string") return step;
+  return step.expect ? `${step.step} — expect ${step.expect}` : step.step;
+}
+
 export function recapMarkdown(recap: Recap): string {
   const state = recap.state === "complete" ? "Complete" : "Ready for review";
   return [
     `**${state}** · ${recap.goal}`,
     ...recap.latest.map((line) => `- ${line}`),
     recap.review.length === 1
-      ? `\n**Review:** ${recap.review[0]}`
+      ? `\n**Review:** ${reviewStepText(recap.review[0]!)}`
       : recap.review.length
-        ? `\n**Review:**\n${recap.review.map((step) => `- ${step}`).join("\n")}`
+        ? `\n**Review:**\n${recap.review.map((step) => `- ${reviewStepText(step)}`).join("\n")}`
         : null,
     recap.state === "review" && recap.links.length
       ? `\n${recap.links.map((link) => `[${link.title}](${link.location})`).join(" · ")}`
@@ -173,7 +219,7 @@ export function recapMarkdown(recap: Recap): string {
 
 /** The tool's description, as the agent sees it in its tool list. */
 export const RECAP_TOOL_DESCRIPTION =
-  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar.";
+  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar. For review, send each distinct action as a separate review item so the card shows a numbered list; use { step, expect } to show an expected result separately.";
 
 /**
  * Instructions for every thread that has the recap tool. They state the
@@ -181,7 +227,7 @@ export const RECAP_TOOL_DESCRIPTION =
  */
 export const RECAP_INSTRUCTIONS = `End every turn with ${RECAP_TOOL}, after completing the work you were authorized to do, unless the turn ends with a question card (AskUserQuestion or your provider's own question tool) still awaiting the user's answer. Ask questions only through such a card, never only in your reply.
 state: complete when the user's latest request is fully done; review when a finished result waits on the user to inspect, test, merge, or ship.
-Write terse fragments in sentence case without closing periods. goal: the thread's durable purpose as a short -ing phrase ("Porting handoffs into Workstreams"). latest: one to three concrete results of work actually done, about 12 words each, most important first. review (required for review): one to three steps, each saying how to inspect or try the requested result and what to expect, about 20 words each. For UI review, give steps to reach and exercise the UI.
+Write terse fragments in sentence case without closing periods. goal: the thread's durable purpose as a short -ing phrase ("Porting handoffs into Workstreams"). latest: one to three concrete results of work actually done, about 12 words each, most important first. review (required for review): one to three steps, each saying how to inspect or try the requested result and what to expect, about 20 words each. Send each distinct action as its own array item; separate items render as a numbered list, while punctuation inside one item does not split it. A step may be a string or { step, expect }. For UI review, give steps to reach and exercise the UI.
 links: optional, only in the review state and only for artifacts or pages explicitly being asked to be reviewed, as absolute file paths or HTTPS URLs. A changed source file qualifies only when source review is requested. For complete, omit links or send an empty list.
 The user decides whether to archive the thread from the recap. When a question card is dismissed or expires, treat the question as unanswered and unapproved, and continue only work that does not depend on it.`;
 
