@@ -66,10 +66,21 @@ describe("whole-map organization", () => {
     if (mode === "duplicate") result.assignments[1]!.threadId = "t1";
     if (mode === "unknown") result.assignments[1]!.threadId = "invented";
     if (mode === "target") result.assignments[0]!.workstream = "invented";
-    if (mode === "section") result.workstreams[0]!.sectionId = "invented";
+    if (mode === "section") {
+      result.workstreams[0]!.sectionId = "invented";
+      result.workstreams[0]!.name = "Unknown effort";
+    }
     if (mode === "duplicateName")
       result.workstreams.push({ ...result.workstreams[0]!, key: "other" });
     expect(() => parseOrganization(JSON.stringify(result), input)).toThrow();
+  });
+  it("reuses an exact named home even if the model chose another section ID", () => {
+    const result = valid();
+    result.workstreams[0]!.sectionId = "wrong-id";
+    expect(
+      parseOrganization(JSON.stringify(result), input).workstreams[0]!
+        .sectionId,
+    ).toBe("s1");
   });
   it("drops unused model-proposed homes without changing assignments", () => {
     const result = valid();
