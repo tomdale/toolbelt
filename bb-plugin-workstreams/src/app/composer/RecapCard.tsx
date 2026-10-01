@@ -65,7 +65,7 @@ function RecapText({
 
 // Labels sit in a gutter beside their row, and above it on narrow cards.
 const ROW_CLASS =
-  "grid grid-cols-[3.75rem_minmax(0,1fr)] gap-x-3 gap-y-0.5 py-1.5 @max-[24rem]/recap:grid-cols-1";
+  "grid grid-cols-[3.25rem_minmax(0,1fr)] gap-x-3 gap-y-0.5 py-2 @max-[24rem]/recap:grid-cols-1";
 const LABEL_CLASS =
   "pt-px text-[11px] font-medium leading-[1.6] text-muted-foreground";
 
@@ -86,10 +86,6 @@ function Glyph({ path, className }: { path: string; className: string }) {
   );
 }
 const CHECK = "M3.5 8.5 6.5 11.5 12.5 4.5";
-const EYE =
-  "M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8Z M8 9.75a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z";
-const CIRCLE_CHECK =
-  "M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Z M5.5 8.25 7.25 10l3.25-3.75";
 const FILE =
   "M9.5 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5Z M9.5 1.5V5H13";
 const LINK =
@@ -101,14 +97,13 @@ function StateLine({ state }: { state: Recap["state"] }) {
   return (
     <p
       className={cn(
-        "flex items-center gap-1.5 pr-7 text-[11px] font-medium leading-[1.6]",
+        "pr-7 text-[11px] font-medium leading-[1.6]",
         review
           ? "text-sky-700 dark:text-sky-300"
           : "text-emerald-700 dark:text-emerald-400",
       )}
     >
-      <Glyph path={review ? EYE : CIRCLE_CHECK} className="h-3.5 w-3.5" />
-      {review ? "Ready for review" : "Complete"}
+      {review ? "Ready for Review" : "Complete"}
     </p>
   );
 }
@@ -186,7 +181,10 @@ function Links({
   files: RecapFiles | null;
 }) {
   return (
-    <ul aria-label="Links" className="m-0 flex list-none flex-wrap gap-1.5 p-0">
+    <ul
+      aria-label="Links"
+      className="m-0 mt-2 flex list-none flex-wrap gap-1.5 p-0"
+    >
       {links.map((link, index) => {
         const web = link.location.startsWith("https://");
         const target = web ? null : fileTarget(link.location, files);
@@ -226,8 +224,9 @@ function Links({
 }
 
 /**
- * The state line and goal, then labeled rows: what was done, what to review
- * (tinted, since it's the one thing asked of the user), and links.
+ * The state line and goal, then labeled rows: what was done and what to
+ * review. Links go with the review steps, since they're what the user opens
+ * to review; a complete recap lists them under its results.
  */
 function RecapSummary({
   recap,
@@ -239,6 +238,9 @@ function RecapSummary({
   files: RecapFiles | null;
 }) {
   const goal = layout === "full" ? recap.goal : null;
+  const review = recap.review.length > 0;
+  const links =
+    recap.links.length > 0 ? <Links links={recap.links} files={files} /> : null;
   return (
     <div>
       {/* The top line clears the dismiss button in the corner. */}
@@ -256,23 +258,19 @@ function RecapSummary({
           />
         </div>
       ) : null}
-      <div className="mt-1 [&>section+section]:border-t [&>section+section]:border-border">
+      <div className="mt-1.5 [&>section+section]:border-t [&>section+section]:border-border">
         <Row label="Done">
           <Results items={recap.latest} />
+          {review ? null : links}
         </Row>
-        {recap.review.length > 0 ? (
+        {review ? (
           <Row
             label="Review"
-            // The tint replaces the hairlines on both sides of this row.
-            className="!my-1 -mx-2 rounded-md !border-transparent bg-foreground/[0.04] px-2 dark:bg-foreground/[0.06] [&+section]:!border-transparent"
-            labelClassName="text-foreground"
+            // Matches the state line, tying the ask to "Ready for Review".
+            labelClassName="text-sky-700 dark:text-sky-300"
           >
             <Steps items={recap.review} />
-          </Row>
-        ) : null}
-        {recap.links.length > 0 ? (
-          <Row label="Links">
-            <Links links={recap.links} files={files} />
+            {links}
           </Row>
         ) : null}
       </div>
@@ -355,7 +353,7 @@ function CardBody({
       ) : null}
       {/* Archive is the card's only footer, so a card without it stays short. */}
       {showArchive ? (
-        <div className="mt-3 flex justify-center">
+        <div className="mt-2 flex justify-center">
           {/* An outline button, so it offers the next step without
               outweighing the recap. */}
           <Button

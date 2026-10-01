@@ -161,9 +161,16 @@ it.each(["full", "minimal"])(
       },
     });
     const region = await slot.findByRole("region", { name: "Latest recap" });
-    expect(region.textContent).toContain("Ready for review");
+    expect(region.textContent).toContain("Ready for Review");
     expect(slot.getByRole("heading", { name: "Review" })).toBeTruthy();
-    expect(slot.getByRole("heading", { name: "Links" })).toBeTruthy();
+    // Links belong to the review row, not a section of their own.
+    expect(slot.queryByRole("heading", { name: "Links" })).toBeNull();
+    expect(
+      slot
+        .getByRole("list", { name: "Links" })
+        .closest("section")
+        ?.querySelector("h3")?.textContent,
+    ).toBe("Review");
     expect(region.textContent).toContain(
       "Open Recent; confirm only top-level threads appear",
     );
