@@ -244,6 +244,30 @@ it("omits complete links from normalization and stored recap Markdown", () => {
   );
 });
 
+it("keeps legacy string lists and reads structured review JSON", () => {
+  const stored = {
+    id: "r",
+    turnId: "t",
+    at: 1,
+    state: "review",
+    goal: "Goal",
+    latest: ["Legacy result"],
+    active: ["Legacy active item"],
+    next: ["Legacy next item"],
+    review: JSON.stringify([
+      { step: "Open Settings", expect: "The panel appears" },
+    ]),
+    links: [],
+  };
+  const recap = recapSchema.parse(stored);
+  expect(recap).toMatchObject({
+    latest: ["Legacy result"],
+    active: ["Legacy active item"],
+    next: ["Legacy next item"],
+    review: [{ step: "Open Settings", expect: "The panel appears" }],
+  });
+});
+
 it("reads a stored single review line as one step", () => {
   const stored = {
     id: "r",
@@ -276,8 +300,39 @@ it("keeps structured review steps and writes their expectations", () => {
     "Reload Settings",
   ]);
   expect(recapMarkdown(recap)).toContain(
-    "- Open Appearance — Dark should be available",
+    "- Open Appearance\n  - Dark should be available",
   );
+});
+
+it("accepts structured items in every list and preserves string items", () => {
+  const parsed = recapInputSchema.parse({
+    state: "continuing",
+    goal: "Implementing structured recap items",
+    active: [{ step: "Building UI", expect: "The card renders subrows" }],
+    latest: [
+      "Parser remains compatible",
+      { step: "Added schema", expect: "All lists accept objects" },
+    ],
+    next: [{ step: "Run tests", expect: "The suite passes" }],
+  });
+  const recap = toRecap(parsed, { id: "r", turnId: "t", at: 1 });
+  expect(recap.active).toEqual([
+    { step: "Building UI", expect: "The card renders subrows" },
+  ]);
+  expect(recap.latest).toEqual([
+    "Parser remains compatible",
+    { step: "Added schema", expect: "All lists accept objects" },
+  ]);
+  expect(recap.next).toEqual([
+    { step: "Run tests", expect: "The suite passes" },
+  ]);
+  expect(recapMarkdown(recap)).toContain(
+    "- ○ Building UI\n  - The card renders subrows",
+  );
+  expect(recapMarkdown(recap)).toContain(
+    "- ✓ Added schema\n  - All lists accept objects",
+  );
+  expect(recapMarkdown(recap)).toContain("- Run tests\n  - The suite passes");
 });
 
 it("measures inline Markdown by its visible text", () => {
