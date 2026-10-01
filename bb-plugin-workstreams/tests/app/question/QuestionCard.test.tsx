@@ -98,6 +98,32 @@ describe("question interaction adapter", () => {
       answers: { q0: { selected: ["q0o1"] } },
     } satisfies InteractionResponse);
   });
+  it("passes heading Markdown to the host renderer and keeps the legend readable", () => {
+    const prompt =
+      "Can you **retry** `vc login` using [the guide](https://example.com)?";
+    const slot = render({
+      questions: [{ ...singleSelect.questions[0]!, prompt }],
+    });
+    const heading = slot.getByRole("heading", { level: 2 });
+    expect(
+      heading.querySelector('[data-testid="bb-markdown"]')?.textContent,
+    ).toBe(prompt);
+    expect(slot.container.querySelector("legend")?.textContent).toBe(
+      "Can you retry vc login using the guide?",
+    );
+  });
+  it("keeps Markdown syntax out of question tab tooltips", () => {
+    const first = {
+      ...singleSelect.questions[0]!,
+      prompt: "Can you **retry** `vc login`?",
+    };
+    const slot = render({
+      questions: [first, { ...first, id: "q1", shortLabel: "Hosting" }],
+    });
+    expect(getButtonByText(slot, "Database").title).toBe(
+      "Can you retry vc login?",
+    );
+  });
   it("shows an awaiting-answer state", () => {
     const slot = render(singleSelect);
     expect(slot.getByRole("status").textContent).toBe("Needs your answer");
