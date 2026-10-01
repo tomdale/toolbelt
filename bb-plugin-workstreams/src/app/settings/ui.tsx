@@ -366,7 +366,7 @@ export function SegmentedControl<V extends string>({
           <label
             key={option.value}
             className={cn(
-              "flex h-full cursor-pointer items-center rounded px-2 text-xs transition-colors has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring",
+              "flex h-full min-w-16 cursor-pointer items-center justify-center rounded px-2 text-xs transition-colors has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring",
               selected
                 ? "bg-accent font-medium text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
