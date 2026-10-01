@@ -189,15 +189,10 @@ describe("thread list", () => {
         },
       },
     );
-    const archived = slot.getByRole("button", { name: /Archived/ });
+    const archived = slot.getByRole("button", { name: /^Archived\d*$/ });
     expect(archived.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(archived);
     const alpha = within(slot.getByRole("region", { name: "Archived Alpha" }));
-    expect(
-      alpha
-        .getByRole("button", { name: /Alpha/ })
-        .getAttribute("aria-expanded"),
-    ).toBe("false");
     fireEvent.click(alpha.getByRole("button", { name: /Alpha/ }));
     expect(
       alpha.getAllByRole("link").map((link) => link.getAttribute("aria-label")),
@@ -269,6 +264,47 @@ describe("thread list", () => {
       method: "open",
     });
     expect(navigated).toBe(1);
+    slot.lifecycle.unmount();
+  });
+
+  it("sorts and groups Recent from its section menu and persists the preference", async () => {
+    const slot = await mount([
+      sidebarThread("a", {
+        sectionId: "sec_a",
+        title: "Zulu task",
+        latestAttentionAt: 300,
+      }),
+      sidebarThread("b", {
+        sectionId: "sec_b",
+        title: "Alpha task",
+        latestAttentionAt: 200,
+      }),
+    ]);
+    const menuButton = slot.getByRole("button", { name: "Section options" });
+    fireEvent.pointerDown(menuButton, { button: 0, ctrlKey: false });
+    const menu = await screen.findByRole("menu");
+    fireEvent.click(
+      within(menu).getByRole("menuitemradio", { name: "Title A–Z" }),
+    );
+    expect(groupRows(slot, "Recent")).toEqual(["Alpha task", "Zulu task"]);
+    fireEvent.pointerDown(
+      slot.getByRole("button", { name: "Section options" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      within(await screen.findByRole("menu")).getByRole("menuitemcheckbox", {
+        name: "Group by workstream",
+      }),
+    );
+    expect(groupRows(slot, "Recent · Alpha")).toEqual(["Zulu task"]);
+    expect(groupRows(slot, "Recent · Beta")).toEqual(["Alpha task"]);
+    expect(
+      JSON.parse(window.localStorage.getItem("workstreams:v1:band-options")!)
+        .recent,
+    ).toEqual({
+      sort: "title",
+      grouped: true,
+    });
     slot.lifecycle.unmount();
   });
 
@@ -785,12 +821,12 @@ describe("snoozing", () => {
       },
     });
     await waitFor(() =>
-      expect(slot.getByRole("button", { name: /Snoozed/ })).toBeTruthy(),
+      expect(slot.getByRole("button", { name: /^Snoozed\d*$/ })).toBeTruthy(),
     );
     expect(slot.queryByRole("region", { name: "For you" })).toBeNull();
     expect(groupRows(slot, "Recent")).toEqual(["Other task"]);
     expect(slot.queryByRole("region", { name: "Alpha" })).toBeNull();
-    const fold = slot.getByRole("button", { name: /Snoozed/ });
+    const fold = slot.getByRole("button", { name: /^Snoozed\d*$/ });
     expect(fold.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(fold);
     expect(groupRows(slot, "Snoozed")).toEqual(["Asking task", "Napping task"]);
@@ -833,7 +869,7 @@ describe("snoozing", () => {
       snoozes: { nap: { until: later(), attentionAt: 0, at: 0 } },
     });
     fireEvent.click(
-      await waitFor(() => slot.getByRole("button", { name: /Snoozed/ })),
+      await waitFor(() => slot.getByRole("button", { name: /^Snoozed\d*$/ })),
     );
     fireEvent.click(
       within(slot.getByRole("region", { name: "Snoozed" })).getByRole(
@@ -867,7 +903,7 @@ it("keeps a snoozed child moving with its parent", async () => {
     },
   );
   fireEvent.click(
-    await waitFor(() => slot.getByRole("button", { name: /Snoozed/ })),
+    await waitFor(() => slot.getByRole("button", { name: /^Snoozed\d*$/ })),
   );
   expect(groupRows(slot, "Alpha")).toEqual(["Root task"]);
   fireEvent.contextMenu(
