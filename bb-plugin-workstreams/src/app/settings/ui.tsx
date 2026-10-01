@@ -50,11 +50,13 @@ export function SettingSwitch({
   onChange,
   label,
   disabled = false,
+  size = "md",
 }: {
   checked: boolean;
   onChange(checked: boolean): void;
   label: string;
   disabled?: boolean;
+  size?: "sm" | "md";
 }) {
   return (
     <button
@@ -65,15 +67,23 @@ export function SettingSwitch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative inline-flex h-[18px] w-[32px] shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed",
+        "relative inline-flex shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed",
+        size === "sm" ? "h-4 w-7" : "h-[18px] w-[32px]",
         checked ? "bg-primary" : "bg-muted-foreground/35",
       )}
     >
       <span
         aria-hidden="true"
         className={cn(
-          "pointer-events-none block size-3.5 rounded-full bg-background shadow-sm transition-transform",
-          checked ? "translate-x-[15px]" : "translate-x-[2px]",
+          "pointer-events-none rounded-full bg-background shadow-sm transition-transform",
+          size === "sm" ? "size-3" : "size-3.5",
+          checked
+            ? size === "sm"
+              ? "translate-x-[12px]"
+              : "translate-x-[15px]"
+            : size === "sm"
+              ? "translate-x-[1px]"
+              : "translate-x-[2px]",
         )}
       />
     </button>
@@ -87,6 +97,7 @@ export function Stepper({
   max,
   onChange,
   disabled = false,
+  size = "md",
 }: {
   label: string;
   value: number;
@@ -94,6 +105,7 @@ export function Stepper({
   max: number;
   onChange(value: number): void;
   disabled?: boolean;
+  size?: "sm" | "md";
 }) {
   return (
     <div
@@ -108,20 +120,29 @@ export function Stepper({
           onChange(value - 1);
         }
       }}
-      className="inline-flex h-8 items-center rounded-md border border-border bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      className={cn(
+        "inline-flex items-center rounded-md border border-border bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        size === "sm" ? "h-7" : "h-8",
+      )}
     >
       <button
         type="button"
         aria-label={`Decrease ${label}`}
         disabled={disabled || value <= min}
         onClick={() => onChange(Math.max(min, value - 1))}
-        className="h-full w-7 rounded-l-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
+        className={cn(
+          "h-full rounded-l-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40",
+          size === "sm" ? "w-6" : "w-7",
+        )}
       >
         −
       </button>
       <output
         aria-label={label}
-        className="min-w-7 text-center text-xs tabular-nums"
+        className={cn(
+          "text-center text-xs tabular-nums",
+          size === "sm" ? "min-w-6" : "min-w-7",
+        )}
       >
         {value}
       </output>
@@ -130,7 +151,10 @@ export function Stepper({
         aria-label={`Increase ${label}`}
         disabled={disabled || value >= max}
         onClick={() => onChange(Math.min(max, value + 1))}
-        className="h-full w-7 rounded-r-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
+        className={cn(
+          "h-full rounded-r-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40",
+          size === "sm" ? "w-6" : "w-7",
+        )}
       >
         +
       </button>
@@ -277,9 +301,38 @@ export function SettingsPicker({
   );
 }
 
-export function SectionRows({ children }: { children: ReactNode }) {
+export function CompactSettingRow({
+  label,
+  control,
+  accessory,
+}: {
+  label: string;
+  control: ReactNode;
+  accessory?: ReactNode;
+}) {
   return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3.5 [&>*+*]:mt-5">
+    <div className="grid min-h-8 grid-cols-[minmax(0,1fr)_auto_1.75rem] items-center gap-3">
+      <p className="min-w-0 truncate text-sm text-foreground">{label}</p>
+      <div className="flex min-w-24 justify-end">{accessory}</div>
+      <div className="flex justify-end">{control}</div>
+    </div>
+  );
+}
+
+export function SectionRows({
+  children,
+  compact = false,
+}: {
+  children: ReactNode;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-lg border border-border bg-card px-4",
+        compact ? "py-2 [&>*+*]:mt-1" : "py-3.5 [&>*+*]:mt-5",
+      )}
+    >
       {children}
     </div>
   );

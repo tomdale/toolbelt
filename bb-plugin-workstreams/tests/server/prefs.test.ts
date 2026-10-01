@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_MODELS } from "../../src/domain/prefs.ts";
+import { DEFAULT_MODELS, parsePrefs } from "../../src/domain/prefs.ts";
 import { openDatabase } from "../../src/server/db.ts";
 import {
   loadPrefs,
@@ -10,6 +10,16 @@ import {
 import { fakeWorld } from "./fake-bb.ts";
 
 describe("Workstreams prefs", () => {
+  it("defaults the new sidebar visibility preferences on", () => {
+    expect(parsePrefs({}).sidebar).toMatchObject({
+      showForYou: true,
+      showRecent: true,
+      showSnoozed: true,
+      showArchived: true,
+      recentLimit: 5,
+    });
+  });
+
   it("maps old declarative values without requiring BB settings registration", () => {
     expect(
       migrateLegacyPrefs({
@@ -24,7 +34,13 @@ describe("Workstreams prefs", () => {
         debug: true,
       }),
     ).toEqual({
-      sidebar: { showForYou: false, showRecent: false, recentLimit: 5 },
+      sidebar: {
+        showForYou: false,
+        showRecent: false,
+        showSnoozed: true,
+        showArchived: true,
+        recentLimit: 5,
+      },
       threads: {
         autoTitle: false,
         analysisModel: { kind: "gateway", model: "google/old-model" },
@@ -63,12 +79,22 @@ describe("Workstreams prefs", () => {
       model: "google/legacy",
     });
     expect(
-      savePrefs(db, { sidebar: { recentLimit: 100 } }).sidebar.recentLimit,
-    ).toBe(20);
+      savePrefs(db, {
+        sidebar: { recentLimit: 100, showSnoozed: false, showArchived: false },
+      }).sidebar,
+    ).toMatchObject({
+      recentLimit: 20,
+      showSnoozed: false,
+      showArchived: false,
+    });
     expect(
       seedPrefs(db, { model: "google/new" }).threads.analysisModel,
     ).toEqual(seeded.threads.analysisModel);
-    expect(loadPrefs(db).sidebar.recentLimit).toBe(20);
+    expect(loadPrefs(db).sidebar).toMatchObject({
+      recentLimit: 20,
+      showSnoozed: false,
+      showArchived: false,
+    });
     await world.harness.lifecycle.dispose();
   });
 });

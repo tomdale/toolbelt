@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { experimental_useSidebarThreads, useRpc } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import { RECENT_LIMIT, type PrefsPatch } from "../../domain/prefs.ts";
 import { ModelField } from "./ModelField.tsx";
 import {
+  CompactSettingRow,
   SectionRows,
   SettingRow,
   SettingSwitch,
@@ -22,44 +23,58 @@ import { usePrefs } from "../prefs.ts";
 export function SidebarSettings() {
   const { prefs, update } = useFeaturePrefs();
   if (!prefs) return <Loading />;
+  const row = (
+    label: string,
+    checked: boolean,
+    onChange: (checked: boolean) => void,
+    accessory?: ReactNode,
+  ) => (
+    <CompactSettingRow
+      label={label}
+      accessory={accessory}
+      control={
+        <SettingSwitch
+          size="sm"
+          label={label}
+          checked={checked}
+          onChange={onChange}
+        />
+      }
+    />
+  );
+  return (
+    <SectionRows compact>
+      {row("Up Next", prefs.sidebar.showForYou, (showForYou) =>
+        update({ sidebar: { showForYou } }),
+      )}
+      {row(
+        "Recent",
+        prefs.sidebar.showRecent,
+        (showRecent) => update({ sidebar: { showRecent } }),
+        prefs.sidebar.showRecent ? (
+          <Stepper
+            size="sm"
+            label="threads shown"
+            value={prefs.sidebar.recentLimit}
+            min={RECENT_LIMIT.min}
+            max={RECENT_LIMIT.max}
+            onChange={(recentLimit) => update({ sidebar: { recentLimit } })}
+          />
+        ) : null,
+      )}
+      {row("Snoozed", prefs.sidebar.showSnoozed, (showSnoozed) =>
+        update({ sidebar: { showSnoozed } }),
+      )}
+      {row("Archived", prefs.sidebar.showArchived, (showArchived) =>
+        update({ sidebar: { showArchived } }),
+      )}
+    </SectionRows>
+  );
+}
+
+export function WorkingIndicatorSettings() {
   return (
     <SectionRows>
-      <SettingRow
-        label="Show Up Next"
-        description="Threads waiting on you appear at the top of the sidebar."
-        control={
-          <SettingSwitch
-            label="Show Up Next"
-            checked={prefs.sidebar.showForYou}
-            onChange={(showForYou) => update({ sidebar: { showForYou } })}
-          />
-        }
-      />
-      <div>
-        <SettingRow
-          label="Show Recent"
-          description="Recently active threads appear above your workstreams."
-          control={
-            <SettingSwitch
-              label="Show Recent"
-              checked={prefs.sidebar.showRecent}
-              onChange={(showRecent) => update({ sidebar: { showRecent } })}
-            />
-          }
-        />
-        {prefs.sidebar.showRecent ? (
-          <div className="ml-4 mt-3 flex items-center justify-between gap-4 border-l border-border pl-3">
-            <p className="text-sm text-foreground">Threads shown</p>
-            <Stepper
-              label="threads shown"
-              value={prefs.sidebar.recentLimit}
-              min={RECENT_LIMIT.min}
-              max={RECENT_LIMIT.max}
-              onChange={(recentLimit) => update({ sidebar: { recentLimit } })}
-            />
-          </div>
-        ) : null}
-      </div>
       <div className="min-w-0">
         <SettingRow
           label="Working indicator"

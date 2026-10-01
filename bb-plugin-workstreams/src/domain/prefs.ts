@@ -70,6 +70,10 @@ const GROUPS = {
     showForYou: [z.boolean(), true],
     /** The Recent band: the most recently active threads. */
     showRecent: [z.boolean(), true],
+    /** The Snoozed fold: threads temporarily put aside. */
+    showSnoozed: [z.boolean(), true],
+    /** The Archived fold: threads kept after completion. */
+    showArchived: [z.boolean(), true],
     /** How many threads the Recent band shows. */
     recentLimit: [recentLimit, RECENT_LIMIT.fallback],
   },

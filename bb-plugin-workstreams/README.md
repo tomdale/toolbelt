@@ -25,7 +25,7 @@ design and the contract the code is checked against.
     delegate's question folds into its parent's newer one. A selected row stays
     in the block through read and status updates until you deselect it or select
     another thread; snoozing or archiving still puts it away immediately. The
-    Sidebar settings section can hide it.
+    **Show in Sidebar** settings can hide it.
   - **Prioritized workstreams**: hover a workstream header and click its flag,
     or right-click it → **Prioritize** (or `bb workstreams prioritize`).
     Prioritized workstreams pin directly below Up Next and keep the flag shown;
@@ -35,7 +35,7 @@ design and the contract the code is checked against.
     the row of the thread you have open; it leaves when you select another. Rows
     open and close smoothly rather than jumping.
   - **Recent**: the most recently active threads not already in Up Next, up to
-    the configurable limit in Sidebar settings.
+    the configurable limit. **Show in Sidebar** can hide this band.
   - **One group per workstream**, in BB's section order until you drag a header
     to reorder them. Each thread tree is filed under its root thread's section,
     exactly as BB's own sidebar does. Drag a root thread to reorder it within
@@ -47,8 +47,9 @@ design and the contract the code is checked against.
   - **Unsorted** and a collapsed **Dormant** fold for populated workstreams with
     no threads touched in 30 days.
   - A collapsed **Snoozed** fold. Snoozing a thread takes it (and its children)
-    out of Up Next, Recent, and its group until it wakes. Hover a row and click
-    its alarm clock to snooze with your default (Tomorrow morning unless
+    out of Up Next, Recent, and its group until it wakes. **Show in Sidebar**
+    can hide the fold without showing those threads elsewhere. Hover a row and
+    click its alarm clock to snooze with your default (Tomorrow morning unless
     changed), or rest the pointer on it for a menu of quick choices. Right-click
     → **Snooze** lists them all: 30 minutes, 1 hour, 3 hours, Tomorrow morning,
     This weekend, Next week, Until it updates, or a date and time you pick. The
@@ -58,14 +59,16 @@ design and the contract the code is checked against.
     timed snooze returns the thread marked unread at its time; "Until it
     updates" returns it at its next activity; sending the thread a message or
     **Wake now** ends any snooze.
+  - **Show in Sidebar** also controls the **Archived** fold; when hidden,
+    Workstreams does not request archived pages. **Working Indicator** controls
+    the working thread spinner animation and colors.
   - Rows show BB's status, a work-state mark (✓ complete, ◇ review, and ↻
     working from the agent's recap; ◆ decision, ◇ review, ⏸ blocked from
     analysis when a thread has no recap; hover for where it stopped), unread
-    state, drafts, shortcuts and pull requests. Pick the working thread's
-    spinner animation and its colors under **Working indicator** in the plugin's
-    settings (BB's own by default). Hover a row for its Snooze and Archive
-    buttons; right-click to move, rename, pin, mark read, snooze, archive, or
-    delete.
+    state, drafts, shortcuts and pull requests. The **Working Indicator**
+    settings choose the working thread's spinner and colors (BB's own by
+    default). Hover a row for its Snooze and Archive buttons; right-click to
+    move, rename, pin, mark read, snooze, archive, or delete.
 - **Question cards**: agents without a native question tool get
   `AskUserQuestion`, which asks one to four questions with suggested answers and
   freeform input. The card appears above the composer in the recap card's place

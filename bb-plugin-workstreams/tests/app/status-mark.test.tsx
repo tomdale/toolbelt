@@ -102,7 +102,9 @@ describe("synchronizeSpinnerAnimations", () => {
 describe("WorkingMark", () => {
   it("resynchronizes when a moved mark's animation restarts", async () => {
     const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
-    const section = app.settingsSections.find((s) => s.id === "sidebar")!;
+    const section = app.settingsSections.find(
+      (s) => s.id === "working-indicator",
+    )!;
     const slot = await renderSlot(
       section,
       {},

@@ -40,19 +40,20 @@ async function mount(
 
 it("registers settings in feature order", async () => {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
-  expect(app.settingsSections.map((section) => section.id)).toEqual([
-    "sidebar",
-    "threads",
-    "recap",
-    "snooze",
-    "new-work",
-    "organize",
-    "advanced",
+  expect(app.settingsSections.map(({ id, title }) => [id, title])).toEqual([
+    ["sidebar", "Show in Sidebar"],
+    ["working-indicator", "Working Indicator"],
+    ["threads", "Threads"],
+    ["recap", "Recap"],
+    ["snooze", "Snooze"],
+    ["new-work", "New work"],
+    ["organize", "Organize"],
+    ["advanced", "Advanced"],
   ]);
 });
 
 it("renders compact working styles and accessible colored swatches", async () => {
-  const slot = await mount("sidebar");
+  const slot = await mount("working-indicator");
   const styles = await slot.findByRole("radiogroup", {
     name: "Working indicator style",
   });
@@ -69,9 +70,31 @@ it("renders compact working styles and accessible colored swatches", async () =>
   ).toBeTruthy();
 });
 
-it("saves Sidebar switches and clamps the Recent stepper to 1–20", async () => {
+it("renders four compact sidebar toggles and saves their preferences", async () => {
   const slot = await mount("sidebar");
-  const recent = await slot.findByRole("switch", { name: "Show Recent" });
+  for (const label of ["For You", "Recent", "Snoozed", "Archived"]) {
+    expect(await slot.findByRole("switch", { name: label })).toBeTruthy();
+  }
+  fireEvent.click(slot.getByRole("switch", { name: "Snoozed" }));
+  fireEvent.click(slot.getByRole("switch", { name: "Archived" }));
+  await waitFor(() =>
+    expect(
+      slot.inspection.rpcCalls.filter((call) => call.method === "setPrefs"),
+    ).toHaveLength(2),
+  );
+  expect(
+    slot.inspection.rpcCalls
+      .filter((call) => call.method === "setPrefs")
+      .map((call) => call.input),
+  ).toEqual([
+    { patch: { sidebar: { showSnoozed: false } } },
+    { patch: { sidebar: { showArchived: false } } },
+  ]);
+});
+
+it("clamps the Recent stepper to 1–20 and hides it when Recent is off", async () => {
+  const slot = await mount("sidebar");
+  const recent = await slot.findByRole("switch", { name: "Recent" });
   const plus = slot.getByRole("button", { name: "Increase threads shown" });
   for (let index = 0; index < 30; index++) fireEvent.click(plus);
   await waitFor(() =>
