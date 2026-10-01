@@ -134,7 +134,7 @@ function Row({
 
 function Results({ items }: { items: string[] }) {
   return (
-    <ul className="space-y-0.5">
+    <ul className="m-0 list-none space-y-0.5 p-0">
       {items.map((item, index) => (
         <li
           key={index}
@@ -156,7 +156,7 @@ function Steps({ items }: { items: string[] }) {
   if (items.length === 1)
     return <RecapText text={items[0]!} className="text-foreground" />;
   return (
-    <ol className="space-y-0.5">
+    <ol className="m-0 list-none space-y-0.5 p-0">
       {items.map((item, index) => (
         <li
           key={index}
@@ -186,7 +186,7 @@ function Links({
   files: RecapFiles | null;
 }) {
   return (
-    <ul aria-label="Links" className="flex flex-wrap gap-1.5">
+    <ul aria-label="Links" className="m-0 flex list-none flex-wrap gap-1.5 p-0">
       {links.map((link, index) => {
         const web = link.location.startsWith("https://");
         const target = web ? null : fileTarget(link.location, files);
