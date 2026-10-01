@@ -135,7 +135,7 @@ it("shows the goal, latest results, and Dismiss under them", async () => {
   expect(slot.getByRole("heading", { name: "Building the card" })).toBeTruthy();
   expect(region.textContent).toContain("Card renders");
   expect(region.textContent).toContain("Complete");
-  expect(slot.getByRole("heading", { name: "Done" })).toBeTruthy();
+  expect(slot.queryByRole("heading", { name: "Done" })).toBeNull();
   expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
   expect(slot.queryByRole("heading", { name: "Links" })).toBeNull();
   expect(slot.getByRole("button", { name: "Dismiss recap" })).toBeTruthy();

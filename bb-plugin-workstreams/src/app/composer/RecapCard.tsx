@@ -141,14 +141,15 @@ function Row({
   accent,
   children,
 }: {
-  label: string;
+  /** Omitted when the row stands alone and needs no heading. */
+  label?: string;
   /** The label's accent text color. */
   accent: string;
   children: ReactNode;
 }) {
   return (
-    <section className={ROW_CLASS}>
-      <h3 className={cn(LABEL_CLASS, accent)}>{label}</h3>
+    <section className={label ? ROW_CLASS : "py-2"}>
+      {label ? <h3 className={cn(LABEL_CLASS, accent)}>{label}</h3> : null}
       <div className="min-w-0">{children}</div>
     </section>
   );
@@ -289,7 +290,7 @@ function RecapSummary({
         </div>
       ) : null}
       <div className={cn("mt-1.5 [&>section+section]:border-t", accent.rules)}>
-        <Row label="Done" accent={accent.text}>
+        <Row label={review ? "Done" : undefined} accent={accent.text}>
           <Results items={recap.latest} accent={accent.text} />
         </Row>
         {review ? (
