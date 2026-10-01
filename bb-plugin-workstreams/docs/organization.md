@@ -25,7 +25,7 @@ more capability clusters of at least 2 roots each; areas are never technical
 layers or lifecycle stages. Third, single homes are named for their owner and
 areas use `<Owner>: <Area>`, for example `Workstreams: Recaps`. The UI shows the
 owner prefix subdued and hides the colon. Roots with no identifiable owner stay
-Unsorted.
+Unfiled.
 
 Organizing defaults to `openai/gpt-6-sol-fast` (`organizeModel`). It is an
 explicit, occasional action, and Flash-Lite does not reliably apply the split
@@ -76,7 +76,7 @@ changes remain journaled and undoable.
 
 The map stays fixed until another explicit organization or manual edit. Thread
 creation through New work uses the previewed route. Other unassigned roots
-remain Unsorted. Recaps, Needs-you, titles and snooze continue independently;
+remain Unfiled. Recaps, Needs-you, titles and snooze continue independently;
 completing a turn does not move a thread or create a section.
 
 New work classifies against populated homes using their names, descriptions and

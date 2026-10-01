@@ -35,7 +35,7 @@ export type Row<T extends WorkstreamThread> = {
   readonly thread: T;
   readonly depth: number;
   readonly hasChildren: boolean;
-  /** The workstream (section id) the row's tree belongs to; null = Unsorted. */
+  /** The workstream (section id) the row's tree belongs to; null = Unfiled. */
   readonly workstreamId: string | null;
   readonly needsYou: boolean;
 };
@@ -49,7 +49,7 @@ export type Group<T extends WorkstreamThread> = {
   readonly needsYou: number;
   /** Latest attention time across the group's threads; 0 when empty. */
   readonly lastActiveAt: number;
-  /** The user prioritized this workstream (never Unsorted). */
+  /** The user prioritized this workstream (never Unfiled). */
   readonly prioritized: boolean;
 };
 
@@ -80,7 +80,13 @@ export type Projection<T extends WorkstreamThread> = {
   readonly needsYouVia: ReadonlyMap<string, readonly T[]>;
 };
 
+/**
+ * The virtual group of threads filed in no workstream, shown as
+ * {@link UNFILED_NAME}. Its id keeps its original value because stored
+ * manual order is keyed by it.
+ */
 export const UNSORTED_ID = "unsorted";
+export const UNFILED_NAME = "Unfiled";
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type ProjectionOptions<T extends WorkstreamThread> = {
@@ -284,7 +290,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
     needsYou: needsYouRows,
     recent,
     groups: [...pinned, ...groups],
-    unsorted: group(UNSORTED_ID, "Unsorted"),
+    unsorted: group(UNSORTED_ID, UNFILED_NAME),
     dormant,
     snoozed,
     rowOf,

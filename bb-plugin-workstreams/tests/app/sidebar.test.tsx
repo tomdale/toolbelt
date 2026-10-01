@@ -295,10 +295,10 @@ describe("thread list", () => {
     fireEvent.click(beta.getByRole("button", { name: /Beta/ }));
     expect(groupRows(slot, "Archived Beta")).toEqual(["Archived Beta task"]);
     const unsorted = within(
-      slot.getByRole("region", { name: "Archived Unsorted" }),
+      slot.getByRole("region", { name: "Archived Unfiled" }),
     );
-    fireEvent.click(unsorted.getByRole("button", { name: /Unsorted/ }));
-    expect(groupRows(slot, "Archived Unsorted")).toEqual([
+    fireEvent.click(unsorted.getByRole("button", { name: /Unfiled/ }));
+    expect(groupRows(slot, "Archived Unfiled")).toEqual([
       "Archived loose task",
     ]);
     const archivedRegion = slot.getByRole("region", { name: "Archived" });
@@ -319,12 +319,12 @@ describe("thread list", () => {
     const slot = await mount(undefined, { settings: { showRecent: false } });
     expect(groupRows(slot, "Alpha")).toEqual(["Root task", "Kid task"]);
     expect(groupRows(slot, "Beta")).toEqual(["Beta task"]);
-    expect(groupRows(slot, "Unsorted")).toEqual(["Loose task"]);
+    expect(groupRows(slot, "Unfiled")).toEqual(["Loose task"]);
     expect(slot.queryByText("Hidden helper")).toBeNull();
     slot.lifecycle.unmount();
   });
 
-  it("shows empty workstreams after populated ones with a scoped New work action and no zero count", async () => {
+  it("shows Unfiled, then empty workstreams, after populated ones; empty ones get a scoped New work action and no zero count", async () => {
     const slot = await mount(undefined, {
       settings: { showRecent: false },
       order: { workstreams: ["sec_z", "sec_b", "sec_a"], threads: {} },
@@ -332,7 +332,7 @@ describe("thread list", () => {
     await waitFor(() =>
       expect(
         slot.getAllByRole("region").map((r) => r.getAttribute("aria-label")),
-      ).toEqual(["Beta", "Alpha", "Zeta", "Unsorted"]),
+      ).toEqual(["Beta", "Alpha", "Unfiled", "Zeta"]),
     );
     expect(slot.queryByRole("button", { name: /Dormant/ })).toBeNull();
     const empty = within(slot.getByRole("region", { name: "Zeta" }));
@@ -357,6 +357,19 @@ describe("thread list", () => {
       await screen.findByRole("dialog", { name: "New work" }),
     );
     expect(dialog.getByRole("button", { name: /Zeta/ })).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
+  it("leaves Unfiled out when every thread is in a workstream", async () => {
+    const slot = await mount(
+      [sidebarThread("a1", { sectionId: "sec_a", title: "Alpha task" })],
+      { settings: { showRecent: false } },
+    );
+    await waitFor(() =>
+      expect(
+        slot.getAllByRole("region").map((r) => r.getAttribute("aria-label")),
+      ).toEqual(["Alpha", "Beta", "Zeta"]),
+    );
     slot.lifecycle.unmount();
   });
 
@@ -498,7 +511,7 @@ describe("thread list", () => {
   it("moves a root through the context menu", async () => {
     const slot = await mount(undefined, { settings: { showRecent: false } });
     const link = within(
-      slot.getByRole("region", { name: "Unsorted" }),
+      slot.getByRole("region", { name: "Unfiled" }),
     ).getByRole("link", {
       name: "Loose task",
     });
@@ -636,7 +649,7 @@ describe("thread list", () => {
       within(band).queryAllByRole("img", { name: "Needs your decision" }),
     ).toHaveLength(0);
     expect(
-      within(slot.getByRole("region", { name: "Unsorted" })).getAllByRole(
+      within(slot.getByRole("region", { name: "Unfiled" })).getAllByRole(
         "img",
         { name: "Needs your decision" },
       ),
@@ -837,7 +850,7 @@ describe("thread list", () => {
         recaps: { asked: recap("review"), finished: recap("complete") },
       },
     );
-    const group = await slot.findByRole("region", { name: "Unsorted" });
+    const group = await slot.findByRole("region", { name: "Unfiled" });
     expect(slot.queryByRole("region", { name: "Up Next" })).toBeNull();
     expect(
       within(group).getByRole("img", { name: "Ready for your review" }),
@@ -896,7 +909,7 @@ describe("thread list", () => {
       sidebarThread("busy", { title: "Busy", indicator: "runtime" }),
     ];
     const markOf = (slot: Awaited<ReturnType<typeof mount>>) =>
-      within(slot.getByRole("region", { name: "Unsorted" })).getByRole("img", {
+      within(slot.getByRole("region", { name: "Unfiled" })).getByRole("img", {
         name: "Working",
       });
     const byDefault = await mount(working, {
@@ -949,7 +962,7 @@ describe("thread list", () => {
         },
       },
     );
-    const row = within(slot.getByRole("region", { name: "Unsorted" }));
+    const row = within(slot.getByRole("region", { name: "Unfiled" }));
     expect(row.getByRole("link").getAttribute("aria-label")).toBe("Finished");
     expect(row.queryByText("✓")).toBeNull();
     slot.lifecycle.unmount();
@@ -1005,7 +1018,7 @@ describe("thread list", () => {
         ],
         { settings: { showRecent: false } },
       );
-      expect(groupRows(slot, "Unsorted")).toEqual([
+      expect(groupRows(slot, "Unfiled")).toEqual([
         "Loose one",
         "Loose two",
         "Loose three",
@@ -1039,7 +1052,7 @@ describe("thread list", () => {
           ids: ["l3", "l1", "l2"],
         }),
       );
-      expect(groupRows(slot, "Unsorted")).toEqual([
+      expect(groupRows(slot, "Unfiled")).toEqual([
         "Loose three",
         "Loose one",
         "Loose two",
@@ -1480,7 +1493,7 @@ describe("prioritized workstreams", () => {
       expect(regions(slot)).toEqual(["Alpha", "Beta", "Zeta"]),
     );
     expect(
-      slot.queryByRole("button", { name: "Prioritize Unsorted" }),
+      slot.queryByRole("button", { name: "Prioritize Unfiled" }),
     ).toBeNull();
     slot.lifecycle.unmount();
   });
@@ -1553,7 +1566,7 @@ describe("prioritized workstreams", () => {
     });
     expect(show.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(show);
-    expect(regions(slot)).toEqual(["Zeta", "Alpha", "Beta", "Unsorted"]);
+    expect(regions(slot)).toEqual(["Zeta", "Alpha", "Unfiled", "Beta"]);
     const alpha = slot.getByRole("region", { name: "Alpha" });
     expect(within(alpha).queryAllByRole("link")).toHaveLength(0);
     fireEvent.click(within(alpha).getByRole("button", { name: "Alpha" }));
@@ -1578,7 +1591,7 @@ describe("prioritized workstreams", () => {
       slot.getByRole("button", { name: "Remove priority from Zeta" }),
     );
     await waitFor(() =>
-      expect(regions(slot)).toEqual(["Alpha", "Zeta", "Beta", "Unsorted"]),
+      expect(regions(slot)).toEqual(["Alpha", "Zeta", "Unfiled", "Beta"]),
     );
     expect(groupRows(slot, "Alpha")).toEqual(["Alpha task"]);
     expect(

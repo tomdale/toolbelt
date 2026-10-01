@@ -80,7 +80,7 @@ describe("projectWorkstreams", () => {
     expect(p.dormant.map((g) => g.id)).toEqual(["sec_a"]);
   });
 
-  it("puts unsectioned and unknown-section roots in Unsorted", () => {
+  it("puts unsectioned and unknown-section roots in Unfiled", () => {
     const p = projectWorkstreams(
       [
         thread("loose", { latestAttentionAt: now }),

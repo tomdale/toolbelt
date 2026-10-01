@@ -50,7 +50,7 @@ it("does not select hidden, archived, snoozed threads or the archived subtree", 
   expect(nextThreadAfterArchive(projection, "first")).toBeNull();
 });
 
-it("advances within Unsorted", () => {
+it("advances within Unfiled", () => {
   const projection = projectWorkstreams(
     [
       thread("a", { latestAttentionAt: 200 }),

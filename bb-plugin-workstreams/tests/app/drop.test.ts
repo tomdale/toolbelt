@@ -86,7 +86,7 @@ describe("planDrop", () => {
     });
   });
 
-  it("files a root dropped on a group header at its top, and into Unsorted", () => {
+  it("files a root dropped on a group header at its top, and into Unfiled", () => {
     expect(
       planDrop(
         threadDrop({ toGroupId: "unsorted", overThreadId: null }),

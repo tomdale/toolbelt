@@ -29,7 +29,7 @@ export type AnalysisInput = {
    * (the opening words of the first request, or the thread id).
    */
   readonly untitled?: boolean;
-  /** The thread's workstream, or null when it is Unsorted. */
+  /** The thread's workstream, or null when it is Unfiled. */
   readonly workstream: {
     readonly name: string;
     readonly description: string | null;

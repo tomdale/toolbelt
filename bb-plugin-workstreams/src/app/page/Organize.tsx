@@ -263,7 +263,7 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
             })}
             {preview.assignments.some((a) => a.workstream === null) ? (
               <div>
-                <h4 className="px-2 text-[13px] font-semibold">Unsorted</h4>
+                <h4 className="px-2 text-[13px] font-semibold">Unfiled</h4>
                 {renderThreads(null)}
               </div>
             ) : null}

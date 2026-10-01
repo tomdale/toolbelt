@@ -234,7 +234,7 @@ it("lists model calls in the Activity log in Debug mode", async () => {
     action: "move",
     source: "user",
     status: "applied",
-    rationale: "Moved from Unsorted to Beta",
+    rationale: "Moved from Unfiled to Beta",
     threads: [{ id: "t1", name: "Alpha parser" }],
     workstreams: [{ id: "sec_b", name: "Beta" }],
     undo: null,
@@ -288,7 +288,7 @@ it("lists model calls in the Activity log in Debug mode", async () => {
       },
     );
   const off = page(false);
-  expect(await off.findByText("Moved from Unsorted to Beta")).toBeTruthy();
+  expect(await off.findByText("Moved from Unfiled to Beta")).toBeTruthy();
   expect(off.queryByText("review · Alpha · drift → Beta (high)")).toBeNull();
   off.unmount();
 
@@ -298,7 +298,7 @@ it("lists model calls in the Activity log in Debug mode", async () => {
   const rows = on.getAllByRole("listitem").map((li) => li.textContent ?? "");
   const order = [
     "Different workstream: Beta",
-    "Moved from Unsorted",
+    "Moved from Unfiled",
     "Fix the parser",
   ].map((text) => rows.findIndex((row) => row.includes(text)));
   expect(order).toEqual([...order].sort((a, b) => a - b));
@@ -317,7 +317,7 @@ it("lists model calls in the Activity log in Debug mode", async () => {
     target: { value: "model-call" },
   });
   await waitFor(() =>
-    expect(on.queryByText("Moved from Unsorted to Beta")).toBeNull(),
+    expect(on.queryByText("Moved from Unfiled to Beta")).toBeNull(),
   );
   expect(on.getByText("Fix the parser")).toBeTruthy();
 });
