@@ -7,7 +7,7 @@ import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contract.ts";
-import { gatewayAgentTurn, gatewayComplete, gatewayKey } from "./gateway.ts";
+import { gatewayComplete, gatewayKey } from "./gateway.ts";
 
 const NO_KEY =
   "Analysis failed: no AI Gateway key on this machine. Sign Pi in to Vercel AI Gateway. No fallback model was used.";
@@ -26,12 +26,6 @@ async function isDir(path: string): Promise<boolean> {
 export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
-    agentTurn: async (request, ctx) => {
-      const apiKey = await gatewayKey();
-      if (!apiKey) throw new Error(NO_KEY);
-      const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(TIMEOUT_MS)]);
-      return gatewayAgentTurn({ ...request, apiKey, signal });
-    },
     // Only looks for .git entries; never reads file contents.
     probe: async ({ path }) => {
       if (!(await isDir(path)))
@@ -49,7 +43,7 @@ export default experimental_defineHostEntry({
           childRepos++;
       return { exists: true, rootRepo: entries.includes(".git"), childRepos };
     },
-    complete: async ({ prompt, model }, ctx) => {
+    complete: async ({ prompt, model, maxTokens }, ctx) => {
       const apiKey = await gatewayKey();
       if (!apiKey) throw new Error(NO_KEY);
       // The server aborts a call whose answer no longer matters (the draft
@@ -59,7 +53,13 @@ export default experimental_defineHostEntry({
         AbortSignal.timeout(TIMEOUT_MS),
       ]);
       try {
-        return await gatewayComplete({ prompt, model, apiKey, signal });
+        return await gatewayComplete({
+          prompt,
+          model,
+          maxTokens,
+          apiKey,
+          signal,
+        });
       } catch (error) {
         if (ctx.signal.aborted) throw error;
         throw new Error(FAILURE);

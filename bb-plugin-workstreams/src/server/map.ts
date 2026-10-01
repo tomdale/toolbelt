@@ -97,13 +97,13 @@ export class WorkstreamMap {
     if (patch.description !== undefined)
       this.db
         .prepare(
-          `UPDATE ws_workstream SET description = ?, description_source = 'user', updated_at = ? WHERE section_id = ?`,
+          `UPDATE ws_workstream SET description = ?, description_source = 'user', metadata_revision = metadata_revision + 1, updated_at = ? WHERE section_id = ?`,
         )
         .run(patch.description?.trim() || null, at, sectionId);
     if (patch.aliases !== undefined)
       this.db
         .prepare(
-          "UPDATE ws_workstream SET aliases = ?, updated_at = ? WHERE section_id = ?",
+          "UPDATE ws_workstream SET aliases = ?, metadata_revision = metadata_revision + 1, updated_at = ? WHERE section_id = ?",
         )
         .run(
           JSON.stringify(
@@ -120,7 +120,7 @@ export class WorkstreamMap {
   describe(sectionId: string, description: string): void {
     this.db
       .prepare(
-        `UPDATE ws_workstream SET description = ?, updated_at = ?
+        `UPDATE ws_workstream SET description = ?, metadata_revision = metadata_revision + 1, updated_at = ?
          WHERE section_id = ? AND description_source = 'generated'`,
       )
       .run(description, this.now(), sectionId);

@@ -132,7 +132,7 @@ it("shows where each thread stopped", async () => {
   slot.lifecycle.unmount();
 });
 
-it("reviews moves by source and destination, noting only what needs a second look", async () => {
+it("previews the whole map and applies only selected moves", async () => {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   const move = (
     threadId: string,
@@ -157,15 +157,37 @@ it("reviews moves by source and destination, noting only what needs a second loo
     updatedAt: 0,
     error: null,
     roots: [
-      { id: "t1", title: "", sectionId: "sec_Alpha", provenance: "auto" },
-      { id: "t2", title: "", sectionId: "sec_Alpha", provenance: "auto" },
-      { id: "t3", title: "", sectionId: null, provenance: "unfiled" },
-      { id: "t4", title: "", sectionId: "sec_Beta", provenance: "user" },
+      { id: "t1", title: "Title t1", sectionId: "sec_Alpha" },
+      { id: "t2", title: "Title t2", sectionId: "sec_Alpha" },
+      { id: "t3", title: "Title t3", sectionId: null },
+      { id: "t4", title: "Title t4", sectionId: "sec_Beta" },
+      { id: "t5", title: "Title t5", sectionId: null },
     ],
     descriptions: {},
     changes: [],
     preview: {
-      creates: [{ name: "Gamma", description: null }],
+      workstreams: [
+        {
+          key: "b",
+          sectionId: "sec_Beta",
+          name: "Beta",
+          description: "The Beta effort",
+          aliases: [],
+        },
+        {
+          key: "g",
+          sectionId: null,
+          name: "Gamma",
+          description: "The Gamma effort",
+          aliases: [],
+        },
+      ],
+      assignments: [1, 2, 3, 4, 5].map((n) => ({
+        threadId: `t${n}`,
+        workstream: n <= 2 ? "b" : n <= 4 ? "g" : null,
+        reason: "Shared effort",
+      })),
+      creates: [{ name: "Gamma", description: "The Gamma effort" }],
       renames: [],
       moves: [
         move("t1", "Alpha", "Beta"),
@@ -183,7 +205,7 @@ it("reviews moves by source and destination, noting only what needs a second loo
       unsure: [{ threadId: "t5", title: "Title t5" }],
     },
     entryId: null,
-    seconds: { intake: 0, map: 0, assign: 0, apply: 0 },
+    traceIds: [],
   };
   const slot = renderSlot(
     app.navPanels[0]!,
@@ -201,25 +223,22 @@ it("reviews moves by source and destination, noting only what needs a second loo
       },
     },
   );
-  const beta = await slot.findByRole("group", { name: "Alpha to Beta" });
-  expect(within(beta).getByRole("checkbox", { name: "Title t1" })).toBeTruthy();
+  expect(await slot.findByText("The Beta effort")).toBeTruthy();
+  expect(slot.getByText("The Gamma effort")).toBeTruthy();
+  expect(slot.getByText("Title t5")).toBeTruthy();
   expect(
-    within(beta).getByRole("checkbox", {
-      name: "Title t2 Medium confidence",
-    }),
-  ).toBeTruthy();
-  const fresh = slot.getByRole("group", { name: "Unsorted to Gamma New" });
+    (slot.getByRole("checkbox", { name: /Title t4/ }) as HTMLInputElement)
+      .checked,
+  ).toBe(false);
   expect(
-    within(fresh).getByRole("checkbox", { name: "Title t3" }),
-  ).toBeTruthy();
-  const mine = slot.getByRole("checkbox", { name: "Title t4 Filed by you" });
-  expect((mine as HTMLInputElement).checked).toBe(false);
-  const unsure = slot.getByRole("group", { name: "Unsure — staying put" });
-  expect(within(unsure).getByText("Title t5")).toBeTruthy();
-  expect(slot.queryByText(/prepared in|high confidence/i)).toBeNull();
-
-  fireEvent.click(slot.getByRole("checkbox", { name: "Title t1" }));
-  fireEvent.click(slot.getByRole("button", { name: "Move 2 threads" }));
+    slot.inspection.rpcCalls.some(
+      (c) =>
+        c.method === "bootstrap" &&
+        (c.input as { action: string }).action === "apply",
+    ),
+  ).toBe(false);
+  fireEvent.click(slot.getByRole("checkbox", { name: /Title t1/ }));
+  fireEvent.click(slot.getByRole("button", { name: "Apply map" }));
   await waitFor(() =>
     expect(
       slot.inspection.rpcCalls.find(
@@ -229,6 +248,7 @@ it("reviews moves by source and destination, noting only what needs a second loo
       )?.input,
     ).toEqual({
       action: "apply",
+      runId: 0,
       overrides: [{ threadId: "t1", accepted: false }],
     }),
   );

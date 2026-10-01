@@ -1,91 +1,56 @@
-/**
- * One-time organizing (SPEC §8), also `bb workstreams rebuild`:
- *
- * 1. Intake: roots, sections, and recorded placement provenance. Automatically
- *    filed and unfiled roots are re-evaluated; manual placements stay put.
- * 2. Map proposal: one model call proposes renames, merges, new workstreams,
- *    and descriptions.
- * 3. Review: the user accepts or rejects each change.
- * 4. Assignment: closed-set calls, eight roots per call, four at a time.
- * 5. Apply: the previewed diff, as one journaled batch that undoes as a whole.
- *
- * Nothing changes in BB before step 5. Evolution and auto-filing stay off
- * until the bootstrap is applied or skipped.
- */
-import { buildForest } from "../domain/tree.ts";
-import { normalize } from "../domain/evolution.ts";
-import type { SupervisionInput } from "../domain/supervision.ts";
-import {
-  ASSIGN_BATCH,
-  type Assignment,
-  type MapChange,
-} from "../domain/organize.ts";
+import { buildForest, flatten } from "../domain/tree.ts";
+import type { OrganizeInput, OrganizeProposal } from "../domain/organize.ts";
 import type { Analyzer } from "./analyzer.ts";
 import { getMeta, setMeta, type Database } from "./db.ts";
 import type { WorkstreamMap } from "./map.ts";
 import { traceIdOf, type Inference } from "./model.ts";
-import type { BatchPlan, WorkstreamService } from "./service.ts";
-import { UserError } from "./service.ts";
-
-export type Provenance = "user" | "auto" | "unfiled";
+import {
+  UserError,
+  type BatchPlan,
+  type WorkstreamService,
+} from "./service.ts";
 
 export type BootstrapMove = {
   threadId: string;
   title: string;
   from: string | null;
   fromName: string;
-  /** Section id, or `new:<name>` for a workstream the batch creates. */
-  to: string;
+  to: string | null;
   toName: string;
   reason: string;
   accepted: boolean;
-  /** The assignment call's confidence; unset for merge and evolution moves. */
-  confidence?: Assignment["confidence"];
-  /** The debug trace of the assignment call that proposed it (SPEC §11.6). */
-  traceId?: string | null;
 };
-
 export type BootstrapState = {
-  status:
-    | "proposing"
-    | "review"
-    | "assigning"
-    | "preview"
-    | "applying"
-    | "applied"
-    | "failed";
+  status: "proposing" | "preview" | "applying" | "applied" | "failed";
   startedAt: number;
   updatedAt: number;
   error: string | null;
-  roots: {
-    id: string;
-    title: string;
-    sectionId: string | null;
-    provenance: Provenance;
+  roots: { id: string; title: string; sectionId: string | null }[];
+  mapSnapshot: {
+    sectionId: string;
+    name: string;
+    description: string | null;
+    aliases: string[];
+    descriptionSource: "user" | "generated";
   }[];
-  descriptions: Record<string, string>;
-  changes: (MapChange & { id: string; accepted: boolean })[];
   preview: {
-    creates: { name: string; description: string | null }[];
+    workstreams: OrganizeProposal["workstreams"];
+    creates: { name: string; description: string }[];
     renames: { sectionId: string; from: string; to: string }[];
     moves: BootstrapMove[];
-    unsure: { threadId: string; title: string }[];
+    assignments: OrganizeProposal["assignments"];
   } | null;
   entryId: string | null;
-  seconds: { intake: number; map: number; assign: number; apply: number };
-  /** Debug traces of this run's model calls, oldest first (SPEC §11.6). */
-  traceIds?: string[];
-  /** The map proposal's trace, which also explains its descriptions. */
-  mapTraceId?: string | null;
+  traceIds: string[];
 };
+const KEY = "organizer";
+const newKey = (key: string) => `new:${key}`;
 
-const KEY = "bootstrap";
-const CONCURRENCY = 4;
-const NEW_PREFIX = "new:";
-
+/** One snapshot and one completion produce a preview; only Apply mutates BB. */
 export class Bootstrap {
-  private running: Promise<unknown> | null = null;
-
+  private running = false;
+  private controller: AbortController | null = null;
+  private disposed = false;
   constructor(
     private readonly deps: {
       db: Database;
@@ -94,527 +59,252 @@ export class Bootstrap {
       map: WorkstreamMap;
       inference: Inference;
       model: () => Promise<string>;
-      context?: () => string;
-      notebook?: (
-        threadId: string,
-      ) => { text: string; updatedAt: number } | null;
+      projects?: () => Promise<{ id: string; name: string }[]>;
       onChange: () => void;
       now?: () => number;
     },
-  ) {}
-
+  ) {
+    const state = this.state();
+    if (state && (state.status === "proposing" || state.status === "applying"))
+      this.save({
+        ...state,
+        status: "failed",
+        error:
+          "Organizing was interrupted. Review Activity for any applied changes before starting again.",
+      });
+  }
   private now() {
     return (this.deps.now ?? Date.now)();
   }
-
-  isDone(): boolean {
+  isDone() {
     return getMeta(this.deps.db, "bootstrapped") === "1";
   }
-
   state(): BootstrapState | null {
     const raw = getMeta(this.deps.db, KEY);
     return raw ? (JSON.parse(raw) as BootstrapState) : null;
   }
-
-  private save(state: BootstrapState): BootstrapState {
+  private save(state: BootstrapState) {
     const next = { ...state, updatedAt: this.now() };
     setMeta(this.deps.db, KEY, JSON.stringify(next));
     this.deps.onChange();
     return next;
   }
-
-  private busy(): void {
-    if (this.running) throw new UserError("Organizing is already running.");
+  dispose() {
+    this.disposed = true;
+    this.controller?.abort();
   }
-
-  /** Steps 1–2. Resolves once the map proposal is ready for review. */
   async start(): Promise<BootstrapState> {
-    this.busy();
-    const work = this.propose();
-    this.running = work;
-    try {
-      return await work;
-    } finally {
-      this.running = null;
-    }
-  }
-
-  private async propose(): Promise<BootstrapState> {
-    const startedAt = this.now();
+    if (this.running || this.disposed)
+      throw new UserError("Organizing is already running or unavailable.");
+    this.running = true;
+    const controller = new AbortController();
+    this.controller = controller;
+    const startedAt = Math.max(this.now(), (this.state()?.startedAt ?? 0) + 1);
     let state: BootstrapState = this.save({
       status: "proposing",
       startedAt,
       updatedAt: startedAt,
       error: null,
       roots: [],
-      descriptions: {},
-      changes: [],
+      mapSnapshot: [],
       preview: null,
       entryId: null,
-      seconds: { intake: 0, map: 0, assign: 0, apply: 0 },
       traceIds: [],
     });
     try {
       await this.deps.service.reconcile();
-    } catch (error) {
-      return this.save({ ...state, status: "failed", error: String(error) });
-    }
-    const roots = this.intake();
-    state = this.save({
-      ...state,
-      roots,
-      seconds: { ...state.seconds, intake: (this.now() - startedAt) / 1000 },
-    });
-    const mapStarted = this.now();
-    try {
-      const analysis = this.deps.analyzer.all();
+      const threads = this.deps.service.threads();
+      this.deps.map.refresh(threads, this.deps.analyzer.all());
+      const roots = buildForest(threads).roots;
       const records = this.deps.map.list();
-      const subject = (id: string) => analysis[id]?.subject ?? null;
-      const titled = new Map(roots.map((r) => [r.id, r.title]));
-      const { value: proposal, traceId } = await this.deps.inference
-        .run(
-          "organize-map",
-          {
-            understanding: this.deps.context?.(),
-            workstreams: records.map((record) => ({
-              name: record.name,
-              description: record.description,
-              roots: roots
-                .filter((r) => r.sectionId === record.sectionId)
-                .map((r) => ({
-                  title: titled.get(r.id)!,
-                  subject: subject(r.id),
-                })),
-            })),
-            unfiled: roots
-              .filter((r) => r.provenance !== "user")
-              .map((r) => ({ title: r.title, subject: subject(r.id) })),
-          },
-          {
+      const projects = new Map(
+        ((await this.deps.projects?.()) ?? []).map((p) => [p.id, p.name]),
+      );
+      const analysis = this.deps.analyzer.all();
+      const input: OrganizeInput = {
+        workstreams: records.map((r) => ({
+          id: r.sectionId,
+          name: r.name,
+          description: r.description,
+          aliases: r.aliases,
+        })),
+        threads: roots.map((root) => ({
+          id: root.thread.id,
+          title: root.thread.title,
+          sectionId: root.thread.sectionId ?? null,
+          project: projects.get(root.thread.projectId) ?? null,
+          recap: analysis[root.thread.id]?.recap ?? null,
+          children: flatten(root)
+            .slice(1)
+            .map((n) => n.thread.title),
+        })),
+      };
+      if (controller.signal.aborted || this.disposed)
+        throw new Error("Organizing cancelled.");
+      state = this.save({
+        ...state,
+        mapSnapshot: records.map((r) => ({
+          sectionId: r.sectionId,
+          name: r.name,
+          description: r.description,
+          aliases: r.aliases,
+          descriptionSource: r.descriptionSource,
+        })),
+        roots: input.threads.map((t) => ({
+          id: t.id,
+          title: t.title,
+          sectionId: t.sectionId,
+        })),
+      });
+      if (controller.signal.aborted || this.disposed)
+        throw new Error("Organizing cancelled.");
+      const result = input.threads.length
+        ? await this.deps.inference.run("organize", input, {
             model: await this.deps.model(),
-            label: `${roots.length} threads, ${records.length} workstreams`,
+            signal: controller.signal,
+            label: `${roots.length} root threads`,
             links: [this.runLink(startedAt)],
-          },
-        )
-        .catch((error: unknown) => {
-          const failed = traceIdOf(error);
-          if (failed) state = { ...state, traceIds: [failed] };
-          throw error;
-        });
-      state = this.save({
-        ...state,
-        traceIds: traceId ? [traceId] : [],
-        mapTraceId: traceId,
-        status: "review",
-        descriptions: proposal.descriptions,
-        changes: proposal.changes.map((change, i) => ({
-          ...change,
-          id: `c${i}`,
-          accepted: true,
-        })),
-        seconds: { ...state.seconds, map: (this.now() - mapStarted) / 1000 },
-      });
-      return state;
-    } catch (error) {
-      return this.save({ ...state, status: "failed", error: String(error) });
-    }
-  }
-
-  /** Steps 3–4: the reviewed map, then closed-set assignment. */
-  async assign(
-    decisions: { id: string; accepted: boolean; name?: string }[],
-  ): Promise<BootstrapState> {
-    this.busy();
-    const current = this.state();
-    if (!current || current.status !== "review")
-      throw new UserError("Start organizing first.");
-    const work = this.runAssign(current, decisions);
-    this.running = work;
-    try {
-      return await work;
-    } finally {
-      this.running = null;
-    }
-  }
-
-  private async runAssign(
-    current: BootstrapState,
-    decisions: { id: string; accepted: boolean; name?: string }[],
-  ): Promise<BootstrapState> {
-    const byId = new Map(decisions.map((d) => [d.id, d]));
-    const changes = current.changes.map((change) => {
-      const decision = byId.get(change.id);
-      if (!decision) return change;
-      const named =
-        decision.name && (change.kind === "rename" || change.kind === "create")
-          ? { ...change, name: decision.name.trim() || change.name }
-          : change;
-      return { ...named, accepted: decision.accepted };
-    });
-    let state = this.save({ ...current, status: "assigning", changes });
-    const started = this.now();
-    try {
-      const records = this.deps.map.list();
-      const idOf = new Map(
-        records.map((r) => [r.name.toLowerCase(), r.sectionId]),
-      );
-      const nameOf = new Map(records.map((r) => [r.sectionId, r.name]));
-      const accepted = changes.filter((c) => c.accepted);
-      const renames = accepted.flatMap((c) =>
-        c.kind === "rename" && idOf.has(c.workstream.toLowerCase())
-          ? [
+          })
+        : {
+            value: { workstreams: [], assignments: [] } as OrganizeProposal,
+            traceId: null,
+          };
+      if (controller.signal.aborted || this.disposed)
+        throw new Error("Organizing cancelled.");
+      const proposal = result.value;
+      for (const home of proposal.workstreams) {
+        const existing = records.find((r) => r.sectionId === home.sectionId);
+        if (existing?.descriptionSource === "user")
+          home.description = existing.description ?? "";
+      }
+      const byKey = new Map(proposal.workstreams.map((w) => [w.key, w]));
+      const byId = new Map(input.threads.map((t) => [t.id, t]));
+      const names = new Map(records.map((r) => [r.sectionId, r.name]));
+      const moves = proposal.assignments.flatMap((a) => {
+        const root = byId.get(a.threadId)!;
+        const target = a.workstream === null ? null : byKey.get(a.workstream)!;
+        const to = target ? (target.sectionId ?? newKey(target.key)) : null;
+        return to === root.sectionId
+          ? []
+          : [
               {
-                sectionId: idOf.get(c.workstream.toLowerCase())!,
-                from: c.workstream,
-                to: c.name,
+                threadId: root.id,
+                title: root.title,
+                from: root.sectionId,
+                fromName: names.get(root.sectionId ?? "") ?? "Unsorted",
+                to,
+                toName: target?.name ?? "Unsorted",
+                reason: a.reason,
+                accepted: true,
               },
-            ]
-          : [],
-      );
-      const renamed = new Map(renames.map((r) => [r.sectionId, r.to]));
-      const finalName = (sectionId: string) =>
-        renamed.get(sectionId) ?? nameOf.get(sectionId) ?? "";
-      const mergedAway = new Map(
-        accepted.flatMap((c) =>
-          c.kind === "merge" &&
-          idOf.has(c.workstream.toLowerCase()) &&
-          idOf.has(c.into.toLowerCase())
-            ? [
-                [
-                  idOf.get(c.workstream.toLowerCase())!,
-                  idOf.get(c.into.toLowerCase())!,
-                ] as const,
-              ]
-            : [],
-        ),
-      );
-      const creates = new Map<
-        string,
-        { name: string; description: string | null }
-      >();
-      for (const c of accepted)
-        if (c.kind === "create")
-          creates.set(normalize(c.name), {
-            name: c.name,
-            description: c.description || null,
-          });
-
-      const options = [
-        ...records
-          .filter((r) => !mergedAway.has(r.sectionId))
-          .map((r) => ({
-            name: finalName(r.sectionId),
-            description: current.descriptions[r.name] ?? r.description ?? null,
-            to: r.sectionId,
-          })),
-        ...[...creates.values()].map((c) => ({
-          name: c.name,
-          description: c.description,
-          to: `${NEW_PREFIX}${c.name}`,
-        })),
-      ];
-      const optionByName = new Map(
-        options.map((o) => [o.name.toLowerCase(), o]),
-      );
-
-      const analysis = this.deps.analyzer.all();
-      const pending = state.roots.filter((r) => r.provenance !== "user");
-      const batches: (typeof pending)[] = [];
-      for (let i = 0; i < pending.length; i += ASSIGN_BATCH)
-        batches.push(pending.slice(i, i + ASSIGN_BATCH));
-      const model = await this.deps.model();
-      const results: Assignment[] = [];
-      const traceOf = new Map<string, string>();
-      const traceIds: string[] = [];
-      let next = 0;
-      await Promise.all(
-        Array.from(
-          { length: Math.min(CONCURRENCY, batches.length) },
-          async () => {
-            while (next < batches.length) {
-              const batch = batches[next++]!;
-              const ids = batch.map((r) => r.id);
-              const noteTrace = (traceId: string | null) => {
-                if (!traceId) return;
-                traceIds.push(traceId);
-                for (const id of ids) traceOf.set(id, traceId);
-              };
-              try {
-                const { value, traceId } = await this.deps.inference.run(
-                  "organize-assign",
-                  {
-                    understanding: this.deps.context?.(),
-                    workstreams: options,
-                    threads: batch.map((r) => ({
-                      id: r.id,
-                      title: r.title,
-                      subject: analysis[r.id]?.subject ?? null,
-                      recap: analysis[r.id]?.recap ?? null,
-                    })),
-                  },
-                  {
-                    model,
-                    label: batch.map((r) => r.title).join(" · "),
-                    links: [
-                      this.runLink(state.startedAt),
-                      ...ids.map((id) => ({
-                        kind: "thread" as const,
-                        ref: id,
-                      })),
-                    ],
-                  },
-                );
-                noteTrace(traceId);
-                results.push(...value);
-              } catch (error) {
-                noteTrace(traceIdOf(error));
-                results.push(
-                  ...ids.map((id): Assignment => ({
-                    id,
-                    confidence: "low",
-                    target: { kind: "unsure" },
-                  })),
-                );
-              }
-            }
-          },
-        ),
-      );
-
-      // A new workstream needs two roots, or an accepted create.
-      const freshCounts = new Map<string, number>();
-      for (const a of results)
-        if (a.target.kind === "new")
-          freshCounts.set(
-            normalize(a.target.name),
-            (freshCounts.get(normalize(a.target.name)) ?? 0) + 1,
-          );
-      const moves: BootstrapMove[] = [];
-      const unsure: { threadId: string; title: string }[] = [];
-      const rootById = new Map(state.roots.map((r) => [r.id, r]));
-      const fromName = (sectionId: string | null) =>
-        sectionId
-          ? (nameOf.get(sectionId) ?? "a deleted workstream")
-          : "Unsorted";
-      for (const a of results) {
-        const root = rootById.get(a.id)!;
-        let option =
-          a.target.kind === "existing"
-            ? optionByName.get(a.target.name.toLowerCase())
-            : undefined;
-        if (a.target.kind === "new") {
-          const key = normalize(a.target.name);
-          if (creates.has(key) || (freshCounts.get(key) ?? 0) >= 2) {
-            if (!creates.has(key))
-              creates.set(key, { name: a.target.name, description: null });
-            const name = creates.get(key)!.name;
-            option = { name, description: null, to: `${NEW_PREFIX}${name}` };
-          }
-        }
-        if (!option) {
-          unsure.push({ threadId: a.id, title: root.title });
-          continue;
-        }
-        if (option.to === root.sectionId) continue;
-        moves.push({
-          threadId: a.id,
-          title: root.title,
-          from: root.sectionId,
-          fromName: fromName(root.sectionId),
-          to: option.to,
-          toName: option.name,
-          reason: `${a.confidence} confidence`,
-          accepted: a.confidence !== "low",
-          confidence: a.confidence,
-          traceId: traceOf.get(a.id) ?? null,
-        });
-      }
-      // Roots in a merged-away workstream follow the merge.
-      for (const root of state.roots) {
-        const into = root.sectionId
-          ? mergedAway.get(root.sectionId)
-          : undefined;
-        if (!into || moves.some((m) => m.threadId === root.id)) continue;
-        moves.push({
-          threadId: root.id,
-          title: root.title,
-          from: root.sectionId,
-          fromName: fromName(root.sectionId),
-          to: into,
-          toName: finalName(into),
-          reason: "merge",
-          accepted: true,
-        });
-      }
-      // Manual placements are shown as opt-in changes in this reviewed flow.
-      const manualRoots = state.roots.filter(
-        (root) => root.provenance === "user",
-      );
-      if (manualRoots.length) {
-        const input: SupervisionInput = {
-          sensitivity: "responsive",
-          context: this.deps.context?.() ?? "",
-          workstreams: records.map((record) => ({
-            id: record.sectionId,
-            name: record.name,
-            description: record.description,
-            descriptionSource: record.descriptionSource,
-            roots: manualRoots
-              .filter((root) => root.sectionId === record.sectionId)
-              .map((root) => {
-                const notebook = this.deps.notebook?.(root.id);
-                return {
-                  id: root.id,
-                  title: root.title,
-                  recap: analysis[root.id]?.recap ?? null,
-                  revision:
-                    this.deps.service.threads().find((t) => t.id === root.id)
-                      ?.latestAttentionAt ?? 0,
-                  notebook: notebook?.text ?? null,
-                  notebookUpdatedAt: notebook?.updatedAt ?? null,
-                  eligible: true,
-                };
-              }),
-          })),
-        };
-        const { value: candidates, traceId } = await this.deps.inference.run(
-          "supervision",
-          input,
-          {
-            model,
-            label: "Review organization of manually filed threads",
-            links: [this.runLink(state.startedAt)],
-          },
-        );
-        if (traceId) traceIds.push(traceId);
-        for (const candidate of candidates)
-          for (const threadId of candidate.threadIds) {
-            if (moves.some((move) => move.threadId === threadId)) continue;
-            const root = rootById.get(threadId)!;
-            const name =
-              candidate.name ?? finalName(candidate.targetSectionId!);
-            if (candidate.name && !creates.has(normalize(name)))
-              creates.set(normalize(name), { name, description: null });
-            moves.push({
-              threadId,
-              title: root.title,
-              from: root.sectionId,
-              fromName: fromName(root.sectionId),
-              to: candidate.targetSectionId ?? `${NEW_PREFIX}${name}`,
-              toName: name,
-              reason: `${candidate.reason} (manual placement; opt in)`,
-              accepted: false,
-              traceId,
-            });
-          }
-      }
-
-      // A new workstream for a single thread starts unchecked: new
-      // workstreams need two roots unless the user opts in.
-      const perTarget = new Map<string, number>();
-      for (const m of moves)
-        perTarget.set(m.to, (perTarget.get(m.to) ?? 0) + 1);
-      for (const m of moves)
-        if (m.to.startsWith(NEW_PREFIX) && (perTarget.get(m.to) ?? 0) < 2)
-          m.accepted = false;
-      state = this.save({
-        ...state,
-        traceIds: [...(state.traceIds ?? []), ...traceIds],
-        status: "preview",
-        preview: {
-          creates: [...creates.values()],
-          renames,
-          moves,
-          unsure,
-        },
-        seconds: { ...state.seconds, assign: (this.now() - started) / 1000 },
+            ];
       });
-      return state;
+      return this.save({
+        ...state,
+        status: "preview",
+        traceIds: result.traceId ? [result.traceId] : [],
+        preview: {
+          workstreams: proposal.workstreams,
+          creates: proposal.workstreams
+            .filter((w) => w.sectionId === null)
+            .map((w) => ({ name: w.name, description: w.description })),
+          renames: proposal.workstreams.flatMap((w) =>
+            w.sectionId && names.get(w.sectionId) !== w.name
+              ? [
+                  {
+                    sectionId: w.sectionId,
+                    from: names.get(w.sectionId)!,
+                    to: w.name,
+                  },
+                ]
+              : [],
+          ),
+          moves,
+          assignments: proposal.assignments,
+        },
+      });
     } catch (error) {
-      return this.save({ ...state, status: "failed", error: String(error) });
+      if (controller.signal.aborted || this.disposed)
+        return { ...state, status: "failed", error: "Organizing cancelled." };
+      const trace = traceIdOf(error);
+      return this.save({
+        ...state,
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+        traceIds: trace ? [trace] : [],
+      });
+    } finally {
+      this.running = false;
+      this.controller = null;
     }
   }
-
-  /** Step 5. `rejected` lists moves the user unchecked in the preview. */
   async apply(
     overrides: { threadId: string; accepted: boolean }[] = [],
+    runId: number,
   ): Promise<BootstrapState> {
-    this.busy();
-    const work = this.runApply(overrides);
-    this.running = work;
-    try {
-      return await work;
-    } finally {
-      this.running = null;
-    }
-  }
-
-  private async runApply(
-    overrides: { threadId: string; accepted: boolean }[],
-  ): Promise<BootstrapState> {
+    if (this.running || this.disposed)
+      throw new UserError("Organizing is already running or unavailable.");
     const current = this.state();
     if (!current || current.status !== "preview" || !current.preview)
       throw new UserError("Nothing to apply yet.");
-    const started = this.now();
-    let state = this.save({ ...current, status: "applying" });
-    const override = new Map(overrides.map((o) => [o.threadId, o.accepted]));
-    const moves = current.preview.moves.filter(
-      (m) => override.get(m.threadId) ?? m.accepted,
-    );
-    const used = new Set(moves.map((m) => m.to));
-    const plan: BatchPlan = {
-      creates: current.preview.creates
-        .filter((c) => used.has(`${NEW_PREFIX}${c.name}`))
-        .map((c) => ({
-          key: `${NEW_PREFIX}${c.name}`,
-          name: c.name,
-          description: c.description,
-        })),
-      renames: current.preview.renames.map((r) => ({
-        sectionId: r.sectionId,
-        name: r.to,
-      })),
-      moves: moves.map((m) => ({
-        threadId: m.threadId,
-        from: m.from,
-        to: m.to,
-      })),
-      descriptions: Object.entries(current.descriptions).flatMap(
-        ([name, description]) => {
-          const record = this.deps.map.list().find((r) => r.name === name);
-          return record
-            ? [[record.sectionId, description] as [string, string]]
-            : [];
-        },
-      ),
-    };
-    try {
-      const touched = new Set(
-        moves.flatMap((m) => [m.from, m.to]).filter(Boolean),
+    if (runId !== current.startedAt)
+      throw new UserError(
+        "This preview was replaced. Review the current map before applying.",
       );
+    const preview = current.preview;
+    const allowed = new Set(preview.moves.map((m) => m.threadId));
+    if (overrides.some((o) => !allowed.has(o.threadId)))
+      throw new UserError("Unknown thread override.");
+    this.running = true;
+    let state = this.save({ ...current, status: "applying" });
+    try {
+      const selections = new Map(
+        overrides.map((o) => [o.threadId, o.accepted]),
+      );
+      const moves = preview.moves.filter(
+        (m) => selections.get(m.threadId) ?? m.accepted,
+      );
+      const used = new Set(moves.map((m) => m.to));
+      const plan: BatchPlan = {
+        creates: preview.workstreams
+          .filter((w) => !w.sectionId && used.has(newKey(w.key)))
+          .map((w) => ({
+            key: newKey(w.key),
+            name: w.name,
+            description: w.description,
+          })),
+        renames: preview.renames.map((r) => ({
+          sectionId: r.sectionId,
+          name: r.to,
+          from: r.from,
+        })),
+        moves: moves.map((m) => ({
+          threadId: m.threadId,
+          from: m.from,
+          to: m.to,
+        })),
+        metadata: preview.workstreams
+          .filter((w) => w.sectionId || used.has(newKey(w.key)))
+          .map((w) => ({
+            sectionId: w.sectionId ?? newKey(w.key),
+            description: w.description,
+            aliases: w.aliases,
+          })),
+        expectedMap: current.mapSnapshot,
+      };
       const { entry, skipped } = await this.deps.service.applyBatch(
         plan,
         "bootstrap",
-        `Organized ${moves.length} thread${moves.length === 1 ? "" : "s"} across ${touched.size} workstreams`,
+        `Organized ${moves.length} threads`,
       );
-      // A rejected move records manual placement, so periodic supervision
-      // respects the user's decision without a separate classifier cooldown.
-      for (const move of current.preview.moves) {
-        if (override.get(move.threadId) ?? move.accepted) continue;
-        this.deps.service.keep(move.threadId, move.from);
-      }
       if (entry)
         this.deps.inference.copyLinks(this.runLink(current.startedAt), {
           kind: "entry",
           ref: entry.id,
         });
-      // The map proposal wrote these descriptions.
-      this.deps.inference.link(
-        current.mapTraceId,
-        ...(plan.descriptions ?? []).map(([sectionId]) => ({
-          kind: "section" as const,
-          ref: sectionId,
-        })),
+      this.deps.map.refresh(
+        this.deps.service.threads(),
+        this.deps.analyzer.all(),
       );
       setMeta(this.deps.db, "bootstrapped", "1");
       state = this.save({
@@ -624,55 +314,26 @@ export class Bootstrap {
         error: skipped.length
           ? `${skipped.length} thread(s) changed since the preview and were left alone.`
           : null,
-        seconds: { ...state.seconds, apply: (this.now() - started) / 1000 },
       });
       return state;
     } catch (error) {
-      return this.save({ ...state, status: "failed", error: String(error) });
+      return this.save({
+        ...state,
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      this.running = false;
     }
   }
-
-  /** Links a run's model calls together, keyed by when the run started. */
+  cancel() {
+    if (this.state()?.status === "applying")
+      throw new UserError("Wait for Apply to finish.");
+    this.controller?.abort();
+    this.deps.db.prepare("DELETE FROM ws_meta WHERE key = ?").run(KEY);
+    this.deps.onChange();
+  }
   private runLink(startedAt: number) {
     return { kind: "organize" as const, ref: String(startedAt) };
-  }
-
-  /** Turns on evolution without reorganizing anything. */
-  skip(): void {
-    setMeta(this.deps.db, "bootstrapped", "1");
-    this.deps.db.prepare("DELETE FROM ws_meta WHERE key = ?").run(KEY);
-    this.deps.onChange();
-  }
-
-  cancel(): void {
-    if (this.running)
-      throw new UserError("Wait for the current step to finish.");
-    this.deps.db.prepare("DELETE FROM ws_meta WHERE key = ?").run(KEY);
-    this.deps.onChange();
-  }
-
-  /** Step 1: every visible root, with who filed it. */
-  private intake(): BootstrapState["roots"] {
-    const threads = this.deps.service.threads();
-    const forest = buildForest(threads);
-    const placements = this.deps.service.state().placements;
-    return forest.roots.map(({ thread }) => {
-      const placement = placements[thread.id];
-      const provenance: Provenance = !thread.sectionId
-        ? "unfiled"
-        : placement && placement.sectionId === thread.sectionId
-          ? placement.source === "auto" ||
-            placement.source === "proposal" ||
-            placement.source === "bootstrap"
-            ? "auto"
-            : "user"
-          : "user";
-      return {
-        id: thread.id,
-        title: thread.title,
-        sectionId: thread.sectionId,
-        provenance,
-      };
-    });
   }
 }

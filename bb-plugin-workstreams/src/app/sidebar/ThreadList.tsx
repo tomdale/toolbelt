@@ -301,7 +301,6 @@ export function WorkstreamsThreadList({
           context={contextOf(row, placement)}
           attention={placement === "needs-you"}
           work={ws.work(row.thread)}
-          proposal={ws.proposalOf.get(row.thread.id)?.text}
           showStatusSlot={showStatusSlot}
           subtitle={placement === "needs-you" ? askOf(row) : null}
           snoozeAction={snoozeActionOf(row, placement)}

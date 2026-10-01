@@ -1,229 +1,293 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { fakeWorld } from "./fake-bb.ts";
-
+import type { BootstrapState } from "../../src/server/bootstrap.ts";
 type World = Awaited<ReturnType<typeof fakeWorld>>;
 let world: World | null = null;
 afterEach(async () => {
   await world?.harness.lifecycle.dispose();
   world = null;
 });
-
-type State = {
-  status: string;
-  roots: { id: string; provenance: string }[];
-  changes: { id: string; kind: string }[];
-  preview: {
-    creates: { name: string }[];
-    moves: {
-      threadId: string;
-      to: string;
-      toName: string;
-      accepted: boolean;
-      confidence?: string;
-    }[];
-    unsure: { threadId: string }[];
-  } | null;
-  entryId: string | null;
+const call = async (w: World, input: unknown) => {
+  let request = input as { action: string; runId?: number };
+  if (request.action === "apply" && request.runId === undefined) {
+    const saved = (await w.harness.behavior.callRpc("bootstrap", {
+      action: "get",
+    })) as { state: BootstrapState };
+    request = { ...request, runId: saved.state.startedAt };
+  }
+  return (
+    (await w.harness.behavior.callRpc("bootstrap", request)) as {
+      state: BootstrapState;
+    }
+  ).state;
 };
-
-/** Assignments keyed by thread id; the map proposal creates "Gamma". */
-function model(assign: Record<string, string>) {
-  return ({ prompt }: { prompt: string }) => {
-    if (prompt.includes("You are tidying"))
+async function setup() {
+  world = await fakeWorld({
+    settings: { debug: true },
+    complete: ({ prompt }) => {
+      if (!prompt.includes("Snapshot:\n"))
+        return JSON.stringify({
+          recap: "Done",
+          state: "done",
+          subject: "Alpha",
+          drift: null,
+        });
+      const data = JSON.parse(prompt.split("Snapshot:\n")[1]!);
       return JSON.stringify({
-        descriptions: { Alpha: "Alpha things." },
-        changes: [
+        workstreams: [
           {
-            kind: "rename",
-            workstream: "Beta",
-            name: "Beta Prime",
-            reason: "clearer",
+            key: "a",
+            sectionId: "sec_1",
+            name: "Alpha",
+            description: "Whole Alpha effort",
+            aliases: ["A"],
           },
-          { kind: "create", name: "Gamma", description: "Gamma things." },
+          {
+            key: "g",
+            sectionId: null,
+            name: "Gamma",
+            description: "Gamma effort",
+            aliases: [],
+          },
         ],
-      });
-    if (prompt.includes("File each thread under")) {
-      const ids = [...prompt.matchAll(/id "([^"]+)"/g)].map((m) => m[1]!);
-      return JSON.stringify({
-        items: ids.map((id) => ({
-          id,
-          workstream: assign[id] ?? "unsure",
-          confidence: "high",
+        assignments: data.threads.map((t: { id: string }) => ({
+          threadId: t.id,
+          workstream: t.id === "stray" ? null : t.id === "loose" ? "g" : "a",
+          reason: "Same effort",
         })),
       });
-    }
-    return JSON.stringify({ recap: "r", state: "done", subject: null });
-  };
-}
-
-const call = async (w: World, input: unknown) =>
-  (
-    (await w.harness.behavior.callRpc("bootstrap", input)) as {
-      state: State | null;
-      bootstrapped: boolean;
-    }
-  ).state!;
-const settle = async (w: World, status: string) => {
-  for (let i = 0; i < 100; i++) {
-    const state = await call(w, { action: "get" });
-    if (state?.status === status) return state;
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  throw new Error(`never reached ${status}`);
-};
-
-async function organized(settings: Record<string, boolean> = {}) {
-  world = await fakeWorld({
-    settings,
-    complete: model({
-      loose: "Alpha",
-      automatic: "Gamma",
-      loose2: "Gamma",
-      mine: "Alpha",
-    }),
+    },
   });
   const w = world;
-  const alpha = w.addSection("Alpha");
-  const beta = w.addSection("Beta");
-  w.addThread("a1", { sectionId: alpha.id });
-  w.addThread("loose");
-  w.addThread("loose2");
-  w.addThread("automatic", { sectionId: beta.id });
+  const alpha = w.addSection("Alpha"),
+    beta = w.addSection("Beta");
   w.addThread("mine", { sectionId: beta.id });
-  w.addThread("kid", { parentThreadId: "mine" });
+  w.addThread("keep", { sectionId: alpha.id });
+  w.addThread("loose");
+  w.addThread("stray", { sectionId: beta.id });
+  w.addThread("child", { parentThreadId: "mine" });
+  w.addThread("hidden", { visibility: "hidden" });
+  w.addThread("archived", { archivedAt: 1 });
   await w.harness.behavior.callRpc("refresh", null);
-  w.bb.storage
-    .database()
-    .prepare(
-      "INSERT OR REPLACE INTO ws_placement (thread_id,section_id,source,entry_id,at) VALUES (?,?,?,NULL,?)",
-    )
-    .run("automatic", beta.id, "auto", Date.now());
   return { w, alpha, beta };
 }
-
-describe("bootstrap", () => {
-  it("reviews, previews, and applies as one batch, leaving user filings alone", async () => {
-    const { w, alpha, beta } = await organized();
-    await call(w, { action: "start" });
-    let state = await settle(w, "review");
-    expect(
-      Object.fromEntries(state.roots.map((r) => [r.id, r.provenance])),
-    ).toEqual({
-      a1: "user",
-      loose: "unfiled",
-      loose2: "unfiled",
-      automatic: "auto",
-      mine: "user",
-    });
-    expect(state.changes.map((c) => c.kind)).toEqual(["rename", "create"]);
-    // Nothing changes in BB before apply.
-    expect(w.sections.map((s) => s.name)).toEqual(["Alpha", "Beta"]);
-
-    await call(w, {
-      action: "assign",
-      decisions: state.changes.map((c) => ({ id: c.id, accepted: true })),
-    });
-    state = await settle(w, "preview");
-    const moves = Object.fromEntries(
-      state.preview!.moves.map((m) => [m.threadId, m.toName]),
-    );
-    expect(moves).toEqual({
-      loose: "Alpha",
-      loose2: "Gamma",
-      automatic: "Gamma",
-    });
-    expect(state.preview!.moves.some((m) => m.threadId === "mine")).toBe(false);
-    // The preview shows confidence without parsing the CLI's reason text.
-    expect(state.preview!.moves.map((m) => m.confidence)).toEqual([
-      "high",
-      "high",
-      "high",
+describe("explicit organizer", () => {
+  it("uses one completion, previews every root, applies and undoes placements plus metadata", async () => {
+    const { w, alpha, beta } = await setup();
+    const state = await call(w, { action: "start" });
+    expect(state.status).toBe("preview");
+    expect(state.roots.map((r) => r.id).sort()).toEqual([
+      "keep",
+      "loose",
+      "mine",
+      "stray",
     ]);
-
-    await call(w, { action: "apply", overrides: [] });
-    state = await settle(w, "applied");
-    const gamma = w.sections.find((s) => s.name === "Gamma")!;
-    expect(w.sections.find((s) => s.id === beta.id)?.name).toBe("Beta Prime");
-    expect(w.threads.get("loose")?.sectionId).toBe(alpha.id);
-    expect(w.threads.get("automatic")?.sectionId).toBe(gamma.id);
-    expect(w.threads.get("mine")?.sectionId).toBe(beta.id);
-    expect(w.threads.get("kid")?.sectionId).toBeNull();
     expect(
-      (
-        (await w.harness.behavior.callRpc("state", null)) as {
-          bootstrapped: boolean;
-        }
-      ).bootstrapped,
-    ).toBe(true);
-
-    // Undo reverts the whole batch, including the new workstream and rename.
-    await w.harness.behavior.callRpc("undo", { entryId: state.entryId });
+      w.completions.filter((c) => c.prompt.includes("Snapshot:\n")),
+    ).toHaveLength(1);
+    expect(w.sections).toHaveLength(2);
+    expect(w.threads.get("mine")?.sectionId).toBe(beta.id);
+    expect(state.traceIds).toHaveLength(1);
+    const applied = await call(w, { action: "apply", overrides: [] });
+    expect(applied.status).toBe("applied");
+    expect(w.threads.get("mine")?.sectionId).toBe(alpha.id);
+    expect(w.threads.get("stray")?.sectionId).toBeNull();
+    expect(w.sections.some((s) => s.name === "Gamma")).toBe(true);
+    const db = w.bb.storage.database();
+    expect(
+      db
+        .prepare("SELECT description FROM ws_workstream WHERE section_id = ?")
+        .get(alpha.id),
+    ).toEqual({ description: "Whole Alpha effort" });
+    await w.harness.behavior.callRpc("undo", { entryId: applied.entryId });
+    expect(w.threads.get("mine")?.sectionId).toBe(beta.id);
+    expect(w.threads.get("stray")?.sectionId).toBe(beta.id);
     expect(w.threads.get("loose")?.sectionId).toBeNull();
-    expect(w.threads.get("automatic")?.sectionId).toBe(beta.id);
-    expect(w.sections.map((s) => s.name).sort()).toEqual(["Alpha", "Beta"]);
+    expect(w.sections.map((s) => s.name)).toEqual(["Alpha", "Beta"]);
+    expect(
+      db
+        .prepare("SELECT description FROM ws_workstream WHERE section_id = ?")
+        .get(alpha.id),
+    ).toEqual({ description: null });
   });
-
-  it("applies only the moves left checked", async () => {
-    const { w } = await organized();
+  it("leaves unchecked and concurrently moved threads alone, and never files them on refresh", async () => {
+    const { w, beta } = await setup();
     await call(w, { action: "start" });
-    const review = await settle(w, "review");
-    await call(w, {
-      action: "assign",
-      decisions: review.changes.map((c) => ({
-        id: c.id,
-        accepted: c.kind !== "rename",
-      })),
-    });
-    await settle(w, "preview");
-    await call(w, {
+    w.threads.set("mine", { ...w.threads.get("mine")!, sectionId: null });
+    const applied = await call(w, {
       action: "apply",
       overrides: [{ threadId: "loose", accepted: false }],
     });
-    await settle(w, "applied");
+    expect(applied.error).toContain("changed since");
+    expect(w.threads.get("mine")?.sectionId).toBeNull();
     expect(w.threads.get("loose")?.sectionId).toBeNull();
-    expect(w.sections.some((s) => s.name === "Beta Prime")).toBe(false);
-    // Evolution, now on, respects the unchecked move.
+    expect(w.sections.some((s) => s.name === "Gamma")).toBe(false);
     await w.harness.behavior.runCli(["analyze", "loose"]);
     await w.harness.behavior.callRpc("refresh", null);
     expect(w.threads.get("loose")?.sectionId).toBeNull();
+    expect(w.sections.some((s) => s.id === beta.id)).toBe(true);
   });
-
-  it("previews from the CLI without changing anything", async () => {
-    const { w } = await organized();
-    const result = await w.harness.behavior.runCli(["rebuild"]);
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toMatch(
-      /^Preview: 3 moves, 1 new workstream, 1 rename/,
+  it("CLI apply consumes the saved preview without another model call", async () => {
+    const { w } = await setup();
+    expect(
+      (await w.harness.behavior.runCli(["rebuild", "--apply"])).exitCode,
+    ).not.toBe(0);
+    expect((await w.harness.behavior.runCli(["rebuild"])).stdout).toContain(
+      "Preview:",
     );
-    expect(w.threads.get("loose")?.sectionId).toBeNull();
+    expect(w.sections).toHaveLength(2);
+    const preview = await call(w, { action: "get" });
+    expect(
+      (
+        await w.harness.behavior.runCli([
+          "rebuild",
+          "--apply",
+          "--run-id",
+          String(preview.startedAt),
+        ])
+      ).exitCode,
+    ).toBe(0);
+    expect(
+      w.completions.filter((c) => c.prompt.includes("Snapshot:\n")),
+    ).toHaveLength(1);
   });
-});
-
-describe("debug traces", () => {
-  it("keeps the run's model calls with the run, each move, and the applied batch", async () => {
-    const { w } = await organized({ debug: true });
+  it("cancel leaves the map unchanged", async () => {
+    const { w } = await setup();
     await call(w, { action: "start" });
-    const review = (await settle(w, "review")) as State & {
-      traceIds: string[];
-    };
-    expect(review.traceIds).toHaveLength(1);
-    await call(w, {
-      action: "assign",
-      decisions: review.changes.map((c) => ({ id: c.id, accepted: true })),
+    await call(w, { action: "cancel" });
+    expect(w.sections).toHaveLength(2);
+    expect(await call(w, { action: "get" })).toBeNull();
+  });
+  it("rejects an obsolete preview id and a concurrently edited map", async () => {
+    const { w, alpha } = await setup();
+    const old = await call(w, { action: "start" });
+    const current = await call(w, { action: "start" });
+    expect(current.startedAt).toBeGreaterThan(old.startedAt);
+    await expect(
+      call(w, { action: "apply", runId: old.startedAt, overrides: [] }),
+    ).rejects.toThrow("replaced");
+    await w.harness.behavior.callRpc("editWorkstream", {
+      sectionId: alpha.id,
+      description: "Manual scope",
     });
-    const preview = (await settle(w, "preview")) as State & {
-      traceIds: string[];
-      preview: { moves: { traceId?: string | null }[] };
-    };
-    expect(preview.traceIds.length).toBeGreaterThan(1);
-    for (const move of preview.preview.moves)
-      expect(preview.traceIds).toContain(move.traceId);
-    await call(w, { action: "apply", overrides: [] });
-    const applied = await settle(w, "applied");
-    const { entries } = (await w.harness.behavior.callRpc("journal", {})) as {
-      entries: { id: string; traceIds: string[] }[];
-    };
-    const batch = entries.find((e) => e.id === applied.entryId)!;
-    expect([...batch.traceIds].sort()).toEqual([...preview.traceIds].sort());
+    const result = await call(w, { action: "apply", overrides: [] });
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("metadata changed");
+    expect(w.sections).toHaveLength(2);
+  });
+  it("cancels an in-flight completion without resurrecting its preview", async () => {
+    let resolve!: (text: string) => void;
+    const response = new Promise<string>((done) => {
+      resolve = done;
+    });
+    world = await fakeWorld({
+      complete: ({ prompt }) =>
+        prompt.includes("Snapshot:\n")
+          ? response
+          : JSON.stringify({ recap: "done", state: "done", subject: null }),
+    });
+    world.addThread("t");
+    await call(world, { action: "start" });
+    await call(world, { action: "cancel" });
+    resolve(
+      JSON.stringify({
+        workstreams: [],
+        assignments: [{ threadId: "t", workstream: null, reason: "Unrelated" }],
+      }),
+    );
+    await new Promise((done) => setTimeout(done, 20));
+    expect(await call(world, { action: "get" })).toBeNull();
+    expect(world.sections).toHaveLength(0);
+  });
+  it("skips roots that become hidden or children after the preview", async () => {
+    const { w, beta } = await setup();
+    await call(w, { action: "start" });
+    w.threads.set("mine", { ...w.threads.get("mine")!, visibility: "hidden" });
+    w.threads.set("loose", {
+      ...w.threads.get("loose")!,
+      parentThreadId: "keep",
+    });
+    const result = await call(w, { action: "apply", overrides: [] });
+    expect(result.error).toContain("2 thread(s)");
+    expect(w.threads.get("mine")?.sectionId).toBe(beta.id);
+    expect(w.sections.some((s) => s.name === "Gamma")).toBe(false);
+  });
+  it("preserves authored descriptions and protects metadata edited after Apply from Undo", async () => {
+    const { w, alpha } = await setup();
+    await w.harness.behavior.callRpc("editWorkstream", {
+      sectionId: alpha.id,
+      description: "Authored scope",
+    });
+    const preview = await call(w, { action: "start" });
+    expect(
+      preview.preview?.workstreams.find((s) => s.sectionId === alpha.id)
+        ?.description,
+    ).toBe("Authored scope");
+    const applied = await call(w, { action: "apply", overrides: [] });
+    const db = w.bb.storage.database();
+    expect(
+      db
+        .prepare(
+          "SELECT description,description_source FROM ws_workstream WHERE section_id=?",
+        )
+        .get(alpha.id),
+    ).toEqual({ description: "Authored scope", description_source: "user" });
+    await w.harness.behavior.callRpc("editWorkstream", {
+      sectionId: alpha.id,
+      aliases: ["A"],
+    });
+    await w.harness.behavior.callRpc("undo", { entryId: applied.entryId });
+    expect(
+      db
+        .prepare("SELECT aliases FROM ws_workstream WHERE section_id=?")
+        .get(alpha.id),
+    ).toEqual({ aliases: '["A"]' });
+  });
+  it("rechecks a later thread after an earlier write allows an external move", async () => {
+    const { w, alpha } = await setup();
+    await call(w, { action: "start" });
+    let writes = 0;
+    w.harness.inspection.sdk.stub(
+      "threads.update",
+      async (args: { threadId: string; sectionId: string | null }) => {
+        w.threads.set(args.threadId, {
+          ...w.threads.get(args.threadId)!,
+          sectionId: args.sectionId,
+        });
+        if (++writes === 1)
+          w.threads.set("stray", {
+            ...w.threads.get("stray")!,
+            sectionId: alpha.id,
+          });
+        return w.threads.get(args.threadId)!;
+      },
+    );
+    const result = await call(w, { action: "apply", overrides: [] });
+    expect(result.error).toContain("changed since");
+    expect(w.threads.get("stray")?.sectionId).toBe(alpha.id);
+  });
+  it("rejects repeated overrides at the RPC boundary", async () => {
+    const { w } = await setup();
+    const preview = await call(w, { action: "start" });
+    await expect(
+      w.harness.behavior.callRpc("bootstrap", {
+        action: "apply",
+        runId: preview.startedAt,
+        overrides: [
+          { threadId: "loose", accepted: true },
+          { threadId: "loose", accepted: false },
+        ],
+      }),
+    ).rejects.toThrow();
+    expect(w.sections).toHaveLength(2);
+  });
+  it("rejects malformed model output without creating a partial map", async () => {
+    world = await fakeWorld({
+      complete: () => JSON.stringify({ workstreams: [], assignments: [] }),
+    });
+    world.addThread("t");
+    const state = await call(world, { action: "start" });
+    expect(state.status).toBe("failed");
+    expect(world.sections).toHaveLength(0);
   });
 });

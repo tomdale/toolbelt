@@ -16,7 +16,6 @@ function emptyState(): ServerState {
     workstreams: {},
     placements: {},
     analysis: {},
-    proposals: [],
     driftDismissed: {},
     bootstrapped: false,
     lastReconciledAt: null,
@@ -85,7 +84,11 @@ class ServerStore {
           // result without overlays so failed writes roll back and server-side
           // normalization is visible; responses keep overlays only while a
           // newer write is still pending.
-          this.publish({ ...emptyState(), ...state, snoozePrefs: parseSnoozePrefs(state.snoozePrefs) });
+          this.publish({
+            ...emptyState(),
+            ...state,
+            snoozePrefs: parseSnoozePrefs(state.snoozePrefs),
+          });
           this.pendingReorders.clear();
           this.pendingPrefs.clear();
         }
@@ -142,22 +145,29 @@ class ServerStore {
     }
   };
 
-  private overlayReorders(order: ManualOrder, responseVersion = 0): ManualOrder {
+  private overlayReorders(
+    order: ManualOrder,
+    responseVersion = 0,
+  ): ManualOrder {
     let next = order;
     const response = this.pendingReorders.get(responseVersion);
     for (const [version, change] of this.pendingReorders) {
       if (version === responseVersion) continue;
-      const sameGroup = response && change.kind === response.kind &&
+      const sameGroup =
+        response &&
+        change.kind === response.kind &&
         (change.kind === "workstreams" ||
           (response.kind === "threads" && change.groupId === response.groupId));
-      if (!sameGroup || version > responseVersion) next = applyChange(next, change);
+      if (!sameGroup || version > responseVersion)
+        next = applyChange(next, change);
     }
     return next;
   }
 
   private overlayPrefs(prefs: SnoozePrefs): SnoozePrefs {
     let next = prefs;
-    for (const patch of this.pendingPrefs.values()) next = parseSnoozePrefs({ ...next, ...patch });
+    for (const patch of this.pendingPrefs.values())
+      next = parseSnoozePrefs({ ...next, ...patch });
     return next;
   }
 
@@ -207,7 +217,8 @@ class ServerStore {
           // Preserve it, but never let an older edit replace this write's keys.
           const overlay = Object.fromEntries(
             Object.entries(pending).filter(
-              ([key]) => version > mutationVersion || !Object.hasOwn(patch, key),
+              ([key]) =>
+                version > mutationVersion || !Object.hasOwn(patch, key),
             ),
           );
           merged = { ...merged, ...overlay };
@@ -222,7 +233,6 @@ class ServerStore {
       this.endMutation();
     }
   };
-
 }
 
 function applyChange(order: ManualOrder, change: ReorderChange): ManualOrder {

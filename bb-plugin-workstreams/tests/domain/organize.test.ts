@@ -1,89 +1,87 @@
-import { describe, expect, it } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  assignPrompt,
-  mapPrompt,
-  parseAssignments,
-  parseMapProposal,
+  organizePrompt,
+  parseOrganization,
+  type OrganizeInput,
 } from "../../src/domain/organize.ts";
-
-describe("parseMapProposal", () => {
-  it("keeps only changes that name real workstreams", () => {
-    const result = parseMapProposal(
-      JSON.stringify({
-        descriptions: { alpha: "Alpha work.", Ghost: "Nope." },
-        changes: [
-          { kind: "rename", workstream: "alpha", name: "Alpha Prime" },
-          { kind: "rename", workstream: "Ghost", name: "Real" },
-          { kind: "rename", workstream: "Alpha", name: "Beta" },
-          { kind: "merge", workstream: "Beta", into: "Alpha" },
-          { kind: "merge", workstream: "Beta", into: "Beta" },
-          { kind: "create", name: "Gamma", description: "New." },
-          { kind: "create", name: "alpha" },
-          { kind: "delete", workstream: "Alpha" },
-        ],
+const input: OrganizeInput = {
+  workstreams: [
+    { id: "s1", name: "Product", description: "Product work", aliases: [] },
+  ],
+  threads: [
+    {
+      id: "t1",
+      title: "Build product",
+      recap: "Implementing it",
+      project: "Repo",
+      sectionId: "s1",
+      children: ["Review"],
+    },
+    {
+      id: "t2",
+      title: "Unrelated",
+      recap: null,
+      project: null,
+      sectionId: null,
+      children: [],
+    },
+  ],
+};
+const valid = () => ({
+  workstreams: [
+    {
+      key: "w",
+      sectionId: "s1",
+      name: "Product",
+      description: "Build and maintain the product",
+      aliases: ["P"],
+    },
+  ],
+  assignments: [
+    { threadId: "t1", workstream: "w", reason: "Product task" },
+    { threadId: "t2", workstream: null, reason: "Unrelated" },
+  ],
+});
+describe("whole-map organization", () => {
+  it("includes all roots and bounded evidence in one prompt", () => {
+    const prompt = organizePrompt(input);
+    expect(prompt).toContain('"id":"t1"');
+    expect(prompt).toContain('"id":"t2"');
+    expect(prompt).toContain("Review");
+    expect(prompt).toContain("entire collection together");
+    expect(prompt).toContain("untrusted evidence");
+  });
+  it("accepts a complete closed assignment with Unsorted", () =>
+    expect(parseOrganization(JSON.stringify(valid()), input)).toEqual(valid()));
+  it.each([
+    "missing",
+    "duplicate",
+    "unknown",
+    "target",
+    "section",
+    "empty",
+    "duplicateName",
+  ])("rejects %s rather than partly applying", (mode) => {
+    const result = valid();
+    if (mode === "missing") result.assignments.pop();
+    if (mode === "duplicate") result.assignments[1]!.threadId = "t1";
+    if (mode === "unknown") result.assignments[1]!.threadId = "invented";
+    if (mode === "target") result.assignments[0]!.workstream = "invented";
+    if (mode === "section") result.workstreams[0]!.sectionId = "invented";
+    if (mode === "empty") result.assignments[0]!.workstream = null as never;
+    if (mode === "duplicateName")
+      result.workstreams.push({ ...result.workstreams[0]!, key: "other" });
+    expect(() => parseOrganization(JSON.stringify(result), input)).toThrow();
+  });
+  it("fails explicitly rather than truncating large inventories", () =>
+    expect(() =>
+      organizePrompt({ ...input, threads: Array(501).fill(input.threads[0]) }),
+    ).toThrow("500"));
+  it("bounds individual source text", () =>
+    expect(
+      organizePrompt({
+        ...input,
+        threads: [{ ...input.threads[0]!, recap: "x".repeat(10000) }],
       }),
-      ["Alpha", "Beta"],
-    );
-    expect(result.descriptions).toEqual({ Alpha: "Alpha work." });
-    expect(result.changes.map((c) => c.kind)).toEqual([
-      "rename",
-      "merge",
-      "create",
-    ]);
-    expect(result.changes[0]).toMatchObject({
-      workstream: "Alpha",
-      name: "Alpha Prime",
-    });
-  });
-});
-
-describe("parseAssignments", () => {
-  it("returns every thread once, from the closed set, and never guesses", () => {
-    const result = parseAssignments(
-      "```json\n" +
-        JSON.stringify({
-          items: [
-            { id: "t1", workstream: "alpha", confidence: "high" },
-            { id: "t2", workstream: "new: Gamma", confidence: "medium" },
-            { id: "t3", workstream: "Nonexistent", confidence: "high" },
-            { id: "t1", workstream: "Beta", confidence: "high" },
-            { id: "intruder", workstream: "Alpha", confidence: "high" },
-            { id: "t5", workstream: "new: beta", confidence: "high" },
-          ],
-        }) +
-        "\n```",
-      ["t1", "t2", "t3", "t4", "t5"],
-      ["Alpha", "Beta"],
-    );
-    expect(result.map((a) => [a.id, a.target])).toEqual([
-      ["t1", { kind: "existing", name: "Alpha" }],
-      ["t2", { kind: "new", name: "Gamma" }],
-      ["t3", { kind: "unsure" }],
-      ["t4", { kind: "unsure" }],
-      ["t5", { kind: "existing", name: "Beta" }],
-    ]);
-  });
-});
-
-describe("prompts", () => {
-  it("carry titles and subjects, redacted, and no project names", () => {
-    const secret = `ghp_${"z".repeat(30)}`;
-    const map = mapPrompt({
-      workstreams: [
-        {
-          name: "Alpha",
-          description: null,
-          roots: [{ title: `Rotate ${secret}`, subject: "Alpha" }],
-        },
-      ],
-      unfiled: [{ title: "Loose", subject: null }],
-    });
-    expect(map).toContain('## "Alpha"');
-    expect(map).not.toContain(secret);
-    const assign = assignPrompt({
-      workstreams: [{ name: "Alpha", description: "A" }],
-      threads: [{ id: "t1", title: "Fix", subject: "Alpha", recap: "Done" }],
-    });
-    expect(assign).toContain('id "t1": Fix [Alpha] — Done');
-  });
+    ).not.toContain("x".repeat(401)));
 });

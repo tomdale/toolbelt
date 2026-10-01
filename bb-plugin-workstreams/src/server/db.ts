@@ -247,6 +247,19 @@ const MIGRATIONS = [
   "ALTER TABLE ws_proposal ADD COLUMN reason TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE ws_proposal ADD COLUMN confidence REAL NOT NULL DEFAULT 0",
   "ALTER TABLE ws_recap ADD COLUMN revision INTEGER",
+  "ALTER TABLE ws_workstream ADD COLUMN metadata_revision INTEGER NOT NULL DEFAULT 0",
+  "DROP TABLE IF EXISTS ws_notebook_run_dependency",
+  "DROP TABLE IF EXISTS ws_notebook_dependency",
+  "DROP TABLE IF EXISTS ws_notebook_version",
+  "DROP TABLE IF EXISTS ws_notebook_run",
+  "DROP TABLE IF EXISTS ws_notebook_brief",
+  "DROP TABLE IF EXISTS ws_notebook",
+  "DROP TABLE IF EXISTS ws_proposal",
+  "DROP TABLE IF EXISTS ws_snooze",
+  "DELETE FROM ws_meta WHERE key IN ('bootstrap', 'supervision_snapshot', 'supervision_failure')",
+  "DELETE FROM ws_trace_link WHERE trace_id IN (SELECT id FROM ws_trace WHERE kind IN ('organize-map','organize-assign','file-unsorted','describe','supervision'))",
+  "DELETE FROM ws_trace WHERE kind IN ('organize-map','organize-assign','file-unsorted','describe','supervision')",
+  "UPDATE ws_journal SET status = 'dismissed' WHERE action = 'proposal' AND status = 'pending'",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

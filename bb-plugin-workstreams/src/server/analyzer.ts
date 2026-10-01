@@ -80,8 +80,6 @@ export class Analyzer {
       inference: Inference;
       model: () => Promise<string>;
       /** Incremental evidence is optional; failure leaves triage available. */
-      observe?: (threadId: string) => Promise<void>;
-      context?: (query: string, threadId: string) => string;
       onChange: () => void;
       /** A new result was stored for the thread's current turn. */
       onResult?: (threadId: string, result: StoredAnalysis) => void;
@@ -104,7 +102,7 @@ export class Analyzer {
 
   /**
    * Stored results for visible, non-archived threads. Archived threads keep
-   * theirs as evidence for workstream evolution but aren't sent to clients.
+   * theirs available for subject lookup but aren't sent to clients.
    */
   all(): Record<string, StoredAnalysis> {
     const out: Record<string, StoredAnalysis> = {};
@@ -120,7 +118,7 @@ export class Analyzer {
     return out;
   }
 
-  /** Subjects for any threads, archived ones included (evolution evidence). */
+  /** Subjects for any threads, archived ones included. */
   subjectsOf(threadIds: readonly string[]): Map<string, string | null> {
     const out = new Map<string, string | null>();
     const read = this.deps.db.prepare(
@@ -265,11 +263,6 @@ export class Analyzer {
       if (!force && previous && previous.revision >= revision) return previous;
 
       const started = this.now();
-      // Evidence collection has its own bounded queue. Triage must remain
-      // responsive even while a historical conversation is being indexed.
-      void this.deps.observe?.(threadId).catch((error) => {
-        this.deps.log(`Understanding failed for ${threadId}: ${String(error)}`);
-      });
       if (this.disposed || this.forgotten.has(threadId)) return null;
       const input = await this.input(thread);
       const model = await this.deps.model();
@@ -405,13 +398,6 @@ export class Analyzer {
           .prepare("SELECT description FROM ws_workstream WHERE section_id = ?")
           .get(own.section_id) as { description: string | null } | undefined)
       : undefined;
-    const query = [
-      displayTitle(thread),
-      own?.name,
-      ...requests.map((r) => r.text),
-    ]
-      .filter(Boolean)
-      .join("\n");
     return {
       sectionByName,
       sectionNameById: new Map(sections.map((s) => [s.section_id, s.name])),
@@ -432,8 +418,6 @@ export class Analyzer {
           : null,
         requests,
         lastAssistantText,
-        understanding:
-          this.deps.context?.(query, thread.id),
       },
     };
   }

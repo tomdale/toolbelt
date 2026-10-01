@@ -11,19 +11,21 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import type { Placement } from "../server/service.ts";
 import type { MapRecord } from "../server/map.ts";
-import type { ProposalView } from "../server/evolution.ts";
 import { projectWorkstreams, type Projection } from "../domain/project.ts";
 import { isCurrent, needsYou } from "../domain/analysis.ts";
 import type { ManualOrder } from "../domain/order.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
-import { isSnoozed, type SnoozePrefs, type ThreadSnooze } from "../domain/snooze.ts";
+import {
+  isSnoozed,
+  type SnoozePrefs,
+  type ThreadSnooze,
+} from "../domain/snooze.ts";
 import { useSharedServerState } from "./serverState.ts";
 
 export type ServerState = {
   workstreams: Record<string, MapRecord>;
   placements: Record<string, Placement>;
   analysis: Record<string, StoredAnalysis>;
-  proposals: ProposalView[];
   driftDismissed: Record<string, string>;
   bootstrapped: boolean;
   lastReconciledAt: number | null;
@@ -39,17 +41,6 @@ export type ReorderChange =
 /** Shared plugin state and optimistic actions for every UI consumer. */
 export function useServerState() {
   return useSharedServerState();
-}
-
-/** Pending or just-applied proposals that involve each thread. */
-export function proposalsByThread(
-  proposals: readonly ProposalView[],
-): Map<string, ProposalView> {
-  const out = new Map<string, ProposalView>();
-  for (const proposal of proposals)
-    for (const id of proposal.threadIds)
-      if (!out.has(id) || proposal.status === "pending") out.set(id, proposal);
-  return out;
 }
 
 /** What a row shows from analysis: nothing, a pending marker, or the result. */
@@ -151,7 +142,6 @@ export function useWorkstreams() {
     server,
     work: (thread: PluginSidebarThread) =>
       workView(thread, analysis[thread.id]),
-    proposalOf: proposalsByThread(server.proposals),
     now,
     rpc,
     refresh,

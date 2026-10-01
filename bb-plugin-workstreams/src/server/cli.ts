@@ -33,7 +33,6 @@ import {
   type TraceSummary,
 } from "../domain/trace.ts";
 import type { TraceStore } from "./trace.ts";
-import type { Notebooks } from "./notebooks.ts";
 
 const TITLE_MAX = 80;
 const clip = (text: string) =>
@@ -132,7 +131,6 @@ export function registerCli(
     map,
     router,
     traces,
-    notebooks,
   }: {
     service: WorkstreamService;
     journal: Journal;
@@ -141,7 +139,6 @@ export function registerCli(
     map: WorkstreamMap;
     router: Router;
     traces: TraceStore;
-    notebooks: Notebooks;
   },
 ): void {
   const load = async () => {
@@ -174,62 +171,6 @@ export function registerCli(
       summary:
         "List workstreams, file threads into them, and read the activity log",
       commands: {
-        understanding: cliCommand({
-          summary:
-            "Read the learner's notebooks and shared brief, learn from a thread, or ask a question",
-          positionals: [
-            { name: "query", description: "Optional notebook search" },
-          ],
-          options: {
-            json: {
-              type: "boolean",
-              description: "Print notebook state or learning run as JSON",
-            },
-            learn: {
-              type: "string",
-              description:
-                "Read new conversation and update notes for this thread (paid model calls)",
-            },
-            ask: {
-              type: "string",
-              description:
-                "Ask the learner to investigate a question without changing notes (paid model calls)",
-            },
-          },
-          async run({ positionals, options }) {
-            try {
-              if (options.learn && options.ask)
-                throw new UserError("Choose --learn or --ask.");
-              if (options.learn) await notebooks.observe(options.learn);
-              if (options.ask) {
-                const run = await notebooks.ask(options.ask);
-                return {
-                  exitCode: run.status === "done" ? 0 : 1,
-                  stdout: options.json
-                    ? json(run)
-                    : run.summary || run.error || run.status,
-                };
-              }
-              const overview = notebooks.overview(positionals.query ?? "");
-              return {
-                exitCode: 0,
-                stdout: options.json
-                  ? json(overview)
-                  : [
-                      "Shared understanding",
-                      overview.brief.text ||
-                        "The learner has not written a brief yet.",
-                      ...overview.notebooks.map(
-                        (n) =>
-                          `\n${n.title} (${n.threadId})\n${n.text}${n.error ? `\nLearning error: ${n.error}` : ""}`,
-                      ),
-                    ].join("\n\n"),
-              };
-            } catch (error) {
-              return fail(error);
-            }
-          },
-        }),
         list: cliCommand({
           summary: "List workstreams (native BB sections) with thread counts",
           options: {
@@ -660,48 +601,52 @@ export function registerCli(
             apply: {
               type: "boolean",
               description:
-                "Apply the previewed changes as one undoable batch (default: preview only)",
+                "Apply a saved preview as one undoable batch; requires --run-id",
+            },
+            "run-id": {
+              type: "integer",
+              min: 0,
+              max: Number.MAX_SAFE_INTEGER,
+              description: "The startedAt value of the reviewed preview",
             },
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ options }) {
+            if (options.apply && options["run-id"] === undefined)
+              throw new PluginCliError(
+                "Apply requires --run-id from the preview.",
+                { code: "preview_required" },
+              );
             const fail = (state: BootstrapState | null) => {
               throw new PluginCliError(state?.error ?? "Organizing failed.", {
                 code: "organize_failed",
               });
             };
-            let state = await bootstrap.start().catch(fail);
-            if (state.status !== "review") fail(state);
-            state = await bootstrap
-              .assign(state.changes.map((c) => ({ id: c.id, accepted: true })))
-              .catch(fail);
-            if (state.status !== "preview") fail(state);
-            if (options.apply) {
-              state = await bootstrap.apply().catch(fail);
-              if (state.status !== "applied") fail(state);
-            }
+            let state = options.apply
+              ? await bootstrap.apply([], options["run-id"]!).catch(fail)
+              : await bootstrap.start().catch(fail);
+            if (state.status !== (options.apply ? "applied" : "preview"))
+              fail(state);
             if (options.json)
               return { exitCode: 0, stdout: JSON.stringify(state, null, 2) };
             const p = state.preview!;
             const moves = p.moves.filter((m) => m.accepted);
             const lines = [
-              `${options.apply ? "Applied" : "Preview"}: ${plural(moves.length, "move")}, ${plural(p.creates.length, "new workstream")}, ${plural(p.renames.length, "rename")} (${(state.seconds.intake + state.seconds.map + state.seconds.assign + state.seconds.apply).toFixed(1)}s)`,
-              ...state.changes.map(
-                (c) =>
-                  `  map: ${c.kind} ${"workstream" in c ? c.workstream : ""}${"name" in c ? ` → ${c.name}` : ""}${"into" in c ? ` → ${c.into}` : ""}`,
-              ),
+              `${options.apply ? "Applied" : "Preview"}: ${plural(moves.length, "move")}, ${plural(p.creates.length, "new workstream")}, ${plural(p.renames.length, "rename")}`,
+              `Run ID: ${state.startedAt}`,
+              ...p.workstreams.map((w) => `  ${w.name}: ${w.description}`),
               ...p.moves.map(
                 (m) =>
                   `  ${m.accepted ? "✓" : "·"} ${clip(m.title)}: ${m.fromName} → ${m.toName} (${m.reason})`,
               ),
-              ...(p.unsure.length
-                ? [`  unsure: ${p.unsure.map((u) => clip(u.title)).join("; ")}`]
-                : []),
+              ...p.assignments
+                .filter((a) => a.workstream === null)
+                .map((a) => `  Unsorted: ${a.threadId}`),
               ...(options.apply
                 ? []
                 : [
                     "",
-                    "Review and apply on the Workstreams page, or rerun with --apply.",
+                    `Review on the Workstreams page, or apply this preview with --apply --run-id ${state.startedAt}.`,
                   ]),
             ];
             return { exitCode: 0, stdout: lines.join("\n") };

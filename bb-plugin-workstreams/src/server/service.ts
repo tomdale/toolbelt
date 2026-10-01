@@ -30,7 +30,15 @@ export type BatchPlan = {
     description?: string | null;
     always?: boolean;
   }[];
-  renames: { sectionId: string; name: string }[];
+  renames: { sectionId: string; name: string; from?: string }[];
+  metadata?: { sectionId: string; description: string; aliases: string[] }[];
+  expectedMap?: {
+    sectionId: string;
+    name: string;
+    description: string | null;
+    aliases: string[];
+    descriptionSource: "user" | "generated";
+  }[];
   moves: { threadId: string; from: string | null; to: string | null }[];
   descriptions?: [string, string][];
 };
@@ -371,8 +379,7 @@ export class WorkstreamService {
           threadId: move.threadId,
           sectionId: move.from,
         });
-        // Undoing is the user's decision: the thread now stays where they put
-        // it back, so automatic filing and evolution leave it alone.
+        // Record Undo as the user's placement decision.
         this.place(move.threadId, move.from, "user", null);
         this.seeThread(move.threadId, move.from, thread.parentThreadId ?? null);
         done++;
@@ -417,6 +424,40 @@ export class WorkstreamService {
         .run(step.sectionId);
       return { done: 1, skipped: 0 };
     }
+    if (step.kind === "metadata") {
+      const row = this.db
+        .prepare(
+          "SELECT description, aliases, description_source, metadata_revision FROM ws_workstream WHERE section_id = ?",
+        )
+        .get(step.sectionId) as
+        | {
+            description: string | null;
+            aliases: string;
+            description_source: string;
+            metadata_revision: number;
+          }
+        | undefined;
+      if (
+        !row ||
+        row.description !== step.to.description ||
+        row.aliases !== JSON.stringify(step.to.aliases) ||
+        row.description_source !== step.to.source ||
+        row.metadata_revision !== step.to.revision
+      )
+        return { done: 0, skipped: 1 };
+      this.db
+        .prepare(
+          "UPDATE ws_workstream SET description = ?, aliases = ?, description_source = ?, metadata_revision = metadata_revision + 1, updated_at = ? WHERE section_id = ?",
+        )
+        .run(
+          step.from.description,
+          JSON.stringify(step.from.aliases),
+          step.from.source,
+          this.now(),
+          step.sectionId,
+        );
+      return { done: 1, skipped: 0 };
+    }
     const sections = await listSections(sdk);
     const current = sections.find((s) => s.id === step.sectionId);
     if (!current || current.name !== step.to) return { done: 0, skipped: 1 };
@@ -451,6 +492,38 @@ export class WorkstreamService {
       const sections = await listSections(sdk);
       const byName = new Map(sections.map((s) => [s.name.toLowerCase(), s]));
       const names = new Map(sections.map((s) => [s.id, s.name]));
+      if (plan.expectedMap) {
+        const expected = new Map(plan.expectedMap.map((w) => [w.sectionId, w]));
+        if (
+          sections.length !== expected.size ||
+          sections.some((s) => expected.get(s.id)?.name !== s.name)
+        )
+          throw new UserError(
+            "The workstream map changed since this preview. Organize again before applying.",
+          );
+        for (const snapshot of expected.values()) {
+          const row = this.db
+            .prepare(
+              "SELECT description, aliases, description_source FROM ws_workstream WHERE section_id = ?",
+            )
+            .get(snapshot.sectionId) as
+            | {
+                description: string | null;
+                aliases: string;
+                description_source: string;
+              }
+            | undefined;
+          if (
+            !row ||
+            row.description !== snapshot.description ||
+            row.aliases !== JSON.stringify(snapshot.aliases) ||
+            row.description_source !== snapshot.descriptionSource
+          )
+            throw new UserError(
+              "Workstream metadata changed since this preview. Organize again before applying.",
+            );
+        }
+      }
       const createKeys = new Set(plan.creates.map((c) => c.key));
       const at = this.now();
 
@@ -473,6 +546,7 @@ export class WorkstreamService {
           !thread ||
           !target ||
           thread.archivedAt !== null ||
+          thread.visibility === "hidden" ||
           (thread.sectionId ?? null) !== move.from ||
           (thread.parentThreadId &&
             (await this.isVisibleActive(thread.parentThreadId)))
@@ -529,7 +603,12 @@ export class WorkstreamService {
         for (const rename of plan.renames) {
           const clean = normalizeName(rename.name);
           const current = names.get(rename.sectionId);
-          if (!current || current === clean) continue;
+          if (
+            !current ||
+            current === clean ||
+            (rename.from !== undefined && current !== rename.from)
+          )
+            continue;
           if (byName.has(clean.toLowerCase())) continue;
           await sdk.threadSections.update({
             id: rename.sectionId,
@@ -559,7 +638,70 @@ export class WorkstreamService {
             )
             .run(description, at, id);
         }
+        for (const metadata of plan.metadata ?? []) {
+          const id = created.get(metadata.sectionId) ?? metadata.sectionId;
+          if (!names.has(id)) continue;
+          const before = this.db
+            .prepare(
+              "SELECT description, aliases, description_source, metadata_revision FROM ws_workstream WHERE section_id = ?",
+            )
+            .get(id) as
+            | {
+                description: string | null;
+                aliases: string;
+                description_source: "user" | "generated";
+                metadata_revision: number;
+              }
+            | undefined;
+          const description =
+            before?.description_source === "user"
+              ? before.description
+              : metadata.description;
+          if (
+            !before ||
+            (before.description === description &&
+              before.aliases === JSON.stringify(metadata.aliases))
+          )
+            continue;
+          this.db
+            .prepare(
+              "UPDATE ws_workstream SET description = ?, aliases = ?, metadata_revision = metadata_revision + 1, updated_at = ? WHERE section_id = ?",
+            )
+            .run(description, JSON.stringify(metadata.aliases), at, id);
+          steps.push({
+            kind: "metadata",
+            sectionId: id,
+            from: {
+              description: before.description,
+              aliases: JSON.parse(before.aliases),
+              source: before.description_source,
+            },
+            to: {
+              description: description!,
+              aliases: metadata.aliases,
+              source: before.description_source,
+              revision: before.metadata_revision + 1,
+            },
+          });
+          touched.set(id, names.get(id)!);
+        }
         for (const move of ready) {
+          // BB has no conditional section update. Recheck immediately before
+          // each write so a change during earlier remote calls stays untouched.
+          const current = await sdk.threads
+            .get({ threadId: move.threadId })
+            .catch(() => null);
+          if (
+            !current ||
+            current.archivedAt !== null ||
+            current.visibility === "hidden" ||
+            (current.sectionId ?? null) !== move.from ||
+            (current.parentThreadId &&
+              (await this.isVisibleActive(current.parentThreadId)))
+          ) {
+            skipped.push(move.threadId);
+            continue;
+          }
           const to =
             move.to === null ? null : (created.get(move.to) ?? move.to);
           if (to !== null && !names.has(to)) {

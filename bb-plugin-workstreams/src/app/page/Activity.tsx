@@ -12,7 +12,6 @@ import {
   type TraceSummary,
 } from "../../domain/trace.ts";
 import type { RpcContract } from "../../server/contract.ts";
-import type { ProposalView } from "../../server/evolution.ts";
 import type { JournalEntry as Entry } from "../../server/journal.ts";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { useDebugMode } from "../debug/debug.ts";
@@ -123,14 +122,12 @@ type Item =
  */
 export function Activity({
   rpc,
-  proposals = [],
   focus = null,
   sections = [],
   workstreamOf,
 }: {
   rpc: ReturnType<typeof useRpc<RpcContract>>;
-  proposals?: readonly ProposalView[];
-  /** A proposal id to review first (deep link from a banner). */
+  /** An activity entry to highlight. */
   focus?: string | null;
   sections?: readonly PluginSidebarSection[];
   /** A thread's workstream, for filtering model calls by workstream. */
@@ -148,9 +145,6 @@ export function Activity({
   const [moreCalls, setMoreCalls] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const proposalOf = new Map(
-    proposals.filter((p) => p.entryId).map((p) => [p.entryId!, p]),
-  );
   const [entries, setEntries] = useState<JournalEntry[] | null>(null);
   const [calls, setCalls] = useState<TraceSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -219,16 +213,6 @@ export function Activity({
     setError(null);
     try {
       await rpc.call("undo", { entryId: entry.id });
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  };
-
-  const decide = async (id: string, verdict: "accept" | "dismiss") => {
-    setError(null);
-    try {
-      await rpc.call("proposal", { id, action: verdict });
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -463,7 +447,7 @@ export function Activity({
                       entry.status === "dismissed") &&
                       "opacity-60",
                     focus !== null &&
-                      proposalOf.get(entry.id)?.id === focus &&
+                      entry.id === focus &&
                       "rounded-md bg-state-hover",
                   )}
                 >
@@ -553,28 +537,8 @@ export function Activity({
                     >
                       <ActivityTerm {...ENTRY_STATUS[entry.status]} />
                     </span>
-                    {entry.status === "pending" && proposalOf.get(entry.id) ? (
-                      <span className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void decide(proposalOf.get(entry.id)!.id, "accept")
-                          }
-                          className="text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-                        >
-                          {proposalOf.get(entry.id)!.accept}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void decide(proposalOf.get(entry.id)!.id, "dismiss")
-                          }
-                          className="text-muted-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-                        >
-                          Not now
-                        </button>
-                      </span>
-                    ) : entry.undo && entry.status === "applied" ? (
+                    {entry.undo &&
+                    ["applied", "partial", "failed"].includes(entry.status) ? (
                       <button
                         type="button"
                         onClick={() => void undo(entry)}

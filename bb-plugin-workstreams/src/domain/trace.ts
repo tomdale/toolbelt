@@ -11,16 +11,7 @@ export const usageSchema = z.object({
 });
 export type Usage = z.infer<typeof usageSchema>;
 
-export const TRACE_KINDS = [
-  "analysis",
-  "recap",
-  "route",
-  "organize-map",
-  "organize-assign",
-  "file-unsorted",
-  "describe",
-  "supervision",
-] as const;
+export const TRACE_KINDS = ["analysis", "recap", "route", "organize"] as const;
 export type TraceKind = (typeof TRACE_KINDS)[number];
 
 /**
@@ -95,11 +86,7 @@ export const TRACE_KIND_TITLE: Record<TraceKind, string> = {
   analysis: "Thread analysis",
   recap: "Thread recap",
   route: "Routing",
-  "organize-map": "Organize: map proposal",
-  "organize-assign": "Organize: filing",
-  "file-unsorted": "Filing Unsorted threads",
-  describe: "Workstream descriptions",
-  supervision: "Workstream supervision",
+  organize: "Organize workstreams",
 };
 
 /** Compact labels for narrow columns, such as the Activity log's. */
@@ -107,11 +94,7 @@ export const TRACE_KIND_SHORT: Record<TraceKind, string> = {
   analysis: "Analysis",
   recap: "Recap",
   route: "Routing",
-  "organize-map": "Organize map",
-  "organize-assign": "Organize filing",
-  "file-unsorted": "Filing",
-  describe: "Descriptions",
-  supervision: "Supervision",
+  organize: "Organize",
 };
 
 export const TRACE_STATUS_TITLE: Record<TraceStatus, string> = {

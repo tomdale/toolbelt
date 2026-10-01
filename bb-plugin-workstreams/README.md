@@ -1,10 +1,10 @@
 # Workstreams for BB
 
-Workstreams organizes your BB threads into **workstreams** and keeps that
-organization current as you work. A workstream is a native BB section, so the
-built-in sidebar and Workstreams always agree on where a thread lives.
-[SPEC.md](SPEC.md) is the full design and the contract the code is checked
-against.
+Workstreams organizes your BB threads into **workstreams** when you ask. A
+single pass proposes the whole map and thread placements; preview it, then
+apply. A workstream is a native BB section, so the built-in sidebar and
+Workstreams always agree on where a thread lives. [SPEC.md](SPEC.md) is the full
+design and the contract the code is checked against.
 
 ## What it does
 
@@ -16,7 +16,7 @@ against.
     and skips classification. **No workstream** creates an unassigned thread and
     requires a chosen or confidently inferred project. Existing threads show
     locked placement and use their existing execution settings. Pending routing
-    blocks submit until the destination and placement are ready.
+    blocks Enter and click before the native composer clears the draft.
   - **For you**: a pending approval or question, or a thread whose latest turn
     asks you to decide something. These rows sit at the top in an amber block
     with a slow shimmer, under an always-open header, each naming its
@@ -47,11 +47,10 @@ against.
     **Wake now** ends any snooze.
   - Rows show BB's status, a work-state mark from analysis (◆ decision, ◇
     review, ⏸ blocked; hover for where it stopped), unread state, drafts,
-    shortcuts, pull requests, and a yellow dot when a workstream change involves
-    the thread. Pick the working thread's spinner animation and its colors under
-    **Working indicator** in the plugin's settings (BB's own by default). Hover
-    a row for its Snooze and Archive buttons; right-click to move, rename, pin,
-    mark read, snooze, archive, or delete.
+    shortcuts and pull requests. Pick the working thread's spinner animation and
+    its colors under **Working indicator** in the plugin's settings (BB's own by
+    default). Hover a row for its Snooze and Archive buttons; right-click to
+    move, rename, pin, mark read, snooze, archive, or delete.
 - **Workstreams page** (`/plugins/workstreams/home`):
   - **Overview**: workstreams ranked by what needs you, each thread with where
     it stopped. Search with `/`.
@@ -63,12 +62,7 @@ against.
   thread's recap, work state, subject, and (for top-level threads) whether its
   latest request drifted to another workstream. Results are tied to the turn
   they describe and show as updating once a new turn starts. Analysis itself
-  never moves anything; the later filing pass may use its subject.
-- **Understanding**: a tool-using learner reads conversations, follows
-  connections, and writes freeform thread notebooks plus a shared brief. Routing
-  and analysis read that brief; the learner does not move threads or edit code.
-  Read notes, explore learning runs, or ask it a question in the Understanding
-  tab. See [the guide](docs/understanding.md).
+  never moves anything.
 - **Archive suggestions**: when classification finds a natural end and BB has no
   unfinished tasks, goals, queued messages, interactions, or background work, a
   quiet **Archive** button appears in the composer toolbar. Clicking archives
@@ -79,36 +73,29 @@ against.
   new suggestion. Workstreams never archives automatically.
 - **Recap freshness**: stored recaps are shown only for the idle thread revision
   they summarize. A new turn invalidates the recap, and generation checks the
-  revision again before saving. Freshness reads do not scan conversation history;
-  recaps without a recorded revision regenerate before being shown.
+  revision again before saving. Freshness reads do not scan conversation
+  history; recaps without a recorded revision regenerate before being shown.
 - **Titles**: the same call suggests a title when a thread has none, its title
   is cut off or too vague, or its latest requests moved onto different work.
   Workstreams applies it (at most once an hour for a titled thread) and logs it
   in Activity with Undo. A title you or an agent set is never changed; clear it
   to hand it back. Turn this off with the `autoTitle` setting.
-- **Organize once** (Map tab, or `bb workstreams rebuild`): proposes a map
-  (renames, merges, new workstreams, descriptions), lets you review it, files
-  unfiled and automatically filed threads, and previews the result before
-  applying it as one undoable change. Threads you filed stay put.
-- **Notebook supervisor**, after that: periodically considers changed notebooks,
-  the shared brief, and active work. It can spin out coherent recurring efforts
-  within one product, move work to an existing effort, or merge overlapping
-  efforts. Changes retain a yellow Undo banner (or, with `evolution = ask`, wait
-  for acceptance). User placement decisions and user-written scope remain
-  authoritative; unchanged or dismissed suggestions do not recur every minute.
-  Unsorted threads it can place confidently are filed the same way. A
-  high-confidence `new: <subject>` assignment creates that workstream and files
-  the thread in the same pass; lower-confidence assignments remain Unsorted.
-- **Routing**: in BB's new-thread composer a banner shows where the draft goes
-  (continue a thread, a new thread in a workstream, or a new workstream) and
-  presets the project and environment; Enter or Start creates the thread and
-  files it there, and Send there continues the thread.
+- **Organize** (Map tab, or `bb workstreams rebuild`): one bounded model call
+  scans open thread roots and proposes a coherent map with descriptions, aliases
+  and placements. Review the whole map, uncheck unwanted moves, then Apply as
+  one undoable batch. Between runs, membership stays fixed. Unassigned roots
+  remain Unsorted. See [Organizing workstreams](docs/organization.md).
+- **Routing**: Workstreams' own New work dialog shows where the draft goes
+  (continue a thread or start one in an existing home) and presets the project
+  and environment; Enter or Start creates the thread and files it there, and
+  Send there continues the thread. An uncertain route leaves the choice to you.
+  Creating a workstream requires the explicit Create workstream action;
+  classification cannot silently create a home.
 - **Task threads**: top-level threads get short instructions to delegate
   subtasks with BB's own `bb thread spawn --parent-self` (with environment
   guidance for the project's shape) and to hand off out-of-scope requests with
-  `bb workstreams handoff`. Delegates are told to report to their parent. A
-  thread whose latest request drifted shows a banner to hand off, move, or
-  dismiss.
+  `bb workstreams handoff`. Delegation requires user approval. Delegates are
+  told to report to their parent.
 - **Parent link** in child threads' headers (the `showParentThreadLink`
   setting).
 - **Reconciler**: BB emits no events for section changes, so Workstreams
@@ -118,24 +105,23 @@ against.
 - **Debug mode** (the `debug` setting, off by default): every model call is
   recorded with the exact prompt, the model's reasoning summary, the raw
   response, the parsed result, and what Workstreams did with it. A small bug
-  button appears wherever Workstreams used a model: the thread header, the drift
-  and proposal banners, New work, Activity entries, the
-  organizing review, generated descriptions, Overview rows, and the sidebar row
-  menu (**Inspect model calls…**). It opens a side pane with those calls. **Run
-  again** sends the same prompt to the same model to show whether the answer is
-  stable, without changing anything. Activity lists each model call among the
-  changes, including calls that made no change. Model rows use a quiet surface
-  tint and a Model badge, and prioritize the event, subject, and labeled
-  assessment. Related threads use BB-style thread-reference pills on an aligned
-  row, with host-owned link navigation. Small information buttons explain event
-  names and lifecycle terms on hover or keyboard focus. **Technical details**
-  reveals labeled model, duration, token usage, and cost measurements plus
-  prompt inspection; these measurements stay collapsed by default. Debug
-  controls in **Activity** filter by call kind and failures, show the count and
-  cost of visible calls, load older calls, and clear traces without deleting
-  activity changes. Journal entries also expose expandable internal details.
-  Records include redacted thread excerpts and are kept for 7 days (at most
-  1,000).
+  button appears wherever Workstreams used a model: the thread header, the
+  New work, Activity entries, the organizing review,
+  generated descriptions, Overview rows, and the sidebar row menu (**Inspect
+  model calls…**). It opens a side pane with those calls. **Run again** sends
+  the same prompt to the same model to show whether the answer is stable,
+  without changing anything. Activity lists each model call among the changes,
+  including calls that made no change. Model rows use a quiet surface tint and a
+  Model badge, and prioritize the event, subject, and labeled assessment.
+  Related threads use BB-style thread-reference pills on an aligned row, with
+  host-owned link navigation. Small information buttons explain event names and
+  lifecycle terms on hover or keyboard focus. **Technical details** reveals
+  labeled model, duration, token usage, and cost measurements plus prompt
+  inspection; these measurements stay collapsed by default. Debug controls in
+  **Activity** filter by call kind and failures, show the count and cost of
+  visible calls, load older calls, and clear traces without deleting activity
+  changes. Journal entries also expose expandable internal details. Records
+  include redacted thread excerpts and are kept for 7 days (at most 1,000).
 
 Model calls go straight to AI Gateway from the analysis machine (`hostId`, blank
 for the only connected machine), with the AI Gateway key Pi has there. They
@@ -153,11 +139,9 @@ bb workstreams new "<prompt>" [--workstream <w>] [--project <id>] [--dry-run]
 bb workstreams handoff --request-stdin [--note <text>] [--dry-run] [--json] <<'EOF'
 <the user's request, verbatim>
 EOF
-bb workstreams understanding [<topic>] [--json] # shared brief and thread notebooks
-bb workstreams understanding --learn <thread-id> # paid learning; updates notes
-bb workstreams understanding --ask "<question>" # paid read-only investigation
 bb workstreams analyze [<thread>]              # analyze now, or catch up
-bb workstreams rebuild [--apply]               # organize once; preview unless --apply
+bb workstreams rebuild                         # generate a saved preview
+bb workstreams rebuild --apply --run-id <id>   # apply that preview, no new model call
 bb workstreams log [--since 7d] [--external]   # the activity log
 bb workstreams undo <entry-id>
 bb workstreams trace [<id>] [--thread <id>] [--entry <id>] [--kind <kind>] [--json]
@@ -169,23 +153,17 @@ A workstream argument is a section id or its name (case-insensitive). `new` and
 
 ## Development
 
-The New work composer requires matching BB host and Plugin SDK builds with
-`experimental_submitLabel`, `experimental_submitDisabled`,
-`experimental_onBeforeSubmit`, `experimental_placementVisibility`, and
-`experimental_executionControlsVisibility`. A registry version alone does not
-establish support for these controls. Until a compatible SDK is published, build
-and pack `packages/plugin-sdk` from the host source containing them, then
-install the resulting tarball after installing dependencies:
-`npm install --no-save --package-lock=false /path/to/packed-sdk.tgz`. Keep local
-tarball paths out of package metadata.
+The package uses the published Plugin SDK pinned in its lockfile. New work uses
+BB's native composer and a scoped CSS adapter. The native button retains BB's
+label, and early submission is rejected with draft restoration. Build and verify
+in an isolated task; deploy only from the canonical checkout.
 
 ```sh
-npm install
-# Install the locally packed SDK described above before these checks.
+npm ci
 npm run typecheck
 npm test
 npm run build
-bb plugin install .   # or `bb plugin reload workstreams` once installed from this path
+# Then run the repository's scripts/bb-plugin-smoke against this package.
 node eval/run.ts      # analysis eval (calls models); see eval/README.md
 node eval/route.ts    # routing eval
 ```
@@ -201,15 +179,15 @@ node scripts/capture-new-work.mjs /tmp/new-work-shots
 
 - `src/domain/`: pure logic: `tree.ts` (exact-once forests), `project.ts` (the
   projection shared by the sidebar, page, and CLI), `analysis.ts`,
-  `evolution.ts`, `organize.ts`, `router.ts`, `instructions.ts`.
+  `organize.ts`, `router.ts`, `instructions.ts`.
 - `src/server/`: `service.ts` (mutations, batches, undo, reconciler),
-  `analyzer.ts`, `bootstrap.ts`, `evolution.ts`, `router.ts`, `agents.ts`
-  (`configure`), `map.ts`, `journal.ts`, `db.ts` (append-only migrations; the
-  existing migration IDs remain append-only), `cli.ts`, `contract.ts`,
-  `model.ts` (every model call's prompt and parser, and Debug mode's recording),
-  `trace.ts` (the trace store), `inference/` (the host entry that runs Pi).
-- `src/app/`: the sidebar list, the page, the header parent link and proposal
-  banner, and `debug/` (inspect buttons, the
+  `analyzer.ts`, `bootstrap.ts`, `router.ts`, `agents.ts` (`configure`),
+  `map.ts`, `journal.ts`, `db.ts` (append-only migrations; the existing
+  migration IDs remain append-only), `cli.ts`, `contract.ts`, `model.ts` (every
+  model call's prompt and parser, and Debug mode's recording), `trace.ts` (the
+  trace store), `inference/` (the host entry that runs Pi).
+- `src/app/`: the sidebar list, the page, the header parent link and recap
+  actions, New work intake, and `debug/` (inspect buttons, the
   inspector pane), fed by `useWorkstreams.ts`.
 
 To check the exact-once guarantee against real data, export a snapshot to

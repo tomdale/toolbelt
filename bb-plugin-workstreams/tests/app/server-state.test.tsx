@@ -45,7 +45,6 @@ function state(revision = 1): ServerState {
     workstreams: {},
     placements: {},
     analysis: {},
-    proposals: [],
     driftDismissed: {},
     bootstrapped: true,
     lastReconciledAt: revision,
@@ -141,8 +140,8 @@ describe("shared server state", () => {
     });
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     const refreshReads = [deferred<ServerState>(), deferred<ServerState>()];
-    read.mockImplementation(() =>
-      refreshReads[read.mock.calls.length - 2]!.promise,
+    read.mockImplementation(
+      () => refreshReads[read.mock.calls.length - 2]!.promise,
     );
     let pending!: Promise<void>;
     act(() => {
@@ -184,7 +183,9 @@ describe("shared server state", () => {
     await expect(pending).rejects.toBe(failure);
     read.mockImplementation(() => recovery.promise);
     const refresh = consumers.get(0)!.refresh();
-    await waitFor(() => expect(read.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() =>
+      expect(read.mock.calls.length).toBeGreaterThanOrEqual(2),
+    );
     recovery.resolve(state(2));
     await refresh;
     expect(consumers.get(0)!.server.order.workstreams).toEqual([]);
@@ -194,22 +195,37 @@ describe("shared server state", () => {
     const firstWrite = deferred<{ order: ServerState["order"] }>();
     const secondWrite = deferred<{ order: ServerState["order"] }>();
     const writes = [firstWrite, secondWrite];
-    const { consumers } = mount({ reorder: vi.fn(() => writes.shift()!.promise) });
-    await waitFor(() => expect(consumers.get(0)!.server.bootstrapped).toBe(true));
-    const first = consumers.get(0)!.reorder({ kind: "threads", groupId: "a", ids: ["a1"] });
-    const second = consumers.get(0)!.reorder({ kind: "threads", groupId: "b", ids: ["b1"] });
+    const { consumers } = mount({
+      reorder: vi.fn(() => writes.shift()!.promise),
+    });
+    await waitFor(() =>
+      expect(consumers.get(0)!.server.bootstrapped).toBe(true),
+    );
+    const first = consumers
+      .get(0)!
+      .reorder({ kind: "threads", groupId: "a", ids: ["a1"] });
+    const second = consumers
+      .get(0)!
+      .reorder({ kind: "threads", groupId: "b", ids: ["b1"] });
     secondWrite.resolve({ order: { workstreams: [], threads: { b: ["b1"] } } });
     firstWrite.resolve({ order: { workstreams: [], threads: { a: ["a1"] } } });
     await Promise.all([first, second]);
-    expect(consumers.get(0)!.server.order.threads).toMatchObject({ a: ["a1"], b: ["b1"] });
+    expect(consumers.get(0)!.server.order.threads).toMatchObject({
+      a: ["a1"],
+      b: ["b1"],
+    });
   });
 
   it("keeps the newer preference through reverse responses", async () => {
     const firstWrite = deferred<{ prefs: ServerState["snoozePrefs"] }>();
     const secondWrite = deferred<{ prefs: ServerState["snoozePrefs"] }>();
     const writes = [firstWrite, secondWrite];
-    const { consumers } = mount({ setSnoozePrefs: vi.fn(() => writes.shift()!.promise) });
-    await waitFor(() => expect(consumers.get(0)!.server.bootstrapped).toBe(true));
+    const { consumers } = mount({
+      setSnoozePrefs: vi.fn(() => writes.shift()!.promise),
+    });
+    await waitFor(() =>
+      expect(consumers.get(0)!.server.bootstrapped).toBe(true),
+    );
     const first = consumers.get(0)!.saveSnoozePrefs({ morningHour: 8 });
     const second = consumers.get(0)!.saveSnoozePrefs({ morningHour: 10 });
     secondWrite.resolve({ prefs: { ...state().snoozePrefs, morningHour: 10 } });
@@ -238,15 +254,19 @@ describe("shared server state", () => {
     });
     await slot.behavior.emitRealtime("changed", {});
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
-    firstRead.resolve({ ...state(2), proposals: [{ id: "server-change" }] as never });
+    firstRead.resolve({ ...state(2), driftDismissed: { t: "server-change" } });
     await Promise.resolve();
-    expect(consumers.get(0)!.server.proposals).toEqual([]);
+    expect(consumers.get(0)!.server.driftDismissed).toEqual({});
     write.resolve({ order: { workstreams: ["a"], threads: {} } });
     await mutation;
     await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
-    secondRead.resolve({ ...state(3), proposals: [{ id: "server-change" }] as never });
-    await waitFor(() => expect(consumers.get(0)!.server.lastReconciledAt).toBe(3));
-    expect(consumers.get(0)!.server.proposals).toHaveLength(1);
+    secondRead.resolve({ ...state(3), driftDismissed: { t: "server-change" } });
+    await waitFor(() =>
+      expect(consumers.get(0)!.server.lastReconciledAt).toBe(3),
+    );
+    expect(consumers.get(0)!.server.driftDismissed).toEqual({
+      t: "server-change",
+    });
   });
 
   it("rolls back rejected preferences and shows authoritative normalization", async () => {
@@ -275,7 +295,10 @@ describe("shared server state", () => {
     write.reject(failure);
     await expect(pending).rejects.toBe(failure);
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
-    recovery.resolve({ ...state(2), snoozePrefs: { ...state().snoozePrefs, morningHour: 6 } });
+    recovery.resolve({
+      ...state(2),
+      snoozePrefs: { ...state().snoozePrefs, morningHour: 6 },
+    });
     await waitFor(() =>
       expect(consumers.get(0)!.server.snoozePrefs.morningHour).toBe(6),
     );
@@ -296,24 +319,33 @@ describe("shared server state", () => {
     let first!: Promise<void>;
     let second!: Promise<void>;
     act(() => {
-      first = consumers.get(0)!.reorder({ kind: "threads", groupId: "a", ids: ["a1"] });
-      second = consumers.get(1)!.reorder({ kind: "threads", groupId: "a", ids: ["a2"] });
+      first = consumers
+        .get(0)!
+        .reorder({ kind: "threads", groupId: "a", ids: ["a1"] });
+      second = consumers
+        .get(1)!
+        .reorder({ kind: "threads", groupId: "a", ids: ["a2"] });
     });
     const newer = { workstreams: [], threads: { a: ["a2"] } };
     secondWrite.resolve({ order: newer });
     await second;
-    for (const value of consumers.values()) expect(value.server.order.threads.a).toEqual(["a2"]);
+    for (const value of consumers.values())
+      expect(value.server.order.threads.a).toEqual(["a2"]);
     const older = { workstreams: [], threads: { a: ["a1"] } };
     committed = { ...state(3), order: newer };
     firstWrite.resolve({ order: older });
     await first;
-    for (const value of consumers.values()) expect(value.server.order.threads.a).toEqual(["a2"]);
+    for (const value of consumers.values())
+      expect(value.server.order.threads.a).toEqual(["a2"]);
     read.mockImplementationOnce(() => recovery.promise);
     const refresh = consumers.get(0)!.refresh();
-    await waitFor(() => expect(read.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() =>
+      expect(read.mock.calls.length).toBeGreaterThanOrEqual(2),
+    );
     recovery.resolve(committed);
     await refresh;
-    for (const value of consumers.values()) expect(value.server.order.threads.a).toEqual(["a2"]);
+    for (const value of consumers.values())
+      expect(value.server.order.threads.a).toEqual(["a2"]);
   });
 
   it("keeps a successful overlapping write after another write fails", async () => {
@@ -331,22 +363,30 @@ describe("shared server state", () => {
     let first!: Promise<void>;
     let second!: Promise<void>;
     act(() => {
-      first = consumers.get(0)!.reorder({ kind: "threads", groupId: "a", ids: ["a1"] });
-      second = consumers.get(1)!.reorder({ kind: "threads", groupId: "b", ids: ["b1"] });
+      first = consumers
+        .get(0)!
+        .reorder({ kind: "threads", groupId: "a", ids: ["a1"] });
+      second = consumers
+        .get(1)!
+        .reorder({ kind: "threads", groupId: "b", ids: ["b1"] });
     });
     failed.reject(new Error("first failed"));
     await expect(first).rejects.toThrow("first failed");
-    for (const value of consumers.values()) expect(value.server.order.threads.b).toEqual(["b1"]);
+    for (const value of consumers.values())
+      expect(value.server.order.threads.b).toEqual(["b1"]);
     const committedOrder = { workstreams: [], threads: { b: ["b1"] } };
     succeeded.resolve({ order: committedOrder });
     await second;
     committed = { ...state(4), order: committedOrder };
     read.mockImplementationOnce(() => recovery.promise);
     const refresh = consumers.get(0)!.refresh();
-    await waitFor(() => expect(read.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() =>
+      expect(read.mock.calls.length).toBeGreaterThanOrEqual(2),
+    );
     recovery.resolve(committed);
     await refresh;
-    for (const value of consumers.values()) expect(value.server.order.threads).toEqual({ b: ["b1"] });
+    for (const value of consumers.values())
+      expect(value.server.order.threads).toEqual({ b: ["b1"] });
   });
 
   it("publishes successful server normalization to every consumer", async () => {
@@ -354,21 +394,30 @@ describe("shared server state", () => {
     const recovery = deferred<ServerState>();
     const normalized = { workstreams: ["server-order"], threads: {} };
     const read = vi.fn(async () => state(1));
-    const { consumers } = mount({ read, reorder: vi.fn(() => response.promise) });
+    const { consumers } = mount({
+      read,
+      reorder: vi.fn(() => response.promise),
+    });
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     let pending!: Promise<void>;
     act(() => {
-      pending = consumers.get(0)!.reorder({ kind: "workstreams", ids: ["requested"] });
+      pending = consumers
+        .get(0)!
+        .reorder({ kind: "workstreams", ids: ["requested"] });
     });
     response.resolve({ order: normalized });
     await pending;
-    for (const value of consumers.values()) expect(value.server.order).toEqual(normalized);
+    for (const value of consumers.values())
+      expect(value.server.order).toEqual(normalized);
     read.mockImplementationOnce(() => recovery.promise);
     const refresh = consumers.get(0)!.refresh();
-    await waitFor(() => expect(read.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() =>
+      expect(read.mock.calls.length).toBeGreaterThanOrEqual(2),
+    );
     recovery.resolve({ ...state(5), order: normalized });
     await refresh;
-    for (const value of consumers.values()) expect(value.server.order).toEqual(normalized);
+    for (const value of consumers.values())
+      expect(value.server.order).toEqual(normalized);
   });
 
   it("publishes successful preference normalization to every consumer", async () => {
@@ -376,7 +425,10 @@ describe("shared server state", () => {
     const recovery = deferred<ServerState>();
     const normalized = { ...state().snoozePrefs, morningHour: 7 };
     const read = vi.fn(async () => state(1));
-    const { consumers } = mount({ read, setSnoozePrefs: vi.fn(() => response.promise) });
+    const { consumers } = mount({
+      read,
+      setSnoozePrefs: vi.fn(() => response.promise),
+    });
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     let pending!: Promise<void>;
     act(() => {
@@ -384,13 +436,17 @@ describe("shared server state", () => {
     });
     response.resolve({ prefs: normalized });
     await pending;
-    for (const value of consumers.values()) expect(value.server.snoozePrefs.morningHour).toBe(7);
+    for (const value of consumers.values())
+      expect(value.server.snoozePrefs.morningHour).toBe(7);
     read.mockImplementationOnce(() => recovery.promise);
     const refresh = consumers.get(0)!.refresh();
-    await waitFor(() => expect(read.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() =>
+      expect(read.mock.calls.length).toBeGreaterThanOrEqual(2),
+    );
     recovery.resolve({ ...state(6), snoozePrefs: normalized });
     await refresh;
-    for (const value of consumers.values()) expect(value.server.snoozePrefs.morningHour).toBe(7);
+    for (const value of consumers.values())
+      expect(value.server.snoozePrefs.morningHour).toBe(7);
   });
 
   it("preserves an older pending preference on an independent field", async () => {
@@ -417,7 +473,14 @@ describe("shared server state", () => {
       expect(value.server.snoozePrefs.default).toBe("activity");
       expect(value.server.snoozePrefs.morningHour).toBe(7);
     }
-    committed = { ...state(2), snoozePrefs: { ...state().snoozePrefs, default: "activity", morningHour: 7 } };
+    committed = {
+      ...state(2),
+      snoozePrefs: {
+        ...state().snoozePrefs,
+        default: "activity",
+        morningHour: 7,
+      },
+    };
     await act(async () => {
       older.resolve({ prefs: committed.snoozePrefs });
       await first;

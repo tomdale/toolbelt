@@ -10,21 +10,11 @@ import {
 } from "../domain/analysis.ts";
 import { parseRecap, recapPrompt, type RecapInput } from "../domain/recap.ts";
 import {
-  assignPrompt,
-  describePrompt,
-  mapPrompt,
-  parseAssignments,
-  parseDescriptions,
-  parseMapProposal,
-  type AssignInput,
-  type MapInput,
+  organizePrompt,
+  parseOrganization,
+  type OrganizeInput,
 } from "../domain/organize.ts";
 import { parseRoute, routePrompt, type RouteInput } from "../domain/router.ts";
-import {
-  buildSupervisionPrompt,
-  parseSupervision,
-  type SupervisionInput,
-} from "../domain/supervision.ts";
 import {
   TRACE_KIND_TITLE,
   type Trace,
@@ -41,23 +31,6 @@ import {
 import { UserError } from "./service.ts";
 import { boundedJson, type TraceStore } from "./trace.ts";
 
-type DescribeInput = Parameters<typeof describePrompt>[0];
-
-const assign = {
-  prompt: (input: AssignInput) => assignPrompt(input),
-  parse: (text: string, input: AssignInput) =>
-    parseAssignments(
-      text,
-      input.threads.map((t) => t.id),
-      input.workstreams.map((w) => w.name),
-      new Map(
-        input.workstreams.flatMap((w) =>
-          (w.aliases ?? []).map((alias) => [alias, w.name] as const),
-        ),
-      ),
-    ),
-};
-
 export const MODEL_CALLS = {
   analysis: {
     prompt: (input: AnalysisInput) => analysisPrompt(input),
@@ -71,28 +44,10 @@ export const MODEL_CALLS = {
     prompt: (input: RouteInput) => routePrompt(input),
     parse: (text: string, input: RouteInput) => parseRoute(text, input),
   },
-  "organize-map": {
-    prompt: (input: MapInput) => mapPrompt(input),
-    parse: (text: string, input: MapInput) =>
-      parseMapProposal(
-        text,
-        input.workstreams.map((w) => w.name),
-      ),
-  },
-  "organize-assign": assign,
-  "file-unsorted": assign,
-  describe: {
-    prompt: (input: DescribeInput) => describePrompt(input),
-    parse: (text: string, input: DescribeInput) =>
-      parseDescriptions(
-        text,
-        input.map((w) => w.name),
-      ),
-  },
-  supervision: {
-    prompt: (input: SupervisionInput) => buildSupervisionPrompt(input),
-    parse: (text: string, input: SupervisionInput) =>
-      parseSupervision(text, input),
+  organize: {
+    prompt: (input: OrganizeInput) => organizePrompt(input),
+    parse: (text: string, input: OrganizeInput) =>
+      parseOrganization(text, input),
   },
 } satisfies Record<
   TraceKind,
@@ -105,14 +60,6 @@ export const MODEL_CALLS = {
 type Calls = typeof MODEL_CALLS;
 export type InputOf<K extends TraceKind> = Parameters<Calls[K]["prompt"]>[0];
 export type OutputOf<K extends TraceKind> = ReturnType<Calls[K]["parse"]>;
-
-const counted = (labels: readonly string[]) => {
-  const counts = new Map<string, number>();
-  for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
-  return [...counts]
-    .map(([label, n]) => (n === 1 ? label : `${label} ×${n}`))
-    .join(" · ");
-};
 
 /**
  * One line of what a call decided, for lists: the Activity log, the Debug
@@ -153,31 +100,9 @@ export function summarize(
         ? `new thread in ${r.workstream}${sure}`
         : `new workstream ${r.name}${sure}`;
     }
-    case "organize-map": {
-      const m = value as OutputOf<"organize-map">;
-      return counted([
-        ...m.changes.map((c) => c.kind),
-        ...Object.keys(m.descriptions).map(() => "description"),
-      ]);
-    }
-    case "organize-assign":
-    case "file-unsorted":
-      return counted(
-        (value as OutputOf<"organize-assign">).map((a) =>
-          a.target.kind === "unsure"
-            ? "unsure"
-            : a.target.kind === "new"
-              ? `new: ${a.target.name}`
-              : a.target.name,
-        ),
-      );
-    case "describe": {
-      const n = Object.keys(value as OutputOf<"describe">).length;
-      return `${n} description${n === 1 ? "" : "s"}`;
-    }
-    case "supervision": {
-      const actions = value as OutputOf<"supervision">;
-      return counted(actions.map((action) => action.kind));
+    case "organize": {
+      const proposal = value as OutputOf<"organize">;
+      return `${proposal.workstreams.length} workstreams · ${proposal.assignments.length} threads`;
     }
   }
 }
@@ -190,6 +115,7 @@ export type Complete = (
   prompt: string,
   model: string,
   signal?: AbortSignal,
+  maxTokens?: number,
 ) => Promise<
   Pick<Completion, "text" | "usage"> &
     Partial<Pick<Completion, "reasoning" | "stopReason">>
@@ -418,6 +344,7 @@ export class Inference {
         request.prompt,
         request.model,
         request.signal,
+        kind === "organize" ? 32768 : undefined,
       );
     } catch (error) {
       if (request.signal?.aborted) throw request.signal.reason;

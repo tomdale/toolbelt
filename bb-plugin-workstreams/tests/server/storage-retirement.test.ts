@@ -1,6 +1,45 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/server/db.ts";
+it("upgrades populated storage while preserving workstreams and activity", async () => {
+  const host = createFakePluginHost({ pluginId: "storage-upgrade" });
+  try {
+    const migrate = host.bb.storage.migrate.bind(host.bb.storage);
+    const spy = vi
+      .spyOn(host.bb.storage, "migrate")
+      .mockImplementation((db, migrations) => {
+        const boundary = migrations.indexOf(
+          "DROP TABLE IF EXISTS ws_notebook_run_dependency",
+        );
+        return migrate(db, migrations.slice(0, boundary));
+      });
+    const db = openDatabase(host.bb);
+    db.prepare(
+      "INSERT INTO ws_snooze(key,evidence_count,at) VALUES ('proposal-key',1,1)",
+    ).run();
+    db.prepare(
+      "INSERT INTO ws_notebook(thread_id,title,text,updated_at) VALUES ('t','Task','Private learned material',1)",
+    ).run();
+    db.prepare(
+      "INSERT INTO ws_workstream(section_id,created_by,created_at,updated_at) VALUES ('s','user',1,1)",
+    ).run();
+    db.prepare(
+      "INSERT INTO ws_meta(key,value) VALUES ('thread-snoozes','{}')",
+    ).run();
+    spy.mockRestore();
+    openDatabase(host.bb);
+    expect(db.prepare("SELECT section_id FROM ws_workstream").all()).toEqual([
+      { section_id: "s" },
+    ]);
+    expect(
+      db.prepare("SELECT value FROM ws_meta WHERE key='thread-snoozes'").get(),
+    ).toEqual({ value: "{}" });
+    expect(() => db.prepare("SELECT * FROM ws_notebook").all()).toThrow();
+    expect(() => db.prepare("SELECT * FROM ws_snooze").all()).toThrow();
+  } finally {
+    await host.harness.lifecycle.dispose();
+  }
+});
 it("installs with current storage and no retired state or banner tables", async () => {
   const host = createFakePluginHost({ pluginId: "storage-retirement" });
   try {
@@ -13,8 +52,10 @@ it("installs with current storage and no retired state or banner tables", async 
     expect(names).not.toContain("state");
     expect(names).not.toContain("banners");
     expect(names).not.toContain("ws_understanding_observation");
-    expect(names).toContain("ws_notebook");
-    expect(names).toContain("ws_proposal");
+    expect(names.some((n) => n.startsWith("ws_notebook"))).toBe(false);
+    expect(names).not.toContain("ws_proposal");
+    expect(names).not.toContain("ws_snooze");
+    expect(names).toContain("ws_recap");
     expect(names).toContain("ws_journal");
   } finally {
     await host.harness.lifecycle.dispose();
