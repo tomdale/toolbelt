@@ -108,8 +108,9 @@ const MARKDOWN_CLASS =
   "text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
 
 /**
- * A commit hash, shortened and highlighted as code rather than styled as a
- * link; a copy icon appears on hover, and clicking copies the full hash.
+ * A commit hash, shortened, with its letters tinted to set them apart from
+ * digits rather than styled as a link. A copy icon follows it, and clicking
+ * copies the full hash.
  */
 function Sha({ sha }: { sha: string }) {
   const [copied, setCopied] = useState(false);
@@ -124,16 +125,23 @@ function Sha({ sha }: { sha: string }) {
           setTimeout(() => setCopied(false), 1200);
         });
       }}
-      className="group/sha inline-flex cursor-pointer items-baseline gap-0.5 font-mono text-[0.923em] text-amber-700 dark:text-amber-300"
+      className="group/sha inline-flex cursor-pointer items-baseline gap-0.5 font-mono text-[0.923em] text-foreground/80 hover:text-foreground"
     >
-      {sha.slice(0, 7)}
+      <span>
+        {[...sha.slice(0, 7)].map((char, index) =>
+          /[a-f]/.test(char) ? (
+            <span key={index} className="text-amber-700 dark:text-amber-300">
+              {char}
+            </span>
+          ) : (
+            char
+          ),
+        )}
+      </span>
       <Icon
         name={copied ? "Check" : "Copy"}
         aria-hidden
-        className={cn(
-          "size-[0.9em] shrink-0 self-center opacity-0 transition-opacity group-hover/sha:opacity-60 group-focus-visible/sha:opacity-60",
-          copied && "opacity-60",
-        )}
+        className="size-[0.9em] shrink-0 self-center opacity-50 transition-opacity group-hover/sha:opacity-90"
       />
     </button>
   );
