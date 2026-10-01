@@ -169,7 +169,13 @@ function mount(
         system: "Return only JSON.",
         prompt:
           "Someone is starting new work. Suggest the single most likely home…",
-        input: { threads: [{ id: "thr_p", title: "Parser fix" }] },
+        input: {
+          prompt: "Also handle CRLF in that fix",
+          selectedWorkstream: "Beta",
+          pickedProjectHosts: null,
+          workstreams: [{ name: "Alpha" }, { name: "Beta" }],
+          threads: [{ id: "thr_p", title: "Parser fix" }],
+        },
         response: '{"outcome":"continue","threadId":"thr_p"}',
         reasoning: "**Same task**\n\nThe draft follows up the parser fix.",
         stopReason: "stop",
@@ -387,35 +393,34 @@ it("shows no Debug section while Debug mode is off", async () => {
   expect(screen.queryByText("Debug")).toBeNull();
 });
 
-it("explains the suggestion, its model call and the dialog's activity in Debug mode", async () => {
+it("shows the result, the model's reason and its inputs in Debug mode", async () => {
   const explained: RouteDecision = {
     ...continueParser,
     explanation: {
-      notes: [
-        "Asked test-model with 2 workstreams.",
-        "The model answered continue.",
-      ],
+      notes: ["The model answered continue."],
       durationMs: 900,
     },
   };
-  const { slot, rpc } = mount(explained, null, { debug: true });
+  const { slot, rpc } = mount(explained, "sec_b", { debug: true });
   await type(slot, "Also handle CRLF in that fix");
   await suggestion();
   const debug = screen.getByText("Debug").closest("details")!;
   expect(debug.open).toBe(false);
-  expect(debug.textContent).toContain("Shown.");
-  expect(debug.textContent).toContain("continue “Parser fix”");
-  expect(debug.textContent).toContain("Asked test-model with 2 workstreams.");
+  expect(debug.querySelector("summary")!.textContent).toContain(
+    "Continue “Parser fix” · Shown.",
+  );
+  expect(debug.textContent).toContain("ReasonFits");
   expect(debug.textContent).toContain("The model answered continue.");
-  // The model call loads the decision's recorded trace.
+  // The inputs come from the decision's recorded model call.
   await waitFor(() =>
     expect(rpc.trace).toHaveBeenCalledWith({ id: "trace_1" }),
   );
-  expect(await within(debug).findByText(/The draft follows up/)).toBeTruthy();
-  // Every classification is logged with its prompt and decision.
-  expect(debug.textContent).toMatch(/classify\s*ok/);
-  expect(debug.textContent).toContain(
-    "“Also handle CRLF in that fix” → continue",
+  await within(debug).findByText("Model inputs");
+  expect(debug.textContent).toContain("WorkstreamBeta");
+  expect(debug.textContent).toContain("Offered2 workstreams · 1 thread");
+  expect(debug.textContent).toContain("test-model · 0.9s");
+  expect(within(debug).getByLabelText("Prompt").textContent).toContain(
+    "Someone is starting new work.",
   );
   fireEvent.click(screen.getByRole("button", { name: "Dismiss suggestion" }));
   await waitFor(() =>
@@ -423,4 +428,14 @@ it("explains the suggestion, its model call and the dialog's activity in Debug m
       "Hidden: you accepted or dismissed it.",
     ),
   );
+});
+
+it("tells the router which workstream opened the dialog", async () => {
+  const { slot, rpc } = mount(inAlpha, "sec_b");
+  await type(slot, "Write the release notes");
+  await suggestion();
+  expect(rpc.route.mock.calls[0]![0]).toMatchObject({
+    prompt: "Write the release notes",
+    selectedWorkstreamId: "sec_b",
+  });
 });

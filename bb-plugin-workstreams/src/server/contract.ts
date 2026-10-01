@@ -300,6 +300,11 @@ export const rpcContract = defineRpcContract({
       prompt: z.string().min(1).max(20_000),
       pickedProjectId: z.string().nullable().optional(),
       workstreamId: z.string().nullable().optional(),
+      /**
+       * The workstream New work's field shows: still classified, but the
+       * model is told to prefer it. `workstreamId` skips the model instead.
+       */
+      selectedWorkstreamId: z.string().nullable().optional(),
       intent: routeIntentSchema.nullable().optional(),
       /**
        * When the route continues an inferred thread, also preview the new

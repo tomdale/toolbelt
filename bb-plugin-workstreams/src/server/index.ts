@@ -426,6 +426,7 @@ export default async function plugin(bb: BbPluginApi) {
       prompt,
       pickedProjectId,
       workstreamId,
+      selectedWorkstreamId,
       intent,
       offerNewThread,
       suggest,
@@ -436,6 +437,7 @@ export default async function plugin(bb: BbPluginApi) {
         const options = {
           pickedProjectId,
           workstreamId,
+          selectedWorkstreamId,
           intent,
           offerNewThread,
           suggest,
