@@ -149,9 +149,10 @@ export function Row({
     <div
       className={cn(
         "ws-row group/row relative flex gap-1.5 rounded-md pr-2 text-[13px]",
-        // Two-line rows align their marks and details with the title line.
+        // Two-line rows give the title a 20px line and center the marks,
+        // details, and hover buttons on it (`ws-row-aside`).
         subtitle
-          ? "items-start py-1 [&>*]:mt-[2px] [&>a]:mt-0"
+          ? "items-start py-1 [&>.ws-row-aside]:h-5 [&>.ws-status-slot]:mt-[3px]"
           : "h-7 items-center",
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
       )}
@@ -246,7 +247,7 @@ export function Row({
               : "text-muted-foreground group-hover/row:text-foreground",
         )}
       >
-        <span className="truncate">
+        <span className="truncate leading-5">
           <ThreadTitle threadId={thread.id} />
         </span>
         {subtitle ? (
@@ -256,7 +257,7 @@ export function Row({
         ) : null}
       </span>
       {/* Shown until the hover buttons take their place, as in BB's row. */}
-      <span className="pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70 empty:hidden group-hover/row:hidden group-has-[:focus-visible]/row:hidden group-has-[[data-state=open]]/row:hidden">
+      <span className="ws-row-aside pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70 empty:hidden group-hover/row:hidden group-has-[:focus-visible]/row:hidden group-has-[[data-state=open]]/row:hidden">
         {rowStatus ? (
           <span title={rowStatus.label} aria-label={rowStatus.label} role="img">
             <Icon name={rowStatus.icon} className="size-3" />
@@ -279,7 +280,7 @@ export function Row({
           rather than display:none, so keyboard focus can reach them;
           focusing one opens the group, and so does an open menu. The
           negative margin cancels the row's gap while collapsed. */}
-      <span className="relative -ml-1.5 flex max-w-0 shrink-0 items-center overflow-hidden opacity-0 group-hover/row:ml-0 group-has-[:focus-visible]/row:ml-0 group-has-[[data-state=open]]/row:ml-0 group-hover/row:max-w-24 group-hover/row:opacity-100 group-has-[:focus-visible]/row:max-w-24 group-has-[:focus-visible]/row:opacity-100 group-has-[[data-state=open]]/row:max-w-24 group-has-[[data-state=open]]/row:opacity-100 pointer-coarse:hidden">
+      <span className="ws-row-aside relative -ml-1.5 flex max-w-0 shrink-0 items-center overflow-hidden opacity-0 group-hover/row:ml-0 group-has-[:focus-visible]/row:ml-0 group-has-[[data-state=open]]/row:ml-0 group-hover/row:max-w-24 group-hover/row:opacity-100 group-has-[:focus-visible]/row:max-w-24 group-has-[:focus-visible]/row:opacity-100 group-has-[[data-state=open]]/row:max-w-24 group-has-[[data-state=open]]/row:opacity-100 pointer-coarse:hidden">
         {showArchive ? (
           <HoverAction
             label="Archive"
@@ -306,7 +307,7 @@ export function Row({
       </span>
       {/* A fixed-width column, so ages line up down the list; only a
           four-digit age like "100w" widens it. */}
-      <span className="pointer-events-none relative min-w-6 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground/70">
+      <span className="ws-row-aside pointer-events-none relative flex min-w-6 shrink-0 items-center justify-end text-right text-[11px] tabular-nums text-muted-foreground/70">
         {shortcut ? (
           <span className="rounded border border-border px-1 text-[10px]">
             {shortcut.label}

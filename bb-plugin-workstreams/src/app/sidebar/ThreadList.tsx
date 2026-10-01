@@ -894,6 +894,7 @@ export function WorkstreamsThreadList({
               <Band
                 title={UP_NEXT}
                 box="attention"
+                markless={!needsMarks}
                 badge={
                   focus.active ? (
                     <span
@@ -1144,6 +1145,7 @@ function Band({
   count,
   box,
   badge,
+  markless,
   collapsed,
   toggle,
   menu,
@@ -1155,6 +1157,11 @@ function Band({
   box?: "attention" | "neutral";
   /** A small mark after the title. */
   badge?: ReactNode;
+  /**
+   * No row in a boxed band draws a status mark, so titles sit at the
+   * collapsed slot's 14px indent; the header indents to match.
+   */
+  markless?: boolean;
   collapsed?: boolean;
   toggle?: () => void;
   menu?: ReactNode;
@@ -1186,7 +1193,8 @@ function Band({
         <div className="flex items-center gap-1">
           <h2
             className={cn(
-              "flex min-w-0 flex-1 items-center gap-1 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
+              "flex min-w-0 flex-1 items-center gap-1 py-0.5 pr-1.5 text-[11px] font-semibold uppercase tracking-wide",
+              markless ? "pl-3.5" : "pl-1.5",
               box === "attention" ? "ws-amber-text" : "text-muted-foreground",
             )}
           >
