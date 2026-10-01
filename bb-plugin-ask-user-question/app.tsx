@@ -42,8 +42,13 @@ function AskUserQuestionInteraction({
     );
   }
   return (
-    <div className="space-y-3">
-      <p role="status" className="text-xs font-medium text-muted-foreground">
+    <div className="@container/question text-foreground">
+      {/* Matches the Workstreams recap card's state line, in the amber
+          accent BB uses for attention. */}
+      <p
+        role="status"
+        className="text-[11px] font-medium leading-[1.6] text-amber-700 dark:text-amber-300"
+      >
         Awaiting your answer
       </p>
       <QuestionForm
@@ -60,7 +65,11 @@ function AskUserQuestionInteraction({
         }}
         onCancel={handleCancel}
       />
-      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="mt-2 text-[11px] text-red-700 dark:text-red-300">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
