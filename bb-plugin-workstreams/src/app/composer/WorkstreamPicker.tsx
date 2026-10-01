@@ -20,6 +20,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { WorkstreamName } from "../WorkstreamName.tsx";
 import { applyOrder } from "../../domain/order.ts";
 import { useServerState } from "../useWorkstreams.ts";
 import type { NewWork } from "./new-work.ts";
@@ -132,7 +133,10 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
                       className="size-4 text-muted-foreground"
                       aria-hidden
                     />
-                    <span className="min-w-0 flex-1 truncate">{w.name}</span>
+                    <WorkstreamName
+                      name={w.name}
+                      className="min-w-0 flex-1 text-xs"
+                    />
                     <Icon
                       name="Check"
                       className={cn(

@@ -101,10 +101,12 @@ design and the contract the code is checked against.
   scans open thread roots and proposes a coherent map with descriptions, aliases
   and placements. Review the whole map, uncheck unwanted moves, then Apply as
   one undoable batch. Between runs, membership stays fixed. Unassigned roots
-  remain Unsorted. Homes default to concrete products/projects; substantial
-  initiatives can stand alone. Apply also removes previewed empty homes or
-  archived-only homes whose newest archive is over 24 hours old, preserving
-  threads and Undo. See [Organizing workstreams](docs/organization.md).
+  remain Unsorted. Homes default to concrete products/projects; high-volume
+  products may subdivide into `<Product>: <Area>` homes, formatted distinctly in
+  the UI; substantial initiatives can stand alone. Apply also removes previewed
+  empty homes or archived-only homes whose newest archive is over 24 hours old,
+  preserving threads and Undo. See
+  [Organizing workstreams](docs/organization.md).
 - **Routing**: New work classifies the draft against the map when you pause
   typing and suggests one home: a thread to continue, an existing workstream, or
   a new workstream, with a project and environment. Nothing changes until you

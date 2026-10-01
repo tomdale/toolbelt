@@ -41,6 +41,7 @@ import { describeWake, shortWake, wakeTime } from "../../domain/snooze.ts";
 import { snoozeThread, wakeThread } from "../snooze/actions.ts";
 import { CustomSnoozeDialog } from "../snooze/CustomSnoozeDialog.tsx";
 import { SnoozeMenuItems, plainMenuKit } from "../snooze/SnoozeMenuItems.tsx";
+import { WorkstreamName } from "../WorkstreamName.tsx";
 
 type ThreadGroup = Group<PluginSidebarThread>;
 type ThreadRow = RowModel<PluginSidebarThread>;
@@ -615,7 +616,10 @@ export function WorkstreamsThreadList({
                         name={collapsed ? "ChevronRight" : "ChevronDown"}
                         className="size-3"
                       />
-                      <span className="flex-1 truncate">{group.name}</span>
+                      <WorkstreamName
+                        name={group.name}
+                        className="flex-1 text-[12px]"
+                      />
                       <span className="tabular-nums">
                         {group.threads.length}
                       </span>
@@ -836,14 +840,11 @@ function WorkstreamGroup({
               name={collapsed ? "ChevronRight" : "ChevronDown"}
               className="size-3 shrink-0 text-muted-foreground"
             />
-            <span
-              className={cn(
-                "truncate text-[13px] font-semibold",
-                muted ? "text-muted-foreground" : "text-foreground",
-              )}
-            >
-              {group.name}
-            </span>
+            <WorkstreamName
+              name={group.name}
+              muted={muted}
+              className="text-[13px]"
+            />
           </button>
           {onNewThread ? (
             <button

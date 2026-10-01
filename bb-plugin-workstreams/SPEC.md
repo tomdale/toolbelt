@@ -361,10 +361,12 @@ New work classifies against that applied map (§6). Manual moves and edits remai
 available. Dormancy and snooze change presentation, not membership.
 
 The organizer defaults to concrete products/projects with simple recognizable
-names. Features, evaluations, memory work and architecture stay with their
-owning product. Substantial independent projects/initiatives can have their own
-homes. Existing abstract labels are not authoritative. Surviving homes retain
-native section IDs; unused homes qualify for reviewed cleanup under I5 and the
+names. High-volume products (4+ open threads) may subdivide into 2–3 focused
+areas in `<Product>: <Area>` format, formatted distinctly in the UI. Features,
+evaluations, memory work and architecture stay with their owning product.
+Substantial independent projects/initiatives can have their own homes. Existing
+abstract labels are not authoritative. Surviving homes retain native section
+IDs; unused homes qualify for reviewed cleanup under I5 and the
 [organization guide](docs/organization.md).
 
 ## 10. Per-thread analysis

@@ -89,10 +89,11 @@ describe("whole-map organization", () => {
     expect(parsed.workstreams).toEqual([]);
     expect(parsed.assignments).toEqual(result.assignments);
   });
-  it("prefers concrete product ownership over abstract feature topics", () => {
+  it("prefers concrete product ownership over abstract feature topics and specifies colon-prefixed sub-areas", () => {
     const prompt = organizePrompt(input);
     expect(prompt).toContain("concrete products and projects");
-    expect(prompt).toContain("A feature's topic is not its owner");
+    expect(prompt).toContain("Colon-prefix naming rule");
+    expect(prompt).toContain("<Product>: <Area>");
     expect(prompt).toContain("Substantial named projects or initiatives");
   });
   it("fails explicitly rather than truncating large inventories", () =>
