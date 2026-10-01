@@ -64,6 +64,7 @@ describe("manual order in the projection", () => {
       order: {
         workstreams: ["sec_b", "sec_a"],
         threads: { sec_a: ["a3", "a2"] },
+        prioritized: [],
       },
     });
     expect(p.groups.map((g) => g.id)).toEqual(["sec_b", "sec_a", "sec_c"]);

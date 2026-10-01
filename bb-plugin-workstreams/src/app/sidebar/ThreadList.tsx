@@ -1,12 +1,18 @@
 /**
- * The Workstreams sidebar thread list: the For You section and the Recent
- * band as overlays, then one group per workstream (BB section, in the user's
- * drag-and-drop order, else BB's), Unsorted, a Dormant fold, and a Snoozed
- * fold. Every visible thread appears in exactly one group, or in Snoozed
- * (SPEC I1).
+ * The Workstreams sidebar thread list: the Up Next section, the prioritized
+ * workstreams, and the Recent band, then one group per remaining workstream
+ * (BB section, in the user's drag-and-drop order, else BB's), Unsorted, a
+ * Dormant fold, and a Snoozed fold. Up Next and Recent are overlays: every
+ * visible thread appears in exactly one group, or in Snoozed (SPEC I1).
+ *
+ * While a prioritized workstream has a thread in Up Next, Up Next shows only
+ * prioritized threads (see `focusNeeds`). Changes the user didn't make never
+ * pull the open thread's row away, and rows open and close rather than pop
+ * (see `motion.ts`).
  */
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -27,7 +33,11 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import type { Group, Row as RowModel } from "../../domain/project.ts";
+import {
+  focusNeeds,
+  type Group,
+  type Row as RowModel,
+} from "../../domain/project.ts";
 import { useWorkstreams } from "../useWorkstreams.ts";
 import { useCollapsed } from "./useCollapsed.ts";
 import {
@@ -57,6 +67,13 @@ import { snoozeThread, wakeThread } from "../snooze/actions.ts";
 import { CustomSnoozeDialog } from "../snooze/CustomSnoozeDialog.tsx";
 import { SnoozeMenuItems, plainMenuKit } from "../snooze/SnoozeMenuItems.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
+import {
+  presenceProps,
+  useFlip,
+  usePresence,
+  type PresenceEntry,
+} from "./motion.ts";
+import { PriorityIcon } from "./PriorityIcon.tsx";
 
 type ThreadGroup = Group<PluginSidebarThread>;
 type ThreadRow = RowModel<PluginSidebarThread>;
@@ -91,7 +108,7 @@ const foldKey = (placement: Placement, id: string) =>
   placement === "group" ? `thread:${id}` : `${placement}:thread:${id}`;
 /**
  * Parents start expanded where they are drawn as trees (groups, Snoozed)
- * and collapsed in the For You and Recent overlays.
+ * and collapsed in the Up Next and Recent overlays.
  */
 const foldDefault = (placement: Placement) =>
   placement === "needs-you" || placement === "recent";
@@ -178,6 +195,7 @@ export function WorkstreamsThreadList({
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAllNeeds, setShowAllNeeds] = useState(false);
+  const [showElsewhere, setShowElsewhere] = useState(false);
   const [inspecting, setInspecting] = useState<PluginSidebarThread | null>(
     null,
   );
@@ -212,7 +230,7 @@ export function WorkstreamsThreadList({
         : forYouSelection;
   if (selection !== forYouSelection) setForYouSelection(selection);
 
-  // Keep a selected For You row in place after read/status updates. Resolve
+  // Keep a selected Up Next row in place after read/status updates. Resolve
   // it from live groups so its contents stay current; snoozed, hidden, and
   // archived threads still leave the list when explicitly put away.
   const forYouRows = [...projection.needsYou];
@@ -230,6 +248,24 @@ export function WorkstreamsThreadList({
     (row) => !forYouRows.some((kept) => kept.thread.id === row.thread.id),
   );
   const nameOf = new Map(sections.map((s) => [s.id, s.name]));
+  const prioritizedIds = ws.server.order.prioritized;
+  const prioritized = new Set(prioritizedIds.filter((id) => nameOf.has(id)));
+
+  // Focus Up Next on the prioritized workstreams. The open thread keeps its
+  // row if Up Next was showing it, so a prioritized thread arriving never
+  // takes the row out from under the user; it leaves once they move on.
+  const shownBefore = useRef<ReadonlySet<string>>(new Set());
+  const focus = focusNeeds(
+    forYouRows,
+    (id) => id !== null && prioritized.has(id),
+    (row) =>
+      row.thread.id === activeThreadId &&
+      shownBefore.current.has(row.thread.id),
+  );
+  useLayoutEffect(() => {
+    shownBefore.current = new Set(focus.shown.map((row) => row.thread.id));
+  });
+  if (!focus.active && showElsewhere) setShowElsewhere(false);
   const archivedThreads = archived.threads.filter(
     (thread) => thread.isArchived && !thread.isHidden,
   );
@@ -291,6 +327,15 @@ export function WorkstreamsThreadList({
   };
 
   const listRef = useRef<HTMLDivElement>(null);
+  const captureLayout = useFlip(listRef, [...prioritized].sort().join(" "));
+  const togglePriority = (group: ThreadGroup) => {
+    setError(null);
+    captureLayout(`group:${group.id}`);
+    const ids = group.prioritized
+      ? prioritizedIds.filter((id) => id !== group.id)
+      : [...prioritizedIds, group.id];
+    ws.reorder({ kind: "prioritized", ids }).catch(report);
+  };
 
   const report = (cause: unknown) =>
     setError(cause instanceof Error ? cause.message : String(cause));
@@ -353,7 +398,7 @@ export function WorkstreamsThreadList({
 
   const workstreamName = (row: ThreadRow) =>
     row.workstreamId ? nameOf.get(row.workstreamId) : "Unsorted";
-  /** What a For You thread asks of Tom, from its current analysis. */
+  /** What an Up Next thread asks of Tom, from its current analysis. */
   const askOf = (row: ThreadRow) => {
     const work = ws.work(row.thread);
     return work?.kind === "current" ? work.analysis.needsYou : null;
@@ -369,10 +414,31 @@ export function WorkstreamsThreadList({
           placement === "needs-you",
         ),
     );
+  // The open thread's row stays visible when newer rows push it past the
+  // limit.
   const needsRows = showAllNeeds
-    ? forYouRows
-    : forYouRows.slice(0, NEEDS_YOU_LIMIT);
-  const needsMarks = anyMark(needsRows, "needs-you");
+    ? focus.shown
+    : focus.shown.filter(
+        (row, index) =>
+          index < NEEDS_YOU_LIMIT || row.thread.id === activeThreadId,
+      );
+  const moreNeeds = focus.shown.length - needsRows.length;
+  const elsewhereRows = showElsewhere ? focus.elsewhere : [];
+  const needsMarks = anyMark([...needsRows, ...elsewhereRows], "needs-you");
+  const rowKey = (row: ThreadRow) => row.thread.id;
+  const showBand = ws.showForYou && focus.shown.length > 0;
+  const bandPresence = usePresence(showBand ? ["band"] : [], String);
+  const needsPresence = usePresence(needsRows, rowKey);
+  const elsewherePresence = usePresence(elsewhereRows, rowKey);
+  const needsControls = usePresence(
+    [
+      ...((showAllNeeds ? focus.shown.length > NEEDS_YOU_LIMIT : moreNeeds > 0)
+        ? ["more"]
+        : []),
+      ...(focus.elsewhere.length > 0 ? ["elsewhere"] : []),
+    ],
+    String,
+  );
   /**
    * The row's hover snooze button and the menu beside it. In Snoozed, a
    * thread with its own snooze wakes; a descendant that is only there with
@@ -596,12 +662,13 @@ export function WorkstreamsThreadList({
     <Sortable
       key={group.id}
       id={groupKey(group.id)}
-      data={{ type: "group", groupId: group.id }}
+      data={{ type: "group", groupId: group.id, pinned: group.prioritized }}
     >
       {({ ref, style, handle }) => (
         <WorkstreamGroup
           {...props}
           group={group}
+          quietCount={focus.active && !group.prioritized}
           sectionRef={ref}
           style={style}
           handle={handle}
@@ -612,6 +679,40 @@ export function WorkstreamsThreadList({
       )}
     </Sortable>
   );
+
+  const pinnedGroups = projection.groups.filter((group) => group.prioritized);
+  const otherGroups = projection.groups.filter((group) => !group.prioritized);
+  const activeGroupProps = (
+    group: ThreadGroup,
+  ): Omit<GroupProps, "group" | "children"> => ({
+    collapsed: isCollapsed(group.id),
+    toggle: () => toggle(group.id),
+    onRename: () => renameWorkstream(group),
+    onTogglePriority: () => togglePriority(group),
+    onNewThread: () =>
+      setNewWork({
+        workstreamId: group.id,
+        workstreamName: group.name,
+      }),
+  });
+  /** An item that opens and closes with its presence phase. */
+  const present = (entry: PresenceEntry<unknown>, children: ReactNode) => (
+    <li
+      key={entry.key}
+      className="ws-presence list-none"
+      {...presenceProps(entry.phase)}
+    >
+      <ul>{children}</ul>
+    </li>
+  );
+  // Left edge matches the row titles: 26px with the status slot, 14px when
+  // the rows fold it away (see styles.css).
+  const bandControlClass = (tone: string) =>
+    cn(
+      "w-full cursor-pointer rounded-md py-0.5 pr-2 text-left text-[12px] transition-[padding] duration-[180ms] ease-out hover:bg-sidebar-accent/60 motion-reduce:transition-none",
+      tone,
+      needsMarks ? "pl-[26px]" : "pl-[14px]",
+    );
 
   if (ws.status === "loading")
     return <p className="px-3 py-2 text-xs text-muted-foreground">Loading…</p>;
@@ -646,34 +747,91 @@ export function WorkstreamsThreadList({
             {error}
           </p>
         ) : null}
-        {ws.showForYou && forYouRows.length > 0 ? (
-          <Band title="For You" box="attention">
-            {needsRows.flatMap((row) =>
-              renderOverlayTree(row, "needs-you", needsMarks),
+        {bandPresence.map((band) => (
+          <div
+            key={band.key}
+            data-flip-key="up-next"
+            className="ws-presence [--ws-presence-gap:0.5rem]"
+            {...presenceProps(band.phase)}
+          >
+            <div>
+              <Band
+                title={UP_NEXT}
+                box="attention"
+                badge={
+                  focus.active ? (
+                    <span
+                      title="Showing prioritized workstreams"
+                      className="inline-flex"
+                    >
+                      <PriorityIcon className="size-3" />
+                    </span>
+                  ) : null
+                }
+              >
+                {needsPresence.map((entry) =>
+                  present(
+                    entry,
+                    renderOverlayTree(entry.item, "needs-you", needsMarks),
+                  ),
+                )}
+                {needsControls.map((entry) =>
+                  present(
+                    entry,
+                    entry.item === "more" ? (
+                      <li>
+                        <button
+                          type="button"
+                          onClick={() => setShowAllNeeds((all) => !all)}
+                          className={bandControlClass("ws-amber-text")}
+                        >
+                          {showAllNeeds
+                            ? "Show less"
+                            : `Show ${Math.max(1, moreNeeds)} more`}
+                        </button>
+                      </li>
+                    ) : (
+                      <li>
+                        <button
+                          type="button"
+                          aria-expanded={showElsewhere}
+                          onClick={() => setShowElsewhere((shown) => !shown)}
+                          className={bandControlClass(
+                            "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {showElsewhere
+                            ? "Hide other workstreams"
+                            : `${Math.max(1, focus.elsewhere.length)} more in other workstreams`}
+                        </button>
+                      </li>
+                    ),
+                  ),
+                )}
+                {elsewherePresence.map((entry) =>
+                  present(
+                    entry,
+                    renderOverlayTree(entry.item, "needs-you", needsMarks),
+                  ),
+                )}
+              </Band>
+            </div>
+          </div>
+        ))}
+        {pinnedGroups.length > 0 ? (
+          <SortableContext
+            items={pinnedGroups.map((group) => groupKey(group.id))}
+            strategy={verticalListSortingStrategy}
+          >
+            {pinnedGroups.map((group) =>
+              renderSortableGroup(group, activeGroupProps(group)),
             )}
-            {forYouRows.length > NEEDS_YOU_LIMIT ? (
-              <li>
-                <button
-                  type="button"
-                  onClick={() => setShowAllNeeds((all) => !all)}
-                  // Left edge matches the row titles: 26px with the status
-                  // slot, 14px when the rows fold it away (see styles.css).
-                  className={cn(
-                    "ws-amber-text w-full cursor-pointer rounded-md py-0.5 pr-2 text-left text-[12px] transition-[padding] duration-[180ms] ease-out hover:bg-sidebar-accent/60 motion-reduce:transition-none",
-                    needsMarks ? "pl-[26px]" : "pl-[14px]",
-                  )}
-                >
-                  {showAllNeeds
-                    ? "Show less"
-                    : `Show ${forYouRows.length - NEEDS_YOU_LIMIT} more`}
-                </button>
-              </li>
-            ) : null}
-          </Band>
+          </SortableContext>
         ) : null}
         {ws.showRecent && recentRows.length > 0 ? (
           <Band
             title="Recent"
+            flipKey="recent"
             box="neutral"
             menu={
               <BandOptionsMenu
@@ -687,20 +845,11 @@ export function WorkstreamsThreadList({
           </Band>
         ) : null}
         <SortableContext
-          items={projection.groups.map((group) => groupKey(group.id))}
+          items={otherGroups.map((group) => groupKey(group.id))}
           strategy={verticalListSortingStrategy}
         >
-          {projection.groups.map((group) =>
-            renderSortableGroup(group, {
-              collapsed: isCollapsed(group.id),
-              toggle: () => toggle(group.id),
-              onRename: () => renameWorkstream(group),
-              onNewThread: () =>
-                setNewWork({
-                  workstreamId: group.id,
-                  workstreamName: group.name,
-                }),
-            }),
+          {otherGroups.map((group) =>
+            renderSortableGroup(group, activeGroupProps(group)),
           )}
         </SortableContext>
         {projection.unsorted.total > 0 ? (
@@ -715,6 +864,7 @@ export function WorkstreamsThreadList({
                 collapsed={isCollapsed(projection.unsorted.id)}
                 toggle={() => toggle(projection.unsorted.id)}
                 dropTarget={dropGroupId === projection.unsorted.id}
+                quietCount={focus.active}
                 muted
               >
                 {renderTrees(projection.unsorted)}
@@ -725,6 +875,7 @@ export function WorkstreamsThreadList({
         {projection.dormant.length > 0 ? (
           <Band
             title="Dormant"
+            flipKey="dormant"
             count={projection.dormant.length}
             collapsed={isCollapsed("__dormant", true)}
             toggle={() => toggle("__dormant", true)}
@@ -739,6 +890,7 @@ export function WorkstreamsThreadList({
                     collapsed: isCollapsed(group.id, true),
                     toggle: () => toggle(group.id, true),
                     onRename: () => renameWorkstream(group),
+                    onTogglePriority: () => togglePriority(group),
                     muted: true,
                   })}
                 </li>
@@ -752,6 +904,7 @@ export function WorkstreamsThreadList({
           archived.experimental_archived?.hasNextPage) ? (
           <Band
             title="Archived"
+            flipKey="archived"
             count={archivedThreads.length}
             collapsed={isCollapsed("__archived", true)}
             toggle={() => toggle("__archived", true)}
@@ -851,6 +1004,7 @@ export function WorkstreamsThreadList({
         {projection.snoozed.length > 0 ? (
           <Band
             title="Snoozed"
+            flipKey="snoozed"
             count={projection.snoozed.filter((row) => row.depth === 0).length}
             collapsed={isCollapsed("__snoozed", true)}
             toggle={() => toggle("__snoozed", true)}
@@ -889,13 +1043,16 @@ export function WorkstreamsThreadList({
   );
 }
 
-/** For You shows this many rows until the user asks for the rest. */
+/** The section of threads waiting on the user. */
+export const UP_NEXT = "Up Next";
+
+/** Up Next shows this many rows until the user asks for the rest. */
 const NEEDS_YOU_LIMIT = 5;
 
 /**
  * An overlay band. A plain band collapses from its header. A boxed band is an
  * always-open block spanning the column, with its header inside: `attention`
- * is the amber For You block (`.ws-needs`, with its shimmer), `neutral` the
+ * is the amber Up Next block (`.ws-needs`, with its shimmer), `neutral` the
  * quieter Recent block (`.ws-band-neutral`). Both set their rows apart from
  * the workstream list below.
  */
@@ -903,22 +1060,31 @@ function Band({
   title,
   count,
   box,
+  badge,
   collapsed,
   toggle,
   menu,
+  flipKey,
   children,
 }: {
   title: string;
   count?: number;
   box?: "attention" | "neutral";
+  /** A small mark after the title. */
+  badge?: ReactNode;
   collapsed?: boolean;
   toggle?: () => void;
   menu?: ReactNode;
+  /** Glides the band when a priority change moves it (see `useFlip`). */
+  flipKey?: string;
   children: ReactNode;
 }) {
   const heading = (
     <>
-      <span className="flex-1 text-left">{title}</span>
+      <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+        {title}
+        {badge}
+      </span>
       {count !== undefined ? (
         <span className="tabular-nums">{count}</span>
       ) : null}
@@ -928,6 +1094,7 @@ function Band({
     return (
       <section
         aria-label={title}
+        data-flip-key={flipKey}
         className={cn(
           "my-1 px-2 py-1",
           box === "attention" ? "ws-needs" : "ws-band-neutral",
@@ -949,7 +1116,7 @@ function Band({
     );
   }
   return (
-    <section aria-label={title} className="px-1">
+    <section aria-label={title} data-flip-key={flipKey} className="px-1">
       <div className="flex items-center gap-1">
         <button
           type="button"
@@ -1065,7 +1232,10 @@ type GroupProps = {
   toggle: () => void;
   onRename?: () => void;
   onNewThread?: () => void;
+  onTogglePriority?: () => void;
   muted?: boolean;
+  /** Up Next is focused elsewhere, so the waiting count recedes. */
+  quietCount?: boolean;
   /** Drag-and-drop wiring: the section moves, the header drags it. */
   sectionRef?: (element: HTMLElement | null) => void;
   style?: CSSProperties;
@@ -1081,7 +1251,9 @@ function WorkstreamGroup({
   toggle,
   onRename,
   onNewThread,
+  onTogglePriority,
   muted,
+  quietCount,
   sectionRef,
   style,
   handle,
@@ -1093,13 +1265,23 @@ function WorkstreamGroup({
       ref={sectionRef}
       style={style}
       aria-label={group.name}
+      data-flip-key={`group:${group.id}`}
+      data-prioritized={group.prioritized ? "" : undefined}
       data-drop-target={dropTarget ? "" : undefined}
       className={cn(
         "rounded-md px-1",
         dropTarget && "bg-sidebar-accent/40 ring-1 ring-sidebar-ring",
       )}
     >
-      <GroupMenu onRename={onRename} onNewThread={onNewThread}>
+      <GroupMenu
+        onRename={onRename}
+        onNewThread={onNewThread}
+        priority={
+          onTogglePriority
+            ? { prioritized: group.prioritized, toggle: onTogglePriority }
+            : undefined
+        }
+      >
         <div
           ref={handle?.ref}
           {...handle?.listeners}
@@ -1121,6 +1303,16 @@ function WorkstreamGroup({
               muted={muted}
               className="text-[13px] font-semibold"
             />
+            {group.prioritized ? (
+              <span
+                role="img"
+                aria-label="Prioritized"
+                title="Prioritized"
+                className="inline-flex shrink-0 text-muted-foreground"
+              >
+                <PriorityIcon className="size-3" />
+              </span>
+            ) : null}
           </button>
           {onNewThread ? (
             <button
@@ -1138,8 +1330,13 @@ function WorkstreamGroup({
           ) : null}
           {group.needsYou > 0 ? (
             <span
-              className="ws-amber-pill rounded-full px-1.5 text-[11px] font-medium tabular-nums"
-              title={`${group.needsYou} for you`}
+              className={cn(
+                "rounded-full px-1.5 text-[11px] font-medium tabular-nums transition-colors duration-300",
+                quietCount
+                  ? "bg-muted-foreground/15 text-muted-foreground"
+                  : "ws-amber-pill",
+              )}
+              title={`${group.needsYou} waiting on you`}
             >
               {group.needsYou}
             </span>

@@ -35,6 +35,7 @@ import {
   type TraceSummary,
 } from "../domain/trace.ts";
 import type { TraceStore } from "./trace.ts";
+import type { StoredOrder } from "./order.ts";
 
 const TITLE_MAX = 80;
 const clip = (text: string) =>
@@ -58,6 +59,7 @@ function groupJson(group: Group<InventoryThread>, now: number) {
     lastActive: group.lastActiveAt
       ? relativeAge(group.lastActiveAt, now)
       : null,
+    prioritized: group.prioritized,
   };
 }
 
@@ -134,7 +136,13 @@ export function registerCli(
     map,
     router,
     traces,
+    arrangement,
   }: {
+    /** The sidebar's stored order and prioritized workstreams. */
+    arrangement: {
+      load(): StoredOrder;
+      setPrioritized(ids: readonly string[]): void;
+    };
     service: WorkstreamService;
     journal: Journal;
     analyzer: Analyzer;
@@ -174,6 +182,7 @@ export function registerCli(
       projection: projectWorkstreams(threads, sections, {
         now,
         needsYou: (thread) => needsYou(thread, analysis[thread.id]),
+        order: arrangement.load(),
       }),
     };
   };
@@ -209,7 +218,7 @@ export function registerCli(
                 ),
               };
             const line = (g: ReturnType<typeof groupJson>) =>
-              `${g.name.padEnd(36)} ${plural(g.threads, "thread").padStart(11)}${g.needsYou ? ` · ${g.needsYou} for you` : ""}${g.lastActive ? ` · ${g.lastActive}` : ""}  (${g.id})`;
+              `${g.name.padEnd(36)} ${plural(g.threads, "thread").padStart(11)}${g.needsYou ? ` · ${g.needsYou} up next` : ""}${g.lastActive ? ` · ${g.lastActive}` : ""}${g.prioritized ? " · prioritized" : ""}  (${g.id})`;
             const lines = [
               ...active.map(line),
               line(unsorted),
@@ -404,7 +413,7 @@ export function registerCli(
                       `${result.state.replace("_", " ")} · ${result.subject ?? "no subject"} · ${seconds}s · ${result.model}`,
                       result.recap,
                       ...(result.needsYou
-                        ? [`For You: ${result.needsYou}`]
+                        ? [`Up Next: ${result.needsYou}`]
                         : []),
                       ...(result.drift
                         ? [
@@ -421,6 +430,46 @@ export function registerCli(
               stdout: options.json
                 ? JSON.stringify({ queued, lastError: analyzer.lastError })
                 : message,
+            };
+          },
+        }),
+        prioritize: cliCommand({
+          summary:
+            "Prioritize a workstream: it pins to the top of the sidebar, and while it has threads waiting on you, Up Next shows only prioritized workstreams",
+          positionals: [
+            {
+              name: "workstream",
+              description: "Workstream name or section id",
+              required: true,
+            },
+          ],
+          options: {
+            off: { type: "boolean", description: "Remove the priority" },
+          },
+          async run({ positionals, options }) {
+            const section = resolveWorkstream(
+              await listSections(bb.sdk),
+              positionals.workstream,
+            );
+            if (!section)
+              throw new PluginCliError(
+                `No workstream named "${positionals.workstream}".`,
+                {
+                  code: "workstream_not_found",
+                  hint: "Run `bb workstreams list` to see workstream names and ids.",
+                },
+              );
+            const current = arrangement
+              .load()
+              .prioritized.filter((id) => id !== section.id);
+            arrangement.setPrioritized(
+              options.off ? current : [...current, section.id],
+            );
+            return {
+              exitCode: 0,
+              stdout: options.off
+                ? `${section.name} is no longer prioritized.`
+                : `Prioritized ${section.name}.`,
             };
           },
         }),

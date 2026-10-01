@@ -107,9 +107,9 @@ environments.
 - **I1. Exactly once.** Every visible, non-archived thread appears in exactly
   one workstream group (Unsorted and Dormant included), or in Snoozed (§11.1).
   It nests under its parent when the parent is visible and active; otherwise it
-  is a root. Orphans and cycles render deterministically. Needs you and Recent
-  are overlays that repeat rows from the groups; they never replace them, and
-  never show snoozed threads.
+  is a root. Orphans and cycles render deterministically. Up Next and Recent are
+  overlays that repeat rows from the groups; they never replace them, and never
+  show snoozed threads.
 - **I2. Tree membership.** A tree's workstream is its root's section.
   Workstreams never writes `sectionId` on a child.
 - **I3. Explicit moves only.** A filed thread moves only through one of these:
@@ -344,7 +344,7 @@ without another model call. See
 | Visible fork                                                                | `thread.created` with `sourceThreadId`                                            | Preserve the creator's placement; otherwise leave it Unsorted                                                                                |
 | User sends a message                                                        | `message.dispatch` (proceeds except for stale recap reminders) or `thread.active` | Mark analysis pending. Clear any inferred "needs decision" and the agent recap.                                                              |
 | Turn completes                                                              | `thread.idle` (`lastAssistantText` included)                                      | Per-thread analysis (§10), debounced about 5 s, at most 4 concurrent. A reminder if the turn ended without a recap or question card (§10.2). |
-| Pending approval or question                                                | `interaction.pending`                                                             | Show in Needs you immediately. A question card ends the turn properly (§10.2).                                                               |
+| Pending approval or question                                                | `interaction.pending`                                                             | Show in Up Next immediately. A question card ends the turn properly (§10.2).                                                                 |
 | Turn fails                                                                  | `thread.failed` / `turn.failed`                                                   | Show an error indicator. No analysis.                                                                                                        |
 | Moves, retitles, reparents, section changes                                 | **None**, so the reconciler catches them                                          | Record as provenance `user`, never override (a retitle locks the title, §10.1), update the map                                               |
 | Archive, unarchive, delete                                                  | Lifecycle events                                                                  | Update views, re-analyze if stale, purge on delete.                                                                                          |
@@ -496,15 +496,30 @@ it.
 ## 11. Surfaces
 
 1. **Sidebar thread list** (`experimental_threadList`):
-   - A Needs you section (exact-once, live), with a collapsible header and count
-     like Recent's, and its rows set apart in a tinted block. Its rows name
-     their workstream and omit the needs-decision mark the section already
-     implies.
-   - An optional Recent band (de-duplicated against Needs you).
+   - The Up Next section: threads that need you (exact-once, live), plus unread
+     complete or review results, in an always-open amber block of five rows with
+     Show more. Its rows name their workstream and omit the needs-decision mark
+     the section already implies. The open thread's row stays through read and
+     status updates, and past the five-row limit, until the user selects another
+     thread; hiding, archiving, and snoozing still remove it at once.
+   - Prioritized workstreams (the header menu's Prioritize, or
+     `bb workstreams prioritize`) pin directly below Up Next, in manual order,
+     with a flag on their header, and never go dormant. While any prioritized
+     workstream has a thread in Up Next, Up Next shows only prioritized threads
+     (focus): the rest collapse behind "N more in other workstreams", and other
+     groups' waiting counts turn neutral. Focus never takes away the open
+     thread's row; it leaves once the user selects another thread. Priorities
+     are view state, stored with the manual order and shared across clients.
+   - An optional Recent band (de-duplicated against Up Next).
    - Workstream groups with plain headers: the name, a needs-you count only when
-     above 0, and a total. Groups follow the user's manual order (drag a
-     header), else BB's section order, so their positions stay stable. The page,
-     not the sidebar, ranks by attention.
+     above 0, and a total. Groups follow the user's manual order (drag a header;
+     prioritized and other workstreams reorder within their own tier), else BB's
+     section order, so their positions stay stable. The page, not the sidebar,
+     ranks by attention.
+   - Motion: rows and bands entering or leaving Up Next open and close their
+     height, so the list below slides rather than jumps, and a priority change
+     glides the workstreams to their new places. A leaving row is inert. Reduced
+     motion applies every change at once.
    - Drag and drop: a root row drags its whole tree, reordering it within the
      group or moving it to the group it is dropped on (a journaled move, as from
      the context menu). Manual order is plugin state shared across clients;
@@ -527,7 +542,7 @@ it.
 3. **Thread header:** a parent link (preference) and the snooze split button
    (§11.1).
 4. **CLI:**
-   `bb workstreams list | show | edit | new | handoff | file | log | analyze | rebuild | trace`,
+   `bb workstreams list | show | edit | prioritize | new | handoff | file | log | analyze | rebuild | trace`,
    built with `defineCli`.
 5. **Activity log** (page tab and `bb workstreams log`):
    - Covers every change and proposal, newest first, grouped by day.
@@ -609,7 +624,7 @@ it.
 
 ### 11.1 Snooze
 
-Snoozing puts a thread away until later. A snoozed thread leaves For You,
+Snoozing puts a thread away until later. A snoozed thread leaves Up Next,
 Recent, and its workstream group, taking its descendants with it, and is listed
 in the sidebar's Snoozed fold, soonest to wake first, with its wake time. Its
 workstream is unchanged.
@@ -648,7 +663,7 @@ entry point is a Workstreams header action.
 | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
 | Workstream map, saved organizing preview, analysis cache, title ownership, journal and Activity log, reconciler cursor, debug traces | Plugin SQLite (`bb.storage.database()`) with migrations                  |
 | Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }`                                           | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
-| Manual order, thread snoozes, feature-grouped Workstreams preferences, Snooze and Recap settings                                     | Plugin SQLite, `ws_meta` values                                          |
+| Manual order and prioritized workstreams, thread snoozes, feature-grouped Workstreams preferences, Snooze and Recap settings         | Plugin SQLite, `ws_meta` values                                          |
 | Agent recaps and their reminder budgets (§10.2)                                                                                      | Plugin SQLite, `ws_agent_recap`                                          |
 | Collapse state and UI preferences                                                                                                    | Client local storage                                                     |
 

@@ -195,8 +195,8 @@
   }
 }
 
-/* The For You amber. Every surface that means "this thread is waiting on
-   you" uses it: the For You block, its header and Show more, the group count
+/* The Up Next amber. Every surface that means "this thread is waiting on
+   you" uses it: the Up Next block, its header and Show more, the group count
    pill, and the decision mark. It is
    amber pulled a quarter of the way toward the foreground, soft enough that
    BB's blue unread dot doesn't clash with it. */
@@ -215,7 +215,7 @@
   background-color: color-mix(in oklab, var(--ws-amber) 20%, transparent);
 }
 
-/* The For You block: the most timely threads. No outline or solid fill,
+/* The Up Next block: the most timely threads. No outline or solid fill,
    just a soft amber wash that fades out toward the bottom right, plus a
    slow, faint shimmer that sweeps across every few seconds. */
 .ws-needs {
@@ -231,7 +231,7 @@
   );
 }
 
-/* The Recent block: the For You block's shape and wash in the foreground
+/* The Recent block: the Up Next block's shape and wash in the foreground
    color instead of amber, and without the shimmer. */
 .ws-band-neutral {
   background-image: linear-gradient(
@@ -277,6 +277,63 @@
   .ws-needs::after {
     animation: none;
     display: none;
+  }
+}
+
+/* Rows and bands that open and close (see sidebar/motion.ts). The element
+   is a one-row grid whose track animates between its content height and
+   zero, so whatever sits below slides instead of jumping. Set
+   --ws-presence-gap to the flex gap after the element so the gap closes
+   with it; the property doesn't inherit, so nested rows close no gap. */
+@property --ws-presence-gap {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+.ws-presence {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+.ws-presence > * {
+  min-height: 0;
+}
+.ws-presence[data-presence] > * {
+  overflow: hidden;
+}
+.ws-presence[data-presence="enter"] {
+  animation: ws-presence-in 260ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.ws-presence[data-presence="leave"] {
+  pointer-events: none;
+  animation: ws-presence-out 260ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+@keyframes ws-presence-in {
+  from {
+    grid-template-rows: 0fr;
+    margin-bottom: calc(-1 * var(--ws-presence-gap, 0px));
+    opacity: 0;
+  }
+  to {
+    grid-template-rows: 1fr;
+    margin-bottom: 0;
+    opacity: 1;
+  }
+}
+@keyframes ws-presence-out {
+  from {
+    grid-template-rows: 1fr;
+    margin-bottom: 0;
+    opacity: 1;
+  }
+  to {
+    grid-template-rows: 0fr;
+    margin-bottom: calc(-1 * var(--ws-presence-gap, 0px));
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-presence[data-presence] {
+    animation: none;
   }
 }
 

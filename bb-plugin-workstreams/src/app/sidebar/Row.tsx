@@ -98,7 +98,7 @@ export function Row({
   /** Shown instead of the age in overlay bands: the row's workstream name. */
   context?: string;
   /**
-   * The row is in the For You section. Every row there needs Tom, so the
+   * The row is in the Up Next section. Every row there needs Tom, so the
    * needs-decision mark is implied and left out, and the title reads at full
    * strength.
    */

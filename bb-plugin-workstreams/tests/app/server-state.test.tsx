@@ -49,7 +49,7 @@ function state(revision = 1): ServerState {
     driftDismissed: {},
     bootstrapped: true,
     lastReconciledAt: revision,
-    order: { workstreams: [], threads: {} },
+    order: { workstreams: [], threads: {}, prioritized: [] },
     snoozes: {},
     snoozePrefs: {
       default: "tomorrow",
@@ -163,7 +163,9 @@ describe("shared server state", () => {
       await Promise.resolve();
     });
     expect(consumers.get(1)!.server.order.threads.a).toEqual(["t1"]);
-    reordered.resolve({ order: { workstreams: [], threads: { a: ["t1"] } } });
+    reordered.resolve({
+      order: { workstreams: [], threads: { a: ["t1"] }, prioritized: [] },
+    });
     await pending;
     expect(consumers.get(1)!.server.order.threads.a).toEqual(["t1"]);
   });
@@ -208,8 +210,12 @@ describe("shared server state", () => {
     const second = consumers
       .get(0)!
       .reorder({ kind: "threads", groupId: "b", ids: ["b1"] });
-    secondWrite.resolve({ order: { workstreams: [], threads: { b: ["b1"] } } });
-    firstWrite.resolve({ order: { workstreams: [], threads: { a: ["a1"] } } });
+    secondWrite.resolve({
+      order: { workstreams: [], threads: { b: ["b1"] }, prioritized: [] },
+    });
+    firstWrite.resolve({
+      order: { workstreams: [], threads: { a: ["a1"] }, prioritized: [] },
+    });
     await Promise.all([first, second]);
     expect(consumers.get(0)!.server.order.threads).toMatchObject({
       a: ["a1"],
@@ -258,7 +264,9 @@ describe("shared server state", () => {
     firstRead.resolve({ ...state(2), driftDismissed: { t: "server-change" } });
     await Promise.resolve();
     expect(consumers.get(0)!.server.driftDismissed).toEqual({});
-    write.resolve({ order: { workstreams: ["a"], threads: {} } });
+    write.resolve({
+      order: { workstreams: ["a"], threads: {}, prioritized: [] },
+    });
     await mutation;
     await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
     secondRead.resolve({ ...state(3), driftDismissed: { t: "server-change" } });
@@ -327,12 +335,12 @@ describe("shared server state", () => {
         .get(1)!
         .reorder({ kind: "threads", groupId: "a", ids: ["a2"] });
     });
-    const newer = { workstreams: [], threads: { a: ["a2"] } };
+    const newer = { workstreams: [], threads: { a: ["a2"] }, prioritized: [] };
     secondWrite.resolve({ order: newer });
     await second;
     for (const value of consumers.values())
       expect(value.server.order.threads.a).toEqual(["a2"]);
-    const older = { workstreams: [], threads: { a: ["a1"] } };
+    const older = { workstreams: [], threads: { a: ["a1"] }, prioritized: [] };
     committed = { ...state(3), order: newer };
     firstWrite.resolve({ order: older });
     await first;
@@ -375,7 +383,11 @@ describe("shared server state", () => {
     await expect(first).rejects.toThrow("first failed");
     for (const value of consumers.values())
       expect(value.server.order.threads.b).toEqual(["b1"]);
-    const committedOrder = { workstreams: [], threads: { b: ["b1"] } };
+    const committedOrder = {
+      workstreams: [],
+      threads: { b: ["b1"] },
+      prioritized: [],
+    };
     succeeded.resolve({ order: committedOrder });
     await second;
     committed = { ...state(4), order: committedOrder };
@@ -393,7 +405,11 @@ describe("shared server state", () => {
   it("publishes successful server normalization to every consumer", async () => {
     const response = deferred<{ order: ServerState["order"] }>();
     const recovery = deferred<ServerState>();
-    const normalized = { workstreams: ["server-order"], threads: {} };
+    const normalized = {
+      workstreams: ["server-order"],
+      threads: {},
+      prioritized: [],
+    };
     const read = vi.fn(async () => state(1));
     const { consumers } = mount({
       read,
@@ -572,7 +588,11 @@ describe("shared server state", () => {
     });
     for (const value of consumers.values())
       expect(value.server.order.threads.a).toEqual(["t1"]);
-    const order = { workstreams: ["a"], threads: { a: ["t1"] } };
+    const order = {
+      workstreams: ["a"],
+      threads: { a: ["t1"] },
+      prioritized: [],
+    };
     await act(async () => {
       reordered.resolve({ order });
       await pending;

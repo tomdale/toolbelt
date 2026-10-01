@@ -156,6 +156,7 @@ const snoozeSchema = z.object({
 const orderSchema = z.object({
   workstreams: z.array(z.string()),
   threads: z.record(z.string(), z.array(z.string())),
+  prioritized: z.array(z.string()),
 });
 
 const routeBase = {
@@ -499,12 +500,14 @@ export const rpcContract = defineRpcContract({
     output: z.object({ woke: z.boolean() }),
   },
   /**
-   * Stores the sidebar's manual order: every workstream, or one group's root
-   * threads (a section id or "unsorted"), top to bottom.
+   * Stores the sidebar's arrangement: every workstream top to bottom, the
+   * prioritized workstreams (a set), or one group's root threads (a section
+   * id or "unsorted") top to bottom.
    */
   reorder: {
     input: z.discriminatedUnion("kind", [
       z.object({ kind: z.literal("workstreams"), ids: idList }),
+      z.object({ kind: z.literal("prioritized"), ids: idList }),
       z.object({
         kind: z.literal("threads"),
         groupId: z.string().min(1),

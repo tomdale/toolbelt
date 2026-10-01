@@ -20,7 +20,7 @@ function emptyState(): ServerState {
     driftDismissed: {},
     bootstrapped: false,
     lastReconciledAt: null,
-    order: { workstreams: [], threads: {} },
+    order: { workstreams: [], threads: {}, prioritized: [] },
     snoozes: {},
     snoozePrefs: DEFAULT_SNOOZE_PREFS,
   };
@@ -88,6 +88,7 @@ class ServerStore {
           this.publish({
             ...emptyState(),
             ...state,
+            order: normalizeOrder(state.order),
             snoozePrefs: parseSnoozePrefs(state.snoozePrefs),
           });
           this.pendingReorders.clear();
@@ -133,7 +134,7 @@ class ServerStore {
         this.latestReorderResponse = mutationVersion;
         this.publish({
           ...this.value,
-          order: this.overlayReorders(order, mutationVersion),
+          order: this.overlayReorders(normalizeOrder(order), mutationVersion),
         });
         this.pendingReorders.delete(mutationVersion);
       }
@@ -157,7 +158,7 @@ class ServerStore {
       const sameGroup =
         response &&
         change.kind === response.kind &&
-        (change.kind === "workstreams" ||
+        (change.kind !== "threads" ||
           (response.kind === "threads" && change.groupId === response.groupId));
       if (!sameGroup || version > responseVersion)
         next = applyChange(next, change);
@@ -236,9 +237,16 @@ class ServerStore {
   };
 }
 
+/** Fills fields a server from before they existed leaves out. */
+function normalizeOrder(order: Partial<ManualOrder> | undefined): ManualOrder {
+  return { ...emptyState().order, ...order };
+}
+
 function applyChange(order: ManualOrder, change: ReorderChange): ManualOrder {
   if (change.kind === "workstreams")
     return { ...order, workstreams: change.ids };
+  if (change.kind === "prioritized")
+    return { ...order, prioritized: change.ids };
   return {
     ...order,
     threads: { ...order.threads, [change.groupId]: change.ids },

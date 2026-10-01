@@ -5,9 +5,10 @@
  * sidebar groups them: build the complete parent/child forest first, then file
  * each tree under its root's section (SPEC I2). Every visible, non-archived
  * thread appears in exactly one group row (SPEC I1), or in Snoozed: a snoozed
- * thread leaves its group, with its descendants, until it wakes. For You and
+ * thread leaves its group, with its descendants, until it wakes. Up Next and
  * Recent are overlays that reference the group rows; they never replace them,
- * and never show snoozed threads.
+ * and never show snoozed threads. Prioritized workstreams lead the groups and
+ * never go dormant.
  */
 import { applyOrder, type ManualOrder } from "./order.ts";
 import {
@@ -48,12 +49,17 @@ export type Group<T extends WorkstreamThread> = {
   readonly needsYou: number;
   /** Latest attention time across the group's threads; 0 when empty. */
   readonly lastActiveAt: number;
+  /** The user prioritized this workstream (never Unsorted). */
+  readonly prioritized: boolean;
 };
 
 export type Projection<T extends WorkstreamThread> = {
   readonly needsYou: readonly Row<T>[];
   readonly recent: readonly Row<T>[];
-  /** Active workstreams, in the manual order, else BB's section order. */
+  /**
+   * Active workstreams: prioritized ones first, each tier in the manual
+   * order, else BB's section order.
+   */
   readonly groups: readonly Group<T>[];
   readonly unsorted: Group<T>;
   /** Workstreams with no visible threads, or none active within the window. */
@@ -68,7 +74,7 @@ export type Projection<T extends WorkstreamThread> = {
   readonly rowOf: ReadonlyMap<string, Row<T>>;
   /**
    * Children whose question folded into their parent's newer one, keyed by
-   * parent id. Folded children stay in their group but leave the For You
+   * parent id. Folded children stay in their group but leave the Up Next
    * band and counts, so one decision isn't counted twice.
    */
   readonly needsYouVia: ReadonlyMap<string, readonly T[]>;
@@ -83,7 +89,10 @@ export type ProjectionOptions<T extends WorkstreamThread> = {
   readonly dormantAfterMs?: number;
   /** Whether a thread needs Tom. Defaults to a live pending interaction. */
   readonly needsYou?: (thread: T) => boolean;
-  /** The user's drag-and-drop order for workstreams and root threads. */
+  /**
+   * The user's drag-and-drop order for workstreams and root threads, and the
+   * prioritized workstreams.
+   */
   readonly order?: ManualOrder;
   /**
    * A snoozed thread's wake time (null: until its next activity); undefined
@@ -203,6 +212,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
   }
   const counts = (row: Row<T>) => row.needsYou && !folded.has(row.thread.id);
 
+  const prioritized = new Set(options.order?.prioritized ?? []);
   const group = (id: string, name: string): Group<T> => {
     const rows = rowsBySection.get(id) ?? [];
     return {
@@ -215,9 +225,11 @@ export function projectWorkstreams<T extends WorkstreamThread>(
         0,
         ...rows.map((row) => row.thread.latestAttentionAt),
       ),
+      prioritized: id !== UNSORTED_ID && prioritized.has(id),
     };
   };
 
+  const pinned: Group<T>[] = [];
   const groups: Group<T>[] = [];
   const empty: Group<T>[] = [];
   const dormant: Group<T>[] = [];
@@ -230,7 +242,8 @@ export function projectWorkstreams<T extends WorkstreamThread>(
   for (const section of orderedSections) {
     const g = group(section.id, section.name);
     const quiet = options.now - g.lastActiveAt > dormantAfterMs;
-    if (g.total === 0) empty.push(g);
+    if (g.prioritized) pinned.push(g);
+    else if (g.total === 0) empty.push(g);
     else if (quiet && g.needsYou === 0) dormant.push(g);
     else groups.push(g);
   }
@@ -270,13 +283,39 @@ export function projectWorkstreams<T extends WorkstreamThread>(
   return {
     needsYou: needsYouRows,
     recent,
-    groups,
+    groups: [...pinned, ...groups],
     unsorted: group(UNSORTED_ID, "Unsorted"),
     dormant,
     snoozed,
     rowOf,
     needsYouVia,
   };
+}
+
+/**
+ * Up Next split by priority. While any prioritized workstream has a thread in
+ * Up Next, `shown` holds only those, plus each row `keep` names, and
+ * `elsewhere` the rest; otherwise every row is shown. `keep` lets the sidebar
+ * hold the row the user has open so focus never pulls it out from under them.
+ * Both lists keep the incoming order.
+ */
+export function focusNeeds<T extends WorkstreamThread>(
+  rows: readonly Row<T>[],
+  isPrioritized: (workstreamId: string | null) => boolean,
+  keep: (row: Row<T>) => boolean = () => false,
+): {
+  readonly active: boolean;
+  readonly shown: readonly Row<T>[];
+  readonly elsewhere: readonly Row<T>[];
+} {
+  const focused = (row: Row<T>) => isPrioritized(row.workstreamId);
+  if (!rows.some(focused))
+    return { active: false, shown: [...rows], elsewhere: [] };
+  const shown: Row<T>[] = [];
+  const elsewhere: Row<T>[] = [];
+  for (const row of rows)
+    (focused(row) || keep(row) ? shown : elsewhere).push(row);
+  return { active: true, shown, elsewhere };
 }
 
 /** Page order: most needs-you first, then most recent attention. */
