@@ -44,3 +44,21 @@ it("disables reminders when agents don't end turns with a recap", async () => {
     slot.getByRole("textbox", { name: "Reminders per turn" }),
   ).toHaveProperty("disabled", true);
 });
+
+it("previews the recap card in each state and the chosen layout", async () => {
+  const slot = await mount();
+  const carousel = await slot.findByRole("region", { name: "Preview" });
+  const visible = () =>
+    Array.from(carousel.querySelectorAll('[aria-roledescription="slide"]'))
+      .filter((s) => !s.hasAttribute("aria-hidden"))
+      .map((s) => s.textContent);
+  expect(visible()).toHaveLength(1);
+  expect(visible()[0]).toMatch(/Complete.*Adding dark mode/);
+  fireEvent.click(slot.getByRole("button", { name: "Next example" }));
+  expect(visible()[0]).toMatch(/Ready for Review.*billing webhooks/);
+  fireEvent.click(slot.getByRole("button", { name: "Next example" }));
+  expect(visible()[0]).toMatch(/Complete/);
+
+  fireEvent.click(slot.getByRole("radio", { name: /Minimal/ }));
+  await waitFor(() => expect(visible()[0]).not.toMatch(/Adding dark mode/));
+});
