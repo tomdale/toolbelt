@@ -1,6 +1,8 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import {
   Markdown,
   UrlLink,
@@ -233,7 +235,22 @@ function CardBody({
       {/* Archive is the card's only footer, so a card without it stays short. */}
       {showArchive ? (
         <div className="mt-3 flex justify-center">
-          <Button size="sm" disabled={archiveBusy} onClick={onArchive}>
+          {/* The card's one action, filled in its own accent. Minimal
+              recaps get a compact button to match. */}
+          <Button
+            size={layout === "full" ? "default" : "sm"}
+            className={cn(
+              "bg-sky-600 text-white shadow-sm hover:bg-sky-700 dark:bg-sky-400 dark:text-sky-950 dark:hover:bg-sky-300",
+              layout === "full" && "px-5",
+            )}
+            disabled={archiveBusy}
+            onClick={onArchive}
+          >
+            <Icon
+              name="Archive"
+              aria-hidden
+              className={layout === "full" ? "size-4" : "size-3.5"}
+            />
             Archive
           </Button>
         </div>

@@ -161,7 +161,10 @@ it.each(["full", "minimal"])(
     );
     expect(slot.getByText("Pull request").closest("a")).toBeTruthy();
     expect(slot.getByText("Report").closest("a")).toBeTruthy();
-    fireEvent.click(await slot.findByRole("button", { name: "Archive" }));
+    const archive = await slot.findByRole("button", { name: "Archive" });
+    // Full recaps get the full-size button; minimal ones a compact one.
+    expect(archive.className).toContain(layout === "full" ? "h-9" : "h-8");
+    fireEvent.click(archive);
     await waitFor(() =>
       expect(slot.inspection.rpcCalls).toContainEqual({
         method: "archive",
