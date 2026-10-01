@@ -105,6 +105,8 @@ async function mount(
             showArchived: options.settings?.showArchived !== false,
             recentLimit: 5,
             timestamps: options.settings?.timestamps ?? "show",
+            threadCount: options.settings?.threadCount ?? "collapsed",
+            waitingCount: options.settings?.waitingCount ?? "collapsed",
           },
           threads: {
             autoTitle: true,
@@ -213,6 +215,33 @@ describe("thread list", () => {
       slot.lifecycle.unmount();
     },
   );
+
+  it.each([
+    ["always", [true, true]],
+    ["collapsed", [false, true]],
+    ["never", [false, false]],
+  ] as const)("shows header counts %s", async (when, [expanded, collapsed]) => {
+    const slot = await mount(
+      [
+        sidebarThread("ask", {
+          sectionId: "sec_a",
+          title: "Asking task",
+          hasPendingInteraction: true,
+          indicator: "waiting-for-input",
+        }),
+      ],
+      { settings: { threadCount: when, waitingCount: when } },
+    );
+    const alpha = within(slot.getByRole("region", { name: "Alpha" }));
+    const counts = () => [
+      alpha.queryByTitle("1 waiting on you") !== null,
+      alpha.queryAllByText("1", { selector: "span" }).length,
+    ];
+    await waitFor(() => expect(counts()).toEqual([expanded, expanded ? 2 : 0]));
+    fireEvent.click(alpha.getByRole("button", { name: "Alpha" }));
+    expect(counts()).toEqual([collapsed, collapsed ? 2 : 0]);
+    slot.lifecycle.unmount();
+  });
 
   it("does not request or render archived threads when their fold is hidden", async () => {
     const fetchNextPage = vi.fn(async () => undefined);

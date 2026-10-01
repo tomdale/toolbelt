@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from "vitest";
-import { cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { parsePrefs, mergePrefs } from "../../src/domain/prefs.ts";
 
@@ -41,8 +41,7 @@ async function mount(
 it("registers settings in feature order", async () => {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   expect(app.settingsSections.map(({ id, title }) => [id, title])).toEqual([
-    ["sidebar", "Show in Sidebar"],
-    ["timestamps", "Sidebar Timestamps"],
+    ["sidebar", "Sidebar"],
     ["working-indicator", "Working Indicator"],
     ["threads", "Threads"],
     ["recap", "Recap"],
@@ -76,7 +75,9 @@ it("renders four compact sidebar toggles and saves their preferences", async () 
   for (const label of ["Up Next", "Recent", "Snoozed", "Archived"]) {
     expect(await slot.findByRole("switch", { name: label })).toBeTruthy();
   }
-  expect(slot.queryByRole("button", { name: "Timestamp" })).toBeNull();
+  const sections = slot.getByRole("region", { name: "Sections" });
+  for (const label of ["Timestamp", "Thread count", "Waiting count"])
+    expect(within(sections).queryByRole("button", { name: label })).toBeNull();
   fireEvent.click(slot.getByRole("switch", { name: "Snoozed" }));
   fireEvent.click(slot.getByRole("switch", { name: "Archived" }));
   await waitFor(() =>
@@ -94,9 +95,13 @@ it("renders four compact sidebar toggles and saves their preferences", async () 
   ]);
 });
 
-it("saves all three timestamp choices in their own section", async () => {
-  const slot = await mount("timestamps");
-  expect(slot.queryByRole("switch")).toBeNull();
+it("saves all three timestamp choices apart from section switches", async () => {
+  const slot = await mount("sidebar");
+  expect(
+    within(await slot.findByRole("region", { name: "Threads" })).queryByRole(
+      "switch",
+    ),
+  ).toBeNull();
   const picker = await slot.findByRole("button", { name: "Timestamp" });
   expect(picker.classList.contains("w-40")).toBe(true);
   expect(picker.parentElement?.classList.contains("shrink-0")).toBe(true);
@@ -117,6 +122,29 @@ it("saves all three timestamp choices in their own section", async () => {
         .filter((call) => call.method === "setPrefs")
         .at(-1)?.input,
     ).toEqual({ patch: { sidebar: { timestamps: value } } });
+  }
+});
+
+it.each([
+  ["Thread count", "threadCount"],
+  ["Waiting count", "waitingCount"],
+])("saves %s visibility", async (label, key) => {
+  const slot = await mount("sidebar");
+  const headers = await slot.findByRole("region", { name: "Workstreams" });
+  for (const [option, value] of [
+    ["Always", "always"],
+    ["Never", "never"],
+    ["When collapsed", "collapsed"],
+  ]) {
+    fireEvent.click(within(headers).getByRole("button", { name: label }));
+    fireEvent.click(await slot.findByRole("option", { name: option }));
+    await waitFor(() =>
+      expect(
+        slot.inspection.rpcCalls
+          .filter((call) => call.method === "setPrefs")
+          .at(-1)?.input,
+      ).toEqual({ patch: { sidebar: { [key]: value } } }),
+    );
   }
 });
 
