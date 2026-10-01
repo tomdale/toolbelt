@@ -22,8 +22,10 @@ design and the contract the code is checked against.
     asks you to decide something. These rows sit at the top in an amber block
     with a slow shimmer, under an always-open header, each naming its
     workstream. The block shows five rows, with Show more for the rest. A
-    delegate's question folds into its parent's newer one. It's hidden when
-    nothing is waiting on you (the `showForYou` setting turns it off).
+    delegate's question folds into its parent's newer one. A selected row stays
+    in the block through read and status updates until you deselect it or select
+    another thread; snoozing or archiving still puts it away immediately. It's
+    hidden when no rows remain (the `showForYou` setting turns it off).
   - **Recent**: the five most recently active threads not already in For you
     (the `showRecent` setting).
   - **One group per workstream**, in BB's section order until you drag a header

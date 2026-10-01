@@ -8,6 +8,10 @@ import {
   within,
 } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import {
+  experimental_useSidebarThreads,
+  type PluginThreadListProps,
+} from "@get-bb/plugin-sdk/app";
 import { emptyState, section, sidebarThread } from "./fixtures.ts";
 
 beforeEach(() => window.localStorage.clear());
@@ -32,6 +36,7 @@ async function mount(
     sidebarThread("hidden", { isHidden: true, title: "Hidden helper" }),
   ],
   options: {
+    activeThreadId?: string | null;
     settings?: Record<string, boolean | string>;
     spinner?: unknown;
     onNavigate?: () => void;
@@ -57,76 +62,89 @@ async function mount(
   const snoozes = { ...options.snoozes };
   const order = options.order ?? { workstreams: [], threads: {} };
   const list = app.threadLists[0]!;
-  return renderSlot(
-    list,
-    {
-      activeThreadId: "beta",
-      activeProjectId: null,
-      isCompactViewport: false,
-      onNavigate: options.onNavigate ?? (() => undefined),
-      searchQuery: "",
+  const props = {
+    activeThreadId:
+      options.activeThreadId === undefined ? "beta" : options.activeThreadId,
+    activeProjectId: null,
+    isCompactViewport: false,
+    onNavigate: options.onNavigate ?? (() => undefined),
+    searchQuery: "",
+  };
+  const Component = list.component;
+  function LiveThreadList(props: PluginThreadListProps) {
+    // The SDK fixture has no live-thread setter. Publish a fresh snapshot on
+    // rerender, matching the immutable updates delivered by the real hook.
+    const snapshot = experimental_useSidebarThreads();
+    snapshot.threads = [...threads];
+    return <Component {...props} />;
+  }
+  const slot = renderSlot({ ...list, component: LiveThreadList }, props, {
+    sidebarThreads: {
+      status: "ready",
+      threads,
+      sections,
+      projects: [],
+      experimental_archived: options.archived ?? null,
     },
-    {
-      sidebarThreads: {
-        status: "ready",
-        threads,
-        sections,
-        projects: [],
-        experimental_archived: options.archived ?? null,
+    settings: options.settings ?? {},
+    rpc: {
+      state: () => ({
+        ...emptyState(),
+        analysis: options.analysis ?? {},
+        recaps: options.recaps ?? {},
+        order: {
+          workstreams: [...order.workstreams],
+          threads: { ...order.threads },
+        },
+        snoozes: { ...snoozes },
+        snoozePrefs: options.snoozePrefs ?? {},
+      }),
+      moveThread: () => ({ entry: null }),
+      snooze: (raw: unknown) => {
+        const { threadId, until } = raw as {
+          threadId: string;
+          until: number | null;
+        };
+        snoozes[threadId] = { until, attentionAt: 0, at: Date.now() };
+        return { snooze: snoozes[threadId] };
       },
-      settings: options.settings ?? {},
-      rpc: {
-        state: () => ({
-          ...emptyState(),
-          analysis: options.analysis ?? {},
-          recaps: options.recaps ?? {},
+      unsnooze: (raw: unknown) => {
+        const { threadId } = raw as { threadId: string };
+        const woke = threadId in snoozes;
+        delete snoozes[threadId];
+        return { woke };
+      },
+      spinner: () => ({
+        spinner: options.spinner ?? {
+          shape: "spokes",
+          primary: "subtle",
+          secondary: "auto",
+        },
+      }),
+      reorder: (raw: unknown) => {
+        const input = raw as {
+          kind: string;
+          groupId?: string;
+          ids: string[];
+        };
+        if (input.kind === "workstreams") order.workstreams = input.ids;
+        else order.threads[input.groupId!] = input.ids;
+        return {
           order: {
             workstreams: [...order.workstreams],
             threads: { ...order.threads },
           },
-          snoozes: { ...snoozes },
-          snoozePrefs: options.snoozePrefs ?? {},
-        }),
-        moveThread: () => ({ entry: null }),
-        snooze: (raw: unknown) => {
-          const { threadId, until } = raw as {
-            threadId: string;
-            until: number | null;
-          };
-          snoozes[threadId] = { until, attentionAt: 0, at: Date.now() };
-          return { snooze: snoozes[threadId] };
-        },
-        unsnooze: (raw: unknown) => {
-          const { threadId } = raw as { threadId: string };
-          const woke = threadId in snoozes;
-          delete snoozes[threadId];
-          return { woke };
-        },
-        spinner: () => ({
-          spinner: options.spinner ?? {
-            shape: "spokes",
-            primary: "subtle",
-            secondary: "auto",
-          },
-        }),
-        reorder: (raw: unknown) => {
-          const input = raw as {
-            kind: string;
-            groupId?: string;
-            ids: string[];
-          };
-          if (input.kind === "workstreams") order.workstreams = input.ids;
-          else order.threads[input.groupId!] = input.ids;
-          return {
-            order: {
-              workstreams: [...order.workstreams],
-              threads: { ...order.threads },
-            },
-          };
-        },
+        };
       },
     },
-  );
+  });
+  return {
+    ...slot,
+    selectThread: (activeThreadId: string | null) =>
+      slot.rerender(
+        <LiveThreadList {...props} activeThreadId={activeThreadId} />,
+      ),
+  };
 }
 
 const groupRows = (slot: Awaited<ReturnType<typeof mount>>, name: string) =>
@@ -573,6 +591,115 @@ describe("thread list", () => {
     ]);
     slot.lifecycle.unmount();
   });
+
+  it.each([
+    { nextThreadId: "other", readOnSelect: false },
+    { nextThreadId: null, readOnSelect: false },
+    { nextThreadId: "other", readOnSelect: true },
+  ])(
+    "keeps a read result until $nextThreadId is selected (readOnSelect: $readOnSelect)",
+    async ({ nextThreadId, readOnSelect }) => {
+      const threads = [
+        sidebarThread("result", {
+          title: "Result",
+          isUnread: true,
+          latestAttentionAt: 100,
+        }),
+        sidebarThread("other", { title: "Other", latestAttentionAt: 50 }),
+      ];
+      const slot = await mount(threads, {
+        activeThreadId: "other",
+        recaps: {
+          result: {
+            id: "result-recap",
+            turnId: "turn",
+            at: 100,
+            state: "complete",
+            goal: "Shipping",
+            latest: ["Finished"],
+            review: [],
+            links: [],
+          },
+        },
+      });
+      await slot.findByRole("region", { name: "For you" });
+      if (!readOnSelect) slot.selectThread("result");
+      threads[0] = {
+        ...threads[0]!,
+        isUnread: false,
+        displayTitle: "Updated result",
+      };
+      slot.selectThread("result");
+      await waitFor(() => {
+        expect(groupRows(slot, "For you")).toEqual([
+          "Updated result, Complete",
+        ]);
+      });
+      expect(groupRows(slot, "Recent")).toEqual(["Other"]);
+
+      slot.selectThread(nextThreadId);
+      expect(slot.queryByRole("region", { name: "For you" })).toBeNull();
+      expect(groupRows(slot, "Recent")).toContain("Updated result, Complete");
+      slot.selectThread("result");
+      expect(slot.queryByRole("region", { name: "For you" })).toBeNull();
+      slot.lifecycle.unmount();
+    },
+  );
+
+  it("releases a resolved question only after selecting another thread", async () => {
+    const threads = [
+      sidebarThread("question", {
+        title: "Question",
+        hasPendingInteraction: true,
+      }),
+      sidebarThread("other", { title: "Other" }),
+    ];
+    const slot = await mount(threads, { activeThreadId: "question" });
+    await slot.findByRole("region", { name: "For you" });
+    threads[0] = {
+      ...threads[0]!,
+      hasPendingInteraction: false,
+      status: "active",
+    };
+    slot.selectThread("question");
+    await waitFor(() =>
+      expect(groupRows(slot, "For you")).toEqual(["Question"]),
+    );
+    slot.selectThread("other");
+    expect(slot.queryByRole("region", { name: "For you" })).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it.each(["hidden", "archived", "snoozed"])(
+    "still removes a selected For you thread when explicitly %s",
+    async (action) => {
+      const threads = [
+        sidebarThread("question", {
+          title: "Question",
+          hasPendingInteraction: true,
+          latestAttentionAt: 100,
+        }),
+      ];
+      const slot = await mount(threads, { activeThreadId: "question" });
+      const band = await slot.findByRole("region", { name: "For you" });
+      if (action === "snoozed") {
+        fireEvent.click(
+          within(band).getByRole("button", { name: /^Snooze until/ }),
+        );
+      } else {
+        threads[0] = {
+          ...threads[0]!,
+          isHidden: action === "hidden",
+          isArchived: action === "archived",
+        };
+        slot.selectThread("question");
+      }
+      await waitFor(() =>
+        expect(slot.queryByRole("region", { name: "For you" })).toBeNull(),
+      );
+      slot.lifecycle.unmount();
+    },
+  );
 
   it("marks the agent's reported state, which outranks analysis", async () => {
     const at = Date.now();
