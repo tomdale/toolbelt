@@ -304,6 +304,12 @@ export const rpcContract = defineRpcContract({
        */
       offerNewThread: z.boolean().optional(),
       /**
+       * New work's suggestion: return the single most likely home, which may
+       * be a new workstream, and keep nothing to execute later. Accepting it
+       * goes through `startThread`, `sendToThread` and `createWorkstream`.
+       */
+      suggest: z.boolean().optional(),
+      /**
        * The unsure decision whose candidate `workstreamId` is: its routing
        * call keeps explaining the result (SPEC §11.6).
        */
@@ -354,6 +360,37 @@ export const rpcContract = defineRpcContract({
       threadId: z.string().nullable(),
       sectionId: z.string().nullable(),
     }),
+  },
+  /**
+   * Starts New work's thread with the composer's resolved request, filed in
+   * `sectionId` or deliberately without a workstream.
+   */
+  startThread: {
+    input: z.object({
+      sectionId: z.string().min(1).nullable(),
+      execution: z
+        .object({
+          projectId: z.string().min(1),
+          environment: environmentSchema,
+        })
+        .catchall(z.unknown()),
+    }),
+    output: z.object({
+      threadId: z.string(),
+      sectionId: z.string().nullable(),
+    }),
+  },
+  /**
+   * Queues New work's draft in an existing thread. `traceId` links the
+   * routing call that suggested it.
+   */
+  sendToThread: {
+    input: z.object({
+      threadId: z.string().min(1),
+      input: z.array(z.unknown()).min(1),
+      traceId: z.string().nullable().optional(),
+    }),
+    output: z.object({ threadId: z.string() }),
   },
   /**
    * The recap card's contents: the agent's recap for the thread's latest
@@ -524,6 +561,8 @@ export const rpcContract = defineRpcContract({
   createWorkstream: {
     input: z.object({
       name: z.string().min(1).max(200),
+      /** The scope the router proposed with a new workstream. */
+      description: z.string().max(500).optional(),
       threadId: z.string().min(1).optional(),
     }),
     output: z.object({ sectionId: z.string(), entry: entrySchema }),

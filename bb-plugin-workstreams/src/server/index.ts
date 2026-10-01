@@ -422,30 +422,36 @@ export default async function plugin(bb: BbPluginApi) {
       workstreamId,
       intent,
       offerNewThread,
+      suggest,
       fromDecisionId,
       draftKey,
     }) =>
       userFacing(async () => {
-        if (!draftKey)
-          return router.route(prompt, {
-            pickedProjectId,
-            workstreamId,
-            intent,
-            offerNewThread,
-            fromDecisionId,
-          });
+        const options = {
+          pickedProjectId,
+          workstreamId,
+          intent,
+          offerNewThread,
+          suggest,
+          fromDecisionId,
+        };
+        const routed = async (signal?: AbortSignal) => {
+          const decision = await router.route(prompt, { ...options, signal });
+          // A suggestion is accepted through its own RPCs. Remembering it
+          // would let BB's composer file an unrelated thread with this text.
+          if (suggest) {
+            router.forget(decision.id);
+            if (decision.outcome === "continue" && decision.alternative)
+              router.forget(decision.alternative.id);
+          }
+          return decision;
+        };
+        if (!draftKey) return routed();
         cancelPreview(draftKey);
         const controller = new AbortController();
         previews.set(draftKey, controller);
         try {
-          return await router.route(prompt, {
-            pickedProjectId,
-            workstreamId,
-            intent,
-            offerNewThread,
-            fromDecisionId,
-            signal: controller.signal,
-          });
+          return await routed(controller.signal);
         } finally {
           if (previews.get(draftKey) === controller) previews.delete(draftKey);
         }
@@ -470,6 +476,20 @@ export default async function plugin(bb: BbPluginApi) {
           claim,
         });
       }),
+    startThread: ({ sectionId, execution }) =>
+      userFacing(() =>
+        router.start(
+          sectionId,
+          execution as unknown as Parameters<Router["start"]>[1],
+        ),
+      ),
+    sendToThread: ({ threadId, input, traceId }) =>
+      userFacing(() =>
+        router.send(threadId, "user", {
+          input: input as Parameters<Router["send"]>[2]["input"],
+          traceId: traceId ?? null,
+        }),
+      ),
     recap_get: async ({ threadId }) => {
       const thread = await bb.sdk.threads.get({ threadId });
       const stored = recaps.get(threadId);
@@ -696,9 +716,11 @@ export default async function plugin(bb: BbPluginApi) {
       userFacing(async () => ({
         entry: await service.move(threadId, sectionId, "user"),
       })),
-    createWorkstream: ({ name, threadId }) =>
+    createWorkstream: ({ name, description, threadId }) =>
       userFacing(async () => {
         const created = await service.createWorkstream(name, "user");
+        if (description?.trim())
+          map.describe(created.sectionId, description.trim());
         if (threadId) await service.move(threadId, created.sectionId, "user");
         return created;
       }),

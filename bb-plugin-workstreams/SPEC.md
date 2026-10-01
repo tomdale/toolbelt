@@ -23,8 +23,8 @@ Workstreams has four responsibilities:
 1. **Organize** threads into workstreams (native BB sections) and keep them
    there.
 2. **Route** new work: continue an existing thread, start a thread in a
-   workstream, or leave the choice unresolved. Explicit user creation can start
-   a new workstream.
+   workstream, or leave the choice unresolved. New work can also suggest a new
+   workstream, which is created only when the user accepts it.
 3. **Equip** task threads to delegate subtasks and hand off out-of-scope
    requests.
 4. **Show** state through the sidebar thread list, the Workstreams page, and
@@ -225,28 +225,22 @@ One router serves three entry points. BB's native New thread composer remains
 host-owned; Workstreams contributes its intake UI only inside its own dialog.
 
 1. **Workstreams ＋ New**, on the page and the sidebar. It embeds
-   `experimental_NewThreadComposer` and previews server routing while the draft
-   stays editable. Submitting acts on the current preview in the same composer.
-   A workstream's ＋ explicitly selects that workstream and skips
-   classification. An inferred continuation is only a suggestion: ⏎ still starts
-   a new thread, previewed by the same routing call in the target's workstream
-   (or in its project when it has none). A composer action beside Create thread,
-   or ⌘⏎ (Ctrl+⏎ elsewhere), sends the draft to the suggested thread instead
-   through the composer's own submit, so attachments and mentions travel with
-   it. A suggestion shown while the draft reroutes is for older text, so
-   continuing it first routes the current text straight to that thread without
-   classifying it again. Compact action and labelled destination controls allow
-   correction of either choice; labelled Project and Environment controls stay
-   visible. Each automatic field carries a solid yellow star. Manual fields
-   survive edits and have an individual hollow-star revert, including keyboard
-   Delete/Backspace and an Automatic menu option. No workstream is a deliberate
-   unassigned destination, distinct from unresolved routing; creation requires a
-   chosen or confidently inferred project. Existing-thread placement is locked
-   and its execution settings apply; ignored creation controls are hidden.
-   Pending, ambiguous and failed routes block execution. The banner names the
-   current action; BB's native submit label remains unchanged. A CSS adapter
-   dims readiness and hides duplicate placement controls; early Enter rejects
-   with draft restoration.
+   `experimental_NewThreadComposer` unchanged, so it looks and acts like BB's
+   New thread view, plus a Workstream field at the start of BB's picker row. The
+   field defaults to No workstream, or to the workstream whose ＋ opened the
+   dialog, and its search can create a workstream by name. ⏎ starts the thread
+   exactly as the pickers show it, filed in the chosen workstream. When typing
+   pauses, the router classifies the draft and the dialog shows one suggestion
+   under the composer: continue an existing thread, start in an existing
+   workstream with its project and environment, or start a new workstream with a
+   project and environment. Clicking it, or ⌘⏎ (Ctrl+⏎ elsewhere), accepts it.
+   Accepting a thread queues the draft there through the composer's own submit,
+   so attachments and mentions travel with it, and closes the dialog. Accepting
+   a workstream fills the Workstream, Project and Environment pickers; a new
+   workstream is created first. A suggestion the pickers already match is
+   hidden, and a dismissed one stays hidden. BB gives plugins no slot in its
+   picker row, so the field keeps one anchor element at the row's start and
+   falls back to its own row when the row isn't found.
 2. **`bb workstreams handoff`**, called by agents (§5).
 3. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
 
@@ -276,8 +270,14 @@ Each decision carries `confidence`, a `reason` of at most 120 characters, and a
 
 **Policy.**
 
-- **Always preview. ⏎ accepts.** A `continue` cannot be undone, and a thread's
-  project cannot be changed after creation.
+- **The user confirms.** In New work a suggestion changes nothing until it is
+  accepted, and ⏎ starts what the pickers show. A `continue` cannot be undone,
+  and a thread's project cannot be changed after creation.
+- New work's suggestion names the single likeliest home. An unsure answer
+  becomes its first candidate, empty workstreams are offered too, and code work
+  with no project evidence (a workstream without a primary project, or a new
+  workstream related to none) leaves the user's project as it is. Only New work
+  asks the model for new workstreams.
 - Auto-routing per outcome is a later setting, and the eval must support it
   first.
 - Code work goes to the workstream's primary project, in its **checkout** by
@@ -331,7 +331,8 @@ without another model call. See
 
 | Change                                                                      | Signal                                                                            | Reaction                                                                                                                                     |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Thread created through intake or a handoff                                  | RPC or CLI call                                                                   | Placed by the router (provenance `router` or `handoff`)                                                                                      |
+| Thread created through New work                                             | RPC call                                                                          | Filed in the workstream the user chose (provenance `user`)                                                                                   |
+| Thread created through `bb workstreams new` or a handoff                    | RPC or CLI call                                                                   | Placed by the router (provenance `router` or `handoff`)                                                                                      |
 | Child created by any source                                                 | `thread.created`                                                                  | No structural change. Analyze it on its first idle.                                                                                          |
 | Top-level thread created elsewhere (BB's native composer, CLI, automations) | `thread.created`, then the first `thread.idle`                                    | Respect its existing section; otherwise leave it Unsorted.                                                                                   |
 | Visible fork                                                                | `thread.created` with `sourceThreadId`                                            | Preserve the creator's placement; otherwise leave it Unsorted                                                                                |

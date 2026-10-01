@@ -5,9 +5,10 @@ Workstreams organizes open BB threads into recognizable ongoing efforts. Click
 thread placements, then **Apply map**. The map stays fixed between runs. Each
 workstream is a native BB section, and children follow their root's section.
 
-New work classifies against the applied names, scope descriptions and aliases.
-It can continue a thread or start one in an existing home; uncertain requests
-can remain Unsorted. Creating a workstream is an explicit user choice.
+New work is BB's New thread composer with a Workstream field. When you pause
+typing, it classifies the draft against the applied names, scope descriptions
+and aliases and suggests one home: continue a thread, start in an existing
+workstream, or start a new one. Nothing changes until you accept it.
 
 Each thread's agent ends its turns with a question card or a recap: complete, or
 ready for review with a Review line naming what to check. The recap sits above

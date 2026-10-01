@@ -9,14 +9,14 @@ design and the contract the code is checked against.
 ## What it does
 
 - **Sidebar thread list** (select it under Settings → Appearance → Sidebar):
-  - **＋ New work** opens a composer that previews the destination as you type.
-    Action, destination, Project and Environment controls stay visible. Solid
-    yellow stars mark automatic fields; each chosen field has its own revert.
-    Choices survive prompt edits. A workstream's **＋** explicitly selects it
-    and skips classification. **No workstream** creates an unassigned thread and
-    requires a chosen or confidently inferred project. Existing threads show
-    locked placement and use their existing execution settings. Pending routing
-    blocks Enter and click before the native composer clears the draft.
+  - **＋ New work** opens BB's own new-thread composer with one more field,
+    Workstream, at the start of the picker row. Enter starts the thread the
+    pickers show. When you pause typing, a ✦ suggestion appears under the
+    composer: send the draft to an existing thread, start in an existing
+    workstream, or start a new one, each with its project and environment. Click
+    it or press ⌘⏎ (Ctrl+⏎) to accept: a thread receives the draft and the
+    dialog closes; a workstream fills the pickers, creating the workstream first
+    when it's new. A workstream's **＋** preselects it.
   - **For you**: a pending approval or question, or a thread whose latest turn
     asks you to decide something. These rows sit at the top in an amber block
     with a slow shimmer, under an always-open header, each naming its
@@ -97,12 +97,10 @@ design and the contract the code is checked against.
   initiatives can stand alone. Apply also removes previewed empty homes or
   archived-only homes whose newest archive is over 24 hours old, preserving
   threads and Undo. See [Organizing workstreams](docs/organization.md).
-- **Routing**: Workstreams' own New work dialog shows where the draft goes
-  (continue a thread or start one in an existing home) and presets the project
-  and environment; Enter or Start creates the thread and files it there, and
-  Send there continues the thread. An uncertain route leaves the choice to you.
-  Creating a workstream requires the explicit Create workstream action;
-  classification cannot silently create a home.
+- **Routing**: New work classifies the draft against the map when you pause
+  typing and suggests one home: a thread to continue, an existing workstream, or
+  a new workstream, with a project and environment. Nothing changes until you
+  accept it; Enter starts what the pickers show.
 - **Task threads**: top-level threads also get short instructions to delegate
   subtasks with BB's own `bb thread spawn --parent-self` (with environment
   guidance for the project's shape) and to hand off out-of-scope requests with
@@ -165,10 +163,10 @@ A workstream argument is a section id or its name (case-insensitive). `new` and
 
 ## Development
 
-The package uses the published Plugin SDK pinned in its lockfile. New work uses
-BB's native composer and a scoped CSS adapter. The native button retains BB's
-label, and early submission is rejected with draft restoration. Build and verify
-in an isolated task; deploy only from the canonical checkout.
+The package uses the published Plugin SDK pinned in its lockfile. New work
+embeds BB's native composer unchanged and places its Workstream field in BB's
+picker row (see SPEC §6). Build and verify in an isolated task; deploy only from
+the canonical checkout.
 
 ```sh
 npm ci
@@ -178,15 +176,6 @@ npm run build
 # Then run the repository's scripts/bb-plugin-smoke against this package.
 node eval/run.ts      # analysis eval (calls models); see eval/README.md
 node eval/route.ts    # routing eval
-```
-
-Standalone screenshots use actual IntakeBanner markup and production CSS, with
-native composer and SDK icons represented by test stand-ins. With Chrome
-installed, capture them without opening BB:
-
-```sh
-NEW_WORK_CAPTURE_DIR=/tmp/new-work-shots npm test -- --run tests/app/intake-banner.test.tsx
-node scripts/capture-new-work.mjs /tmp/new-work-shots
 ```
 
 - `src/domain/`: pure logic: `tree.ts` (exact-once forests), `project.ts` (the
@@ -200,8 +189,8 @@ node scripts/capture-new-work.mjs /tmp/new-work-shots
   prompt and parser, and Debug mode's recording), `trace.ts` (the trace store),
   `inference/` (the host entry that runs Pi).
 - `src/app/`: the sidebar list, the page, the header parent link, the recap
-  card, New work intake, and `debug/` (inspect buttons, the inspector pane), fed
-  by `useWorkstreams.ts`.
+  card, New work, and `debug/` (inspect buttons, the inspector pane), fed by
+  `useWorkstreams.ts`.
 
 To check the exact-once guarantee against real data, export a snapshot to
 private storage (it contains thread titles) and point the test at it:
