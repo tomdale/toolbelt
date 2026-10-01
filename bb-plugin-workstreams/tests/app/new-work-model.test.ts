@@ -185,7 +185,7 @@ describe("accepting", () => {
     const { newWork, composer } = setup(async () => inAlpha);
     newWork.observe("Fix the parser in Alpha");
     await pause(DEBOUNCE_MS);
-    await newWork.accept();
+    await newWork.accept({ submit: false });
     expect(newWork.snapshot().workstream).toEqual({
       id: "sec_a",
       name: "Alpha",
@@ -207,7 +207,7 @@ describe("accepting", () => {
       kind: "new-workstream",
       name: "Billing",
     });
-    await newWork.accept();
+    await newWork.accept({ submit: false });
     expect(deps.createWorkstream).toHaveBeenCalledWith("Billing", "Invoices");
     expect(newWork.snapshot().workstream).toEqual({
       id: "sec_new",
@@ -216,11 +216,52 @@ describe("accepting", () => {
     expect(composer.setSelection).toHaveBeenCalledTimes(1);
   });
 
+  it("applies a workstream suggestion and starts the thread with it", async () => {
+    const { deps, newWork, composer } = setup(async () => inAlpha);
+    newWork.observe("Fix the parser in Alpha");
+    await pause(DEBOUNCE_MS);
+    const accepting = newWork.accept({ submit: true });
+    await vi.advanceTimersByTimeAsync(0);
+    await accepting;
+    expect(composer.setSelection).toHaveBeenCalledTimes(1);
+    expect(composer.submit).toHaveBeenCalledTimes(1);
+    expect(deps.startThread).toHaveBeenCalledExactlyOnceWith(
+      "sec_a",
+      request("Fix the parser in Alpha"),
+    );
+    expect(composer.focus).not.toHaveBeenCalled();
+  });
+
+  it("doesn't start the thread when the pickers can't be filled", async () => {
+    const { deps, newWork, composer } = setup(async () => inAlpha);
+    composer.setSelection.mockRejectedValueOnce(
+      new Error("Choose a project the composer can use."),
+    );
+    newWork.observe("Fix the parser in Alpha");
+    await pause(DEBOUNCE_MS);
+    await newWork.accept({ submit: true });
+    expect(composer.submit).not.toHaveBeenCalled();
+    expect(deps.startThread).not.toHaveBeenCalled();
+    expect(newWork.snapshot().error).toBe(
+      "Choose a project the composer can use.",
+    );
+  });
+
+  it("has nothing to apply from a thread suggestion without submitting", async () => {
+    const { deps, newWork, composer } = setup(async () => continueParser);
+    newWork.observe("Also handle CRLF in that fix");
+    await pause(DEBOUNCE_MS);
+    await newWork.accept({ submit: false });
+    expect(composer.submit).not.toHaveBeenCalled();
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(shownSuggestion(newWork.snapshot())?.kind).toBe("thread");
+  });
+
   it("sends the draft to a suggested thread through the composer's submit", async () => {
     const { deps, newWork, composer } = setup(async () => continueParser);
     newWork.observe("Also handle CRLF in that fix");
     await pause(DEBOUNCE_MS);
-    await newWork.accept();
+    await newWork.accept({ submit: true });
     expect(composer.submit).toHaveBeenCalledTimes(1);
     expect(deps.sendToThread).toHaveBeenCalledExactlyOnceWith(
       "thr_p",
@@ -235,7 +276,7 @@ describe("accepting", () => {
     composer.submit.mockRejectedValueOnce(new Error("Models are loading."));
     newWork.observe("Also handle CRLF in that fix");
     await pause(DEBOUNCE_MS);
-    await newWork.accept();
+    await newWork.accept({ submit: true });
     expect(newWork.snapshot()).toMatchObject({
       error: "Models are loading.",
       accepting: false,
@@ -344,7 +385,7 @@ describe("Debug mode's record", () => {
     const { deps, newWork } = setup(async () => inAlpha);
     newWork.observe("Fix the parser in Alpha");
     await pause(DEBOUNCE_MS);
-    await newWork.accept();
+    await newWork.accept({ submit: false });
     deps.startThread.mockRejectedValueOnce(new Error("Gone"));
     await expect(newWork.submit(request("Fix it"))).rejects.toThrow("Gone");
     const [classify, accept] = newWork.snapshot().events;
@@ -352,7 +393,10 @@ describe("Debug mode's record", () => {
     expect(accept).toMatchObject({
       kind: "accept",
       status: "ok",
-      input: { suggestion: { kind: "workstream", sectionId: "sec_a" } },
+      input: {
+        suggestion: { kind: "workstream", sectionId: "sec_a" },
+        submit: false,
+      },
       output: {
         workstream: { id: "sec_a", name: "Alpha" },
         selection: { requested: { projectId: "proj_a" } },

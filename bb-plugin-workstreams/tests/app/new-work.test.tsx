@@ -216,7 +216,7 @@ async function type(slot: ReturnType<typeof mount>["slot"], text: string) {
   await act(() => slot.behavior.setComposerText(text));
 }
 const suggestion = () =>
-  screen.findByRole("button", { name: /^Suggested:/ }, { timeout: 2000 });
+  screen.findByRole("button", { name: / suggestion: / }, { timeout: 2000 });
 
 it("adds a workstream field at the start of BB's picker row", async () => {
   mount(inAlpha);
@@ -260,14 +260,20 @@ it("suggests an existing workstream and fills the fields when clicked", async ()
   await waitFor(() =>
     expect(button.textContent).toContain("bb · Project checkout"),
   );
-  expect(button.querySelector("kbd")?.textContent).toMatch(/⏎/);
+  expect(
+    screen.getByRole("button", { name: "Apply to the composer" }).textContent,
+  ).toContain("Tab");
+  expect(
+    screen.getByRole("button", { name: "Apply and start the thread" })
+      .textContent,
+  ).toMatch(/⏎/);
   fireEvent.click(button);
   await screen.findByRole("button", { name: "Workstream: Alpha" });
   expect(slot.inspection.composer.selections).toEqual([
     { projectId: "proj_a", environment: placement.environment },
   ]);
   await waitFor(() =>
-    expect(screen.queryByRole("button", { name: /^Suggested:/ })).toBeNull(),
+    expect(screen.queryByRole("button", { name: / suggestion: / })).toBeNull(),
   );
 });
 
@@ -284,11 +290,55 @@ it("creates a suggested new workstream before filling the fields", async () => {
   });
 });
 
+it("Tab in the editor applies the suggestion without starting", async () => {
+  const { slot, rpc, onClose } = mount(inAlpha);
+  await type(slot, "Fix the parser in Alpha");
+  await suggestion();
+  fireEvent.keyDown(input(), { key: "Tab" });
+  await screen.findByRole("button", { name: "Workstream: Alpha" });
+  expect(slot.inspection.composer.selections).toHaveLength(1);
+  expect(rpc.startThread).not.toHaveBeenCalled();
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+it("leaves Tab to the editor when it uses the key itself", async () => {
+  const { slot } = mount(inAlpha);
+  await type(slot, "Fix the parser in Alpha");
+  await suggestion();
+  // A mention menu or list indent claims Tab before it bubbles.
+  input().addEventListener("keydown", (event) => event.preventDefault(), {
+    once: true,
+  });
+  fireEvent.keyDown(input(), { key: "Tab" });
+  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  expect(slot.inspection.composer.selections).toHaveLength(0);
+  screen.getByRole("button", { name: "Workstream: No workstream" });
+});
+
+it("⌘⏎ applies a workstream suggestion and starts the thread", async () => {
+  const { slot, rpc, onClose } = mount(inAlpha);
+  await type(slot, "Fix the parser in Alpha");
+  await suggestion();
+  fireEvent.keyDown(input(), { key: "Enter", metaKey: true });
+  await waitFor(() => expect(rpc.startThread).toHaveBeenCalledTimes(1));
+  expect(rpc.startThread.mock.calls[0]![0]).toMatchObject({
+    sectionId: "sec_a",
+  });
+  expect(slot.inspection.composer.selections).toHaveLength(1);
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
 it("⌘⏎ sends the draft to a suggested thread and closes", async () => {
   const { slot, rpc, onClose } = mount(continueParser);
   await type(slot, "Also handle CRLF in that fix");
   const button = await suggestion();
   expect(button.textContent).toContain("Send to Parser fix");
+  // A thread has no pickers to fill, so it offers only sending.
+  expect(
+    screen.queryByRole("button", { name: "Apply to the composer" }),
+  ).toBeNull();
+  fireEvent.keyDown(input(), { key: "Tab" });
+  expect(rpc.sendToThread).not.toHaveBeenCalled();
   fireEvent.keyDown(input(), { key: "Enter", metaKey: true });
   await waitFor(() => expect(rpc.sendToThread).toHaveBeenCalledTimes(1));
   expect(rpc.sendToThread.mock.calls[0]![0]).toEqual({

@@ -653,6 +653,30 @@
   color: var(--muted-foreground);
   background: var(--background);
 }
+.ws-suggestion-key {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.ws-suggestion-key:hover {
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--ws-magic) 10%, transparent);
+}
+.ws-suggestion-key:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ring);
+}
+.ws-suggestion-key:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
 .ws-suggestion-dismiss {
   display: inline-flex;
   flex-shrink: 0;
