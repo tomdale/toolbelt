@@ -58,6 +58,21 @@ const EXAMPLES: readonly Example[] = [
       links: [],
     },
   },
+  {
+    label: "Work continuing",
+    showArchive: false,
+    recap: {
+      id: "preview-continuing",
+      turnId: "preview",
+      at: 0,
+      state: "continuing",
+      goal: "Adding dark mode to the settings page",
+      latest: ["Theme behavior agreed", "UI and server subagents are running"],
+      next: ["Inspect both agents' results and screenshots before integrating"],
+      review: [],
+      links: [],
+    },
+  },
 ];
 
 const NAV_BUTTON =

@@ -27,6 +27,7 @@ async function report(w: World, threadId: string, state = "complete") {
       goal: "Answering a question",
       latest: ["Answered it"],
       ...(state === "review" ? { review: "Read the answer" } : {}),
+      ...(state === "continuing" ? { next: ["Inspect worker results"] } : {}),
     },
     { threadId },
   );
@@ -64,6 +65,13 @@ it("offers Archive on a complete recap, but never archives without a click", asy
   expect(w.threads.get("t1")!.archivedAt).toBeNull();
   await archive(w);
   expect(w.threads.get("t1")!.archivedAt).not.toBeNull();
+});
+
+it("never offers or accepts Archive for continuing work, even when BB is idle", async () => {
+  const w = await world("continuing");
+  expect(await suggestions(w)).toEqual({});
+  await expect(archive(w)).rejects.toThrow(/work|current/);
+  expect(w.threads.get("t1")!.archivedAt).toBeNull();
 });
 
 it("lets the user accept a reviewed result by archiving", async () => {

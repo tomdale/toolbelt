@@ -9,10 +9,10 @@ import type { ThreadAnalysis } from "./analysis.ts";
 export const RECAP_TOOL = "WorkstreamsRecap";
 
 /**
- * How a turn's result stands: complete, or waiting on the user's review.
+ * How a turn's result stands: complete, awaiting review, or work continuing.
  * A turn that needs the user's answer ends with a question card instead.
  */
-export const RECAP_STATES = ["complete", "review"] as const;
+export const RECAP_STATES = ["complete", "review", "continuing"] as const;
 export type RecapState = (typeof RECAP_STATES)[number];
 
 /**
@@ -104,6 +104,14 @@ export const recapInputSchema = z
     state: z.enum(RECAP_STATES),
     goal: line(80),
     latest: z.array(line(120)).min(1).max(3),
+    next: z
+      .array(line(160))
+      .min(1)
+      .max(3)
+      .optional()
+      .describe(
+        "Continuing state only: what active background work or scheduled continuation will do next; no user action is needed.",
+      ),
     // A string is one step, or a list some harnesses send JSON-encoded.
     review: z
       .union([
@@ -123,6 +131,23 @@ export const recapInputSchema = z
       ),
   })
   .strict()
+  .refine((recap) => recap.state !== "continuing" || recap.next !== undefined, {
+    message:
+      "A continuing recap needs next steps for the agent's ongoing work.",
+    path: ["next"],
+  })
+  .refine((recap) => recap.state === "continuing" || recap.next === undefined, {
+    message: "Next steps belong only in a continuing recap.",
+    path: ["next"],
+  })
+  .refine(
+    (recap) => recap.state !== "continuing" || recap.review === undefined,
+    {
+      message:
+        "Continuing work needs no user review; use next for the agent's steps.",
+      path: ["review"],
+    },
+  )
   .refine((recap) => recap.state === "review" || recap.links.length === 0, {
     message: "Links are review targets and belong only in a review recap.",
     path: ["links"],
@@ -160,6 +185,7 @@ export const recapSchema = z.object({
   state: z.enum(RECAP_STATES),
   goal: z.string(),
   latest: z.array(z.string()),
+  next: z.array(z.string()).optional(),
   /** Review steps; empty unless the state is review. */
   review: z.preprocess(
     (value) =>
@@ -204,6 +230,7 @@ export function toRecap(
     state: input.state,
     goal: tidy(input.goal),
     latest: input.latest.map(tidy),
+    next: input.state === "continuing" ? (input.next ?? []).map(tidy) : [],
     review:
       input.state === "review"
         ? reviewSteps(input.review).map((step) =>
@@ -234,10 +261,22 @@ export function reviewStepText(step: ReviewStep): string {
 }
 
 export function recapMarkdown(recap: Recap): string {
-  const state = recap.state === "complete" ? "Complete" : "Ready for review";
+  const state =
+    recap.state === "complete"
+      ? "Complete"
+      : recap.state === "continuing"
+        ? "Work continuing"
+        : "Ready for review";
   return [
     `**${state}** · ${recap.goal}`,
+    ...(recap.state === "continuing" ? ["\n**Progress:**"] : []),
     ...recap.latest.map((line) => `- ${line}`),
+    ...(recap.state === "continuing"
+      ? [
+          `\n**Next:**\n${(recap.next ?? []).map((step) => `- ${step}`).join("\n")}`,
+          "\nNothing needed from you",
+        ]
+      : []),
     recap.review.length === 1
       ? `\n**Review:** ${reviewStepText(recap.review[0]!)}`
       : recap.review.length
@@ -260,8 +299,9 @@ export const RECAP_TOOL_DESCRIPTION =
  * contract once; the tool's schema carries the limits.
  */
 export const RECAP_INSTRUCTIONS = `End every turn with ${RECAP_TOOL}, after completing the work you were authorized to do, unless the turn ends with a question card (AskUserQuestion or your provider's own question tool) still awaiting the user's answer. Ask questions only through such a card, never only in your reply.
-state: complete when the user's latest request is fully done; review when a finished result waits on the user to inspect, test, merge, or ship.
-Write terse fragments in sentence case without closing periods. Every text field (goal, latest, review step and expect) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips; length limits count visible text, not link targets. Inline links fit any state; the links field below is a separate list of review targets. goal: the thread's durable purpose as a short -ing phrase ("Porting handoffs into Workstreams"). latest: one to three concrete results of work actually done, about 12 words each, most important first. review (required for review): one to three steps, each saying how to inspect or try the requested result and what to expect, about 20 words each. Send each distinct action as its own array item; separate items render as a numbered list, while punctuation inside one item does not split it. A step may be a string or { step, expect }. For UI review, give steps to reach and exercise the UI.
+state: complete when the user's latest request is fully done; review when a finished result waits on the user to inspect, test, merge, or ship; continuing when background work is active or continuation is scheduled and nothing is needed from the user. Verify that work is active or scheduled before reporting continuing. Stay on unfinished work that has no active or scheduled continuation; use a question card when required user input blocks progress.
+Write terse fragments in sentence case without closing periods. Every text field (goal, latest, next, review step and expect) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips; length limits count visible text, not link targets. Inline links fit any state; the links field below is a separate list of review targets. goal: the thread's durable purpose as a short -ing phrase ("Porting handoffs into Workstreams"). latest: one to three concrete results of work actually done, about 12 words each, most important first. review (required for review): one to three steps, each saying how to inspect or try the requested result and what to expect, about 20 words each. Send each distinct action as its own array item; separate items render as a numbered list, while punctuation inside one item does not split it. A step may be a string or { step, expect }. For UI review, give steps to reach and exercise the UI.
+For continuing, latest describes progress, including active work; next (required): one to three agent-owned next steps, at most 160 visible characters each. Omit review and links.
 links: optional, only in the review state and only for artifacts or pages explicitly being asked to be reviewed, as absolute file paths or HTTPS URLs. A changed source file qualifies only when source review is requested. For complete, omit links or send an empty list.
 The user decides whether to archive the thread from the recap. When a question card is dismissed or expires, treat the question as unanswered and unapproved, and continue only work that does not depend on it.`;
 
@@ -285,7 +325,12 @@ export function reportedAnalysis(
     traceId: null,
     ...base,
     recap: plainText(recap.latest[0] ?? recap.goal),
-    state: recap.state === "complete" ? "done" : "review",
+    state:
+      recap.state === "complete"
+        ? "done"
+        : recap.state === "continuing"
+          ? "in_progress"
+          : "review",
     needsYou: null,
     revision: thread.latestAttentionAt,
     at: recap.at,
