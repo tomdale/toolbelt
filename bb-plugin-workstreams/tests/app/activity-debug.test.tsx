@@ -48,8 +48,25 @@ async function page(rpc: Record<string, unknown>) {
     app.navPanels[0]!,
     { subPath: "debug" },
     {
-      settings: { debug: true },
+      settings: {},
       rpc: {
+        prefs: () => ({
+          prefs: {
+            sidebar: { showForYou: true, showRecent: true, recentLimit: 5 },
+            threads: {
+              autoTitle: true,
+              analysisModel: { kind: "gateway", model: "m" },
+              showParentLink: false,
+            },
+            newWork: {
+              homeProjectId: "",
+              suggestions: true,
+              suggestionsModel: { kind: "gateway", model: "m" },
+            },
+            organize: { model: { kind: "gateway", model: "m" } },
+            advanced: { hostId: "", debug: true },
+          },
+        }),
         state: () => emptyState(),
         journal: () => ({ entries: [entry] }),
         ...rpc,
@@ -73,6 +90,7 @@ it("filters internal calls, exposes metadata and event internals, and opens the 
     trace: ({ id }: { id: string }) => ({
       trace: {
         ...traces.find((t) => t.id === id),
+        id,
         provider: "test",
         thinking: "off",
         system: "Classify",

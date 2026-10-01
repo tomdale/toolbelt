@@ -88,6 +88,35 @@ async function mount(
     },
     settings: options.settings ?? {},
     rpc: {
+      prefs: () => ({
+        prefs: {
+          sidebar: {
+            showForYou: true,
+            showRecent: options.settings?.showRecent !== false,
+            recentLimit: 5,
+          },
+          threads: {
+            autoTitle: true,
+            analysisModel: {
+              kind: "gateway",
+              model: "google/gemini-3.1-flash-lite",
+            },
+            showParentLink: false,
+          },
+          newWork: {
+            homeProjectId: "",
+            suggestions: true,
+            suggestionsModel: {
+              kind: "gateway",
+              model: "google/gemini-3.1-flash-lite",
+            },
+          },
+          organize: {
+            model: { kind: "gateway", model: "openai/gpt-6-sol-fast" },
+          },
+          advanced: { hostId: "", debug: false },
+        },
+      }),
       state: () => ({
         ...emptyState(),
         analysis: options.analysis ?? {},
@@ -912,8 +941,13 @@ describe("thread list", () => {
         "Loose two",
         "Loose three",
       ]);
+      await waitFor(() =>
+        expect(slot.queryByRole("region", { name: "Recent" })).toBeNull(),
+      );
       let navigated = 0;
-      const link = slot.getByRole("link", { name: "Loose three" });
+      const link = slot.container.querySelector<HTMLAnchorElement>(
+        '[data-sidebar-thread-id="l3"]',
+      )!;
       link.addEventListener("click", (event) => {
         if (!event.defaultPrevented) navigated++;
       });

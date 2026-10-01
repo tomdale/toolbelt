@@ -8,6 +8,7 @@ import {
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../src/server/index.ts";
+import { migrateLegacyPrefs, savePrefs } from "../../src/server/prefs.ts";
 
 type Thread = ReturnType<typeof makeThreadResponse>;
 type Section = {
@@ -49,6 +50,7 @@ export async function fakeWorld(
   const completions: { prompt: string; model: string }[] = [];
   const spawned: Record<string, unknown>[] = [];
   const sent: Record<string, unknown>[] = [];
+  const workerCalls: Record<string, unknown>[] = [];
   const markedUnread: string[] = [];
   /** Each thread's latest agent turn: its number and how it ended. */
   const turns = new Map<string, { n: number; status: string }>();
@@ -59,6 +61,7 @@ export async function fakeWorld(
       id,
       title: `Thread ${id}`,
       projectId: "proj_1",
+      environmentId: "env_1",
       sectionId: null,
       parentThreadId: null,
       archivedAt: null,
@@ -95,6 +98,30 @@ export async function fakeWorld(
         : { ...answer, usage, stopReason: "stop" };
     },
     sdk: {
+      plugins: {
+        getSettings: async ({ pluginId }: { pluginId: string }) => {
+          if (pluginId !== "workstreams") throw new Error("Unknown plugin");
+          const values = Object.fromEntries(
+            Object.entries(options.settings ?? {}).map(([key, value]) => [
+              (
+                {
+                  showParentThreadLink: "showParentThreadLink",
+                  showForYou: "showForYou",
+                  showRecent: "showRecent",
+                  model: "model",
+                  autoTitle: "autoTitle",
+                  hostId: "hostId",
+                  organizeModel: "organizeModel",
+                  homeProjectId: "homeProjectId",
+                  debug: "debug",
+                } as Record<string, string>
+              )[key] ?? key,
+              value,
+            ]),
+          );
+          return { ok: true, schema: {}, values };
+        },
+      },
       projects: {
         // A distinctive name that must never reach a model prompt.
         list: async () =>
@@ -123,6 +150,23 @@ export async function fakeWorld(
           makeHostResponse({ id: "host_1", status: "connected" } as never),
         ],
       },
+      providers: {
+        models: async () => ({
+          models: [
+            {
+              id: "model-1",
+              model: "gpt-5.5",
+              isDefault: true,
+              defaultReasoningEffort: "medium",
+              supportedReasoningEfforts: [{ reasoningEffort: "medium" }],
+            },
+          ],
+          providers: [{ id: "openai", serviceTiers: [{ id: "fast" }] }],
+          modelLoadError: null,
+          permissionCeiling: "accept-edits",
+          selectedOnlyModels: [],
+        }),
+      },
       threads: {
         getPluginMetadata: async () => ({}),
         promptHistory: async ({ threadId }: { threadId: string }) =>
@@ -134,6 +178,22 @@ export async function fakeWorld(
               input: text(value),
             })),
         spawn: async (args: Record<string, unknown>) => {
+          if (args.title === "Workstreams worker") {
+            workerCalls.push(args);
+            const answer = await (options.complete?.({
+              prompt: String(args.prompt),
+              model: String(args.model),
+            }) ?? DEFAULT_ANSWER);
+            conversations.set(`worker${workerCalls.length}`, {
+              requests: [],
+              output: typeof answer === "string" ? answer : answer.text,
+            });
+            return addThread(`worker${workerCalls.length}`, {
+              title: "Workstreams worker",
+              visibility: "hidden",
+              projectId: args.projectId as string,
+            });
+          }
           spawned.push(args);
           const thread = addThread(`spawn${spawned.length}`, {
             sectionId: (args.sectionId as string | null) ?? null,
@@ -151,6 +211,12 @@ export async function fakeWorld(
           markedUnread.push(threadId);
           return { id: threadId };
         },
+        stop: async () => ({ ok: true }),
+        wait: async ({ threadId }: { threadId: string }) => ({
+          matched: true,
+          target: { kind: "status", status: "idle" },
+          threadId,
+        }),
         archive: async ({ threadId }: { threadId: string }) => {
           const thread = threads.get(threadId);
           if (!thread) throw missing(threadId);
@@ -263,6 +329,12 @@ export async function fakeWorld(
     } as never,
   });
   await plugin(host.bb);
+  if (options.settings) {
+    const db = host.bb.storage.database();
+    savePrefs(db, migrateLegacyPrefs(options.settings));
+    if (typeof options.settings.suggestions === "boolean")
+      savePrefs(db, { newWork: { suggestions: options.settings.suggestions } });
+  }
   // Let the load-time reconcile and analysis catch-up run on the empty world
   // before tests act, then seed explicitly.
   await new Promise((resolve) => setTimeout(resolve, 5));
@@ -288,6 +360,7 @@ export async function fakeWorld(
     converse,
     completions,
     spawned,
+    workerCalls,
     sent,
     markedUnread,
   };

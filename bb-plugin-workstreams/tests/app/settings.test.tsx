@@ -17,6 +17,7 @@ async function mount(
     section,
     {},
     {
+      settings: { debug: true },
       rpc: {
         prefs: () => ({ prefs }),
         setPrefs: (input: unknown) => {
@@ -122,7 +123,7 @@ it("saves New work preferences and disables the suggestions model when suggestio
   const slot = await mount("new-work");
   await slot.findByRole("switch", { name: "Suggestions while typing" });
   expect(
-    slot.getByText("Suggest a workstream for a new thread as you write."),
+    slot.getByText("Suggests a workstream for a new-thread draft as you type."),
   ).toBeTruthy();
   expect(
     slot.getByText("Suggests a workstream for a new-thread draft as you type."),
