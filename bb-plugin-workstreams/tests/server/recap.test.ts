@@ -196,6 +196,46 @@ describe("agent recaps", () => {
     expect(s.corrections()).toHaveLength(1);
   });
 
+  it("dates a fork's session from the thread its fork chain started from", async () => {
+    const s = await world();
+    // Created before the tool existed; its fork carries on that session.
+    s.w.addThread("old", { createdAt: 1 });
+    s.w.addThread("mid", {
+      createdAt: Date.now() + 1_000,
+      originKind: "fork",
+      sourceThreadId: "old",
+    });
+    s.w.threads.set("t1", {
+      ...s.thread(),
+      originKind: "fork",
+      sourceThreadId: "mid",
+    });
+    s.w.turn("t1");
+    await s.idle();
+    expect(s.corrections()).toHaveLength(0);
+
+    // A fork whose chain starts after the tool existed has it.
+    s.w.threads.set("old", {
+      ...s.w.threads.get("old")!,
+      createdAt: Date.now() + 1_000,
+    });
+    s.w.turn("t1");
+    await s.idle();
+    expect(s.corrections()).toHaveLength(1);
+  });
+
+  it("doesn't remind a fork whose source can't be read", async () => {
+    const s = await world();
+    s.w.threads.set("t1", {
+      ...s.thread(),
+      originKind: "fork",
+      sourceThreadId: "gone",
+    });
+    s.w.turn("t1");
+    await s.idle();
+    expect(s.corrections()).toHaveLength(0);
+  });
+
   it("restarts the clock when recaps are turned back on", async () => {
     const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
     const s = await world();
