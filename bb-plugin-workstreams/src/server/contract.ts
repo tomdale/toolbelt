@@ -1,4 +1,8 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
+import {
+  interactionPayloadSchema,
+  interactionResponseSchema,
+} from "./questions/contracts.ts";
 import { z } from "zod";
 import { WORK_STATES } from "../domain/analysis.ts";
 import { prefsPatchSchema, prefsSchema } from "../domain/prefs.ts";
@@ -296,6 +300,25 @@ export const routeSchema = z.discriminatedUnion("outcome", [
 ]);
 
 export const rpcContract = defineRpcContract({
+  question_pending: {
+    input: z.object({ threadId: z.string().min(1) }),
+    output: z
+      .object({
+        id: z.string(),
+        recoverable: z.boolean(),
+        payload: interactionPayloadSchema,
+      })
+      .nullable(),
+  },
+  question_recover: {
+    input: z.object({
+      threadId: z.string().min(1),
+      id: z.string().min(1),
+      value: interactionResponseSchema.nullable(),
+      dismiss: z.boolean(),
+    }),
+    output: z.object({ ok: z.literal(true) }),
+  },
   /** Where new work would go (SPEC §6). Changes nothing. */
   route: {
     input: z.object({

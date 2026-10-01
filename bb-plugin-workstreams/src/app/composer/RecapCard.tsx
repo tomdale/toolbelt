@@ -22,6 +22,7 @@ import {
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
+import { usePendingQuestion } from "../question/pending.ts";
 import {
   fileTarget,
   recapSegments,
@@ -848,10 +849,13 @@ export function RecapCard() {
   const { scope, isEmpty, attachmentCount, isRunning, isSubmitting } =
     useComposer();
   const threadId = scope.kind === "thread" ? scope.threadId : null;
+  const durableQuestion = usePendingQuestion(threadId);
   const { threads } = experimental_useSidebarThreads();
-  const hasPendingInteraction = threads.some(
-    (thread) => thread.id === threadId && thread.hasPendingInteraction,
-  );
+  const hasPendingInteraction =
+    Boolean(durableQuestion) ||
+    threads.some(
+      (thread) => thread.id === threadId && thread.hasPendingInteraction,
+    );
   // Archive is no suggestion for a thread the user is writing into, but the
   // recap stays readable until the message goes out.
   const continuing = useContinuing({

@@ -85,6 +85,50 @@ function getButtonByText(
 }
 
 describe("question interaction adapter", () => {
+  it("restores a durable question and its draft after the native interaction unmounts", async () => {
+    sessionStorage.clear();
+    const slot = render({
+      ...singleSelect,
+      durableId: "durable-test",
+    } as InteractionPayload);
+    fireEvent.click(getButtonByText(slot, "SQLite"));
+    slot.lifecycle.unmount();
+    const banner = app.composerCustomizations
+      .find((c) => c.id === "recap")!
+      .banners!.find((b) => b.id === "question")!;
+    const recover = vi.fn(async () => ({ ok: true }));
+    const composer = renderSlot(
+      banner,
+      {},
+      {
+        composer: { scope: { kind: "thread", threadId: "thr_test" } },
+        rpc: {
+          question_pending: () => ({
+            id: "durable-test",
+            recoverable: true,
+            payload: singleSelect,
+          }),
+          question_recover: recover,
+        },
+      },
+    );
+    await composer.findByText(
+      "Needs your answer · Restored after interruption",
+    );
+    expect(
+      getButtonByText(composer, "SQLite").getAttribute("aria-pressed"),
+    ).toBe("true");
+    fireEvent.click(getButtonByText(composer, "Submit answer"));
+    await vi.waitFor(() => expect(recover).toHaveBeenCalledOnce());
+    expect(recover.mock.calls[0]).toEqual([
+      expect.objectContaining({
+        id: "durable-test",
+        value: { answers: { q0: { selected: ["q0o1"] } } },
+        dismiss: false,
+      }),
+    ]);
+    sessionStorage.clear();
+  });
   it("submits the selected option value", () => {
     const submit = vi.fn(async (_value: unknown) => undefined);
     const slot = render(singleSelect, { submit });

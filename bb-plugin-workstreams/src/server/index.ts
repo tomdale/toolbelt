@@ -25,6 +25,7 @@ import { UserError, WorkstreamService } from "./service.ts";
 import { TraceStore } from "./trace.ts";
 import { AgentRecaps } from "./recap.ts";
 import { registerQuestionTool } from "./questions/tool.ts";
+import { QuestionStore } from "./questions/store.ts";
 import {
   loadRecapPrefs,
   recapToolSince,
@@ -213,7 +214,8 @@ export default async function plugin(bb: BbPluginApi) {
     analyzer,
     onChange: notify,
   });
-  registerQuestionTool(bb);
+  const questions = new QuestionStore(db, bb);
+  registerQuestionTool(bb, questions);
   registerAgentInstructions(bb, db, recaps);
   const map = new WorkstreamMap(db);
   const bootstrap = new Bootstrap({
@@ -548,6 +550,11 @@ export default async function plugin(bb: BbPluginApi) {
             }
           : null,
       };
+    },
+    question_pending: ({ threadId }) => questions.pending(threadId),
+    question_recover: async ({ threadId, id, value, dismiss }) => {
+      await questions.recover(threadId, id, value, dismiss);
+      return { ok: true as const };
     },
     recap_dismiss: ({ threadId, recapId }) =>
       userFacing(async () => {

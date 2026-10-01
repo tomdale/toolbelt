@@ -76,6 +76,18 @@ async function world(
 }
 
 describe("agent recaps", () => {
+  it("does not send recap corrections while a recovered question awaits an answer", async () => {
+    const s = await world();
+    s.w.bb.storage
+      .database()
+      .prepare(
+        "INSERT INTO ws_question (id, thread_id, payload, status) VALUES (?, ?, ?, 'pending')",
+      )
+      .run("question", "t1", "{}");
+    s.w.turn("t1");
+    await s.idle();
+    expect(s.corrections()).toHaveLength(0);
+  });
   it("rejects incomplete state-specific input before recording a recap", async () => {
     const s = await world();
     s.w.turn("t1");

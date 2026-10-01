@@ -440,6 +440,15 @@ export class AgentRecaps {
 
   private async enforce(threadId: string) {
     const { required, corrections } = this.deps.prefs();
+    // A durable question remains a valid turn ending after BB loses its waiter.
+    if (
+      this.deps.db
+        .prepare(
+          "SELECT 1 FROM ws_question WHERE thread_id = ? AND status IN ('pending', 'sending')",
+        )
+        .get(threadId)
+    )
+      return;
     const row = this.row(threadId);
     if (!required || corrections === 0 || !row.enrolled || row.capped) return;
     const signal = this.controller.signal;
