@@ -834,7 +834,7 @@ export function RecapCard() {
     isRunning,
   });
   const sending = useContinuing({ drafting: false, isSubmitting, isRunning });
-  const { recap, dismissed, capped, corrections, files, dismiss, restore } =
+  const { recap, dismissed, capped, files, dismiss, restore } =
     useRecap(threadId);
   const { prefs } = useRecapPrefs();
   const layout: RecapLayout = prefs?.layout ?? "full";
@@ -1028,8 +1028,7 @@ export function RecapCard() {
           className="mx-auto mb-3 w-full max-w-4xl px-1 text-center text-xs text-muted-foreground"
           style={FIRST}
         >
-          No recap after {corrections}{" "}
-          {corrections === 1 ? "reminder" : "reminders"}. Send a message to
+          No recap recorded. Automatic continuation is paused. Send a message to
           continue the thread.
         </p>
       ) : null}

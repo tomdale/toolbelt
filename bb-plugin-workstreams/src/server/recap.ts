@@ -35,6 +35,7 @@ import {
 import type { RecapPrefs } from "../domain/recapPrefs.ts";
 import type { Database } from "./db.ts";
 import { ASK_USER_QUESTION_RENDERER_ID } from "./questions/contracts.ts";
+import { ToolFailureGuard } from "./toolFailureGuard.ts";
 
 type Row = {
   thread_id: string;
@@ -84,6 +85,7 @@ export class AgentRecaps {
   private readonly controller = new AbortController();
   private readonly pending = new Map<string, Promise<void>>();
   private readonly repeat = new Set<string>();
+  private readonly failureGuard: ToolFailureGuard;
 
   constructor(
     private readonly deps: {
@@ -94,10 +96,29 @@ export class AgentRecaps {
       since: () => number;
       onChange: () => void;
     },
-  ) {}
+  ) {
+    this.failureGuard = new ToolFailureGuard({
+      bb: deps.bb,
+      enabled: (threadId) =>
+        deps.prefs().required && this.row(threadId).enrolled === 1,
+      onLoop: (threadId) => {
+        deps.db
+          .prepare("UPDATE ws_agent_recap SET capped = 1 WHERE thread_id = ?")
+          .run(threadId);
+        deps.onChange();
+      },
+    });
+  }
 
   /** The tool's registration and the instructions that go with it. */
   register(): void {
+    this.deps.bb.events.on(
+      "experimental_thread.events",
+      ({ thread, sequence }) => {
+        if (thread.status === "active")
+          return this.failureGuard.observe(thread.id, sequence);
+      },
+    );
     this.deps.bb.agents.registerTool({
       name: RECAP_TOOL,
       description: RECAP_TOOL_DESCRIPTION,
@@ -172,6 +193,7 @@ export class AgentRecaps {
       const current =
         this.deps.prefs().required &&
         row.enrolled === 1 &&
+        row.capped === 0 &&
         ctx.thread.status === "idle" &&
         ctx.thread.archivedAt === null &&
         ctx.thread.visibility === "visible" &&
@@ -219,6 +241,7 @@ export class AgentRecaps {
 
   /** Coalesces idle events per thread; a repeat during a check runs again. */
   onIdle(threadId: string): Promise<void> {
+    this.failureGuard.forget(threadId);
     const running = this.pending.get(threadId);
     if (running) {
       this.repeat.add(threadId);
@@ -245,12 +268,14 @@ export class AgentRecaps {
   }
 
   onArchived(threadId: string) {
+    this.failureGuard.forget(threadId);
     this.deps.db
       .prepare("UPDATE ws_agent_recap SET enrolled = 0 WHERE thread_id = ?")
       .run(threadId);
   }
 
   forget(threadId: string) {
+    this.failureGuard.forget(threadId);
     this.deps.db
       .prepare("DELETE FROM ws_agent_recap WHERE thread_id = ?")
       .run(threadId);
@@ -285,9 +310,9 @@ export class AgentRecaps {
   /** Whether corrections ran out for this thread's latest turn. */
   capped(threadId: string): { capped: boolean; corrections: number } {
     const row = this.row(threadId);
-    const { required, corrections } = this.deps.prefs();
+    const { required } = this.deps.prefs();
     return {
-      capped: required && corrections > 0 && row.capped === 1,
+      capped: required && row.capped === 1,
       corrections: row.intercepts,
     };
   }
@@ -313,7 +338,10 @@ export class AgentRecaps {
 
   async dispose() {
     this.controller.abort();
-    await Promise.allSettled(this.pending.values());
+    await Promise.allSettled([
+      ...this.pending.values(),
+      this.failureGuard.dispose(),
+    ]);
   }
 
   private row(threadId: string): Row {
@@ -398,6 +426,7 @@ export class AgentRecaps {
     const row = this.row(threadId);
     // A queued group dispatches more than once; only its first attempt is new.
     if (inputKey !== null && row.input_key === inputKey) return;
+    this.failureGuard.forget(threadId);
     this.deps.db
       .prepare(
         `UPDATE ws_agent_recap SET epoch = epoch + 1, intercepts = 0, capped = 0,
@@ -410,7 +439,7 @@ export class AgentRecaps {
   private async enforce(threadId: string) {
     const { required, corrections } = this.deps.prefs();
     const row = this.row(threadId);
-    if (!required || corrections === 0 || !row.enrolled) return;
+    if (!required || corrections === 0 || !row.enrolled || row.capped) return;
     const signal = this.controller.signal;
     const sdk = this.deps.bb.sdk;
     const [completed] = await sdk.threads.events.list({

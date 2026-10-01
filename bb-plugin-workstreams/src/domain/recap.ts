@@ -101,7 +101,7 @@ export type RecapLink = z.infer<typeof linkSchema>;
  * The tool's parameters. The limits keep each line glanceable: a goal
  * heading, short results, acceptance checks, and optional review targets.
  */
-export const recapInputSchema = z
+const recapFields = z
   .object({
     state: z.enum(RECAP_STATES),
     goal: line(80),
@@ -146,18 +146,35 @@ export const recapInputSchema = z
         "Review state only: optional links to artifacts or pages explicitly being reviewed, as absolute file paths or HTTPS URLs.",
       ),
   })
-  .strict()
-  .refine((recap) => recap.state === "continuing" || recap.latest.length > 0, {
-    message: "Complete and review recaps need at least one latest result.",
-    path: ["latest"],
-  })
-  .refine(
-    (recap) => recap.state !== "continuing" || recap.active !== undefined,
-    {
-      message: "A continuing recap needs at least one active item.",
-      path: ["active"],
-    },
-  )
+  .strict();
+
+// Providers see the same state-specific fields that server validation accepts.
+// The root object annotation keeps BB's tool contract while Pi reads oneOf.
+export const recapInputSchema = z
+  .discriminatedUnion("state", [
+    recapFields.omit({ active: true, next: true, review: true }).extend({
+      state: z.literal("complete"),
+      latest: recapFields.shape.latest.removeDefault().min(1),
+      links: z
+        .array(linkSchema)
+        .max(0, "Links are review targets and belong only in a review recap.")
+        .default([]),
+    }),
+    recapFields.omit({ active: true, next: true }).extend({
+      state: z.literal("review"),
+      latest: recapFields.shape.latest.removeDefault().min(1),
+      review: recapFields.shape.review.unwrap(),
+    }),
+    recapFields.omit({ review: true }).extend({
+      state: z.literal("continuing"),
+      active: recapFields.shape.active.unwrap(),
+      links: z
+        .array(linkSchema)
+        .max(0, "Links are review targets and belong only in a review recap.")
+        .default([]),
+    }),
+  ])
+  .meta({ type: "object" })
   .refine(
     (recap) =>
       recap.state !== "continuing" ||
@@ -168,34 +185,10 @@ export const recapInputSchema = z
     },
   )
   .refine(
-    (recap) =>
-      recap.state === "continuing" ||
-      (recap.active === undefined && recap.next === undefined),
-    {
-      message: "Active and next belong only in a continuing recap.",
-      path: ["active"],
-    },
-  )
-  .refine(
-    (recap) => recap.state !== "continuing" || recap.review === undefined,
-    {
-      message:
-        "Continuing work needs no user review; use next for the agent's steps.",
-      path: ["review"],
-    },
-  )
-  .refine((recap) => recap.state === "review" || recap.links.length === 0, {
-    message: "Links are review targets and belong only in a review recap.",
-    path: ["links"],
-  })
-  .refine((recap) => recap.state !== "review" || recap.review !== undefined, {
-    message:
-      "A review recap needs review steps: what to check, and the expected result.",
-    path: ["review"],
-  })
-  .refine(
     (recap) => {
-      const steps = reviewSteps(recap.review);
+      const steps = reviewSteps(
+        recap.state === "review" ? recap.review : undefined,
+      );
       return (
         steps.length <= 3 &&
         steps.every((step) =>
