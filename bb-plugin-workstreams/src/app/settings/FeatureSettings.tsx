@@ -8,6 +8,7 @@ import {
   SectionRows,
   SettingRow,
   SettingSwitch,
+  SegmentedControl,
   SettingsPicker,
   Stepper,
 } from "./ui.tsx";
@@ -42,32 +43,25 @@ export function SidebarSettings() {
       }
     />
   );
-  const picker = <V extends string>(
+  const choice = <V extends string>(
     label: string,
     value: V,
     options: readonly { value: V; label: string }[],
     onChange: (value: V) => void,
   ) => (
-    <SettingRow
-      label={label}
-      className="min-h-8"
-      control={
-        <SettingsPicker
-          label={label}
-          value={value}
-          className="w-40"
-          options={options}
-          onChange={(next) => {
-            const option = options.find((o) => o.value === next);
-            if (option) onChange(option.value);
-          }}
-        />
-      }
-    />
+    <div className="flex min-h-8 items-center justify-between gap-3">
+      <p className="min-w-0 truncate text-sm text-foreground">{label}</p>
+      <SegmentedControl
+        label={label}
+        value={value}
+        options={options}
+        onChange={onChange}
+      />
+    </div>
   );
   const countOptions = [
     { value: "always", label: "Always" },
-    { value: "collapsed", label: "When collapsed" },
+    { value: "collapsed", label: "Collapsed" },
     { value: "never", label: "Never" },
   ] as const;
   return (
@@ -100,29 +94,25 @@ export function SidebarSettings() {
           )}
         </SectionRows>
       </SidebarGroup>
-      <SidebarGroup title="Threads">
-        <SectionRows>
-          {picker(
+      <SidebarGroup title="Details">
+        <SectionRows compact>
+          {choice(
             "Timestamp",
             prefs.sidebar.timestamps,
             [
-              { value: "show", label: "Show" },
-              { value: "hover", label: "Only on hover" },
-              { value: "hide", label: "Don't show" },
+              { value: "show", label: "Always" },
+              { value: "hover", label: "On hover" },
+              { value: "hide", label: "Never" },
             ],
             (timestamps) => update({ sidebar: { timestamps } }),
           )}
-        </SectionRows>
-      </SidebarGroup>
-      <SidebarGroup title="Workstreams">
-        <SectionRows>
-          {picker(
+          {choice(
             "Thread count",
             prefs.sidebar.threadCount,
             countOptions,
             (threadCount) => update({ sidebar: { threadCount } }),
           )}
-          {picker(
+          {choice(
             "Waiting count",
             prefs.sidebar.waitingCount,
             countOptions,
