@@ -451,7 +451,10 @@ it.
   `links` (≤ 8 absolute file paths or HTTPS URLs, optional in review only and
   limited to artifacts or pages explicitly being reviewed). UI review steps
   explain how to reach and exercise the UI; source links qualify when source
-  review is requested. Complete recaps have no links. Closing periods are
+  review is requested. Complete recaps have no links. Text fields are inline
+  Markdown (code, emphasis, links, `@thread:<id>` mentions as chips, through
+  BB's Markdown renderer); limits count visible text, and the sidebar shows
+  the first line as plain text. Closing periods are
   dropped. The card shows a single Latest line or Review step as plain text and
   several as a list. A file link opens in the thread's workspace when its path
   is inside it, else on the environment's host.
