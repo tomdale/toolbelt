@@ -278,6 +278,8 @@ const MIGRATIONS = [
   "DELETE FROM ws_trace_link WHERE trace_id IN (SELECT id FROM ws_trace WHERE kind = 'recap')",
   "DELETE FROM ws_trace WHERE kind = 'recap'",
   "ALTER TABLE ws_agent_recap ADD COLUMN proven INTEGER NOT NULL DEFAULT 0",
+  `CREATE TABLE ws_question (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL)`,
+  "CREATE UNIQUE INDEX ws_question_pending ON ws_question(thread_id) WHERE status IN ('pending', 'sending')",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

@@ -20,6 +20,8 @@ import {
   validateToolInput,
 } from "./translate.ts";
 
+import type { QuestionStore } from "./store.ts";
+
 export const TOOL_NAME = "AskUserQuestion";
 
 const QUESTION_TIMEOUT_MS = 60 * 60 * 1000;
@@ -28,7 +30,10 @@ function errorResult(message: string): PluginAgentToolResult {
   return { content: [{ type: "text", text: message }], isError: true };
 }
 
-export function registerQuestionTool(bb: BbPluginApi): void {
+export function registerQuestionTool(
+  bb: BbPluginApi,
+  store?: QuestionStore,
+): void {
   bb.agents.registerTool({
     name: TOOL_NAME,
     description: TOOL_DESCRIPTION,
@@ -54,14 +59,16 @@ export function registerQuestionTool(bb: BbPluginApi): void {
         );
       }
 
+      let durableId: string | undefined;
       let result;
       try {
+        durableId = store?.open(ctx.threadId, payload);
         result = await bb.ui.requestInput(
           {
             threadId: ctx.threadId,
             rendererId: ASK_USER_QUESTION_RENDERER_ID,
             title: buildInteractionTitle(payload),
-            payload,
+            payload: { ...payload, ...(durableId ? { durableId } : {}) },
             timeoutMs: QUESTION_TIMEOUT_MS,
             presentation: {
               label: { pending: "Awaiting your answer", completed: "Answered" },
@@ -79,17 +86,25 @@ export function registerQuestionTool(bb: BbPluginApi): void {
           { signal: ctx.signal },
         );
       } catch (error) {
+        if (durableId) store?.finish(durableId);
         return errorResult(
           `The question could not be shown (${error instanceof Error ? error.message : String(error)}). Only one prompt can await the user at a time; group related questions in one AskUserQuestion call. Missing input remains unresolved. Continue only independent work and report what remains blocked.`,
         );
       }
 
       if (result.outcome === "cancelled") {
+        // Reload and turn interruption lose the native waiter, not the user's
+        // outstanding decision. Only explicit dismissal resolves the record.
+        if (durableId) {
+          if (result.reason === "user") store?.finish(durableId);
+          else store?.interrupted(durableId);
+        }
         return errorResult(
           `The question was cancelled (${result.reason}) without an answer. This is not a decision or approval. Continue only work independent of the missing input and report what remains blocked.`,
         );
       }
 
+      if (durableId) store?.finish(durableId);
       const parsed = interactionResponseSchema.safeParse(result.value);
       if (!parsed.success) {
         return errorResult(

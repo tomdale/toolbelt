@@ -84,8 +84,15 @@ design and the contract the code is checked against.
   freeform input. The card appears above the composer in the recap card's place
   and style, with an amber accent; the thread reads as waiting until it is
   answered or dismissed. Number keys pick options, and ⌘⏎ (Ctrl+⏎) in the
-  freeform field submits or advances. A dismissed or expired card tells the
-  agent the input is still unresolved.
+  freeform field submits or advances. Questions are saved before opening: a
+  plugin reload or interrupted waiter restores an answerable card, with partial
+  input retained in the same browser tab. A restored answer resumes the agent
+  through an ordinary user message because BB no longer retains the original
+  tool waiter. Native waiting status is not restored, and the card can briefly
+  disappear while the frontend reloads. Explicit Cancel dismisses the question
+  without granting approval; a native timeout leaves the saved question
+  available to answer later. Recap reminders stand aside while a saved question
+  is pending.
 - **Workstreams page** (`/plugins/workstreams/home`):
   - **Overview**: workstreams ranked by what needs you, each thread with where
     it stopped. Search with `/`.

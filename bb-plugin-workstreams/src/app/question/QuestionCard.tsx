@@ -14,11 +14,15 @@ import { useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
   useComposer,
+  useRpc,
+  experimental_useSidebarThreads,
   type PluginPendingInteractionProps,
 } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import { interactionPayloadSchema } from "../../server/questions/contracts.ts";
 import { QuestionForm } from "./question-form.tsx";
+import { usePendingQuestion } from "./pending.ts";
+import type { RpcContract } from "../../server/contract.ts";
 
 /** The recap card's frame (see RecapCard.tsx) in the attention accent. */
 const CARD_CLASS =
@@ -52,6 +56,34 @@ function useAnchor(threadId: string): HTMLElement | null {
 export function QuestionAnchor() {
   const { scope } = useComposer();
   const threadId = scope.kind === "thread" ? scope.threadId : null;
+  const pending = usePendingQuestion(threadId);
+  const { threads } = experimental_useSidebarThreads();
+  const native = threads.some(
+    (t) => t.id === threadId && t.hasPendingInteraction,
+  );
+  const rpc = useRpc<RpcContract>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const recover = async (
+    value: Parameters<typeof rpc.call<"question_recover">>[1]["value"],
+    dismiss: boolean,
+  ) => {
+    if (!pending) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await rpc.call("question_recover", {
+        threadId: pending.threadId,
+        id: pending.id,
+        value,
+        dismiss,
+      });
+    } catch {
+      setError("Could not send your answer. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div
       ref={(node) => {
@@ -60,7 +92,28 @@ export function QuestionAnchor() {
         return () => setAnchor(threadId, null);
       }}
       className="contents"
-    />
+    >
+      {pending?.recoverable && !native ? (
+        <div
+          className={CARD_CLASS}
+          role="region"
+          aria-label="Question"
+          data-ws-question-card=""
+        >
+          <StateLine>Needs your answer · Restored after interruption</StateLine>
+          <QuestionForm
+            key={pending.id}
+            persistenceKey={pending.id}
+            questions={pending.payload.questions}
+            disabled={busy}
+            cancelDisabled={busy}
+            onSubmit={(answers) => void recover({ answers }, false)}
+            onCancel={() => void recover(null, true)}
+          />
+          {error ? <p role="alert">{error}</p> : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -106,6 +159,12 @@ export function QuestionInteraction({
       <StateLine>Needs your answer</StateLine>
       <QuestionForm
         key={interaction.id}
+        persistenceKey={
+          typeof (interaction.payload as { durableId?: unknown }).durableId ===
+          "string"
+            ? (interaction.payload as { durableId: string }).durableId
+            : undefined
+        }
         questions={parsed.data.questions}
         disabled={busy}
         cancelDisabled={busy}

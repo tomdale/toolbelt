@@ -326,6 +326,7 @@ function QuestionInputBlock({
 }
 
 export interface QuestionFormProps {
+  persistenceKey?: string;
   questions: readonly Question[];
   disabled: boolean;
   cancelDisabled: boolean;
@@ -334,16 +335,52 @@ export interface QuestionFormProps {
 }
 
 export function QuestionForm({
+  persistenceKey,
   questions,
   disabled,
   cancelDisabled,
   onSubmit,
   onCancel,
 }: QuestionFormProps) {
-  const [formState, setFormState] = useState<QuestionFormState>(() =>
-    createInitialFormState(questions),
-  );
+  const storageKey = persistenceKey
+    ? `ws-question-draft:${persistenceKey}`
+    : null;
+  const [formState, setFormState] = useState<QuestionFormState>(() => {
+    try {
+      const saved = storageKey ? sessionStorage.getItem(storageKey) : null;
+      if (saved) {
+        const parsed: unknown = JSON.parse(saved);
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          Object.values(parsed).every(
+            (value) =>
+              value &&
+              typeof value === "object" &&
+              Array.isArray(value.selected) &&
+              value.selected.every(
+                (item: unknown) => typeof item === "string",
+              ) &&
+              typeof value.otherSelected === "boolean" &&
+              typeof value.otherText === "string",
+          )
+        )
+          return parsed as QuestionFormState;
+      }
+    } catch {
+      /* Storage may be unavailable in embedded composers. */
+    }
+    return createInitialFormState(questions);
+  });
   const [currentIndex, setCurrentIndex] = useState(0);
+  useEffect(() => {
+    if (!storageKey) return;
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify(formState));
+    } catch {
+      /* Keep the form usable without storage. */
+    }
+  }, [storageKey, formState]);
   const formRef = useRef<HTMLDivElement>(null);
   const { shortcuts, registerChoiceHandler } = useQuestionFormHost();
 
