@@ -402,12 +402,13 @@ export const rpcContract = defineRpcContract({
   },
   /**
    * The recap card's contents: the agent's recap for the thread's latest
-   * turn unless dismissed, and whether corrections ran out without one.
+   * turn, its dismissal state, and whether corrections ran out without one.
    */
   recap_get: {
     input: z.object({ threadId: z.string().min(1) }),
     output: z.object({
       recap: recapSchema.nullable(),
+      dismissed: z.boolean(),
       capped: z.boolean(),
       corrections: z.number(),
       /** Where the thread's files live, to resolve the recap's file links. */
@@ -420,8 +421,13 @@ export const rpcContract = defineRpcContract({
         .nullable(),
     }),
   },
-  /** Hides the recap card on every client until the next recap. */
+  /** Hides the current recap card on every client. */
   recap_dismiss: {
+    input: z.object({ threadId: z.string().min(1), recapId: z.string() }),
+    output: z.object({ ok: z.literal(true) }),
+  },
+  /** Restores the current recap card on every client. */
+  recap_restore: {
     input: z.object({ threadId: z.string().min(1), recapId: z.string() }),
     output: z.object({ ok: z.literal(true) }),
   },

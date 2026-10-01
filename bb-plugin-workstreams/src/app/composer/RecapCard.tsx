@@ -305,12 +305,14 @@ function RecapSummary({
 
 type RecapResponse = {
   recap: Recap | null;
+  dismissed: boolean;
   capped: boolean;
   corrections: number;
   files: RecapFiles | null;
 };
 const EMPTY: RecapResponse = {
   recap: null,
+  dismissed: false,
   capped: false,
   corrections: 0,
   files: null,
@@ -334,14 +336,24 @@ function useRecap(threadId: string | null) {
   useRealtime("changed", load);
   const dismiss = async (recapId: string) => {
     if (!threadId) return;
-    // Hidden at once; the server's copy keeps it hidden on every client.
+    // Hide at once; retain the recap so the card can be restored.
     setState((current) =>
-      current.recap?.id === recapId ? { ...current, recap: null } : current,
+      current.recap?.id === recapId ? { ...current, dismissed: true } : current,
     );
     await rpc.call("recap_dismiss", { threadId, recapId }).catch(() => {});
     load();
   };
-  return { ...state, dismiss };
+  const restore = async (recapId: string) => {
+    if (!threadId) return;
+    setState((current) =>
+      current.recap?.id === recapId
+        ? { ...current, dismissed: false }
+        : current,
+    );
+    await rpc.call("recap_restore", { threadId, recapId }).catch(() => {});
+    load();
+  };
+  return { ...state, dismiss, restore };
 }
 
 type CardProps = {
@@ -557,10 +569,12 @@ export function RecapCard() {
     isRunning,
   });
   const sending = useContinuing({ drafting: false, isSubmitting, isRunning });
-  const { recap, capped, corrections, files, dismiss } = useRecap(threadId);
+  const { recap, dismissed, capped, corrections, files, dismiss, restore } =
+    useRecap(threadId);
   const { prefs } = useRecapPrefs();
   const layout: RecapLayout = prefs?.layout ?? "full";
-  const archive = useArchiveSuggestion(threadId, recap, continuing);
+  const visibleRecap = dismissed ? null : recap;
+  const archive = useArchiveSuggestion(threadId, visibleRecap, continuing);
   const markerRef = useRef<HTMLDivElement>(null);
   const slotRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -592,9 +606,9 @@ export function RecapCard() {
   const available =
     threadId !== null && !sending && !inlineEditor && !hasPendingInteraction;
   const frame: CardProps | null =
-    available && recap
+    available && visibleRecap
       ? {
-          recap,
+          recap: visibleRecap,
           layout,
           files,
           showArchive: archive.visible,
@@ -723,6 +737,23 @@ export function RecapCard() {
               </div>
             </div>
           ) : null}
+        </div>
+      ) : null}
+      {!frame && available && dismissed && recap ? (
+        <div
+          className="mx-auto mb-3 flex w-full max-w-4xl items-center justify-end gap-2 px-1 text-xs text-muted-foreground"
+          style={FIRST}
+        >
+          <span>Recap dismissed</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2"
+            onClick={() => void restore(recap.id)}
+          >
+            Show recap
+          </Button>
         </div>
       ) : null}
       {!frame && available && capped ? (

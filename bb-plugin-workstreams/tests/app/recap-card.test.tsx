@@ -79,6 +79,7 @@ async function mount(
     .banners![0]!;
   let recap =
     options.recap === null ? null : { ...RECAP, ...(options.recap ?? {}) };
+  let dismissed = false;
   return renderSlot(
     banner,
     {},
@@ -110,12 +111,17 @@ async function mount(
         archive: () => ({ ok: true }),
         recap_get: () => ({
           recap,
+          dismissed,
           capped: options.capped ?? false,
           corrections: 3,
           files: { environmentId: "env_1", root: "/work", hostId: "host_1" },
         }),
         recap_dismiss: () => {
-          recap = null;
+          dismissed = true;
+          return { ok: true };
+        },
+        recap_restore: () => {
+          dismissed = false;
           return { ok: true };
         },
       },
@@ -264,7 +270,7 @@ it("withdraws Archive once the user continues the thread", async () => {
   expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
 });
 
-it("dismisses the recap on the server without archiving", async () => {
+it("restores a dismissed recap without archiving", async () => {
   const slot = await mount({ archivable: true, recap: { id: "r2" } });
   fireEvent.click(await slot.findByRole("button", { name: "Dismiss recap" }));
   await waitFor(() =>
@@ -276,6 +282,16 @@ it("dismisses the recap on the server without archiving", async () => {
   await waitFor(() =>
     expect(slot.queryByRole("region", { name: "Latest recap" })).toBeNull(),
   );
+  fireEvent.click(await slot.findByRole("button", { name: "Show recap" }));
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls).toContainEqual({
+      method: "recap_restore",
+      input: { threadId: "t1", recapId: "r2" },
+    }),
+  );
+  expect(
+    await slot.findByRole("region", { name: "Latest recap" }),
+  ).toBeTruthy();
   expect(slot.inspection.rpcCalls.some((c) => c.method === "archive")).toBe(
     false,
   );
