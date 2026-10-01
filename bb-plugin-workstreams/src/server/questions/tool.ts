@@ -43,7 +43,7 @@ export function registerQuestionTool(
         completed: "Received an answer",
       },
       icon: { glyph: "MessageQuestion" },
-      suppress: true,
+      suppress: false,
     },
     parameters: toolInputSchema,
     async execute(input, ctx) {
@@ -96,7 +96,8 @@ export function registerQuestionTool(
         // Reload and turn interruption lose the native waiter, not the user's
         // outstanding decision. Only explicit dismissal resolves the record.
         if (durableId) {
-          if (result.reason === "user") store?.finish(durableId);
+          if (result.reason === "user")
+            store?.finish(durableId, null, "dismissed");
           else store?.interrupted(durableId);
         }
         return errorResult(
@@ -104,14 +105,20 @@ export function registerQuestionTool(
         );
       }
 
-      if (durableId) store?.finish(durableId);
       const parsed = interactionResponseSchema.safeParse(result.value);
       if (!parsed.success) {
+        if (durableId) store?.finish(durableId);
         return errorResult(
           "The answer could not be read. The required input remains unresolved. Use AskUserQuestion to request it again; continue only independent work.",
         );
       }
       const toolResult = buildToolResult(payload, parsed.data);
+      if (durableId)
+        store?.finish(
+          durableId,
+          toolResult,
+          Object.keys(toolResult.answers).length ? "answered" : "unknown",
+        );
       if (Object.keys(toolResult.answers).length === 0) {
         return errorResult(
           "The user submitted no answers. The required input remains unresolved. Continue only independent work and report what remains blocked.",

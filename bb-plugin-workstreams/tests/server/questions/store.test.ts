@@ -14,7 +14,7 @@ function setup() {
   const send = vi.fn(async () => ({ status: "started" }));
   const host = createFakePluginHost({
     pluginId: "workstreams",
-    sdk: { threads: { send } },
+    sdk: { threads: { send, events: { list: async () => [] } } },
   });
   let store: QuestionStore;
   const plugin = (bb: typeof host.bb) => {
@@ -26,6 +26,30 @@ function setup() {
 }
 
 describe("durable questions", () => {
+  it("recovers old detached answers and avoids duplicating them on repeated history reads", async () => {
+    const { host, store } = setup();
+    const result = { ...input, answers: { "Ship it?": "Yes, tomorrow" } };
+    host.harness.sdk.stub("threads.events.list", async () => [
+      {
+        id: "event-answer",
+        createdAt: 123,
+        type: "client/turn/requested",
+        data: {
+          input: [
+            {
+              type: "text",
+              text: `Your earlier AskUserQuestion tool call has finished. Its result:\n\n${JSON.stringify(result)}`,
+            },
+          ],
+        },
+      },
+    ]);
+    const rows = await store().history("thread");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: "answered", result, at: 123 });
+    expect(await store().history("thread")).toEqual(rows);
+    await host.harness.lifecycle.dispose();
+  });
   it("survives plugin reload and delivers the recovered answer as a user message", async () => {
     const { host, send, plugin, store } = setup();
     const call = host.harness.callAgentTool("AskUserQuestion", input);
@@ -56,6 +80,10 @@ describe("durable questions", () => {
       }),
     ]);
     expect(store().pending(threadId)).toBeNull();
+    expect((await store().history(threadId))[0]).toMatchObject({
+      status: "answered",
+      result: { answers: { "Ship it?": "Ship tomorrow" } },
+    });
     await expect(
       store().recover(threadId, saved.id, null, true),
     ).rejects.toThrow("no longer pending");
@@ -77,6 +105,9 @@ describe("durable questions", () => {
         });
       await call;
       expect(store().pending(interaction.threadId)).toBeNull();
+      expect((await store().history(interaction.threadId))[0]).toMatchObject({
+        status: dismiss ? "dismissed" : "answered",
+      });
     }
     expect(send).not.toHaveBeenCalled();
     await host.harness.lifecycle.dispose();

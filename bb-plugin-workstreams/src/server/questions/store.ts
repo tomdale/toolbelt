@@ -5,8 +5,15 @@ import {
   interactionPayloadSchema,
   interactionResponseSchema,
   type InteractionPayload,
+  type ToolResult,
+  toolInputSchema,
 } from "./contracts.ts";
-import { buildToolResult } from "./translate.ts";
+import { buildToolResult, buildInteractionPayload } from "./translate.ts";
+import {
+  deliveredQuestionResult,
+  questionResultSchema,
+  type QuestionHistory,
+} from "./history.ts";
 
 export class QuestionStore {
   private live = new Set<string>();
@@ -31,9 +38,9 @@ export class QuestionStore {
     const id = randomUUID();
     this.db
       .prepare(
-        "INSERT INTO ws_question (id, thread_id, payload, status) VALUES (?, ?, ?, 'pending')",
+        "INSERT INTO ws_question (id, thread_id, payload, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
       )
-      .run(id, threadId, JSON.stringify(payload));
+      .run(id, threadId, JSON.stringify(payload), Date.now());
     this.live.add(id);
     this.bb.realtime.publish("changed", {});
     return id;
@@ -58,12 +65,96 @@ export class QuestionStore {
     this.live.delete(id);
   }
 
-  finish(id: string) {
+  finish(
+    id: string,
+    result?: ToolResult | null,
+    outcome: "answered" | "dismissed" | "unknown" = "unknown",
+  ) {
     this.live.delete(id);
     this.db
-      .prepare("UPDATE ws_question SET status = 'resolved' WHERE id = ?")
-      .run(id);
+      .prepare(
+        "UPDATE ws_question SET status = 'resolved', result = ?, outcome = ? WHERE id = ?",
+      )
+      .run(result ? JSON.stringify(result) : null, outcome, id);
     this.bb.realtime.publish("changed", {});
+  }
+
+  async history(threadId: string): Promise<QuestionHistory[]> {
+    // Import retained answers on demand, including those delivered before
+    // Workstreams saved them. Bound each request and never inspect raw provider logs.
+    const events = await this.bb.sdk.threads.events.list({
+      threadId,
+      types: ["client/turn/requested", "item/completed"],
+      order: "desc",
+      limit: "200",
+    });
+    for (const event of events) {
+      let result = null;
+      if (event.type === "client/turn/requested") {
+        for (const part of event.data.input ?? []) {
+          if (part.type === "text")
+            result = deliveredQuestionResult(part.text) ?? result;
+        }
+      } else if (
+        event.type === "item/completed" &&
+        event.data.item.type === "toolCall" &&
+        event.data.item.tool === "AskUserQuestion" &&
+        typeof event.data.item.result === "string"
+      ) {
+        try {
+          const parsed = questionResultSchema.safeParse(
+            JSON.parse(event.data.item.result),
+          );
+          if (parsed.success) result = parsed.data;
+        } catch {
+          /* Non-answer tool results are not history. */
+        }
+      }
+      if (!result) continue;
+      const parsed = toolInputSchema.safeParse({ questions: result.questions });
+      if (!parsed.success) continue;
+      const payload = buildInteractionPayload(parsed.data);
+      // A saved answer and its retained delivery refer to the same decision.
+      const existing = this.db
+        .prepare("SELECT 1 FROM ws_question WHERE thread_id = ? AND result = ?")
+        .get(threadId, JSON.stringify(result));
+      if (!existing)
+        this.db
+          .prepare(
+            "INSERT OR IGNORE INTO ws_question (id, thread_id, payload, status, result, created_at, outcome) VALUES (?, ?, ?, 'resolved', ?, ?, 'answered')",
+          )
+          .run(
+            `history:${event.id}`,
+            threadId,
+            JSON.stringify(payload),
+            JSON.stringify(result),
+            event.createdAt,
+          );
+    }
+    const rows = this.db
+      .prepare(
+        "SELECT id, payload, result, created_at, outcome, status FROM ws_question WHERE thread_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 100",
+      )
+      .all(threadId) as {
+      id: string;
+      payload: string;
+      result: string | null;
+      created_at: number | null;
+      outcome: QuestionHistory["status"] | null;
+      status: string;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      at: row.created_at,
+      status:
+        row.status === "pending" || row.status === "sending"
+          ? "pending"
+          : (row.outcome ?? "unknown"),
+      payload: interactionPayloadSchema.parse(JSON.parse(row.payload)),
+      result: row.result
+        ? questionResultSchema.parse(JSON.parse(row.result))
+        : null,
+    }));
   }
 
   async recover(
@@ -106,7 +197,7 @@ export class QuestionStore {
           },
         ],
       });
-      this.finish(id);
+      this.finish(id, result, dismiss ? "dismissed" : "answered");
     } catch (error) {
       this.db
         .prepare(

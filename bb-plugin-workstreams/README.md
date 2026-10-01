@@ -92,7 +92,12 @@ design and the contract the code is checked against.
   disappear while the frontend reloads. Explicit Cancel dismisses the question
   without granting approval; a native timeout leaves the saved question
   available to answer later. Recap reminders stand aside while a saved question
-  is pending.
+  is pending. Answered questions stay in the transcript rather than being
+  suppressed. Click **Question history** in the thread header (or select it from
+  the thread panel menu) to read saved prompts, options, previews, answers, and
+  dismissal status. The panel shows the latest 100 records and recovers older
+  answers from the latest 200 retained input/tool events. Missing historical
+  answers are labeled unavailable, never inferred.
 - **Workstreams page** (`/plugins/workstreams/home`):
   - **Overview**: workstreams ranked by what needs you, each thread with where
     it stopped. Search with `/`.

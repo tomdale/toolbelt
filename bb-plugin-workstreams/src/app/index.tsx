@@ -11,6 +11,10 @@ import {
   QuestionInteraction,
 } from "./question/QuestionCard.tsx";
 import { ASK_USER_QUESTION_RENDERER_ID } from "../server/questions/contracts.ts";
+import {
+  QuestionHistoryPanel,
+  QuestionHistoryButton,
+} from "./question/QuestionHistory.tsx";
 import { NewWorkBridge } from "./composer/NewWorkBridge.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
 import {
@@ -31,6 +35,18 @@ import { SnoozeSettings } from "./snooze/SnoozeSettings.tsx";
 import "./styles.css";
 
 export default definePluginApp((app) => {
+  app.slots.experimental_threadHeaderAction({
+    id: "question-history",
+    title: "Question history",
+    component: QuestionHistoryButton,
+  });
+  app.slots.threadPanelAction({
+    id: "question-history",
+    title: "Question history",
+    icon: "MessageQuestion",
+    layout: "flush",
+    component: QuestionHistoryPanel,
+  });
   app.slots.experimental_appOverlay({
     id: "server-state",
     component: ServerStateRealtime,

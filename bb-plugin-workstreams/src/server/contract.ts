@@ -1,4 +1,5 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
+import { questionHistorySchema } from "./questions/history.ts";
 import {
   interactionPayloadSchema,
   interactionResponseSchema,
@@ -300,6 +301,10 @@ export const routeSchema = z.discriminatedUnion("outcome", [
 ]);
 
 export const rpcContract = defineRpcContract({
+  question_history: {
+    input: z.object({ threadId: z.string().min(1) }),
+    output: z.array(questionHistorySchema),
+  },
   question_pending: {
     input: z.object({ threadId: z.string().min(1) }),
     output: z
