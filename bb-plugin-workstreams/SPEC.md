@@ -445,10 +445,13 @@ it.
 - **Recap.** `goal` (≤ 80 characters), `latest` (1–3 lines, ≤ 120 each),
   `review` (1–3 steps, ≤ 160 each, required for review: what to check and the
   expected result; a single string counts as one step), and `links` (≤ 8
-  absolute file paths or HTTPS URLs). Closing periods are dropped. The card
-  shows a single Latest line or Review step as plain text and several as a list.
-  A file link opens in the thread's workspace when its path is inside it, else
-  on the environment's host.
+  absolute file paths or HTTPS URLs, optional in review only and limited to
+  artifacts or pages explicitly being reviewed). UI review steps explain how to
+  reach and exercise the UI; source links qualify when source review is
+  requested. Complete recaps have no links. Closing periods are dropped. The
+  card shows a single Latest line or Review step as plain text and several as a
+  list. A file link opens in the thread's workspace when its path is inside it,
+  else on the environment's host.
 - **Timeline row.** The tool call stays in the thread as a tinted row titled
   Recap, whose output is the recap as short Markdown, so the recap remains
   readable after the conversation moves on. BB renders plugin tool rows with
@@ -566,18 +569,18 @@ it.
    green for complete) on its border, background, state line, and row labels: a
    state line (Ready for Review or Complete), the Goal heading (Full layout
    only), then labeled rows: Done (the Latest lines, check-marked) and Review
-   (the one thing asked of the user, with Links as chips under its steps; a
-   complete recap shows them under Done); labels stack above their rows on
-   narrow cards. A dismiss ✕ sits in the top-right corner, and Archive centered
-   underneath when it applies. It stays up while the user drafts and hides while
-   a message sends or the thread runs, while a question card is open, and in the
-   inline message editor; hiding never moves the thread. **Archive** shows when
-   the server confirms that the thread and every child and lifecycle dependent
-   are idle with no queued work, interactions, background work, unfinished goal
-   or pending todos, and that each dependent is complete (its own recap, else
-   current analysis); hidden dependents block it. Archiving a review recap
-   accepts its result. Continuing the thread withdraws Archive for that recap.
-   Workstreams never archives on its own.
+   (the requested checks, with optional review-target Links as chips under their
+   steps); labels stack above their rows on narrow cards. A dismiss ✕ sits in
+   the top-right corner, and Archive centered underneath when it applies. It
+   stays up while the user drafts and hides while a message sends or the thread
+   runs, while a question card is open, and in the inline message editor; hiding
+   never moves the thread. **Archive** shows when the server confirms that the
+   thread and every child and lifecycle dependent are idle with no queued work,
+   interactions, background work, unfinished goal or pending todos, and that
+   each dependent is complete (its own recap, else current analysis); hidden
+   dependents block it. Archiving a review recap accepts its result. Continuing
+   the thread withdraws Archive for that recap. Workstreams never archives on
+   its own.
 
 ### 11.1 Snooze
 

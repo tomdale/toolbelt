@@ -29,7 +29,7 @@ const EXAMPLES: readonly Example[] = [
         "Every settings panel follows the system theme by default",
       ],
       review: [],
-      links: [{ title: "theme.ts", location: "src/settings/theme.ts" }],
+      links: [],
     },
   },
   {
@@ -40,21 +40,16 @@ const EXAMPLES: readonly Example[] = [
       turnId: "preview",
       at: 0,
       state: "review",
-      goal: "Moving billing webhooks onto the job queue",
+      goal: "Adding dark mode to the settings page",
       latest: [
-        "Webhook handlers enqueue a job instead of processing inline",
-        "Failed jobs retry with backoff for up to an hour",
+        "Theme toggle saves to the user's preferences",
+        "Every settings panel follows the system theme by default",
       ],
       review: [
-        "Replay a test webhook and expect exactly one job in the queue",
-        "Check the worker log shows the job finishing within seconds",
+        "Open Settings → Appearance and choose Dark; expect every settings panel to use the dark theme",
+        "Reload Settings; expect Dark to remain selected and the panels to keep their dark theme",
       ],
-      links: [
-        {
-          title: "Pull request #482",
-          location: "https://github.com/example/app/pull/482",
-        },
-      ],
+      links: [],
     },
   },
 ];

@@ -248,8 +248,7 @@ function Links({
 
 /**
  * The state line and goal, then labeled rows: what was done and what to
- * review. Links go with the review steps, since they're what the user opens
- * to review; a complete recap lists them under its results.
+ * review. Optional links identify the review targets and go with the steps.
  */
 function RecapSummary({
   recap,
@@ -261,10 +260,12 @@ function RecapSummary({
   files: RecapFiles | null;
 }) {
   const goal = layout === "full" ? recap.goal : null;
-  const review = recap.review.length > 0;
+  const review = recap.state === "review" && recap.review.length > 0;
   const accent = ACCENT[recap.state];
   const links =
-    recap.links.length > 0 ? <Links links={recap.links} files={files} /> : null;
+    review && recap.links.length > 0 ? (
+      <Links links={recap.links} files={files} />
+    ) : null;
   return (
     <div>
       {/* The top line clears the dismiss button in the corner. */}
@@ -285,7 +286,6 @@ function RecapSummary({
       <div className={cn("mt-1.5 [&>section+section]:border-t", accent.rules)}>
         <Row label="Done" accent={accent.text}>
           <Results items={recap.latest} />
-          {review ? null : links}
         </Row>
         {review ? (
           <Row label="Review" accent={accent.text}>

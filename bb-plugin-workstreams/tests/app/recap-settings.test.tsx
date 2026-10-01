@@ -55,7 +55,9 @@ it("previews the recap card in each state and the chosen layout", async () => {
   expect(visible()).toHaveLength(1);
   expect(visible()[0]).toMatch(/Complete.*Adding dark mode/);
   fireEvent.click(slot.getByRole("button", { name: "Next example" }));
-  expect(visible()[0]).toMatch(/Ready for Review.*billing webhooks/);
+  expect(visible()[0]).toMatch(/Ready for Review.*Adding dark mode/);
+  expect(visible()[0]).toContain("Open Settings → Appearance and choose Dark");
+  expect(carousel.querySelectorAll('ul[aria-label="Links"]')).toHaveLength(0);
   fireEvent.click(slot.getByRole("button", { name: "Next example" }));
   expect(visible()[0]).toMatch(/Complete/);
 

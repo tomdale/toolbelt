@@ -136,6 +136,39 @@ it("shows the goal, latest results, and Dismiss under them", async () => {
   expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
 });
 
+it.each(["full", "minimal"])(
+  "hides links on stored complete recaps in %s",
+  async (layout) => {
+    const slot = await mount({
+      layout,
+      recap: {
+        links: [{ title: "Source", location: "/work/src/settings.ts" }],
+      },
+    });
+    await slot.findByRole("region", { name: "Latest recap" });
+    expect(slot.queryByRole("list", { name: "Links" })).toBeNull();
+    expect(slot.queryByText("Source")).toBeNull();
+  },
+);
+
+it("shows UI review steps without artifact links", async () => {
+  const slot = await mount({
+    recap: {
+      state: "review",
+      review: [
+        "Open Settings → Appearance and choose Dark; expect dark panels",
+      ],
+    },
+  });
+  await slot.findByRole("region", { name: "Latest recap" });
+  expect(
+    slot.getByText(
+      "Open Settings → Appearance and choose Dark; expect dark panels",
+    ),
+  ).toBeTruthy();
+  expect(slot.queryByRole("list", { name: "Links" })).toBeNull();
+});
+
 it("drops the goal heading in the minimal layout", async () => {
   const slot = await mount({ layout: "minimal" });
   const region = await slot.findByRole("region", { name: "Latest recap" });
@@ -151,7 +184,9 @@ it.each(["full", "minimal"])(
       archivable: true,
       recap: {
         state: "review",
-        review: ["Open Recent; confirm only top-level threads appear"],
+        review: [
+          "Review the pull request, report, and notes; expect matching findings",
+        ],
         links: [
           { title: "Pull request", location: "https://github.com/o/r/pull/1" },
           { title: "Report", location: "/work/report.md" },
@@ -172,7 +207,7 @@ it.each(["full", "minimal"])(
         ?.querySelector("h3")?.textContent,
     ).toBe("Review");
     expect(region.textContent).toContain(
-      "Open Recent; confirm only top-level threads appear",
+      "Review the pull request, report, and notes; expect matching findings",
     );
     expect(slot.getByText("Pull request").closest("a")).toBeTruthy();
     expect(slot.getByText("Report").closest("a")).toBeTruthy();
@@ -180,7 +215,9 @@ it.each(["full", "minimal"])(
     // One review step reads as plain text.
     expect(
       slot
-        .getByText("Open Recent; confirm only top-level threads appear")
+        .getByText(
+          "Review the pull request, report, and notes; expect matching findings",
+        )
         .closest("li"),
     ).toBeNull();
     const archive = await slot.findByRole("button", { name: "Archive" });
