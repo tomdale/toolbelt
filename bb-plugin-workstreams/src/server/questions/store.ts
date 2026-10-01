@@ -82,12 +82,24 @@ export class QuestionStore {
   async history(threadId: string): Promise<QuestionHistory[]> {
     // Import retained answers on demand, including those delivered before
     // Workstreams saved them. Bound each request and never inspect raw provider logs.
-    const events = await this.bb.sdk.threads.events.list({
+    const first = await this.bb.sdk.threads.events.list({
       threadId,
       types: ["client/turn/requested", "item/completed"],
       order: "desc",
-      limit: "200",
+      limit: "100",
     });
+    const last = first.at(-1);
+    const older =
+      first.length === 100 && last
+        ? await this.bb.sdk.threads.events.list({
+            threadId,
+            types: ["client/turn/requested", "item/completed"],
+            order: "desc",
+            limit: "100",
+            beforeSeq: String(last.seq),
+          })
+        : [];
+    const events = [...first, ...older];
     for (const event of events) {
       let result = null;
       if (event.type === "client/turn/requested") {
