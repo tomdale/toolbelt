@@ -40,16 +40,16 @@ it("validates state-specific fields at execution", () => {
   const branch = (state: string) =>
     variants.find((variant) => variant.properties.state?.const === state)!;
   for (const state of ["complete", "review"]) {
-    expect(branch(state).properties).not.toHaveProperty("next");
-    expect(branch(state).properties).not.toHaveProperty("active");
+    expect(branch(state).properties).toHaveProperty("next");
+    expect(branch(state).properties).toHaveProperty("active");
     expect(branch(state).properties.latest?.minItems).toBe(1);
     expect(branch(state).required).toContain("latest");
     expect(branch(state).additionalProperties).toBe(false);
   }
   expect(branch("review").required).toContain("review");
   expect(branch("continuing").required).toContain("active");
-  expect(branch("continuing").properties).not.toHaveProperty("review");
-  expect(branch("complete").properties).not.toHaveProperty("review");
+  expect(branch("continuing").properties).toHaveProperty("review");
+  expect(branch("complete").properties).toHaveProperty("review");
   const review = {
     state: "review",
     goal: "Finished work",
@@ -61,6 +61,70 @@ it("validates state-specific fields at execution", () => {
     recapInputSchema.safeParse({ ...review, next: ["Check navigation"] })
       .success,
   ).toBe(false);
+});
+
+it.each([undefined, null, []])("accepts empty unused arrays: %j", (empty) => {
+  for (const state of ["complete", "review", "continuing"] as const) {
+    const input = {
+      state,
+      goal: "Fixed recap validation",
+      latest: ["Tests passed"],
+      active: state === "continuing" ? ["Running checks"] : empty,
+      next: empty,
+      review: state === "review" ? ["Inspect the fix"] : empty,
+    };
+    expect(recapToolSchema.safeParse(input).success).toBe(true);
+    const recap = toRecap(recapInputSchema.parse(input), {
+      id: "r",
+      turnId: "t",
+      at: 1,
+    });
+    expect(recap.next).toEqual([]);
+    if (state !== "continuing") expect(recap.active).toEqual([]);
+    if (state !== "review") expect(recap.review).toEqual([]);
+  }
+});
+
+it("accepts empty review strings only when review is not required", () => {
+  for (const state of ["complete", "continuing"] as const) {
+    expect(
+      recapInputSchema.safeParse({
+        state,
+        goal: "Fixed validation",
+        latest: ["Tests passed"],
+        ...(state === "continuing" ? { active: ["Running checks"] } : {}),
+        review: "",
+      }).success,
+    ).toBe(true);
+  }
+  for (const review of [undefined, null, [], "", "   "]) {
+    expect(
+      recapInputSchema.safeParse({
+        state: "review",
+        goal: "Fixed validation",
+        latest: ["Tests passed"],
+        review,
+      }).success,
+    ).toBe(false);
+  }
+});
+
+it("rejects substantive unused fields and unknown keys", () => {
+  const complete = {
+    state: "complete",
+    goal: "Fixed validation",
+    latest: ["Tests passed"],
+  };
+  for (const patch of [
+    { active: ["Running checks"] },
+    { next: ["Run checks"] },
+    { review: ["Inspect the fix"] },
+    { review: "Inspect the fix" },
+    { extra: [] },
+  ])
+    expect(recapInputSchema.safeParse({ ...complete, ...patch }).success).toBe(
+      false,
+    );
 });
 
 it("requires active work for a working recap and maps it to in progress", () => {
@@ -108,6 +172,7 @@ it("requires active work for a working recap and maps it to in progress", () => 
   // Every item done: report complete, not working.
   rejects({ active: undefined, latest: ["Done"] });
   rejects({ active: [] });
+  rejects({ active: null });
   rejects({ active: ["a", "b"], latest: ["c", "d", "e"] });
   rejects({ review: "Nothing to review" });
   rejects({ links: [{ title: "File", location: "/work/a" }] });
