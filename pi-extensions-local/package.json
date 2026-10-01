@@ -10,10 +10,7 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/claude-rules.ts",
-      "./extensions/plan-shortcut.ts",
-      "./extensions/preset.ts",
-      "./extensions/protected-paths.ts"
+      "./extensions/plan-shortcut.ts"
     ]
   },
   "peerDependencies": {
