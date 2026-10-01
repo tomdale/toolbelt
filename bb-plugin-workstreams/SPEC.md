@@ -502,14 +502,16 @@ it.
      the section already implies. The open thread's row stays through read and
      status updates, and past the five-row limit, until the user selects another
      thread; hiding, archiving, and snoozing still remove it at once.
-   - Prioritized workstreams (the header menu's Prioritize, or
-     `bb workstreams prioritize`) pin directly below Up Next, in manual order,
-     with a flag on their header, and never go dormant. While any prioritized
-     workstream has a thread in Up Next, Up Next shows only prioritized threads
-     (focus): the rest collapse behind "N more in other workstreams", and other
-     groups' waiting counts turn neutral. Focus never takes away the open
-     thread's row; it leaves once the user selects another thread. Priorities
-     are view state, stored with the manual order and shared across clients.
+   - Prioritized workstreams pin directly below Up Next, in manual order, and
+     never go dormant. The header's flag button toggles priority: it appears on
+     hover, and stays shown, filled, on a prioritized workstream as its mark.
+     The header menu's Prioritize and `bb workstreams prioritize` do the same.
+     While any prioritized workstream has a thread in Up Next, Up Next shows
+     only prioritized threads (focus): the rest collapse behind "N more in other
+     workstreams", and other groups' waiting counts turn neutral. Focus never
+     takes away the open thread's row; it leaves once the user selects another
+     thread. Priorities are view state, stored with the manual order and shared
+     across clients.
    - An optional Recent band (de-duplicated against Up Next).
    - Workstream groups with plain headers: the name, a needs-you count only when
      above 0, and a total. Groups follow the user's manual order (drag a header;

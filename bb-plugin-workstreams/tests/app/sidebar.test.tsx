@@ -1376,17 +1376,17 @@ describe("prioritized workstreams", () => {
       ]),
     );
     expect(
-      within(slot.getByRole("region", { name: "Zeta" })).getByRole("img", {
-        name: "Prioritized",
-      }),
-    ).toBeTruthy();
+      within(slot.getByRole("region", { name: "Zeta" }))
+        .getByRole("button", { name: "Remove priority from Zeta" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(
       slot.inspection.rpcCalls.find((c) => c.method === "reorder")?.input,
     ).toEqual({ kind: "prioritized", ids: ["sec_z"] });
 
     fireEvent.contextMenu(
       within(slot.getByRole("region", { name: "Zeta" })).getByRole("button", {
-        name: /^Zeta/,
+        name: "Zeta",
       }),
     );
     fireEvent.click(
@@ -1401,6 +1401,35 @@ describe("prioritized workstreams", () => {
         "Beta",
       ]),
     );
+    slot.lifecycle.unmount();
+  });
+
+  it("prioritizes from the header's inline button", async () => {
+    const slot = await mount(
+      [
+        sidebarThread("a1", { sectionId: "sec_a", title: "Alpha task" }),
+        sidebarThread("b1", { sectionId: "sec_b", title: "Beta task" }),
+      ],
+      { activeThreadId: null, settings: { showRecent: false } },
+    );
+    await waitFor(() =>
+      expect(regions(slot)).toEqual(["Alpha", "Beta", "Zeta"]),
+    );
+    fireEvent.click(slot.getByRole("button", { name: "Prioritize Beta" }));
+    await waitFor(() =>
+      expect(regions(slot)).toEqual(["Beta", "Alpha", "Zeta"]),
+    );
+    const off = slot.getByRole("button", { name: "Remove priority from Beta" });
+    expect(off.getAttribute("aria-pressed")).toBe("true");
+    // The click stays on the button: the group doesn't collapse.
+    expect(groupRows(slot, "Beta")).toEqual(["Beta task"]);
+    fireEvent.click(off);
+    await waitFor(() =>
+      expect(regions(slot)).toEqual(["Alpha", "Beta", "Zeta"]),
+    );
+    expect(
+      slot.queryByRole("button", { name: "Prioritize Unsorted" }),
+    ).toBeNull();
     slot.lifecycle.unmount();
   });
 

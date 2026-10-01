@@ -1303,17 +1303,30 @@ function WorkstreamGroup({
               muted={muted}
               className="text-[13px] font-semibold"
             />
-            {group.prioritized ? (
-              <span
-                role="img"
-                aria-label="Prioritized"
-                title="Prioritized"
-                className="inline-flex shrink-0 text-muted-foreground"
-              >
-                <PriorityIcon className="size-3" />
-              </span>
-            ) : null}
           </button>
+          {onTogglePriority ? (
+            // Always shown on a prioritized workstream, where it is also the
+            // priority mark; elsewhere it appears on hover like New work.
+            <button
+              type="button"
+              aria-pressed={group.prioritized}
+              aria-label={
+                group.prioritized
+                  ? `Remove priority from ${group.name}`
+                  : `Prioritize ${group.name}`
+              }
+              title={group.prioritized ? "Remove priority" : "Prioritize"}
+              onClick={onTogglePriority}
+              className={cn(
+                "rounded p-0.5 hover:text-foreground focus-visible:opacity-100",
+                group.prioritized
+                  ? "text-foreground/70"
+                  : "text-muted-foreground opacity-0 group-hover/head:opacity-100",
+              )}
+            >
+              <PriorityIcon filled={group.prioritized} className="size-3.5" />
+            </button>
+          ) : null}
           {onNewThread ? (
             <button
               type="button"
