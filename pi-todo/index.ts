@@ -21,6 +21,7 @@
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
+import { shouldUseNativeBbTodo } from "./bb-mode.js";
 import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.js";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
 import { replayFromBranch } from "./state/replay.js";
@@ -126,6 +127,8 @@ function formatError(e: unknown): string {
 }
 
 export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = () => import("./todo-overlay.js")) {
+	// BB owns this tool and its UI for BB-launched sessions; standalone Pi still uses this extension.
+	if (shouldUseNativeBbTodo()) return;
 	let todoOverlay: TodoOverlay | undefined;
 	const loadTodoOverlay = makeTodoOverlayLoader(importOverlay);
 	let uiCtx: ExtensionUIContext | undefined;
