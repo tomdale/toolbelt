@@ -59,13 +59,14 @@ export const recapInputSchema = z
     state: z.enum(RECAP_STATES),
     goal: line(80),
     latest: z.array(line(120)).min(1).max(3),
-    review: line(160).optional(),
+    // One step may arrive as a plain string.
+    review: z.union([line(160), z.array(line(160)).min(1).max(3)]).optional(),
     links: z.array(linkSchema).max(8).default([]),
   })
   .strict()
   .refine((recap) => recap.state !== "review" || recap.review !== undefined, {
     message:
-      "A review recap needs a review line: what to check, and the expected result.",
+      "A review recap needs review steps: what to check, and the expected result.",
     path: ["review"],
   });
 export type RecapInput = z.infer<typeof recapInputSchema>;
@@ -78,7 +79,12 @@ export const recapSchema = z.object({
   state: z.enum(RECAP_STATES),
   goal: z.string(),
   latest: z.array(z.string()),
-  review: z.string().nullable(),
+  /** Review steps; empty unless the state is review. */
+  review: z.preprocess(
+    (value) =>
+      typeof value === "string" ? [value] : value === null ? [] : value,
+    z.array(z.string()),
+  ),
   links: z.array(linkSchema),
 });
 export type Recap = z.infer<typeof recapSchema>;
@@ -93,7 +99,9 @@ export function toRecap(
     goal: tidy(input.goal),
     latest: input.latest.map(tidy),
     review:
-      input.state === "review" && input.review ? tidy(input.review) : null,
+      input.state === "review" && input.review
+        ? [input.review].flat().map(tidy)
+        : [],
     links: input.links.map((item) => ({
       ...item,
       title: tidy(item.title),
@@ -111,7 +119,11 @@ export function recapMarkdown(recap: Recap): string {
   return [
     `**${state}** · ${recap.goal}`,
     ...recap.latest.map((line) => `- ${line}`),
-    recap.review ? `\n**Review:** ${recap.review}` : null,
+    recap.review.length === 1
+      ? `\n**Review:** ${recap.review[0]}`
+      : recap.review.length
+        ? `\n**Review:**\n${recap.review.map((step) => `- ${step}`).join("\n")}`
+        : null,
     recap.links.length
       ? `\n${recap.links.map((link) => `[${link.title}](${link.location})`).join(" · ")}`
       : null,
@@ -130,7 +142,7 @@ export const RECAP_TOOL_DESCRIPTION =
  */
 export const RECAP_INSTRUCTIONS = `End every turn with ${RECAP_TOOL}, after completing the work you were authorized to do, unless the turn ends with a question card (AskUserQuestion or your provider's own question tool) still awaiting the user's answer. Ask questions only through such a card, never only in your reply.
 state: complete when the user's latest request is fully done; review when a finished result waits on the user to inspect, test, merge, or ship.
-Write terse fragments in sentence case without closing periods. goal: the thread's durable purpose as a short -ing phrase ("Porting handoffs into Workstreams"). latest: one to three concrete results of work actually done, about 12 words each, most important first. review (required for review): what to inspect or try and the result to expect, about 20 words. links: files or pages you actually made or changed that the user will open, as absolute file paths or HTTPS URLs.
+Write terse fragments in sentence case without closing periods. goal: the thread's durable purpose as a short -ing phrase ("Porting handoffs into Workstreams"). latest: one to three concrete results of work actually done, about 12 words each, most important first. review (required for review): one to three steps, each saying what to inspect or try and the result to expect, about 20 words each. links: files or pages you actually made or changed that the user will open, as absolute file paths or HTTPS URLs.
 The user decides whether to archive the thread from the recap. When a question card is dismissed or expires, treat the question as unanswered and unapproved, and continue only work that does not depend on it.`;
 
 /**
@@ -158,4 +170,31 @@ export function reportedAnalysis(
     revision: thread.latestAttentionAt,
     at: recap.at,
   };
+}
+
+/** Where the thread's files live, for resolving a recap's file links. */
+export type RecapFiles = {
+  environmentId: string;
+  /** The environment's directory on its host. */
+  root: string | null;
+  hostId: string | null;
+};
+
+/**
+ * BB's file target for a recap link's absolute path: the thread's workspace
+ * when the path is inside it, else the environment's host. Null when neither
+ * is known, so the link shows as plain text.
+ */
+export function fileTarget(
+  path: string,
+  files: RecapFiles | null,
+):
+  | { kind: "workspace"; environmentId: string; path: string }
+  | { kind: "host"; hostId: string; path: string }
+  | null {
+  if (!files) return null;
+  const root = files.root?.replace(/\/+$/, "");
+  if (root && (path === root || path.startsWith(`${root}/`)))
+    return { kind: "workspace", environmentId: files.environmentId, path };
+  return files.hostId ? { kind: "host", hostId: files.hostId, path } : null;
 }

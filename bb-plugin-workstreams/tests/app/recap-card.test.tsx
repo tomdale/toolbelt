@@ -61,7 +61,7 @@ const RECAP = {
   state: "complete",
   goal: "Building the card",
   latest: ["Card renders"],
-  review: null,
+  review: [],
   links: [],
 };
 
@@ -112,7 +112,7 @@ async function mount(
           recap,
           capped: options.capped ?? false,
           corrections: 3,
-          environmentId: "env_1",
+          files: { environmentId: "env_1", root: "/work", hostId: "host_1" },
         }),
         recap_dismiss: () => {
           recap = null;
@@ -147,10 +147,12 @@ it.each(["full", "minimal"])(
       archivable: true,
       recap: {
         state: "review",
-        review: "Open Recent; confirm only top-level threads appear",
+        review: ["Open Recent; confirm only top-level threads appear"],
         links: [
           { title: "Pull request", location: "https://github.com/o/r/pull/1" },
-          { title: "Report", location: "/tmp/report.md" },
+          { title: "Report", location: "/work/report.md" },
+          // Outside the workspace: still a link, through the host.
+          { title: "Notes", location: "/tmp/notes.md" },
         ],
       },
     });
@@ -161,6 +163,13 @@ it.each(["full", "minimal"])(
     );
     expect(slot.getByText("Pull request").closest("a")).toBeTruthy();
     expect(slot.getByText("Report").closest("a")).toBeTruthy();
+    expect(slot.getByText("Notes").closest("a")).toBeTruthy();
+    // One review step reads as plain text.
+    expect(
+      slot
+        .getByText("Open Recent; confirm only top-level threads appear")
+        .closest("li"),
+    ).toBeNull();
     const archive = await slot.findByRole("button", { name: "Archive" });
     // Full recaps get the full-size button; minimal ones a compact one.
     expect(archive.className).toContain(layout === "full" ? "h-9" : "h-8");
@@ -173,6 +182,22 @@ it.each(["full", "minimal"])(
     );
   },
 );
+
+it("lists several review steps", async () => {
+  const slot = await mount({
+    recap: {
+      state: "review",
+      review: ["Open New work and type a request", "Expand Debug"],
+    },
+  });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  const steps = [...region.querySelectorAll("section")].find((section) =>
+    section.textContent?.startsWith("Review"),
+  )!;
+  expect([...steps.querySelectorAll("li")].map((li) => li.textContent)).toEqual(
+    ["Open New work and type a request", "Expand Debug"],
+  );
+});
 
 it("withdraws Archive once the user continues the thread", async () => {
   const slot = await mount({ archivable: true });

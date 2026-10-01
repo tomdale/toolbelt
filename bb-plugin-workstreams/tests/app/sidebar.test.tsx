@@ -501,7 +501,7 @@ describe("thread list", () => {
       state,
       goal: "Shipping",
       latest: [`Reported ${state}`],
-      review: state === "review" ? "Try it" : null,
+      review: state === "review" ? ["Try it"] : [],
       links: [],
     });
     const slot = await mount(

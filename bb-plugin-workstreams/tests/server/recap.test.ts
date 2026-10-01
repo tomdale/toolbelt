@@ -97,7 +97,7 @@ describe("agent recaps", () => {
     expect(state.recaps.t1).toMatchObject({ state: "complete" });
   });
 
-  it("requires a review line for review, and real link locations", async () => {
+  it("requires review steps for review, and real link locations", async () => {
     const s = await world();
     s.w.turn("t1");
     await expect(s.report({ ...RECAP, state: "review" })).rejects.toThrow();
@@ -108,24 +108,42 @@ describe("agent recaps", () => {
       }),
     ).rejects.toThrow();
     await expect(s.report({ ...RECAP, latest: [] })).rejects.toThrow();
+    await expect(
+      s.report({ ...RECAP, state: "review", review: [] }),
+    ).rejects.toThrow();
     const output = await s.report({
       ...RECAP,
       state: "review",
-      review: "Open the sidebar and check the ✓ mark",
+      review: ["Open the sidebar.", "Check the ✓ mark"],
       links: [{ title: "Report", location: "/tmp/report.md" }],
     });
-    expect((await s.card()).recap).toMatchObject({ state: "review" });
+    expect((await s.card()).recap).toMatchObject({
+      state: "review",
+      review: ["Open the sidebar", "Check the ✓ mark"],
+    });
     // The call's output is the recap the timeline row keeps.
     expect(output).toBe(
       [
         "**Ready for review** · Porting handoffs into Workstreams",
         "- Moved the recap tool into Workstreams",
         "",
-        "**Review:** Open the sidebar and check the ✓ mark",
+        "**Review:**",
+        "- Open the sidebar",
+        "- Check the ✓ mark",
         "",
         "[Report](/tmp/report.md)",
       ].join("\n"),
     );
+    // A single step may come as a string, and reads as one line.
+    const single = await s.report({
+      ...RECAP,
+      state: "review",
+      review: "Open the sidebar",
+    });
+    expect((await s.card()).recap).toMatchObject({
+      review: ["Open the sidebar"],
+    });
+    expect(single).toContain("**Review:** Open the sidebar");
   });
 
   it("asks for a missing recap, caps the reminders, and resets on fresh input", async () => {

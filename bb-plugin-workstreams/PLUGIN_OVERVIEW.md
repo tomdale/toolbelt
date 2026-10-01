@@ -11,7 +11,7 @@ and aliases and suggests one home: continue a thread, start in an existing
 workstream, or start a new one. Nothing changes until you accept it.
 
 Each thread's agent ends its turns with a question card or a recap: complete, or
-ready for review with a Review line naming what to check. The recap sits above
+ready for review with Review steps naming what to check. The recap sits above
 the composer with a dismiss ✕ and, once the work is done, Archive; its state
 marks the thread in the sidebar.
 

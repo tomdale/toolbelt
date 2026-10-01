@@ -512,11 +512,27 @@ export default async function plugin(bb: BbPluginApi) {
       const thread = await bb.sdk.threads.get({ threadId });
       const stored = recaps.get(threadId);
       const { capped, corrections } = recaps.capped(threadId);
+      const recap = stored && !stored.dismissed ? stored.recap : null;
+      // Only file links need the environment, and an unreadable one leaves
+      // them as plain text.
+      const environment =
+        recap?.links.some((link) => link.location.startsWith("/")) &&
+        thread.environmentId
+          ? await bb.sdk.environments
+              .get({ environmentId: thread.environmentId })
+              .catch(() => null)
+          : null;
       return {
-        recap: stored && !stored.dismissed ? stored.recap : null,
+        recap,
         capped: capped && thread.status === "idle",
         corrections,
-        environmentId: thread.environmentId,
+        files: thread.environmentId
+          ? {
+              environmentId: thread.environmentId,
+              root: environment?.path ?? null,
+              hostId: environment?.hostId ?? null,
+            }
+          : null,
       };
     },
     recap_dismiss: ({ threadId, recapId }) =>
