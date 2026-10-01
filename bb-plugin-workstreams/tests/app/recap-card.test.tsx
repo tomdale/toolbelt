@@ -68,6 +68,8 @@ const RECAP = {
 async function mount(
   options: {
     layout?: string;
+    hashDigits?: string;
+    hashLetters?: string;
     recap?: Record<string, unknown> | null;
     capped?: boolean;
     archivable?: boolean;
@@ -107,6 +109,8 @@ async function mount(
             required: true,
             corrections: 3,
             layout: options.layout ?? "full",
+            hashDigits: options.hashDigits ?? null,
+            hashLetters: options.hashLetters ?? null,
           },
         }),
         state: () => emptyState(),
@@ -532,5 +536,19 @@ it("renders commit hashes and thread mentions as chips", async () => {
   expect(sha.textContent).toBe("cef4818");
   expect(slot.getByRole("link").getAttribute("href")).toBe(
     "/projects/proj_1/threads/other",
+  );
+});
+
+it("colors hash digits and letters from settings", async () => {
+  const slot = await mount({
+    hashDigits: "#112233",
+    hashLetters: "#445566",
+    recap: { latest: ["Pushed cef48186269c"] },
+  });
+  await slot.findByRole("region", { name: "Latest recap" });
+  const sha = slot.getByRole("button", { name: "Copy commit cef48186269c" });
+  expect(sha.style.color).toBe("rgb(17, 34, 51)");
+  expect((sha.querySelector("span span") as HTMLElement).style.color).toBe(
+    "rgb(68, 85, 102)",
   );
 });

@@ -6,6 +6,8 @@ it("fills defaults for missing or invalid preferences", () => {
     required: true,
     corrections: 3,
     layout: "full",
+    hashDigits: null,
+    hashLetters: null,
   });
   expect(parseRecapPrefs({ layout: "huge", required: "yes" })).toMatchObject({
     required: true,
@@ -21,4 +23,10 @@ it("keeps a stored minimal layout and reads other stored layouts as full", () =>
 it("clamps reminders to their range", () => {
   expect(parseRecapPrefs({ corrections: 99 }).corrections).toBe(10);
   expect(parseRecapPrefs({ corrections: -1 }).corrections).toBe(0);
+});
+
+it("keeps valid hash colors and drops invalid ones", () => {
+  const prefs = parseRecapPrefs({ hashDigits: "#336699", hashLetters: "red" });
+  expect(prefs.hashDigits).toBe("#336699");
+  expect(prefs.hashLetters).toBeNull();
 });

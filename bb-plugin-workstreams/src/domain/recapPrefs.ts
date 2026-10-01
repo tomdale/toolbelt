@@ -27,6 +27,13 @@ export const RECAP_LAYOUT_OPTIONS: readonly {
   },
 ];
 
+/** A custom hash color, as `#rrggbb`; null keeps the theme's default tint. */
+const hashColor = z
+  .string()
+  .regex(/^#[0-9a-f]{6}$/i)
+  .nullable()
+  .catch(null);
+
 export const CORRECTIONS = { min: 0, max: 10, fallback: 3 } as const;
 
 export const recapPrefsSchema = z.object({
@@ -41,6 +48,9 @@ export const recapPrefsSchema = z.object({
       Math.min(CORRECTIONS.max, Math.max(CORRECTIONS.min, value)),
     ),
   layout: z.enum(RECAP_LAYOUTS).catch("full"),
+  /** Commit hash colors in recap text: one for digits, one for letters. */
+  hashDigits: hashColor,
+  hashLetters: hashColor,
 });
 export type RecapPrefs = z.infer<typeof recapPrefsSchema>;
 
@@ -50,6 +60,8 @@ export function parseRecapPrefs(raw: unknown): RecapPrefs {
     required: true,
     corrections: CORRECTIONS.fallback,
     layout: "full",
+    hashDigits: null,
+    hashLetters: null,
     ...value,
   });
 }

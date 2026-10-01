@@ -31,6 +31,47 @@ function LayoutGlyph({ layout }: { layout: RecapLayout }) {
   );
 }
 
+/** Swatch starting points when a color is unset; the card uses theme tints. */
+const DEFAULT_HASH_COLORS = { digits: "#5b7c99", letters: "#86709c" };
+
+function HashColorInput({
+  label,
+  value,
+  fallback,
+  onChange,
+}: {
+  label: string;
+  value: string | null;
+  fallback: string;
+  onChange: (value: string | null) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <label className="flex cursor-pointer items-center gap-1.5">
+        <input
+          type="color"
+          aria-label={`${label} color`}
+          value={value ?? fallback}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-6 w-7 cursor-pointer rounded border border-border bg-transparent p-0.5"
+        />
+        {label}
+      </label>
+      {value ? (
+        <button
+          type="button"
+          aria-label={`Reset ${label.toLowerCase()} color`}
+          title="Use the theme default"
+          onClick={() => onChange(null)}
+          className="cursor-pointer underline-offset-2 hover:text-foreground hover:underline"
+        >
+          Reset
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export function RecapSettings() {
   const { prefs, save } = useRecapPrefs();
   const [error, setError] = useState<string | null>(null);
@@ -115,8 +156,31 @@ export function RecapSettings() {
             );
           })}
         </div>
-        <RecapPreview layout={prefs.layout} />
+        <RecapPreview
+          layout={prefs.layout}
+          hashColors={{ digits: prefs.hashDigits, letters: prefs.hashLetters }}
+        />
       </div>
+      <SettingRow
+        label="Commit hash colors"
+        description="Tints for the digits and letters of commit hashes in recaps. Default follows the light or dark theme."
+        control={
+          <div className="flex items-center gap-3">
+            <HashColorInput
+              label="Digits"
+              value={prefs.hashDigits}
+              fallback={DEFAULT_HASH_COLORS.digits}
+              onChange={(hashDigits) => change({ hashDigits })}
+            />
+            <HashColorInput
+              label="Letters"
+              value={prefs.hashLetters}
+              fallback={DEFAULT_HASH_COLORS.letters}
+              onChange={(hashLetters) => change({ hashLetters })}
+            />
+          </div>
+        }
+      />
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {error}
