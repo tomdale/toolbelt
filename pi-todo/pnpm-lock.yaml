@@ -1,0 +1,36 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: false
+  excludeLinksFromLockfile: false
+
+overrides:
+  '@juicesharp/rpiv-config': 2.6.2
+  typebox: 1.1.24
+
+importers:
+
+  .:
+    dependencies:
+      '@juicesharp/rpiv-config':
+        specifier: 2.6.2
+        version: 2.6.2
+      typebox:
+        specifier: 1.1.24
+        version: 1.1.24
+
+packages:
+
+  '@juicesharp/rpiv-config@2.6.2':
+    resolution: {integrity: sha512-FD36DmnRowb3ZHOZlJMx5pmSVflVseurpT8Yo5E9TBcWFnUvTfy1IgRfFSiap73fi1wZ8M130dtr9P4+Ot0TlA==}
+
+  typebox@1.1.24:
+    resolution: {integrity: sha512-IGWOHx9UfqkEl7lNmA5417b80VY1NHNGdD5OgwEojHCKdsX1oj0lmgc6N6qEb0tUYzQBveIoccNwBen3IDIHwg==}
+
+snapshots:
+
+  '@juicesharp/rpiv-config@2.6.2':
+    dependencies:
+      typebox: 1.1.24
+
+  typebox@1.1.24: {}

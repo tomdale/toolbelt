@@ -1,0 +1,321 @@
+# pi-recap
+
+[English](./README.md)
+
+`pi-recap` 是一个 Pi extension，用来生成**最近活动 recap**。它不是 compact，不会压缩或替换 LLM 上下文。
+
+核心能力：
+
+- 手动 `/recap` 生成最近活动摘要；
+- agent 完成后空闲一段时间自动生成 recap；
+- 发送新消息时取消尚未完成的自动 recap，避免写入或展示过期结果；
+- 使用 editor widget 展示自动 recap 的进度以及 recap 结果和错误，成功结果不会再重复显示为聊天区通知；
+- recap 时顺便生成短 title；模型未返回可用 title 时会确定性地从 recap 派生 fallback，并显示明确 warning；
+- 空输出、截断/失败响应或损坏的 JSON-like 输出不会保存半成品 recap 状态；
+- 是否用 title 更新 Pi session name 由配置控制；
+- session name 变化时可选同步最近一层终端复用器：Herdr pane label 或 tmux window name；
+- `/recap-config` 提供 TUI 常用配置；
+- `/recap-config json` 编辑完整 JSON 配置。
+
+### 安装
+
+本包未发布到 npm。把目录加入 Pi 的 `packages` 设置，或从 toolbelt checkout 安装：
+
+```bash
+pi install ./pi-recap
+```
+
+临时试用：
+
+```bash
+pi -e ./pi-recap
+```
+
+### 命令
+
+```text
+/recap
+```
+
+生成最近活动 recap。它会：
+
+1. 收集上一次 recap 之后的最近活动；
+2. 调用模型生成一行 recap；
+3. 顺便生成一个短 title；
+4. 使用 `pi.appendEntry("recap", ...)` 保存状态；
+5. 在 editor widget 中展示 recap；
+6. 如果配置允许，用 title 更新 Pi session name；
+7. 如果启用终端复用器同步，session name 变化会同步到最近一层 Herdr pane 或 tmux window。
+
+```text
+/recap-config
+```
+
+打开 TUI 配置界面，修改常用配置并保存到：
+
+```text
+$PI_CODING_AGENT_DIR/extension-data/pi-recap/config.json
+```
+
+```text
+/recap-config json
+```
+
+编辑完整 JSON 配置。
+
+### TUI only
+
+recap 只在 Pi TUI 模式工作。`print`、`json`、`rpc` 等 headless 模式会直接跳过，避免后台脚本或多实例场景产生额外模型调用、session 写入或命名副作用。
+
+### 配置文件
+
+插件读取：
+
+```text
+$PI_CODING_AGENT_DIR/extension-data/pi-recap/config.json
+.pi/extension-data/pi-recap/config.json
+```
+
+项目级 `.pi/extension-data/pi-recap/config.json` 仅在项目被 Pi trust 后读取，并覆盖全局配置。首次加载时会自动迁移并升级旧的全局路径和受信任项目路径；无法映射的字段会被丢弃并提示 warning，格式损坏的文件会原样保留。
+
+示例配置见：
+
+```text
+examples/recap.json
+```
+
+默认配置：
+
+```json
+{
+  "recap": {
+    "enabled": true,
+    "auto": true,
+    "manualCommand": true,
+    "idleAfterTurnMs": 180000,
+    "minSessionTurns": 3,
+    "neverTwiceInARow": true,
+    "model": "current",
+    "fallbackToCurrentModel": true,
+    "maxRecentChars": 20000,
+    "maxTokens": 300,
+    "language": "auto"
+  },
+  "display": {
+    "widgetPlacement": "aboveEditor"
+  },
+  "title": {
+    "generate": true,
+    "applyToSessionName": false,
+    "applyPolicy": "if-empty-or-auto",
+    "maxLength": 50
+  },
+  "multiplexer": {
+    "enabled": true,
+    "template": "π {session} · {project}",
+    "maxLength": 48,
+    "restoreOnShutdown": true
+  }
+}
+```
+
+### 常用配置
+
+启用自动更新 session name：
+
+```json
+{
+  "title": {
+    "applyToSessionName": true,
+    "applyPolicy": "if-empty-or-auto"
+  }
+}
+```
+
+启用 `title.generate` 后，如果模型没有返回可用 title，recap 会确定性地使用清理成一行的 recap 作为 title，并严格限制在 `title.maxLength` 内。fallback 仍遵守 `title.applyToSessionName` 与 `title.applyPolicy`；`never`、`if-empty`、`if-empty-or-auto`、`always` 的原有语义不变。持久化 recap 会记录 title 来自 fallback，因此生成后以及 session reload 后，editor widget 都会显示 warning。将 `title.generate` 设为 `false` 会同时禁用模型 title 和该 fallback。
+
+纯文本与普通 bullet recap 响应仍然有效。空 recap、损坏或截断的 JSON-like 响应，以及以 `length` 或 `error` 结束的模型响应都会被视为 recap 失败：widget 会显示失败信息，不会 append recap entry、不会更新 session name，也不会推进上一次 recap 的 source 位置。
+
+关闭自动 recap，仅保留手动 `/recap`：
+
+```json
+{
+  "recap": {
+    "auto": false
+  }
+}
+```
+
+指定 recap 模型：
+
+```json
+{
+  "recap": {
+    "model": "google/gemini-2.5-flash",
+    "fallbackToCurrentModel": true
+  }
+}
+```
+
+选择 widget 位置：
+
+```json
+{
+  "display": {
+    "widgetPlacement": "aboveEditor"
+  }
+}
+```
+
+recap 始终使用 editor widget，展示区域不再支持配置。自动 recap 的生成进度会在同一个 widget 中被最终结果替换；手动 `/recap` 生成时使用可取消 Loader，完成后在 widget 中显示结果。下一条消息开始时会清除 widget；如果自动 recap 仍在生成，该任务也会被取消，并且不会在稍后写入或重新展示过期结果。
+
+读取旧配置时，插件会移除已废弃的 `display.notify`、`display.mode`、`display.widget` 和 `display.clearWidgetOnNextAgentStart`，并更新原配置文件；`display.widgetPlacement` 会保留。旧的 `tmux` 配置会自动迁移到 `multiplexer`；两者同时存在时，显式设置的 `multiplexer` 字段优先。
+
+自定义 Herdr pane label 或 tmux window 名称：
+
+```json
+{
+  "multiplexer": {
+    "template": "π {project} · {session}",
+    "maxLength": 60
+  }
+}
+```
+
+支持变量：
+
+```text
+{session}
+{project}
+{cwd}
+{id}
+```
+
+### 语言
+
+`recap.language` 默认是：
+
+```json
+{
+  "recap": {
+    "language": "auto"
+  }
+}
+```
+
+`auto` 会要求模型使用最近活动的主要语言。你也可以显式指定：
+
+```json
+{
+  "recap": {
+    "language": "zh-CN"
+  }
+}
+```
+
+或：
+
+```json
+{
+  "recap": {
+    "language": "en"
+  }
+}
+```
+
+注意：Pi 当前不会向 extension 提供用户语言/locale 字段；这是插件自己的配置。
+
+### 终端复用器行为
+
+启用 `multiplexer.enabled` 后，recap 会自动选择直接承载当前 Pi 的最近一层：
+
+1. `HERDR_ENV=1` 且 `HERDR_PANE_ID` 非空时，选择当前 Herdr pane label。系统需要能执行 `herdr` CLI；Herdr 也可以通过 `HERDR_BIN_PATH` 提供绝对路径。
+2. 未检测到 Herdr、但存在 `TMUX` 时，选择当前 tmux window name。
+3. 两者都没有时，不执行任何命名操作。
+
+Herdr 嵌套在 tmux 中时，recap 只更新 Herdr pane。如果检测到了 Herdr，但 pane 身份不完整或 CLI 不可用，recap 只警告一次，不会回退修改继承的外层 tmux。
+
+对于 tmux，recap 延续原行为：持有 window name 期间关闭 `automatic-rename`。仅当当前名称仍等于 recap 最近一次成功写入的值时，才恢复原 pane/window 名称，因此后续手动改名不会被覆盖。运行时关闭同步或 reload 会立即释放持有状态；reload 会先恢复，再由新 extension 实例重新应用。普通 Pi 退出时是否恢复由 `restoreOnShutdown` 控制。同步被恢复或关闭时，tmux 捕获到的 `automatic-rename` 设置会一并恢复。
+
+以下操作都会触发复用器同步：
+
+```bash
+pi --name "auth refresh"
+```
+
+```text
+/name auth refresh
+```
+
+以及 recap 根据配置调用 `pi.setSessionName(title)`。recap 不会修改 Herdr 官方的 Pi agent-state integration。
+
+### 隐私与费用
+
+- recap 会额外调用模型。
+- 默认使用当前 Pi 模型：`recap.model = "current"`。
+- 最近活动内容会发送给当前或配置的 provider。
+- 如果不希望自动额外调用模型，请设置：
+
+```json
+{
+  "recap": {
+    "auto": false
+  }
+}
+```
+
+### 不是 compact
+
+`pi-recap` 不会：
+
+- 调用 Pi compact；
+- 替换 LLM 历史；
+- 把 recap 注入后续 LLM context；
+- 删除或压缩 session 消息。
+
+recap 历史使用 `pi.appendEntry("recap", ...)` 作为 extension 状态保存，不参与 LLM context。
+
+### 在 Pi 官方 package gallery 中可见的前提
+
+Pi 文档说明，package gallery 会展示带有 `pi-package` keyword 的包。公开共享时建议：
+
+1. 发布为公开 npm 包；
+2. `package.json` 中包含：
+
+```json
+{
+  "keywords": ["pi-package"]
+}
+```
+
+3. 提供 `pi` manifest，例如：
+
+```json
+{
+  "pi": {
+    "extensions": ["./extensions/recap.ts"]
+  }
+}
+```
+
+4. 可选添加 gallery 预览图：
+
+```json
+{
+  "pi": {
+    "extensions": ["./extensions/recap.ts"],
+    "image": "https://example.com/screenshot.png"
+  }
+}
+```
+
+或 MP4：
+
+```json
+{
+  "pi": {
+    "extensions": ["./extensions/recap.ts"],
+    "video": "https://example.com/demo.mp4"
+  }
+}
+```

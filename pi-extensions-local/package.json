@@ -1,0 +1,31 @@
+{
+  "name": "@tomdale/pi-extensions-local",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Small single-file Pi extensions loaded from Tom's toolbelt checkout.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/claude-rules.ts",
+      "./extensions/plan-shortcut.ts",
+      "./extensions/preset.ts",
+      "./extensions/protected-paths.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@earendil-works/pi-tui": "0.87.1",
+    "@types/node": "25.6.0",
+    "typescript": "6.0.3"
+  }
+}
