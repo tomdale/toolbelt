@@ -187,7 +187,7 @@ function RecapText({
             {body ? (
               <Markdown
                 content={body}
-                className={`!inline [&_p]:!inline ${MARKDOWN_CLASS}`}
+                className={`!inline !text-[length:inherit] !leading-[inherit] [&_p]:!inline ${MARKDOWN_CLASS}`}
               />
             ) : null}
             {/\s$/.test(segment.text) && body ? " " : null}
