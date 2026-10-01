@@ -6,7 +6,8 @@
  * visible thread appears in exactly one group, or in Snoozed (SPEC I1).
  *
  * While a prioritized workstream has a thread in Up Next, Up Next shows only
- * prioritized threads (see `focusNeeds`). Changes the user didn't make never
+ * prioritized threads (see `focusNeeds`), and while any workstream is
+ * prioritized, the rest hide behind a toggle below the prioritized ones. Changes the user didn't make never
  * pull the open thread's row away, and rows open and close rather than pop
  * (see `motion.ts`).
  */
@@ -195,7 +196,6 @@ export function WorkstreamsThreadList({
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAllNeeds, setShowAllNeeds] = useState(false);
-  const [showElsewhere, setShowElsewhere] = useState(false);
   const [showLower, setShowLower] = useState(false);
   // Lower-priority workstreams the user expanded since revealing them. Not
   // persisted: each reveal starts with every one collapsed.
@@ -271,7 +271,6 @@ export function WorkstreamsThreadList({
   useLayoutEffect(() => {
     shownBefore.current = new Set(focus.shown.map((row) => row.thread.id));
   });
-  if (!focus.active && showElsewhere) setShowElsewhere(false);
   const archivedThreads = ws.showArchived
     ? archived.threads.filter((thread) => thread.isArchived && !thread.isHidden)
     : [];
@@ -429,20 +428,15 @@ export function WorkstreamsThreadList({
           index < NEEDS_YOU_LIMIT || row.thread.id === activeThreadId,
       );
   const moreNeeds = focus.shown.length - needsRows.length;
-  const elsewhereRows = showElsewhere ? focus.elsewhere : [];
-  const needsMarks = anyMark([...needsRows, ...elsewhereRows], "needs-you");
+  const needsMarks = anyMark(needsRows, "needs-you");
   const rowKey = (row: ThreadRow) => row.thread.id;
   const showBand = ws.showForYou && focus.shown.length > 0;
   const bandPresence = usePresence(showBand ? ["band"] : [], String);
   const needsPresence = usePresence(needsRows, rowKey);
-  const elsewherePresence = usePresence(elsewhereRows, rowKey);
   const needsControls = usePresence(
-    [
-      ...((showAllNeeds ? focus.shown.length > NEEDS_YOU_LIMIT : moreNeeds > 0)
-        ? ["more"]
-        : []),
-      ...(focus.elsewhere.length > 0 ? ["elsewhere"] : []),
-    ],
+    (showAllNeeds ? focus.shown.length > NEEDS_YOU_LIMIT : moreNeeds > 0)
+      ? ["more"]
+      : [],
     String,
   );
   /**
@@ -907,40 +901,17 @@ export function WorkstreamsThreadList({
                 {needsControls.map((entry) =>
                   present(
                     entry,
-                    entry.item === "more" ? (
-                      <li>
-                        <button
-                          type="button"
-                          onClick={() => setShowAllNeeds((all) => !all)}
-                          className={bandControlClass("ws-amber-text")}
-                        >
-                          {showAllNeeds
-                            ? "Show less"
-                            : `Show ${Math.max(1, moreNeeds)} more`}
-                        </button>
-                      </li>
-                    ) : (
-                      <li>
-                        <button
-                          type="button"
-                          aria-expanded={showElsewhere}
-                          onClick={() => setShowElsewhere((shown) => !shown)}
-                          className={bandControlClass(
-                            "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          {showElsewhere
-                            ? "Hide other workstreams"
-                            : `${Math.max(1, focus.elsewhere.length)} more in other workstreams`}
-                        </button>
-                      </li>
-                    ),
-                  ),
-                )}
-                {elsewherePresence.map((entry) =>
-                  present(
-                    entry,
-                    renderOverlayTree(entry.item, "needs-you", needsMarks),
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => setShowAllNeeds((all) => !all)}
+                        className={bandControlClass("ws-amber-text")}
+                      >
+                        {showAllNeeds
+                          ? "Show less"
+                          : `Show ${Math.max(1, moreNeeds)} more`}
+                      </button>
+                    </li>,
                   ),
                 )}
               </Band>
@@ -972,9 +943,25 @@ export function WorkstreamsThreadList({
                         name={showLower ? "ChevronDown" : "ChevronRight"}
                         className="size-3 shrink-0"
                       />
-                      {showLower
-                        ? "Hide lower priority workstreams"
-                        : "Show lower priority workstreams"}
+                      <span className="min-w-0 flex-1">
+                        {showLower
+                          ? "Hide lower priority workstreams"
+                          : "Show lower priority workstreams"}
+                      </span>
+                      {!showLower && focus.elsewhere.length > 0 ? (
+                        // What Up Next left out, so nothing waits unseen.
+                        <span
+                          title={`${focus.elsewhere.length} waiting on you`}
+                          className="rounded-full bg-muted-foreground/15 px-1.5 text-[11px] font-medium tabular-nums"
+                        >
+                          <span aria-hidden="true">
+                            {focus.elsewhere.length}
+                          </span>
+                          <span className="sr-only">
+                            , {focus.elsewhere.length} waiting on you
+                          </span>
+                        </span>
+                      ) : null}
                     </button>,
                   ]
                 : []),

@@ -295,7 +295,8 @@ export function projectWorkstreams<T extends WorkstreamThread>(
 /**
  * Up Next split by priority. While any prioritized workstream has a thread in
  * Up Next, `shown` holds only those, plus each row `keep` names, and
- * `elsewhere` the rest; otherwise every row is shown. `keep` lets the sidebar
+ * `elsewhere` the rest, which Up Next leaves out; otherwise every row is
+ * shown. `keep` lets the sidebar
  * hold the row the user has open so focus never pulls it out from under them.
  * Both lists keep the incoming order.
  */

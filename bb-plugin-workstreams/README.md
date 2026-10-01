@@ -33,10 +33,10 @@ design and the contract the code is checked against.
     the others (with Unsorted and Dormant) are hidden behind **Show lower
     priority workstreams** below the prioritized ones; it reveals them
     collapsed, and hiding them again resets that. While any of them has a thread
-    in Up Next, Up Next shows only prioritized threads, and the rest wait behind
-    "N more in other workstreams". A prioritized thread arriving never takes
-    away the row of the thread you have open; it leaves when you select another.
-    Rows open and close smoothly rather than jumping.
+    in Up Next, Up Next shows only prioritized threads; the toggle counts the
+    threads it leaves out, which wait in their workstreams. A prioritized thread
+    arriving never takes away the row of the thread you have open; it leaves
+    when you select another. Rows open and close smoothly rather than jumping.
   - **Recent**: the most recently active threads not already in Up Next, up to
     the configurable limit. **Show in Sidebar** can hide this band.
   - **One group per workstream**, in BB's section order until you drag a header
