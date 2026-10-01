@@ -14,8 +14,12 @@ afterEach(async () => {
   world = null;
 });
 
-async function setup(answer: Record<string, unknown>) {
+async function setup(
+  answer: Record<string, unknown>,
+  settings: Record<string, string | boolean> = {},
+) {
   world = await fakeWorld({
+    settings,
     complete: ({ prompt }) =>
       prompt.includes("Someone is starting new work")
         ? JSON.stringify(answer)
@@ -191,6 +195,48 @@ describe("suggest", () => {
     );
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(w.threads.get("native")?.sectionId).toBeNull();
+  });
+});
+
+describe("Debug mode", () => {
+  const answer = {
+    outcome: "unsure",
+    candidates: [{ workstream: "Alpha" }],
+    reason: "Could be Alpha",
+  };
+
+  it("explains each step from the draft to the suggestion", async () => {
+    const { w } = await setup(answer, { debug: true });
+    const decision = await suggest(w, "Tidy up the parser");
+    expect(decision.traceId).toEqual(expect.any(String));
+    const { notes, durationMs } = decision.explanation as {
+      notes: string[];
+      durationMs: number;
+    };
+    expect(durationMs).toBeGreaterThanOrEqual(0);
+    expect(notes).toEqual([
+      expect.stringMatching(
+        /^Asked .+ with 1 workstream and the 1 most recently active thread\.$/,
+      ),
+      "The model answered unsure, with 1 candidate.",
+      "The model was unsure among 1 candidate; suggesting the first, which it lists as the likeliest.",
+      `Code work goes to "Alpha"'s primary project, in its checkout.`,
+    ]);
+  });
+
+  it("explains a mention without asking the model", async () => {
+    const { w } = await setup(answer, { debug: true });
+    const decision = await suggest(w, "Follow up in @thread:a1");
+    expect((decision.explanation as { notes: string[] }).notes).toEqual([
+      `The draft mentions the thread "Alpha task", so the model wasn't asked.`,
+    ]);
+  });
+
+  it("adds nothing while Debug mode is off", async () => {
+    const { w } = await setup(answer);
+    expect(await suggest(w, "Tidy up the parser")).not.toHaveProperty(
+      "explanation",
+    );
   });
 });
 

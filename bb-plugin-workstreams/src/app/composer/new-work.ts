@@ -87,6 +87,32 @@ export function suggestionFrom(decision: RouteDecision): Suggestion | null {
   }
 }
 
+/**
+ * One thing the dialog did, for Debug mode: a classification of the draft,
+ * accepting or dismissing a suggestion, picking or creating a workstream, or
+ * a submit. Each records its inputs and its result or error.
+ */
+export type NewWorkEvent = {
+  id: number;
+  at: number;
+  kind:
+    | "classify"
+    | "accept"
+    | "dismiss"
+    | "select-workstream"
+    | "create-workstream"
+    | "submit";
+  /** `superseded`: newer text replaced the draft before the answer came. */
+  status: "pending" | "ok" | "failed" | "superseded";
+  durationMs: number | null;
+  input: unknown;
+  output: unknown;
+  error: string | null;
+};
+
+/** The newest events the dialog keeps for Debug mode. */
+const EVENT_LIMIT = 100;
+
 export type NewWorkState = {
   /** The draft's trimmed plain text, as last observed from the composer. */
   text: string;
@@ -99,6 +125,8 @@ export type NewWorkState = {
    * that result arrives.
    */
   suggestion: Suggestion | null;
+  /** The route decision the suggestion came from, as the server sent it. */
+  decision: RouteDecision | null;
   classifying: boolean;
   /** The key of the suggestion the user accepted or dismissed. */
   settled: string | null;
@@ -107,6 +135,8 @@ export type NewWorkState = {
   error: string | null;
   /** Counts failures, so a repeated message is announced again. */
   errors: number;
+  /** What the dialog did, oldest first, for Debug mode. */
+  events: readonly NewWorkEvent[];
 };
 
 export type NewWorkDeps = {
@@ -148,6 +178,25 @@ function alreadyApplied(suggestion: Suggestion, state: NewWorkState): boolean {
   );
 }
 
+/** Why the suggestion is or isn't showing, in Debug mode's words. */
+export function suggestionVisibility(state: NewWorkState): string {
+  const { suggestion } = state;
+  if (!state.text) return "Hidden: the draft is empty.";
+  if (!suggestion)
+    return state.classifying
+      ? "Waiting for the first classification."
+      : state.decision
+        ? "None: the router named no home."
+        : "None yet: classification runs once typing pauses.";
+  if (suggestion.key === state.settled)
+    return "Hidden: you accepted or dismissed it.";
+  if (alreadyApplied(suggestion, state))
+    return "Hidden: the pickers already match it.";
+  return state.classifying
+    ? "Shown, while newer text is being classified."
+    : "Shown.";
+}
+
 /** The suggestion New work shows now, if any. */
 export function shownSuggestion(state: NewWorkState): Suggestion | null {
   const { suggestion } = state;
@@ -155,6 +204,9 @@ export function shownSuggestion(state: NewWorkState): Suggestion | null {
     return null;
   return alreadyApplied(suggestion, state) ? null : suggestion;
 }
+
+const messageOf = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
 
 export class NewWork {
   private state: NewWorkState;
@@ -165,6 +217,7 @@ export class NewWork {
   private pending = false;
   /** The thread the next composer submit goes to instead of a new thread. */
   private sendTarget: Extract<Suggestion, { kind: "thread" }> | null = null;
+  private eventIds = 0;
 
   constructor(
     private deps: NewWorkDeps,
@@ -175,11 +228,13 @@ export class NewWork {
       workstream,
       selection: null,
       suggestion: null,
+      decision: null,
       classifying: false,
       settled: null,
       accepting: false,
       error: null,
       errors: 0,
+      events: [],
     };
   }
 
@@ -195,6 +250,45 @@ export class NewWork {
     this.listeners.forEach((listener) => listener());
   }
 
+  /** Starts an event; `finish` settles it with a result or an error. */
+  private begin(
+    kind: NewWorkEvent["kind"],
+    input: unknown,
+  ): (
+    status: Exclude<NewWorkEvent["status"], "pending">,
+    result?: { output?: unknown; error?: unknown },
+  ) => void {
+    const id = ++this.eventIds;
+    const at = Date.now();
+    const event: NewWorkEvent = {
+      id,
+      at,
+      kind,
+      status: "pending",
+      durationMs: null,
+      input,
+      output: null,
+      error: null,
+    };
+    this.set({ events: [...this.state.events, event].slice(-EVENT_LIMIT) });
+    return (status, result = {}) => {
+      this.set({
+        events: this.state.events.map((e) =>
+          e.id === id
+            ? {
+                ...e,
+                status,
+                durationMs: Date.now() - at,
+                output: result.output ?? null,
+                error:
+                  result.error === undefined ? null : messageOf(result.error),
+              }
+            : e,
+        ),
+      });
+    };
+  }
+
   /** The composer this dialog embeds; its slot remounts on a project change. */
   attach(composer: PluginComposerApi) {
     this.composer = composer;
@@ -206,7 +300,7 @@ export class NewWork {
     this.set({
       text: trimmed,
       error: null,
-      ...(trimmed ? {} : { suggestion: null }),
+      ...(trimmed ? {} : { suggestion: null, decision: null }),
     });
     this.schedule();
   }
@@ -216,31 +310,37 @@ export class NewWork {
   }
 
   selectWorkstream(choice: WorkstreamChoice) {
+    this.begin("select-workstream", {
+      from: this.state.workstream,
+      to: choice,
+    })("ok");
     this.set({ workstream: choice, error: null });
   }
 
   reportError(error: unknown) {
-    this.set({
-      error: error instanceof Error ? error.message : String(error),
-      errors: this.state.errors + 1,
-    });
+    this.set({ error: messageOf(error), errors: this.state.errors + 1 });
   }
 
   /** Creates a workstream the user named in the picker and selects it. */
   async createWorkstream(name: string): Promise<void> {
     const clean = name.trim();
     if (!clean) return;
+    const finish = this.begin("create-workstream", { name: clean });
     try {
       const created = await this.deps.createWorkstream(clean, "");
+      finish("ok", { output: created });
       this.selectWorkstream({ id: created.sectionId, name: created.name });
     } catch (error) {
+      finish("failed", { error });
       this.reportError(error);
     }
   }
 
   dismiss() {
     const suggestion = shownSuggestion(this.state);
-    if (suggestion) this.set({ settled: suggestion.key, error: null });
+    if (!suggestion) return;
+    this.begin("dismiss", { suggestion })("ok");
+    this.set({ settled: suggestion.key, error: null });
   }
 
   /**
@@ -254,10 +354,12 @@ export class NewWork {
     const composer = this.composer;
     if (!suggestion || !composer || this.state.accepting) return;
     this.set({ accepting: true, error: null });
+    const finish = this.begin("accept", { suggestion });
     try {
       if (suggestion.kind === "thread") {
         this.sendTarget = suggestion;
         await composer.submit({ experimental_data: null });
+        finish("ok", { output: "Submitted the draft to the thread." });
         return;
       }
       const workstream =
@@ -267,17 +369,29 @@ export class NewWork {
               .createWorkstream(suggestion.name, suggestion.description)
               .then(({ sectionId, name }) => ({ id: sectionId, name }));
       this.set({ workstream, settled: suggestion.key });
+      let requested: ComposerSelection | null = null;
+      let applied: ComposerSelection | null = null;
       if (suggestion.placement) {
         const { projectId, environment } = suggestion.placement;
-        const applied = await composer.setSelection({
+        requested = {
           projectId,
           ...(environment.type === "project-default" ? {} : { environment }),
-        });
+        };
+        applied = await composer.setSelection(requested);
         this.observeSelection(applied);
       }
+      finish("ok", {
+        output: {
+          workstream,
+          selection: suggestion.placement
+            ? { requested, applied }
+            : "No placement; the project and environment were left alone.",
+        },
+      });
       // A clicked suggestion disappears; typing carries on in the draft.
       composer.focus();
     } catch (error) {
+      finish("failed", { error });
       // A failed thread send has already been reported by `submit`'s caller.
       if (this.state.error === null) this.reportError(error);
     } finally {
@@ -294,19 +408,34 @@ export class NewWork {
     const target = this.sendTarget;
     this.sendTarget = null;
     this.invalidate();
-    if (target) {
-      await this.deps.sendToThread(
-        target.threadId,
-        request.input,
-        target.traceId,
-      );
-      return { kind: "sent", threadId: target.threadId, title: target.title };
-    }
-    const { threadId } = await this.deps.startThread(
-      this.state.workstream?.id ?? null,
-      request,
+    const sectionId = this.state.workstream?.id ?? null;
+    const finish = this.begin(
+      "submit",
+      target
+        ? { sendTo: target.threadId, request }
+        : { startIn: sectionId, request },
     );
-    return { kind: "started", threadId };
+    try {
+      if (target) {
+        await this.deps.sendToThread(
+          target.threadId,
+          request.input,
+          target.traceId,
+        );
+        finish("ok", { output: { sentTo: target.threadId } });
+        return {
+          kind: "sent",
+          threadId: target.threadId,
+          title: target.title,
+        };
+      }
+      const { threadId } = await this.deps.startThread(sectionId, request);
+      finish("ok", { output: { started: threadId, sectionId } });
+      return { kind: "started", threadId };
+    } catch (error) {
+      finish("failed", { error });
+      throw error;
+    }
   }
 
   dispose() {
@@ -336,11 +465,19 @@ export class NewWork {
     const mine = ++this.generation;
     this.pending = true;
     this.set({ classifying: true });
+    const prompt = this.state.text;
+    const finish = this.begin("classify", { prompt });
     try {
-      const decision = await this.deps.route(this.state.text);
-      if (mine !== this.generation) return;
-      this.set({ suggestion: suggestionFrom(decision) });
+      const decision = await this.deps.route(prompt);
+      if (mine !== this.generation) {
+        finish("superseded", { output: decision });
+        return;
+      }
+      const suggestion = suggestionFrom(decision);
+      finish("ok", { output: { decision, suggestion } });
+      this.set({ decision, suggestion });
     } catch (error) {
+      finish(mine === this.generation ? "failed" : "superseded", { error });
       // A suggestion is optional; the draft and its pickers work without one.
       if (mine === this.generation)
         console.warn("Workstreams couldn't suggest a home:", error);

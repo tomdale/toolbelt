@@ -509,22 +509,32 @@ session is constructed, which enrolls the thread for reminders.
    - Links tie traces to threads, journal entries and organizing runs. Analysis
      results and routing decisions carry their own trace ID.
    - Each surface that shows a model's decision gets a small inspect button that
-     opens a side pane with those calls: the thread header, New work, Activity
-     entries, the organizing review, generated descriptions, Overview rows, and
-     the sidebar row menu. The Activity log lists each call in place among the
-     changes, with a one-line summary of what the model decided (or why it
-     failed) and a "Model calls" filter. Debug-only Activity controls filter
-     calls by kind and failures, show the count and cost of visible calls, load
-     older traces, and clear traces without deleting journal entries. Model rows
-     use a quiet surface tint and Model badge, and show an event name, subject,
-     and labeled assessment, distinct from applied changes. Related threads use
-     BB-style thread-reference pills with host-owned link navigation.
-     Information buttons explain event and lifecycle terms on hover and keyboard
-     focus. Model, duration, token usage, and cost appear under collapsed
-     Technical details. Journal change status is separate from assessed thread
-     state; raw JSON is a nested disclosure. There is no separate Debug tab;
-     `debug` page links open Activity. `bb workstreams trace` prints recorded
-     calls.
+     opens a side pane with those calls: the thread header, Activity entries,
+     the organizing review, generated descriptions, Overview rows, and the
+     sidebar row menu.
+   - New work instead adds a collapsed Debug section under the composer. It says
+     why the suggestion is or isn't showing; shows the route decision (outcome,
+     confidence, reason, subject, placement, time) with the server's numbered
+     notes on how it was reached (a mention short-circuit, what the model was
+     offered and answered, each rewrite such as an unsure answer becoming its
+     first candidate, and how the placement was chosen); embeds the decision's
+     recorded model call; shows the dialog's state; and lists every
+     classification (including superseded ones), acceptance, dismissal,
+     workstream choice and submit with its inputs, result or error, and
+     duration. Copy diagnostics copies all of it as JSON. The Activity log lists
+     each call in place among the changes, with a one-line summary of what the
+     model decided (or why it failed) and a "Model calls" filter. Debug-only
+     Activity controls filter calls by kind and failures, show the count and
+     cost of visible calls, load older traces, and clear traces without deleting
+     journal entries. Model rows use a quiet surface tint and Model badge, and
+     show an event name, subject, and labeled assessment, distinct from applied
+     changes. Related threads use BB-style thread-reference pills with
+     host-owned link navigation. Information buttons explain event and lifecycle
+     terms on hover and keyboard focus. Model, duration, token usage, and cost
+     appear under collapsed Technical details. Journal change status is separate
+     from assessed thread state; raw JSON is a nested disclosure. There is no
+     separate Debug tab; `debug` page links open Activity.
+     `bb workstreams trace` prints recorded calls.
    - "Run again" sends a recorded prompt to its model again and records the
      answer as a replay of the original. A replay changes nothing Workstreams
      stores.

@@ -23,6 +23,8 @@ import type { RpcContract } from "../../server/contract.ts";
 import type { RouteDecision } from "../../server/router.ts";
 import { useHostPickerRow } from "./host-picker-row.ts";
 import { NewWork as NewWorkModel, NewWorkContext } from "./new-work.ts";
+import { useDebugMode } from "../debug/debug.ts";
+import { NewWorkDebug } from "./NewWorkDebug.tsx";
 import { SuggestionRow } from "./Suggestion.tsx";
 import { WorkstreamPicker } from "./WorkstreamPicker.tsx";
 
@@ -125,6 +127,7 @@ function NewWork({
   useEffect(() => () => newWork.dispose(), [newWork]);
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const pickerRow = useHostPickerRow(root);
+  const debug = useDebugMode();
 
   const submit = useCallback(
     async (request: NewThreadRequest) => {
@@ -162,6 +165,7 @@ function NewWork({
           <div className="flex px-3.5">{picker}</div>
         )}
         <SuggestionRow newWork={newWork} />
+        {debug ? <NewWorkDebug newWork={newWork} onClose={onClose} /> : null}
       </div>
     </NewWorkContext.Provider>
   );

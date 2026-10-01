@@ -163,6 +163,9 @@ const routeBase = {
   reason: z.string(),
   subject: z.string().nullable(),
   traceId: z.string().nullable(),
+  explanation: z
+    .object({ notes: z.array(z.string()), durationMs: z.number() })
+    .optional(),
 };
 /** The supported SDK environment selection union, validated before routing or execution. */
 export const environmentSchema = z.discriminatedUnion("type", [

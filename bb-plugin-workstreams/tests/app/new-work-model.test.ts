@@ -311,3 +311,58 @@ it("suggestionFrom maps each outcome to the home it names", () => {
     name: "Billing",
   });
 });
+
+describe("Debug mode's record", () => {
+  it("logs each classification with its prompt and result, marking superseded ones", async () => {
+    let answer: (d: RouteDecision) => void = () => {};
+    const { deps, newWork } = setup(
+      () => new Promise<RouteDecision>((resolve) => (answer = resolve)),
+    );
+    newWork.observe("Fix the parser in Alpha");
+    await pause(DEBOUNCE_MS);
+    const first = answer;
+    newWork.observe("Fix the parser in Alpha, and the lexer");
+    await pause(DEBOUNCE_MS);
+    first(inAlpha);
+    answer(continueParser);
+    await pause(0);
+    expect(deps.route).toHaveBeenCalledTimes(2);
+    expect(
+      newWork.snapshot().events.map((e) => [e.kind, e.status, e.input]),
+    ).toEqual([
+      ["classify", "superseded", { prompt: "Fix the parser in Alpha" }],
+      ["classify", "ok", { prompt: "Fix the parser in Alpha, and the lexer" }],
+    ]);
+    expect(newWork.snapshot().events[1]!.output).toMatchObject({
+      decision: { id: "d_thread" },
+      suggestion: { kind: "thread" },
+    });
+    expect(newWork.snapshot().decision?.id).toBe("d_thread");
+  });
+
+  it("logs acceptance and submits with their inputs, results and errors", async () => {
+    const { deps, newWork } = setup(async () => inAlpha);
+    newWork.observe("Fix the parser in Alpha");
+    await pause(DEBOUNCE_MS);
+    await newWork.accept();
+    deps.startThread.mockRejectedValueOnce(new Error("Gone"));
+    await expect(newWork.submit(request("Fix it"))).rejects.toThrow("Gone");
+    const [classify, accept] = newWork.snapshot().events;
+    expect(classify).toMatchObject({ kind: "classify", status: "ok" });
+    expect(accept).toMatchObject({
+      kind: "accept",
+      status: "ok",
+      input: { suggestion: { kind: "workstream", sectionId: "sec_a" } },
+      output: {
+        workstream: { id: "sec_a", name: "Alpha" },
+        selection: { requested: { projectId: "proj_a" } },
+      },
+    });
+    expect(newWork.snapshot().events.at(-1)).toMatchObject({
+      kind: "submit",
+      status: "failed",
+      input: { startIn: "sec_a" },
+      error: "Gone",
+    });
+  });
+});

@@ -40,7 +40,7 @@ const ENVIRONMENT_LABELS: Record<string, string> = {
 type ProjectInfo = { name: string; personal: boolean };
 
 /** Project names for placements; the router reports only ids. */
-function useProjects(): Map<string, ProjectInfo> {
+export function useProjects(): Map<string, ProjectInfo> {
   const sdk = useSdk();
   const [projects, setProjects] = useState(new Map<string, ProjectInfo>());
   useEffect(() => {
