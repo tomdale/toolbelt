@@ -167,15 +167,18 @@ describe("agent recaps", () => {
   });
 
   it("restarts the clock when recaps are turned back on", async () => {
-    const s = await world({}, Date.now() + 1_000);
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+    const s = await world();
+    // Created after the first load, but before recaps come back on.
+    await tick();
+    s.w.threads.set("t1", { ...s.thread(), createdAt: Date.now() });
+    await tick();
     await s.w.harness.behavior.callRpc("setRecapPrefs", {
       patch: { required: false },
     });
-    await new Promise((resolve) => setTimeout(resolve, 5));
     await s.w.harness.behavior.callRpc("setRecapPrefs", {
       patch: { required: true },
     });
-    s.w.threads.set("t1", { ...s.thread(), createdAt: Date.now() - 1 });
     await s.configure();
     s.w.turn("t1");
     await s.idle();
