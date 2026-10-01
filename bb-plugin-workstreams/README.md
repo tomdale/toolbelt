@@ -64,17 +64,18 @@ design and the contract the code is checked against.
   they describe and show as updating once a new turn starts. Analysis itself
   never moves anything.
 - **Review recaps**: a **Review** instruction names what to inspect or try and
-  the expected result. It stays visible in detailed, compact, and minimal layouts.
+  the expected result. It stays visible in detailed, compact, and minimal
+  layouts.
 - **Archive suggestions**: when classification finds a natural end or a result
   ready for review, and BB has no unfinished tasks, goals, queued messages,
   interactions, or background work, an **Archive** button appears on the recap.
   For review results, clicking accepts the result and closes the thread. Archive
   rechecks outstanding work and requires completed children and lifecycle
-  dependents. Typing a continuation, adding an
-  attachment, or starting new work dismisses the suggestion for that completed
-  turn; clearing the draft does not bring it back. Reading, scrolling, and
-  focusing the composer do not dismiss it. A later completed turn can produce a
-  new suggestion. Workstreams never archives automatically.
+  dependents. Typing a continuation, adding an attachment, or starting new work
+  dismisses the suggestion for that completed turn; clearing the draft does not
+  bring it back. Reading, scrolling, and focusing the composer do not dismiss
+  it. A later completed turn can produce a new suggestion. Workstreams never
+  archives automatically.
 - **Recap freshness**: stored recaps are shown only for the idle thread revision
   they summarize. A new turn invalidates the recap, and generation checks the
   revision again before saving. Freshness reads do not scan conversation
@@ -88,7 +89,10 @@ design and the contract the code is checked against.
   scans open thread roots and proposes a coherent map with descriptions, aliases
   and placements. Review the whole map, uncheck unwanted moves, then Apply as
   one undoable batch. Between runs, membership stays fixed. Unassigned roots
-  remain Unsorted. See [Organizing workstreams](docs/organization.md).
+  remain Unsorted. Homes default to concrete products/projects; substantial
+  initiatives can stand alone. Apply also removes previewed empty homes or
+  archived-only homes whose newest archive is over 24 hours old, preserving
+  threads and Undo. See [Organizing workstreams](docs/organization.md).
 - **Routing**: Workstreams' own New work dialog shows where the draft goes
   (continue a thread or start one in an existing home) and presets the project
   and environment; Enter or Start creates the thread and files it there, and
@@ -109,23 +113,23 @@ design and the contract the code is checked against.
 - **Debug mode** (the `debug` setting, off by default): every model call is
   recorded with the exact prompt, the model's reasoning summary, the raw
   response, the parsed result, and what Workstreams did with it. A small bug
-  button appears wherever Workstreams used a model: the thread header, the
-  New work, Activity entries, the organizing review,
-  generated descriptions, Overview rows, and the sidebar row menu (**Inspect
-  model calls…**). It opens a side pane with those calls. **Run again** sends
-  the same prompt to the same model to show whether the answer is stable,
-  without changing anything. Activity lists each model call among the changes,
-  including calls that made no change. Model rows use a quiet surface tint and a
-  Model badge, and prioritize the event, subject, and labeled assessment.
-  Related threads use BB-style thread-reference pills on an aligned row, with
-  host-owned link navigation. Small information buttons explain event names and
-  lifecycle terms on hover or keyboard focus. **Technical details** reveals
-  labeled model, duration, token usage, and cost measurements plus prompt
-  inspection; these measurements stay collapsed by default. Debug controls in
-  **Activity** filter by call kind and failures, show the count and cost of
-  visible calls, load older calls, and clear traces without deleting activity
-  changes. Journal entries also expose expandable internal details. Records
-  include redacted thread excerpts and are kept for 7 days (at most 1,000).
+  button appears wherever Workstreams used a model: the thread header, the New
+  work, Activity entries, the organizing review, generated descriptions,
+  Overview rows, and the sidebar row menu (**Inspect model calls…**). It opens a
+  side pane with those calls. **Run again** sends the same prompt to the same
+  model to show whether the answer is stable, without changing anything.
+  Activity lists each model call among the changes, including calls that made no
+  change. Model rows use a quiet surface tint and a Model badge, and prioritize
+  the event, subject, and labeled assessment. Related threads use BB-style
+  thread-reference pills on an aligned row, with host-owned link navigation.
+  Small information buttons explain event names and lifecycle terms on hover or
+  keyboard focus. **Technical details** reveals labeled model, duration, token
+  usage, and cost measurements plus prompt inspection; these measurements stay
+  collapsed by default. Debug controls in **Activity** filter by call kind and
+  failures, show the count and cost of visible calls, load older calls, and
+  clear traces without deleting activity changes. Journal entries also expose
+  expandable internal details. Records include redacted thread excerpts and are
+  kept for 7 days (at most 1,000).
 
 Model calls go straight to AI Gateway from the analysis machine (`hostId`, blank
 for the only connected machine), with the AI Gateway key Pi has there. They
@@ -191,8 +195,8 @@ node scripts/capture-new-work.mjs /tmp/new-work-shots
   model call's prompt and parser, and Debug mode's recording), `trace.ts` (the
   trace store), `inference/` (the host entry that runs Pi).
 - `src/app/`: the sidebar list, the page, the header parent link and recap
-  actions, New work intake, and `debug/` (inspect buttons, the
-  inspector pane), fed by `useWorkstreams.ts`.
+  actions, New work intake, and `debug/` (inspect buttons, the inspector pane),
+  fed by `useWorkstreams.ts`.
 
 To check the exact-once guarantee against real data, export a snapshot to
 private storage (it contains thread titles) and point the test at it:

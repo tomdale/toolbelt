@@ -19,10 +19,16 @@ import {
 } from "./inventory.ts";
 import type { JournalEntry, Journal, Source, UndoStep } from "./journal.ts";
 import { retitleDecision } from "../domain/titles.ts";
+import {
+  cleanupCandidate,
+  sectionMembers,
+  type CleanupCandidate,
+} from "./cleanup.ts";
 import { forgetTitle, observeThreadTitle, writeTitleRecord } from "./titles.ts";
 
 /** Changes applied together; `to` and description keys may name a create. */
 export type BatchPlan = {
+  removals?: CleanupCandidate[];
   /** Created only if a surviving move needs it, unless `always`. */
   creates: {
     key: string;
@@ -328,8 +334,9 @@ export class WorkstreamService {
           : [original.undo];
       let skipped = 0;
       let done = 0;
+      const restored = new Map<string, string>();
       for (const step of steps) {
-        const result = await this.undoStep(step);
+        const result = await this.undoStep(step, restored);
         done += result.done;
         skipped += result.skipped;
       }
@@ -358,12 +365,82 @@ export class WorkstreamService {
   /** Reverts one step; returns how many parts were reverted and skipped. */
   private async undoStep(
     step: UndoStep,
+    restored = new Map<string, string>(),
   ): Promise<{ done: number; skipped: number }> {
     const sdk = this.sdk();
+    if (step.kind === "restore-section") {
+      const sections = await listSections(sdk);
+      // Reuse only a section this Undo previously recreated, never a namesake.
+      const restoreKey = `restore-section:${step.sectionId}`;
+      const previousId = getMeta(this.db, restoreKey);
+      let section = previousId
+        ? sections.find((s) => s.id === previousId)
+        : undefined;
+      if (!section) {
+        if (
+          sections.some((s) => s.name.toLowerCase() === step.name.toLowerCase())
+        )
+          return { done: 0, skipped: 1 + step.archivedThreads.length };
+        section = await sdk.threadSections.create({ name: step.name });
+        setMeta(this.db, restoreKey, section.id);
+        this.db
+          .prepare(
+            "INSERT INTO ws_workstream(section_id,description,description_source,created_by,created_at,updated_at,aliases) VALUES (?,?,?,?,?,?,?)",
+          )
+          .run(
+            section.id,
+            step.metadata.description,
+            step.metadata.source,
+            step.metadata.createdBy,
+            this.now(),
+            this.now(),
+            JSON.stringify(step.metadata.aliases),
+          );
+        this.seeSection(section.id, section.name);
+      }
+      restored.set(step.sectionId, section.id);
+      let done = 1,
+        skipped = 0;
+      for (const member of step.archivedThreads) {
+        const thread = await sdk.threads
+          .get({ threadId: member.id })
+          .catch(() => null);
+        if (
+          !thread ||
+          thread.sectionId !== null ||
+          thread.archivedAt !== member.archivedAt
+        ) {
+          skipped++;
+          continue;
+        }
+        await sdk.threads.update({
+          threadId: member.id,
+          sectionId: section.id,
+        });
+        done++;
+      }
+      return { done, skipped };
+    }
     if (step.kind === "move") {
       let done = 0;
       let skipped = 0;
-      for (const move of step.moves) {
+      for (const originalMove of step.moves) {
+        const move = {
+          ...originalMove,
+          from: originalMove.from
+            ? (restored.get(originalMove.from) ?? originalMove.from)
+            : null,
+          to: originalMove.to
+            ? (restored.get(originalMove.to) ?? originalMove.to)
+            : null,
+        };
+        if (
+          move.from &&
+          !(await listSections(sdk)).some((s) => s.id === move.from)
+        ) {
+          skipped++;
+          continue;
+        }
         const thread = await sdk.threads
           .get({ threadId: move.threadId })
           .catch(() => null);
@@ -486,6 +563,7 @@ export class WorkstreamService {
     entry: JournalEntry | null;
     skipped: string[];
     created: Map<string, string>;
+    cleanupSkipped: string[];
   }> {
     return this.serial(async () => {
       const sdk = this.sdk();
@@ -564,6 +642,8 @@ export class WorkstreamService {
       const needed = new Set(ready.map((m) => m.to));
 
       const steps: UndoStep[] = [];
+      const cleanupSteps: UndoStep[] = [];
+      const cleanupSkipped: string[] = [];
       const created = new Map<string, string>();
       const touched = new Map<string, string>();
       const moves: {
@@ -715,18 +795,80 @@ export class WorkstreamService {
           if (move.from) touched.set(move.from, names.get(move.from) ?? "");
           if (to) touched.set(to, names.get(to) ?? "");
         }
+        for (const removal of plan.removals ?? []) {
+          const liveSection = (await listSections(sdk)).find(
+            (s) => s.id === removal.sectionId,
+          );
+          if (!liveSection || liveSection.name !== removal.name) {
+            cleanupSkipped.push(removal.sectionId);
+            continue;
+          }
+          const members = await sectionMembers(sdk, removal.sectionId);
+          const candidate = cleanupCandidate(liveSection, members, this.now());
+          const expected = new Map(
+            removal.archivedThreads.map((t) => [t.id, t.archivedAt]),
+          );
+          if (
+            !candidate ||
+            candidate.archivedThreads.some(
+              (t) => expected.get(t.id) !== t.archivedAt,
+            )
+          ) {
+            cleanupSkipped.push(removal.sectionId);
+            continue;
+          }
+          const row = this.db
+            .prepare(
+              "SELECT description,aliases,description_source,created_by FROM ws_workstream WHERE section_id=?",
+            )
+            .get(removal.sectionId) as
+            | {
+                description: string | null;
+                aliases: string;
+                description_source: "user" | "generated";
+                created_by: "user" | "workstreams";
+              }
+            | undefined;
+          if (!row) {
+            cleanupSkipped.push(removal.sectionId);
+            continue;
+          }
+          // Core unfiles members without deleting threads. Its delete API has
+          // no conditional membership guard; validation is immediately before it.
+          await sdk.threadSections.delete({ id: removal.sectionId });
+          cleanupSteps.push({
+            kind: "restore-section",
+            sectionId: removal.sectionId,
+            name: removal.name,
+            archivedThreads: candidate.archivedThreads,
+            metadata: {
+              description: row.description,
+              aliases: JSON.parse(row.aliases),
+              source: row.description_source,
+              createdBy: row.created_by,
+            },
+          });
+          this.db
+            .prepare("DELETE FROM ws_workstream WHERE section_id=?")
+            .run(removal.sectionId);
+          this.db
+            .prepare("DELETE FROM ws_seen_section WHERE section_id=?")
+            .run(removal.sectionId);
+          touched.set(removal.sectionId, removal.name);
+        }
       } catch (error) {
         failure = error;
       }
       if (moves.length) steps.push({ kind: "move", moves });
+      steps.push(...cleanupSteps);
       if (steps.length === 0) {
         if (failure) throw failure;
-        return { entry: null, skipped, created };
+        return { entry: null, skipped, created, cleanupSkipped };
       }
       const fields = {
         status: failure
           ? ("failed" as const)
-          : skipped.length
+          : skipped.length || cleanupSkipped.length
             ? ("partial" as const)
             : ("applied" as const),
         rationale,
@@ -735,8 +877,8 @@ export class WorkstreamService {
         undo: { kind: "batch" as const, steps },
         detail: failure
           ? `Stopped partway: ${String(failure).slice(0, 200)}. Undo reverts what changed.`
-          : skipped.length
-            ? `${skipped.length} thread(s) changed since and were left alone.`
+          : skipped.length || cleanupSkipped.length
+            ? `${skipped.length} thread(s) changed since and were left alone; ${cleanupSkipped.length} workstream(s) no longer qualified for cleanup.`
             : null,
       };
       let entry: JournalEntry;
@@ -753,7 +895,7 @@ export class WorkstreamService {
         this.place(move.threadId, move.to, source, entry.id);
       this.onChange();
       if (failure) throw failure;
-      return { entry, skipped, created };
+      return { entry, skipped, created, cleanupSkipped };
     });
   }
 

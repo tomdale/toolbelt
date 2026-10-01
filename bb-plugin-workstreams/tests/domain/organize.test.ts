@@ -59,7 +59,6 @@ describe("whole-map organization", () => {
     "unknown",
     "target",
     "section",
-    "empty",
     "duplicateName",
   ])("rejects %s rather than partly applying", (mode) => {
     const result = valid();
@@ -68,10 +67,22 @@ describe("whole-map organization", () => {
     if (mode === "unknown") result.assignments[1]!.threadId = "invented";
     if (mode === "target") result.assignments[0]!.workstream = "invented";
     if (mode === "section") result.workstreams[0]!.sectionId = "invented";
-    if (mode === "empty") result.assignments[0]!.workstream = null as never;
     if (mode === "duplicateName")
       result.workstreams.push({ ...result.workstreams[0]!, key: "other" });
     expect(() => parseOrganization(JSON.stringify(result), input)).toThrow();
+  });
+  it("drops unused model-proposed homes without changing assignments", () => {
+    const result = valid();
+    result.assignments[0]!.workstream = null as never;
+    const parsed = parseOrganization(JSON.stringify(result), input);
+    expect(parsed.workstreams).toEqual([]);
+    expect(parsed.assignments).toEqual(result.assignments);
+  });
+  it("prefers concrete product ownership over abstract feature topics", () => {
+    const prompt = organizePrompt(input);
+    expect(prompt).toContain("concrete products and projects");
+    expect(prompt).toContain("A feature's topic is not its owner");
+    expect(prompt).toContain("Substantial named projects or initiatives");
   });
   it("fails explicitly rather than truncating large inventories", () =>
     expect(() =>

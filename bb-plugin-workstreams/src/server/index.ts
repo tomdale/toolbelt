@@ -10,6 +10,7 @@ import { refreshShapes, registerAgentInstructions } from "./agents.ts";
 import { Analyzer } from "./analyzer.ts";
 import { ArchiveSuggestions } from "./archive.ts";
 import { Bootstrap } from "./bootstrap.ts";
+import { sectionMembers } from "./cleanup.ts";
 import { WorkstreamMap } from "./map.ts";
 import { Router, type RouteDecision } from "./router.ts";
 import { rpcContract } from "./contract.ts";
@@ -238,6 +239,7 @@ export default async function plugin(bb: BbPluginApi) {
     inference,
     model: async () => (await settings.get()).organizeModel,
     projects: async () => bb.sdk.projects.list(),
+    members: (sectionId) => sectionMembers(bb.sdk, sectionId),
     onChange: notify,
   });
   bb.onDispose(() => bootstrap.dispose());

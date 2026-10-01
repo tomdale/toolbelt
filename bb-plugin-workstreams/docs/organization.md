@@ -9,22 +9,26 @@ leaves membership and descriptions unchanged.
 
 The organizer snapshots visible, non-archived threads and considers all roots
 together. Children supply bounded context and stay with their root. Inputs
-contain titles, cached thread summaries, project names, existing scope
-descriptions and aliases. No fresh per-thread summarization calls are required.
-One tool-free model response supplies names, descriptions, aliases and an
-assignment for every root; an empty inventory needs no model call.
+contain titles, cached thread summaries and product hints, project names, and
+existing section IDs/names for reuse. Current placement and old generated scope
+descriptions are excluded from model evidence so they cannot perpetuate bad
+groups. No fresh per-thread summarization calls are required. One tool-free
+model response supplies names, descriptions, aliases and an assignment for every
+root; an empty inventory needs no model call.
 
-Prefer distinct, recognizable homes over overlapping topic labels. Work on a
-product stays together unless separate durable commitments materially improve
-navigation. Implementation layers, temporary phases and isolated chores do not
-justify extra homes by themselves. A single root with substantial child work can
-still represent a commitment. Ambiguous or unrelated work belongs in Unsorted.
+Default to concrete products and projects, named simply. A product's design,
+implementation, evaluations, memory features and maintenance belong together.
+Abstract topics such as governance or architecture are not separate owners.
+Substantial named projects and initiatives can stand alone when they represent
+independent sustained outcomes. Existing folders are fallible context, not a
+reason to preserve misleading boundaries. Ambiguous work belongs in Unsorted.
 
 The pass accepts at most 500 roots, 500 existing sections and 300,000 characters
 of serialized evidence. Per-thread text is bounded. An oversized inventory fails
 explicitly rather than silently omitting threads. Model output must cover every
-root exactly once, refer only to valid destinations, and avoid duplicate or
-empty homes. Invalid output changes nothing.
+root exactly once and refer only to valid, distinct destinations. Unused
+proposed homes are discarded deterministically; invalid assignments change
+nothing.
 
 ## Preview and Apply
 
@@ -40,8 +44,20 @@ moved, hidden, archived, deleted or reparented since the preview are skipped.
 Thread state is checked again immediately before each move. BB does not expose
 conditional updates, so it cannot guarantee atomicity against external writes
 between that final read and update. New sections are created only for moves
-surviving preflight. Existing sections omitted from the result remain dormant
-containers so archived history and native section IDs are preserved.
+surviving preflight.
+
+The preview also lists unused homes for removal. A home qualifies if it will be
+completely empty after the selected moves, or contains only archived threads
+whose newest archive timestamp is strictly more than 24 hours old. Hidden
+non-archived threads block removal. Apply rereads every member and rechecks the
+24-hour rule; unchecked or skipped moves may keep a home occupied.
+
+Deleting a home preserves its threads and leaves its archived members
+unassigned. Undo recreates the name and routing metadata, then restores eligible
+archived members and roots moved by the batch. BB generates a fresh section ID;
+external links to the deleted ID cannot be restored. Members reassigned or
+unarchived since cleanup are left alone. A conflicting existing name is not
+reused.
 
 Activity records the application as one undoable batch, including descriptions
 and aliases. Undo restores only values still matching the application;

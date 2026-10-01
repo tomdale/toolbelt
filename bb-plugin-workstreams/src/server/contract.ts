@@ -119,6 +119,16 @@ const bootstrapSchema = z
           )
           .max(100),
         assignments: organizeProposalSchema.shape.assignments,
+        removals: z.array(
+          z.object({
+            sectionId: z.string(),
+            name: z.string(),
+            latestArchivedAt: z.number().nullable(),
+            archivedThreads: z.array(
+              z.object({ id: z.string(), archivedAt: z.number() }),
+            ),
+          }),
+        ),
         creates: z.array(
           z.object({ name: z.string(), description: z.string() }),
         ),

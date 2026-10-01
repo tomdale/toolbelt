@@ -172,7 +172,7 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
             {preview.workstreams.length} workstreams ·{" "}
             {state?.roots.length ?? 0} root threads · {preview.moves.length}{" "}
             proposed moves. Uncheck a move to keep its current home. Children
-            follow their parent. Empty prior homes remain dormant for history.
+            follow their parent.
           </p>
           {preview.workstreams.map((w) => (
             <div key={w.key} className="rounded border border-border p-3">
@@ -202,6 +202,27 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
             <div className="rounded border border-border p-3">
               <h4 className="font-medium">Unsorted</h4>
               {renderThreads(null)}
+            </div>
+          ) : null}
+          {preview.removals?.length ? (
+            <div className="rounded border border-border p-3">
+              <h4 className="font-medium">Remove unused workstreams</h4>
+              <p className="text-xs text-muted-foreground">
+                Threads are preserved. Archived threads become unassigned; Undo
+                restores their grouping. Apply rechecks eligibility.
+              </p>
+              <ul className="mt-2 space-y-2">
+                {preview.removals.map((r) => (
+                  <li key={r.sectionId}>
+                    <strong>{r.name}</strong>
+                    <span className="block text-xs text-muted-foreground">
+                      {r.archivedThreads.length
+                        ? `${r.archivedThreads.length} archived threads · latest archive ${new Date(r.latestArchivedAt!).toLocaleString()} (over 24 hours ago)`
+                        : "Empty"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
           {!state?.roots.length ? <p>No open threads to organize.</p> : null}

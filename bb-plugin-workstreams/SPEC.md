@@ -125,8 +125,11 @@ environments.
 - **I4. Placement is fixed at creation.** Project and environment are chosen
   once, at creation, and are always passed **explicitly**. Workstreams never
   relies on `project-default`.
-- **I5. Section ownership.** Workstreams deletes only sections it created, and
-  only when they are empty in every lifecycle and the user has confirmed.
+- **I5. Reviewed cleanup.** Apply may remove previewed unused sections:
+  completely empty, or archived-only with the newest archive strictly older than
+  24 hours. Any non-archived member, including hidden threads, blocks cleanup.
+  Threads are preserved. Undo restores names, metadata and eligible membership
+  with fresh native section IDs.
 - **I6. Freshness.** Derived data (recap, state, subject, drift, title) is keyed
   to the thread's revision. Stale data renders as _pending_, never as current.
 - **I7. Journal.** Every mutation is written to the journal (§11.5), with undo
@@ -324,19 +327,19 @@ without another model call. See
 
 **Steady state.**
 
-| Change                                                                                    | Signal                                                               | Reaction                                                                                       |
-| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Thread created through intake or a handoff                                                | RPC or CLI call                                                      | Placed by the router (provenance `router` or `handoff`)                                        |
-| Child created by any source                                                               | `thread.created`                                                     | No structural change. Analyze it on its first idle.                                            |
+| Change                                                                      | Signal                                                               | Reaction                                                                                       |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Thread created through intake or a handoff                                  | RPC or CLI call                                                      | Placed by the router (provenance `router` or `handoff`)                                        |
+| Child created by any source                                                 | `thread.created`                                                     | No structural change. Analyze it on its first idle.                                            |
 | Top-level thread created elsewhere (BB's native composer, CLI, automations) | `thread.created`, then the first `thread.idle`                       | Respect its existing section; otherwise leave it Unsorted.                                     |
-| Visible fork                                                                              | `thread.created` with `sourceThreadId`                               | Preserve the creator's placement; otherwise leave it Unsorted                                  |
-| User sends a message                                                                      | `message.dispatch` (observe and always `proceed`) or `thread.active` | Mark analysis pending. Clear any inferred "needs decision".                                    |
-| Turn completes                                                                            | `thread.idle` (`lastAssistantText` included)                         | Per-thread analysis (§10), debounced about 5 s, at most 4 concurrent                           |
-| Pending approval or question                                                              | `interaction.pending`                                                | Show in Needs you immediately                                                                  |
-| Turn fails                                                                                | `thread.failed` / `turn.failed`                                      | Show an error indicator. No analysis.                                                          |
-| Moves, retitles, reparents, section changes                                               | **None**, so the reconciler catches them                             | Record as provenance `user`, never override (a retitle locks the title, §10.1), update the map |
-| Archive, unarchive, delete                                                                | Lifecycle events                                                     | Update views, re-analyze if stale, purge on delete.                                            |
-| The plugin was offline                                                                    | Load                                                                 | Full reconcile, then analyze every thread whose revision is newer than its last analysis       |
+| Visible fork                                                                | `thread.created` with `sourceThreadId`                               | Preserve the creator's placement; otherwise leave it Unsorted                                  |
+| User sends a message                                                        | `message.dispatch` (observe and always `proceed`) or `thread.active` | Mark analysis pending. Clear any inferred "needs decision".                                    |
+| Turn completes                                                              | `thread.idle` (`lastAssistantText` included)                         | Per-thread analysis (§10), debounced about 5 s, at most 4 concurrent                           |
+| Pending approval or question                                                | `interaction.pending`                                                | Show in Needs you immediately                                                                  |
+| Turn fails                                                                  | `thread.failed` / `turn.failed`                                      | Show an error indicator. No analysis.                                                          |
+| Moves, retitles, reparents, section changes                                 | **None**, so the reconciler catches them                             | Record as provenance `user`, never override (a retitle locks the title, §10.1), update the map |
+| Archive, unarchive, delete                                                  | Lifecycle events                                                     | Update views, re-analyze if stale, purge on delete.                                            |
+| The plugin was offline                                                      | Load                                                                 | Full reconcile, then analyze every thread whose revision is newer than its last analysis       |
 
 **Reconciler.** A deterministic diff that calls no model. It runs on load, every
 60 s while a client is connected, and on page focus. It pages through
@@ -350,10 +353,12 @@ create sections or move roots. Explicit organizing considers the whole map (§8)
 New work classifies against that applied map (§6). Manual moves and edits remain
 available. Dormancy and snooze change presentation, not membership.
 
-The organizer favors broad recognizable efforts with distinct scopes. Existing
-section IDs are reused when their efforts survive. Empty omitted sections remain
-available for archived history and explicit selection, but do not compete as
-inferred New work destinations.
+The organizer defaults to concrete products/projects with simple recognizable
+names. Features, evaluations, memory work and architecture stay with their
+owning product. Substantial independent projects/initiatives can have their own
+homes. Existing abstract labels are not authoritative. Surviving homes retain
+native section IDs; unused homes qualify for reviewed cleanup under I5 and the
+[organization guide](docs/organization.md).
 
 ## 10. Per-thread analysis
 
@@ -464,22 +469,22 @@ restores the previous title while it is still the one Workstreams wrote.
    - Links tie traces to threads, journal entries and organizing runs. Analysis
      results and routing decisions carry their own trace ID.
    - Each surface that shows a model's decision gets a small inspect button that
-     opens a side pane with those calls: the thread header,
-     New work, Activity entries, the organizing review, generated
-     descriptions, Overview rows, and the sidebar row menu. The Activity log
-     lists each call in place among the changes, with a one-line summary of what
-     the model decided (or why it failed) and a "Model calls" filter. Debug-only
-     Activity controls filter calls by kind and failures, show the count and
-     cost of visible calls, load older traces, and clear traces without deleting
-     journal entries. Model rows use a quiet surface tint and Model badge, and
-     show an event name, subject, and labeled assessment, distinct from applied
-     changes. Related threads use BB-style thread-reference pills with
-     host-owned link navigation. Information buttons explain event and lifecycle
-     terms on hover and keyboard focus. Model, duration, token usage, and cost
-     appear under collapsed Technical details. Journal change status is separate
-     from assessed thread state; raw JSON is a nested disclosure. There is no
-     separate Debug tab; `debug` page links open Activity.
-     `bb workstreams trace` prints recorded calls.
+     opens a side pane with those calls: the thread header, New work, Activity
+     entries, the organizing review, generated descriptions, Overview rows, and
+     the sidebar row menu. The Activity log lists each call in place among the
+     changes, with a one-line summary of what the model decided (or why it
+     failed) and a "Model calls" filter. Debug-only Activity controls filter
+     calls by kind and failures, show the count and cost of visible calls, load
+     older traces, and clear traces without deleting journal entries. Model rows
+     use a quiet surface tint and Model badge, and show an event name, subject,
+     and labeled assessment, distinct from applied changes. Related threads use
+     BB-style thread-reference pills with host-owned link navigation.
+     Information buttons explain event and lifecycle terms on hover and keyboard
+     focus. Model, duration, token usage, and cost appear under collapsed
+     Technical details. Journal change status is separate from assessed thread
+     state; raw JSON is a nested disclosure. There is no separate Debug tab;
+     `debug` page links open Activity. `bb workstreams trace` prints recorded
+     calls.
    - "Run again" sends a recorded prompt to its model again and records the
      answer as a replay of the original. A replay changes nothing Workstreams
      stores.
