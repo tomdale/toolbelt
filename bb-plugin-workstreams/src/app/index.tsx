@@ -6,6 +6,8 @@ import { ServerStateRealtime } from "./serverState.ts";
 import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { RecapCard } from "./composer/RecapCard.tsx";
+import { NewWorkControls } from "./composer/NewWorkControls.tsx";
+import { ContinueAction } from "./composer/ContinueAction.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
 import { SpinnerSettings } from "./settings/SpinnerSettings.tsx";
 import { WorkstreamsThreadList } from "./sidebar/ThreadList.tsx";
@@ -30,6 +32,12 @@ export default definePluginApp((app) => {
     id: "recap",
     scopes: ["thread"],
     banners: [{ id: "recap", chrome: "bare", component: RecapCard }],
+  });
+  app.composer.customize({
+    id: "new-work",
+    scopes: ["new-thread"],
+    banners: [{ id: "intake", chrome: "bare", component: NewWorkControls }],
+    actions: [{ id: "continue", component: ContinueAction }],
   });
   app.slots.experimental_threadHeaderAction({
     id: "parent-thread",

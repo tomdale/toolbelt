@@ -1,16 +1,24 @@
 // @vitest-environment jsdom
 import { useContext, useMemo } from "react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { IntakeContext } from "../../src/app/composer/intake.ts";
-import { IntakeBanner } from "../../src/app/composer/IntakeBanner.tsx";
 import { NewWorkDialog } from "../../src/app/composer/NewWork.tsx";
 import type { PluginBrowserBbSdk } from "@get-bb/plugin-sdk/app";
 import type { RouteDecision } from "../../src/server/router.ts";
 import { emptyState } from "./fixtures.ts";
-// The SDK composer stub omits draft-view publication.
-// This adapter supplies those two host responsibilities around its guarded submit.
+let customizations: Awaited<
+  ReturnType<typeof loadPluginApp>
+>["composerCustomizations"];
+beforeEach(async () => {
+  const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
+  customizations = app.composerCustomizations.filter(
+    (c) => !c.scopes || c.scopes.includes("new-thread"),
+  );
+});
+// The SDK stub omits slot mounting and draft-view publication. Mount the
+// actual registrations so missing modal controls cannot be hidden by the adapter.
 const selectionBehavior = vi.hoisted(() => ({
   apply: undefined as
     | undefined
@@ -95,7 +103,12 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
             }
           }}
         >
-          <IntakeBanner intake={intake} />
+          {customizations.flatMap((c) =>
+            (c.banners ?? []).map((banner) => {
+              const Banner = banner.component;
+              return <Banner key={`${c.id}:${banner.id}`} />;
+            }),
+          )}
           <Composer
             {...props}
             onSubmit={async (request) => {
@@ -121,6 +134,12 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
               }
             }}
           />
+          {customizations.flatMap((c) =>
+            (c.actions ?? []).map((action) => {
+              const Action = action.component;
+              return <Action key={`${c.id}:${action.id}`} />;
+            }),
+          )}
         </div>
       );
     },
@@ -379,6 +398,15 @@ it("Enter creates the new thread while a continuation is only suggested", async 
   });
 });
 it.each([
+  [
+    "its button",
+    () =>
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Continue Spacing fix instead",
+        }),
+      ),
+  ],
   [
     "⌘⏎",
     () =>
