@@ -394,8 +394,9 @@ IDs; unused homes qualify for reviewed cleanup under I5 and the
   timestamps only.
 - **Agent recaps outrank analysis.** While an idle thread has an agent recap for
   its latest turn, the recap's state (complete → `done`, review → `review`,
-  continuing → `in_progress`) and first Latest line replace analysis's state,
-  ask and summary in the sidebar, the page, and the CLI.
+  continuing → `in_progress`) and first line (the first active item while
+  working, else the first Latest line) replace analysis's state, ask and summary
+  in the sidebar, the page, and the CLI.
 - **Model:** the `threads.analysisModel` preference. Gateway-backed choices use
   a direct completion from the selected analysis machine. Other provider choices
   run in a hidden BB worker thread. Model changes require passing the private
@@ -445,24 +446,28 @@ it.
   question, or Toolbelt's AskUserQuestion), or with a recap whose state is
   `complete` (the latest request is fully done) or `review` (a finished result
   waits on the user to inspect, test, merge, or ship), or `continuing` (active
-  background work or scheduled continuation, with nothing needed from the user).
-  The agent verifies active or scheduled work before choosing continuing.
-- **Recap.** `goal` (≤ 80 characters), `latest` (1–3 lines, ≤ 120 each),
-  `review` (1–3 steps, ≤ 160 each, required for review: what to check and the
-  expected result; each step is a string or `{ step, expect }`, separate items
-  render as a numbered list, and a single string counts as one step), and
-  `links` (≤ 8 absolute file paths or HTTPS URLs, optional in review only and
-  limited to artifacts or pages explicitly being reviewed). UI review steps
-  explain how to reach and exercise the UI; source links qualify when source
-  review is requested. Continuing recaps require `next` (1–3 agent-owned steps,
-  ≤ 160 visible characters each), omit review and links, and show Progress and
-  Next with “Nothing needed from you”. Complete recaps have no links. Text
-  fields are inline Markdown (code, emphasis, links, `@thread:<id>` mentions as
-  chips, commit hashes shortened with copy on click, through BB's Markdown
-  renderer); limits count visible text, and the sidebar shows the first line as
-  plain text. Closing periods are dropped. The card shows a single Latest line
-  or Review step as plain text and several as a list. A file link opens in the
-  thread's workspace when its path is inside it, else on the environment's host.
+  background work or scheduled continuation, with nothing needed from the user;
+  shown as Working). The agent verifies active or scheduled work before choosing
+  continuing.
+- **Recap.** `goal` (≤ 80 characters; past tense for complete and review, "-ing"
+  while continuing), `latest` (finished results, 1–3 lines, ≤ 120 each; 0–3
+  while continuing), `review` (1–3 steps, ≤ 160 each, required for review: what
+  to check and the expected result; each step is a string or `{ step, expect }`,
+  separate items render as a numbered list, and a single string counts as one
+  step), and `links` (≤ 8 absolute file paths or HTTPS URLs, optional in review
+  only and limited to artifacts or pages explicitly being reviewed). UI review
+  steps explain how to reach and exercise the UI; source links qualify when
+  source review is requested. Continuing recaps require `active` (1–3
+  in-progress items, ≤ 120 each; at most four `active` and `latest` items
+  together, active first), take optional `next` (1–3 agent-owned steps after
+  active work, ≤ 160 each), and omit review and links. Complete recaps have no
+  links. Text fields are inline Markdown (code, emphasis, links, `@thread:<id>`
+  mentions as chips, commit hashes shortened with copy on click, through BB's
+  Markdown renderer); limits count visible text, and the sidebar shows the first
+  line as plain text. Closing periods are dropped. The card shows a single
+  Latest line or Review step as plain text and several as a list. A file link
+  opens in the thread's workspace when its path is inside it, else on the
+  environment's host.
 - **Timeline row.** The tool call stays in the thread as a tinted row titled
   Recap, whose output is the recap as short Markdown, so the recap remains
   readable after the conversation moves on. BB renders plugin tool rows with
@@ -486,7 +491,7 @@ it.
   edited in Workstreams' settings sections. Recap settings remain in the Recap
   section: whether agents end turns with a recap (off removes the tool at each
   session's next start and stops reminders at once), reminders per turn, and the
-  card layout (Full, or Minimal without the goal).
+  card layout (Full or Compact; Compact is stored as `minimal`).
 
 ## 11. Surfaces
 
@@ -581,18 +586,21 @@ it.
 
 7. **Recap card** (a composer banner), in its state's accent (blue for review,
    green for complete, violet for continuing) on its border, background, state
-   line, and row labels: a state line (Ready for Review, Complete, or Work
-   continuing), the Goal heading (Full layout only), then Progress (neutral
-   bullets) and Next for continuing; complete shows just results; review shows
-   Done (the Latest lines, check-marked) and Review (the requested checks, with
-   optional review-target Links as chips under their steps); labels stack above
-   their rows on narrow cards. A dismiss ✕ sits in the top-right corner, and
-   Archive at the right of a footer strip along the bottom edge when it applies.
-   It stays up while the user drafts and hides while a message sends or the
-   thread runs, while a question card is open, and in the inline message editor;
-   hiding never moves the thread. **Archive** is unavailable for continuing
-   recaps. For complete and review it shows when the server confirms that the
-   thread and every child and lifecycle dependent are idle with no queued work,
+   line, and row labels: a state line (Ready for Review, Complete, or Working),
+   the Goal heading, then rows by layout. Full: Progress (rings for active
+   items, then checks for finished ones) and optional Next while working;
+   results alone when complete; Done (check-marked) and Review (the requested
+   checks, with optional review-target Links as chips under their steps) for
+   review; labels stack above their rows on narrow cards. Compact uses smaller
+   type and spacing and one unlabeled row: active items while working, results
+   when complete, review steps and links for review. A dismiss ✕ sits in the
+   top-right corner. Archive, when it applies, sits at the right of a footer
+   strip in Full and as an icon-only button beside ✕ in Compact. It stays up
+   while the user drafts and hides while a message sends or the thread runs,
+   while a question card is open, and in the inline message editor; hiding never
+   moves the thread. **Archive** is unavailable for continuing recaps. For
+   complete and review it shows when the server confirms that the thread and
+   every child and lifecycle dependent are idle with no queued work,
    interactions, background work, unfinished goal or pending todos, and that
    each dependent is complete (its own recap, else current analysis); hidden
    dependents block it. Archiving a review recap accepts its result. Continuing

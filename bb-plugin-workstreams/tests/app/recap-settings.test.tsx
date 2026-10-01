@@ -26,7 +26,7 @@ async function mount() {
 
 it("saves a layout pick immediately", async () => {
   const slot = await mount();
-  fireEvent.click(await slot.findByRole("radio", { name: /Minimal/ }));
+  fireEvent.click(await slot.findByRole("radio", { name: /Compact/ }));
   await waitFor(() =>
     expect(
       slot.inspection.rpcCalls.find((c) => c.method === "setRecapPrefs")?.input,
@@ -56,17 +56,22 @@ it("previews the recap card in each state and the chosen layout", async () => {
       .filter((s) => !s.hasAttribute("aria-hidden"))
       .map((s) => s.textContent);
   expect(visible()).toHaveLength(1);
-  expect(visible()[0]).toMatch(/Complete.*Adding dark mode/);
+  expect(visible()[0]).toMatch(/Complete.*Added dark mode/);
   fireEvent.click(slot.getByRole("button", { name: "Next example" }));
-  expect(visible()[0]).toMatch(/Ready for Review.*Adding dark mode/);
+  expect(visible()[0]).toMatch(/Ready for Review.*Added dark mode/);
   expect(visible()[0]).toContain("Open Settings → Appearance and choose Dark");
   expect(carousel.querySelectorAll('ul[aria-label="Links"]')).toHaveLength(0);
   fireEvent.click(slot.getByRole("button", { name: "Next example" }));
-  expect(visible()[0]).toMatch(/Work continuing/);
-  expect(visible()[0]).toContain("Nothing needed from you");
+  expect(visible()[0]).toMatch(/Working/);
+  expect(visible()[0]).not.toContain("Nothing needed");
   fireEvent.click(slot.getByRole("button", { name: "Next example" }));
   expect(visible()[0]).toMatch(/Complete/);
 
-  fireEvent.click(slot.getByRole("radio", { name: /Minimal/ }));
-  await waitFor(() => expect(visible()[0]).not.toMatch(/Adding dark mode/));
+  fireEvent.click(slot.getByRole("radio", { name: /Compact/ }));
+  // Compact keeps the goal; the working example drops its finished items.
+  fireEvent.click(slot.getByRole("button", { name: "Previous example" }));
+  await waitFor(() =>
+    expect(visible()[0]).not.toMatch(/Theme behavior agreed/),
+  );
+  expect(visible()[0]).toMatch(/Working.*Adding dark mode.*subagents/);
 });

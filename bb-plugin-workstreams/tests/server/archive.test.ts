@@ -27,7 +27,7 @@ async function report(w: World, threadId: string, state = "complete") {
       goal: "Answering a question",
       latest: ["Answered it"],
       ...(state === "review" ? { review: "Read the answer" } : {}),
-      ...(state === "continuing" ? { next: ["Inspect worker results"] } : {}),
+      ...(state === "continuing" ? { active: ["Workers are running"] } : {}),
     },
     { threadId },
   );

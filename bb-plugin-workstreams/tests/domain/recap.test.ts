@@ -10,12 +10,11 @@ import {
   reportedAnalysis,
 } from "../../src/domain/recap.ts";
 
-it("requires agent next steps for continuing work and maps it to in progress", () => {
+it("requires active work for a working recap and maps it to in progress", () => {
   const input = {
     state: "continuing",
     goal: "Updating settings",
-    latest: ["Workers are running"],
-    next: ["Inspect worker results."],
+    active: ["Workers are building the toggle."],
     links: [],
   };
   const recap = toRecap(recapInputSchema.parse(input), {
@@ -23,41 +22,57 @@ it("requires agent next steps for continuing work and maps it to in progress", (
     turnId: "t",
     at: 1,
   });
-  expect(recap.next).toEqual(["Inspect worker results"]);
-  expect(recap.review).toEqual([]);
-  expect(recapMarkdown(recap)).toContain("Work continuing");
-  expect(recapMarkdown(recap)).toContain("**Progress:**");
-  expect(recapMarkdown(recap)).toContain("**Next:**");
-  expect(recapMarkdown(recap)).not.toContain("**Review:");
-  expect(reportedAnalysis(recap, { latestAttentionAt: 1 }).state).toBe(
-    "in_progress",
+  expect(recap).toMatchObject({
+    active: ["Workers are building the toggle"],
+    latest: [],
+    next: [],
+    review: [],
+  });
+  const markdown = recapMarkdown(recap);
+  expect(markdown).toContain("**Working**");
+  expect(markdown).toContain("- ○ Workers are building the toggle");
+  expect(markdown).not.toContain("**Next:");
+  expect(markdown).not.toContain("Nothing needed");
+  const analysis = reportedAnalysis(recap, { latestAttentionAt: 1 });
+  expect(analysis.state).toBe("in_progress");
+  expect(analysis.recap).toBe("Workers are building the toggle");
+
+  const full = recapInputSchema.parse({
+    ...input,
+    latest: ["Theme agreed"],
+    next: ["Inspect results"],
+  });
+  const fullMarkdown = recapMarkdown(
+    toRecap(full, { id: "r", turnId: "t", at: 1 }),
   );
+  expect(fullMarkdown).toContain("- ✓ Theme agreed");
+  expect(fullMarkdown).toContain("**Next:**\n- Inspect results");
+
+  const rejects = (patch: Record<string, unknown>) =>
+    expect(recapInputSchema.safeParse({ ...input, ...patch }).success).toBe(
+      false,
+    );
+  // Every item done: report complete, not working.
+  rejects({ active: undefined, latest: ["Done"] });
+  rejects({ active: [] });
+  rejects({ active: ["a", "b"], latest: ["c", "d", "e"] });
+  rejects({ review: "Nothing to review" });
+  rejects({ links: [{ title: "File", location: "/work/a" }] });
   expect(
-    recapInputSchema.safeParse({ ...input, next: undefined }).success,
-  ).toBe(false);
-  expect(recapInputSchema.safeParse({ ...input, next: [] }).success).toBe(
-    false,
-  );
-  expect(
-    recapInputSchema.safeParse({ ...input, review: "Nothing to review" })
+    recapInputSchema.safeParse({ ...input, state: "complete", latest: ["x"] })
       .success,
   ).toBe(false);
   expect(
-    recapInputSchema.safeParse({ ...input, state: "complete" }).success,
-  ).toBe(false);
-  expect(
-    recapInputSchema.safeParse({
-      ...input,
-      links: [{ title: "File", location: "/work/a" }],
-    }).success,
+    recapInputSchema.safeParse({ state: "complete", goal: "Goal", latest: [] })
+      .success,
   ).toBe(false);
 });
 
-it("marks reported continuing work but leaves inferred progress unmarked", async () => {
+it("marks reported working threads but leaves inferred progress unmarked", async () => {
   const { workStateMark } = await import("../../src/domain/presentation.ts");
   expect(workStateMark("in_progress", true)).toEqual({
     glyph: "↻",
-    label: "Work continuing",
+    label: "Working",
   });
   expect(workStateMark("in_progress", false).glyph).toBeNull();
 });
