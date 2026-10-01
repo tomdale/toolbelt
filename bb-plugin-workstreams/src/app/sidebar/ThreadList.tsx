@@ -1125,10 +1125,13 @@ function WorkstreamGroup({
           {onNewThread ? (
             <button
               type="button"
-              aria-label={`New thread in ${group.name}`}
-              title={`New thread in ${group.name}`}
+              aria-label={`New work in ${group.name}`}
+              title={`New work in ${group.name}`}
               onClick={onNewThread}
-              className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover/head:opacity-100"
+              className={cn(
+                "rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:opacity-100 group-hover/head:opacity-100",
+                group.total > 0 && "opacity-0",
+              )}
             >
               <Icon name="Plus" className="size-3.5" />
             </button>
@@ -1141,9 +1144,11 @@ function WorkstreamGroup({
               {group.needsYou}
             </span>
           ) : null}
-          <span className="text-[11px] tabular-nums text-muted-foreground/70">
-            {group.total}
-          </span>
+          {group.total > 0 ? (
+            <span className="text-[11px] tabular-nums text-muted-foreground/70">
+              {group.total}
+            </span>
+          ) : null}
         </div>
       </GroupMenu>
       {collapsed ? null : <ul className="mt-0.5">{children}</ul>}

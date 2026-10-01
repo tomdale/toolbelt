@@ -87,6 +87,7 @@ async function mount(
       experimental_archived: options.archived ?? null,
     },
     settings: options.settings ?? {},
+    sdk: { projects: { list: async () => [] } },
     rpc: {
       prefs: () => ({
         prefs: {
@@ -281,13 +282,29 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
-  it("keeps empty workstreams in a collapsed Dormant fold", async () => {
-    const slot = await mount(undefined, { settings: { showRecent: false } });
-    const dormant = slot.getByRole("button", { name: /Dormant/ });
-    expect(dormant.getAttribute("aria-expanded")).toBe("false");
-    expect(slot.queryByRole("region", { name: "Zeta" })).toBeNull();
-    fireEvent.click(dormant);
-    expect(slot.getByRole("region", { name: "Zeta" })).toBeTruthy();
+  it("shows empty workstreams after populated ones with a scoped New work action and no zero count", async () => {
+    const slot = await mount(undefined, {
+      settings: { showRecent: false },
+      order: { workstreams: ["sec_z", "sec_b", "sec_a"], threads: {} },
+    });
+    await waitFor(() =>
+      expect(
+        slot.getAllByRole("region").map((r) => r.getAttribute("aria-label")),
+      ).toEqual(["Beta", "Alpha", "Zeta", "Unsorted"]),
+    );
+    expect(slot.queryByRole("button", { name: /Dormant/ })).toBeNull();
+    const empty = within(slot.getByRole("region", { name: "Zeta" }));
+    expect(empty.queryByText("0")).toBeNull();
+    expect(
+      within(slot.getByRole("region", { name: "Beta" })).getByText("1"),
+    ).toBeTruthy();
+    const newWork = empty.getByRole("button", { name: "New work in Zeta" });
+    expect(newWork.classList.contains("opacity-0")).toBe(false);
+    fireEvent.click(newWork);
+    const dialog = within(
+      await screen.findByRole("dialog", { name: "New work" }),
+    );
+    expect(dialog.getByRole("button", { name: /Zeta/ })).toBeTruthy();
     slot.lifecycle.unmount();
   });
 
@@ -919,7 +936,7 @@ describe("thread list", () => {
     await waitFor(() =>
       expect(
         slot.getAllByRole("region").map((r) => r.getAttribute("aria-label")),
-      ).toEqual(["Beta", "Alpha", "Dormant"]),
+      ).toEqual(["Beta", "Alpha", "Zeta"]),
     );
     expect(groupRows(slot, "Beta")).toEqual(["B two", "B three", "B one"]);
     slot.lifecycle.unmount();
@@ -1042,7 +1059,11 @@ describe("snoozing", () => {
     );
     expect(slot.queryByRole("region", { name: "For You" })).toBeNull();
     expect(groupRows(slot, "Recent")).toEqual(["Other task"]);
-    expect(slot.queryByRole("region", { name: "Alpha" })).toBeNull();
+    expect(
+      within(slot.getByRole("region", { name: "Alpha" })).queryAllByRole(
+        "link",
+      ),
+    ).toEqual([]);
     const fold = slot.getByRole("button", { name: /^Snoozed\d*$/ });
     expect(fold.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(fold);

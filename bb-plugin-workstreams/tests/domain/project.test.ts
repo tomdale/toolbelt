@@ -35,22 +35,26 @@ describe("projectWorkstreams", () => {
     expect(p.groups.map((g) => [g.id, rowIds(g)])).toEqual([
       ["sec_a", ["root", "child"]],
       ["sec_b", ["beta"]],
+      ["sec_empty", []],
     ]);
     expect(p.rowOf.get("child")?.workstreamId).toBe("sec_a");
     expect(p.rowOf.get("child")?.depth).toBe(1);
   });
 
-  it("keeps BB's section order and moves empty sections to dormant", () => {
+  it("keeps populated sections first even when empty sections have manual priority", () => {
     const p = projectWorkstreams(
       [
         thread("b1", { sectionId: "sec_b", latestAttentionAt: now }),
         thread("a1", { sectionId: "sec_a", latestAttentionAt: now - 1 }),
       ],
       sections,
-      { now },
+      {
+        now,
+        order: { workstreams: ["sec_empty", "sec_b", "sec_a"], threads: {} },
+      },
     );
-    expect(p.groups.map((g) => g.id)).toEqual(["sec_a", "sec_b"]);
-    expect(p.dormant.map((g) => g.id)).toEqual(["sec_empty"]);
+    expect(p.groups.map((g) => g.id)).toEqual(["sec_b", "sec_a", "sec_empty"]);
+    expect(p.dormant).toEqual([]);
   });
 
   it("marks workstreams dormant after 30 quiet days unless something needs you", () => {
@@ -67,8 +71,8 @@ describe("projectWorkstreams", () => {
       sections,
       { now },
     );
-    expect(p.groups.map((g) => g.id)).toEqual(["sec_b"]);
-    expect(p.dormant.map((g) => g.id)).toEqual(["sec_a", "sec_empty"]);
+    expect(p.groups.map((g) => g.id)).toEqual(["sec_b", "sec_empty"]);
+    expect(p.dormant.map((g) => g.id)).toEqual(["sec_a"]);
   });
 
   it("puts unsectioned and unknown-section roots in Unsorted", () => {
@@ -194,7 +198,11 @@ describe("projectWorkstreams", () => {
       sections,
       { now },
     );
-    expect(rankGroups(p.groups).map((g) => g.id)).toEqual(["sec_b", "sec_a"]);
+    expect(rankGroups(p.groups).map((g) => g.id)).toEqual([
+      "sec_b",
+      "sec_a",
+      "sec_empty",
+    ]);
   });
 });
 
@@ -321,7 +329,8 @@ describe("snoozed threads", () => {
     expect(p.groups[0]!.needsYou).toBe(0);
     expect(p.needsYou).toEqual([]);
     expect(ids(p.recent)).not.toContain("beta");
-    expect(p.dormant.map((g) => g.id)).toContain("sec_b");
+    expect(p.groups.find((g) => g.id === "sec_b")?.total).toBe(0);
+    expect(p.dormant).toEqual([]);
     expect(ids(p.snoozed)).toEqual(["asks", "beta"]);
     expect(p.snoozed[0]!.workstreamId).toBe("sec_a");
   });
