@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
   fireEvent,
@@ -42,6 +42,13 @@ async function mount(
       { until: number | null; attentionAt: number; at: number }
     >;
     snoozePrefs?: Record<string, unknown>;
+    archived?: {
+      status: "loading" | "ready" | "error";
+      hasNextPage: boolean;
+      isFetchingNextPage: boolean;
+      isFetchNextPageError: boolean;
+      fetchNextPage: () => Promise<void>;
+    };
   } = {},
 ) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
@@ -59,13 +66,22 @@ async function mount(
       searchQuery: "",
     },
     {
-      sidebarThreads: { status: "ready", threads, sections, projects: [] },
+      sidebarThreads: {
+        status: "ready",
+        threads,
+        sections,
+        projects: [],
+        experimental_archived: options.archived ?? null,
+      },
       settings: options.settings ?? {},
       rpc: {
         state: () => ({
           ...emptyState(),
           analysis: options.analysis ?? {},
-          order: { workstreams: [...order.workstreams], threads: { ...order.threads } },
+          order: {
+            workstreams: [...order.workstreams],
+            threads: { ...order.threads },
+          },
           snoozes: { ...snoozes },
           snoozePrefs: options.snoozePrefs ?? {},
         }),
@@ -92,10 +108,19 @@ async function mount(
           },
         }),
         reorder: (raw: unknown) => {
-          const input = raw as { kind: string; groupId?: string; ids: string[] };
+          const input = raw as {
+            kind: string;
+            groupId?: string;
+            ids: string[];
+          };
           if (input.kind === "workstreams") order.workstreams = input.ids;
           else order.threads[input.groupId!] = input.ids;
-          return { order: { workstreams: [...order.workstreams], threads: { ...order.threads } } };
+          return {
+            order: {
+              workstreams: [...order.workstreams],
+              threads: { ...order.threads },
+            },
+          };
         },
       },
     },
@@ -108,6 +133,101 @@ const groupRows = (slot: Awaited<ReturnType<typeof mount>>, name: string) =>
     .map((a) => a.getAttribute("aria-label"));
 
 describe("thread list", () => {
+  it("shows archived threads grouped by workstream and loads another page", async () => {
+    const fetchNextPage = vi.fn(async () => undefined);
+    const slot = await mount(
+      [
+        sidebarThread("arch-alpha", {
+          sectionId: "sec_a",
+          title: "Archived Alpha task",
+          isArchived: true,
+          archivedAt: 300,
+        }),
+        sidebarThread("arch-alpha-old", {
+          sectionId: "sec_a",
+          title: "Older Alpha task",
+          isArchived: true,
+          archivedAt: 100,
+        }),
+        sidebarThread("arch-beta", {
+          sectionId: "sec_b",
+          title: "Archived Beta task",
+          isArchived: true,
+          archivedAt: 200,
+        }),
+        sidebarThread("arch-beta-child", {
+          parentThreadId: "arch-alpha",
+          sectionId: "sec_b",
+          title: "Archived child task",
+          isArchived: true,
+          archivedAt: 250,
+        }),
+        sidebarThread("arch-loose", {
+          title: "Archived loose task",
+          isArchived: true,
+          archivedAt: 50,
+        }),
+        sidebarThread("arch-hidden", {
+          sectionId: "sec_a",
+          title: "Hidden archived task",
+          isArchived: true,
+          isHidden: true,
+          archivedAt: 400,
+        }),
+        sidebarThread("active", { sectionId: "sec_a", title: "Active task" }),
+      ],
+      {
+        settings: { showRecent: false },
+        archived: {
+          status: "ready",
+          hasNextPage: true,
+          isFetchingNextPage: false,
+          isFetchNextPageError: false,
+          fetchNextPage,
+        },
+      },
+    );
+    const archived = slot.getByRole("button", { name: /Archived/ });
+    expect(archived.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(archived);
+    const alpha = within(slot.getByRole("region", { name: "Archived Alpha" }));
+    expect(
+      alpha
+        .getByRole("button", { name: /Alpha/ })
+        .getAttribute("aria-expanded"),
+    ).toBe("false");
+    fireEvent.click(alpha.getByRole("button", { name: /Alpha/ }));
+    expect(
+      alpha.getAllByRole("link").map((link) => link.getAttribute("aria-label")),
+    ).toEqual([
+      "Archived Alpha task",
+      "Archived child task",
+      "Older Alpha task",
+    ]);
+    const beta = within(slot.getByRole("region", { name: "Archived Beta" }));
+    fireEvent.click(beta.getByRole("button", { name: /Beta/ }));
+    expect(groupRows(slot, "Archived Beta")).toEqual(["Archived Beta task"]);
+    const unsorted = within(
+      slot.getByRole("region", { name: "Archived Unsorted" }),
+    );
+    fireEvent.click(unsorted.getByRole("button", { name: /Unsorted/ }));
+    expect(groupRows(slot, "Archived Unsorted")).toEqual([
+      "Archived loose task",
+    ]);
+    const archivedRegion = slot.getByRole("region", { name: "Archived" });
+    expect(
+      archivedRegion.querySelector('[data-sidebar-thread-id="active"]'),
+    ).toBeNull();
+    expect(
+      archivedRegion.querySelector('[data-sidebar-thread-id="arch-hidden"]'),
+    ).toBeNull();
+    fireEvent.click(
+      slot.getByRole("button", { name: "Load more archived threads" }),
+    );
+    expect(fetchNextPage).toHaveBeenCalledOnce();
+    slot.lifecycle.unmount();
+  });
+
   it("groups whole trees by the root's workstream and hides hidden threads", async () => {
     const slot = await mount(undefined, { settings: { showRecent: false } });
     expect(groupRows(slot, "Alpha")).toEqual(["Root task", "Kid task"]);
@@ -672,10 +792,13 @@ describe("snoozing", () => {
     await waitFor(() =>
       expect(groupRows(slot, "Alpha")).toEqual(["Asking task", "Napping task"]),
     );
-    expect(slot.inspection.rpcCalls.some((call) =>
-      call.method === "unsnooze" &&
-      (call.input as { threadId?: string }).threadId === "nap",
-    )).toBe(true);
+    expect(
+      slot.inspection.rpcCalls.some(
+        (call) =>
+          call.method === "unsnooze" &&
+          (call.input as { threadId?: string }).threadId === "nap",
+      ),
+    ).toBe(true);
     slot.lifecycle.unmount();
   });
 });

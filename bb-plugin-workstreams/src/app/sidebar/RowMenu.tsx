@@ -38,6 +38,7 @@ export function RowMenu({
   handlers,
   snooze,
   morningHour,
+  showArchive = true,
   children,
 }: {
   thread: PluginSidebarThread;
@@ -49,6 +50,7 @@ export function RowMenu({
   snooze?: ThreadSnooze;
   /** When "morning" choices wake (the Snooze settings). */
   morningHour: number;
+  showArchive?: boolean;
   children: ReactNode;
 }) {
   const actions = experimental_useSidebarThreadActions();
@@ -157,7 +159,9 @@ export function RowMenu({
               </ContextMenu.SubContent>
             </ContextMenu.Portal>
           </ContextMenu.Sub>
-          <Item onSelect={() => actions.archive(thread.id)}>Archive</Item>
+          {showArchive ? (
+            <Item onSelect={() => actions.archive(thread.id)}>Archive</Item>
+          ) : null}
           <Item destructive onSelect={() => actions.requestDelete(thread.id)}>
             Delete…
           </Item>

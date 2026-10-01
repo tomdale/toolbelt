@@ -84,6 +84,7 @@ export function Row({
   showStatusSlot = true,
   subtitle,
   snoozeAction,
+  showArchive = true,
   disclosure,
   onNavigate,
 }: {
@@ -118,6 +119,8 @@ export function Row({
     run: () => void;
     menu?: ReactNode;
   };
+  /** Hide Archive when the row is already in the archived lifecycle. */
+  showArchive?: boolean;
   /** Present when the row has child threads: the expand/collapse toggle. */
   disclosure?: { expanded: boolean; toggle: () => void };
   onNavigate: () => void;
@@ -273,9 +276,14 @@ export function Row({
           focusing one opens the group, and so does an open menu. The
           negative margin cancels the row's gap while collapsed. */}
       <span className="relative -ml-1.5 flex max-w-0 shrink-0 items-center overflow-hidden opacity-0 group-hover/row:ml-0 group-has-[:focus-visible]/row:ml-0 group-has-[[data-state=open]]/row:ml-0 group-hover/row:max-w-24 group-hover/row:opacity-100 group-has-[:focus-visible]/row:max-w-24 group-has-[:focus-visible]/row:opacity-100 group-has-[[data-state=open]]/row:max-w-24 group-has-[[data-state=open]]/row:opacity-100 pointer-coarse:hidden">
-        <HoverAction label="Archive" onClick={() => actions.archive(thread.id)}>
-          <Icon name="Archive" className="size-3.5" />
-        </HoverAction>
+        {showArchive ? (
+          <HoverAction
+            label="Archive"
+            onClick={() => actions.archive(thread.id)}
+          >
+            <Icon name="Archive" className="size-3.5" />
+          </HoverAction>
+        ) : null}
         {snoozeAction ? (
           snoozeAction.menu ? (
             <HoverMenuButton
