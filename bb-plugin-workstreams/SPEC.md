@@ -432,7 +432,9 @@ session is constructed. `configure` also runs on turn submits and can't tell
 them from session starts, so a thread gets reminders only while it has the tool
 selected and its session demonstrably has it: the thread was created after
 agents started getting the tool (first load, or recaps turned back on), or its
-agent has called the tool.
+agent has called the tool. A fork carries on its source's session, so the first
+thread in its fork chain must meet the creation test; an unreadable chain fails
+it.
 
 - **Endings.** A turn ends with a question card still open (BB's native
   question, or Toolbelt's AskUserQuestion), or with a recap whose state is

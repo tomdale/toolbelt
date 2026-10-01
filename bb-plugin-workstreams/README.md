@@ -78,8 +78,8 @@ design and the contract the code is checked against.
   turn completion after the fact, so the turn's own reply is already visible
   when the reminder arrives. The tool reaches each thread when its provider
   session next starts. Reminders go only to threads that certainly have it:
-  threads created since recaps were turned on, and threads whose agent has
-  called it.
+  threads created since recaps were turned on (for a fork, the thread its fork
+  chain started from), and threads whose agent has called it.
 - **Archive**: on a complete or review recap, when BB has no unfinished tasks,
   goals, queued messages, interactions, or background work, and every child and
   lifecycle dependent is complete. Archiving a review recap accepts its result.

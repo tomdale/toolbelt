@@ -10,7 +10,9 @@
  * BB applies a tool set only when it constructs a provider session, and
  * `configure` can't tell a session start from a turn submit. So reminders go
  * only to threads whose session demonstrably has the tool: threads created
- * since agents started getting it, and threads whose agent has called it.
+ * since agents started getting it, and threads whose agent has called it. A
+ * fork continues its source's session, so it counts from the first thread in
+ * its fork chain.
  *
  * BB reports turn completion as an observation, not a veto: the turn's final
  * reply is already visible when a correction asks for the recap. Corrections
@@ -319,6 +321,37 @@ export class AgentRecaps {
     return start.scope.turnId;
   }
 
+  /**
+   * Whether the thread's provider session may predate the recap tool. A fork
+   * carries on its source's session, so the session dates from the first
+   * thread in the fork chain. A chain that can't be read counts as predating.
+   */
+  private async sessionPredatesTool(
+    thread: {
+      createdAt: number;
+      originKind: string | null;
+      sourceThreadId: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    const since = this.deps.since();
+    let current = thread;
+    for (let depth = 0; depth < 16; depth++) {
+      if (current.createdAt < since) return true;
+      if (current.originKind !== "fork" || !current.sourceThreadId)
+        return false;
+      try {
+        current = await this.deps.bb.sdk.threads.get({
+          threadId: current.sourceThreadId,
+          signal,
+        });
+      } catch {
+        return true;
+      }
+    }
+    return true;
+  }
+
   /** Records the turn's ending, unless fresh input arrived since `epoch`. */
   private accept(
     threadId: string,
@@ -394,11 +427,11 @@ export class AgentRecaps {
       thread.archivedAt !== null ||
       thread.visibility !== "visible" ||
       thread.queuedMessageCount > 0 ||
-      // A session constructed before the tool existed can't call it.
-      (!row.proven && thread.createdAt < this.deps.since()) ||
       signal.aborted
     )
       return;
+    // A session constructed before the tool existed can't call it.
+    if (!row.proven && (await this.sessionPredatesTool(thread, signal))) return;
     const token = randomUUID();
     // Reserved before sending, so a reload or a repeated idle event can't
     // refund a correction.
