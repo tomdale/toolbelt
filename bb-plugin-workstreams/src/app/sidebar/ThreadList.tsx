@@ -1289,15 +1289,17 @@ function WorkstreamGroup({
         >
           <button
             type="button"
-            aria-expanded={!collapsed}
-            onClick={toggle}
+            aria-expanded={group.total > 0 ? !collapsed : undefined}
+            onClick={group.total > 0 ? toggle : undefined}
             onDoubleClick={onRename}
             className="flex min-w-0 flex-1 items-center gap-1 text-left"
           >
-            <Icon
-              name={collapsed ? "ChevronRight" : "ChevronDown"}
-              className="size-3 shrink-0 text-muted-foreground"
-            />
+            {group.total > 0 ? (
+              <Icon
+                name={collapsed ? "ChevronRight" : "ChevronDown"}
+                className="size-3 shrink-0 text-muted-foreground"
+              />
+            ) : null}
             <WorkstreamName
               name={group.name}
               muted={muted}
