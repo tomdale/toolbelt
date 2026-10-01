@@ -23,7 +23,11 @@ import { loadSpinner, saveSpinner } from "./spinner.ts";
 import { UserError, WorkstreamService } from "./service.ts";
 import { TraceStore } from "./trace.ts";
 import { AgentRecaps } from "./recap.ts";
-import { loadRecapPrefs, saveRecapPrefs } from "./recapPrefs.ts";
+import {
+  loadRecapPrefs,
+  recapToolSince,
+  saveRecapPrefs,
+} from "./recapPrefs.ts";
 import { ThreadSnoozes, loadSnoozePrefs, saveSnoozePrefs } from "./snooze.ts";
 
 export { rpcContract } from "./contract.ts";
@@ -204,8 +208,10 @@ export default async function plugin(bb: BbPluginApi) {
     bb,
     db,
     prefs: () => loadRecapPrefs(db),
+    since: () => recapToolSince(db),
     onChange: notify,
   });
+  recapToolSince(db);
   recaps.register();
   bb.onDispose(() => recaps.dispose());
   const archives = new RecapArchive({

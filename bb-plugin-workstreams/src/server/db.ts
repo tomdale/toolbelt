@@ -277,6 +277,7 @@ const MIGRATIONS = [
   "DROP TABLE IF EXISTS ws_archive_dismissed",
   "DELETE FROM ws_trace_link WHERE trace_id IN (SELECT id FROM ws_trace WHERE kind = 'recap')",
   "DELETE FROM ws_trace WHERE kind = 'recap'",
+  "ALTER TABLE ws_agent_recap ADD COLUMN proven INTEGER NOT NULL DEFAULT 0",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

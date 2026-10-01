@@ -19,10 +19,13 @@ const RECAP = {
   latest: ["Moved the recap tool into Workstreams."],
 };
 
-async function world(prefs: Record<string, unknown> = {}) {
+async function world(
+  prefs: Record<string, unknown> = {},
+  createdAt = Date.now() + 1_000,
+) {
   const w = await fakeWorld();
   worlds.push(w);
-  w.addThread("t1", { status: "idle", queuedMessageCount: 0 });
+  w.addThread("t1", { status: "idle", queuedMessageCount: 0, createdAt });
   if (Object.keys(prefs).length)
     await w.harness.behavior.callRpc("setRecapPrefs", { patch: prefs });
   const configure = (origin?: { kind: "fork"; pluginId: string }) =>
@@ -146,6 +149,37 @@ describe("agent recaps", () => {
     s.w.turn("t1");
     await s.idle();
     expect(s.corrections()).toHaveLength(3);
+  });
+
+  it("reminds an older thread only once its agent has used the tool", async () => {
+    // Created before the tool existed: its live session may lack it.
+    const s = await world({}, 1);
+    s.w.turn("t1");
+    await s.idle();
+    expect(s.corrections()).toHaveLength(0);
+    // A recap call proves this session has the tool.
+    s.w.turn("t1");
+    await s.report();
+    await s.dispatch();
+    s.w.turn("t1");
+    await s.idle();
+    expect(s.corrections()).toHaveLength(1);
+  });
+
+  it("restarts the clock when recaps are turned back on", async () => {
+    const s = await world({}, Date.now() + 1_000);
+    await s.w.harness.behavior.callRpc("setRecapPrefs", {
+      patch: { required: false },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await s.w.harness.behavior.callRpc("setRecapPrefs", {
+      patch: { required: true },
+    });
+    s.w.threads.set("t1", { ...s.thread(), createdAt: Date.now() - 1 });
+    await s.configure();
+    s.w.turn("t1");
+    await s.idle();
+    expect(s.corrections()).toHaveLength(0);
   });
 
   it("counts an open question card, even one without a turn of its own", async () => {
