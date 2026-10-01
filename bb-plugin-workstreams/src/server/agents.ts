@@ -14,6 +14,7 @@ import {
   type ProjectShape,
   type ThreadRole,
 } from "../domain/instructions.ts";
+import { isWorkstreamsWorker } from "../domain/worker.ts";
 import type { Database } from "./db.ts";
 import type { AgentRecaps } from "./recap.ts";
 
@@ -93,8 +94,8 @@ export function roleOf(
 
 /**
  * Each session's role instructions (SPEC §5) and the recap tool (SPEC §10.2).
- * Every thread except a side chat gets the recap tool, including threads too
- * new to have a role yet.
+ * Every non-worker thread except a side chat gets the recap tool, including
+ * threads too new to have a role yet.
  */
 export function registerAgentInstructions(
   bb: BbPluginApi,
@@ -102,6 +103,8 @@ export function registerAgentInstructions(
   recaps: AgentRecaps,
 ): void {
   bb.agents.configure((context) => {
+    const worker = isWorkstreamsWorker(context.pluginMetadata);
+    if (worker) return { tools: [], skills: [] };
     const sideChat =
       context.origin.kind === "fork" && context.origin.pluginId === "side-chat";
     const recap = recaps.configure(context.thread.id, !sideChat);
