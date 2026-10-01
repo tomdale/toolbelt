@@ -55,41 +55,52 @@ export function SnoozeSettings() {
           />
         }
       />
-      <div className="py-4 first:pt-0 last:pb-0">
+      <div>
         <SettingRow
           label="Hover menu"
-          description={`Choose up to ${QUICK_SNOOZE_LIMIT} options for the sidebar snooze menu. Pick a date and time is always available.`}
-          stacked
+          description={`Choose up to ${QUICK_SNOOZE_LIMIT} options for the sidebar snooze menu. ${prefs.quick.length} of ${QUICK_SNOOZE_LIMIT} chosen; pick a date and time is always available.`}
         />
-        <ul className="mt-2 space-y-0.5">
+        <ul aria-label="Hover menu choices" className="mt-2 space-y-1">
           {SNOOZE_PRESETS.map((preset) => {
             const checked = prefs.quick.includes(preset.id);
             const disabled = !checked && full;
             return (
               <li key={preset.id}>
-                <label
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-label={preset.label}
+                  aria-checked={checked}
+                  data-testid={`quick-snooze-${preset.id}`}
+                  aria-disabled={disabled}
+                  disabled={disabled}
+                  onClick={() => toggleQuick(preset.id, !checked)}
                   className={cn(
-                    "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/50",
-                    disabled && "cursor-default opacity-50",
+                    "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors",
+                    disabled
+                      ? "cursor-not-allowed text-muted-foreground/60"
+                      : "cursor-pointer text-foreground hover:bg-accent/50",
+                    checked && "bg-accent/30",
                   )}
                 >
-                  <input
-                    type="checkbox"
-                    aria-label={preset.label}
-                    checked={checked}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      toggleQuick(preset.id, event.currentTarget.checked)
-                    }
-                    className="size-4 accent-primary"
-                  />
-                  <span className="flex-1 text-sm text-foreground">
-                    {preset.label}
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "flex size-4 shrink-0 items-center justify-center rounded border",
+                      checked
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-muted-foreground/50",
+                    )}
+                  >
+                    {checked ? (
+                      <span className="text-xs leading-none">✓</span>
+                    ) : null}
                   </span>
+                  <span className="flex-1 text-sm">{preset.label}</span>
                   <span className="text-xs text-muted-foreground">
                     {hints.get(preset.id)}
                   </span>
-                </label>
+                </button>
               </li>
             );
           })}

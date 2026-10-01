@@ -29,11 +29,13 @@ const pickerValue = (
 
 export function ModelField({
   label,
+  description,
   choice,
   onChange,
   disabled = false,
 }: {
   label: string;
+  description: string;
   choice: ModelChoice;
   onChange(choice: ModelChoice): void;
   disabled?: boolean;
@@ -43,25 +45,21 @@ export function ModelField({
   return (
     <SettingRow
       label={label}
-      description="Summarizes each thread after every turn and writes titles, even when title updates are off."
-      stacked
+      description={
+        directModel === null
+          ? `${description} This model runs in a hidden worker thread and takes several seconds longer per call.`
+          : description
+      }
       control={
-        <div className="w-full space-y-1.5">
+        <div className="min-w-0 max-w-full rounded-md border border-border bg-background px-2 py-1 shadow-sm">
           <ProviderModelPicker
             value={selected}
             onChange={(next) => onChange({ kind: "provider", ...next })}
-            align="start"
+            align="end"
             disabled={disabled}
-            className="w-full"
+            className="max-w-[22rem]"
             allowProviderChange
           />
-          {directModel === null ? (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              This model runs in a hidden worker thread and takes several
-              seconds longer per call.
-            </p>
-          ) : null}
-          {/* Reserved for a future “Browse all AI Gateway models…” affordance. */}
         </div>
       }
     />

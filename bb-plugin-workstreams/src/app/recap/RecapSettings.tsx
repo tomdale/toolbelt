@@ -8,7 +8,12 @@ import {
 } from "../../domain/recapPrefs.ts";
 import { useRecapPrefs } from "./prefs.ts";
 import { RecapPreview } from "./RecapPreview.tsx";
-import { SectionRows, SettingRow, SettingSwitch } from "../settings/ui.tsx";
+import {
+  SectionRows,
+  SettingRow,
+  SettingSwitch,
+  Stepper,
+} from "../settings/ui.tsx";
 
 function LayoutGlyph({ layout }: { layout: RecapLayout }) {
   const line = "h-[3px] rounded-full bg-current";
@@ -23,39 +28,6 @@ function LayoutGlyph({ layout }: { layout: RecapLayout }) {
       <div className={`${line} w-full opacity-40`} />
       <div className={`${line} w-4/5 opacity-40`} />
     </div>
-  );
-}
-
-function BoundedNumberInput({
-  label,
-  value,
-  range,
-  disabled,
-  onCommit,
-}: {
-  label: string;
-  value: number;
-  range: { min: number; max: number };
-  disabled?: boolean;
-  onCommit: (next: number) => void;
-}) {
-  const [text, setText] = useState<string | null>(null);
-  return (
-    <input
-      type="text"
-      inputMode="numeric"
-      aria-label={label}
-      value={text ?? String(value)}
-      disabled={disabled}
-      onChange={(event) => {
-        const raw = event.currentTarget.value;
-        setText(raw);
-        if (/^\d+$/.test(raw.trim()))
-          onCommit(Math.min(range.max, Math.max(range.min, Number(raw))));
-      }}
-      onBlur={() => setText(null)}
-      className="h-8 w-24 rounded-md border border-border bg-background px-2.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-    />
   );
 }
 
@@ -91,27 +63,23 @@ export function RecapSettings() {
           />
         }
       />
-      <div
-        className={cn(
-          "py-4 first:pt-0 last:pb-0",
-          !prefs.required && "opacity-50",
-        )}
-      >
+      <div className={cn(!prefs.required && "opacity-50")}>
         <SettingRow
           label="Reminders"
           description={`How many times to remind an agent that ends a turn without a recap (${CORRECTIONS.min}–${CORRECTIONS.max}; 0 never reminds).`}
           control={
-            <BoundedNumberInput
+            <Stepper
               label="Reminders per turn"
               value={prefs.corrections}
-              range={CORRECTIONS}
+              min={CORRECTIONS.min}
+              max={CORRECTIONS.max}
               disabled={!prefs.required}
-              onCommit={(corrections) => change({ corrections })}
+              onChange={(corrections) => change({ corrections })}
             />
           }
         />
       </div>
-      <div className="space-y-3 py-4 first:pt-0 last:pb-0">
+      <div className="space-y-3">
         <p id="ws-recap-layout" className="text-sm font-medium text-foreground">
           Layout
         </p>
@@ -150,7 +118,7 @@ export function RecapSettings() {
         <RecapPreview layout={prefs.layout} />
       </div>
       {error ? (
-        <p role="alert" className="py-2 text-sm text-destructive">
+        <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
       ) : null}

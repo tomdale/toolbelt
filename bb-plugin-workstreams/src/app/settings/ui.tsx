@@ -24,8 +24,8 @@ export function SettingRow({
   return (
     <div
       className={cn(
-        "flex min-w-0 items-start justify-between gap-5",
-        stacked && "flex-col gap-3",
+        "flex min-w-0 items-center justify-between gap-5",
+        stacked && "flex-col items-stretch gap-3",
         disabled && "opacity-50",
         className,
       )}
@@ -86,19 +86,34 @@ export function Stepper({
   min,
   max,
   onChange,
+  disabled = false,
 }: {
   label: string;
   value: number;
   min: number;
   max: number;
   onChange(value: number): void;
+  disabled?: boolean;
 }) {
   return (
-    <div className="inline-flex h-7 items-center rounded-md border border-border bg-background">
+    <div
+      role="group"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowUp" && value < max) {
+          event.preventDefault();
+          onChange(value + 1);
+        } else if (event.key === "ArrowDown" && value > min) {
+          event.preventDefault();
+          onChange(value - 1);
+        }
+      }}
+      className="inline-flex h-8 items-center rounded-md border border-border bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+    >
       <button
         type="button"
         aria-label={`Decrease ${label}`}
-        disabled={value <= min}
+        disabled={disabled || value <= min}
         onClick={() => onChange(Math.max(min, value - 1))}
         className="h-full w-7 rounded-l-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
       >
@@ -113,7 +128,7 @@ export function Stepper({
       <button
         type="button"
         aria-label={`Increase ${label}`}
-        disabled={value >= max}
+        disabled={disabled || value >= max}
         onClick={() => onChange(Math.min(max, value + 1))}
         className="h-full w-7 rounded-r-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
       >
@@ -174,9 +189,18 @@ export function SettingsPicker({
           )}
         >
           <span className="truncate">{current?.label ?? placeholder}</span>
-          <span aria-hidden="true" className="text-muted-foreground">
-            ⌄
-          </span>
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 16 16"
+            className="size-3.5 shrink-0 text-muted-foreground"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m4.5 6 3.5 3.5L11.5 6" />
+          </svg>
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 p-1.5">
@@ -255,7 +279,7 @@ export function SettingsPicker({
 
 export function SectionRows({ children }: { children: ReactNode }) {
   return (
-    <div className="divide-y divide-border [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+    <div className="rounded-lg border border-border bg-card px-4 py-3.5 [&>*+*]:mt-5">
       {children}
     </div>
   );

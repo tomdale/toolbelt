@@ -35,33 +35,33 @@ export function SidebarSettings() {
           />
         }
       />
-      <SettingRow
-        label="Show Recent"
-        description="Recently active threads appear above your workstreams."
-        control={
-          <div className="flex items-center gap-3">
-            {prefs.sidebar.showRecent ? (
-              <Stepper
-                label="threads shown"
-                value={prefs.sidebar.recentLimit}
-                min={RECENT_LIMIT.min}
-                max={RECENT_LIMIT.max}
-                onChange={(recentLimit) => update({ sidebar: { recentLimit } })}
-              />
-            ) : null}
+      <div>
+        <SettingRow
+          label="Show Recent"
+          description="Recently active threads appear above your workstreams."
+          control={
             <SettingSwitch
               label="Show Recent"
               checked={prefs.sidebar.showRecent}
               onChange={(showRecent) => update({ sidebar: { showRecent } })}
             />
-          </div>
-        }
-      />
-      <div className="py-4 first:pt-0 last:pb-0">
-        <SettingRow
-          label="Working indicator"
-          description="Choose how Workstreams marks a thread that is working."
+          }
         />
+        {prefs.sidebar.showRecent ? (
+          <div className="ml-4 mt-3 flex items-center justify-between gap-4 border-l border-border pl-3">
+            <p className="text-sm text-foreground">Threads shown</p>
+            <Stepper
+              label="threads shown"
+              value={prefs.sidebar.recentLimit}
+              min={RECENT_LIMIT.min}
+              max={RECENT_LIMIT.max}
+              onChange={(recentLimit) => update({ sidebar: { recentLimit } })}
+            />
+          </div>
+        ) : null}
+      </div>
+      <div className="min-w-0">
+        <SettingRow label="Working indicator" />
         <div className="mt-3">
           <SpinnerSettings />
         </div>
@@ -75,6 +75,16 @@ export function ThreadsSettings() {
   if (!prefs) return <Loading />;
   return (
     <SectionRows>
+      <ModelField
+        label="Analysis model"
+        description={
+          prefs.threads.autoTitle
+            ? "Summarizes each thread after every turn for the sidebar, and writes titles while Keep titles current is on."
+            : "Summarizes each thread after every turn for the sidebar."
+        }
+        choice={prefs.threads.analysisModel}
+        onChange={(analysisModel) => update({ threads: { analysisModel } })}
+      />
       <SettingRow
         label="Keep titles current"
         description="Write and update thread titles as work progresses."
@@ -85,11 +95,6 @@ export function ThreadsSettings() {
             onChange={(autoTitle) => update({ threads: { autoTitle } })}
           />
         }
-      />
-      <ModelField
-        label="Analysis model"
-        choice={prefs.threads.analysisModel}
-        onChange={(analysisModel) => update({ threads: { analysisModel } })}
       />
       <SettingRow
         label="Show parent thread link"
@@ -150,6 +155,7 @@ export function NewWorkSettings() {
       />
       <ModelField
         label="Suggestions model"
+        description="Suggests a workstream for a new-thread draft as you type; keep it fast."
         choice={prefs.newWork.suggestionsModel}
         disabled={!prefs.newWork.suggestions}
         onChange={(suggestionsModel) =>
@@ -164,11 +170,14 @@ export function OrganizeSettings() {
   const { prefs, update } = useFeaturePrefs();
   if (!prefs) return <Loading />;
   return (
-    <ModelField
-      label="Organizing model"
-      choice={prefs.organize.model}
-      onChange={(model) => update({ organize: { model } })}
-    />
+    <SectionRows>
+      <ModelField
+        label="Organizing model"
+        description="Proposes the workstream map when you click Organize."
+        choice={prefs.organize.model}
+        onChange={(model) => update({ organize: { model } })}
+      />
+    </SectionRows>
   );
 }
 

@@ -52,8 +52,10 @@ it("saves the click-to-snooze choice and the morning hour", async () => {
 it("picks up to four hover-menu choices, in menu order", async () => {
   const slot = await mount({ quick: ["1h", "tomorrow", "activity"] });
   const box = async (name: RegExp) =>
-    (await slot.findByRole("checkbox", { name })) as HTMLInputElement;
-  await waitFor(async () => expect((await box(/^1 hour/)).checked).toBe(true));
+    slot.getByRole("checkbox", { name }) as HTMLButtonElement;
+  await waitFor(async () =>
+    expect((await box(/^1 hour/)).getAttribute("aria-checked")).toBe("true"),
+  );
   fireEvent.click(await box(/^30 minutes/));
   await waitFor(() =>
     expect(lastPatch(slot)).toEqual({
@@ -62,7 +64,7 @@ it("picks up to four hover-menu choices, in menu order", async () => {
   );
   // Four chosen: the rest can't be added until one is removed.
   await waitFor(async () =>
-    expect((await box(/^3 hours/)).disabled).toBe(true),
+    expect((await box(/^3 hours/)).getAttribute("aria-disabled")).toBe("true"),
   );
   fireEvent.click(await box(/^1 hour/));
   await waitFor(() =>
@@ -72,6 +74,6 @@ it("picks up to four hover-menu choices, in menu order", async () => {
     }),
   );
   await waitFor(async () =>
-    expect((await box(/^3 hours/)).disabled).toBe(false),
+    expect((await box(/^3 hours/)).getAttribute("aria-disabled")).toBe("false"),
   );
 });

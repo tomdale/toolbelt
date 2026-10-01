@@ -7,15 +7,7 @@
  * container overflows it, and focusing the input then scrolls that container
  * and clips the settings page.
  */
-import {
-  useCallback,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-  type Ref,
-} from "react";
+import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   COLOR_LABEL,
@@ -62,18 +54,15 @@ export function SpinnerSettings() {
 
   return (
     <div className="flex min-w-0 flex-col gap-5">
-      <Group legend="Animation">
-        <ShapeGrid style={style} onPick={(shape) => change({ shape })} />
-      </Group>
-      <Group legend="Color">
-        <Swatches
-          value={style.primary}
-          onPick={(primary) => change({ primary })}
-          customLabel="Custom color"
-        />
-      </Group>
+      <ShapeGrid style={style} onPick={(shape) => change({ shape })} />
+      <Swatches
+        value={style.primary}
+        onPick={(primary) => change({ primary })}
+        customLabel="Custom color"
+      />
       {showTrack ? (
-        <Group legend="Track" groupRef={trackRef}>
+        <fieldset ref={trackRef} className="min-w-0">
+          <legend className="sr-only">Track color</legend>
           <Swatches
             value={style.secondary}
             onPick={(secondary) => change({ secondary })}
@@ -87,7 +76,7 @@ export function SpinnerSettings() {
               { value: "none", label: "No track", fill: null },
             ]}
           />
-        </Group>
+        </fieldset>
       ) : null}
       {error ? (
         <p role="alert" className="text-xs text-destructive">
@@ -95,25 +84,6 @@ export function SpinnerSettings() {
         </p>
       ) : null}
     </div>
-  );
-}
-
-function Group({
-  legend,
-  groupRef,
-  children,
-}: {
-  legend: string;
-  groupRef?: Ref<HTMLFieldSetElement>;
-  children: ReactNode;
-}) {
-  return (
-    <fieldset ref={groupRef} className="min-w-0">
-      <legend className="mb-2 text-xs font-medium text-muted-foreground">
-        {legend}
-      </legend>
-      {children}
-    </fieldset>
   );
 }
 
@@ -147,7 +117,11 @@ function ShapeGrid({
 }) {
   const name = useId();
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-1">
+    <div
+      role="radiogroup"
+      aria-label="Working indicator style"
+      className="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2"
+    >
       {SPINNER_SHAPES.map((shape) => {
         const { name: label, note } = SHAPE_LABEL[shape];
         const checked = style.shape === shape;
@@ -156,8 +130,10 @@ function ShapeGrid({
             key={shape}
             title={note}
             className={cn(
-              "relative flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring",
-              checked ? "bg-primary/10" : "hover:bg-state-hover",
+              "relative flex min-w-0 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border px-2 py-2.5 text-xs transition-colors has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring",
+              checked
+                ? "border-primary bg-accent text-foreground ring-1 ring-primary/40"
+                : "border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground",
             )}
           >
             <input
@@ -168,10 +144,9 @@ function ShapeGrid({
               onChange={() => onPick(shape)}
               className="sr-only"
             />
-            <RadioDot checked={checked} />
             <span
               aria-hidden="true"
-              className="flex size-5 shrink-0 items-center justify-center"
+              className="flex size-6 shrink-0 items-center justify-center"
             >
               <span className="inline-flex scale-125">
                 <WorkingMark spinner={{ ...style, shape }} />
@@ -267,7 +242,9 @@ function Swatch({ fill, checked }: { fill: string | null; checked: boolean }) {
       aria-hidden="true"
       className={cn(
         "flex size-7 items-center justify-center rounded-full border-2",
-        checked ? "border-primary" : "border-transparent",
+        checked
+          ? "border-primary ring-2 ring-primary/40"
+          : "border-transparent",
       )}
     >
       <span
@@ -279,20 +256,6 @@ function Swatch({ fill, checked }: { fill: string | null; checked: boolean }) {
           <span className="absolute left-1/2 top-[-2px] h-6 w-px -translate-x-1/2 rotate-45 bg-muted-foreground" />
         )}
       </span>
-    </span>
-  );
-}
-
-function RadioDot({ checked }: { checked: boolean }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "flex size-3.5 shrink-0 items-center justify-center rounded-full border",
-        checked ? "border-primary" : "border-muted-foreground/50",
-      )}
-    >
-      {checked ? <span className="size-1.5 rounded-full bg-primary" /> : null}
     </span>
   );
 }
