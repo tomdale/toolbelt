@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { cliCommand, defineCli, defineRpcContract, PluginCliError, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { answersSchema, cardSchema, deliverSchema, finishSchema, INSTRUCTIONS, QUESTIONS_RENDERER, questionsSchema, TOOLS, type Card } from "./contracts";
 import { createStore } from "./store";
@@ -78,6 +78,30 @@ export default async function plugin(bb: BbPluginApi) {
       },
     });
   }
+  bb.cli.register(defineCli({
+    name: "bottom-line",
+    summary: "Record a concrete turn handoff",
+    commands: {
+      finish: cliCommand({
+        summary: "Show a task completion summary with Archive and Dismiss controls",
+        options: {
+          summary: { type: "string", required: true, description: "Completion summary, 1–4000 characters", stdin: true },
+          thread: { type: "string", description: "Thread ID; defaults to the invoking thread" },
+        },
+        async run({ options }, ctx) {
+          const threadId = options.thread ?? ctx.threadId;
+          if (!threadId) throw new PluginCliError("A thread is required.", { code: "thread_required", hint: "Add --thread <thread-id>." });
+          const parsed = finishSchema.safeParse({ summary: options.summary });
+          if (!parsed.success) throw new PluginCliError("Summary must contain 1–4000 non-whitespace characters.", { code: "invalid_summary" });
+          await bb.sdk.threads.get({ threadId, signal: ctx.signal });
+          await accept(threadId, ctx.signal ?? controller.signal, (turnId) => ({
+            id: randomUUID(), turnId, kind: "finished", ...parsed.data,
+          }));
+          return { exitCode: 0, stdout: "Completion summary shown. The user can Archive or Dismiss it." };
+        },
+      }),
+    },
+  }));
   bb.agents.configure((context) => {
     const enabled = config.enabled && context.origin.pluginId !== "side-chat";
     store.enroll(context.thread.id, enabled);
@@ -128,7 +152,7 @@ export default async function plugin(bb: BbPluginApi) {
     await bb.sdk.threads.send({
       threadId, mode: "start",
       pluginSubmission: { pluginId: bb.pluginId, data: { epoch: state.epoch, completedSeq: completed.seq, token } },
-      input: [{ type: "text", visibility: "agent-only", text: `[Bottom Line correction ${token} ${state.epoch} ${completed.seq}]\nBottom Line: your turn ended without a concrete handoff. Call BottomLineAskQuestions for concrete questions or next steps, BottomLineDeliver for requested artifacts, or BottomLineFinish if the overall task is finished. Complete any remaining authorized work first. Correction ${state.intercepts + 1} of ${config.maxIntercepts}.`, mentions: [] }],
+      input: [{ type: "text", visibility: "agent-only", text: `[Bottom Line correction ${token} ${state.epoch} ${completed.seq}]\nBottom Line: your turn ended without a concrete handoff. Call BottomLineAskQuestions for concrete questions or next steps, BottomLineDeliver for requested artifacts, or BottomLineFinish if the overall task is finished. If BottomLineFinish is unavailable in this session, run bb bottom-line finish --summary "<completion summary>" using your shell tool. AskUserQuestion also satisfies the questions path. Complete any remaining authorized work first. Correction ${state.intercepts + 1} of ${config.maxIntercepts}.`, mentions: [] }],
     });
   }
   bb.events.on("thread.idle", ({ thread }) => {

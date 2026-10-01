@@ -6,6 +6,8 @@ Bottom Line gives agents three ways to hand control back: concrete questions or 
 
 `BottomLineFinish` places the completion summary above the composer with **Archive** and **Dismiss**. You choose whether to archive. Dismiss keeps the thread available to resume, and a fresh message clears the previous card.
 
+Sessions can also show a completion summary with `bb bottom-line finish --summary "Task complete."` through their shell tool. This provides the same controls when injected tools are unavailable.
+
 `BottomLineAskQuestions` collects answers when input remains useful. `BottomLineDeliver` hands you one or more artifacts you requested. BB's Ask User Question and native question cards also satisfy the questions path.
 
 ## Bounded corrections

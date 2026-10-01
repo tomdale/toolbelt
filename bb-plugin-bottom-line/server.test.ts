@@ -42,6 +42,24 @@ async function setup(settings: Record<string, boolean | number> = {}) {
 }
 
 describe("handoff enforcement", () => {
+  it("accepts CLI completion for sessions without injected tools, leaving archive to the user", async () => {
+    const s = await setup();
+    const result = await s.host.harness.behavior.runCli(["finish", "--summary", "Installed and verified."], { threadId: s.threadId });
+    expect(result.exitCode).toBe(0);
+    expect(await s.snapshot()).toMatchObject({ card: { kind: "finished", summary: "Installed and verified.", deliverables: [] } });
+    expect(await s.host.bb.sdk.threads.get({ threadId: s.threadId })).toMatchObject({ archivedAt: null });
+    await s.idle();
+    expect(s.sends).toHaveLength(0);
+    await s.dispatch(); s.next(); await s.idle();
+    expect(s.sends).toHaveLength(1);
+  });
+  it("requires a thread and validates CLI summaries before accepting a handoff", async () => {
+    const s = await setup();
+    expect((await s.host.harness.behavior.runCli(["finish", "--summary", "Done"])).exitCode).toBe(1);
+    expect((await s.host.harness.behavior.runCli(["finish", "--thread", s.threadId, "--summary", "   "])).exitCode).toBe(1);
+    expect((await s.snapshot()).card).toBeNull();
+    expect((await s.host.harness.behavior.runCli(["finish", "--thread", s.threadId, "--summary", "Done"])).exitCode).toBe(0);
+  });
   it("caps a correction chain, deduplicates idle events, and resets on fresh input", async () => {
     const s = await setup({ maxIntercepts: 2 });
     await s.idle(); await s.idle();
