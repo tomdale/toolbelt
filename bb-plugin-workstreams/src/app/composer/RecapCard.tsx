@@ -412,6 +412,35 @@ function CardBody({
 }
 
 /**
+ * A recap card as it appears above the composer, for showing outside a
+ * thread. It is inert: dismiss, Archive, and links do nothing.
+ */
+export function RecapCardPreview({
+  recap,
+  layout,
+  showArchive = false,
+  className,
+}: {
+  recap: Recap;
+  layout: RecapLayout;
+  showArchive?: boolean;
+  className?: string;
+}) {
+  return (
+    <div inert className={cn(cardClass(recap.state), className)}>
+      <CardBody
+        recap={recap}
+        layout={layout}
+        files={null}
+        showArchive={showArchive}
+        archiveBusy={false}
+        archiveError={null}
+      />
+    </div>
+  );
+}
+
+/**
  * The slot a hidden card leaves behind. `ghost` is the card as last shown,
  * dissolving inside the slot.
  */

@@ -1,7 +1,7 @@
 /**
  * The Recap settings section: whether agents end each turn with a recap,
  * how many reminders a turn without one gets, and the card's layout as
- * picture cards. Every change saves immediately.
+ * picture cards with a live preview. Every change saves immediately.
  */
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ import {
   type RecapPrefs,
 } from "../../domain/recapPrefs.ts";
 import { useRecapPrefs } from "./prefs.ts";
+import { RecapPreview } from "./RecapPreview.tsx";
 
 /** A schematic of each layout, drawn with the recap card's own proportions. */
 function LayoutPreview({ layout }: { layout: RecapLayout }) {
@@ -140,6 +141,7 @@ export function RecapSettings() {
           })}
         </div>
       </div>
+      <RecapPreview layout={prefs.layout} />
       <div className="flex items-start justify-between gap-4 border-t border-border pt-4">
         <div>
           <p className="font-medium text-foreground">End turns with a recap</p>

@@ -1,0 +1,201 @@
+/**
+ * A live preview of the recap card in the chosen layout, as a carousel with
+ * one example per recap state.
+ */
+import { useRef, useState } from "react";
+import { cn } from "@/lib/utils";
+import type { Recap } from "../../domain/recap.ts";
+import type { RecapLayout } from "../../domain/recapPrefs.ts";
+import { RecapCardPreview } from "../composer/RecapCard.tsx";
+
+type Example = {
+  label: string;
+  recap: Recap;
+  showArchive: boolean;
+};
+
+const EXAMPLES: readonly Example[] = [
+  {
+    label: "Complete",
+    showArchive: true,
+    recap: {
+      id: "preview-complete",
+      turnId: "preview",
+      at: 0,
+      state: "complete",
+      goal: "Adding dark mode to the settings page",
+      latest: [
+        "Theme toggle saves to the user's preferences",
+        "Every settings panel follows the system theme by default",
+      ],
+      review: [],
+      links: [{ title: "theme.ts", location: "src/settings/theme.ts" }],
+    },
+  },
+  {
+    label: "Ready for review",
+    showArchive: false,
+    recap: {
+      id: "preview-review",
+      turnId: "preview",
+      at: 0,
+      state: "review",
+      goal: "Moving billing webhooks onto the job queue",
+      latest: [
+        "Webhook handlers enqueue a job instead of processing inline",
+        "Failed jobs retry with backoff for up to an hour",
+      ],
+      review: [
+        "Replay a test webhook and expect exactly one job in the queue",
+        "Check the worker log shows the job finishing within seconds",
+      ],
+      links: [
+        {
+          title: "Pull request #482",
+          location: "https://github.com/example/app/pull/482",
+        },
+      ],
+    },
+  },
+];
+
+const NAV_BUTTON =
+  "flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+
+function Chevron({ direction }: { direction: "left" | "right" }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      className="h-3.5 w-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path
+        d={
+          direction === "left"
+            ? "M10 3.5 5.5 8l4.5 4.5"
+            : "M6 3.5 10.5 8 6 12.5"
+        }
+      />
+    </svg>
+  );
+}
+
+export function RecapPreview({ layout }: { layout: RecapLayout }) {
+  const [index, setIndex] = useState(0);
+  const slides = useRef<(HTMLDivElement | null)[]>([]);
+  const show = (next: number) => {
+    const target = (next + EXAMPLES.length) % EXAMPLES.length;
+    if (target === index) return;
+    // jsdom and older engines lack the Web Animations API.
+    slides.current[target]?.animate?.(
+      [
+        {
+          opacity: 0,
+          transform: `translateX(${next > index ? 12 : -12}px)`,
+        },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: 180, easing: "cubic-bezier(0.2, 0, 0, 1)" },
+    );
+    setIndex(target);
+  };
+  const current = EXAMPLES[index]!;
+  return (
+    <section
+      aria-roledescription="carousel"
+      aria-labelledby="ws-recap-preview"
+      className="space-y-2"
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft") show(index - 1);
+        else if (event.key === "ArrowRight") show(index + 1);
+        else return;
+        event.preventDefault();
+      }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p id="ws-recap-preview" className="font-medium text-foreground">
+          Preview
+        </p>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            className={NAV_BUTTON}
+            aria-label="Previous example"
+            onClick={() => show(index - 1)}
+          >
+            <Chevron direction="left" />
+          </button>
+          <div className="flex items-center gap-1 px-0.5">
+            {EXAMPLES.map((example, position) => (
+              <button
+                key={example.label}
+                type="button"
+                aria-label={`Show ${example.label} example`}
+                aria-current={position === index ? "true" : undefined}
+                title={example.label}
+                onClick={() => show(position)}
+                className="flex h-6 cursor-pointer items-center px-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "block h-1.5 rounded-full transition-all",
+                    position === index
+                      ? "w-4 bg-foreground/70"
+                      : "w-1.5 bg-foreground/25",
+                  )}
+                />
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className={NAV_BUTTON}
+            aria-label="Next example"
+            onClick={() => show(index + 1)}
+          >
+            <Chevron direction="right" />
+          </button>
+        </div>
+      </div>
+      <p aria-live="polite" className="sr-only">
+        {current.label}
+      </p>
+      {/* Every slide shares one grid cell, so the preview keeps the tallest
+          example's height and switching never shifts the page. */}
+      <div className="grid rounded-lg border border-dashed border-border bg-muted/30 p-3">
+        {EXAMPLES.map((example, position) => {
+          const active = position === index;
+          return (
+            <div
+              key={example.label}
+              ref={(node) => {
+                slides.current[position] = node;
+              }}
+              role="group"
+              aria-roledescription="slide"
+              aria-label={`${position + 1} of ${EXAMPLES.length}: ${example.label}`}
+              aria-hidden={active ? undefined : true}
+              className={cn(
+                "flex min-w-0 flex-col justify-end [grid-area:1/1]",
+                !active && "invisible",
+              )}
+            >
+              <RecapCardPreview
+                recap={example.recap}
+                layout={layout}
+                showArchive={example.showArchive}
+                className="mb-0"
+              />
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
