@@ -606,6 +606,12 @@ export class Router {
       };
     if (options.suggest && decision.outcome === "unsure")
       decision = await this.likeliest(decision, explain);
+    if (
+      options.suggest &&
+      decision.outcome === "continue" &&
+      decision.confidence !== "high"
+    )
+      decision = await this.suggestNewThread(decision, explain);
     decision = this.constrain(decision, intent);
     this.deps.inference.annotate(traceId, {
       decision: { ...decision, traceId: undefined },
@@ -735,6 +741,29 @@ export class Router {
       workstream: top.name,
       title: "",
       placement: await this.suggestedPlacement(top.sectionId, true, explain),
+    };
+  }
+
+  private async suggestNewThread(
+    continued: Extract<RouteDecision, { outcome: "continue" }>,
+    explain: (note: string) => void,
+  ): Promise<NewThreadDecision> {
+    explain(
+      "The continuation is uncertain, so the suggestion starts a new thread in the same workstream.",
+    );
+    return {
+      id: continued.id,
+      outcome: "new-thread",
+      sectionId: continued.sectionId,
+      workstream: continued.workstream,
+      title: "",
+      placement: continued.sectionId
+        ? await this.suggestedPlacement(continued.sectionId, true, explain)
+        : null,
+      confidence: continued.confidence,
+      reason: "Start a new thread because the task continuation is uncertain.",
+      subject: continued.subject,
+      traceId: continued.traceId,
     };
   }
 

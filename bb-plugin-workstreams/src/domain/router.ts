@@ -100,7 +100,7 @@ export function routePrompt(input: RouteInput): string {
       ? clean(input.selectedWorkstream, 80)
       : null;
   const focus = selected
-    ? `\nThe user has already selected the workstream ${JSON.stringify(selected)} for this work. Prefer it, or one of its threads, when the request fits; suggest another home only when the request plainly belongs elsewhere.`
+    ? `\nThe user has already selected the workstream ${JSON.stringify(selected)} for this work. Prefer it when the request fits; continue one of its threads only when the request clearly follows up that thread's own task. Suggest another home only when the request plainly belongs elsewhere.`
     : "";
   const request = redact(input.prompt).slice(0, PROMPT_CHARS);
   const task = input.suggest
@@ -131,7 +131,7 @@ Return exactly one of:
 {"outcome": "continue", "threadId": "<id from the list>", "confidence": "high"|"medium"|"low", "reason": "<at most 120 characters>", "subject": "<product>"}
 {"outcome": "new-thread", "workstream": "<exact name from the list>", "title": "<3-8 words>", "code": true|false, "confidence": ..., "reason": ..., "subject": ...}
 ${newWorkstream}{"outcome": "unsure", "candidates": [{"threadId": "<id>"} | {"workstream": "<name>"}] (at most 3), "reason": ...}
-- continue only when the request plainly carries on that thread's own task (a follow-up, a fix to what it just did). New work in the same area is a new thread.
+- continue only with high confidence that the request plainly carries on that thread's own task (a follow-up, a fix to what it just did). Shared topic, workstream, or project alone is not enough. When it is ambiguous whether this is a new task or a continuation, always prefer a new thread over continuing an existing thread. Choose its workstream using the scope descriptions and the unsure rules below.
 - Use the scope descriptions to distinguish existing homes. Related work belongs together; do not invent a more specific destination.
 - code: true when the work changes code or files in a repository.
 ${unsureRule}`;
