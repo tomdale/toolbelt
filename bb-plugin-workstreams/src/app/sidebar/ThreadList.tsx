@@ -306,7 +306,7 @@ export function WorkstreamsThreadList({
           subtitle={placement === "needs-you" ? askOf(row) : null}
           snoozeAction={snoozeActionOf(row, placement)}
           disclosure={
-            descendants.has(row.thread.id)
+            placement !== "recent" && descendants.has(row.thread.id)
               ? {
                   expanded: !folded(placement, row.thread.id),
                   toggle: () =>
@@ -466,10 +466,11 @@ export function WorkstreamsThreadList({
         ) : null}
         {ws.showRecent && projection.recent.length > 0 ? (
           <Band title="Recent" box="neutral">
-            {projection.recent.flatMap((row) =>
-              renderOverlayTree(
+            {projection.recent.map((row) =>
+              renderRow(
                 row,
                 "recent",
+                undefined,
                 anyMark(projection.recent, "recent"),
               ),
             )}

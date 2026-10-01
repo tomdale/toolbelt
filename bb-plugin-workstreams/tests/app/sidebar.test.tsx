@@ -182,23 +182,19 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
-  it("shows an overlay row's children only once expanded", async () => {
+  it("shows only top-level threads in Recent", async () => {
     const slot = await mount();
-    const kids = () =>
-      groupRows(slot, "Recent").filter((title) => title === "Kid task").length;
-    expect(kids()).toBe(1);
-    const recent = within(slot.getByRole("region", { name: "Recent" }));
-    fireEvent.click(recent.getByRole("button", { name: "Show child threads" }));
-    const rows = groupRows(slot, "Recent");
+    expect(groupRows(slot, "Recent").sort()).toEqual([
+      "Beta task",
+      "Loose task",
+      "Root task",
+    ]);
     expect(
-      rows.slice(rows.indexOf("Root task"), rows.indexOf("Root task") + 2),
-    ).toEqual(["Root task", "Kid task"]);
-    expect(kids()).toBe(2);
-    fireEvent.click(recent.getByRole("button", { name: "Hide child threads" }));
-    expect(kids()).toBe(1);
-    expect(
-      groupRows(slot, "Recent").filter((t) => t === "Root task"),
-    ).toHaveLength(1);
+      within(slot.getByRole("region", { name: "Recent" })).queryByRole(
+        "button",
+        { name: /child threads/i },
+      ),
+    ).toBeNull();
     expect(groupRows(slot, "Alpha")).toEqual(["Root task", "Kid task"]);
     slot.lifecycle.unmount();
   });
