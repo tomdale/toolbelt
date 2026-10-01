@@ -91,6 +91,33 @@ describe("agent recaps", () => {
     expect((await s.card()).recap?.state).toBe("complete");
   });
 
+  it.each([null, []])(
+    "records complete recaps with empty unused fields: %j",
+    async (empty) => {
+      const s = await world();
+      s.w.turn("t1");
+      const output = await s.report({
+        ...RECAP,
+        active: empty,
+        next: empty,
+        review: empty,
+        links: [],
+      });
+      await s.idle();
+      expect(s.corrections()).toHaveLength(0);
+      expect((await s.card()).recap).toMatchObject({
+        state: "complete",
+        active: [],
+        next: [],
+        review: [],
+        links: [],
+      });
+      expect(output).toContain("**Complete**");
+      expect(output).not.toContain("**Review:**");
+      expect(output).not.toContain("**Next:**");
+    },
+  );
+
   it("stops a live failing-tool loop and suppresses mandatory recap corrections", async () => {
     const s = await world({ corrections: 0 });
     s.w.turn("t1");

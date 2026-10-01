@@ -114,26 +114,24 @@ const recapFields = z
       ),
     active: z
       .array(line(120))
-      .min(1)
       .max(3)
+      .nullable()
       .optional()
       .describe(
         "Continuing state only, required: work still in progress, such as running subagents or scheduled steps.",
       ),
     next: z
       .array(line(160))
-      .min(1)
       .max(3)
+      .nullable()
       .optional()
       .describe(
         "Continuing state only, optional: what the agent will do once active work finishes.",
       ),
     // A string is one step, or a list some harnesses send JSON-encoded.
     review: z
-      .union([
-        z.array(reviewStepSchema).min(1).max(3),
-        z.string().trim().min(1),
-      ])
+      .union([z.array(reviewStepSchema).max(3), z.string().trim()])
+      .nullable()
       .optional()
       .describe(
         "Required for review. Send each distinct action as its own array item; separate items render as a numbered list, while punctuation inside one item does not split it. Use { step, expect } when the expected result should appear separately.",
@@ -158,22 +156,37 @@ export const recapToolSchema = recapFields;
 /** The state-specific contract checked before accepting a recap. */
 export const recapInputSchema = z
   .discriminatedUnion("state", [
-    recapFields.omit({ active: true, next: true, review: true }).extend({
+    recapFields.extend({
       state: z.literal("complete"),
+      active: z.array(z.never()).max(0).nullable().optional(),
+      next: z.array(z.never()).max(0).nullable().optional(),
+      review: z
+        .union([z.array(z.never()).max(0), z.literal("")])
+        .nullable()
+        .optional(),
       latest: recapFields.shape.latest.removeDefault().min(1),
       links: z
         .array(linkSchema)
         .max(0, "Links are review targets and belong only in a review recap.")
         .default([]),
     }),
-    recapFields.omit({ active: true, next: true }).extend({
+    recapFields.extend({
       state: z.literal("review"),
+      active: z.array(z.never()).max(0).nullable().optional(),
+      next: z.array(z.never()).max(0).nullable().optional(),
       latest: recapFields.shape.latest.removeDefault().min(1),
-      review: recapFields.shape.review.unwrap(),
+      review: z.union([
+        z.array(reviewStepSchema).min(1).max(3),
+        z.string().trim().min(1),
+      ]),
     }),
-    recapFields.omit({ review: true }).extend({
+    recapFields.extend({
       state: z.literal("continuing"),
-      active: recapFields.shape.active.unwrap(),
+      active: z.array(line(120)).min(1).max(3),
+      review: z
+        .union([z.array(z.never()).max(0), z.literal("")])
+        .nullable()
+        .optional(),
       links: z
         .array(linkSchema)
         .max(0, "Links are review targets and belong only in a review recap.")
