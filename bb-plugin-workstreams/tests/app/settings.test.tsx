@@ -77,7 +77,9 @@ it("renders four compact sidebar toggles and saves their preferences", async () 
   }
   const sections = slot.getByRole("region", { name: "Sections" });
   for (const label of ["Timestamp", "Thread count", "Waiting count"])
-    expect(within(sections).queryByRole("button", { name: label })).toBeNull();
+    expect(
+      within(sections).queryByRole("radiogroup", { name: label }),
+    ).toBeNull();
   fireEvent.click(slot.getByRole("switch", { name: "Snoozed" }));
   fireEvent.click(slot.getByRole("switch", { name: "Archived" }));
   await waitFor(() =>
@@ -95,58 +97,62 @@ it("renders four compact sidebar toggles and saves their preferences", async () 
   ]);
 });
 
-it("saves all three timestamp choices apart from section switches", async () => {
-  const slot = await mount("sidebar");
-  expect(
-    within(await slot.findByRole("region", { name: "Threads" })).queryByRole(
-      "switch",
-    ),
-  ).toBeNull();
-  const picker = await slot.findByRole("button", { name: "Timestamp" });
-  expect(picker.classList.contains("w-40")).toBe(true);
-  expect(picker.parentElement?.classList.contains("shrink-0")).toBe(true);
-  for (const [label, value] of [
-    ["Only on hover", "hover"],
-    ["Don't show", "hide"],
-    ["Show", "show"],
-  ]) {
-    fireEvent.click(await slot.findByRole("button", { name: "Timestamp" }));
-    fireEvent.click(await slot.findByRole("option", { name: label }));
-    await waitFor(() =>
-      expect(slot.getByRole("button", { name: "Timestamp" }).textContent).toBe(
-        label,
-      ),
-    );
-    expect(
-      slot.inspection.rpcCalls
-        .filter((call) => call.method === "setPrefs")
-        .at(-1)?.input,
-    ).toEqual({ patch: { sidebar: { timestamps: value } } });
-  }
-});
-
 it.each([
-  ["Thread count", "threadCount"],
-  ["Waiting count", "waitingCount"],
-])("saves %s visibility", async (label, key) => {
-  const slot = await mount("sidebar");
-  const headers = await slot.findByRole("region", { name: "Workstreams" });
-  for (const [option, value] of [
-    ["Always", "always"],
-    ["Never", "never"],
-    ["When collapsed", "collapsed"],
-  ]) {
-    fireEvent.click(within(headers).getByRole("button", { name: label }));
-    fireEvent.click(await slot.findByRole("option", { name: option }));
-    await waitFor(() =>
+  [
+    "Timestamp",
+    "timestamps",
+    [
+      ["On hover", "hover"],
+      ["Never", "hide"],
+      ["Always", "show"],
+    ],
+  ],
+  [
+    "Thread count",
+    "threadCount",
+    [
+      ["Always", "always"],
+      ["Never", "never"],
+      ["Collapsed", "collapsed"],
+    ],
+  ],
+  [
+    "Waiting count",
+    "waitingCount",
+    [
+      ["Always", "always"],
+      ["Never", "never"],
+      ["Collapsed", "collapsed"],
+    ],
+  ],
+] as const)(
+  "saves %s from a segmented control in Details",
+  async (label, key, choices) => {
+    const slot = await mount("sidebar");
+    const details = await slot.findByRole("region", { name: "Details" });
+    const group = within(details).getByRole("radiogroup", { name: label });
+    expect(within(details).queryByRole("switch")).toBeNull();
+    expect(slot.queryByRole("searchbox")).toBeNull();
+    expect(slot.queryByPlaceholderText(/search/i)).toBeNull();
+    for (const [option, value] of choices) {
+      fireEvent.click(within(group).getByRole("radio", { name: option }));
+      await waitFor(() =>
+        expect(
+          (
+            within(group).getByRole("radio", {
+              name: option,
+            }) as HTMLInputElement
+          ).checked,
+        ).toBe(true),
+      );
       expect(
         slot.inspection.rpcCalls
           .filter((call) => call.method === "setPrefs")
           .at(-1)?.input,
-      ).toEqual({ patch: { sidebar: { [key]: value } } }),
-    );
-  }
-});
+      ).toEqual({ patch: { sidebar: { [key]: value } } });
+    }
+  },
+);
 
 it("clamps the Recent stepper to 1–20 and hides it when Recent is off", async () => {
   const slot = await mount("sidebar");

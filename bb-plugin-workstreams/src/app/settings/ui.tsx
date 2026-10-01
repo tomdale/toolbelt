@@ -337,3 +337,53 @@ export function SectionRows({
     </div>
   );
 }
+
+/**
+ * A compact single choice among a few short options, drawn as one segmented
+ * pill. Native radios give it arrow-key navigation and form semantics.
+ */
+export function SegmentedControl<V extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: V;
+  options: readonly { value: V; label: string }[];
+  onChange(value: V): void;
+}) {
+  const name = useId();
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="inline-flex h-7 items-center rounded-md border border-border bg-background p-0.5"
+    >
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <label
+            key={option.value}
+            className={cn(
+              "flex h-full cursor-pointer items-center rounded px-2 text-xs transition-colors has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring",
+              selected
+                ? "bg-accent font-medium text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <input
+              type="radio"
+              name={name}
+              value={option.value}
+              checked={selected}
+              onChange={() => onChange(option.value)}
+              className="sr-only"
+            />
+            {option.label}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
