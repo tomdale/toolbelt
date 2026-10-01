@@ -937,13 +937,11 @@ export function WorkstreamsThreadList({
                       data-flip-key="lower-toggle"
                       aria-expanded={showLower}
                       onClick={toggleLower}
-                      className="mx-1 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-left text-[12px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+                      // A quiet link-style toggle, not a section header:
+                      // the workstreams it reveals keep their own headers.
+                      className="group/lower mx-2.5 flex items-center gap-1.5 self-start rounded-sm text-left text-[12px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
                     >
-                      <Icon
-                        name={showLower ? "ChevronDown" : "ChevronRight"}
-                        className="size-3 shrink-0"
-                      />
-                      <span className="min-w-0 flex-1">
+                      <span className="underline-offset-2 group-hover/lower:underline">
                         {showLower
                           ? "Hide lower priority workstreams"
                           : "Show lower priority workstreams"}

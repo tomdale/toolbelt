@@ -508,16 +508,16 @@ it.
      hover, and stays shown, filled, on a prioritized workstream as its mark.
      The header menu's Prioritize and `bb workstreams prioritize` do the same.
      While any workstream is prioritized, the other workstreams, Unsorted, and
-     Dormant are hidden behind a subtle "Show lower priority workstreams" toggle
-     directly below the prioritized ones (Recent follows it). Revealing shows
-     them all collapsed; expansions there are per reveal and never touch their
-     stored collapse state. While any prioritized workstream has a thread in Up
-     Next, Up Next shows only prioritized threads (focus): the toggle shows a
-     neutral count of the threads it leaves out, and other groups' waiting
-     counts turn neutral. With no prioritized thread waiting, Up Next shows
-     every waiting thread. Focus never takes away the open thread's row; it
-     leaves once the user selects another thread. Priorities are view state,
-     stored with the manual order and shared across clients.
+     Dormant are hidden behind a subtle "Show lower priority workstreams"
+     link-style toggle directly below the prioritized ones (Recent follows it).
+     Revealing shows them all collapsed; expansions there are per reveal and
+     never touch their stored collapse state. While any prioritized workstream
+     has a thread in Up Next, Up Next shows only prioritized threads (focus):
+     the toggle shows a neutral count of the threads it leaves out, and other
+     groups' waiting counts turn neutral. With no prioritized thread waiting, Up
+     Next shows every waiting thread. Focus never takes away the open thread's
+     row; it leaves once the user selects another thread. Priorities are view
+     state, stored with the manual order and shared across clients.
    - An optional Recent band (de-duplicated against Up Next).
    - Workstream groups with plain headers: the name, a needs-you count only when
      above 0, and a total. Groups follow the user's manual order (drag a header;
