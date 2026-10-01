@@ -212,7 +212,8 @@ it("shows structured review steps with expected results", async () => {
   });
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(region.querySelectorAll("ol > li")).toHaveLength(2);
-  expect(slot.getAllByText("Expect")).toHaveLength(2);
+  expect(slot.queryByText("Expect")).toBeNull();
+  expect(slot.getByText("Dark is available")).toBeTruthy();
   expect(slot.getByText("Dark stays selected")).toBeTruthy();
 });
 

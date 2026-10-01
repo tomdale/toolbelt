@@ -200,10 +200,10 @@ function StepText({ item }: { item: ReviewStep }) {
     <div className="min-w-0">
       <RecapText text={item.step} />
       {item.expect ? (
-        <div className="mt-0.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-1 text-muted-foreground">
-          <span className="font-medium">Expect</span>
-          <RecapText text={item.expect} />
-        </div>
+        <RecapText
+          text={item.expect}
+          className="mt-0.5 text-muted-foreground"
+        />
       ) : null}
     </div>
   );

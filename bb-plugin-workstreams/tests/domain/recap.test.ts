@@ -132,17 +132,17 @@ it("keeps structured review steps and writes their expectations", () => {
     goal: "Adding dark mode",
     latest: ["Theme toggle works"],
     review: [
-      { step: "Open Appearance.", expect: "Dark is available." },
+      { step: "Open Appearance.", expect: "Dark should be available." },
       "Reload Settings",
     ],
   });
   const recap = toRecap(input, { id: "r", turnId: "t", at: 1 });
   expect(recap.review).toEqual([
-    { step: "Open Appearance", expect: "Dark is available" },
+    { step: "Open Appearance", expect: "Dark should be available" },
     "Reload Settings",
   ]);
   expect(recapMarkdown(recap)).toContain(
-    "- Open Appearance — expect Dark is available",
+    "- Open Appearance — Dark should be available",
   );
 });
 
