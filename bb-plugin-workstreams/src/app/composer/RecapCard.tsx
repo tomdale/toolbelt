@@ -27,8 +27,8 @@ import {
   recapSegments,
   type Recap,
   type RecapFiles,
+  type RecapItem,
   type RecapLink,
-  type ReviewStep,
 } from "../../domain/recap.ts";
 import type { RecapLayout } from "../../domain/recapPrefs.ts";
 import { useRecapPrefs } from "../recap/prefs.ts";
@@ -319,24 +319,30 @@ function Results({
   done,
   accent,
 }: {
-  active?: string[];
-  done: string[];
+  active?: RecapItem[];
+  done: RecapItem[];
   accent: string;
 }) {
   const body = useBodyClass();
   const items = [
-    ...active.map((text) => ({ text, path: ACTIVE, label: "In progress" })),
-    ...done.map((text) => ({ text, path: CHECK, label: "Done" })),
+    ...active.map((item) => ({ item, path: ACTIVE, label: "In progress" })),
+    ...done.map((item) => ({ item, path: CHECK, label: "Done" })),
   ];
-  if (active.length > 0 && items.length === 1)
-    return (
+  if (active.length > 0 && items.length === 1) {
+    const item = items[0]!.item;
+    return typeof item === "string" ? (
       <p
         data-progress="active"
         className={`m-0 min-w-0 ${body} text-foreground`}
       >
-        <RecapText text={items[0]!.text} />
+        <RecapText text={item} />
       </p>
+    ) : (
+      <div data-progress="active" className={`min-w-0 ${body} text-foreground`}>
+        <StepText item={item} />
+      </div>
     );
+  }
   return (
     <ul className="m-0 list-none space-y-0.5 p-0">
       {items.map((item, index) => (
@@ -351,14 +357,14 @@ function Results({
             className={cn("mt-[0.2em] h-3.5 w-3.5", accent)}
           />
           <span className="sr-only">{item.label}: </span>
-          <RecapText text={item.text} />
+          <StepText item={item.item} />
         </li>
       ))}
     </ul>
   );
 }
 
-function StepText({ item }: { item: ReviewStep }) {
+function StepText({ item }: { item: RecapItem }) {
   if (typeof item === "string") return <RecapText text={item} />;
   return (
     <div className="min-w-0">
@@ -374,7 +380,7 @@ function StepText({ item }: { item: ReviewStep }) {
 }
 
 /** Review steps: one reads as plain text, more as a list. */
-function Steps({ items }: { items: ReviewStep[] }) {
+function Steps({ items }: { items: RecapItem[] }) {
   const body = useBodyClass();
   if (items.length === 1)
     return (

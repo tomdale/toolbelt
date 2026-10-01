@@ -452,22 +452,24 @@ it.
 - **Recap.** `goal` (≤ 80 characters; past tense for complete and review, "-ing"
   while continuing), `latest` (finished results, 1–3 lines, ≤ 120 each; 0–3
   while continuing), `review` (1–3 steps, ≤ 160 each, required for review: what
-  to check and the expected result; each step is a string or `{ step, expect }`,
-  separate items render as a numbered list, and a single string counts as one
-  step), and `links` (≤ 8 absolute file paths or HTTPS URLs, optional in review
-  only and limited to artifacts or pages explicitly being reviewed). UI review
-  steps explain how to reach and exercise the UI; source links qualify when
-  source review is requested. Continuing recaps require `active` (1–3
-  in-progress items, ≤ 120 each; at most four `active` and `latest` items
-  together, active first), take optional `next` (1–3 agent-owned steps after
-  active work, ≤ 160 each), and omit review and links. Complete recaps have no
-  links. Text fields are inline Markdown (code, emphasis, links, `@thread:<id>`
-  mentions as chips, commit hashes shortened with copy on click, through BB's
-  Markdown renderer); limits count visible text, and the sidebar shows the first
-  line as plain text. Closing periods are dropped. The card shows a single
-  Latest line or Review step as plain text and several as a list. A file link
-  opens in the thread's workspace when its path is inside it, else on the
-  environment's host.
+  to check and the expected result), and `links` (≤ 8 absolute file paths or
+  HTTPS URLs, optional in review only and limited to artifacts or pages
+  explicitly being reviewed). Items in `latest`, `active`, `next`, and `review`
+  accept strings or `{ step, expect }` objects. `expect` is optional secondary
+  text shown as a bulleted subrow. Separate items render as a list; review items
+  are numbered. A single string counts as one item. Keep distinct results in
+  separate items rather than joining them with semicolons. UI review steps
+  explain how to reach and exercise the UI; source links qualify when source
+  review is requested. Continuing recaps require `active` (1–3 in-progress
+  items, ≤ 120 each; at most four `active` and `latest` items together, active
+  first), take optional `next` (1–3 agent-owned steps after active work, ≤ 160
+  each), and omit review and links. Complete recaps have no links. Text fields
+  are inline Markdown (code, emphasis, links, `@thread:<id>` mentions as chips,
+  commit hashes shortened with copy on click, through BB's Markdown renderer);
+  limits count visible text, and the sidebar shows the first line as plain text.
+  Closing periods are dropped. The card shows a single Latest line or Review
+  step as plain text and several as a list. A file link opens in the thread's
+  workspace when its path is inside it, else on the environment's host.
 - **Timeline row.** The tool call stays in the thread as a tinted row titled
   Recap, whose output is the recap as short Markdown, so the recap remains
   readable after the conversation moves on. BB renders plugin tool rows with

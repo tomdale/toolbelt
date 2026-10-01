@@ -57,19 +57,27 @@ const tidy = (text: string) =>
     .trim()
     .replace(/(?<!\.)\.$/, "");
 
-/** One review action, optionally with the result the user should see. */
-const reviewStepSchema = z.union([
-  line(160),
-  z
-    .object({
-      step: line(160).describe("What the user does or inspects"),
-      expect: line(160)
-        .optional()
-        .describe("The result the user should see, as the user should read it"),
-    })
-    .strict(),
+/** One recap list item, optionally with a secondary subrow. */
+const recapItemSchema = (max: number) =>
+  z.union([
+    line(max),
+    z
+      .object({
+        step: line(max).describe("The item's primary text"),
+        expect: line(max)
+          .optional()
+          .describe("Optional secondary text shown on a subrow"),
+      })
+      .strict(),
+  ]);
+export type RecapItem = string | { step: string; expect?: string };
+const storedRecapItemSchema = z.union([
+  z.string(),
+  z.object({ step: z.string(), expect: z.string().optional() }).strict(),
 ]);
-export type ReviewStep = string | { step: string; expect?: string };
+/** One review action, optionally with the result the user should see. */
+const reviewStepSchema = recapItemSchema(160);
+export type ReviewStep = RecapItem;
 
 export const linkSchema = z
   .object({
@@ -106,27 +114,27 @@ const recapFields = z
     state: z.enum(RECAP_STATES),
     goal: line(80),
     latest: z
-      .array(line(120))
+      .array(recapItemSchema(120))
       .max(3)
       .default([])
       .describe(
-        "Completed results. Required for complete and review; optional for continuing, where active work comes first.",
+        "Completed results. Required for complete and review; optional for continuing, where active work comes first. Items can be strings or { step, expect } objects with optional secondary text.",
       ),
     active: z
-      .array(line(120))
+      .array(recapItemSchema(120))
       .max(3)
       .nullable()
       .optional()
       .describe(
-        "Continuing state only, required: work still in progress, such as running subagents or scheduled steps.",
+        "Continuing state only, required: work still in progress, such as running subagents or scheduled steps. Items can be strings or { step, expect } objects with optional secondary text.",
       ),
     next: z
-      .array(line(160))
+      .array(recapItemSchema(160))
       .max(3)
       .nullable()
       .optional()
       .describe(
-        "Continuing state only, optional: what the agent will do once active work finishes.",
+        "Continuing state only, optional: what the agent will do once active work finishes. Items can be strings or { step, expect } objects with optional secondary text.",
       ),
     // A string is one step, or a list some harnesses send JSON-encoded.
     review: z
@@ -134,7 +142,7 @@ const recapFields = z
       .nullable()
       .optional()
       .describe(
-        "Required for review. Send each distinct action as its own array item; separate items render as a numbered list, while punctuation inside one item does not split it. Use { step, expect } when the expected result should appear separately.",
+        "Required for review. Send each distinct action as its own array item; separate items render as a numbered list. Items can be strings or { step, expect } objects with optional secondary text.",
       ),
     links: z
       .array(linkSchema)
@@ -182,7 +190,7 @@ export const recapInputSchema = z
     }),
     recapFields.extend({
       state: z.literal("continuing"),
-      active: z.array(line(120)).min(1).max(3),
+      active: z.array(recapItemSchema(120)).min(1).max(3),
       review: z
         .union([z.array(z.never()).max(0), z.literal("")])
         .nullable()
@@ -208,13 +216,7 @@ export const recapInputSchema = z
         recap.state === "review" ? recap.review : undefined,
       );
       return (
-        steps.length <= 3 &&
-        steps.every((step) =>
-          typeof step === "string"
-            ? visibleLength(step) <= 160
-            : visibleLength(step.step) <= 160 &&
-              visibleLength(step.expect ?? "") <= 160,
-        )
+        steps.length <= 3 && steps.every((step) => recapItemWithin(step, 160))
       );
     },
     {
@@ -231,25 +233,38 @@ export const recapSchema = z.object({
   at: z.number(),
   state: z.enum(RECAP_STATES),
   goal: z.string(),
-  latest: z.array(z.string()),
-  active: z.array(z.string()).optional(),
-  next: z.array(z.string()).optional(),
+  latest: z.array(storedRecapItemSchema).default([]),
+  active: z.array(storedRecapItemSchema).optional(),
+  next: z.array(storedRecapItemSchema).optional(),
   /** Review steps; empty unless the state is review. */
   review: z.preprocess(
-    (value) =>
-      typeof value === "string" ? [value] : value === null ? [] : value,
-    z.array(
-      z.union([
-        z.string(),
-        z.object({ step: z.string(), expect: z.string().optional() }),
-      ]),
-    ),
+    (value) => storedRecapItems(value),
+    z.array(storedRecapItemSchema),
   ),
   links: z.array(linkSchema),
 });
 export type Recap = z.infer<typeof recapSchema>;
 
+function storedRecapItems(value: unknown): unknown {
+  if (value === null || value === undefined) return [];
+  if (typeof value !== "string") return value;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    // Stored plain strings remain one-item lists.
+  }
+  return [value];
+}
+
 /** The review as steps, from a list, a single step, or a JSON-encoded list. */
+function recapItemWithin(item: RecapItem, max: number): boolean {
+  return typeof item === "string"
+    ? visibleLength(item) <= max
+    : visibleLength(item.step) <= max &&
+        visibleLength(item.expect ?? "") <= max;
+}
+
 function reviewSteps(review: string | ReviewStep[] | undefined): ReviewStep[] {
   if (review === undefined) return [];
   if (Array.isArray(review)) return review;
@@ -259,9 +274,11 @@ function reviewSteps(review: string | ReviewStep[] | undefined): ReviewStep[] {
       if (
         Array.isArray(parsed) &&
         parsed.length > 0 &&
-        parsed.every((step) => typeof step === "string" && step.trim())
+        parsed.every((step) => recapItemSchema(160).safeParse(step).success)
       )
-        return parsed.map((step: string) => step.trim());
+        return parsed.map((step) =>
+          typeof step === "string" ? step.trim() : step,
+        ) as ReviewStep[];
     } catch {
       // Not JSON: a step that happens to start with a bracket.
     }
@@ -277,19 +294,16 @@ export function toRecap(
     ...meta,
     state: input.state,
     goal: tidy(input.goal),
-    latest: input.latest.map(tidy),
-    active: input.state === "continuing" ? (input.active ?? []).map(tidy) : [],
-    next: input.state === "continuing" ? (input.next ?? []).map(tidy) : [],
+    latest: input.latest.map(tidyRecapItem),
+    active:
+      input.state === "continuing"
+        ? (input.active ?? []).map(tidyRecapItem)
+        : [],
+    next:
+      input.state === "continuing" ? (input.next ?? []).map(tidyRecapItem) : [],
     review:
       input.state === "review"
-        ? reviewSteps(input.review).map((step) =>
-            typeof step === "string"
-              ? tidy(step)
-              : {
-                  step: tidy(step.step),
-                  ...(step.expect ? { expect: tidy(step.expect) } : {}),
-                },
-          )
+        ? reviewSteps(input.review).map(tidyRecapItem)
         : [],
     links:
       input.state === "review"
@@ -303,10 +317,21 @@ export function toRecap(
  * call's timeline row so the recap stays in the thread after the card is
  * gone. The agent reads it back as the call's result.
  */
-/** A review step as one Markdown line. */
-export function reviewStepText(step: ReviewStep): string {
-  if (typeof step === "string") return step;
-  return step.expect ? `${step.step} — ${step.expect}` : step.step;
+/** A recap item with optional secondary text on its own Markdown row. */
+export function recapItemText(item: RecapItem): string {
+  if (typeof item === "string") return item;
+  return item.expect ? `${item.step}\n  - ${item.expect}` : item.step;
+}
+
+/** A review step as readable Markdown. */
+export const reviewStepText = recapItemText;
+
+function tidyRecapItem(item: RecapItem): RecapItem {
+  if (typeof item === "string") return tidy(item);
+  return {
+    step: tidy(item.step),
+    ...(item.expect ? { expect: tidy(item.expect) } : {}),
+  };
 }
 
 export function recapMarkdown(recap: Recap): string {
@@ -320,12 +345,14 @@ export function recapMarkdown(recap: Recap): string {
   return [
     `**${state}** · ${recap.goal}`,
     ...(recap.state === "continuing" ? ["\n**Progress:**"] : []),
-    ...(recap.active ?? []).map((line) => `- ○ ${line}`),
-    ...recap.latest.map((line) =>
-      recap.state === "continuing" ? `- ✓ ${line}` : `- ${line}`,
+    ...(recap.active ?? []).map((item) => `- ○ ${recapItemText(item)}`),
+    ...recap.latest.map((item) =>
+      recap.state === "continuing"
+        ? `- ✓ ${recapItemText(item)}`
+        : `- ${recapItemText(item)}`,
     ),
     next.length
-      ? `\n**Next:**\n${next.map((step) => `- ${step}`).join("\n")}`
+      ? `\n**Next:**\n${next.map((item) => `- ${recapItemText(item)}`).join("\n")}`
       : null,
     recap.review.length === 1
       ? `\n**Review:** ${reviewStepText(recap.review[0]!)}`
@@ -342,7 +369,7 @@ export function recapMarkdown(recap: Recap): string {
 
 /** The tool's description, as the agent sees it in its tool list. */
 export const RECAP_TOOL_DESCRIPTION =
-  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar. For review, send each distinct action as a separate review item so the card shows a numbered list; use { step, expect } to show an expected result separately. Text fields render inline Markdown, including links and @thread:<id> mentions.";
+  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar. Lists accept strings or { step, expect } items. The optional expect appears as a subrow. Text fields render inline Markdown, including links and @thread:<id> mentions.";
 
 /**
  * Instructions for every thread that has the recap tool. They state the
@@ -350,7 +377,7 @@ export const RECAP_TOOL_DESCRIPTION =
  */
 export const RECAP_INSTRUCTIONS = `End every turn with ${RECAP_TOOL}, after completing the work you were authorized to do, unless the turn ends with a question card (AskUserQuestion or your provider's own question tool) still awaiting the user's answer. Ask questions only through such a card, never only in your reply.
 state: complete when the user's latest request is fully done; review when a finished result waits on the user to inspect, test, merge, or ship; continuing when you have confirmed that background work is running or continuation is scheduled, and nothing is needed from the user. When unfinished work has nothing running or scheduled, keep working on it before ending the turn, or use a question card when required user input blocks progress.
-Write terse fragments in sentence case without closing periods. Every text field (goal, latest, active, next, review step and expect) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips; a lowercase commit hash, bare or alone in backticks (not in links), shows shortened and highlighted with copy on click; length limits count visible text, not link targets. Inline links fit any state; the links field below is a separate list of review targets. goal: the thread's purpose as a short phrase, past tense for complete and review ("Added dark mode to Settings") and -ing for continuing ("Adding dark mode to Settings"). latest: one to three concrete results of work actually done, about 12 words each, most important first. review (required for review): one to three steps, each saying how to inspect or try the requested result and what to expect, about 20 words each. Send each distinct action as its own array item; separate items render as a numbered list, while punctuation inside one item does not split it. A step may be a string or { step, expect }. For UI review, give steps to reach and exercise the UI.
+Write terse fragments in sentence case without closing periods. Every text field (goal, latest, active, next, review step and expect) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips. A lowercase commit hash, bare or alone in backticks (not in links), shows shortened and highlighted with copy on click. Length limits count visible text, not link targets. Inline links fit any state. The links field is a separate list of review targets. goal: the thread's purpose as a short phrase, past tense for complete and review ("Added dark mode to Settings") and -ing for continuing ("Adding dark mode to Settings"). latest: one to three concrete results of work actually done, about 12 words each, most important first. active: one to three pieces of continuing work. next: optional agent-owned steps. review (required for review): one to three steps saying how to inspect or try the result and what to expect. Every item list accepts strings or { step, expect } objects. Use expect for optional secondary text shown on its own subrow. Keep each item distinct. Use separate items rather than joining results with semicolons. For UI review, give steps to reach and exercise the UI.
 For continuing: active (required) names one to three pieces of work still running or scheduled; latest optionally lists finished results; use at most four items across both, and give active items priority when choosing what to include. next (optional): one to three agent-owned steps after active work finishes. Omit review and links.
 links: optional, only in the review state and only for artifacts or pages explicitly being asked to be reviewed, as absolute file paths or HTTPS URLs. A changed source file qualifies only when source review is requested. For complete, omit links or send an empty list.
 The user decides whether to archive the thread from the recap. When a question card is dismissed or expires, treat the question as unanswered and unapproved, and continue only work that does not depend on it.`;
@@ -374,7 +401,9 @@ export function reportedAnalysis(
     model: "agent",
     traceId: null,
     ...base,
-    recap: plainText(recap.active?.[0] ?? recap.latest[0] ?? recap.goal),
+    recap: plainText(
+      recapItemText(recap.active?.[0] ?? recap.latest[0] ?? recap.goal),
+    ),
     state:
       recap.state === "complete"
         ? "done"

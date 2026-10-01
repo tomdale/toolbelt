@@ -191,6 +191,55 @@ it("does not leave the workstream when its last thread is archived", async () =>
   expect(slot.inspection.sidebarActionCalls).toEqual([]);
 });
 
+it("renders structured subrows for completed items", async () => {
+  const slot = await mount({
+    recap: {
+      latest: [
+        {
+          step: "Changed the recap parser",
+          expect: "Legacy strings still work",
+        },
+        "Added compatibility coverage",
+      ],
+    },
+  });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  expect(region.textContent).toContain("Changed the recap parser");
+  expect(region.textContent).toContain("Legacy strings still work");
+  expect(region.textContent).toContain("Added compatibility coverage");
+  expect(region.querySelectorAll('li[data-progress="done"]')).toHaveLength(2);
+  expect(slot.getByText("Legacy strings still work").className).toContain(
+    "text-muted-foreground",
+  );
+  expect(
+    slot.getByText("Legacy strings still work").parentElement?.tagName,
+  ).toBe("DIV");
+});
+
+it("renders subrows in every recap item list", async () => {
+  const slot = await mount({
+    recap: {
+      state: "continuing",
+      active: [{ step: "Running tests", expect: "Waiting for the suite" }],
+      latest: [
+        { step: "Implemented the schema", expect: "Strings remain valid" },
+      ],
+      next: [{ step: "Review results", expect: "Check the output" }],
+    },
+  });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  for (const text of [
+    "Running tests",
+    "Waiting for the suite",
+    "Implemented the schema",
+    "Strings remain valid",
+    "Review results",
+    "Check the output",
+  ])
+    expect(region.textContent).toContain(text);
+  expect(region.querySelectorAll("li[data-progress]")).toHaveLength(2);
+});
+
 it("shows the goal, latest results, and Dismiss under them", async () => {
   const slot = await mount();
   const region = await slot.findByRole("region", { name: "Latest recap" });
