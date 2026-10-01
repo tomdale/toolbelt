@@ -151,6 +151,14 @@ design and the contract the code is checked against.
   empty homes or archived-only homes whose newest archive is over 24 hours old,
   preserving threads and Undo. See
   [Organizing workstreams](docs/organization.md).
+- **Model settings**: Threads analysis, New work suggestions, and Organize each
+  use their own selected model. Pi AI Gateway models run as direct completions;
+  explicit reasoning levels use Gateway's shared effort control, and service
+  tiers are forwarded as routing hints. Other providers run in hidden workers.
+  Unavailable worker models or unsupported controls fail rather than silently
+  substituting another selection. Built-in model choices leave reasoning at the
+  provider default. Gateway may translate effort for the serving model, and a
+  requested service tier is not a guarantee of the tier served.
 - **Routing**: New work classifies the draft against the map when you pause
   typing and suggests one home: a thread to continue, an existing workstream, or
   a new workstream, with a project and environment. Nothing changes until you

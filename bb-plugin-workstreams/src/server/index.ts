@@ -139,7 +139,19 @@ export default async function plugin(bb: BbPluginApi) {
       if (direct !== null)
         return hostRpc.call(
           "complete",
-          { prompt, model: direct, ...(maxTokens ? { maxTokens } : {}) },
+          {
+            prompt,
+            model: direct,
+            ...(maxTokens ? { maxTokens } : {}),
+            ...(choice.kind === "provider"
+              ? {
+                  reasoningLevel: choice.reasoningLevel,
+                  ...(choice.serviceTier
+                    ? { serviceTier: choice.serviceTier }
+                    : {}),
+                }
+              : {}),
+          },
           { hostId: await analysisHost(), timeoutMs: 95_000, signal },
         );
       return completeWorker(prompt, choice, signal, context);
