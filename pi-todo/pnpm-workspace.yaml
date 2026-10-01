@@ -1,0 +1,10 @@
+# pnpm 11 reads project settings from here instead of package.json.
+#
+# Pi supplies the @earendil-works/pi-* peers at runtime, and @juicesharp/rpiv-i18n
+# is an optional peer that the extension loads only when present, so peers are
+# not installed here. The overrides hold the dependencies at the lowest versions
+# package.json allows, the versions this copy was written against.
+autoInstallPeers: false
+overrides:
+  "@juicesharp/rpiv-config": 2.6.2
+  typebox: 1.1.24

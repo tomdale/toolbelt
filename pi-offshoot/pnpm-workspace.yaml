@@ -1,0 +1,9 @@
+# pnpm 11 reads project settings from here instead of package.json.
+#
+# The Pi packages are dev-only (peer dependencies at runtime, dev dependencies
+# for typechecking and tests). Their transitive native build scripts are never
+# needed here, so they stay disabled.
+allowBuilds:
+  "@google/genai": false
+  esbuild: false
+  protobufjs: false
