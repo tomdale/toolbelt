@@ -67,11 +67,11 @@ design and the contract the code is checked against.
   - The **Sidebar** settings also control the **Archived** fold; when hidden,
     Workstreams does not request archived pages. **Working Indicator** controls
     the working thread spinner animation and colors. In **Sidebar → Details**,
-    **Timestamp** chooses Always (the default), On hover, or Never for thread
-    ages. On-hover ages also appear on keyboard focus. Workstream names and
+    **Timestamp** chooses Always (the default), On Hover, or Never for thread
+    ages. On Hover ages also appear on keyboard focus. Workstream names and
     shortcut hints remain visible regardless of this setting. **Thread count**
-    and **Waiting count** each choose Always, Collapsed (the default), or Never
-    for workstream headers.
+    and **Waiting count** each choose Always, When Collapsed (the default), or
+    Never for workstream headers.
   - Rows show BB's status, a work-state mark (✓ complete, ◇ review, and ↻
     working from the agent's recap; ◆ decision, ◇ review, ⏸ blocked from
     analysis when a thread has no recap; hover for where it stopped), unread

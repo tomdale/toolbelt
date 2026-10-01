@@ -102,7 +102,7 @@ it.each([
     "Timestamp",
     "timestamps",
     [
-      ["On hover", "hover"],
+      ["On Hover", "hover"],
       ["Never", "hide"],
       ["Always", "show"],
     ],
@@ -113,7 +113,7 @@ it.each([
     [
       ["Always", "always"],
       ["Never", "never"],
-      ["Collapsed", "collapsed"],
+      ["When Collapsed", "collapsed"],
     ],
   ],
   [
@@ -122,7 +122,7 @@ it.each([
     [
       ["Always", "always"],
       ["Never", "never"],
-      ["Collapsed", "collapsed"],
+      ["When Collapsed", "collapsed"],
     ],
   ],
 ] as const)(
