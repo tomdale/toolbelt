@@ -72,7 +72,7 @@ it("renders compact working styles and accessible colored swatches", async () =>
 
 it("renders four compact sidebar toggles and saves their preferences", async () => {
   const slot = await mount("sidebar");
-  for (const label of ["For You", "Recent", "Snoozed", "Archived"]) {
+  for (const label of ["Up Next", "Recent", "Snoozed", "Archived"]) {
     expect(await slot.findByRole("switch", { name: label })).toBeTruthy();
   }
   fireEvent.click(slot.getByRole("switch", { name: "Snoozed" }));
