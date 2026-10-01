@@ -405,8 +405,14 @@ export const rpcContract = defineRpcContract({
       recap: recapSchema.nullable(),
       capped: z.boolean(),
       corrections: z.number(),
-      /** Resolves the recap's file deliverables to workspace links. */
-      environmentId: z.string().nullable(),
+      /** Where the thread's files live, to resolve the recap's file links. */
+      files: z
+        .object({
+          environmentId: z.string(),
+          root: z.string().nullable(),
+          hostId: z.string().nullable(),
+        })
+        .nullable(),
     }),
   },
   /** Hides the recap card on every client until the next recap. */

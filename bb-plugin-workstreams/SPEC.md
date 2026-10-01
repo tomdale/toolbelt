@@ -439,9 +439,12 @@ agent has called the tool.
   `complete` (the latest request is fully done) or `review` (a finished result
   waits on the user to inspect, test, merge, or ship).
 - **Recap.** `goal` (≤ 80 characters), `latest` (1–3 lines, ≤ 120 each),
-  `review` (≤ 160, required for review: what to check and the expected result),
-  and `links` (≤ 8 absolute file paths or HTTPS URLs). Closing periods are
-  dropped.
+  `review` (1–3 steps, ≤ 160 each, required for review: what to check and the
+  expected result; a single string counts as one step), and `links` (≤ 8
+  absolute file paths or HTTPS URLs). Closing periods are dropped. The card
+  shows a single Latest line or Review step as plain text and several as a list.
+  A file link opens in the thread's workspace when its path is inside it, else
+  on the environment's host.
 - **Timeline row.** The tool call stays in the thread as a tinted row titled
   Recap, whose output is the recap as short Markdown, so the recap remains
   readable after the conversation moves on. BB renders plugin tool rows with

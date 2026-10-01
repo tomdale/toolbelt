@@ -13,7 +13,12 @@ import {
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
-import type { Recap, RecapLink } from "../../domain/recap.ts";
+import {
+  fileTarget,
+  type Recap,
+  type RecapFiles,
+  type RecapLink,
+} from "../../domain/recap.ts";
 import type { RecapLayout } from "../../domain/recapPrefs.ts";
 import { useRecapPrefs } from "../recap/prefs.ts";
 import { useArchiveSuggestion } from "../archive/useArchiveSuggestion.ts";
@@ -81,10 +86,10 @@ function Bullets({ items }: { items: string[] }) {
 
 function Links({
   links,
-  environmentId,
+  files,
 }: {
   links: RecapLink[];
-  environmentId: string | null;
+  files: RecapFiles | null;
 }) {
   if (links.length === 0) return null;
   return (
@@ -92,34 +97,37 @@ function Links({
       aria-label="Links"
       className={`mt-1.5 flex flex-wrap gap-x-4 gap-y-1 ${BODY_CLASS} font-medium text-sky-700 dark:text-sky-300`}
     >
-      {links.map((link, index) => (
-        <li key={index} className="min-w-0 truncate">
-          {link.location.startsWith("https://") ? (
-            <UrlLink href={link.location}>{link.title}</UrlLink>
-          ) : environmentId ? (
-            <FileLink
-              target={{ kind: "workspace", environmentId, path: link.location }}
-            >
-              {link.title}
-            </FileLink>
-          ) : (
-            <span title={link.location}>{link.title}</span>
-          )}
-        </li>
-      ))}
+      {links.map((link, index) => {
+        const target = link.location.startsWith("https://")
+          ? null
+          : fileTarget(link.location, files);
+        return (
+          <li key={index} className="min-w-0 truncate">
+            {link.location.startsWith("https://") ? (
+              <UrlLink href={link.location}>{link.title}</UrlLink>
+            ) : target ? (
+              <FileLink target={target} title={link.location}>
+                {link.title}
+              </FileLink>
+            ) : (
+              <span title={link.location}>{link.title}</span>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
-/** The goal as a heading, the latest results, then the review check. */
+/** The goal as a heading, the latest results, then the review steps. */
 function RecapSummary({
   recap,
   layout,
-  environmentId,
+  files,
 }: {
   recap: Recap;
   layout: RecapLayout;
-  environmentId: string | null;
+  files: RecapFiles | null;
 }) {
   const goal = layout === "full" ? recap.goal : null;
   return (
@@ -142,14 +150,14 @@ function RecapSummary({
         <h3 className="sr-only">Latest</h3>
         <Bullets items={recap.latest} />
       </section>
-      {recap.review ? (
+      {recap.review.length > 0 ? (
         <section className="mt-2.5 text-foreground">
           <h3 className={`${BODY_CLASS} font-medium`}>Review</h3>
-          <RecapText text={recap.review} />
-          <Links links={recap.links} environmentId={environmentId} />
+          <Bullets items={recap.review} />
+          <Links links={recap.links} files={files} />
         </section>
       ) : (
-        <Links links={recap.links} environmentId={environmentId} />
+        <Links links={recap.links} files={files} />
       )}
     </div>
   );
@@ -159,13 +167,13 @@ type RecapResponse = {
   recap: Recap | null;
   capped: boolean;
   corrections: number;
-  environmentId: string | null;
+  files: RecapFiles | null;
 };
 const EMPTY: RecapResponse = {
   recap: null,
   capped: false,
   corrections: 0,
-  environmentId: null,
+  files: null,
 };
 
 function useRecap(threadId: string | null) {
@@ -199,7 +207,7 @@ function useRecap(threadId: string | null) {
 type CardProps = {
   recap: Recap;
   layout: RecapLayout;
-  environmentId: string | null;
+  files: RecapFiles | null;
   showArchive: boolean;
   archiveBusy: boolean;
   archiveError: string | null;
@@ -208,7 +216,7 @@ type CardProps = {
 function CardBody({
   recap,
   layout,
-  environmentId,
+  files,
   showArchive,
   archiveBusy,
   archiveError,
@@ -218,11 +226,7 @@ function CardBody({
   return (
     <>
       <div className="@max-[20rem]/recap:[&_*]:!text-[0.625rem] @max-[20rem]/recap:[&_*]:!font-normal @max-[20rem]/recap:[&_*]:!leading-[1.5] @max-[20rem]/recap:[&_*]:!tracking-normal">
-        <RecapSummary
-          recap={recap}
-          layout={layout}
-          environmentId={environmentId}
-        />
+        <RecapSummary recap={recap} layout={layout} files={files} />
       </div>
       {archiveError ? (
         <p
@@ -382,8 +386,7 @@ export function RecapCard() {
     isRunning,
   });
   const sending = useContinuing({ drafting: false, isSubmitting, isRunning });
-  const { recap, capped, corrections, environmentId, dismiss } =
-    useRecap(threadId);
+  const { recap, capped, corrections, files, dismiss } = useRecap(threadId);
   const { prefs } = useRecapPrefs();
   const layout: RecapLayout = prefs?.layout ?? "full";
   const archive = useArchiveSuggestion(threadId, recap, continuing);
@@ -422,7 +425,7 @@ export function RecapCard() {
       ? {
           recap,
           layout,
-          environmentId,
+          files,
           showArchive: archive.visible,
           archiveBusy: archive.busy,
           archiveError: archive.error,
