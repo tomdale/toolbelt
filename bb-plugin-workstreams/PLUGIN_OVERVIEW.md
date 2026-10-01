@@ -17,7 +17,7 @@ ready for review with Review steps naming what to check. The recap sits above
 the composer with a dismiss ✕ and, once the work is done, Archive; its state
 marks the thread in the sidebar.
 
-The sidebar puts For you and Recent above the workstream groups. Recaps, work
+The sidebar puts For You and Recent above the workstream groups. Recaps, work
 state, titles and snooze stay current independently of organization. Activity
 records changes with rationale and Undo, including the organizing batch's
 placements and routing metadata. Manual changes made elsewhere are respected.

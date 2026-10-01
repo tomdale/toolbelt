@@ -404,7 +404,7 @@ export function registerCli(
                       `${result.state.replace("_", " ")} · ${result.subject ?? "no subject"} · ${seconds}s · ${result.model}`,
                       result.recap,
                       ...(result.needsYou
-                        ? [`For you: ${result.needsYou}`]
+                        ? [`For You: ${result.needsYou}`]
                         : []),
                       ...(result.drift
                         ? [

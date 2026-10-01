@@ -355,7 +355,7 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
-  it("shows For you and Recent as overlays without removing group rows", async () => {
+  it("shows For You and Recent as overlays without removing group rows", async () => {
     const slot = await mount([
       sidebarThread("ask", {
         sectionId: "sec_a",
@@ -365,7 +365,7 @@ describe("thread list", () => {
       }),
       sidebarThread("other", { sectionId: "sec_b", title: "Other task" }),
     ]);
-    expect(groupRows(slot, "For you")).toEqual(["Asking task"]);
+    expect(groupRows(slot, "For You")).toEqual(["Asking task"]);
     expect(groupRows(slot, "Recent")).toEqual(["Other task"]);
     expect(groupRows(slot, "Alpha")).toEqual(["Asking task"]);
     expect(
@@ -496,7 +496,7 @@ describe("thread list", () => {
     marked.lifecycle.unmount();
   });
 
-  it("caps For you at five threads with a way to show the rest", async () => {
+  it("caps For You at five threads with a way to show the rest", async () => {
     const at = Date.now();
     const ids = ["a", "b", "c", "d", "e", "f", "g"];
     const slot = await mount(
@@ -525,7 +525,7 @@ describe("thread list", () => {
         ),
       },
     );
-    const band = await slot.findByRole("region", { name: "For you" });
+    const band = await slot.findByRole("region", { name: "For You" });
     expect(within(band).getAllByRole("link")).toHaveLength(5);
     fireEvent.click(within(band).getByRole("button", { name: "Show 2 more" }));
     expect(within(band).getAllByRole("link")).toHaveLength(7);
@@ -534,7 +534,7 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
-  it("lists a current needs-decision result in For you, but not a stale one", async () => {
+  it("lists a current needs-decision result in For You, but not a stale one", async () => {
     const at = Date.now();
     const result = (revision: number) => ({
       recap: "Asked whether to ship.",
@@ -554,7 +554,7 @@ describe("thread list", () => {
       ],
       { analysis: { fresh: result(100), stale: result(150) } },
     );
-    const band = await slot.findByRole("region", { name: "For you" });
+    const band = await slot.findByRole("region", { name: "For You" });
     // The section implies the decision, so its rows leave the mark out.
     expect(
       within(band)
@@ -575,7 +575,7 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
-  it("includes unread reported results and open questions in For you", async () => {
+  it("includes unread reported results and open questions in For You", async () => {
     const at = Date.now();
     const recap = (state: string) => ({
       id: `r-${state}`,
@@ -608,7 +608,7 @@ describe("thread list", () => {
       ],
       { recaps: { complete: recap("complete"), review: recap("review") } },
     );
-    const band = await slot.findByRole("region", { name: "For you" });
+    const band = await slot.findByRole("region", { name: "For You" });
     expect(
       within(band)
         .getAllByRole("link")
@@ -651,7 +651,7 @@ describe("thread list", () => {
           },
         },
       });
-      await slot.findByRole("region", { name: "For you" });
+      await slot.findByRole("region", { name: "For You" });
       if (!readOnSelect) slot.selectThread("result");
       threads[0] = {
         ...threads[0]!,
@@ -660,17 +660,17 @@ describe("thread list", () => {
       };
       slot.selectThread("result");
       await waitFor(() => {
-        expect(groupRows(slot, "For you")).toEqual([
+        expect(groupRows(slot, "For You")).toEqual([
           "Updated result, Complete",
         ]);
       });
       expect(groupRows(slot, "Recent")).toEqual(["Other"]);
 
       slot.selectThread(nextThreadId);
-      expect(slot.queryByRole("region", { name: "For you" })).toBeNull();
+      expect(slot.queryByRole("region", { name: "For You" })).toBeNull();
       expect(groupRows(slot, "Recent")).toContain("Updated result, Complete");
       slot.selectThread("result");
-      expect(slot.queryByRole("region", { name: "For you" })).toBeNull();
+      expect(slot.queryByRole("region", { name: "For You" })).toBeNull();
       slot.lifecycle.unmount();
     },
   );
@@ -684,7 +684,7 @@ describe("thread list", () => {
       sidebarThread("other", { title: "Other" }),
     ];
     const slot = await mount(threads, { activeThreadId: "question" });
-    await slot.findByRole("region", { name: "For you" });
+    await slot.findByRole("region", { name: "For You" });
     threads[0] = {
       ...threads[0]!,
       hasPendingInteraction: false,
@@ -692,15 +692,15 @@ describe("thread list", () => {
     };
     slot.selectThread("question");
     await waitFor(() =>
-      expect(groupRows(slot, "For you")).toEqual(["Question"]),
+      expect(groupRows(slot, "For You")).toEqual(["Question"]),
     );
     slot.selectThread("other");
-    expect(slot.queryByRole("region", { name: "For you" })).toBeNull();
+    expect(slot.queryByRole("region", { name: "For You" })).toBeNull();
     slot.lifecycle.unmount();
   });
 
   it.each(["hidden", "archived", "snoozed"])(
-    "still removes a selected For you thread when explicitly %s",
+    "still removes a selected For You thread when explicitly %s",
     async (action) => {
       const threads = [
         sidebarThread("question", {
@@ -710,7 +710,7 @@ describe("thread list", () => {
         }),
       ];
       const slot = await mount(threads, { activeThreadId: "question" });
-      const band = await slot.findByRole("region", { name: "For you" });
+      const band = await slot.findByRole("region", { name: "For You" });
       if (action === "snoozed") {
         fireEvent.click(
           within(band).getByRole("button", { name: /^Snooze until/ }),
@@ -724,7 +724,7 @@ describe("thread list", () => {
         slot.selectThread("question");
       }
       await waitFor(() =>
-        expect(slot.queryByRole("region", { name: "For you" })).toBeNull(),
+        expect(slot.queryByRole("region", { name: "For You" })).toBeNull(),
       );
       slot.lifecycle.unmount();
     },
@@ -769,7 +769,7 @@ describe("thread list", () => {
       },
     );
     const group = await slot.findByRole("region", { name: "Unsorted" });
-    expect(slot.queryByRole("region", { name: "For you" })).toBeNull();
+    expect(slot.queryByRole("region", { name: "For You" })).toBeNull();
     expect(
       within(group).getByRole("img", { name: "Ready for your review" }),
     ).toBeTruthy();
@@ -780,7 +780,7 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
-  it("keeps For you open and names each row's workstream", async () => {
+  it("keeps For You open and names each row's workstream", async () => {
     const at = Date.now();
     const asks = (revision: number) => ({
       recap: "Asked whether to ship.",
@@ -813,11 +813,11 @@ describe("thread list", () => {
         analysis: { manager: asks(200), delegate: asks(100) },
       },
     );
-    const band = await slot.findByRole("region", { name: "For you" });
+    const band = await slot.findByRole("region", { name: "For You" });
     expect(within(band).getByText("Alpha")).toBeTruthy();
     // The section is always open: its header is a heading, not a toggle.
-    expect(within(band).getByRole("heading", { name: /For you/ })).toBeTruthy();
-    expect(within(band).queryByRole("button", { name: /For you/ })).toBeNull();
+    expect(within(band).getByRole("heading", { name: /For You/ })).toBeTruthy();
+    expect(within(band).queryByRole("button", { name: /For You/ })).toBeNull();
     expect(within(band).queryByText(/via/)).toBeNull();
     slot.lifecycle.unmount();
   });
@@ -1040,7 +1040,7 @@ describe("snoozing", () => {
     await waitFor(() =>
       expect(slot.getByRole("button", { name: /^Snoozed\d*$/ })).toBeTruthy(),
     );
-    expect(slot.queryByRole("region", { name: "For you" })).toBeNull();
+    expect(slot.queryByRole("region", { name: "For You" })).toBeNull();
     expect(groupRows(slot, "Recent")).toEqual(["Other task"]);
     expect(slot.queryByRole("region", { name: "Alpha" })).toBeNull();
     const fold = slot.getByRole("button", { name: /^Snoozed\d*$/ });

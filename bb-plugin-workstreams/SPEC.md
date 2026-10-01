@@ -601,7 +601,7 @@ it.
 
 ### 11.1 Snooze
 
-Snoozing puts a thread away until later. A snoozed thread leaves For you,
+Snoozing puts a thread away until later. A snoozed thread leaves For You,
 Recent, and its workstream group, taking its descendants with it, and is listed
 in the sidebar's Snoozed fold, soonest to wake first, with its wake time. Its
 workstream is unchanged.

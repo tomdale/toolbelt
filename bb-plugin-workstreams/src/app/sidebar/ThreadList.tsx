@@ -1,5 +1,5 @@
 /**
- * The Workstreams sidebar thread list: the For you section and the Recent
+ * The Workstreams sidebar thread list: the For You section and the Recent
  * band as overlays, then one group per workstream (BB section, in the user's
  * drag-and-drop order, else BB's), Unsorted, a Dormant fold, and a Snoozed
  * fold. Every visible thread appears in exactly one group, or in Snoozed
@@ -91,7 +91,7 @@ const foldKey = (placement: Placement, id: string) =>
   placement === "group" ? `thread:${id}` : `${placement}:thread:${id}`;
 /**
  * Parents start expanded where they are drawn as trees (groups, Snoozed)
- * and collapsed in the For you and Recent overlays.
+ * and collapsed in the For You and Recent overlays.
  */
 const foldDefault = (placement: Placement) =>
   placement === "needs-you" || placement === "recent";
@@ -212,7 +212,7 @@ export function WorkstreamsThreadList({
         : forYouSelection;
   if (selection !== forYouSelection) setForYouSelection(selection);
 
-  // Keep a selected For you row in place after read/status updates. Resolve
+  // Keep a selected For You row in place after read/status updates. Resolve
   // it from live groups so its contents stay current; snoozed, hidden, and
   // archived threads still leave the list when explicitly put away.
   const forYouRows = [...projection.needsYou];
@@ -353,7 +353,7 @@ export function WorkstreamsThreadList({
 
   const workstreamName = (row: ThreadRow) =>
     row.workstreamId ? nameOf.get(row.workstreamId) : "Unsorted";
-  /** What a For you thread asks of Tom, from its current analysis. */
+  /** What a For You thread asks of Tom, from its current analysis. */
   const askOf = (row: ThreadRow) => {
     const work = ws.work(row.thread);
     return work?.kind === "current" ? work.analysis.needsYou : null;
@@ -647,7 +647,7 @@ export function WorkstreamsThreadList({
           </p>
         ) : null}
         {ws.showForYou && forYouRows.length > 0 ? (
-          <Band title="For you" box="attention">
+          <Band title="For You" box="attention">
             {needsRows.flatMap((row) =>
               renderOverlayTree(row, "needs-you", needsMarks),
             )}
@@ -889,13 +889,13 @@ export function WorkstreamsThreadList({
   );
 }
 
-/** For you shows this many rows until the user asks for the rest. */
+/** For You shows this many rows until the user asks for the rest. */
 const NEEDS_YOU_LIMIT = 5;
 
 /**
  * An overlay band. A plain band collapses from its header. A boxed band is an
  * always-open block spanning the column, with its header inside: `attention`
- * is the amber For you block (`.ws-needs`, with its shimmer), `neutral` the
+ * is the amber For You block (`.ws-needs`, with its shimmer), `neutral` the
  * quieter Recent block (`.ws-band-neutral`). Both set their rows apart from
  * the workstream list below.
  */

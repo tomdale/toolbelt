@@ -315,7 +315,7 @@ describe("snoozed threads", () => {
   const ids = (rows: readonly { thread: { id: string } }[]) =>
     rows.map((r) => r.thread.id);
 
-  it("moves a snoozed thread out of its group, For you, and Recent", () => {
+  it("moves a snoozed thread out of its group, For You, and Recent", () => {
     const p = project({ asks: now + 1000, beta: null });
     expect(rowIds(p.groups[0]!)).toEqual(["root", "kid", "grandkid"]);
     expect(p.groups[0]!.needsYou).toBe(0);
