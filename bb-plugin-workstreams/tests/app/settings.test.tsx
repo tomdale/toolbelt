@@ -42,6 +42,7 @@ it("registers settings in feature order", async () => {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   expect(app.settingsSections.map(({ id, title }) => [id, title])).toEqual([
     ["sidebar", "Show in Sidebar"],
+    ["timestamps", "Sidebar Timestamps"],
     ["working-indicator", "Working Indicator"],
     ["threads", "Threads"],
     ["recap", "Recap"],
@@ -75,6 +76,7 @@ it("renders four compact sidebar toggles and saves their preferences", async () 
   for (const label of ["Up Next", "Recent", "Snoozed", "Archived"]) {
     expect(await slot.findByRole("switch", { name: label })).toBeTruthy();
   }
+  expect(slot.queryByRole("button", { name: "Timestamp" })).toBeNull();
   fireEvent.click(slot.getByRole("switch", { name: "Snoozed" }));
   fireEvent.click(slot.getByRole("switch", { name: "Archived" }));
   await waitFor(() =>
@@ -92,8 +94,9 @@ it("renders four compact sidebar toggles and saves their preferences", async () 
   ]);
 });
 
-it("saves all three timestamp choices", async () => {
-  const slot = await mount("sidebar");
+it("saves all three timestamp choices in their own section", async () => {
+  const slot = await mount("timestamps");
+  expect(slot.queryByRole("switch")).toBeNull();
   const picker = await slot.findByRole("button", { name: "Timestamp" });
   expect(picker.classList.contains("w-40")).toBe(true);
   expect(picker.parentElement?.classList.contains("shrink-0")).toBe(true);
