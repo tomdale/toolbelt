@@ -55,13 +55,13 @@ export class ArchiveSuggestions {
       thread.visibility === "hidden" ||
       !archiveIdle(thread) ||
       !isCurrent(analysis, thread) ||
-      analysis.state !== "done" ||
+      (analysis.state !== "done" && analysis.state !== "review") ||
       this.dismissed(thread.id, analysis.revision)
     )
       return false;
 
-    // Archiving cascades to children and lifecycle dependents. Require fresh
-    // completion evidence for every dependent before offering that action.
+    // Archiving a review-state root is the user's acceptance of its result.
+    // Cascading dependents still require fresh completion evidence.
     const family = new Set([thread.id]);
     let changed = true;
     while (changed) {
@@ -103,7 +103,7 @@ export class ArchiveSuggestions {
     const analysis = this.deps.analyzer.get(threadId);
     if (
       !analysis ||
-      analysis.state !== "done" ||
+      (analysis.state !== "done" && analysis.state !== "review") ||
       this.dismissed(threadId, analysis.revision)
     )
       return { revision: null };

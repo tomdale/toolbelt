@@ -29,6 +29,8 @@ export function useArchiveSuggestion(
   });
   const analysis = threadId ? server.analysis[threadId] : undefined;
   const thread = threads.find((t) => t.id === threadId);
+  const acceptsResult =
+    analysis?.state === "done" || analysis?.state === "review";
   const [suggestion, setSuggestion] = useState<{
     threadId: string;
     revision: number | null;
@@ -50,7 +52,7 @@ export function useArchiveSuggestion(
   useEffect(() => {
     if (
       !threadId ||
-      analysis?.state !== "done" ||
+      !acceptsResult ||
       !(continuing || activeWork) ||
       busy ||
       dismissed.current.has(key)
@@ -68,7 +70,7 @@ export function useArchiveSuggestion(
     } catch {}
   }, [
     threadId,
-    analysis?.state,
+    acceptsResult,
     analysis?.revision,
     continuing,
     activeWork,
@@ -79,8 +81,7 @@ export function useArchiveSuggestion(
   ]);
 
   useEffect(() => {
-    if (!threadId || analysis?.state !== "done" || !dismissed.current.has(key))
-      return;
+    if (!threadId || !acceptsResult || !dismissed.current.has(key)) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let delay = 1000;
@@ -104,14 +105,14 @@ export function useArchiveSuggestion(
       disposed = true;
       if (timer) clearTimeout(timer);
     };
-  }, [threadId, analysis?.state, analysis?.revision, settled, key, rpc]);
+  }, [threadId, acceptsResult, analysis?.revision, settled, key, rpc]);
 
   useEffect(() => {
     let canceled = false;
     setSuggestion(null);
     if (
       threadId &&
-      analysis?.state === "done" &&
+      acceptsResult &&
       !continuing &&
       !activeWork &&
       !dismissed.current.has(key)
@@ -130,7 +131,7 @@ export function useArchiveSuggestion(
   }, [
     threadId,
     analysis?.revision,
-    analysis?.state,
+    acceptsResult,
     thread?.latestAttentionAt,
     thread?.status,
     thread?.runtimeStatus,
@@ -161,7 +162,7 @@ export function useArchiveSuggestion(
     !thread.isArchived &&
     !thread.isHidden &&
     isCurrent(analysis, thread) &&
-    analysis.state === "done" &&
+    acceptsResult &&
     analysis.revision === revision &&
     settled !== key &&
     !dismissed.current.has(key);

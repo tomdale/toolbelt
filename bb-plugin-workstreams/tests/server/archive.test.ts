@@ -61,7 +61,19 @@ it("persists dismissal for that turn and permits a later finished turn", async (
   expect(w.threads.get("t1")!.archivedAt).toBeNull();
 });
 
-it.each(["review", "needs_decision", "blocked", "in_progress"])(
+it("lets the user accept a reviewed result by archiving", async () => {
+  const w = await world("review");
+  expect(await suggestions(w)).toEqual({ t1: 500 });
+  expect(w.threads.get("t1")!.archivedAt).toBeNull();
+  await w.harness.behavior.callRpc("archiveSuggestion", {
+    threadId: "t1",
+    revision: 500,
+    action: "archive",
+  });
+  expect(w.threads.get("t1")!.archivedAt).not.toBeNull();
+});
+
+it.each(["needs_decision", "blocked", "in_progress"])(
   "does not propose %s work",
   async (state) => {
     expect(await suggestions(await world(state))).toEqual({});
@@ -96,7 +108,7 @@ it.each([
   { goal: null, pendingTodos: { items: [{ status: "pending" }] } },
   { goal: null, pendingTodos: { items: [{ status: "in_progress" }] } },
 ])("blocks unfinished structured work: %j", async (timeline) => {
-  const w = await world();
+  const w = await world("review");
   w.harness.inspection.sdk.stub("threads.timeline", async () => timeline);
   expect(await suggestions(w)).toEqual({});
 });
