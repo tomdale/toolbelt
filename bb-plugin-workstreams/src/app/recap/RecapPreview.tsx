@@ -103,7 +103,13 @@ function Chevron({ direction }: { direction: "left" | "right" }) {
   );
 }
 
-export function RecapPreview({ layout }: { layout: RecapLayout }) {
+export function RecapPreview({
+  layout,
+  hashColors,
+}: {
+  layout: RecapLayout;
+  hashColors?: { digits: string | null; letters: string | null };
+}) {
   const [index, setIndex] = useState(0);
   const slides = useRef<(HTMLDivElement | null)[]>([]);
   const show = (next: number) => {
@@ -203,6 +209,7 @@ export function RecapPreview({ layout }: { layout: RecapLayout }) {
                 recap={example.recap}
                 layout={layout}
                 showArchive={example.showArchive}
+                hashColors={hashColors}
                 className="mb-0"
               />
             </div>

@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -112,8 +113,14 @@ const MARKDOWN_CLASS =
  * digits rather than styling it as a link. A copy icon follows it, and clicking
  * copies the full hash.
  */
+/** The user's hash colors; null fields use the theme's default tints. */
+type HashColorPrefs = { digits: string | null; letters: string | null };
+const NO_HASH_COLORS: HashColorPrefs = { digits: null, letters: null };
+const HashColors = createContext<HashColorPrefs>(NO_HASH_COLORS);
+
 function Sha({ sha }: { sha: string }) {
   const [copied, setCopied] = useState(false);
+  const colors = useContext(HashColors);
   return (
     <button
       type="button"
@@ -125,14 +132,23 @@ function Sha({ sha }: { sha: string }) {
           setTimeout(() => setCopied(false), 1200);
         });
       }}
-      className="group/sha inline-flex cursor-pointer items-baseline gap-0.5 font-mono text-[0.923em] text-sky-900/75 hover:text-sky-950 dark:text-sky-100/75 dark:hover:text-sky-50"
+      className={cn(
+        "group/sha inline-flex cursor-pointer items-baseline gap-0.5 font-mono text-[0.923em]",
+        !colors.digits && "text-sky-900/75 dark:text-sky-100/75",
+      )}
+      style={colors.digits ? { color: colors.digits } : undefined}
     >
       <span>
         {[...sha.slice(0, 7)].map((char, index) =>
           /[a-f]/.test(char) ? (
             <span
               key={index}
-              className="text-violet-800/70 dark:text-violet-200/70"
+              className={
+                colors.letters
+                  ? undefined
+                  : "text-violet-800/70 dark:text-violet-200/70"
+              }
+              style={colors.letters ? { color: colors.letters } : undefined}
             >
               {char}
             </span>
@@ -710,23 +726,27 @@ export function RecapCardPreview({
   layout,
   showArchive = false,
   className,
+  hashColors = NO_HASH_COLORS,
 }: {
   recap: Recap;
   layout: RecapLayout;
   showArchive?: boolean;
   className?: string;
+  hashColors?: HashColorPrefs;
 }) {
   return (
-    <div inert className={cn(cardClass(recap.state, layout), className)}>
-      <CardBody
-        recap={recap}
-        layout={layout}
-        files={null}
-        showArchive={showArchive}
-        archiveBusy={false}
-        archiveError={null}
-      />
-    </div>
+    <HashColors.Provider value={hashColors}>
+      <div inert className={cn(cardClass(recap.state, layout), className)}>
+        <CardBody
+          recap={recap}
+          layout={layout}
+          files={null}
+          showArchive={showArchive}
+          archiveBusy={false}
+          archiveError={null}
+        />
+      </div>
+    </HashColors.Provider>
   );
 }
 
@@ -956,82 +976,93 @@ export function RecapCard() {
     };
   }, [entrance]);
 
+  const hashDigits = prefs?.hashDigits ?? null;
+  const hashLetters = prefs?.hashLetters ?? null;
+  const hashColors = useMemo(
+    () => ({ digits: hashDigits, letters: hashLetters }),
+    [hashDigits, hashLetters],
+  );
   return (
-    <div ref={markerRef} className="contents">
-      {frame ? (
-        // flow-root keeps the card's bottom margin inside the measured slot.
-        <div key="shown" ref={slotRef} className="flow-root" style={FIRST}>
-          <div
-            ref={cardRef}
-            className={cardClass(frame.recap.state, frame.layout)}
-            role="region"
-            aria-label="Latest recap"
-          >
-            {/* The card's only in-flow child, so its height drives resizes. */}
-            <div ref={bodyRef}>
-              <CardBody
-                {...frame}
-                onArchive={() => void archive.archive()}
-                onDismiss={() => void dismiss(frame.recap.id)}
-              />
-            </div>
-          </div>
-        </div>
-      ) : hold ? (
-        <div
-          key={`hold-${hold.id}`}
-          ref={slotRef}
-          aria-hidden="true"
-          className="relative flow-root"
-          // Clip only the top edge: content filling the slot from above
-          // covers the dissolving card, while its blur and drift stay whole.
-          style={{
-            ...FIRST,
-            height: hold.height,
-            clipPath: "inset(0 -3rem -3rem -3rem)",
-          }}
-        >
-          {hold.ghost ? (
+    <HashColors.Provider value={hashColors}>
+      <div ref={markerRef} className="contents">
+        {frame ? (
+          // flow-root keeps the card's bottom margin inside the measured slot.
+          <div key="shown" ref={slotRef} className="flow-root" style={FIRST}>
             <div
-              ref={ghostRef}
-              inert
-              className="pointer-events-none absolute inset-x-0 bottom-0"
+              ref={cardRef}
+              className={cardClass(frame.recap.state, frame.layout)}
+              role="region"
+              aria-label="Latest recap"
             >
-              <div
-                className={cardClass(hold.ghost.recap.state, hold.ghost.layout)}
-              >
-                <CardBody {...hold.ghost} />
+              {/* The card's only in-flow child, so its height drives resizes. */}
+              <div ref={bodyRef}>
+                <CardBody
+                  {...frame}
+                  onArchive={() => void archive.archive()}
+                  onDismiss={() => void dismiss(frame.recap.id)}
+                />
               </div>
             </div>
-          ) : null}
-        </div>
-      ) : null}
-      {!frame && available && dismissed && recap ? (
-        <div
-          className="mx-auto mb-3 flex w-full max-w-4xl justify-end px-1"
-          style={FIRST}
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2"
-            onClick={() => void restore(recap.id)}
+          </div>
+        ) : hold ? (
+          <div
+            key={`hold-${hold.id}`}
+            ref={slotRef}
+            aria-hidden="true"
+            className="relative flow-root"
+            // Clip only the top edge: content filling the slot from above
+            // covers the dissolving card, while its blur and drift stay whole.
+            style={{
+              ...FIRST,
+              height: hold.height,
+              clipPath: "inset(0 -3rem -3rem -3rem)",
+            }}
           >
-            Show recap
-          </Button>
-        </div>
-      ) : null}
-      {!frame && available && capped ? (
-        <p
-          role="status"
-          className="mx-auto mb-3 w-full max-w-4xl px-1 text-center text-xs text-muted-foreground"
-          style={FIRST}
-        >
-          No recap recorded. Automatic continuation is paused. Send a message to
-          continue the thread.
-        </p>
-      ) : null}
-    </div>
+            {hold.ghost ? (
+              <div
+                ref={ghostRef}
+                inert
+                className="pointer-events-none absolute inset-x-0 bottom-0"
+              >
+                <div
+                  className={cardClass(
+                    hold.ghost.recap.state,
+                    hold.ghost.layout,
+                  )}
+                >
+                  <CardBody {...hold.ghost} />
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {!frame && available && dismissed && recap ? (
+          <div
+            className="mx-auto mb-3 flex w-full max-w-4xl justify-end px-1"
+            style={FIRST}
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => void restore(recap.id)}
+            >
+              Show recap
+            </Button>
+          </div>
+        ) : null}
+        {!frame && available && capped ? (
+          <p
+            role="status"
+            className="mx-auto mb-3 w-full max-w-4xl px-1 text-center text-xs text-muted-foreground"
+            style={FIRST}
+          >
+            No recap recorded. Automatic continuation is paused. Send a message
+            to continue the thread.
+          </p>
+        ) : null}
+      </div>
+    </HashColors.Provider>
   );
 }

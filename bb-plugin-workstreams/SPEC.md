@@ -491,7 +491,8 @@ it.
   edited in Workstreams' settings sections. Recap settings remain in the Recap
   section: whether agents end turns with a recap (off removes the tool at each
   session's next start and stops reminders at once), reminders per turn, and the
-  card layout (Full or Compact; Compact is stored as `minimal`).
+  card layout (Full or Compact; Compact is stored as `minimal`), and optional
+  `#rrggbb` colors for commit hash digits and letters (unset follows the theme).
 
 ## 11. Surfaces
 
