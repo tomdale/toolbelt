@@ -185,6 +185,50 @@ export function WorkstreamsThreadList({
     null,
   );
   const { projection, sections, now } = ws;
+  const previousNeedsYou = useRef(projection.needsYou);
+  useEffect(() => {
+    previousNeedsYou.current = projection.needsYou;
+  }, [projection.needsYou]);
+  const [forYouSelection, setForYouSelection] = useState({
+    threadId: activeThreadId,
+    index: -1,
+  });
+  const selectedIndex = projection.needsYou.findIndex(
+    (row) => row.thread.id === activeThreadId,
+  );
+  const selection =
+    forYouSelection.threadId !== activeThreadId
+      ? {
+          threadId: activeThreadId,
+          index:
+            selectedIndex >= 0
+              ? selectedIndex
+              : previousNeedsYou.current.findIndex(
+                  (row) => row.thread.id === activeThreadId,
+                ),
+        }
+      : forYouSelection.index < 0 && selectedIndex >= 0
+        ? { ...forYouSelection, index: selectedIndex }
+        : forYouSelection;
+  if (selection !== forYouSelection) setForYouSelection(selection);
+
+  // Keep a selected For you row in place after read/status updates. Resolve
+  // it from live groups so its contents stay current; snoozed, hidden, and
+  // archived threads still leave the list when explicitly put away.
+  const forYouRows = [...projection.needsYou];
+  if (selection.index >= 0 && selectedIndex < 0) {
+    const selectedRow = [
+      ...projection.groups,
+      projection.unsorted,
+      ...projection.dormant,
+    ]
+      .flatMap((group) => group.rows)
+      .find((row) => row.thread.id === activeThreadId);
+    if (selectedRow) forYouRows.splice(selection.index, 0, selectedRow);
+  }
+  const recentRows = projection.recent.filter(
+    (row) => !forYouRows.some((kept) => kept.thread.id === row.thread.id),
+  );
   const nameOf = new Map(sections.map((s) => [s.id, s.name]));
   const archivedThreads = archived.threads.filter(
     (thread) => thread.isArchived && !thread.isHidden,
@@ -326,8 +370,8 @@ export function WorkstreamsThreadList({
         ),
     );
   const needsRows = showAllNeeds
-    ? projection.needsYou
-    : projection.needsYou.slice(0, NEEDS_YOU_LIMIT);
+    ? forYouRows
+    : forYouRows.slice(0, NEEDS_YOU_LIMIT);
   const needsMarks = anyMark(needsRows, "needs-you");
   /**
    * The row's hover snooze button and the menu beside it. In Snoozed, a
@@ -602,12 +646,12 @@ export function WorkstreamsThreadList({
             {error}
           </p>
         ) : null}
-        {ws.showForYou && projection.needsYou.length > 0 ? (
+        {ws.showForYou && forYouRows.length > 0 ? (
           <Band title="For you" box="attention">
             {needsRows.flatMap((row) =>
               renderOverlayTree(row, "needs-you", needsMarks),
             )}
-            {projection.needsYou.length > NEEDS_YOU_LIMIT ? (
+            {forYouRows.length > NEEDS_YOU_LIMIT ? (
               <li>
                 <button
                   type="button"
@@ -621,13 +665,13 @@ export function WorkstreamsThreadList({
                 >
                   {showAllNeeds
                     ? "Show less"
-                    : `Show ${projection.needsYou.length - NEEDS_YOU_LIMIT} more`}
+                    : `Show ${forYouRows.length - NEEDS_YOU_LIMIT} more`}
                 </button>
               </li>
             ) : null}
           </Band>
         ) : null}
-        {ws.showRecent && projection.recent.length > 0 ? (
+        {ws.showRecent && recentRows.length > 0 ? (
           <Band
             title="Recent"
             box="neutral"
@@ -639,7 +683,7 @@ export function WorkstreamsThreadList({
               />
             }
           >
-            {renderBandRows(projection.recent, "recent", "recent")}
+            {renderBandRows(recentRows, "recent", "recent")}
           </Band>
         ) : null}
         <SortableContext
