@@ -742,10 +742,9 @@ export function RecapCard() {
       ) : null}
       {!frame && available && dismissed && recap ? (
         <div
-          className="mx-auto mb-3 flex w-full max-w-4xl items-center justify-end gap-2 px-1 text-xs text-muted-foreground"
+          className="mx-auto mb-3 flex w-full max-w-4xl justify-end px-1"
           style={FIRST}
         >
-          <span>Recap dismissed</span>
           <Button
             type="button"
             variant="ghost"
