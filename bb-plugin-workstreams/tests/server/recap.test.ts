@@ -52,6 +52,7 @@ async function world(
   const card = () =>
     w.harness.behavior.callRpc("recap_get", { threadId: "t1" }) as Promise<{
       recap: { id: string; state: string; latest: string[] } | null;
+      dismissed: boolean;
       capped: boolean;
       corrections: number;
     }>;
@@ -327,7 +328,22 @@ describe("agent recaps", () => {
       threadId: "t1",
       recapId: recap!.id,
     });
-    expect((await s.card()).recap).toBeNull();
+    expect(await s.card()).toMatchObject({
+      recap: { id: recap!.id },
+      dismissed: true,
+    });
+    await s.w.harness.behavior.callRpc("recap_restore", {
+      threadId: "t1",
+      recapId: recap!.id,
+    });
+    expect(await s.card()).toMatchObject({
+      recap: { id: recap!.id },
+      dismissed: false,
+    });
+    await s.w.harness.behavior.callRpc("recap_dismiss", {
+      threadId: "t1",
+      recapId: recap!.id,
+    });
     const state = (await s.w.harness.behavior.callRpc("state", null)) as {
       recaps: Record<string, unknown>;
     };

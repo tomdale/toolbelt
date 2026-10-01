@@ -514,11 +514,13 @@ export default async function plugin(bb: BbPluginApi) {
       const thread = await bb.sdk.threads.get({ threadId });
       const stored = recaps.get(threadId);
       const { capped, corrections } = recaps.capped(threadId);
-      const recap = stored && !stored.dismissed ? stored.recap : null;
-      // Only file links need the environment, and an unreadable one leaves
-      // them as plain text.
+      const recap = stored?.recap ?? null;
+      // Only visible file links need the environment, and an unreadable one
+      // leaves them as plain text.
       const environment =
-        recap?.links.some((link) => link.location.startsWith("/")) &&
+        recap &&
+        !stored?.dismissed &&
+        recap.links.some((link) => link.location.startsWith("/")) &&
         thread.environmentId
           ? await bb.sdk.environments
               .get({ environmentId: thread.environmentId })
@@ -526,6 +528,7 @@ export default async function plugin(bb: BbPluginApi) {
           : null;
       return {
         recap,
+        dismissed: stored?.dismissed ?? false,
         capped: capped && thread.status === "idle",
         corrections,
         files: thread.environmentId
@@ -540,6 +543,11 @@ export default async function plugin(bb: BbPluginApi) {
     recap_dismiss: ({ threadId, recapId }) =>
       userFacing(async () => {
         recaps.dismiss(threadId, recapId);
+        return { ok: true as const };
+      }),
+    recap_restore: ({ threadId, recapId }) =>
+      userFacing(async () => {
+        recaps.restore(threadId, recapId);
         return { ok: true as const };
       }),
     state: async () => ({

@@ -286,11 +286,20 @@ export class AgentRecaps {
 
   /** Hides the card on every client; the sidebar keeps the recap's state. */
   dismiss(threadId: string, recapId: string) {
+    this.setDismissed(threadId, recapId, true);
+  }
+
+  /** Restores the current recap card on every client. */
+  restore(threadId: string, recapId: string) {
+    this.setDismissed(threadId, recapId, false);
+  }
+
+  private setDismissed(threadId: string, recapId: string, dismissed: boolean) {
     if (this.get(threadId)?.recap.id !== recapId)
       throw new Error("This recap is no longer current.");
     this.deps.db
-      .prepare("UPDATE ws_agent_recap SET dismissed = 1 WHERE thread_id = ?")
-      .run(threadId);
+      .prepare("UPDATE ws_agent_recap SET dismissed = ? WHERE thread_id = ?")
+      .run(dismissed ? 1 : 0, threadId);
     this.deps.onChange();
   }
 
