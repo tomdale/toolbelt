@@ -220,23 +220,7 @@ drift flag (§10) is the safety net.
 
 One router serves four entry points:
 
-1. **BB's native New thread composer.** A banner added with
-   `app.composer.customize({ scopes: ["new-thread"], banners })` shows the
-   proposed route while you type. A draft under about 20 characters is routed
-   once typing pauses (about 900 ms) and shows only the decision; a longer one
-   is routed on a 250 ms debounce. Every change cancels the routing call in
-   flight: the banner sends the draft's key with each `route`, and a newer
-   `route` or a `routeCancel` for that key aborts the model request.
-   - `experimental_setSelection({ projectId, environment })` presets the
-     pickers. _(spike: works)_
-   - "Send there" sends the draft to the chosen thread, then calls
-     `composer.clear()`. _(spike: works)_
-   - A plain ⏎ creates the thread through the composer, and the server files it
-     using the routing decision passed as
-     `experimental_submit({ experimental_data })` / `pluginSubmission`.
-   - The banner remounts when the composer scope changes, so its state lives
-     outside the component, keyed by scope. _(spike)_
-2. **Workstreams ＋ New**, on the page and the sidebar. It embeds
+1. **Workstreams ＋ New**, on the page and the sidebar. It embeds
    `experimental_NewThreadComposer` and previews server routing while the draft
    stays editable. Submitting acts on the current preview in the same composer.
    A workstream's ＋ explicitly selects that workstream and skips
@@ -244,7 +228,7 @@ One router serves four entry points:
    a new thread, previewed by the same routing call in the target's workstream
    (or in its project when it has none). A composer action beside Create thread,
    or ⌘⏎ (Ctrl+⏎ elsewhere), sends the draft to the suggested thread instead
-   through the composer's own submit, so attachments and mentions travel with
+   through the same composer submit path, so attachments and mentions travel with
    it. A suggestion shown while the draft reroutes is for older text, so
    continuing it first routes the current text straight to that thread without
    classifying it again. Compact action and labelled destination controls allow
@@ -258,8 +242,8 @@ One router serves four entry points:
    Pending, ambiguous and failed routes disable submission before draft
    clearing. The submit label names the current action: Create thread, Send
    message or Create workstream.
-3. **`bb workstreams handoff`**, called by agents (§5).
-4. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
+2. **`bb workstreams handoff`**, called by agents (§5).
+3. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
 
 **Inputs.**
 
@@ -344,7 +328,7 @@ The bootstrap runs the §9 evolution engine with relaxed thresholds.
 | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Thread created through intake or a handoff                                                | RPC or CLI call                                                      | Placed by the router (provenance `router` or `handoff`)                                        |
 | Child created by any source                                                               | `thread.created`                                                     | No structural change. Analyze it on its first idle.                                            |
-| Top-level thread created elsewhere (native composer without the banner, CLI, automations) | `thread.created`, then the first `thread.idle`                       | Respect a section that is already set. Otherwise classify it, then auto-file or suggest (§17). |
+| Top-level thread created elsewhere (BB's native composer, CLI, automations) | `thread.created`, then the first `thread.idle`                       | Respect a section that is already set. Otherwise classify it, then auto-file or suggest (§17). |
 | Visible fork                                                                              | `thread.created` with `sourceThreadId`                               | Default to the source's workstream                                                             |
 | User sends a message                                                                      | `message.dispatch` (observe and always `proceed`) or `thread.active` | Mark analysis pending. Clear any inferred "needs decision".                                    |
 | Turn completes                                                                            | `thread.idle` (`lastAssistantText` included)                         | Per-thread analysis (§10), debounced about 5 s, at most 4 concurrent                           |
@@ -533,7 +517,7 @@ restores the previous title while it is still the one Workstreams wrote.
      subjects raised it.
    - Each surface that shows a model's decision gets a small inspect button that
      opens a side pane with those calls: the thread header, the drift and
-     proposal banners, the routing banner and New work, Activity entries, the
+     proposal banners and New work, Activity entries, the
      organizing review, generated descriptions, Overview rows, and the sidebar
      row menu. The Activity log lists each call in place among the changes, with
      a one-line summary of what the model decided (or why it failed) and a
@@ -608,7 +592,7 @@ current data is owned by the workstream journal, placements, and notebooks.
 bb-plugin-workstreams/
   src/domain/    tree · project (thread trees → groups and bands) · attention · rank · evolution · schemas   ← pure; most tests live here
   src/server/    index · map · journal · reconciler · analyzer (idle queue) · router · evolution-runner · inference/{host,pi,prompts} · rpc · cli · agents (configure instructions)
-  src/app/       index · useWorkstreams (live hook + one state RPC + realtime) · sidebar/* · page/* · header/* (pill + floating banner) · composer/* (routing banner)
+  src/app/       index · useWorkstreams (live hook + one state RPC + realtime) · sidebar/* · page/* · header/* (pill + floating banner) · composer/* (New work intake and thread cards)
   tests/         domain (real exported snapshots) · server (mock SDK) · app (renderSlot)
 ```
 

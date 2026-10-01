@@ -4,9 +4,12 @@ import { join } from "node:path";
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
-import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { Intake, IntakeContext } from "../../src/app/composer/intake.ts";
-import { IntakeStatus } from "../../src/app/composer/IntakeBanner.tsx";
+import {
+  IntakeBanner,
+  IntakeStatus,
+} from "../../src/app/composer/IntakeBanner.tsx";
 import type { PluginBrowserBbSdk } from "@get-bb/plugin-sdk/app";
 import type {
   NewThreadDecision,
@@ -49,22 +52,18 @@ async function mount(
   text = PROMPT,
   workstreamId: string | null = null,
 ) {
-  const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
-  const banner = app.composerCustomizations.find((c) => c.id === "router")!
-    .banners![0]!;
-  const Banner = banner.component;
+  const Banner = IntakeBanner;
   const route = vi.fn().mockResolvedValue(first);
   const intake = new Intake(route, workstreamId, workstreamId ? "Alpha" : null);
   let remount!: () => void;
   const slot = renderSlot(
     {
-      ...banner,
       component: function Host() {
         const [scope, setScope] = useState(0);
         remount = () => setScope((n) => n + 1);
         return (
           <IntakeContext.Provider value={intake}>
-            <Banner key={scope} />
+            <Banner key={scope} intake={intake} />
             <IntakeStatus intake={intake} />
           </IntakeContext.Provider>
         );

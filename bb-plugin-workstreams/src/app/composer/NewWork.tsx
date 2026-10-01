@@ -17,6 +17,7 @@ import type { RpcContract } from "../../server/contract.ts";
 import type { RouteDecision } from "../../server/router.ts";
 import { Intake, IntakeContext } from "./intake.ts";
 import { IntakeStatus } from "./IntakeBanner.tsx";
+import { ContinueAction } from "./ContinueAction.tsx";
 
 export function NewWorkDialog({
   open,
@@ -159,6 +160,7 @@ function NewWork({
           placeholder="What's the work?"
           onSubmit={submit}
         />
+        <ContinueAction />
         <IntakeStatus intake={intake} />
         {message ? (
           <p
