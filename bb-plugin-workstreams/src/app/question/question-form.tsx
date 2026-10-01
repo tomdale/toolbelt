@@ -17,6 +17,8 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from "react";
+import { Markdown } from "@get-bb/plugin-sdk/app";
+import { plainText } from "../../domain/recap.ts";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { usePointerCoarse } from "@/components/ui/hooks/use-pointer-coarse";
@@ -39,6 +41,8 @@ const PREVIEW_MAX_HEIGHT = 220;
 // A step below the recap card's type scale: a question card carries more
 // lines than a recap, so options stay compact.
 const PROMPT_CLASS = "text-[13.5px] leading-[1.4] [text-wrap:pretty]";
+const MARKDOWN_CLASS =
+  "text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
 const LABEL_CLASS = "text-[12.5px] leading-[1.45]";
 const DESCRIPTION_CLASS = "text-[11.5px] leading-[1.45] [text-wrap:pretty]";
 
@@ -172,7 +176,7 @@ function QuestionTabs({
                 type="button"
                 onClick={() => onSelect(index)}
                 aria-pressed={isActive}
-                title={question.prompt}
+                title={plainText(question.prompt)}
                 className="flex min-w-0 items-center gap-1 rounded-full px-2 py-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 {answered ? (
@@ -254,7 +258,7 @@ function QuestionInputBlock({
 
   return (
     <fieldset disabled={disabled} className="min-w-0">
-      <legend className="sr-only">{question.prompt}</legend>
+      <legend className="sr-only">{plainText(question.prompt)}</legend>
       {question.prompt ? (
         <div
           role="heading"
@@ -264,7 +268,7 @@ function QuestionInputBlock({
             PROMPT_CLASS,
           )}
         >
-          {question.prompt}
+          <Markdown content={question.prompt} className={MARKDOWN_CLASS} />
         </div>
       ) : null}
       <div className="mt-1.5 space-y-px">

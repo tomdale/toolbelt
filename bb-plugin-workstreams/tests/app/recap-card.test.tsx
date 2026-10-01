@@ -205,6 +205,20 @@ it("shows the goal, latest results, and Dismiss under them", async () => {
 });
 
 it.each(["full", "minimal"])(
+  "renders recap heading Markdown through the host renderer in %s",
+  async (layout) => {
+    const goal =
+      "Fixed **login** with `vc login` and [the guide](https://example.com)";
+    const slot = await mount({ layout, recap: { goal } });
+    await slot.findByRole("region", { name: "Latest recap" });
+    const heading = slot.getByRole("heading", { level: 2 });
+    expect(
+      heading.querySelector('[data-testid="bb-markdown"]')?.textContent,
+    ).toBe(goal);
+  },
+);
+
+it.each(["full", "minimal"])(
   "hides links on stored complete recaps in %s",
   async (layout) => {
     const slot = await mount({
