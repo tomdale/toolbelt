@@ -454,7 +454,9 @@ export function WorkstreamsThreadList({
     );
     const renderTrees = (items: readonly ThreadRow[][]) =>
       items.flatMap((tree) =>
-        tree.map((row) => renderRow(row, placement, undefined, marks)),
+        unfolded(tree, placement).map((row) =>
+          renderRow(row, placement, undefined, marks),
+        ),
       );
     if (!options.grouped) return renderTrees(orderedTrees);
     const groups = new Map<string | null, ThreadRow[][]>();
