@@ -52,7 +52,7 @@ export function RecapSettings() {
         label="End turns with a recap"
         description={
           prefs.required
-            ? "Agents report each turn as complete or ready for review, or ask through a question card. Applies to each thread's next session."
+            ? "Agents report each turn as complete, ready for review, or work continuing, or ask through a question card. Applies to each thread's next session."
             : "Off: agents don't get the recap tool, and threads show no recap card."
         }
         control={
