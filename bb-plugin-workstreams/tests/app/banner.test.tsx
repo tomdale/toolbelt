@@ -10,5 +10,6 @@ it("offers recaps and routing without background organization banners", async ()
     app.composerCustomizations.some((a) => a.id === "automatic-filing"),
   ).toBe(false);
   expect(app.composerCustomizations.some((a) => a.id === "recap")).toBe(true);
-  expect(app.composerCustomizations.some((a) => a.scopes?.includes("new-thread"))).toBe(false);
+  expect(app.composerCustomizations.some((a) => a.id === "router")).toBe(false);
+  expect(app.composerCustomizations.some((a) => a.id === "new-work")).toBe(true);
 });
