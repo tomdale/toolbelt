@@ -1499,26 +1499,38 @@ describe("prioritized workstreams", () => {
     );
     await waitFor(() => expect(groupRows(slot, "Up Next")).toEqual(["Ask z1"]));
     const band = slot.getByRole("region", { name: "Up Next" });
-    // The others recede but stay one click away.
+    expect(within(band).queryAllByRole("button", { name: /more/ })).toEqual([]);
+    // What Up Next leaves out is counted on the lower-priority toggle, and
+    // waits in its workstream with a neutral count.
     fireEvent.click(
-      slot.getByRole("button", { name: "Show lower priority workstreams" }),
+      slot.getByRole("button", {
+        name: "Show lower priority workstreams, 2 waiting on you",
+      }),
     );
     expect(
       within(slot.getByRole("region", { name: "Alpha" })).getByTitle(
         "1 waiting on you",
       ).className,
     ).not.toContain("ws-amber-pill");
-    fireEvent.click(
-      within(band).getByRole("button", {
-        name: "2 more in other workstreams",
-      }),
-    );
-    expect(groupRows(slot, "Up Next")).toEqual(["Ask z1", "Ask a1", "Ask b1"]);
-    fireEvent.click(
-      within(band).getByRole("button", { name: "Hide other workstreams" }),
-    );
-    expect(groupRows(slot, "Up Next")).toEqual(["Ask z1"]);
+
+    // With no prioritized thread waiting, Up Next shows everything.
     slot.lifecycle.unmount();
+    const unfocused = await mount(
+      [asking("a1", "sec_a", 300), asking("b1", "sec_b", 200)],
+      {
+        activeThreadId: null,
+        order: { workstreams: [], threads: {}, prioritized: ["sec_z"] },
+      },
+    );
+    await waitFor(() =>
+      expect(groupRows(unfocused, "Up Next")).toEqual(["Ask a1", "Ask b1"]),
+    );
+    expect(
+      unfocused.getByRole("button", {
+        name: "Show lower priority workstreams",
+      }),
+    ).toBeTruthy();
+    unfocused.lifecycle.unmount();
   });
 
   it("hides lower-priority workstreams until revealed, then shows them collapsed", async () => {
@@ -1594,10 +1606,9 @@ describe("prioritized workstreams", () => {
     slot.selectThread("z1");
     await waitFor(() => expect(groupRows(slot, "Up Next")).toEqual(["Ask z1"]));
     expect(
-      within(slot.getByRole("region", { name: "Up Next" })).getByRole(
-        "button",
-        { name: "1 more in other workstreams" },
-      ),
+      slot.getByRole("button", {
+        name: "Show lower priority workstreams, 1 waiting on you",
+      }),
     ).toBeTruthy();
     slot.lifecycle.unmount();
   });
