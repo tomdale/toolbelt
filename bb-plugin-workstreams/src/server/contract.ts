@@ -1,6 +1,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { WORK_STATES } from "../domain/analysis.ts";
+import { prefsPatchSchema, prefsSchema } from "../domain/prefs.ts";
 import { recapPrefsSchema } from "../domain/recapPrefs.ts";
 import { recapSchema } from "../domain/recap.ts";
 import { snoozePrefsPatchSchema, snoozePrefsSchema } from "../domain/snooze.ts";
@@ -430,6 +431,23 @@ export const rpcContract = defineRpcContract({
   recap_restore: {
     input: z.object({ threadId: z.string().min(1), recapId: z.string() }),
     output: z.object({ ok: z.literal(true) }),
+  },
+  /** Workstreams' feature-grouped preferences (domain/prefs.ts). */
+  prefs: {
+    input: z.null(),
+    output: z.object({ prefs: prefsSchema }),
+  },
+  /** Saves a patch and broadcasts the result as the `prefs` realtime event. */
+  setPrefs: {
+    input: z.object({ patch: prefsPatchSchema }),
+    output: z.object({ prefs: prefsSchema }),
+  },
+  /** Connected machines, for the analysis-machine picker. */
+  machines: {
+    input: z.null(),
+    output: z.object({
+      machines: z.array(z.object({ id: z.string(), name: z.string() })),
+    }),
   },
   recapPrefs: {
     input: z.null(),
