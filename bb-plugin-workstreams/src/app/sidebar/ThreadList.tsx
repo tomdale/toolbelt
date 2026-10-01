@@ -5,7 +5,14 @@
  * fold. Every visible thread appears in exactly one group, or in Snoozed
  * (SPEC I1).
  */
-import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { DndContext } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -23,6 +30,14 @@ import { cn } from "@/lib/utils";
 import type { Group, Row as RowModel } from "../../domain/project.ts";
 import { useWorkstreams } from "../useWorkstreams.ts";
 import { useCollapsed } from "./useCollapsed.ts";
+import {
+  BAND_OPTIONS_KEY,
+  readBandOptions,
+  type BandId,
+  type BandOptions,
+  type BandSort,
+  type BandSortOption,
+} from "./useBandOptions.ts";
 import { NameDialog, type NameRequest } from "./NameDialog.tsx";
 import { Row, hasStatusMark } from "./Row.tsx";
 import { RowMenu, type RowMenuHandlers } from "./RowMenu.tsx";
@@ -92,6 +107,40 @@ function treesOf(rows: readonly ThreadRow[]): ThreadRow[][] {
   return trees;
 }
 
+function compareBandRows(
+  a: ThreadRow,
+  b: ThreadRow,
+  sort: BandSort,
+  snoozeOf: (
+    thread: PluginSidebarThread,
+  ) => { until: number | null } | undefined,
+): number {
+  if (sort === "title")
+    return a.thread.displayTitle.localeCompare(b.thread.displayTitle);
+  if (sort === "wake") {
+    const wake = (row: ThreadRow) =>
+      snoozeOf(row.thread)?.until ?? Number.POSITIVE_INFINITY;
+    return wake(a) - wake(b);
+  }
+  if (sort === "archived")
+    return (b.thread.archivedAt ?? 0) - (a.thread.archivedAt ?? 0);
+  return b.thread.latestAttentionAt - a.thread.latestAttentionAt;
+}
+
+function sortedBandRows(
+  rows: readonly ThreadRow[],
+  sort: BandSort,
+  snoozeOf: (
+    thread: PluginSidebarThread,
+  ) => { until: number | null } | undefined,
+): ThreadRow[] {
+  return [...rows].sort(
+    (a, b) =>
+      compareBandRows(a, b, sort, snoozeOf) ||
+      a.thread.id.localeCompare(b.thread.id),
+  );
+}
+
 export function WorkstreamsThreadList({
   activeThreadId,
   onNavigate,
@@ -103,6 +152,25 @@ export function WorkstreamsThreadList({
   const actions = experimental_useSidebarThreadActions();
   const navigate = useBbNavigate();
   const { isCollapsed, toggle } = useCollapsed();
+  const [bandOptions, setBandOptions] = useState(readBandOptions);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        BAND_OPTIONS_KEY,
+        JSON.stringify(bandOptions),
+      );
+    } catch {
+      // Section preferences are a convenience; losing them is harmless.
+    }
+  }, [bandOptions]);
+  const updateBandOptions = (
+    section: BandId,
+    change: Partial<BandOptions[BandId]>,
+  ) =>
+    setBandOptions((current) => ({
+      ...current,
+      [section]: { ...current[section], ...change },
+    }));
   const [nameRequest, setNameRequest] = useState<NameRequest | null>(null);
   const [newWork, setNewWork] = useState<{
     workstreamId: string | null;
@@ -135,21 +203,26 @@ export function WorkstreamsThreadList({
     }
     return root.sectionId;
   };
+  const archivedRows: ThreadRow[] = archivedThreads.map((thread) => ({
+    thread,
+    depth: 0,
+    hasChildren: false,
+    workstreamId: archivedWorkstreamOf(thread),
+    needsYou: false,
+  }));
   const archivedGroups = sections
     .map((section) => ({
       id: section.id,
       name: section.name,
-      threads: archivedThreads
-        .filter((thread) => archivedWorkstreamOf(thread) === section.id)
-        .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0)),
+      threads: archivedThreads.filter(
+        (thread) => archivedWorkstreamOf(thread) === section.id,
+      ),
     }))
     .filter((group) => group.threads.length > 0);
-  const unsortedArchived = archivedThreads
-    .filter((thread) => {
-      const sectionId = archivedWorkstreamOf(thread);
-      return !sectionId || !nameOf.has(sectionId);
-    })
-    .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0));
+  const unsortedArchived = archivedThreads.filter((thread) => {
+    const sectionId = archivedWorkstreamOf(thread);
+    return !sectionId || !nameOf.has(sectionId);
+  });
 
   const descendants = descendantsOf([
     ...[...projection.groups, projection.unsorted, ...projection.dormant].map(
@@ -297,7 +370,7 @@ export function WorkstreamsThreadList({
     };
   };
   const contextOf = (row: ThreadRow, placement: Placement) => {
-    if (placement === "group" || placement === "archived") return undefined;
+    if (placement === "group") return undefined;
     if (placement !== "snoozed") return workstreamName(row);
     const snooze = ws.snoozeOf(row.thread);
     return snooze ? shortWake(snooze.until, now) : undefined;
@@ -365,6 +438,55 @@ export function WorkstreamsThreadList({
    * An overlay row followed, when expanded, by its visible descendants,
    * indented relative to it.
    */
+  const renderBandRows = (
+    rows: readonly ThreadRow[],
+    placement: "recent" | "snoozed" | "archived",
+    section: BandId,
+  ) => {
+    const options = bandOptions[section];
+    const marks = anyMark(rows, placement);
+    const trees =
+      placement === "snoozed" ? treesOf(rows) : rows.map((row) => [row]);
+    const orderedTrees = [...trees].sort(
+      (a, b) =>
+        compareBandRows(a[0]!, b[0]!, options.sort, ws.snoozeOf) ||
+        a[0]!.thread.id.localeCompare(b[0]!.thread.id),
+    );
+    const renderTrees = (items: readonly ThreadRow[][]) =>
+      items.flatMap((tree) =>
+        tree.map((row) => renderRow(row, placement, undefined, marks)),
+      );
+    if (!options.grouped) return renderTrees(orderedTrees);
+    const groups = new Map<string | null, ThreadRow[][]>();
+    for (const tree of orderedTrees) {
+      const id = tree[0]!.workstreamId;
+      const group = groups.get(id) ?? [];
+      group.push(tree);
+      groups.set(id, group);
+    }
+    return [...groups.entries()]
+      .sort(([a], [b]) =>
+        (a ? (nameOf.get(a) ?? "Unsorted") : "Unsorted").localeCompare(
+          b ? (nameOf.get(b) ?? "Unsorted") : "Unsorted",
+        ),
+      )
+      .map(([id, groupTrees]) => {
+        const name = id ? (nameOf.get(id) ?? "Unsorted") : "Unsorted";
+        return (
+          <li key={`${placement}:${id ?? "unsorted"}`} className="list-none">
+            <section
+              aria-label={`${placement === "archived" ? "Archived " : `${placement[0]!.toUpperCase()}${placement.slice(1)} · `}${name}`}
+              className="px-1"
+            >
+              <h3 className="px-1.5 py-0.5 text-[12px] font-medium text-muted-foreground">
+                {name}
+              </h3>
+              <ul className="mt-0.5">{renderTrees(groupTrees)}</ul>
+            </section>
+          </li>
+        );
+      });
+  };
   const renderOverlayTree = (
     row: ThreadRow,
     placement: Placement,
@@ -504,15 +626,18 @@ export function WorkstreamsThreadList({
           </Band>
         ) : null}
         {ws.showRecent && projection.recent.length > 0 ? (
-          <Band title="Recent" box="neutral">
-            {projection.recent.map((row) =>
-              renderRow(
-                row,
-                "recent",
-                undefined,
-                anyMark(projection.recent, "recent"),
-              ),
-            )}
+          <Band
+            title="Recent"
+            box="neutral"
+            menu={
+              <BandOptionsMenu
+                section="recent"
+                options={bandOptions.recent}
+                onChange={(change) => updateBandOptions("recent", change)}
+              />
+            }
+          >
+            {renderBandRows(projection.recent, "recent", "recent")}
           </Band>
         ) : null}
         <SortableContext
@@ -576,8 +701,7 @@ export function WorkstreamsThreadList({
           </Band>
         ) : null}
         {archived.experimental_archived?.status !== "error" &&
-        (archivedGroups.length > 0 ||
-          unsortedArchived.length > 0 ||
+        (archivedThreads.length > 0 ||
           archived.experimental_archived?.status === "loading" ||
           archived.experimental_archived?.hasNextPage) ? (
           <Band
@@ -585,67 +709,75 @@ export function WorkstreamsThreadList({
             count={archivedThreads.length}
             collapsed={isCollapsed("__archived", true)}
             toggle={() => toggle("__archived", true)}
+            menu={
+              <BandOptionsMenu
+                section="archived"
+                options={bandOptions.archived}
+                onChange={(change) => updateBandOptions("archived", change)}
+              />
+            }
           >
-            {[
-              ...archivedGroups,
-              ...(unsortedArchived.length > 0
-                ? [
-                    {
-                      id: "__unsorted",
-                      name: "Unsorted",
-                      threads: unsortedArchived,
-                    },
-                  ]
-                : []),
-            ].map((group) => {
-              const key = `archived:${group.id}`;
-              const collapsed = isCollapsed(key, true);
-              return (
-                <li key={key} className="list-none">
-                  <section
-                    aria-label={`Archived ${group.name}`}
-                    className="px-1"
-                  >
-                    <button
-                      type="button"
-                      aria-expanded={!collapsed}
-                      onClick={() => toggle(key, true)}
-                      className="flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-left text-[12px] font-medium text-muted-foreground hover:bg-sidebar-accent/60"
-                    >
-                      <Icon
-                        name={collapsed ? "ChevronRight" : "ChevronDown"}
-                        className="size-3"
-                      />
-                      <WorkstreamName
-                        name={group.name}
-                        className="flex-1 text-[12px]"
-                      />
-                      <span className="tabular-nums">
-                        {group.threads.length}
-                      </span>
-                    </button>
-                    {collapsed ? null : (
-                      <ul className="mt-0.5">
-                        {group.threads.map((thread) =>
-                          renderRow(
-                            {
-                              thread,
-                              depth: 0,
-                              hasChildren: false,
-                              workstreamId: archivedWorkstreamOf(thread),
-                              needsYou: false,
-                            },
-                            "archived",
-                            undefined,
-                            false,
-                          ),
+            {bandOptions.archived.grouped
+              ? [
+                  ...archivedGroups,
+                  ...(unsortedArchived.length > 0
+                    ? [
+                        {
+                          id: "__unsorted",
+                          name: "Unsorted",
+                          threads: unsortedArchived,
+                        },
+                      ]
+                    : []),
+                ].map((group) => {
+                  const key = `archived:${group.id}`;
+                  const collapsed = isCollapsed(key, true);
+                  return (
+                    <li key={key} className="list-none">
+                      <section
+                        aria-label={`Archived ${group.name}`}
+                        className="px-1"
+                      >
+                        <button
+                          type="button"
+                          aria-expanded={!collapsed}
+                          onClick={() => toggle(key, true)}
+                          className="flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-left text-[12px] font-medium text-muted-foreground hover:bg-sidebar-accent/60"
+                        >
+                          <Icon
+                            name={collapsed ? "ChevronRight" : "ChevronDown"}
+                            className="size-3"
+                          />
+                          <WorkstreamName
+                            name={group.name}
+                            className="flex-1 text-[12px]"
+                          />
+                          <span className="tabular-nums">
+                            {group.threads.length}
+                          </span>
+                        </button>
+                        {collapsed ? null : (
+                          <ul className="mt-0.5">
+                            {sortedBandRows(
+                              group.threads.map((thread) => ({
+                                thread,
+                                depth: 0,
+                                hasChildren: false,
+                                workstreamId: archivedWorkstreamOf(thread),
+                                needsYou: false,
+                              })),
+                              bandOptions.archived.sort,
+                              ws.snoozeOf,
+                            ).map((row) =>
+                              renderRow(row, "archived", undefined, false),
+                            )}
+                          </ul>
                         )}
-                      </ul>
-                    )}
-                  </section>
-                </li>
-              );
-            })}
+                      </section>
+                    </li>
+                  );
+                })
+              : renderBandRows(archivedRows, "archived", "archived")}
             {archived.experimental_archived?.status === "loading" ? (
               <li className="list-none px-2 py-1 text-xs text-muted-foreground">
                 Loading archived threads…
@@ -675,15 +807,15 @@ export function WorkstreamsThreadList({
             count={projection.snoozed.filter((row) => row.depth === 0).length}
             collapsed={isCollapsed("__snoozed", true)}
             toggle={() => toggle("__snoozed", true)}
+            menu={
+              <BandOptionsMenu
+                section="snoozed"
+                options={bandOptions.snoozed}
+                onChange={(change) => updateBandOptions("snoozed", change)}
+              />
+            }
           >
-            {unfolded(projection.snoozed, "snoozed").map((row) =>
-              renderRow(
-                row,
-                "snoozed",
-                undefined,
-                anyMark(projection.snoozed, "snoozed"),
-              ),
-            )}
+            {renderBandRows(projection.snoozed, "snoozed", "snoozed")}
           </Band>
         ) : null}
         <NameDialog
@@ -726,6 +858,7 @@ function Band({
   box,
   collapsed,
   toggle,
+  menu,
   children,
 }: {
   title: string;
@@ -733,6 +866,7 @@ function Band({
   box?: "attention" | "neutral";
   collapsed?: boolean;
   toggle?: () => void;
+  menu?: ReactNode;
   children: ReactNode;
 }) {
   const heading = (
@@ -752,34 +886,129 @@ function Band({
           box === "attention" ? "ws-needs" : "ws-band-neutral",
         )}
       >
-        <h2
-          className={cn(
-            "flex w-full items-center gap-1 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
-            box === "attention" ? "ws-amber-text" : "text-muted-foreground",
-          )}
-        >
-          {heading}
-        </h2>
+        <div className="flex items-center gap-1">
+          <h2
+            className={cn(
+              "flex min-w-0 flex-1 items-center gap-1 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
+              box === "attention" ? "ws-amber-text" : "text-muted-foreground",
+            )}
+          >
+            {heading}
+          </h2>
+          {menu}
+        </div>
         <ul className="mt-0.5">{children}</ul>
       </section>
     );
   }
   return (
     <section aria-label={title} className="px-1">
-      <button
-        type="button"
-        aria-expanded={!collapsed}
-        onClick={toggle}
-        className="flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-sidebar-accent/60"
-      >
-        <Icon
-          name={collapsed ? "ChevronRight" : "ChevronDown"}
-          className="size-3"
-        />
-        {heading}
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          onClick={toggle}
+          className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-sidebar-accent/60"
+        >
+          <Icon
+            name={collapsed ? "ChevronRight" : "ChevronDown"}
+            className="size-3"
+          />
+          {heading}
+        </button>
+        {menu}
+      </div>
       {collapsed ? null : <ul className="mt-0.5">{children}</ul>}
     </section>
+  );
+}
+
+function BandOptionsMenu({
+  section,
+  options,
+  onChange,
+}: {
+  section: BandId;
+  options: BandOptions[BandId];
+  onChange: (change: Partial<BandOptions[BandId]>) => void;
+}) {
+  const label = section[0]!.toUpperCase() + section.slice(1);
+  const sortOptions: readonly BandSortOption[] =
+    section === "recent"
+      ? [
+          ["activity", "Recent activity"],
+          ["title", "Title A–Z"],
+        ]
+      : section === "snoozed"
+        ? [
+            ["wake", "Soonest to wake"],
+            ["activity", "Recent activity"],
+            ["title", "Title A–Z"],
+          ]
+        : [
+            ["archived", "Archive date"],
+            ["activity", "Recent activity"],
+            ["title", "Title A–Z"],
+          ];
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          aria-label="Section options"
+          title={`${label} options`}
+          onClick={(event) => event.stopPropagation()}
+          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-40 hover:bg-sidebar-accent hover:text-foreground hover:opacity-100 focus-visible:opacity-100"
+        >
+          <Icon name="MoreHorizontal" className="size-3.5" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end"
+          sideOffset={4}
+          className="z-50 min-w-48 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
+        >
+          <DropdownMenu.Label className="px-2 py-1.5 text-xs text-muted-foreground">
+            Sort by
+          </DropdownMenu.Label>
+          <DropdownMenu.RadioGroup
+            value={options.sort}
+            onValueChange={(value) => onChange({ sort: value as BandSort })}
+          >
+            {sortOptions.map(([value, name]) => (
+              <DropdownMenu.RadioItem
+                key={value}
+                value={value}
+                className="flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent"
+              >
+                <span className="inline-flex size-4 items-center justify-center">
+                  <DropdownMenu.ItemIndicator>
+                    <Icon name="Check" className="size-3.5" />
+                  </DropdownMenu.ItemIndicator>
+                </span>
+                {name}
+              </DropdownMenu.RadioItem>
+            ))}
+          </DropdownMenu.RadioGroup>
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          <DropdownMenu.CheckboxItem
+            checked={options.grouped}
+            onCheckedChange={(checked) =>
+              onChange({ grouped: checked === true })
+            }
+            className="flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent"
+          >
+            <span className="inline-flex size-4 items-center justify-center">
+              <DropdownMenu.ItemIndicator>
+                <Icon name="Check" className="size-3.5" />
+              </DropdownMenu.ItemIndicator>
+            </span>
+            Group by workstream
+          </DropdownMenu.CheckboxItem>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 
