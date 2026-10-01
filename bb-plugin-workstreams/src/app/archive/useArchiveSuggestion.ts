@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { experimental_useSidebarThreads } from "@get-bb/plugin-sdk/app";
+import { experimental_useSidebarThreadActions } from "@get-bb/plugin-sdk/app";
 import type { Recap } from "../../domain/recap.ts";
-import { useServerState } from "../useWorkstreams.ts";
+import { nextThreadAfterArchive } from "../../domain/archiveNavigation.ts";
+import { useWorkstreams } from "../useWorkstreams.ts";
 
 /**
  * Recaps whose Archive the user passed up by continuing the thread. Clearing
@@ -18,11 +19,9 @@ export function useArchiveSuggestion(
   recap: Recap | null,
   continuing = false,
 ) {
-  const { rpc, refresh } = useServerState();
-  const { threads } = experimental_useSidebarThreads({
-    experimental_lifecycles: ["active"],
-  });
-  const thread = threads.find((t) => t.id === threadId);
+  const { rpc, refresh, projection } = useWorkstreams();
+  const actions = experimental_useSidebarThreadActions();
+  const thread = threadId ? projection.rowOf.get(threadId)?.thread : undefined;
   const recapId = recap?.id ?? null;
   const [eligible, setEligible] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -70,8 +69,10 @@ export function useArchiveSuggestion(
     if (!visible || !threadId || !recapId || busy) return;
     setBusy(true);
     setError(null);
+    const nextThreadId = nextThreadAfterArchive(projection, threadId);
     try {
       await rpc.call("archive", { threadId, recapId });
+      if (nextThreadId) actions.open(nextThreadId);
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
