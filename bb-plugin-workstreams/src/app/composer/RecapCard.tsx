@@ -42,19 +42,23 @@ const CARD_CLASS =
  */
 const ACCENT: Record<
   Recap["state"],
-  { card: string; text: string; rules: string }
+  { card: string; text: string; rules: string; footer: string }
 > = {
   review: {
     card: "border-sky-400 bg-sky-50/40 dark:border-sky-500/80 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(29.3%_0.066_243.157))]",
     text: "text-sky-700 dark:text-sky-300",
     rules:
       "[&>section+section]:border-sky-900/10 dark:[&>section+section]:border-sky-200/15",
+    footer:
+      "border-sky-900/10 bg-sky-500/[0.05] dark:border-sky-200/15 dark:bg-sky-300/[0.04]",
   },
   complete: {
     card: "border-emerald-400 bg-emerald-50/40 dark:border-emerald-500/70 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(26.2%_0.051_172.552))]",
     text: "text-emerald-700 dark:text-emerald-300",
     rules:
       "[&>section+section]:border-emerald-900/10 dark:[&>section+section]:border-emerald-200/15",
+    footer:
+      "border-emerald-900/10 bg-emerald-500/[0.05] dark:border-emerald-200/15 dark:bg-emerald-300/[0.04]",
   },
 };
 
@@ -364,29 +368,37 @@ function CardBody({
       <div className="@max-[20rem]/recap:[&_*]:!text-[0.625rem] @max-[20rem]/recap:[&_*]:!font-normal @max-[20rem]/recap:[&_*]:!leading-[1.5] @max-[20rem]/recap:[&_*]:!tracking-normal">
         <RecapSummary recap={recap} layout={layout} files={files} />
       </div>
-      {archiveError ? (
-        <p
-          role="alert"
-          className="mt-2 text-center text-[11px] text-red-700 dark:text-red-300"
+      {/* The footer strip runs edge to edge under the rows, so the card
+          without Archive (or an error) stays short. */}
+      {showArchive || archiveError ? (
+        <div
+          className={cn(
+            "-mx-4 -mb-3 mt-1.5 flex items-center justify-end gap-3 rounded-b-[7px] border-t px-3 py-2",
+            ACCENT[recap.state].footer,
+          )}
         >
-          {archiveError}
-        </p>
-      ) : null}
-      {/* Archive is the card's only footer, so a card without it stays short. */}
-      {showArchive ? (
-        <div className="mt-2 flex justify-center">
-          {/* An outline button, so it offers the next step without
-              outweighing the recap. */}
-          <Button
-            variant="outline"
-            size="sm"
-            className={cn("bg-background/60", layout === "full" && "px-4")}
-            disabled={archiveBusy}
-            onClick={onArchive}
-          >
-            <Icon name="Archive" aria-hidden className="size-3.5" />
-            Archive
-          </Button>
+          {archiveError ? (
+            <p
+              role="alert"
+              className="mr-auto min-w-0 text-[11px] text-red-700 dark:text-red-300"
+            >
+              {archiveError}
+            </p>
+          ) : null}
+          {showArchive ? (
+            // Outline, so it offers the next step without outweighing the
+            // recap.
+            <Button
+              variant="outline"
+              size="sm"
+              className="bg-background/60"
+              disabled={archiveBusy}
+              onClick={onArchive}
+            >
+              <Icon name="Archive" aria-hidden className="size-3.5" />
+              Archive
+            </Button>
+          ) : null}
         </div>
       ) : null}
       <button
@@ -521,7 +533,7 @@ function useHold(
 /**
  * The agent's recap of the thread's latest turn, above the composer, with
  * dismiss in its top-right corner and, when the thread can be archived,
- * Archive centered under it. It stays up while the user drafts,
+ * Archive at the right of a footer strip under it. It stays up while the user drafts,
  * so they can refer to it in their message, and hides once a message is sent
  * or the thread runs, while a question card is open, and inside the inline
  * message editor.
