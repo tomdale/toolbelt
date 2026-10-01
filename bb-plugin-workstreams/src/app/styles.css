@@ -226,10 +226,9 @@
 
 /* The Up Next block: the threads waiting on Tom, and the sidebar's most
    important element. It follows the Geist warning note: a flat card tinted
-   with BB's theme attention color, a hairline border in that color, and a
-   solid status dot. Colors come from theme tokens (`--attention`,
+   with BB's theme attention color, and a hairline border in that color. Colors come from theme tokens (`--attention`,
    `--sidebar`, `--foreground`), so every BB theme restyles it. A slow shimmer
-   and a pinging header dot keep it alive; on arrival the border brightens
+   keeps it alive; on arrival the border brightens
    once and a new row rises in with a short blur. */
 .ws-needs {
   --ws-needs-tone: var(--attention, var(--ws-amber));
@@ -252,11 +251,6 @@
 }
 .ws-needs-heading {
   color: var(--foreground);
-}
-.ws-needs-dot {
-  background-color: var(--ws-needs-tone, var(--ws-amber));
-  box-shadow: 0 0 0 2px
-    color-mix(in oklab, var(--ws-needs-tone, var(--ws-amber)) 25%, transparent);
 }
 /* The waiting-thread count, as a Geist badge in the attention color. */
 .ws-needs-count {
@@ -319,34 +313,13 @@
     background-position: -25% 0;
   }
 }
-/* The header dot pings: a copy of it grows and fades on a loop. */
-.ws-needs-dot {
-  position: relative;
-}
-.ws-needs-dot::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background-color: inherit;
-  animation: ws-needs-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
-}
-@keyframes ws-needs-ping {
-  75%,
-  100% {
-    transform: scale(2.6);
-    opacity: 0;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   .ws-needs,
   .ws-needs .ws-row,
-  .ws-needs::after,
-  .ws-needs-dot::after {
+  .ws-needs::after {
     animation: none;
   }
-  .ws-needs::after,
-  .ws-needs-dot::after {
+  .ws-needs::after {
     display: none;
   }
 }

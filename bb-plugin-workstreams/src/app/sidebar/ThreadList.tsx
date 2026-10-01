@@ -1174,12 +1174,6 @@ function Band({
   const heading = (
     <>
       <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
-        {box === "attention" ? (
-          <span
-            aria-hidden
-            className="ws-needs-dot size-1.5 shrink-0 rounded-full"
-          />
-        ) : null}
         {title}
         {badge}
       </span>
