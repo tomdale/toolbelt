@@ -85,8 +85,11 @@ const GOAL_CLASS =
 const MARKDOWN_CLASS =
   "text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
 
-/** A commit hash, shortened; clicking copies the full hash. */
-function ShaChip({ sha }: { sha: string }) {
+/**
+ * A commit hash, shortened and highlighted as code rather than styled as a
+ * link; a copy icon appears on hover, and clicking copies the full hash.
+ */
+function Sha({ sha }: { sha: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -99,14 +102,17 @@ function ShaChip({ sha }: { sha: string }) {
           setTimeout(() => setCopied(false), 1200);
         });
       }}
-      className="mx-px inline-flex cursor-pointer items-baseline gap-1 rounded border border-border bg-background/60 px-1 font-mono text-[0.85em] leading-[1.35] text-foreground/80 hover:border-foreground/25 hover:text-foreground"
+      className="group/sha inline-flex cursor-pointer items-baseline gap-0.5 font-mono text-[0.923em] text-amber-700 dark:text-amber-300"
     >
-      <Icon
-        name={copied ? "Check" : "GitCommitHorizontal"}
-        aria-hidden
-        className="size-[1em] shrink-0 self-center opacity-70"
-      />
       {sha.slice(0, 7)}
+      <Icon
+        name={copied ? "Check" : "Copy"}
+        aria-hidden
+        className={cn(
+          "size-[0.9em] shrink-0 self-center opacity-0 transition-opacity group-hover/sha:opacity-60 group-focus-visible/sha:opacity-60",
+          copied && "opacity-60",
+        )}
+      />
     </button>
   );
 }
@@ -114,7 +120,7 @@ function ShaChip({ sha }: { sha: string }) {
 /**
  * One recap line through BB's markdown, so inline code, emphasis, and links
  * survive. BB's Markdown leaves thread mentions and commit hashes as text,
- * so those segments render here as chips between inline Markdown runs. The
+ * so those segments render here between inline Markdown runs. The
  * overrides keep BB's paragraph and code styles inside the recap's type
  * scale.
  */
@@ -148,7 +154,7 @@ function RecapText({
             </span>
           );
         if (segment.kind === "sha")
-          return <ShaChip key={index} sha={segment.sha} />;
+          return <Sha key={index} sha={segment.sha} />;
         // Markdown trims its source, so edge spaces are kept outside it.
         const body = segment.text.trim();
         return (
