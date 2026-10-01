@@ -65,14 +65,14 @@ design and the contract the code is checked against.
   or the provider's own), a **review** recap, or a **complete** recap. A recap
   is a Goal heading, one to three Latest results, for review a **Review** line
   naming what to inspect or try and the expected result, and links to files or
-  pages. It shows above the composer with **Archive** and **Dismiss** centered
-  under it, and its state marks the sidebar row. Fresh input clears it. A turn
-  that ends without either gets an agent-only reminder, three by default
-  (Settings → **Recap**: on/off, reminders 0–10, and a Full or Minimal layout
-  without the goal). BB reports turn completion after the fact, so the turn's
-  own reply is already visible when the reminder arrives. The tool reaches each
-  thread when its provider session next starts, and only those threads get
-  reminders.
+  pages. It shows above the composer with a dismiss ✕ in its corner and, when
+  the thread can be archived, **Archive** centered under it; its state marks the
+  sidebar row. Fresh input clears it. A turn that ends without either gets an
+  agent-only reminder, three by default (Settings → **Recap**: on/off, reminders
+  0–10, and a Full or Minimal layout without the goal). BB reports turn
+  completion after the fact, so the turn's own reply is already visible when the
+  reminder arrives. The tool reaches each thread when its provider session next
+  starts, and only those threads get reminders.
 - **Archive**: on a complete or review recap, when BB has no unfinished tasks,
   goals, queued messages, interactions, or background work, and every child and
   lifecycle dependent is complete. Archiving a review recap accepts its result.
