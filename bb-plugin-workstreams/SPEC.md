@@ -574,16 +574,16 @@ it.
    only), then labeled rows: Done (the Latest lines, check-marked) and Review
    (the requested checks, with optional review-target Links as chips under their
    steps); labels stack above their rows on narrow cards. A dismiss ✕ sits in
-   the top-right corner, and Archive centered underneath when it applies. It
-   stays up while the user drafts and hides while a message sends or the thread
-   runs, while a question card is open, and in the inline message editor; hiding
-   never moves the thread. **Archive** shows when the server confirms that the
-   thread and every child and lifecycle dependent are idle with no queued work,
-   interactions, background work, unfinished goal or pending todos, and that
-   each dependent is complete (its own recap, else current analysis); hidden
-   dependents block it. Archiving a review recap accepts its result. Continuing
-   the thread withdraws Archive for that recap. Workstreams never archives on
-   its own.
+   the top-right corner, and Archive at the right of a footer strip along the
+   bottom edge when it applies. It stays up while the user drafts and hides
+   while a message sends or the thread runs, while a question card is open, and
+   in the inline message editor; hiding never moves the thread. **Archive**
+   shows when the server confirms that the thread and every child and lifecycle
+   dependent are idle with no queued work, interactions, background work,
+   unfinished goal or pending todos, and that each dependent is complete (its
+   own recap, else current analysis); hidden dependents block it. Archiving a
+   review recap accepts its result. Continuing the thread withdraws Archive for
+   that recap. Workstreams never archives on its own.
 
 ### 11.1 Snooze
 
