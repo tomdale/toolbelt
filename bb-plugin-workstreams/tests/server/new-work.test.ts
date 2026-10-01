@@ -173,18 +173,75 @@ describe("suggest", () => {
     });
   });
 
-  it("turns an unsure thread candidate into a continuation", async () => {
+  it("turns an unsure thread candidate into a new thread in its workstream", async () => {
     const { w, alpha } = await setup({
       outcome: "unsure",
       candidates: [{ threadId: "a1" }],
       reason: "Probably the same task",
     });
-    expect(await suggest(w, "One more tweak")).toMatchObject({
-      outcome: "continue",
-      threadId: "a1",
-      threadTitle: "Alpha task",
+    const decision = await suggest(w, "One more tweak");
+    expect(decision).toMatchObject({
+      outcome: "new-thread",
       sectionId: alpha.id,
       workstream: "Alpha",
+      confidence: "low",
+      placement: { projectId: "proj_1" },
+    });
+    expect(decision).not.toHaveProperty("threadId");
+  });
+
+  it.each(["medium", "low"])(
+    "suggests a new thread for a %s-confidence continuation",
+    async (confidence) => {
+      const { w, alpha } = await setup({
+        outcome: "continue",
+        threadId: "a1",
+        confidence,
+        reason: "Related to Alpha",
+      });
+      expect(await suggest(w, "Improve Alpha")).toMatchObject({
+        outcome: "new-thread",
+        sectionId: alpha.id,
+        workstream: "Alpha",
+        confidence,
+        placement: { projectId: "proj_1" },
+      });
+      expect(routePrompt(w)).toContain(
+        "When it is ambiguous whether this is a new task or a continuation, always prefer a new thread over continuing an existing thread",
+      );
+    },
+  );
+
+  it("preserves a high-confidence task continuation", async () => {
+    const { w } = await setup({
+      outcome: "continue",
+      threadId: "a1",
+      confidence: "high",
+      reason: "Explicit follow-up",
+    });
+    expect(
+      await suggest(w, "Fix the bug in the Alpha task you just did"),
+    ).toMatchObject({
+      outcome: "continue",
+      threadId: "a1",
+      confidence: "high",
+    });
+  });
+
+  it("suggests an unfiled new thread for an uncertain unfiled continuation", async () => {
+    const { w } = await setup({
+      outcome: "continue",
+      threadId: "unfiled",
+      confidence: "low",
+      reason: "Possibly related",
+    });
+    w.addThread("unfiled", { title: "Unfiled task", projectId: "proj_1" });
+    await w.harness.behavior.callRpc("refresh", null);
+    expect(await suggest(w, "Improve that task")).toMatchObject({
+      outcome: "new-thread",
+      sectionId: null,
+      workstream: null,
+      placement: null,
     });
   });
 
@@ -248,6 +305,7 @@ describe("Debug mode", () => {
   it("explains a mention without asking the model", async () => {
     const { w } = await setup(answer, { debug: true });
     const decision = await suggest(w, "Follow up in @thread:a1");
+    expect(decision).toMatchObject({ outcome: "continue", threadId: "a1" });
     expect((decision.explanation as { notes: string[] }).notes).toEqual([
       `The draft mentions the thread "Alpha task", so the model wasn't asked.`,
     ]);
