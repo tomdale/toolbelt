@@ -860,12 +860,22 @@ describe("snoozing", () => {
   ];
 
   it("moves snoozed threads into a collapsed Snoozed fold", async () => {
-    const slot = await mount(threads(), {
-      snoozes: {
-        ask: { until: later(), attentionAt: 0, at: 0 },
-        nap: { until: null, attentionAt: Date.now() + 1, at: 0 },
+    const slot = await mount(
+      [
+        ...threads(),
+        sidebarThread("nap-child", {
+          parentThreadId: "nap",
+          sectionId: "sec_a",
+          title: "Nap child task",
+        }),
+      ],
+      {
+        snoozes: {
+          ask: { until: later(), attentionAt: 0, at: 0 },
+          nap: { until: null, attentionAt: Date.now() + 1, at: 0 },
+        },
       },
-    });
+    );
     await waitFor(() =>
       expect(slot.getByRole("button", { name: /^Snoozed\d*$/ })).toBeTruthy(),
     );
@@ -875,7 +885,26 @@ describe("snoozing", () => {
     const fold = slot.getByRole("button", { name: /^Snoozed\d*$/ });
     expect(fold.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(fold);
+    expect(groupRows(slot, "Snoozed")).toEqual([
+      "Asking task",
+      "Napping task",
+      "Nap child task",
+    ]);
+    const napRow = within(slot.getByRole("region", { name: "Snoozed" }))
+      .getByRole("link", { name: "Napping task" })
+      .closest("li")!;
+    fireEvent.click(
+      within(napRow).getByRole("button", { name: "Hide child threads" }),
+    );
     expect(groupRows(slot, "Snoozed")).toEqual(["Asking task", "Napping task"]);
+    fireEvent.click(
+      within(napRow).getByRole("button", { name: "Show child threads" }),
+    );
+    expect(groupRows(slot, "Snoozed")).toEqual([
+      "Asking task",
+      "Napping task",
+      "Nap child task",
+    ]);
     expect(
       within(slot.getByRole("region", { name: "Snoozed" })).getByText(
         "On update",
