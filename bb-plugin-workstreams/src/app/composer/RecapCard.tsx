@@ -33,7 +33,7 @@ import { useContinuing } from "./useContinuing.ts";
 import type { HeldSpace } from "./recapMotion.ts";
 
 const CARD_CLASS =
-  "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-400 bg-sky-50/40 px-4 py-3 text-sky-900 dark:border-sky-500/80 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(29.3%_0.066_243.157))] dark:text-sky-200";
+  "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-border bg-muted/40 px-4 py-3 text-foreground shadow-sm";
 
 // What happened is the card's primary text.
 const BODY_CLASS =
@@ -67,7 +67,7 @@ function RecapText({
 const ROW_CLASS =
   "grid grid-cols-[3.75rem_minmax(0,1fr)] gap-x-3 gap-y-0.5 py-1.5 @max-[24rem]/recap:grid-cols-1";
 const LABEL_CLASS =
-  "pt-px text-[11px] font-medium leading-[1.6] text-sky-900/55 dark:text-sky-200/50";
+  "pt-px text-[11px] font-medium leading-[1.6] text-muted-foreground";
 
 function Glyph({ path, className }: { path: string; className: string }) {
   return (
@@ -142,7 +142,7 @@ function Results({ items }: { items: string[] }) {
         >
           <Glyph
             path={CHECK}
-            className="mt-[0.2em] h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400"
+            className="mt-[0.2em] h-3.5 w-3.5 text-muted-foreground"
           />
           <RecapText text={item} />
         </li>
@@ -164,7 +164,7 @@ function Steps({ items }: { items: string[] }) {
         >
           <span
             aria-hidden="true"
-            className="text-[0.85em] font-medium tabular-nums text-sky-700 dark:text-sky-300"
+            className="text-[0.85em] font-medium tabular-nums text-muted-foreground"
           >
             {index + 1}
           </span>
@@ -176,7 +176,7 @@ function Steps({ items }: { items: string[] }) {
 }
 
 const CHIP_CLASS =
-  "inline-flex max-w-full items-center gap-1.5 truncate rounded-full no-underline hover:no-underline border border-sky-900/15 bg-background/60 px-2 py-px text-[11.5px] font-medium leading-[1.6] text-sky-700 hover:border-sky-900/30 dark:border-sky-200/20 dark:text-sky-300 dark:hover:border-sky-200/40";
+  "inline-flex max-w-full items-center gap-1.5 truncate rounded-full no-underline hover:no-underline border border-border bg-background/60 px-2 py-px text-[11.5px] font-medium leading-[1.6] text-foreground/80 hover:border-foreground/25 hover:text-foreground";
 
 function Links({
   links,
@@ -247,7 +247,7 @@ function RecapSummary({
         <div
           role="heading"
           aria-level={2}
-          className="pr-7 font-medium tracking-[-0.006em] text-sky-700 dark:text-sky-300"
+          className="pr-7 font-medium tracking-[-0.006em] text-foreground"
         >
           <RecapText
             text={goal}
@@ -256,7 +256,7 @@ function RecapSummary({
           />
         </div>
       ) : null}
-      <div className="mt-1 [&>section+section]:border-t [&>section+section]:border-sky-900/10 dark:[&>section+section]:border-sky-200/10">
+      <div className="mt-1 [&>section+section]:border-t [&>section+section]:border-border">
         <Row label="Done">
           <Results items={recap.latest} />
         </Row>
@@ -264,8 +264,8 @@ function RecapSummary({
           <Row
             label="Review"
             // The tint replaces the hairlines on both sides of this row.
-            className="!my-1 -mx-2 rounded-md !border-transparent bg-sky-900/[0.06] px-2 dark:bg-sky-200/[0.07] [&+section]:!border-transparent"
-            labelClassName="text-sky-700 dark:text-sky-300"
+            className="!my-1 -mx-2 rounded-md !border-transparent bg-foreground/[0.04] px-2 dark:bg-foreground/[0.06] [&+section]:!border-transparent"
+            labelClassName="text-foreground"
           >
             <Steps items={recap.review} />
           </Row>
@@ -356,29 +356,23 @@ function CardBody({
       {/* Archive is the card's only footer, so a card without it stays short. */}
       {showArchive ? (
         <div className="mt-3 flex justify-center">
-          {/* The card's one action, filled in its own accent. Minimal
-              recaps get a compact button to match. */}
+          {/* An outline button, so it offers the next step without
+              outweighing the recap. */}
           <Button
-            size={layout === "full" ? "default" : "sm"}
-            className={cn(
-              "bg-sky-600 text-white shadow-sm hover:bg-sky-700 dark:bg-sky-400 dark:text-sky-950 dark:hover:bg-sky-300",
-              layout === "full" && "px-5",
-            )}
+            variant="outline"
+            size="sm"
+            className={cn("bg-background/60", layout === "full" && "px-4")}
             disabled={archiveBusy}
             onClick={onArchive}
           >
-            <Icon
-              name="Archive"
-              aria-hidden
-              className={layout === "full" ? "size-4" : "size-3.5"}
-            />
+            <Icon name="Archive" aria-hidden className="size-3.5" />
             Archive
           </Button>
         </div>
       ) : null}
       <button
         type="button"
-        className="absolute right-2.5 top-2.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-sky-900/50 transition-colors hover:bg-sky-900/10 hover:text-sky-900/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:text-sky-200/50 dark:hover:bg-sky-200/10 dark:hover:text-sky-200/80"
+        className="absolute right-2.5 top-2.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         aria-label="Dismiss recap"
         title="Dismiss recap"
         onClick={onDismiss}
