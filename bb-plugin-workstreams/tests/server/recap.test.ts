@@ -105,13 +105,24 @@ describe("agent recaps", () => {
       }),
     ).rejects.toThrow();
     await expect(s.report({ ...RECAP, latest: [] })).rejects.toThrow();
-    await s.report({
+    const output = await s.report({
       ...RECAP,
       state: "review",
       review: "Open the sidebar and check the ✓ mark",
       links: [{ title: "Report", location: "/tmp/report.md" }],
     });
     expect((await s.card()).recap).toMatchObject({ state: "review" });
+    // The call's output is the recap the timeline row keeps.
+    expect(output).toBe(
+      [
+        "**Ready for review** · Porting handoffs into Workstreams",
+        "- Moved the recap tool into Workstreams",
+        "",
+        "**Review:** Open the sidebar and check the ✓ mark",
+        "",
+        "[Report](/tmp/report.md)",
+      ].join("\n"),
+    );
   });
 
   it("asks for a missing recap, caps the reminders, and resets on fresh input", async () => {
