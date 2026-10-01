@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
 import { fakeWorld } from "./fake-bb.ts";
 import { instructionsFor, quote } from "../../src/domain/instructions.ts";
+import { WORKER_THREAD_MARKER } from "../../src/domain/worker.ts";
 
 type World = Awaited<ReturnType<typeof fakeWorld>>;
 let world: World | null = null;
@@ -76,6 +77,36 @@ describe("configure", () => {
     expect(task.instructions).toContain("End every turn with WorkstreamsRecap");
     const kid = await resolve(w, { id: "kid", parentThreadId: "task" });
     expect(kid.instructions).toContain('delegated subtask of "Fix tabs"');
+  });
+
+  it("keeps worker threads out of recap enrollment and role instructions", async () => {
+    const w = await setup();
+    const worker = await resolve(
+      w,
+      { id: "worker" },
+      {
+        pluginMetadata: {
+          [WORKER_THREAD_MARKER.key]: WORKER_THREAD_MARKER.value,
+          kind: "task",
+          filedSectionId: w.sections[0]!.id,
+          filedAt: Date.now(),
+        },
+      },
+    );
+    expect(worker.instructions).toBeNull();
+    expect(worker.tools).toEqual([]);
+    expect(
+      w.bb.storage
+        .database()
+        .prepare("SELECT thread_id FROM ws_agent_recap WHERE thread_id = ?")
+        .get("worker"),
+    ).toBeUndefined();
+
+    const normal = await resolve(w, { id: "ordinary" });
+    expect(normal.tools.map((tool) => tool.name)).toEqual(["WorkstreamsRecap"]);
+    expect(normal.instructions).toContain(
+      "End every turn with WorkstreamsRecap",
+    );
   });
 
   it("stays out of side chats, and gives unknown threads only the recap", async () => {

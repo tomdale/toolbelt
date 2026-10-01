@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { fakeWorld } from "./fake-bb.ts";
 import { gatewayModel } from "../../src/domain/prefs.ts";
+import { WORKER_THREAD_MARKER } from "../../src/domain/worker.ts";
 
 type World = Awaited<ReturnType<typeof fakeWorld>>;
 let world: World | null = null;
@@ -44,5 +45,8 @@ it("uses the worker path only when gatewayModel returns null", async () => {
     visibility: "hidden",
     permissionMode: "accept-edits",
     projectId: "proj_1",
+    pluginMetadata: {
+      [WORKER_THREAD_MARKER.key]: WORKER_THREAD_MARKER.value,
+    },
   });
 });

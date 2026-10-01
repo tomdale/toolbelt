@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ModelChoice } from "../../domain/prefs.ts";
+import { WORKER_THREAD_MARKER } from "../../domain/worker.ts";
 import { WORKER_SYSTEM_PROMPT, type Completion } from "./gateway.ts";
 
 type Sdk = BbPluginApi["sdk"];
@@ -102,6 +103,7 @@ export async function runWorker(
     permissionMode: PERMISSION_MODE,
     title: "Workstreams worker",
     visibility: "hidden",
+    pluginMetadata: { [WORKER_THREAD_MARKER.key]: WORKER_THREAD_MARKER.value },
     prompt: `${WORKER_SYSTEM_PROMPT}\n\n${prompt}`,
   });
   try {
