@@ -76,10 +76,9 @@ export function WorkingIndicatorSettings() {
   return (
     <SectionRows>
       <div className="min-w-0">
-        <SettingRow
-          label="Working indicator"
-          description="How a working thread is marked in the sidebar."
-        />
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          How a working thread is marked in the sidebar.
+        </p>
         <div className="mt-3">
           <SpinnerSettings />
         </div>
