@@ -144,6 +144,18 @@ describe("agent recaps", () => {
       review: ["Open the sidebar"],
     });
     expect(single).toContain("**Review:** Open the sidebar");
+    // A list sent as a JSON-encoded string still reads as steps.
+    await s.report({
+      ...RECAP,
+      state: "review",
+      review: JSON.stringify(["Open the sidebar", "Check the mark"]),
+    });
+    expect((await s.card()).recap).toMatchObject({
+      review: ["Open the sidebar", "Check the mark"],
+    });
+    await expect(
+      s.report({ ...RECAP, state: "review", review: "x".repeat(161) }),
+    ).rejects.toThrow();
   });
 
   it("asks for a missing recap, caps the reminders, and resets on fresh input", async () => {
