@@ -73,7 +73,9 @@ design and the contract the code is checked against.
   **Recap**: on/off, reminders 0–10, and a Full or Minimal layout without the
   goal). BB reports turn completion after the fact, so the turn's own reply is
   already visible when the reminder arrives. The tool reaches each thread when
-  its provider session next starts, and only those threads get reminders.
+  its provider session next starts. Reminders go only to threads that certainly
+  have it: threads created since recaps were turned on, and threads whose agent
+  has called it.
 - **Archive**: on a complete or review recap, when BB has no unfinished tasks,
   goals, queued messages, interactions, or background work, and every child and
   lifecycle dependent is complete. Archiving a review recap accepts its result.

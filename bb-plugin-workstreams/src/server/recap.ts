@@ -7,6 +7,11 @@
  * a stored recap always describes the thread's latest turn. A pending question
  * card also ends a turn properly; it stores no recap.
  *
+ * BB applies a tool set only when it constructs a provider session, and
+ * `configure` can't tell a session start from a turn submit. So reminders go
+ * only to threads whose session demonstrably has the tool: threads created
+ * since agents started getting it, and threads whose agent has called it.
+ *
  * BB reports turn completion as an observation, not a veto: the turn's final
  * reply is already visible when a correction asks for the recap. Corrections
  * carry an epoch and a token that `message.dispatch` checks, so input that
@@ -40,6 +45,8 @@ type Row = {
   capped: number;
   correction_token: string | null;
   input_key: string | null;
+  /** The thread's agent has called the tool, so its session has it. */
+  proven: number;
 };
 type DispatchContext = Parameters<
   Parameters<BbPluginApi["experimental_hooks"]["on"]>[1]
@@ -77,6 +84,8 @@ export class AgentRecaps {
       bb: BbPluginApi;
       db: Database;
       prefs: () => RecapPrefs;
+      /** See `recapToolSince` in recapPrefs.ts. */
+      since: () => number;
       onChange: () => void;
     },
   ) {}
@@ -96,6 +105,9 @@ export class AgentRecaps {
       parameters: recapInputSchema,
       execute: async (input, ctx) => {
         const epoch = this.row(ctx.threadId).epoch;
+        this.deps.db
+          .prepare("UPDATE ws_agent_recap SET proven = 1 WHERE thread_id = ?")
+          .run(ctx.threadId);
         const turnId = await this.latestTurn(ctx.threadId, ctx.signal);
         const recap = toRecap(input, {
           id: randomUUID(),
@@ -113,8 +125,8 @@ export class AgentRecaps {
   }
 
   /**
-   * Called from `configure`: whether this session gets the tool. Only an
-   * enrolled thread's session has it, so only enrolled threads get corrections.
+   * Called from `configure` at every session start and turn submit: whether
+   * the session gets the tool. Enrollment follows the latest answer.
    */
   configure(threadId: string, enabled: boolean) {
     const on = enabled && this.deps.prefs().required;
@@ -382,6 +394,8 @@ export class AgentRecaps {
       thread.archivedAt !== null ||
       thread.visibility !== "visible" ||
       thread.queuedMessageCount > 0 ||
+      // A session constructed before the tool existed can't call it.
+      (!row.proven && thread.createdAt < this.deps.since()) ||
       signal.aborted
     )
       return;

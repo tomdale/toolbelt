@@ -428,7 +428,11 @@ restores the previous title while it is still the one Workstreams wrote.
 
 The thread's own agent reports how each turn ended. Every thread except a side
 chat gets the `WorkstreamsRecap` tool and its instructions when its provider
-session is constructed, which enrolls the thread for reminders.
+session is constructed. `configure` also runs on turn submits and can't tell
+them from session starts, so a thread gets reminders only while it has the tool
+selected and its session demonstrably has it: the thread was created after
+agents started getting the tool (first load, or recaps turned back on), or its
+agent has called the tool.
 
 - **Endings.** A turn ends with a question card still open (BB's native
   question, or Toolbelt's AskUserQuestion), or with a recap whose state is
@@ -455,8 +459,8 @@ session is constructed, which enrolls the thread for reminders.
   `message.dispatch` checks, so input that arrived first rejects it; a queued
   reminder is recognized by a text marker because submission metadata is
   transient. Failed and interrupted turns, hidden, archived, and busy threads,
-  threads with queued messages, and threads not enrolled get no reminders. When
-  the budget runs out, the card says so.
+  threads with queued messages, and threads without the tool get no reminders.
+  When the budget runs out, the card says so.
 - **Settings.** The Recap section: whether agents end turns with a recap (off
   removes the tool at each session's next start and stops reminders at once),
   reminders per turn, and the card layout (Full, or Minimal without the goal).
