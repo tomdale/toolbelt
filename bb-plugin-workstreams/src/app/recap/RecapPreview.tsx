@@ -105,11 +105,52 @@ export function RecapPreview({ layout }: { layout: RecapLayout }) {
     setIndex(target);
   };
   const current = EXAMPLES[index]!;
+  const controls = (
+    <div className="flex items-center justify-center gap-1">
+      <button
+        type="button"
+        className={NAV_BUTTON}
+        aria-label="Previous example"
+        onClick={() => show(index - 1)}
+      >
+        <Chevron direction="left" />
+      </button>
+      {EXAMPLES.map((example, position) => (
+        <button
+          key={example.label}
+          type="button"
+          aria-label={`Show ${example.label} example`}
+          aria-current={position === index ? "true" : undefined}
+          title={example.label}
+          onClick={() => show(position)}
+          className="flex h-6 cursor-pointer items-center rounded px-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              "block h-1.5 rounded-full transition-all",
+              position === index
+                ? "w-4 bg-foreground/60"
+                : "w-1.5 bg-foreground/20",
+            )}
+          />
+        </button>
+      ))}
+      <button
+        type="button"
+        className={NAV_BUTTON}
+        aria-label="Next example"
+        onClick={() => show(index + 1)}
+      >
+        <Chevron direction="right" />
+      </button>
+    </div>
+  );
   return (
     <section
       aria-roledescription="carousel"
-      aria-labelledby="ws-recap-preview"
-      className="space-y-2"
+      aria-label="Recap preview"
+      className="rounded-lg bg-muted/40 px-3 pt-3 pb-1.5"
       onKeyDown={(event) => {
         if (event.key === "ArrowLeft") show(index - 1);
         else if (event.key === "ArrowRight") show(index + 1);
@@ -117,58 +158,12 @@ export function RecapPreview({ layout }: { layout: RecapLayout }) {
         event.preventDefault();
       }}
     >
-      <div className="flex items-center justify-between gap-3">
-        <p id="ws-recap-preview" className="font-medium text-foreground">
-          Preview
-        </p>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className={NAV_BUTTON}
-            aria-label="Previous example"
-            onClick={() => show(index - 1)}
-          >
-            <Chevron direction="left" />
-          </button>
-          <div className="flex items-center gap-1 px-0.5">
-            {EXAMPLES.map((example, position) => (
-              <button
-                key={example.label}
-                type="button"
-                aria-label={`Show ${example.label} example`}
-                aria-current={position === index ? "true" : undefined}
-                title={example.label}
-                onClick={() => show(position)}
-                className="flex h-6 cursor-pointer items-center px-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
-              >
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "block h-1.5 rounded-full transition-all",
-                    position === index
-                      ? "w-4 bg-foreground/70"
-                      : "w-1.5 bg-foreground/25",
-                  )}
-                />
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            className={NAV_BUTTON}
-            aria-label="Next example"
-            onClick={() => show(index + 1)}
-          >
-            <Chevron direction="right" />
-          </button>
-        </div>
-      </div>
       <p aria-live="polite" className="sr-only">
         {current.label}
       </p>
       {/* Every slide shares one grid cell, so the preview keeps the tallest
           example's height and switching never shifts the page. */}
-      <div className="grid rounded-lg border border-dashed border-border bg-muted/30 p-3">
+      <div className="grid">
         {EXAMPLES.map((example, position) => {
           const active = position === index;
           return (
@@ -196,6 +191,7 @@ export function RecapPreview({ layout }: { layout: RecapLayout }) {
           );
         })}
       </div>
+      <div className="mt-1.5">{controls}</div>
     </section>
   );
 }

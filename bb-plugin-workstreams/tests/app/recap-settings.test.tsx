@@ -47,7 +47,7 @@ it("disables reminders when agents don't end turns with a recap", async () => {
 
 it("previews the recap card in each state and the chosen layout", async () => {
   const slot = await mount();
-  const carousel = await slot.findByRole("region", { name: "Preview" });
+  const carousel = await slot.findByRole("region", { name: "Recap preview" });
   const visible = () =>
     Array.from(carousel.querySelectorAll('[aria-roledescription="slide"]'))
       .filter((s) => !s.hasAttribute("aria-hidden"))
