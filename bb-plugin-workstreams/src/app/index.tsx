@@ -18,7 +18,6 @@ import {
   NewWorkSettings,
   OrganizeSettings,
   SidebarSettings,
-  TimestampSettings,
   ThreadsSettings,
   WorkingIndicatorSettings,
 } from "./settings/FeatureSettings.tsx";
@@ -99,13 +98,8 @@ export default definePluginApp((app) => {
   });
   app.slots.settingsSection({
     id: "sidebar",
-    title: "Show in Sidebar",
+    title: "Sidebar",
     component: SidebarSettings,
-  });
-  app.slots.settingsSection({
-    id: "timestamps",
-    title: "Sidebar Timestamps",
-    component: TimestampSettings,
   });
   app.slots.settingsSection({
     id: "working-indicator",

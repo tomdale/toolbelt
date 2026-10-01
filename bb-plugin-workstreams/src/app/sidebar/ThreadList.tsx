@@ -76,6 +76,7 @@ import {
   type PresenceEntry,
 } from "./motion.ts";
 import { PriorityIcon } from "./PriorityIcon.tsx";
+import { usePrefs } from "../prefs.ts";
 
 type ThreadGroup = Group<PluginSidebarThread>;
 type ThreadRow = RowModel<PluginSidebarThread>;
@@ -1366,6 +1367,9 @@ function WorkstreamGroup({
   dropTarget,
   children,
 }: GroupProps) {
+  const { prefs } = usePrefs();
+  const shows = (when: "always" | "collapsed" | "never" = "collapsed") =>
+    when === "always" || (when === "collapsed" && collapsed);
   return (
     <section
       ref={sectionRef}
@@ -1449,7 +1453,7 @@ function WorkstreamGroup({
               <Icon name="Plus" className="size-3.5" />
             </button>
           ) : null}
-          {collapsed && group.needsYou > 0 ? (
+          {shows(prefs?.sidebar.waitingCount) && group.needsYou > 0 ? (
             <span
               className={cn(
                 "rounded-full px-1.5 text-[11px] font-medium tabular-nums transition-colors duration-300",
@@ -1462,7 +1466,7 @@ function WorkstreamGroup({
               {group.needsYou}
             </span>
           ) : null}
-          {collapsed && group.total > 0 ? (
+          {shows(prefs?.sidebar.threadCount) && group.total > 0 ? (
             <span className="text-[11px] tabular-nums text-muted-foreground/70">
               {group.total}
             </span>

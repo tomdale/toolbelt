@@ -42,65 +42,112 @@ export function SidebarSettings() {
       }
     />
   );
-  return (
-    <SectionRows compact>
-      {row("Up Next", prefs.sidebar.showForYou, (showForYou) =>
-        update({ sidebar: { showForYou } }),
-      )}
-      {row(
-        "Recent",
-        prefs.sidebar.showRecent,
-        (showRecent) => update({ sidebar: { showRecent } }),
-        prefs.sidebar.showRecent ? (
-          <Stepper
-            size="sm"
-            label="threads shown"
-            value={prefs.sidebar.recentLimit}
-            min={RECENT_LIMIT.min}
-            max={RECENT_LIMIT.max}
-            onChange={(recentLimit) => update({ sidebar: { recentLimit } })}
-          />
-        ) : null,
-      )}
-      {row("Snoozed", prefs.sidebar.showSnoozed, (showSnoozed) =>
-        update({ sidebar: { showSnoozed } }),
-      )}
-      {row("Archived", prefs.sidebar.showArchived, (showArchived) =>
-        update({ sidebar: { showArchived } }),
-      )}
-    </SectionRows>
+  const picker = <V extends string>(
+    label: string,
+    value: V,
+    options: readonly { value: V; label: string }[],
+    onChange: (value: V) => void,
+  ) => (
+    <SettingRow
+      label={label}
+      className="min-h-8"
+      control={
+        <SettingsPicker
+          label={label}
+          value={value}
+          className="w-40"
+          options={options}
+          onChange={(next) => {
+            const option = options.find((o) => o.value === next);
+            if (option) onChange(option.value);
+          }}
+        />
+      }
+    />
   );
-}
-
-export function TimestampSettings() {
-  const { prefs, update } = useFeaturePrefs();
-  if (!prefs) return <Loading />;
+  const countOptions = [
+    { value: "always", label: "Always" },
+    { value: "collapsed", label: "When collapsed" },
+    { value: "never", label: "Never" },
+  ] as const;
   return (
-    <SectionRows>
-      <SettingRow
-        label="Show timestamp"
-        control={
-          <SettingsPicker
-            label="Timestamp"
-            value={prefs.sidebar.timestamps}
-            className="w-40"
-            options={[
+    <div className="space-y-4">
+      <SidebarGroup title="Sections">
+        <SectionRows compact>
+          {row("Up Next", prefs.sidebar.showForYou, (showForYou) =>
+            update({ sidebar: { showForYou } }),
+          )}
+          {row(
+            "Recent",
+            prefs.sidebar.showRecent,
+            (showRecent) => update({ sidebar: { showRecent } }),
+            prefs.sidebar.showRecent ? (
+              <Stepper
+                size="sm"
+                label="threads shown"
+                value={prefs.sidebar.recentLimit}
+                min={RECENT_LIMIT.min}
+                max={RECENT_LIMIT.max}
+                onChange={(recentLimit) => update({ sidebar: { recentLimit } })}
+              />
+            ) : null,
+          )}
+          {row("Snoozed", prefs.sidebar.showSnoozed, (showSnoozed) =>
+            update({ sidebar: { showSnoozed } }),
+          )}
+          {row("Archived", prefs.sidebar.showArchived, (showArchived) =>
+            update({ sidebar: { showArchived } }),
+          )}
+        </SectionRows>
+      </SidebarGroup>
+      <SidebarGroup title="Threads">
+        <SectionRows>
+          {picker(
+            "Timestamp",
+            prefs.sidebar.timestamps,
+            [
               { value: "show", label: "Show" },
               { value: "hover", label: "Only on hover" },
               { value: "hide", label: "Don't show" },
-            ]}
-            onChange={(timestamps) => {
-              if (
-                timestamps === "show" ||
-                timestamps === "hover" ||
-                timestamps === "hide"
-              )
-                update({ sidebar: { timestamps } });
-            }}
-          />
-        }
-      />
-    </SectionRows>
+            ],
+            (timestamps) => update({ sidebar: { timestamps } }),
+          )}
+        </SectionRows>
+      </SidebarGroup>
+      <SidebarGroup title="Workstreams">
+        <SectionRows>
+          {picker(
+            "Thread count",
+            prefs.sidebar.threadCount,
+            countOptions,
+            (threadCount) => update({ sidebar: { threadCount } }),
+          )}
+          {picker(
+            "Waiting count",
+            prefs.sidebar.waitingCount,
+            countOptions,
+            (waitingCount) => update({ sidebar: { waitingCount } }),
+          )}
+        </SectionRows>
+      </SidebarGroup>
+    </div>
+  );
+}
+
+function SidebarGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section aria-label={title}>
+      <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">
+        {title}
+      </h4>
+      {children}
+    </section>
   );
 }
 

@@ -22,6 +22,8 @@ describe("Workstreams prefs", () => {
       showArchived: true,
       recentLimit: 5,
       timestamps: "show",
+      threadCount: "collapsed",
+      waitingCount: "collapsed",
     });
   });
 
@@ -64,6 +66,8 @@ describe("Workstreams prefs", () => {
         showArchived: true,
         recentLimit: 5,
         timestamps: "show",
+        threadCount: "collapsed",
+        waitingCount: "collapsed",
       },
       threads: {
         autoTitle: false,

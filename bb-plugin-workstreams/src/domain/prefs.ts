@@ -59,6 +59,8 @@ const recentLimit = z
   .int()
   .transform((n) => Math.min(RECENT_LIMIT.max, Math.max(RECENT_LIMIT.min, n)));
 
+const countVisibility = z.enum(["always", "collapsed", "never"]);
+
 /**
  * Each feature group's fields, strict. Patches validate against these; the
  * stored shape (`prefsSchema`) falls back to defaults field by field, so one
@@ -76,7 +78,12 @@ const GROUPS = {
     showArchived: [z.boolean(), true],
     /** How many threads the Recent band shows. */
     recentLimit: [recentLimit, RECENT_LIMIT.fallback],
+    /** Thread ages on rows: always, on hover or focus, or never. */
     timestamps: [z.enum(["show", "hover", "hide"]), "show"],
+    /** When workstream headers show their thread count. */
+    threadCount: [countVisibility, "collapsed"],
+    /** When workstream headers show their waiting-on-you count. */
+    waitingCount: [countVisibility, "collapsed"],
   },
   threads: {
     /** Title untitled threads and retitle them as work moves on. */
