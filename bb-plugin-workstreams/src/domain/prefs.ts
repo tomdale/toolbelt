@@ -76,6 +76,7 @@ const GROUPS = {
     showArchived: [z.boolean(), true],
     /** How many threads the Recent band shows. */
     recentLimit: [recentLimit, RECENT_LIMIT.fallback],
+    timestamps: [z.enum(["show", "hover", "hide"]), "show"],
   },
   threads: {
     /** Title untitled threads and retitle them as work moves on. */

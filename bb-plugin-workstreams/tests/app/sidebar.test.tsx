@@ -104,6 +104,7 @@ async function mount(
             showSnoozed: options.settings?.showSnoozed !== false,
             showArchived: options.settings?.showArchived !== false,
             recentLimit: 5,
+            timestamps: options.settings?.timestamps ?? "show",
           },
           threads: {
             autoTitle: true,
@@ -195,6 +196,24 @@ const groupRows = (slot: Awaited<ReturnType<typeof mount>>, name: string) =>
     .map((a) => a.getAttribute("aria-label"));
 
 describe("thread list", () => {
+  it.each(["show", "hover", "hide"])(
+    "applies the %s timestamp preference without hiding band context",
+    async (timestamps) => {
+      const slot = await mount(undefined, { settings: { timestamps } });
+      const alpha = slot.getByRole("region", { name: "Alpha" });
+      await waitFor(() => {
+        const ages = alpha.querySelectorAll("[data-timestamp]");
+        expect(ages).toHaveLength(timestamps === "hide" ? 0 : 2);
+        for (const age of ages)
+          expect(age.getAttribute("data-timestamp")).toBe(timestamps);
+      });
+      expect(
+        within(slot.getByRole("region", { name: "Recent" })).getByText("Alpha"),
+      ).toBeTruthy();
+      slot.lifecycle.unmount();
+    },
+  );
+
   it("does not request or render archived threads when their fold is hidden", async () => {
     const fetchNextPage = vi.fn(async () => undefined);
     const slot = await mount(
@@ -348,8 +367,8 @@ describe("thread list", () => {
         .querySelector('[data-icon="ChevronDown"]'),
     ).not.toBeNull();
     expect(
-      within(slot.getByRole("region", { name: "Beta" })).getByText("1"),
-    ).toBeTruthy();
+      within(slot.getByRole("region", { name: "Beta" })).queryByText("1"),
+    ).toBeNull();
     const newWork = empty.getByRole("button", { name: "New work in Zeta" });
     expect(newWork.classList.contains("opacity-0")).toBe(false);
     fireEvent.click(newWork);
@@ -450,11 +469,14 @@ describe("thread list", () => {
     expect(groupRows(slot, "Up Next")).toEqual(["Asking task"]);
     expect(groupRows(slot, "Recent")).toEqual(["Other task"]);
     expect(groupRows(slot, "Alpha")).toEqual(["Asking task"]);
-    expect(
-      within(slot.getByRole("region", { name: "Alpha" })).getByTitle(
-        "1 waiting on you",
-      ),
-    ).toBeTruthy();
+    const alpha = within(slot.getByRole("region", { name: "Alpha" }));
+    expect(alpha.queryByTitle("1 waiting on you")).toBeNull();
+    expect(alpha.queryByText("1", { selector: "span" })).toBeNull();
+    fireEvent.click(alpha.getByRole("button", { name: "Alpha" }));
+    expect(alpha.getByTitle("1 waiting on you")).toBeTruthy();
+    expect(alpha.getAllByText("1", { selector: "span" })).toHaveLength(2);
+    fireEvent.click(alpha.getByRole("button", { name: "Alpha" }));
+    expect(alpha.queryByTitle("1 waiting on you")).toBeNull();
     slot.lifecycle.unmount();
   });
 
@@ -1520,11 +1542,15 @@ describe("prioritized workstreams", () => {
         name: "Show lower priority workstreams, 2 waiting on you",
       }),
     );
+    const alpha = within(slot.getByRole("region", { name: "Alpha" }));
     expect(
-      within(slot.getByRole("region", { name: "Alpha" })).getByTitle(
-        "1 waiting on you",
-      ).className,
-    ).not.toContain("ws-amber-pill");
+      alpha
+        .getByRole("button", { name: "Alpha" })
+        .getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(alpha.getByTitle("1 waiting on you").className).not.toContain(
+      "ws-amber-pill",
+    );
 
     // With no prioritized thread waiting, Up Next shows everything.
     slot.lifecycle.unmount();

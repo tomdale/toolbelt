@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_MODELS, parsePrefs } from "../../src/domain/prefs.ts";
+import {
+  DEFAULT_MODELS,
+  parsePrefs,
+  prefsPatchSchema,
+} from "../../src/domain/prefs.ts";
 import { openDatabase } from "../../src/server/db.ts";
 import {
   loadPrefs,
@@ -17,7 +21,26 @@ describe("Workstreams prefs", () => {
       showSnoozed: true,
       showArchived: true,
       recentLimit: 5,
+      timestamps: "show",
     });
+  });
+
+  it("validates timestamp choices and preserves neighboring preferences", async () => {
+    const world = await fakeWorld();
+    const db = openDatabase(world.bb);
+    for (const timestamps of ["show", "hover", "hide"] as const) {
+      savePrefs(db, { sidebar: { timestamps } });
+      expect(loadPrefs(db).sidebar.timestamps).toBe(timestamps);
+    }
+    expect(
+      prefsPatchSchema.safeParse({ sidebar: { timestamps: "invalid" } })
+        .success,
+    ).toBe(false);
+    expect(
+      parsePrefs({ sidebar: { timestamps: "invalid", showRecent: false } })
+        .sidebar,
+    ).toMatchObject({ timestamps: "show", showRecent: false });
+    await world.harness.lifecycle.dispose();
   });
 
   it("maps old declarative values without requiring BB settings registration", () => {
@@ -40,6 +63,7 @@ describe("Workstreams prefs", () => {
         showSnoozed: true,
         showArchived: true,
         recentLimit: 5,
+        timestamps: "show",
       },
       threads: {
         autoTitle: false,
