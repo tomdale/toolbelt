@@ -156,11 +156,16 @@ export function useWorkstreams() {
     () =>
       projectWorkstreams(placed, sections, {
         now,
-        needsYou: (thread) =>
-          needsYou(
-            thread,
-            workView(thread, analysis[thread.id], recaps[thread.id]),
-          ),
+        needsYou: (thread) => {
+          const work = workView(thread, analysis[thread.id], recaps[thread.id]);
+          return (
+            needsYou(thread, work) ||
+            (thread.isUnread &&
+              work.kind === "current" &&
+              (work.analysis.state === "done" ||
+                work.analysis.state === "review"))
+          );
+        },
         order,
         snoozedUntil: (thread) => {
           const snooze = snoozes[thread.id];
