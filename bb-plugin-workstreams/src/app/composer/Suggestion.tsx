@@ -1,9 +1,17 @@
 /**
  * New work's magic suggestion: the home classification found for the draft,
- * shown under the composer once a result arrives. Clicking it, or ⌘⏎
- * (Ctrl+⏎ elsewhere), accepts it; ⏎ still starts the thread the pickers
- * show. ⌘⏎ is BB's alternate send, which fits the one suggestion that sends:
- * continuing an existing thread.
+ * shown under the composer once a result arrives. Two keys accept it, and
+ * each has a button showing it:
+ *
+ * - Tab applies a workstream suggestion to the pickers without submitting,
+ *   as Tab accepts an inline completion. It acts only from the prompt editor,
+ *   and only when the editor didn't use the key itself (a mention menu, a
+ *   list indent).
+ * - ⌘⏎ (Ctrl+⏎ elsewhere), BB's alternate send, submits with the
+ *   suggestion: it applies a workstream suggestion and starts the thread, or
+ *   sends the draft to a suggested thread.
+ *
+ * ⏎ still starts the thread the pickers show.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useSdk } from "@get-bb/plugin-sdk/app";
@@ -11,7 +19,27 @@ import { Icon } from "@/components/ui/icon";
 import type { Placement } from "../../server/router.ts";
 import { shownSuggestion, type NewWork, type Suggestion } from "./new-work.ts";
 
-export function isAcceptShortcut(event: KeyboardEvent): boolean {
+/** Tab with no modifiers. */
+export function isApplyShortcut(event: KeyboardEvent): boolean {
+  return (
+    event.key === "Tab" &&
+    !event.shiftKey &&
+    !event.altKey &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.isComposing
+  );
+}
+
+/** Whether `target` is where the draft is typed. */
+function inEditor(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || target instanceof HTMLTextAreaElement)
+  );
+}
+
+export function isSubmitShortcut(event: KeyboardEvent): boolean {
   return (
     event.key === "Enter" &&
     (event.metaKey || event.ctrlKey) &&
@@ -113,24 +141,38 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
   const suggestion = shownSuggestion(state);
   const projects = useProjects();
   const row = useRef<HTMLDivElement>(null);
+  const applies = !!suggestion && suggestion.kind !== "thread";
   useEffect(() => {
     if (!suggestion) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!isAcceptShortcut(event)) return;
-      // Capturing on the document runs before the editor's own ⌘⏎ handling,
-      // which would start the thread. Keys outside this dialog stay alone.
+    const inDialog = (target: EventTarget | null) => {
       const scope = row.current?.closest('[role="dialog"]');
-      if (!scope || !(event.target instanceof Node)) return;
-      if (!scope.contains(event.target)) return;
+      return !!scope && target instanceof Node && scope.contains(target);
+    };
+    // Capturing runs before the editor's own ⌘⏎ handling, which would start
+    // the thread from the pickers as they are.
+    const onSubmitKey = (event: KeyboardEvent) => {
+      if (!isSubmitShortcut(event) || !inDialog(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
-      void newWork.accept();
+      void newWork.accept({ submit: true });
     };
-    document.addEventListener("keydown", onKeyDown, true);
-    return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [newWork, suggestion]);
+    // Bubbling runs after the editor, which claims Tab for its own menus.
+    const onApplyKey = (event: KeyboardEvent) => {
+      if (!applies || !isApplyShortcut(event) || event.defaultPrevented) return;
+      if (!inEditor(event.target) || !inDialog(event.target)) return;
+      event.preventDefault();
+      void newWork.accept({ submit: false });
+    };
+    document.addEventListener("keydown", onSubmitKey, true);
+    document.addEventListener("keydown", onApplyKey);
+    return () => {
+      document.removeEventListener("keydown", onSubmitKey, true);
+      document.removeEventListener("keydown", onApplyKey);
+    };
+  }, [newWork, suggestion, applies]);
   const mac = macKeyboard();
-  const shortcut = mac ? "⌘⏎" : "Ctrl ⏎";
+  const submitKey = mac ? "⌘⏎" : "Ctrl ⏎";
+  const submitLabel = suggestion?.kind === "thread" ? "Send" : "Start";
   const described = suggestion
     ? describeSuggestion(suggestion, projects)
     : null;
@@ -154,11 +196,10 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
             type="button"
             className="ws-suggestion-accept"
             title={suggestion.reason || undefined}
-            aria-label={`Suggested: ${sentence}`}
-            aria-keyshortcuts={mac ? "Meta+Enter" : "Control+Enter"}
+            aria-label={`${applies ? "Apply" : "Accept"} suggestion: ${sentence}`}
             aria-busy={state.accepting || undefined}
             disabled={state.accepting}
-            onClick={() => void newWork.accept()}
+            onClick={() => void newWork.accept({ submit: !applies })}
           >
             <span className="ws-suggestion-spark" aria-hidden>
               ✦
@@ -173,7 +214,36 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
                 </span>
               ))}
             </span>
-            <kbd className="ws-suggestion-kbd">{shortcut}</kbd>
+          </button>
+          {applies ? (
+            <button
+              type="button"
+              className="ws-suggestion-key"
+              aria-label="Apply to the composer"
+              aria-keyshortcuts="Tab"
+              title="Fill the pickers without starting (Tab)"
+              disabled={state.accepting}
+              onClick={() => void newWork.accept({ submit: false })}
+            >
+              <kbd className="ws-suggestion-kbd">Tab</kbd>
+              Apply
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="ws-suggestion-key"
+            aria-label={
+              applies
+                ? "Apply and start the thread"
+                : `Send to ${described.target}`
+            }
+            aria-keyshortcuts={mac ? "Meta+Enter" : "Control+Enter"}
+            title={`${applies ? "Apply and start" : "Send there"} (${submitKey})`}
+            disabled={state.accepting}
+            onClick={() => void newWork.accept({ submit: true })}
+          >
+            <kbd className="ws-suggestion-kbd">{submitKey}</kbd>
+            {submitLabel}
           </button>
           <button
             type="button"

@@ -67,7 +67,8 @@ function eventLine(event: NewWorkEvent): string {
     case "accept": {
       const suggestion = input?.suggestion as
         { kind: string; title?: string; name?: string } | undefined;
-      return `${suggestion?.kind ?? "suggestion"}: ${suggestion?.title ?? suggestion?.name ?? ""}`;
+      const how = input?.submit ? "submit" : "apply";
+      return `${how} ${suggestion?.kind ?? "suggestion"}: ${suggestion?.title ?? suggestion?.name ?? ""}`;
     }
     case "dismiss":
       return "the suggestion";

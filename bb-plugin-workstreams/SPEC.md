@@ -233,14 +233,18 @@ host-owned; Workstreams contributes its intake UI only inside its own dialog.
    pauses, the router classifies the draft and the dialog shows one suggestion
    under the composer: continue an existing thread, start in an existing
    workstream with its project and environment, or start a new workstream with a
-   project and environment. Clicking it, or ⌘⏎ (Ctrl+⏎ elsewhere), accepts it.
-   Accepting a thread queues the draft there through the composer's own submit,
-   so attachments and mentions travel with it, and closes the dialog. Accepting
-   a workstream fills the Workstream, Project and Environment pickers; a new
-   workstream is created first. A suggestion the pickers already match is
-   hidden, and a dismissed one stays hidden. BB gives plugins no slot in its
-   picker row, so the field keeps one anchor element at the row's start and
-   falls back to its own row when the row isn't found.
+   project and environment. A workstream suggestion can be applied or submitted.
+   Tab in the prompt editor (when the editor doesn't use the key itself), its
+   Apply button, or a click fills the Workstream, Project and Environment
+   pickers without starting anything. ⌘⏎ (Ctrl+⏎ elsewhere) or its Start button
+   fills them and starts the thread. Either way, a suggested new workstream is
+   created first. A thread suggestion has no pickers to fill: ⌘⏎, Send or a
+   click queues the draft there through the composer's own submit, so
+   attachments and mentions travel with it, and closes the dialog. A suggestion
+   the pickers already match is hidden, and a dismissed one stays hidden. BB
+   gives plugins no slot in its picker row, so the field keeps one anchor
+   element at the row's start and falls back to its own row when the row isn't
+   found.
 2. **`bb workstreams handoff`**, called by agents (§5).
 3. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
 

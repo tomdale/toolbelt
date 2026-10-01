@@ -344,17 +344,21 @@ export class NewWork {
   }
 
   /**
-   * Accepts the shown suggestion. A thread receives the draft through the
-   * composer's own submit, so attachments and mentions travel with it, and
-   * the dialog closes as for any submit. A workstream, created first when
-   * it's new, fills the workstream, project and environment pickers.
+   * Accepts the shown suggestion. A workstream suggestion fills the
+   * Workstream, Project and Environment pickers, creating the workstream
+   * first when it's new; with `submit`, the composer then starts the thread
+   * with them. A thread suggestion has no pickers to fill, so it only
+   * submits: the draft goes to that thread through the composer's own
+   * submit, so attachments and mentions travel with it, and the dialog
+   * closes as for any submit.
    */
-  async accept(): Promise<void> {
+  async accept({ submit }: { submit: boolean }): Promise<void> {
     const suggestion = shownSuggestion(this.state);
     const composer = this.composer;
     if (!suggestion || !composer || this.state.accepting) return;
+    if (suggestion.kind === "thread" && !submit) return;
     this.set({ accepting: true, error: null });
-    const finish = this.begin("accept", { suggestion });
+    const finish = this.begin("accept", { suggestion, submit });
     try {
       if (suggestion.kind === "thread") {
         this.sendTarget = suggestion;
@@ -386,13 +390,19 @@ export class NewWork {
           selection: suggestion.placement
             ? { requested, applied }
             : "No placement; the project and environment were left alone.",
+          submitted: submit,
         },
       });
-      // A clicked suggestion disappears; typing carries on in the draft.
-      composer.focus();
+      if (submit) {
+        await afterHostCommit();
+        await composer.submit({ experimental_data: null });
+      } else {
+        // The suggestion disappears; typing carries on in the draft.
+        composer.focus();
+      }
     } catch (error) {
       finish("failed", { error });
-      // A failed thread send has already been reported by `submit`'s caller.
+      // A failed submit has already been reported by `submit`'s caller.
       if (this.state.error === null) this.reportError(error);
     } finally {
       // The composer has called `submit` by the time its own submit settles;
@@ -489,5 +499,12 @@ export class NewWork {
     }
   }
 }
+
+/**
+ * BB binds its submit to the composer's last committed render, so a submit
+ * right after `setSelection` lets the new picker values commit first.
+ */
+const afterHostCommit = () =>
+  new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 export const NewWorkContext = createContext<NewWork | null>(null);

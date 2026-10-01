@@ -13,10 +13,11 @@ design and the contract the code is checked against.
     Workstream, at the start of the picker row. Enter starts the thread the
     pickers show. When you pause typing, a ✦ suggestion appears under the
     composer: send the draft to an existing thread, start in an existing
-    workstream, or start a new one, each with its project and environment. Click
-    it or press ⌘⏎ (Ctrl+⏎) to accept: a thread receives the draft and the
-    dialog closes; a workstream fills the pickers, creating the workstream first
-    when it's new. A workstream's **＋** preselects it.
+    workstream, or start a new one, each with its project and environment. Press
+    Tab to apply a workstream suggestion to the pickers, or ⌘⏎ (Ctrl+⏎) to apply
+    it and start the thread; on a thread suggestion ⌘⏎ sends the draft there and
+    closes the dialog. A new workstream is created first. A workstream's **＋**
+    preselects it.
   - **For you**: a pending approval or question, or a thread whose latest turn
     asks you to decide something. These rows sit at the top in an amber block
     with a slow shimmer, under an always-open header, each naming its
