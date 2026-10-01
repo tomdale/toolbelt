@@ -177,8 +177,9 @@ it.each(["full", "minimal"])(
         .closest("li"),
     ).toBeNull();
     const archive = await slot.findByRole("button", { name: "Archive" });
-    // Full recaps get the full-size button; minimal ones a compact one.
-    expect(archive.className).toContain(layout === "full" ? "h-9" : "h-8");
+    // A compact outline button in every layout, so it never outweighs the recap.
+    expect(archive.className).toContain("h-8");
+    expect(archive.className).toContain("border-input");
     fireEvent.click(archive);
     await waitFor(() =>
       expect(slot.inspection.rpcCalls).toContainEqual({
