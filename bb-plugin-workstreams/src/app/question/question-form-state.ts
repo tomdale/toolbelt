@@ -105,9 +105,7 @@ export function buildQuestionAnswers(
 }
 
 export type QuestionShortcutChoice =
-  | { kind: "option"; value: string }
-  | { kind: "other" }
-  | null;
+  { kind: "option"; value: string } | { kind: "other" } | null;
 
 export function resolveQuestionShortcutChoice(
   question: Question,

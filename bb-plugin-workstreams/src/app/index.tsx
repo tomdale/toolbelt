@@ -1,11 +1,16 @@
 // Workstreams frontend entry: the sidebar thread list, the Workstreams page,
-// thread header actions (parent link, snooze), the recap card, and the
-// settings sections.
+// thread header actions (parent link, snooze), the recap and question
+// cards, and the settings sections.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ServerStateRealtime } from "./serverState.ts";
 import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { RecapCard } from "./composer/RecapCard.tsx";
+import {
+  QuestionAnchor,
+  QuestionInteraction,
+} from "./question/QuestionCard.tsx";
+import { ASK_USER_QUESTION_RENDERER_ID } from "../server/questions/contracts.ts";
 import { NewWorkBridge } from "./composer/NewWorkBridge.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
 import {
@@ -32,7 +37,14 @@ export default definePluginApp((app) => {
   app.composer.customize({
     id: "recap",
     scopes: ["thread"],
-    banners: [{ id: "recap", chrome: "bare", component: RecapCard }],
+    banners: [
+      { id: "recap", chrome: "bare", component: RecapCard },
+      { id: "question", chrome: "bare", component: QuestionAnchor },
+    ],
+  });
+  app.slots.pendingInteraction({
+    id: ASK_USER_QUESTION_RENDERER_ID,
+    component: QuestionInteraction,
   });
   // Renders nothing; it hands New work the composer its dialog embeds.
   app.composer.customize({

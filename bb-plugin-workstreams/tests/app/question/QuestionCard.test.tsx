@@ -2,9 +2,12 @@
 import { cleanup, fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import type { InteractionPayload, InteractionResponse } from "./src/contracts";
+import type {
+  InteractionPayload,
+  InteractionResponse,
+} from "../../../src/server/questions/contracts.ts";
 
-const app = await loadPluginApp(() => import("./app"));
+const app = await loadPluginApp(() => import("../../../src/app/index.tsx"));
 
 beforeEach(() => {
   Object.defineProperty(window, "matchMedia", {
@@ -97,22 +100,35 @@ describe("question interaction adapter", () => {
   });
   it("shows an awaiting-answer state", () => {
     const slot = render(singleSelect);
-    expect(slot.getByRole("status").textContent).toBe("Awaiting your answer");
+    expect(slot.getByRole("status").textContent).toBe("Needs your answer");
   });
   it("accepts a freeform-only question", () => {
     const submit = vi.fn(async (_value: unknown) => undefined);
-    const slot = render({ questions: [{ ...singleSelect.questions[0]!, options: [] }] }, { submit });
-    fireEvent.change(slot.getByLabelText("Database answer"), { target: { value: "Use our managed service" } });
+    const slot = render(
+      { questions: [{ ...singleSelect.questions[0]!, options: [] }] },
+      { submit },
+    );
+    fireEvent.change(slot.getByLabelText("Database answer"), {
+      target: { value: "Use our managed service" },
+    });
     fireEvent.click(getButtonByText(slot, "Submit answer"));
-    expect(submit.mock.calls[0]?.[0]).toEqual({ answers: { q0: { selected: [], freeText: "Use our managed service" } } });
+    expect(submit.mock.calls[0]?.[0]).toEqual({
+      answers: { q0: { selected: [], freeText: "Use our managed service" } },
+    });
   });
   it("preserves the answer and displays submission failures", async () => {
-    const submit = vi.fn(async () => { throw new Error("offline"); });
+    const submit = vi.fn(async () => {
+      throw new Error("offline");
+    });
     const slot = render(singleSelect, { submit });
     fireEvent.click(getButtonByText(slot, "SQLite"));
     fireEvent.click(getButtonByText(slot, "Submit answer"));
-    expect((await slot.findByRole("alert")).textContent).toContain("Could not send your answer");
-    expect(getButtonByText(slot, "SQLite").getAttribute("aria-pressed")).toBe("true");
+    expect((await slot.findByRole("alert")).textContent).toContain(
+      "Could not send your answer",
+    );
+    expect(getButtonByText(slot, "SQLite").getAttribute("aria-pressed")).toBe(
+      "true",
+    );
     fireEvent.click(getButtonByText(slot, "Submit answer"));
     expect(submit).toHaveBeenCalledTimes(2);
   });
@@ -143,5 +159,31 @@ describe("question interaction adapter", () => {
     ).toBeTruthy();
     fireEvent.click(getButtonByText(slot, "Cancel"));
     expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws the card in the composer banner and leaves the shell a marker", async () => {
+    const banner = app.composerCustomizations
+      .find((c) => c.id === "recap")!
+      .banners!.find((b) => b.id === "question")!;
+    const composer = renderSlot(
+      banner,
+      {},
+      { composer: { scope: { kind: "thread", threadId: "thr_test" } } },
+    );
+    const submit = vi.fn(async (_value: unknown) => undefined);
+    const slot = render(singleSelect, { submit });
+
+    const card = await vi.waitFor(() => {
+      const found = composer.container.querySelector("[data-ws-question-card]");
+      if (!found) throw new Error("card not portaled");
+      return found;
+    });
+    expect(card.textContent).toContain("Which database should we use?");
+    expect(slot.container.querySelector(".ws-question-portaled")).toBeTruthy();
+    fireEvent.click(getButtonByText(composer, "SQLite"));
+    fireEvent.click(getButtonByText(composer, "Submit answer"));
+    expect(submit.mock.calls[0]?.[0]).toEqual({
+      answers: { q0: { selected: ["q0o1"] } },
+    });
   });
 });

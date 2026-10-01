@@ -1,10 +1,16 @@
+/**
+ * The AskUserQuestion tool: question cards for required user input. The
+ * tool opens a BB interaction (so the thread reads as waiting and recaps
+ * stand aside), and the app draws the card above the composer in the recap
+ * card's place; see src/app/question/QuestionCard.tsx.
+ */
 import type { BbPluginApi, PluginAgentToolResult } from "@get-bb/plugin-sdk";
 import {
   ASK_USER_QUESTION_RENDERER_ID,
   interactionResponseSchema,
   toolInputSchema,
-} from "./contracts.js";
-import { QUESTION_INSTRUCTIONS, TOOL_DESCRIPTION } from "./tool-definition.js";
+} from "./contracts.ts";
+import { QUESTION_INSTRUCTIONS, TOOL_DESCRIPTION } from "./tool-definition.ts";
 import {
   assertInteractionPayloadFits,
   buildInteractionPayload,
@@ -12,7 +18,7 @@ import {
   buildToolResult,
   describeAnswers,
   validateToolInput,
-} from "./translate.js";
+} from "./translate.ts";
 
 export const TOOL_NAME = "AskUserQuestion";
 
@@ -22,12 +28,15 @@ function errorResult(message: string): PluginAgentToolResult {
   return { content: [{ type: "text", text: message }], isError: true };
 }
 
-export default function plugin(bb: BbPluginApi) {
+export function registerQuestionTool(bb: BbPluginApi): void {
   bb.agents.registerTool({
     name: TOOL_NAME,
     description: TOOL_DESCRIPTION,
     presentation: {
-      label: { pending: "Awaiting your answer", completed: "Received an answer" },
+      label: {
+        pending: "Awaiting your answer",
+        completed: "Received an answer",
+      },
       icon: { glyph: "MessageQuestion" },
       suppress: true,
     },
@@ -96,15 +105,18 @@ export default function plugin(bb: BbPluginApi) {
       return JSON.stringify(toolResult);
     },
   });
+}
 
-  bb.agents.configure((context) => {
-    if (context.provider.capabilities.supportsNativeUserQuestion) {
-      return { tools: [], skills: [], instructions: QUESTION_INSTRUCTIONS };
-    }
-    return {
-      tools: [TOOL_NAME],
-      skills: [],
-      instructions: QUESTION_INSTRUCTIONS,
-    };
-  });
+/**
+ * The session's question tool and instructions. Providers with their own
+ * question tool keep it and get only the instructions.
+ */
+export function questionConfig(nativeQuestions: boolean): {
+  tools: string[];
+  instructions: string;
+} {
+  return {
+    tools: nativeQuestions ? [] : [TOOL_NAME],
+    instructions: QUESTION_INSTRUCTIONS,
+  };
 }

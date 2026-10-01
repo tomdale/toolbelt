@@ -791,3 +791,9 @@
 .ws-has-disclosure:has(> .ws-disclosure:focus-visible) > :not(.ws-disclosure) {
   opacity: 0;
 }
+
+/* A question card drawn above the composer (src/app/question/QuestionCard.tsx)
+   leaves BB's interaction shell holding only its marker. */
+section[data-testid="plugin-interaction-shell"]:has(.ws-question-portaled) {
+  display: none;
+}

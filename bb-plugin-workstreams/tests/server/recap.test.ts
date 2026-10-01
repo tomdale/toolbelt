@@ -296,7 +296,7 @@ describe("agent recaps", () => {
         payload: { kind: "plugin" },
         origin: {
           kind: "plugin",
-          pluginId: "toolbelt-ask-user-question",
+          pluginId: "workstreams",
           rendererId: "ask-user-question",
         },
       } as never,
@@ -401,13 +401,15 @@ describe("agent recaps", () => {
   it("leaves side chats, and every thread when recaps are off, without the tool or reminders", async () => {
     const s = await world();
     const side = await s.configure({ kind: "fork", pluginId: "side-chat" });
-    expect(side.tools).toEqual([]);
+    const recapTools = (config: { tools: { name: string }[] }) =>
+      config.tools.filter((tool) => tool.name === "WorkstreamsRecap");
+    expect(recapTools(side)).toEqual([]);
     s.w.turn("t1");
     await s.idle();
     expect(s.corrections()).toHaveLength(0);
 
     const off = await world({ required: false });
-    expect((await off.configure()).tools).toEqual([]);
+    expect(recapTools(await off.configure())).toEqual([]);
     off.w.turn("t1");
     await off.idle();
     expect(off.corrections()).toHaveLength(0);

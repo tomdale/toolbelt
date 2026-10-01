@@ -24,6 +24,7 @@ import { loadSpinner, saveSpinner } from "./spinner.ts";
 import { UserError, WorkstreamService } from "./service.ts";
 import { TraceStore } from "./trace.ts";
 import { AgentRecaps } from "./recap.ts";
+import { registerQuestionTool } from "./questions/tool.ts";
 import {
   loadRecapPrefs,
   recapToolSince,
@@ -200,6 +201,7 @@ export default async function plugin(bb: BbPluginApi) {
     analyzer,
     onChange: notify,
   });
+  registerQuestionTool(bb);
   registerAgentInstructions(bb, db, recaps);
   const map = new WorkstreamMap(db);
   const bootstrap = new Bootstrap({

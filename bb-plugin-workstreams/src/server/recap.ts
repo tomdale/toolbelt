@@ -34,6 +34,7 @@ import {
 } from "../domain/recap.ts";
 import type { RecapPrefs } from "../domain/recapPrefs.ts";
 import type { Database } from "./db.ts";
+import { ASK_USER_QUESTION_RENDERER_ID } from "./questions/contracts.ts";
 
 type Row = {
   thread_id: string;
@@ -64,15 +65,18 @@ const correctionSchema = z.object({
 });
 
 /** Interactions that put a question to the user and end the turn properly. */
-function asksUser(interaction: {
-  payload: { kind: string };
-  origin?: { kind: string; pluginId?: string; rendererId?: string } | null;
-}): boolean {
+function asksUser(
+  interaction: {
+    payload: { kind: string };
+    origin?: { kind: string; pluginId?: string; rendererId?: string } | null;
+  },
+  pluginId: string,
+): boolean {
   return (
     interaction.payload.kind === "user_question" ||
     (interaction.origin?.kind === "plugin" &&
-      interaction.origin.pluginId === "toolbelt-ask-user-question" &&
-      interaction.origin.rendererId === "ask-user-question")
+      interaction.origin.pluginId === pluginId &&
+      interaction.origin.rendererId === ASK_USER_QUESTION_RENDERER_ID)
   );
 }
 
@@ -197,7 +201,11 @@ export class AgentRecaps {
     threadId: string,
     interaction: Parameters<typeof asksUser>[0] & { turnId?: string | null },
   ) {
-    if (!this.row(threadId).enrolled || !asksUser(interaction)) return;
+    if (
+      !this.row(threadId).enrolled ||
+      !asksUser(interaction, this.deps.bb.pluginId)
+    )
+      return;
     const epoch = this.row(threadId).epoch;
     // A plugin's form opened from a detached tool call has no turn of its own.
     const turnId =
