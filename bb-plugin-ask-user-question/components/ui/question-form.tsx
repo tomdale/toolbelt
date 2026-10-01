@@ -36,6 +36,12 @@ const FREE_TEXT_MIN_HEIGHT = 84;
 const FREE_TEXT_MAX_HEIGHT = 158;
 const PREVIEW_MAX_HEIGHT = 220;
 
+// The Workstreams recap card's type scale, sized to the form's container.
+const BODY_CLASS =
+  "text-[clamp(0.75rem,calc(0.5rem+0.9375cqi),0.8125rem)] leading-[1.5] [text-wrap:pretty]";
+const GOAL_CLASS =
+  "text-[clamp(0.875rem,calc(0.5rem+1.75cqi),1.0625rem)] leading-[1.4]";
+
 interface QuestionOptionRowProps {
   checked: boolean;
   label: string;
@@ -78,8 +84,10 @@ function QuestionOptionRow({
       aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
       onClick={onSelect}
       className={cn(
-        "flex w-full items-start gap-2.5 rounded-md px-2.5 py-1.5 text-left transition-colors",
-        checked ? "bg-surface-selected" : "hover:bg-state-hover",
+        "flex w-full items-start gap-2.5 rounded-md border px-2.5 py-1.5 text-left transition-colors",
+        checked
+          ? "border-amber-500/40 bg-amber-500/[0.07] dark:border-amber-300/30 dark:bg-amber-300/[0.06]"
+          : "border-transparent hover:bg-foreground/[0.04]",
       )}
     >
       <span
@@ -87,18 +95,18 @@ function QuestionOptionRow({
           "mt-0.5 flex size-4 shrink-0 items-center justify-center border",
           multiSelect ? "rounded" : "rounded-full",
           checked
-            ? "border-primary bg-primary text-primary-foreground"
-            : "border-input",
+            ? "border-amber-600 bg-amber-600 text-white dark:border-amber-400 dark:bg-amber-400 dark:text-amber-950"
+            : "border-foreground/25",
         )}
       >
         {checked ? <Icon name="Check" className="size-3" aria-hidden /> : null}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium text-foreground">
+        <span className={cn("block font-medium text-foreground", BODY_CLASS)}>
           {label}
         </span>
         {description ? (
-          <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+          <span className={cn("mt-0.5 block text-muted-foreground", BODY_CLASS)}>
             {description}
           </span>
         ) : null}
@@ -106,7 +114,7 @@ function QuestionOptionRow({
       {shortcut ? (
         <kbd
           aria-hidden="true"
-          className="mt-0.5 shrink-0 text-xs font-normal text-subtle-foreground"
+          className="mt-px shrink-0 text-[11px] font-medium tabular-nums text-foreground/50"
         >
           {shortcut.label}
         </kbd>
@@ -118,7 +126,7 @@ function QuestionOptionRow({
 function QuestionOptionPreview({ preview }: { preview: string }) {
   return (
     <pre
-      className="mx-2.5 mb-1 mt-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-surface-raised px-2.5 py-2 font-mono text-xs leading-relaxed text-foreground"
+      className="mx-2.5 mb-1 mt-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 px-2.5 py-2 font-mono text-[11.5px] leading-relaxed text-foreground"
       style={{ maxHeight: `${PREVIEW_MAX_HEIGHT}px` }}
     >
       {preview}
@@ -141,7 +149,7 @@ function QuestionTabs({
 }: QuestionTabsProps) {
   return (
     <div className="mb-2 flex shrink-0 items-center gap-2">
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
         {questions.map((question, index) => {
           const answered = isQuestionAnswered(
             question,
@@ -152,10 +160,10 @@ function QuestionTabs({
             <div
               key={question.id}
               className={cn(
-                "relative inline-flex h-7 shrink-0 items-center rounded-md",
+                "relative inline-flex shrink-0 items-center rounded-full border",
                 isActive
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:bg-state-hover",
+                  ? "border-amber-500/50 bg-amber-500/[0.08] text-foreground dark:border-amber-300/40 dark:bg-amber-300/[0.08]"
+                  : "border-border bg-background/60 text-foreground/70 hover:border-foreground/25 hover:text-foreground",
               )}
             >
               <button
@@ -163,11 +171,18 @@ function QuestionTabs({
                 onClick={() => onSelect(index)}
                 aria-pressed={isActive}
                 title={question.prompt}
-                className="flex h-full min-w-0 items-center rounded-md px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="flex min-w-0 items-center gap-1 rounded-full px-2 py-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
+                {answered ? (
+                  <Icon
+                    name="Check"
+                    aria-hidden
+                    className="size-3 shrink-0 text-amber-700 dark:text-amber-300"
+                  />
+                ) : null}
                 <span
                   className={cn(
-                    "truncate text-xs",
+                    "truncate text-[11.5px] font-medium leading-[1.6]",
                     answered ? "line-through" : undefined,
                   )}
                   style={{ maxWidth: "180px" }}
@@ -179,7 +194,7 @@ function QuestionTabs({
           );
         })}
       </div>
-      <span className="shrink-0 text-xs text-muted-foreground">
+      <span className="shrink-0 text-[11px] font-medium tabular-nums text-amber-700 dark:text-amber-300">
         {currentIndex + 1} of {questions.length}
       </span>
     </div>
@@ -239,7 +254,14 @@ function QuestionInputBlock({
     <fieldset disabled={disabled} className="min-w-0">
       <legend className="sr-only">{question.prompt}</legend>
       {question.prompt ? (
-        <div className="text-sm font-semibold text-foreground">
+        <div
+          role="heading"
+          aria-level={2}
+          className={cn(
+            "font-medium tracking-[-0.006em] text-foreground",
+            GOAL_CLASS,
+          )}
+        >
           {question.prompt}
         </div>
       ) : null}
@@ -286,7 +308,7 @@ function QuestionInputBlock({
           }}
           onKeyDown={handleFreeTextKeyDown}
           placeholder="Type your own answer…"
-          className="mt-2 w-full resize-none overflow-y-auto rounded-md border border-border bg-surface-raised px-3 py-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:border-ring/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
+          className="mt-2 w-full resize-none overflow-y-auto rounded-md border border-border bg-background/60 px-3 py-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:border-ring/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
           style={{
             minHeight: `${FREE_TEXT_MIN_HEIGHT}px`,
             maxHeight: `${FREE_TEXT_MAX_HEIGHT}px`,
@@ -431,7 +453,7 @@ export function QuestionForm({
         event.preventDefault();
         handleAdvance();
       }}
-      className="flex max-h-[calc(100dvh-6rem)] min-h-0 flex-col text-xs text-muted-foreground"
+      className="flex max-h-[calc(100dvh-6rem)] min-h-0 flex-col text-foreground focus-visible:outline-none"
     >
       {totalQuestions > 1 ? (
         <QuestionTabs
@@ -457,7 +479,9 @@ export function QuestionForm({
           shortcuts={shortcuts}
         />
       </div>
-      <div className="mt-3 flex shrink-0 items-center justify-between gap-2">
+      {/* An edge-to-edge footer strip like the recap card's, offset by the
+          host shell's px-3 pb-3 padding. */}
+      <div className="-mx-3 -mb-3 mt-3 flex shrink-0 items-center justify-between gap-2 rounded-b-[7px] border-t border-amber-900/10 bg-amber-500/[0.05] px-3 py-2 dark:border-amber-200/15 dark:bg-amber-300/[0.04]">
         <Button
           type="button"
           size="sm"
@@ -473,6 +497,7 @@ export function QuestionForm({
               type="button"
               size="sm"
               variant="outline"
+              className="bg-background/60"
               disabled={disabled}
               onClick={() => setCurrentIndex((index) => Math.max(index - 1, 0))}
             >
