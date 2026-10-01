@@ -215,30 +215,96 @@
   background-color: color-mix(in oklab, var(--ws-amber) 20%, transparent);
 }
 
-/* The Up Next block: the most timely threads. No outline or solid fill,
-   just a soft amber wash that fades out toward the bottom right, plus a
-   slow, faint shimmer that sweeps across every few seconds. */
+/* The Up Next block: the threads waiting on Tom, and the sidebar's most
+   important element. An amber card with a hairline amber edge and a soft
+   glow below it, a pinging dot in the header, and a slow, faint shimmer that
+   sweeps across every few seconds. The card and each row flash amber when
+   they mount, so a thread arriving here catches the eye. */
 .ws-needs {
   --ws-needs-tone: var(--ws-amber);
   position: relative;
   isolation: isolate;
   overflow: hidden;
+  border-radius: 10px;
   background-image: linear-gradient(
     160deg,
-    color-mix(in oklab, var(--ws-needs-tone) 6%, transparent) 0%,
-    color-mix(in oklab, var(--ws-needs-tone) 2%, transparent) 50%,
-    transparent 100%
+    color-mix(in oklab, var(--ws-needs-tone) 17%, transparent) 0%,
+    color-mix(in oklab, var(--ws-needs-tone) 7%, transparent) 70%
   );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--ws-needs-tone) 34%, transparent),
+    0 6px 20px -10px color-mix(in oklab, var(--ws-needs-tone) 55%, transparent);
+  animation: ws-needs-arrive 1.4s cubic-bezier(0.23, 1, 0.32, 1);
 }
-
-/* The Up Next header's marker: the block's one solid touch of amber. */
-.ws-needs-dot {
+@keyframes ws-needs-arrive {
+  0% {
+    box-shadow:
+      inset 0 0 0 1px var(--ws-needs-tone),
+      0 0 0 4px color-mix(in oklab, var(--ws-needs-tone) 40%, transparent);
+  }
+}
+.ws-needs-heading {
+  color: var(--ws-amber);
+  letter-spacing: 0.06em;
+}
+/* The waiting-thread count: a solid amber pill. */
+.ws-needs-count {
+  display: inline-flex;
+  min-width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0 5px;
   background-color: var(--ws-amber);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ws-amber) 18%, transparent);
+  color: var(--background, #1e1e1e);
+  font-size: 10px;
+  font-weight: 700;
+}
+.ws-needs-dot {
+  position: relative;
+  background-color: var(--ws-amber);
+}
+.ws-needs-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: var(--ws-amber);
+  animation: ws-needs-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes ws-needs-ping {
+  75%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+/* Rows tint amber rather than BB's gray, so the card reads as one piece. */
+.ws-needs .ws-row {
+  animation: ws-needs-row-arrive 1.6s ease-out;
+}
+.ws-needs .ws-row:hover {
+  background-color: color-mix(in oklab, var(--ws-amber) 12%, transparent);
+}
+.ws-needs .ws-row.bg-sidebar-accent {
+  background-color: color-mix(in oklab, var(--ws-amber) 20%, transparent);
+}
+@keyframes ws-needs-row-arrive {
+  0% {
+    background-color: color-mix(in oklab, var(--ws-amber) 40%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-needs,
+  .ws-needs .ws-row,
+  .ws-needs-dot::after {
+    animation: none;
+  }
 }
 
-/* The Recent block: the Up Next block's shape and wash in the foreground
-   color instead of amber, and without the shimmer. */
+/* The Recent block: a quiet wash in the foreground color, without the Up
+   Next card's edge, glow, or motion. */
 .ws-band-neutral {
   background-image: linear-gradient(
     160deg,

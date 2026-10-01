@@ -1138,7 +1138,7 @@ const NEEDS_YOU_LIMIT = 5;
 /**
  * An overlay band. A plain band collapses from its header. A boxed band is an
  * always-open block spanning the column, with its header inside: `attention`
- * is the amber Up Next block (`.ws-needs`, with its shimmer), `neutral` the
+ * is the amber Up Next card (`.ws-needs`), `neutral` the
  * quieter Recent block (`.ws-band-neutral`). Both set their rows apart from
  * the workstream list below.
  */
@@ -1184,7 +1184,14 @@ function Band({
         {badge}
       </span>
       {count !== undefined ? (
-        <span className="tabular-nums">{count}</span>
+        <span
+          className={cn(
+            "tabular-nums",
+            box === "attention" && "ws-needs-count",
+          )}
+        >
+          {count}
+        </span>
       ) : null}
     </>
   );
@@ -1194,8 +1201,9 @@ function Band({
         aria-label={title}
         data-flip-key={flipKey}
         className={cn(
-          "my-1 px-2 py-1",
-          box === "attention" ? "ws-needs" : "ws-band-neutral",
+          box === "attention"
+            ? "ws-needs mx-2 my-1.5 px-1 pt-1.5 pb-1"
+            : "ws-band-neutral my-1 px-2 py-1",
         )}
       >
         <div className="flex items-center gap-1">
@@ -1203,7 +1211,9 @@ function Band({
             className={cn(
               "flex min-w-0 flex-1 items-center gap-1 py-0.5 pr-1.5 text-[11px] font-semibold uppercase tracking-wide",
               markless ? "pl-3.5" : "pl-1.5",
-              "text-muted-foreground",
+              box === "attention"
+                ? "ws-needs-heading"
+                : "text-muted-foreground",
             )}
           >
             {heading}
