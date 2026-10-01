@@ -24,4 +24,20 @@ describe("child session async context", () => {
       expect(() => subagentsExtension(pi as any)).not.toThrow();
     });
   });
+
+  it("deactivates when BB_THREAD_ID is set", () => {
+    const original = process.env.BB_THREAD_ID;
+    try {
+      process.env.BB_THREAD_ID = "thr_test123";
+      const pi = new Proxy({}, {
+        get: vi.fn(() => {
+          throw new Error("extension factory must not access pi when in BB");
+        }),
+      });
+      expect(() => subagentsExtension(pi as any)).not.toThrow();
+    } finally {
+      if (original === undefined) delete process.env.BB_THREAD_ID;
+      else process.env.BB_THREAD_ID = original;
+    }
+  });
 });

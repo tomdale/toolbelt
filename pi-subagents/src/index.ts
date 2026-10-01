@@ -299,6 +299,9 @@ export const WORKFLOW_FILE_FLAG = "subagents-workflow-file";
 export { FOREIGN_WORKFLOW_TOOL_NAMES, WORKFLOW_ENTRY_TYPE, type WorkflowEntryData, workflowEntryData };
 
 export default function (pi: ExtensionAPI) {
+  // In BB, all agent delegation and orchestration uses native BB threads and workflows.
+  if (process.env.BB_THREAD_ID) return;
+
   // Child AgentSessions load normal extensions. Re-entering this extension there
   // would create another manager and leak handlers. Nested orchestration is
   // injected as scoped custom tools by the existing manager instead.

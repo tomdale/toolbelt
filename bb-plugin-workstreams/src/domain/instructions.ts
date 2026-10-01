@@ -59,7 +59,7 @@ export function instructionsFor(role: ThreadRole): string {
           : ""
       }.`
     : "You are a task thread.";
-  return `${where} Delegate separable subtasks to child threads with \`bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"\`, always choosing the environment explicitly: ${shapeGuidance(role.shape)}. Then coordinate and integrate here. If the user asks for something outside this thread's task or workstream, don't do it here: pass their request verbatim to \`bb workstreams handoff --request-stdin\` and reply with the link it prints.`.slice(
+  return `${where} When the user requests or approves delegating separable subtasks to child threads, use \`bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"\`, always choosing the environment explicitly: ${shapeGuidance(role.shape)}. Then coordinate and integrate here. If the user asks for something outside this thread's task or workstream, don't do it here: pass their request verbatim to \`bb workstreams handoff --request-stdin\` and reply with the link it prints.`.slice(
     0,
     MAX,
   );
