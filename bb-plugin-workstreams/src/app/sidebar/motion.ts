@@ -87,13 +87,14 @@ export function mergePresence<T>(
 
 /**
  * `items` with entering and leaving phases (see {@link mergePresence}). The
- * first render enters nothing, so the list appears as it is. Each phase ends
- * on a timer rather than an animation event, so a missed event never strands
- * a row.
+ * first render enters nothing, so the list appears as it is, and neither does
+ * a render with `animate` false. Each phase ends on a timer rather than an
+ * animation event, so a missed event never strands a row.
  */
 export function usePresence<T>(
   items: readonly T[],
   keyOf: (item: T) => string,
+  animate = true,
 ): PresenceEntry<T>[] {
   const committed = useRef<PresenceEntry<T>[] | null>(null);
   const timers = useRef(
@@ -107,7 +108,7 @@ export function usePresence<T>(
     committed.current ?? [],
     items,
     keyOf,
-    committed.current !== null && canAnimate(),
+    animate && committed.current !== null && canAnimate(),
   );
   useLayoutEffect(() => {
     committed.current = entries;

@@ -1425,14 +1425,9 @@ describe("prioritized workstreams", () => {
     const zeta = slot.getByRole("region", { name: "Zeta" });
     fireEvent.contextMenu(within(zeta).getByRole("button", { name: "Zeta" }));
     fireEvent.click(await slot.findByRole("menuitem", { name: "Prioritize" }));
+    // The rest hide behind the lower-priority toggle.
     await waitFor(() =>
-      expect(regions(slot)).toEqual([
-        "Up Next",
-        "Zeta",
-        "Recent",
-        "Alpha",
-        "Beta",
-      ]),
+      expect(regions(slot)).toEqual(["Up Next", "Zeta", "Recent"]),
     );
     expect(
       within(slot.getByRole("region", { name: "Zeta" }))
@@ -1475,9 +1470,7 @@ describe("prioritized workstreams", () => {
       expect(regions(slot)).toEqual(["Alpha", "Beta", "Zeta"]),
     );
     fireEvent.click(slot.getByRole("button", { name: "Prioritize Beta" }));
-    await waitFor(() =>
-      expect(regions(slot)).toEqual(["Beta", "Alpha", "Zeta"]),
-    );
+    await waitFor(() => expect(regions(slot)).toEqual(["Beta"]));
     const off = slot.getByRole("button", { name: "Remove priority from Beta" });
     expect(off.getAttribute("aria-pressed")).toBe("true");
     // The click stays on the button: the group doesn't collapse.
@@ -1507,6 +1500,9 @@ describe("prioritized workstreams", () => {
     await waitFor(() => expect(groupRows(slot, "Up Next")).toEqual(["Ask z1"]));
     const band = slot.getByRole("region", { name: "Up Next" });
     // The others recede but stay one click away.
+    fireEvent.click(
+      slot.getByRole("button", { name: "Show lower priority workstreams" }),
+    );
     expect(
       within(slot.getByRole("region", { name: "Alpha" })).getByTitle(
         "1 waiting on you",
@@ -1522,6 +1518,60 @@ describe("prioritized workstreams", () => {
       within(band).getByRole("button", { name: "Hide other workstreams" }),
     );
     expect(groupRows(slot, "Up Next")).toEqual(["Ask z1"]);
+    slot.lifecycle.unmount();
+  });
+
+  it("hides lower-priority workstreams until revealed, then shows them collapsed", async () => {
+    const slot = await mount(
+      [
+        sidebarThread("a1", { sectionId: "sec_a", title: "Alpha task" }),
+        sidebarThread("z1", { sectionId: "sec_z", title: "Zeta task" }),
+        sidebarThread("loose", { title: "Loose task" }),
+      ],
+      {
+        activeThreadId: null,
+        settings: { showRecent: false },
+        order: { workstreams: [], threads: {}, prioritized: ["sec_z"] },
+      },
+    );
+    await waitFor(() => expect(regions(slot)).toEqual(["Zeta"]));
+    expect(groupRows(slot, "Zeta")).toEqual(["Zeta task"]);
+    const show = slot.getByRole("button", {
+      name: "Show lower priority workstreams",
+    });
+    expect(show.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(show);
+    expect(regions(slot)).toEqual(["Zeta", "Alpha", "Beta", "Unsorted"]);
+    const alpha = slot.getByRole("region", { name: "Alpha" });
+    expect(within(alpha).queryAllByRole("link")).toHaveLength(0);
+    fireEvent.click(within(alpha).getByRole("button", { name: "Alpha" }));
+    expect(groupRows(slot, "Alpha")).toEqual(["Alpha task"]);
+
+    // Hiding and revealing again starts every one collapsed.
+    fireEvent.click(
+      slot.getByRole("button", { name: "Hide lower priority workstreams" }),
+    );
+    expect(regions(slot)).toEqual(["Zeta"]);
+    fireEvent.click(
+      slot.getByRole("button", { name: "Show lower priority workstreams" }),
+    );
+    expect(
+      within(slot.getByRole("region", { name: "Alpha" })).queryAllByRole(
+        "link",
+      ),
+    ).toHaveLength(0);
+
+    // Without priorities, every workstream shows with its own collapse state.
+    fireEvent.click(
+      slot.getByRole("button", { name: "Remove priority from Zeta" }),
+    );
+    await waitFor(() =>
+      expect(regions(slot)).toEqual(["Alpha", "Zeta", "Beta", "Unsorted"]),
+    );
+    expect(groupRows(slot, "Alpha")).toEqual(["Alpha task"]);
+    expect(
+      slot.queryByRole("button", { name: /lower priority workstreams/ }),
+    ).toBeNull();
     slot.lifecycle.unmount();
   });
 

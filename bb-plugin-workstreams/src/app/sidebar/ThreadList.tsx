@@ -196,6 +196,12 @@ export function WorkstreamsThreadList({
   const [error, setError] = useState<string | null>(null);
   const [showAllNeeds, setShowAllNeeds] = useState(false);
   const [showElsewhere, setShowElsewhere] = useState(false);
+  const [showLower, setShowLower] = useState(false);
+  // Lower-priority workstreams the user expanded since revealing them. Not
+  // persisted: each reveal starts with every one collapsed.
+  const [lowerExpanded, setLowerExpanded] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [inspecting, setInspecting] = useState<PluginSidebarThread | null>(
     null,
   );
@@ -682,11 +688,50 @@ export function WorkstreamsThreadList({
 
   const pinnedGroups = projection.groups.filter((group) => group.prioritized);
   const otherGroups = projection.groups.filter((group) => !group.prioritized);
+  // With any workstream prioritized, the rest (with Unsorted and Dormant)
+  // sit hidden behind a toggle below the prioritized ones.
+  const tiered = pinnedGroups.length > 0;
+  if (!tiered && (showLower || lowerExpanded.size > 0)) {
+    setShowLower(false);
+    setLowerExpanded(new Set());
+  }
+  const hasLower =
+    otherGroups.length > 0 ||
+    projection.unsorted.total > 0 ||
+    projection.dormant.length > 0;
+  const wasTiered = useRef(tiered);
+  useLayoutEffect(() => {
+    wasTiered.current = tiered;
+  });
+  // Entering or leaving tiers rearranges the whole list, which the priority
+  // glide covers; only the toggle opens and closes the hidden block.
+  const lowerPresence = usePresence(
+    hasLower && (!tiered || showLower) ? ["lower"] : [],
+    String,
+    wasTiered.current === tiered,
+  );
+  const lowerCollapsed = (id: string, byDefault = false) =>
+    tiered ? !lowerExpanded.has(id) : isCollapsed(id, byDefault);
+  const lowerToggle = (id: string, byDefault = false) => {
+    if (!tiered) return toggle(id, byDefault);
+    setLowerExpanded((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  };
+  const toggleLower = () => {
+    if (showLower) setLowerExpanded(new Set());
+    setShowLower(!showLower);
+  };
   const activeGroupProps = (
     group: ThreadGroup,
   ): Omit<GroupProps, "group" | "children"> => ({
-    collapsed: isCollapsed(group.id),
-    toggle: () => toggle(group.id),
+    collapsed: group.prioritized
+      ? isCollapsed(group.id)
+      : lowerCollapsed(group.id),
+    toggle: () =>
+      group.prioritized ? toggle(group.id) : lowerToggle(group.id),
     onRename: () => renameWorkstream(group),
     onTogglePriority: () => togglePriority(group),
     onNewThread: () =>
@@ -714,6 +759,90 @@ export function WorkstreamsThreadList({
       needsMarks ? "pl-[26px]" : "pl-[14px]",
     );
 
+  const recentBlock =
+    ws.showRecent && recentRows.length > 0 ? (
+      <Band
+        key="recent"
+        title="Recent"
+        flipKey="recent"
+        box="neutral"
+        menu={
+          <BandOptionsMenu
+            section="recent"
+            options={bandOptions.recent}
+            onChange={(change) => updateBandOptions("recent", change)}
+          />
+        }
+      >
+        {renderBandRows(recentRows, "recent", "recent")}
+      </Band>
+    ) : null;
+  /** Everything below the prioritized workstreams, as one opening block. */
+  const lowerBlock = lowerPresence.map((entry) => (
+    <div
+      key="lower"
+      data-flip-key="lower"
+      className="ws-presence [--ws-presence-gap:0.5rem]"
+      {...presenceProps(entry.phase)}
+    >
+      <div className="flex flex-col gap-2">
+        <SortableContext
+          items={otherGroups.map((group) => groupKey(group.id))}
+          strategy={verticalListSortingStrategy}
+        >
+          {otherGroups.map((group) =>
+            renderSortableGroup(group, activeGroupProps(group)),
+          )}
+        </SortableContext>
+        {projection.unsorted.total > 0 ? (
+          <DropTarget
+            id={groupKey(projection.unsorted.id)}
+            data={{ type: "target", groupId: projection.unsorted.id }}
+          >
+            {(ref) => (
+              <WorkstreamGroup
+                group={projection.unsorted}
+                sectionRef={ref}
+                collapsed={lowerCollapsed(projection.unsorted.id)}
+                toggle={() => lowerToggle(projection.unsorted.id)}
+                dropTarget={dropGroupId === projection.unsorted.id}
+                quietCount={focus.active}
+                muted
+              >
+                {renderTrees(projection.unsorted)}
+              </WorkstreamGroup>
+            )}
+          </DropTarget>
+        ) : null}
+        {projection.dormant.length > 0 ? (
+          <Band
+            title="Dormant"
+            flipKey="dormant"
+            count={projection.dormant.length}
+            collapsed={lowerCollapsed("__dormant", true)}
+            toggle={() => lowerToggle("__dormant", true)}
+          >
+            <SortableContext
+              items={projection.dormant.map((group) => groupKey(group.id))}
+              strategy={verticalListSortingStrategy}
+            >
+              {projection.dormant.map((group) => (
+                <li key={group.id} className="list-none">
+                  {renderSortableGroup(group, {
+                    collapsed: isCollapsed(group.id, true),
+                    toggle: () => toggle(group.id, true),
+                    onRename: () => renameWorkstream(group),
+                    onTogglePriority: () => togglePriority(group),
+                    muted: true,
+                  })}
+                </li>
+              ))}
+            </SortableContext>
+          </Band>
+        ) : null}
+      </div>
+    </div>
+  ));
   if (ws.status === "loading")
     return <p className="px-3 py-2 text-xs text-muted-foreground">Loading…</p>;
   if (ws.status === "error")
@@ -818,86 +947,41 @@ export function WorkstreamsThreadList({
             </div>
           </div>
         ))}
-        {pinnedGroups.length > 0 ? (
-          <SortableContext
-            items={pinnedGroups.map((group) => groupKey(group.id))}
-            strategy={verticalListSortingStrategy}
-          >
-            {pinnedGroups.map((group) =>
-              renderSortableGroup(group, activeGroupProps(group)),
-            )}
-          </SortableContext>
-        ) : null}
-        {ws.showRecent && recentRows.length > 0 ? (
-          <Band
-            title="Recent"
-            flipKey="recent"
-            box="neutral"
-            menu={
-              <BandOptionsMenu
-                section="recent"
-                options={bandOptions.recent}
-                onChange={(change) => updateBandOptions("recent", change)}
-              />
-            }
-          >
-            {renderBandRows(recentRows, "recent", "recent")}
-          </Band>
-        ) : null}
-        <SortableContext
-          items={otherGroups.map((group) => groupKey(group.id))}
-          strategy={verticalListSortingStrategy}
-        >
-          {otherGroups.map((group) =>
-            renderSortableGroup(group, activeGroupProps(group)),
-          )}
-        </SortableContext>
-        {projection.unsorted.total > 0 ? (
-          <DropTarget
-            id={groupKey(projection.unsorted.id)}
-            data={{ type: "target", groupId: projection.unsorted.id }}
-          >
-            {(ref) => (
-              <WorkstreamGroup
-                group={projection.unsorted}
-                sectionRef={ref}
-                collapsed={isCollapsed(projection.unsorted.id)}
-                toggle={() => toggle(projection.unsorted.id)}
-                dropTarget={dropGroupId === projection.unsorted.id}
-                quietCount={focus.active}
-                muted
+        {tiered
+          ? [
+              <SortableContext
+                key="pinned"
+                items={pinnedGroups.map((group) => groupKey(group.id))}
+                strategy={verticalListSortingStrategy}
               >
-                {renderTrees(projection.unsorted)}
-              </WorkstreamGroup>
-            )}
-          </DropTarget>
-        ) : null}
-        {projection.dormant.length > 0 ? (
-          <Band
-            title="Dormant"
-            flipKey="dormant"
-            count={projection.dormant.length}
-            collapsed={isCollapsed("__dormant", true)}
-            toggle={() => toggle("__dormant", true)}
-          >
-            <SortableContext
-              items={projection.dormant.map((group) => groupKey(group.id))}
-              strategy={verticalListSortingStrategy}
-            >
-              {projection.dormant.map((group) => (
-                <li key={group.id} className="list-none">
-                  {renderSortableGroup(group, {
-                    collapsed: isCollapsed(group.id, true),
-                    toggle: () => toggle(group.id, true),
-                    onRename: () => renameWorkstream(group),
-                    onTogglePriority: () => togglePriority(group),
-                    muted: true,
-                  })}
-                </li>
-              ))}
-            </SortableContext>
-          </Band>
-        ) : null}
+                {pinnedGroups.map((group) =>
+                  renderSortableGroup(group, activeGroupProps(group)),
+                )}
+              </SortableContext>,
+              ...(hasLower
+                ? [
+                    <button
+                      key="lower-toggle"
+                      type="button"
+                      data-flip-key="lower-toggle"
+                      aria-expanded={showLower}
+                      onClick={toggleLower}
+                      className="mx-1 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-left text-[12px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+                    >
+                      <Icon
+                        name={showLower ? "ChevronDown" : "ChevronRight"}
+                        className="size-3 shrink-0"
+                      />
+                      {showLower
+                        ? "Hide lower priority workstreams"
+                        : "Show lower priority workstreams"}
+                    </button>,
+                  ]
+                : []),
+              ...lowerBlock,
+              recentBlock,
+            ]
+          : [recentBlock, ...lowerBlock]}
         {ws.showArchived &&
         archived.experimental_archived?.status !== "error" &&
         (archivedThreads.length > 0 ||
