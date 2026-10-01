@@ -4,6 +4,7 @@ import {
   DAY_MS,
   UNSORTED_ID,
   projectWorkstreams,
+  focusNeeds,
   rankGroups,
   type Group,
 } from "../../src/domain/project.ts";
@@ -50,7 +51,11 @@ describe("projectWorkstreams", () => {
       sections,
       {
         now,
-        order: { workstreams: ["sec_empty", "sec_b", "sec_a"], threads: {} },
+        order: {
+          workstreams: ["sec_empty", "sec_b", "sec_a"],
+          threads: {},
+          prioritized: [],
+        },
       },
     );
     expect(p.groups.map((g) => g.id)).toEqual(["sec_b", "sec_a", "sec_empty"]);
@@ -323,7 +328,7 @@ describe("snoozed threads", () => {
   const ids = (rows: readonly { thread: { id: string } }[]) =>
     rows.map((r) => r.thread.id);
 
-  it("moves a snoozed thread out of its group, For You, and Recent", () => {
+  it("moves a snoozed thread out of its group, Up Next, and Recent", () => {
     const p = project({ asks: now + 1000, beta: null });
     expect(rowIds(p.groups[0]!)).toEqual(["root", "kid", "grandkid"]);
     expect(p.groups[0]!.needsYou).toBe(0);
@@ -364,5 +369,65 @@ describe("snoozed threads", () => {
         .map((t) => t.id)
         .sort(),
     );
+  });
+});
+
+describe("prioritized workstreams", () => {
+  const order = (prioritized: string[]) => ({
+    workstreams: ["sec_a", "sec_b", "sec_empty"],
+    threads: {},
+    prioritized,
+  });
+  const threads = [
+    thread("a1", { sectionId: "sec_a", latestAttentionAt: now - 1 }),
+    thread("b1", { sectionId: "sec_b", latestAttentionAt: now - 2 }),
+    thread("old", { sectionId: "sec_old", latestAttentionAt: 0 }),
+  ];
+  const all = [...sections, { id: "sec_old", name: "Old" }];
+
+  it("pins prioritized workstreams first, in manual order, and never dormant", () => {
+    const p = projectWorkstreams(threads, all, {
+      now,
+      order: order(["sec_old", "sec_b", "sec_empty", "unsorted"]),
+    });
+    expect(p.groups.map((g) => [g.id, g.prioritized])).toEqual([
+      ["sec_b", true],
+      ["sec_empty", true],
+      ["sec_old", true],
+      ["sec_a", false],
+    ]);
+    expect(p.dormant).toEqual([]);
+    expect(p.unsorted.prioritized).toBe(false);
+  });
+
+  it("focuses Up Next on prioritized rows only while one is waiting", () => {
+    const p = projectWorkstreams(threads, all, {
+      now,
+      needsYou: () => true,
+      order: order(["sec_b"]),
+    });
+    const isPrioritized = (id: string | null) => id === "sec_b";
+    const ids = (rows: readonly { thread: { id: string } }[]) =>
+      rows.map((r) => r.thread.id);
+    const focus = focusNeeds(p.needsYou, isPrioritized);
+    expect(focus.active).toBe(true);
+    expect(ids(focus.shown)).toEqual(["b1"]);
+    expect(ids(focus.elsewhere)).toEqual(["a1", "old"]);
+
+    // The open thread stays where it is.
+    const kept = focusNeeds(
+      p.needsYou,
+      isPrioritized,
+      (r) => r.thread.id === "a1",
+    );
+    expect(ids(kept.shown)).toEqual(["a1", "b1"]);
+    expect(ids(kept.elsewhere)).toEqual(["old"]);
+
+    const unfocused = focusNeeds(
+      p.needsYou.filter((r) => r.workstreamId !== "sec_b"),
+      isPrioritized,
+    );
+    expect(unfocused.active).toBe(false);
+    expect(ids(unfocused.shown)).toEqual(["a1", "old"]);
   });
 });

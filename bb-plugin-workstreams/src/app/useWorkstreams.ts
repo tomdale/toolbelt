@@ -39,6 +39,7 @@ export type ServerState = {
 
 export type ReorderChange =
   | { kind: "workstreams"; ids: string[] }
+  | { kind: "prioritized"; ids: string[] }
   | { kind: "threads"; groupId: string; ids: string[] };
 
 /** Shared plugin state and optimistic actions for every UI consumer. */

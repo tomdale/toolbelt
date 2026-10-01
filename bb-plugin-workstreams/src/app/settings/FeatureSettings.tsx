@@ -25,11 +25,11 @@ export function SidebarSettings() {
   return (
     <SectionRows>
       <SettingRow
-        label="Show For You"
+        label="Show Up Next"
         description="Threads waiting on you appear at the top of the sidebar."
         control={
           <SettingSwitch
-            label="Show For You"
+            label="Show Up Next"
             checked={prefs.sidebar.showForYou}
             onChange={(showForYou) => update({ sidebar: { showForYou } })}
           />

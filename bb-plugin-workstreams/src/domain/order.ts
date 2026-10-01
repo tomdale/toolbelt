@@ -1,5 +1,6 @@
 /**
- * The user's manual sidebar order, set by drag and drop.
+ * The user's sidebar arrangement: the manual order set by drag and drop, and
+ * the workstreams the user prioritized.
  *
  * BB keeps sections in creation order and threads by recency, so manual order
  * is the plugin's own state. It is sparse on purpose: an id the user never
@@ -11,9 +12,18 @@ export type ManualOrder = {
   readonly workstreams: readonly string[];
   /** Root thread ids, top to bottom, keyed by group id (section id or "unsorted"). */
   readonly threads: Readonly<Record<string, readonly string[]>>;
+  /**
+   * Prioritized section ids, as a set: prioritized workstreams pin above the
+   * others in `workstreams` order, and focus Up Next (see `focusNeeds`).
+   */
+  readonly prioritized: readonly string[];
 };
 
-export const EMPTY_ORDER: ManualOrder = { workstreams: [], threads: {} };
+export const EMPTY_ORDER: ManualOrder = {
+  workstreams: [],
+  threads: {},
+  prioritized: [],
+};
 
 /**
  * Sorts `items` by their position in `ids`. Unlisted items keep their

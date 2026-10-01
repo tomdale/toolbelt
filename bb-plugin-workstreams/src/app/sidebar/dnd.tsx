@@ -36,7 +36,8 @@ import { CSS } from "@dnd-kit/utilities";
 
 /** What each draggable or droppable is. `groupId` is a section id or "unsorted". */
 export type DragData =
-  | { type: "group"; groupId: string }
+  /** `pinned`: a prioritized workstream, which reorders only among its tier. */
+  | { type: "group"; groupId: string; pinned?: boolean }
   | { type: "thread"; threadId: string; groupId: string }
   /** A group that takes thread drops but does not itself reorder (Unsorted). */
   | { type: "target"; groupId: string };
@@ -58,17 +59,22 @@ const dataOf = (value: unknown) => value as DragData | undefined;
 
 /**
  * Threads land on rows first, then on a group; workstreams land only on
- * workstreams. Only what is under the pointer counts, so releasing over a
- * band or outside the list changes nothing.
+ * workstreams in their own tier (prioritized or not). Only what is under the
+ * pointer counts, so releasing over a band or outside the list changes
+ * nothing.
  */
 const collision: CollisionDetection = (args) => {
-  const activeType = dataOf(args.active.data.current)?.type;
-  const accepts = (type: DragData["type"] | undefined) =>
-    activeType === "group" ? type === "group" : type !== undefined;
+  const active = dataOf(args.active.data.current);
+  const activeType = active?.type;
+  const accepts = (data: DragData | undefined) =>
+    activeType === "group"
+      ? data?.type === "group" &&
+        !!data.pinned === (active?.type === "group" && !!active.pinned)
+      : data !== undefined;
   const hits = pointerWithin({
     ...args,
     droppableContainers: args.droppableContainers.filter((container) =>
-      accepts(dataOf(container.data.current)?.type),
+      accepts(dataOf(container.data.current)),
     ),
   });
   if (activeType !== "thread") return hits;

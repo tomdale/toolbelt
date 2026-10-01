@@ -26,7 +26,11 @@ it.each([0, 100 * DAY_MS])(
 it("respects manual ordering", () => {
   const projection = projectWorkstreams(threads, sections, {
     now: 0,
-    order: { workstreams: [], threads: { ws: ["last", "first"] } },
+    order: {
+      workstreams: [],
+      threads: { ws: ["last", "first"] },
+      prioritized: [],
+    },
   });
   expect(nextThreadAfterArchive(projection, "last")).toBe("first");
   expect(nextThreadAfterArchive(projection, "first")).toBe("last");

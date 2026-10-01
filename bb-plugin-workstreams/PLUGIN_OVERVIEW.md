@@ -17,11 +17,12 @@ ready for review with Review steps naming what to check. The recap sits above
 the composer with a dismiss ✕ and, once the work is done, Archive; its state
 marks the thread in the sidebar.
 
-The sidebar puts For You and Recent above the workstream groups. Recaps, work
-state, titles and snooze stay current independently of organization. Activity
-records changes with rationale and Undo, including the organizing batch's
-placements and routing metadata. Manual changes made elsewhere are respected.
-Workstreams' preferences are grouped by feature and stored in plugin storage.
-Model choices use BB's provider/model picker: gateway-backed models use a direct
-completion from the configured machine; other provider models run in a hidden BB
-worker thread.
+The sidebar puts Up Next, the workstreams you prioritized, and Recent above the
+other workstream groups; while a prioritized workstream has a thread waiting, Up
+Next shows only those. Recaps, work state, titles and snooze stay current
+independently of organization. Activity records changes with rationale and Undo,
+including the organizing batch's placements and routing metadata. Manual changes
+made elsewhere are respected. Workstreams' preferences are grouped by feature
+and stored in plugin storage. Model choices use BB's provider/model picker:
+gateway-backed models use a direct completion from the configured machine; other
+provider models run in a hidden BB worker thread.

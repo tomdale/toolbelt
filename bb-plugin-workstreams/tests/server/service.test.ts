@@ -243,23 +243,57 @@ describe("cli", () => {
     const logged = await cli(["log"]);
     expect(logged.stdout).toContain("Moved from Unsorted to Alpha");
   });
+
+  it("prioritizes a workstream and lists it first", async () => {
+    const w = await setup();
+    w.addSection("Alpha");
+    const beta = w.addSection("Beta");
+    w.addThread("a", { title: "A task", sectionId: w.sections[0]!.id });
+    w.addThread("b", { title: "B task", sectionId: beta.id });
+    const cli = (argv: string[]) => w.harness.behavior.runCli(argv);
+
+    expect((await cli(["prioritize", "beta"])).stdout).toBe(
+      "Prioritized Beta.",
+    );
+    const state = await rpc<{ order: { prioritized: string[] } }>(
+      w,
+      "state",
+      null,
+    );
+    expect(state.order.prioritized).toEqual([beta.id]);
+    const list = (await cli(["list"])).stdout.split("\n");
+    expect(list[0]).toMatch(/^Beta\s.* · prioritized/);
+    expect(list[1]).not.toContain("prioritized");
+
+    await cli(["prioritize", "Beta", "--off"]);
+    expect((await cli(["list"])).stdout).not.toContain("prioritized");
+  });
 });
 
 describe("sidebar order", () => {
   it("stores workstream and per-group thread order and returns it in state", async () => {
     const w = await setup();
     const empty = await rpc<{ order: unknown }>(w, "state", null);
-    expect(empty.order).toEqual({ workstreams: [], threads: {} });
+    expect(empty.order).toEqual({
+      workstreams: [],
+      threads: {},
+      prioritized: [],
+    });
     await rpc(w, "reorder", { kind: "workstreams", ids: ["sec_b", "sec_a"] });
     await rpc(w, "reorder", {
       kind: "threads",
       groupId: "unsorted",
       ids: ["t2", "t1"],
     });
+    await rpc(w, "reorder", {
+      kind: "prioritized",
+      ids: ["sec_a", "sec_a"],
+    });
     const { order } = await rpc<{ order: unknown }>(w, "state", null);
     expect(order).toEqual({
       workstreams: ["sec_b", "sec_a"],
       threads: { unsorted: ["t2", "t1"] },
+      prioritized: ["sec_a"],
     });
     await rpc(w, "reorder", { kind: "threads", groupId: "unsorted", ids: [] });
     const cleared = await rpc<{ order: { threads: unknown } }>(

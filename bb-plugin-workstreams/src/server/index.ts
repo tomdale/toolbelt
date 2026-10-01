@@ -799,6 +799,13 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   registerCli(bb, {
+    arrangement: {
+      load: () => loadOrder(db),
+      setPrioritized: (ids) => {
+        saveOrder(db, { kind: "prioritized", ids });
+        notify();
+      },
+    },
     service,
     journal,
     analyzer,
