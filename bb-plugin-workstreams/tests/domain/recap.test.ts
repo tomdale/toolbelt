@@ -10,6 +10,41 @@ import {
   reportedAnalysis,
 } from "../../src/domain/recap.ts";
 
+it("advertises state-specific fields instead of contradictory optional fields", () => {
+  const schema = recapInputSchema.toJSONSchema({ io: "input" });
+  expect(schema.type).toBe("object");
+  const variants = schema.oneOf as Array<{
+    properties: Record<string, { const?: string; minItems?: number }>;
+    required: string[];
+    additionalProperties: boolean;
+  }>;
+  expect(variants).toHaveLength(3);
+  const branch = (state: string) =>
+    variants.find((variant) => variant.properties.state?.const === state)!;
+  for (const state of ["complete", "review"]) {
+    expect(branch(state).properties).not.toHaveProperty("next");
+    expect(branch(state).properties).not.toHaveProperty("active");
+    expect(branch(state).properties.latest?.minItems).toBe(1);
+    expect(branch(state).required).toContain("latest");
+    expect(branch(state).additionalProperties).toBe(false);
+  }
+  expect(branch("review").required).toContain("review");
+  expect(branch("continuing").required).toContain("active");
+  expect(branch("continuing").properties).not.toHaveProperty("review");
+  expect(branch("complete").properties).not.toHaveProperty("review");
+  const review = {
+    state: "review",
+    goal: "Finished work",
+    latest: ["Tests passed"],
+    review: "Check navigation",
+  };
+  expect(recapInputSchema.safeParse(review).success).toBe(true);
+  expect(
+    recapInputSchema.safeParse({ ...review, next: ["Check navigation"] })
+      .success,
+  ).toBe(false);
+});
+
 it("requires active work for a working recap and maps it to in progress", () => {
   const input = {
     state: "continuing",

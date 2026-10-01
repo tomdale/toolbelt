@@ -76,6 +76,70 @@ async function world(
 }
 
 describe("agent recaps", () => {
+  it("stops a live failing-tool loop and suppresses mandatory recap corrections", async () => {
+    const s = await world({ corrections: 0 });
+    s.w.turn("t1");
+    s.w.threads.set("t1", { ...s.thread(), status: "active" });
+    let completed = false;
+    const events = [
+      {
+        seq: 1,
+        type: "turn/started",
+        scope: { kind: "turn", turnId: "t1-t1" },
+        data: {},
+      },
+      ...Array.from({ length: 5 }, (_, i) => ({
+        seq: i + 2,
+        type: "item/completed",
+        scope: { kind: "turn", turnId: "t1-t1" },
+        data: {
+          item: {
+            type: "toolCall",
+            tool: RECAP_TOOL,
+            status: "failed",
+            result: "Invalid arguments: next",
+            arguments: { next: ["Verify"] },
+          },
+        },
+      })),
+    ];
+    s.w.harness.inspection.sdk.stub(
+      "threads.events.list",
+      async ({ types, afterSeq, order, limit }) => {
+        if (completed)
+          return [
+            {
+              seq: 7,
+              type: "turn/completed",
+              scope: { kind: "turn", turnId: "t1-t1" },
+              data: { status: "completed" },
+            },
+          ];
+        let rows = events.filter(
+          (e) =>
+            (!types || (types as readonly string[]).includes(e.type)) &&
+            e.seq > Number(afterSeq ?? 0),
+        );
+        if (order === "desc") rows = [...rows].reverse();
+        return rows.slice(0, Number(limit ?? 100));
+      },
+    );
+    await s.w.harness.behavior.emitThreadEvent("experimental_thread.events", {
+      thread: s.thread(),
+      sequence: 6,
+    });
+    expect(s.w.harness.inspection.sdk.callsTo("threads.stop")).toHaveLength(1);
+    completed = true;
+    s.w.threads.set("t1", { ...s.thread(), status: "idle" });
+    expect((await s.card()).capped).toBe(true);
+    await s.configure();
+    await s.idle();
+    expect(s.corrections()).toHaveLength(0);
+    expect((await s.card()).capped).toBe(true);
+    await s.dispatch();
+    await s.configure();
+    expect((await s.card()).capped).toBe(false);
+  });
   it("shows the agent's recap for its turn and asks for nothing more", async () => {
     const s = await world();
     s.w.turn("t1");

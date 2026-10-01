@@ -449,7 +449,11 @@ it("restores a dismissed recap without archiving", async () => {
 
 it("says so when the agent ran out of reminders without a recap", async () => {
   const slot = await mount({ recap: null, capped: true });
-  expect(await slot.findByText(/No recap after 3 reminders/)).toBeTruthy();
+  expect(
+    await slot.findByText(
+      /No recap recorded\. Automatic continuation is paused/,
+    ),
+  ).toBeTruthy();
 });
 
 it("lets a live question card supersede the recap", async () => {
