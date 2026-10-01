@@ -212,7 +212,7 @@ it("lists model calls in the Activity log in Debug mode", async () => {
   const page = (debug: boolean) =>
     renderSlot(
       app.navPanels[0]!,
-      { subPath: "activity" },
+      { subPath: "debug" },
       {
         settings: { debug },
         rpc: {

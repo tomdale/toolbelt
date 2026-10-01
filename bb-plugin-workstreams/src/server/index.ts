@@ -40,10 +40,10 @@ const RECONCILE_DEBOUNCE_MS = 1_500;
  * the default. Add one only after it passes.
  */
 export const MODELS = ["google/gemini-3.1-flash-lite"] as const;
-/** Bounded organizing uses Flash-Lite by default; callers can opt into a stronger model. */
+/** Organizing is an explicit, infrequent action, so it defaults to the stronger model: Flash-Lite does not reliably split large products into areas. */
 export const ORGANIZE_MODELS = [
-  "google/gemini-3.1-flash-lite",
   "openai/gpt-6-sol-fast",
+  "google/gemini-3.1-flash-lite",
 ] as const;
 /** The furthest out a snooze can wake. */
 const MAX_SNOOZE_MS = 366 * 24 * 60 * 60 * 1000;

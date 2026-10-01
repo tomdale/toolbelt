@@ -16,19 +16,20 @@ groups. No fresh per-thread summarization calls are required. One tool-free
 model response supplies names, descriptions, aliases and an assignment for every
 root; an empty inventory needs no model call.
 
-Default to concrete products and projects, named simply. A product's design,
-implementation, evaluations, memory features and maintenance belong together.
-Abstract topics such as governance or architecture are not separate owners. When
-a product has high thread volume (e.g. 4+ open threads) spanning distinct
-sustained capability areas, it may subdivide into 2–3 focused homes using the
-colon-prefix format: `<Product>: <Area>` (e.g. `Workstreams: Core` and
-`Workstreams: Learning & Memory`). The UI formats colon-prefixed sub-areas
-distinctly—quiet product prefix, prominent sub-area—and they cluster naturally
-in the sidebar. Smaller products (under 4 threads) stay unified in a single
-home. Substantial named projects and initiatives can stand alone when they
-represent independent sustained outcomes. Existing folders are fallible context,
-not a reason to preserve misleading boundaries. Ambiguous work belongs in
+The model works in three steps. First it names each root's owner: the concrete
+product or project the thread changes or studies, read from its title and
+summary (the cached subject is only a hint). Separately named plugins and apps
+are distinct owners even on a shared host platform. Second, an owner with 4 or
+more roots is split into 2–3 functional areas whenever its roots form two or
+more capability clusters of at least 2 roots each; areas are never technical
+layers or lifecycle stages. Third, single homes are named for their owner and
+areas use `<Owner>: <Area>`, for example `Workstreams: Recaps`. The UI shows the
+owner prefix subdued and hides the colon. Roots with no identifiable owner stay
 Unsorted.
+
+Organizing defaults to `openai/gpt-6-sol-fast` (`organizeModel`). It is an
+explicit, occasional action, and Flash-Lite does not reliably apply the split
+rule. A pass over a few dozen roots takes about 15 seconds and a few cents.
 
 The pass accepts at most 500 roots, 500 existing sections and 300,000 characters
 of serialized evidence. Per-thread text is bounded. An oversized inventory fails

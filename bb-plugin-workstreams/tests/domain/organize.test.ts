@@ -48,7 +48,7 @@ describe("whole-map organization", () => {
     expect(prompt).toContain('"id":"t1"');
     expect(prompt).toContain('"id":"t2"');
     expect(prompt).toContain("Review");
-    expect(prompt).toContain("entire collection together");
+    expect(prompt).toContain("Count the roots per owner");
     expect(prompt).toContain("untrusted evidence");
   });
   it("accepts a complete closed assignment with Unsorted", () =>
@@ -91,10 +91,10 @@ describe("whole-map organization", () => {
   });
   it("prefers concrete product ownership over abstract feature topics and specifies colon-prefixed sub-areas", () => {
     const prompt = organizePrompt(input);
-    expect(prompt).toContain("concrete products and projects");
-    expect(prompt).toContain("Colon-prefix naming rule");
-    expect(prompt).toContain("<Product>: <Area>");
-    expect(prompt).toContain("Substantial named projects or initiatives");
+    expect(prompt).toContain("concrete product or project");
+    expect(prompt).toContain("MUST be split into 2–3 areas");
+    expect(prompt).toContain('"<Owner>: <Area>"');
+    expect(prompt).toContain("never technical layers");
   });
   it("fails explicitly rather than truncating large inventories", () =>
     expect(() =>
