@@ -23,7 +23,11 @@ Configure in Settings → Plugins → Bottom Line or `bb plugin config bottom-li
 - `enabled`: defaults to `true`. Controls tool selection and corrections.
 - `maxIntercepts`: integer from 0 to 10, default `3`. Maximum corrective continuations per handoff; `0` disables automatic corrections. When exhausted, a composer notice explains that the thread can be resumed manually.
 
-Enforcement reads setting updates immediately. BB applies changed tool and instruction sets when constructing the next provider session. Start a fresh session after installation to use the tools.
+Enforcement reads setting updates immediately. BB applies changed tool and instruction sets when constructing the next provider session.
+
+## CLI completion
+
+Existing sessions can record completion through their shell tool with `bb bottom-line finish --summary "Task complete."`. This shows the same Archive and Dismiss controls and satisfies the completed turn's handoff. The command defaults to the invoking thread; outside a thread, supply `--thread <thread-id>`. Use `--summary-stdin` for a summary from standard input. Summaries accept 1–4000 characters. Injected tools become available when BB constructs a provider session.
 
 ## Development
 
