@@ -24,10 +24,10 @@ design and the contract the code is checked against.
     workstream. The block shows five rows, with Show more for the rest. A
     delegate's question folds into its parent's newer one. A selected row stays
     in the block through read and status updates until you deselect it or select
-    another thread; snoozing or archiving still puts it away immediately. It's
-    hidden when no rows remain (the `showForYou` setting turns it off).
-  - **Recent**: the five most recently active threads not already in For you
-    (the `showRecent` setting).
+    another thread; snoozing or archiving still puts it away immediately. The
+    Sidebar settings section can hide it.
+  - **Recent**: the most recently active threads not already in For you, up to
+    the configurable limit in Sidebar settings.
   - **One group per workstream**, in BB's section order until you drag a header
     to reorder them. Each thread tree is filed under its root thread's section,
     exactly as BB's own sidebar does. Drag a root thread to reorder it within
@@ -99,7 +99,7 @@ design and the contract the code is checked against.
   is cut off or too vague, or its latest requests moved onto different work.
   Workstreams applies it (at most once an hour for a titled thread) and logs it
   in Activity with Undo. A title you or an agent set is never changed; clear it
-  to hand it back. Turn this off with the `autoTitle` setting.
+  to hand it back. Turn this off in the Threads settings section.
 - **Organize** (Map tab, or `bb workstreams rebuild`): one bounded model call
   scans open thread roots and proposes a coherent map with descriptions, aliases
   and placements. Review the whole map, uncheck unwanted moves, then Apply as
@@ -119,13 +119,12 @@ design and the contract the code is checked against.
   guidance for the project's shape) and to hand off out-of-scope requests with
   `bb workstreams handoff`. Delegation requires user approval. Delegates are
   told to report to their parent.
-- **Parent link** in child threads' headers (the `showParentThreadLink`
-  setting).
+- **Parent link** in child threads' headers (the Threads settings section).
 - **Reconciler**: BB emits no events for section changes, so Workstreams
   compares BB's state with its own every minute. Changes made elsewhere are
   recorded as made "outside Workstreams" and never overridden.
 
-- **Debug mode** (the `debug` setting, off by default): every model call is
+- **Debug mode** (the Advanced preference, off by default): every model call is
   recorded with the exact prompt, the model's reasoning summary, the raw
   response, the parsed result, and what Workstreams did with it. A small bug
   button appears wherever Workstreams used a model: the thread header, the New
@@ -146,10 +145,13 @@ design and the contract the code is checked against.
   expandable internal details. Records include redacted thread excerpts and are
   kept for 7 days (at most 1,000).
 
-Model calls go straight to AI Gateway from the analysis machine (`hostId`, blank
-for the only connected machine), with the AI Gateway key Pi has there. They
-never request reasoning. The analysis and routing model is a setting limited to
-models that pass the eval (`eval/README.md`).
+Workstreams settings are grouped by feature and stored in plugin storage. Model
+choices use BB's provider/model picker. AI Gateway choices, including BB's Pi AI
+Gateway provider, use a direct completion from the configured analysis machine
+and its Pi key. Other provider choices run in a hidden BB worker thread; these
+calls take several seconds longer. Provider catalogs determine the available
+model, reasoning level, and service tier at execution time. Analysis model
+changes should pass the eval (`eval/README.md`).
 
 ## CLI
 
