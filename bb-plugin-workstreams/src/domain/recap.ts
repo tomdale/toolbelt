@@ -148,8 +148,14 @@ const recapFields = z
   })
   .strict();
 
-// Providers see the same state-specific fields that server validation accepts.
-// The root object annotation keeps BB's tool contract while Pi reads oneOf.
+/**
+ * The fields advertised to agents. Keep the root a concrete object: provider
+ * bridges can flatten a root union into a tool with no named parameters.
+ * State-specific requirements are enforced by recapInputSchema at execution.
+ */
+export const recapToolSchema = recapFields;
+
+/** The state-specific contract checked before accepting a recap. */
 export const recapInputSchema = z
   .discriminatedUnion("state", [
     recapFields.omit({ active: true, next: true, review: true }).extend({
@@ -174,7 +180,6 @@ export const recapInputSchema = z
         .default([]),
     }),
   ])
-  .meta({ type: "object" })
   .refine(
     (recap) =>
       recap.state !== "continuing" ||

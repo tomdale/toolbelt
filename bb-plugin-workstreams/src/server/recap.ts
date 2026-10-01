@@ -27,6 +27,7 @@ import {
   RECAP_TOOL,
   RECAP_TOOL_DESCRIPTION,
   recapInputSchema,
+  recapToolSchema,
   recapMarkdown,
   recapSchema,
   toRecap,
@@ -129,14 +130,15 @@ export class AgentRecaps {
         label: { pending: "Writing recap", completed: "Recap" },
         tint: { light: "#0284c7", dark: "#38bdf8" },
       },
-      parameters: recapInputSchema,
+      parameters: recapToolSchema,
       execute: async (input, ctx) => {
+        const validated = recapInputSchema.parse(input);
         const epoch = this.row(ctx.threadId).epoch;
         this.deps.db
           .prepare("UPDATE ws_agent_recap SET proven = 1 WHERE thread_id = ?")
           .run(ctx.threadId);
         const turnId = await this.latestTurn(ctx.threadId, ctx.signal);
-        const recap = toRecap(input, {
+        const recap = toRecap(validated, {
           id: randomUUID(),
           turnId,
           at: Date.now(),
