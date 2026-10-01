@@ -102,12 +102,24 @@ describe("synchronizeSpinnerAnimations", () => {
 describe("WorkingMark", () => {
   it("resynchronizes when a moved mark's animation restarts", async () => {
     const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
-    const section = app.settingsSections.find((s) => s.id === "spinner")!;
+    const section = app.settingsSections.find((s) => s.id === "sidebar")!;
     const slot = await renderSlot(
       section,
       {},
       {
         rpc: {
+          prefs: () => ({
+            prefs: {
+              sidebar: {},
+              threads: {},
+              newWork: {},
+              organize: {},
+              advanced: {},
+            },
+          }),
+          setPrefs: (input: unknown) => ({
+            prefs: (input as { patch: unknown }).patch,
+          }),
           spinner: async () => ({
             spinner: { shape: "arc", primary: "subtle", secondary: "auto" },
           }),

@@ -37,7 +37,7 @@ it("saves a layout pick immediately", async () => {
 it("disables reminders when agents don't end turns with a recap", async () => {
   const slot = await mount();
   fireEvent.click(
-    await slot.findByRole("checkbox", { name: "End turns with a recap" }),
+    await slot.findByRole("switch", { name: "End turns with a recap" }),
   );
   expect(await slot.findByText(/don't get the recap tool/)).toBeTruthy();
   expect(
