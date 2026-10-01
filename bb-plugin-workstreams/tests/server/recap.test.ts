@@ -98,6 +98,26 @@ describe("agent recaps", () => {
     expect(state.recaps.t1).toMatchObject({ state: "complete" });
   });
 
+  it("accepts continuing work without a reminder and clears it on fresh input", async () => {
+    const s = await world();
+    s.w.turn("t1");
+    const output = await s.report({
+      ...RECAP,
+      state: "continuing",
+      next: ["Inspect worker results"],
+    });
+    await s.idle();
+    expect(s.corrections()).toHaveLength(0);
+    expect((await s.card()).recap).toMatchObject({
+      state: "continuing",
+      next: ["Inspect worker results"],
+      review: [],
+    });
+    expect(output).toContain("Nothing needed from you");
+    await s.dispatch();
+    expect((await s.card()).recap).toBeNull();
+  });
+
   it("requires review steps for review, and real link locations", async () => {
     const s = await world();
     s.w.turn("t1");

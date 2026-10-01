@@ -45,6 +45,13 @@ const ACCENT: Record<
   Recap["state"],
   { card: string; text: string; rules: string; footer: string }
 > = {
+  continuing: {
+    card: "border-violet-400 bg-violet-50/40 dark:border-violet-500/70 dark:bg-violet-950/20",
+    text: "text-violet-700 dark:text-violet-300",
+    rules:
+      "[&>section+section]:border-violet-900/10 dark:[&>section+section]:border-violet-200/15",
+    footer: "border-violet-900/10 dark:border-violet-200/15",
+  },
   review: {
     card: "border-sky-400 bg-sky-50/40 dark:border-sky-500/80 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(29.3%_0.066_243.157))]",
     text: "text-sky-700 dark:text-sky-300",
@@ -124,7 +131,6 @@ const LINK =
 
 /** Where the turn's result stands, above the goal. */
 function StateLine({ state }: { state: Recap["state"] }) {
-  const review = state === "review";
   return (
     <p
       className={cn(
@@ -132,7 +138,11 @@ function StateLine({ state }: { state: Recap["state"] }) {
         ACCENT[state].text,
       )}
     >
-      {review ? "Ready for Review" : "Complete"}
+      {state === "review"
+        ? "Ready for Review"
+        : state === "continuing"
+          ? "Work continuing"
+          : "Complete"}
     </p>
   );
 }
@@ -156,8 +166,16 @@ function Row({
   );
 }
 
-/** Results, check-marked in the state's accent text color. */
-function Results({ items, accent }: { items: string[]; accent: string }) {
+/** Finished results use checks; ongoing progress uses neutral bullets. */
+function Results({
+  items,
+  accent,
+  continuing = false,
+}: {
+  items: string[];
+  accent: string;
+  continuing?: boolean;
+}) {
   return (
     <ul className="m-0 list-none space-y-0.5 p-0">
       {items.map((item, index) => (
@@ -166,7 +184,7 @@ function Results({ items, accent }: { items: string[]; accent: string }) {
           className={`grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 ${BODY_CLASS} text-foreground`}
         >
           <Glyph
-            path={CHECK}
+            path={continuing ? "M7 8h2" : CHECK}
             className={cn("mt-[0.2em] h-3.5 w-3.5", accent)}
           />
           <RecapText text={item} />
@@ -287,6 +305,7 @@ function RecapSummary({
 }) {
   const goal = layout === "full" ? recap.goal : null;
   const review = recap.state === "review" && recap.review.length > 0;
+  const continuing = recap.state === "continuing";
   const accent = ACCENT[recap.state];
   const links =
     review && recap.links.length > 0 ? (
@@ -310,9 +329,24 @@ function RecapSummary({
         </div>
       ) : null}
       <div className={cn("mt-1.5 [&>section+section]:border-t", accent.rules)}>
-        <Row label={review ? "Done" : undefined} accent={accent.text}>
-          <Results items={recap.latest} accent={accent.text} />
+        <Row
+          label={continuing ? "Progress" : review ? "Done" : undefined}
+          accent={accent.text}
+        >
+          <Results
+            items={recap.latest}
+            accent={accent.text}
+            continuing={continuing}
+          />
         </Row>
+        {continuing ? (
+          <Row label="Next" accent={accent.text}>
+            <Steps items={recap.next ?? []} />
+            <p className={cn("mt-1 text-muted-foreground", BODY_CLASS)}>
+              Nothing needed from you
+            </p>
+          </Row>
+        ) : null}
         {review ? (
           <Row label="Review" accent={accent.text}>
             <Steps items={recap.review} />

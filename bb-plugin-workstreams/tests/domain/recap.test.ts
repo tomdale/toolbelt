@@ -6,7 +6,60 @@ import {
   recapMarkdown,
   recapSchema,
   toRecap,
+  reportedAnalysis,
 } from "../../src/domain/recap.ts";
+
+it("requires agent next steps for continuing work and maps it to in progress", () => {
+  const input = {
+    state: "continuing",
+    goal: "Updating settings",
+    latest: ["Workers are running"],
+    next: ["Inspect worker results."],
+    links: [],
+  };
+  const recap = toRecap(recapInputSchema.parse(input), {
+    id: "r",
+    turnId: "t",
+    at: 1,
+  });
+  expect(recap.next).toEqual(["Inspect worker results"]);
+  expect(recap.review).toEqual([]);
+  expect(recapMarkdown(recap)).toContain("Work continuing");
+  expect(recapMarkdown(recap)).toContain("**Progress:**");
+  expect(recapMarkdown(recap)).toContain("**Next:**");
+  expect(recapMarkdown(recap)).not.toContain("**Review:");
+  expect(reportedAnalysis(recap, { latestAttentionAt: 1 }).state).toBe(
+    "in_progress",
+  );
+  expect(
+    recapInputSchema.safeParse({ ...input, next: undefined }).success,
+  ).toBe(false);
+  expect(recapInputSchema.safeParse({ ...input, next: [] }).success).toBe(
+    false,
+  );
+  expect(
+    recapInputSchema.safeParse({ ...input, review: "Nothing to review" })
+      .success,
+  ).toBe(false);
+  expect(
+    recapInputSchema.safeParse({ ...input, state: "complete" }).success,
+  ).toBe(false);
+  expect(
+    recapInputSchema.safeParse({
+      ...input,
+      links: [{ title: "File", location: "/work/a" }],
+    }).success,
+  ).toBe(false);
+});
+
+it("marks reported continuing work but leaves inferred progress unmarked", async () => {
+  const { workStateMark } = await import("../../src/domain/presentation.ts");
+  expect(workStateMark("in_progress", true)).toEqual({
+    glyph: "↻",
+    label: "Work continuing",
+  });
+  expect(workStateMark("in_progress", false).glyph).toBeNull();
+});
 
 const files = { environmentId: "env_1", root: "/work/", hostId: "host_1" };
 

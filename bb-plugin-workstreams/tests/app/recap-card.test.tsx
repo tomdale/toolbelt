@@ -157,6 +157,31 @@ it.each(["full", "minimal"])(
   },
 );
 
+it.each(["full", "minimal"])(
+  "shows ongoing progress without done or review in %s",
+  async (layout) => {
+    const slot = await mount({
+      layout,
+      recap: {
+        state: "continuing",
+        latest: ["Workers are running"],
+        next: ["Inspect worker results"],
+      },
+    });
+    const region = await slot.findByRole("region", { name: "Latest recap" });
+    expect(region.textContent).toContain("Work continuing");
+    expect(region.textContent).toContain("Nothing needed from you");
+    expect(slot.getByRole("heading", { name: "Progress" })).toBeTruthy();
+    expect(slot.getByRole("heading", { name: "Next" })).toBeTruthy();
+    expect(slot.queryByRole("heading", { name: "Done" })).toBeNull();
+    expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
+    expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
+    expect(region.querySelector("li svg path")?.getAttribute("d")).not.toBe(
+      "M3.5 8.5 6.5 11.5 12.5 4.5",
+    );
+  },
+);
+
 it("shows UI review steps without artifact links", async () => {
   const slot = await mount({
     recap: {

@@ -62,6 +62,9 @@ it("previews the recap card in each state and the chosen layout", async () => {
   expect(visible()[0]).toContain("Open Settings → Appearance and choose Dark");
   expect(carousel.querySelectorAll('ul[aria-label="Links"]')).toHaveLength(0);
   fireEvent.click(slot.getByRole("button", { name: "Next example" }));
+  expect(visible()[0]).toMatch(/Work continuing/);
+  expect(visible()[0]).toContain("Nothing needed from you");
+  fireEvent.click(slot.getByRole("button", { name: "Next example" }));
   expect(visible()[0]).toMatch(/Complete/);
 
   fireEvent.click(slot.getByRole("radio", { name: /Minimal/ }));
