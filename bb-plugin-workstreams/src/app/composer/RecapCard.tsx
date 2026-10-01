@@ -97,7 +97,7 @@ const GOAL_CLASS =
 const COMPACT_BODY_CLASS =
   "text-[clamp(0.625rem,calc(0.375rem+0.875cqi),0.75rem)] leading-[1.45] [text-wrap:pretty]";
 const COMPACT_GOAL_CLASS =
-  "text-[clamp(0.75rem,calc(0.4375rem+1.5cqi),0.9375rem)] leading-[1.35] [text-wrap:wrap]";
+  "text-[clamp(0.6875rem,calc(0.375rem+1.375cqi),0.875rem)] leading-[1.35] [text-wrap:wrap]";
 
 /** True inside a compact card; selects the smaller type scale. */
 const CompactContext = createContext(false);
@@ -211,13 +211,21 @@ const ROW_CLASS =
   "grid grid-cols-[3.25rem_minmax(0,1fr)] gap-x-3 gap-y-0.5 py-2 @max-[24rem]/recap:grid-cols-1";
 const LABEL_CLASS = "pt-px text-[11px] font-medium leading-[1.6]";
 
-function Glyph({ path, className }: { path: string; className: string }) {
+function Glyph({
+  path,
+  className,
+  filled = false,
+}: {
+  path: string;
+  className: string;
+  filled?: boolean;
+}) {
   return (
     <svg
       aria-hidden="true"
       viewBox="0 0 16 16"
       className={className}
-      fill="none"
+      fill={filled ? "currentColor" : "none"}
       stroke="currentColor"
       strokeWidth="1.5"
       strokeLinecap="round"
@@ -228,8 +236,8 @@ function Glyph({ path, className }: { path: string; className: string }) {
   );
 }
 const CHECK = "M3.5 8.5 6.5 11.5 12.5 4.5";
-/** A ring: work still in progress. */
-const ACTIVE = "M8 5.25a2.75 2.75 0 1 0 0 5.5 2.75 2.75 0 1 0 0-5.5Z";
+/** A solid dot: work still in progress. */
+const ACTIVE = "M8 5.75a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 1 0 0-4.5Z";
 const FILE =
   "M9.5 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5Z M9.5 1.5V5H13";
 const LINK =
@@ -283,8 +291,9 @@ function Row({
 }
 
 /**
- * Progress items: rings for work still in progress, then checks for finished
- * results, both in the state's accent text color.
+ * Progress items: solid dots for work still in progress, then checks for
+ * finished results, both in the state's accent text color. A working recap
+ * with a single shown item reads as plain text.
  */
 function Results({
   active = [],
@@ -300,6 +309,15 @@ function Results({
     ...active.map((text) => ({ text, path: ACTIVE, label: "In progress" })),
     ...done.map((text) => ({ text, path: CHECK, label: "Done" })),
   ];
+  if (active.length > 0 && items.length === 1)
+    return (
+      <p
+        data-progress="active"
+        className={`m-0 min-w-0 ${body} text-foreground`}
+      >
+        <RecapText text={items[0]!.text} />
+      </p>
+    );
   return (
     <ul className="m-0 list-none space-y-0.5 p-0">
       {items.map((item, index) => (
@@ -310,6 +328,7 @@ function Results({
         >
           <Glyph
             path={item.path}
+            filled={item.path === ACTIVE}
             className={cn("mt-[0.2em] h-3.5 w-3.5", accent)}
           />
           <span className="sr-only">{item.label}: </span>

@@ -602,25 +602,25 @@ it.
 7. **Recap card** (a composer banner), in its state's accent (blue for review,
    green for complete, violet for continuing) on its border, background, state
    line, and row labels: a state line (Ready for Review, Complete, or Working),
-   the Goal heading, then rows by layout. Full: Progress (rings for active
-   items, then checks for finished ones) and optional Next while working;
-   results alone when complete; Done (check-marked) and Review (the requested
-   checks, with optional review-target Links as chips under their steps) for
-   review; labels stack above their rows on narrow cards. Compact uses smaller
-   type and spacing and one unlabeled row: active items while working, results
-   when complete, review steps and links for review. A dismiss ✕ sits in the
-   top-right corner. Archive, when it applies, sits at the right of a footer
-   strip in Full and as an icon-only button beside ✕ in Compact. It stays up
-   while the user drafts and hides while a message sends or the thread runs,
-   while a question card is open, and in the inline message editor; hiding never
-   moves the thread. **Archive** is unavailable for continuing recaps. For
-   complete and review it shows when the server confirms that the thread and
-   every child and lifecycle dependent are idle with no queued work,
-   interactions, background work, unfinished goal or pending todos, and that
-   each dependent is complete (its own recap, else current analysis); hidden
-   dependents block it. Archiving a review recap accepts its result. Continuing
-   the thread withdraws Archive for that recap. Workstreams never archives on
-   its own.
+   the Goal heading, then rows by layout. Full: Progress (solid dots for active
+   items, then checks for finished ones; a single shown working item has no
+   bullet) and optional Next while working; results alone when complete; Done
+   (check-marked) and Review (the requested checks, with optional review-target
+   Links as chips under their steps) for review; labels stack above their rows
+   on narrow cards. Compact uses smaller type and spacing and one unlabeled row:
+   active items while working, results when complete, review steps and links for
+   review. A dismiss ✕ sits in the top-right corner. Archive, when it applies,
+   sits at the right of a footer strip in Full and as an icon-only button beside
+   ✕ in Compact. It stays up while the user drafts and hides while a message
+   sends or the thread runs, while a question card is open, and in the inline
+   message editor; hiding never moves the thread. **Archive** is unavailable for
+   continuing recaps. For complete and review it shows when the server confirms
+   that the thread and every child and lifecycle dependent are idle with no
+   queued work, interactions, background work, unfinished goal or pending todos,
+   and that each dependent is complete (its own recap, else current analysis);
+   hidden dependents block it. Archiving a review recap accepts its result.
+   Continuing the thread withdraws Archive for that recap. Workstreams never
+   archives on its own.
 
 ### 11.1 Snooze
 
