@@ -187,7 +187,9 @@ it("splits thread mentions and commit hashes out of a line", () => {
     { kind: "sha", sha: "cef4818" },
     { kind: "markdown", text: " for " },
     { kind: "thread", threadId: "thr_ab1" },
-    { kind: "markdown", text: ", see `deadbee1` and [x](https://a.b/cef4818)" },
+    { kind: "markdown", text: ", see " },
+    { kind: "sha", sha: "deadbee1" },
+    { kind: "markdown", text: " and [x](https://a.b/cef4818)" },
   ]);
   expect(recapSegments("1234567 deadbeef facade1x")).toEqual([
     { kind: "markdown", text: "1234567 deadbeef facade1x" },

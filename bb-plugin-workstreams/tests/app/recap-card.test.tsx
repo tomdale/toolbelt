@@ -88,7 +88,9 @@ async function mount(
     {
       composer: { scope: { kind: "thread", threadId: "t1" } },
       sidebarThreads: {
-        sections: [{ id: "ws", name: "Workstream", createdAt: 0, updatedAt: 0 }],
+        sections: [
+          { id: "ws", name: "Workstream", createdAt: 0, updatedAt: 0 },
+        ],
         threads: options.threads ?? [
           sidebarThread("t1", {
             latestAttentionAt: 500,
