@@ -33,7 +33,7 @@ import { useContinuing } from "./useContinuing.ts";
 import type { HeldSpace } from "./recapMotion.ts";
 
 const CARD_CLASS =
-  "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-border bg-muted/40 px-4 py-3 text-foreground shadow-sm";
+  "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-400 bg-sky-50/40 px-4 py-3 text-foreground dark:border-sky-500/80 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(29.3%_0.066_243.157))]";
 
 // What happened is the card's primary text.
 const BODY_CLASS =
