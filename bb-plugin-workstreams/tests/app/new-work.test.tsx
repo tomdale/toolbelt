@@ -5,12 +5,11 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { IntakeContext } from "../../src/app/composer/intake.ts";
 import { IntakeBanner } from "../../src/app/composer/IntakeBanner.tsx";
-import { ContinueAction } from "../../src/app/composer/ContinueAction.tsx";
 import { NewWorkDialog } from "../../src/app/composer/NewWork.tsx";
 import type { PluginBrowserBbSdk } from "@get-bb/plugin-sdk/app";
 import type { RouteDecision } from "../../src/server/router.ts";
 import { emptyState } from "./fixtures.ts";
-// The SDK composer stub omits registered banners and draft-view publication.
+// The SDK composer stub omits draft-view publication.
 // This adapter supplies those two host responsibilities around its guarded submit.
 const selectionBehavior = vi.hoisted(() => ({
   apply: undefined as
@@ -122,7 +121,6 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
               }
             }}
           />
-          <ContinueAction />
         </div>
       );
     },
@@ -369,9 +367,9 @@ it("Enter creates the new thread while a continuation is only suggested", async 
   expect(route).toHaveBeenCalledWith(
     expect.objectContaining({ offerNewThread: true }),
   );
-  expect(
-    screen.getByRole("button", { name: "Continue Spacing fix instead" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toContain(
+    "Suggested: continue Spacing fix",
+  );
   fireEvent.keyDown(input(), { key: "Enter" });
   await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
   expect(execute.mock.calls[0]![0]).toMatchObject({
@@ -381,13 +379,6 @@ it("Enter creates the new thread while a continuation is only suggested", async 
   });
 });
 it.each([
-  [
-    "its button",
-    () =>
-      fireEvent.click(
-        screen.getByRole("button", { name: "Continue Spacing fix instead" }),
-      ),
-  ],
   [
     "⌘⏎",
     () =>

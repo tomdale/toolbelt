@@ -16,7 +16,7 @@ against.
     and skips classification. **No workstream** creates an unassigned thread and
     requires a chosen or confidently inferred project. Existing threads show
     locked placement and use their existing execution settings. Pending routing
-    blocks Enter and click before the native composer clears the draft.
+    blocks submit until the destination and placement are ready.
   - **For you**: a pending approval or question, or a thread whose latest turn
     asks you to decide something. These rows sit at the top in an amber block
     with a slow shimmer, under an always-open header, each naming its
@@ -119,7 +119,7 @@ against.
   recorded with the exact prompt, the model's reasoning summary, the raw
   response, the parsed result, and what Workstreams did with it. A small bug
   button appears wherever Workstreams used a model: the thread header, the drift
-  and proposal banners, the routing banner and New work, Activity entries, the
+  and proposal banners, New work, Activity entries, the
   organizing review, generated descriptions, Overview rows, and the sidebar row
   menu (**Inspect model calls…**). It opens a side pane with those calls. **Run
   again** sends the same prompt to the same model to show whether the answer is
@@ -209,7 +209,7 @@ node scripts/capture-new-work.mjs /tmp/new-work-shots
   `model.ts` (every model call's prompt and parser, and Debug mode's recording),
   `trace.ts` (the trace store), `inference/` (the host entry that runs Pi).
 - `src/app/`: the sidebar list, the page, the header parent link and proposal
-  banner, the composer routing banner, and `debug/` (inspect buttons, the
+  banner, and `debug/` (inspect buttons, the
   inspector pane), fed by `useWorkstreams.ts`.
 
 To check the exact-once guarantee against real data, export a snapshot to
