@@ -11,5 +11,7 @@ it("offers recaps and routing without background organization banners", async ()
   ).toBe(false);
   expect(app.composerCustomizations.some((a) => a.id === "recap")).toBe(true);
   expect(app.composerCustomizations.some((a) => a.id === "router")).toBe(false);
-  expect(app.composerCustomizations.some((a) => a.id === "new-work")).toBe(true);
+  expect(app.composerCustomizations.some((a) => a.id === "new-work")).toBe(
+    true,
+  );
 });

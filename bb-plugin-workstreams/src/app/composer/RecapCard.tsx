@@ -1,5 +1,5 @@
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -15,6 +15,7 @@ import {
 import type { RpcContract } from "../../server/contract.ts";
 import {
   fileTarget,
+  recapSegments,
   type Recap,
   type RecapFiles,
   type RecapLink,
@@ -31,6 +32,7 @@ import {
   holdSpace,
 } from "./recapMotion.ts";
 import { useContinuing } from "./useContinuing.ts";
+import { ActivityThreadLink } from "../page/ActivityThreadLink.tsx";
 import type { HeldSpace } from "./recapMotion.ts";
 
 const CARD_CLASS =
@@ -80,10 +82,41 @@ const BODY_CLASS =
 const GOAL_CLASS =
   "text-[clamp(0.8125rem,calc(0.5rem+1.75cqi),1.0625rem)] leading-[1.4] [text-wrap:wrap]";
 
+const MARKDOWN_CLASS =
+  "text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
+
+/** A commit hash, shortened; clicking copies the full hash. */
+function ShaChip({ sha }: { sha: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      title={copied ? "Copied" : `Copy ${sha}`}
+      aria-label={`Copy commit ${sha}`}
+      onClick={() => {
+        void navigator.clipboard?.writeText(sha).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        });
+      }}
+      className="mx-px inline-flex cursor-pointer items-baseline gap-1 rounded border border-border bg-background/60 px-1 font-mono text-[0.85em] leading-[1.35] text-foreground/80 hover:border-foreground/25 hover:text-foreground"
+    >
+      <Icon
+        name={copied ? "Check" : "GitCommitHorizontal"}
+        aria-hidden
+        className="size-[1em] shrink-0 self-center opacity-70"
+      />
+      {sha.slice(0, 7)}
+    </button>
+  );
+}
+
 /**
  * One recap line through BB's markdown, so inline code, emphasis, and links
- * survive. The overrides keep BB's paragraph and code styles inside the
- * recap's type scale.
+ * survive. BB's Markdown leaves thread mentions and commit hashes as text,
+ * so those segments render here as chips between inline Markdown runs. The
+ * overrides keep BB's paragraph and code styles inside the recap's type
+ * scale.
  */
 function RecapText({
   text,
@@ -94,11 +127,44 @@ function RecapText({
   className?: string;
   typeClass?: string;
 }) {
+  const segments = recapSegments(text);
+  if (segments.length === 1 && segments[0]!.kind === "markdown")
+    return (
+      <Markdown
+        content={text}
+        className={`min-w-0 ${typeClass} ${MARKDOWN_CLASS} ${className}`}
+      />
+    );
   return (
-    <Markdown
-      content={text}
-      className={`min-w-0 ${typeClass} text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em] ${className}`}
-    />
+    <div className={`min-w-0 ${typeClass} ${className}`}>
+      {segments.map((segment, index) => {
+        if (segment.kind === "thread")
+          return (
+            <span
+              key={index}
+              className="inline-block max-w-[16rem] align-middle [&>a]:text-[0.85em]"
+            >
+              <ActivityThreadLink threadId={segment.threadId} />
+            </span>
+          );
+        if (segment.kind === "sha")
+          return <ShaChip key={index} sha={segment.sha} />;
+        // Markdown trims its source, so edge spaces are kept outside it.
+        const body = segment.text.trim();
+        return (
+          <Fragment key={index}>
+            {/^\s/.test(segment.text) ? " " : null}
+            {body ? (
+              <Markdown
+                content={body}
+                className={`!inline [&_p]:!inline ${MARKDOWN_CLASS}`}
+              />
+            ) : null}
+            {/\s$/.test(segment.text) && body ? " " : null}
+          </Fragment>
+        );
+      })}
+    </div>
   );
 }
 

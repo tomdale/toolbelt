@@ -302,7 +302,7 @@ export const RECAP_TOOL_DESCRIPTION =
  */
 export const RECAP_INSTRUCTIONS = `End every turn with ${RECAP_TOOL}, after completing the work you were authorized to do, unless the turn ends with a question card (AskUserQuestion or your provider's own question tool) still awaiting the user's answer. Ask questions only through such a card, never only in your reply.
 state: complete when the user's latest request is fully done; review when a finished result waits on the user to inspect, test, merge, or ship; continuing when background work is active or continuation is scheduled and nothing is needed from the user. Verify that work is active or scheduled before reporting continuing. Stay on unfinished work that has no active or scheduled continuation; use a question card when required user input blocks progress.
-Write terse fragments in sentence case without closing periods. Every text field (goal, latest, next, review step and expect) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips; length limits count visible text, not link targets. Inline links fit any state; the links field below is a separate list of review targets. goal: the thread's durable purpose as a short -ing phrase ("Porting handoffs into Workstreams"). latest: one to three concrete results of work actually done, about 12 words each, most important first. review (required for review): one to three steps, each saying how to inspect or try the requested result and what to expect, about 20 words each. Send each distinct action as its own array item; separate items render as a numbered list, while punctuation inside one item does not split it. A step may be a string or { step, expect }. For UI review, give steps to reach and exercise the UI.
+Write terse fragments in sentence case without closing periods. Every text field (goal, latest, next, review step and expect) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips; a bare lowercase commit hash (not in backticks or links) shows as a short copyable chip; length limits count visible text, not link targets. Inline links fit any state; the links field below is a separate list of review targets. goal: the thread's durable purpose as a short -ing phrase ("Porting handoffs into Workstreams"). latest: one to three concrete results of work actually done, about 12 words each, most important first. review (required for review): one to three steps, each saying how to inspect or try the requested result and what to expect, about 20 words each. Send each distinct action as its own array item; separate items render as a numbered list, while punctuation inside one item does not split it. A step may be a string or { step, expect }. For UI review, give steps to reach and exercise the UI.
 For continuing, latest describes progress, including active work; next (required): one to three agent-owned next steps, at most 160 visible characters each. Omit review and links.
 links: optional, only in the review state and only for artifacts or pages explicitly being asked to be reviewed, as absolute file paths or HTTPS URLs. A changed source file qualifies only when source review is requested. For complete, omit links or send an empty list.
 The user decides whether to archive the thread from the recap. When a question card is dismissed or expires, treat the question as unanswered and unapproved, and continue only work that does not depend on it.`;
@@ -364,4 +364,53 @@ export function fileTarget(
   if (root && (path === root || path.startsWith(`${root}/`)))
     return { kind: "workspace", environmentId: files.environmentId, path };
   return files.hostId ? { kind: "host", hostId: files.hostId, path } : null;
+}
+
+/** A piece of a recap line: Markdown, or a token the card renders itself. */
+export type RecapSegment =
+  | { kind: "markdown"; text: string }
+  | { kind: "thread"; threadId: string }
+  | { kind: "sha"; sha: string };
+
+/**
+ * `@thread:<id>` mentions, and commit hashes: 7–40 hex digits with at least
+ * one digit and one letter, so plain numbers and hex-looking words stay text.
+ */
+const TOKEN =
+  /@thread:([A-Za-z0-9_-]+)|(?<![\w/#.-])(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])([0-9a-f]{7,40})(?![\w/-])/g;
+
+/**
+ * Splits a recap line around thread mentions and commit hashes, which BB's
+ * Markdown renders as plain text. Code spans and link syntax stay whole, so
+ * a hash inside `code` or a URL is left to Markdown.
+ */
+export function recapSegments(text: string): RecapSegment[] {
+  const segments: RecapSegment[] = [];
+  let markdown = "";
+  const protectedSpan =
+    /`[^`]*`|\[[^\]]*\]\([^)]*\)|<https?:\/\/[^>\s]+>|https?:\/\/\S+/g;
+  let last = 0;
+  const scan = (chunk: string) => {
+    let at = 0;
+    for (const match of chunk.matchAll(TOKEN)) {
+      markdown += chunk.slice(at, match.index);
+      if (markdown) segments.push({ kind: "markdown", text: markdown });
+      markdown = "";
+      segments.push(
+        match[1]
+          ? { kind: "thread", threadId: match[1] }
+          : { kind: "sha", sha: match[2]! },
+      );
+      at = match.index + match[0].length;
+    }
+    markdown += chunk.slice(at);
+  };
+  for (const span of text.matchAll(protectedSpan)) {
+    scan(text.slice(last, span.index));
+    markdown += span[0];
+    last = span.index + span[0].length;
+  }
+  scan(text.slice(last));
+  if (markdown) segments.push({ kind: "markdown", text: markdown });
+  return segments;
 }
