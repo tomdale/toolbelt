@@ -247,7 +247,7 @@ it("lists several review steps", async () => {
   )!;
   // Steps are numbered in order.
   expect([...steps.querySelectorAll("li")].map((li) => li.textContent)).toEqual(
-    ["1Open New work and type a request", "2Expand Debug"],
+    ["1.Open New work and type a request", "2.Expand Debug"],
   );
 });
 

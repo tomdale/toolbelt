@@ -150,7 +150,8 @@ function Row({
   );
 }
 
-function Results({ items }: { items: string[] }) {
+/** Results, check-marked in the state's accent text color. */
+function Results({ items, accent }: { items: string[]; accent: string }) {
   return (
     <ul className="m-0 list-none space-y-0.5 p-0">
       {items.map((item, index) => (
@@ -160,7 +161,7 @@ function Results({ items }: { items: string[] }) {
         >
           <Glyph
             path={CHECK}
-            className="mt-[0.2em] h-3.5 w-3.5 text-foreground/60"
+            className={cn("mt-[0.2em] h-3.5 w-3.5", accent)}
           />
           <RecapText text={item} />
         </li>
@@ -184,7 +185,7 @@ function Steps({ items }: { items: string[] }) {
             aria-hidden="true"
             className="text-[0.85em] font-medium tabular-nums text-foreground/60"
           >
-            {index + 1}
+            {index + 1}.
           </span>
           <RecapText text={item} />
         </li>
@@ -285,7 +286,7 @@ function RecapSummary({
       ) : null}
       <div className={cn("mt-1.5 [&>section+section]:border-t", accent.rules)}>
         <Row label="Done" accent={accent.text}>
-          <Results items={recap.latest} />
+          <Results items={recap.latest} accent={accent.text} />
         </Row>
         {review ? (
           <Row label="Review" accent={accent.text}>
