@@ -23,7 +23,7 @@ const EXAMPLES: readonly Example[] = [
       turnId: "preview",
       at: 0,
       state: "complete",
-      goal: "Adding dark mode to the settings page",
+      goal: "Added dark mode to the Settings page",
       latest: [
         "Theme toggle saves to the user's preferences",
         "Every settings panel follows the system theme by default",
@@ -41,7 +41,7 @@ const EXAMPLES: readonly Example[] = [
       turnId: "preview",
       at: 0,
       state: "review",
-      goal: "Adding dark mode to the settings page",
+      goal: "Added dark mode to the Settings page",
       latest: [
         "Theme toggle saves to the user's preferences",
         "Every settings panel follows the system theme by default",
@@ -60,15 +60,16 @@ const EXAMPLES: readonly Example[] = [
     },
   },
   {
-    label: "Work continuing",
+    label: "Working",
     showArchive: false,
     recap: {
       id: "preview-continuing",
       turnId: "preview",
       at: 0,
       state: "continuing",
-      goal: "Adding dark mode to the settings page",
-      latest: ["Theme behavior agreed", "UI and server subagents are running"],
+      goal: "Adding dark mode to the Settings page",
+      active: ["UI and server subagents are building the theme toggle"],
+      latest: ["Theme behavior agreed"],
       next: ["Inspect both agents' results and screenshots before integrating"],
       review: [],
       links: [],

@@ -104,16 +104,17 @@ describe("agent recaps", () => {
     const output = await s.report({
       ...RECAP,
       state: "continuing",
-      next: ["Inspect worker results"],
+      latest: [],
+      active: ["Workers are running"],
     });
     await s.idle();
     expect(s.corrections()).toHaveLength(0);
     expect((await s.card()).recap).toMatchObject({
       state: "continuing",
-      next: ["Inspect worker results"],
+      active: ["Workers are running"],
       review: [],
     });
-    expect(output).toContain("Nothing needed from you");
+    expect(output).toContain("**Working**");
     await s.dispatch();
     expect((await s.card()).recap).toBeNull();
   });

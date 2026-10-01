@@ -50,8 +50,8 @@ design and the contract the code is checked against.
     timed snooze returns the thread marked unread at its time; "Until it
     updates" returns it at its next activity; sending the thread a message or
     **Wake now** ends any snooze.
-  - Rows show BB's status, a work-state mark (✓ complete, ◇ review, and ↻ work
-    continuing from the agent's recap; ◆ decision, ◇ review, ⏸ blocked from
+  - Rows show BB's status, a work-state mark (✓ complete, ◇ review, and ↻
+    working from the agent's recap; ◆ decision, ◇ review, ⏸ blocked from
     analysis when a thread has no recap; hover for where it stopped), unread
     state, drafts, shortcuts and pull requests. Pick the working thread's
     spinner animation and its colors under **Working indicator** in the plugin's
@@ -75,22 +75,23 @@ design and the contract the code is checked against.
   links to files or pages. One Latest result or Review step reads as plain text,
   more as a list. File links inside the thread's workspace open there, others
   through its machine. The card shows a state line (Ready for Review, Complete,
-  or Work continuing), the goal, and Done and Review rows for review recaps,
-  with links under Review. Continuing recaps use Progress and Next rows, neutral
-  progress bullets, and “Nothing needed from you”; their `next` field contains
-  one to three agent-owned steps. Complete recaps show just results. The card
-  sits above the composer, with a dismiss ✕ in its corner and, when the thread
-  can be archived, **Archive** at the right of a footer strip along its bottom
-  edge; its state marks the sidebar row. Each recap also stays in the thread as
-  a tinted **Recap** tool row; expand it to read the recap. Fresh input clears
-  the card. A turn that ends without either gets an agent-only reminder, three
-  by default (Settings → **Recap**: on/off, reminders 0–10, and a Full or
-  Minimal layout without the goal). BB reports turn completion after the fact,
-  so the turn's own reply is already visible when the reminder arrives. The tool
-  reaches each thread when its provider session next starts. Reminders go only
-  to threads that certainly have it: threads created since recaps were turned on
-  (for a fork, the thread its fork chain started from), and threads whose agent
-  has called it.
+  or Working), the goal, and Done and Review rows for review recaps, with links
+  under Review. Working recaps list one to three in-progress items (rings)
+  before any finished ones (checks), four at most, plus optional Next steps.
+  Complete recaps show just results. The **Compact** layout keeps the goal and
+  one essential row in smaller type: active items, results, or review steps,
+  with an icon-only Archive beside ✕. The card sits above the composer, with a
+  dismiss ✕ in its corner and, when the thread can be archived, **Archive** at
+  the right of a footer strip along its bottom edge; its state marks the sidebar
+  row. Each recap also stays in the thread as a tinted **Recap** tool row;
+  expand it to read the recap. Fresh input clears the card. A turn that ends
+  without either gets an agent-only reminder, three by default (Settings →
+  **Recap**: on/off, reminders 0–10, and a Full or Compact layout). BB reports
+  turn completion after the fact, so the turn's own reply is already visible
+  when the reminder arrives. The tool reaches each thread when its provider
+  session next starts. Reminders go only to threads that certainly have it:
+  threads created since recaps were turned on (for a fork, the thread its fork
+  chain started from), and threads whose agent has called it.
 - **Archive**: on a complete or review recap, when BB has no unfinished tasks,
   goals, queued messages, interactions, or background work, and every child and
   lifecycle dependent is complete. Archiving a review recap accepts its result.

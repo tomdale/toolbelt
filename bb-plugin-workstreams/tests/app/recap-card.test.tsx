@@ -215,30 +215,77 @@ it.each(["full", "minimal"])(
   },
 );
 
-it.each(["full", "minimal"])(
-  "shows ongoing progress without done or review in %s",
-  async (layout) => {
-    const slot = await mount({
-      layout,
-      recap: {
-        state: "continuing",
-        latest: ["Workers are running"],
-        next: ["Inspect worker results"],
-      },
-    });
-    const region = await slot.findByRole("region", { name: "Latest recap" });
-    expect(region.textContent).toContain("Work continuing");
-    expect(region.textContent).toContain("Nothing needed from you");
-    expect(slot.getByRole("heading", { name: "Progress" })).toBeTruthy();
-    expect(slot.getByRole("heading", { name: "Next" })).toBeTruthy();
-    expect(slot.queryByRole("heading", { name: "Done" })).toBeNull();
-    expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
-    expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
-    expect(region.querySelector("li svg path")?.getAttribute("d")).not.toBe(
-      "M3.5 8.5 6.5 11.5 12.5 4.5",
-    );
-  },
-);
+const WORKING = {
+  state: "continuing",
+  active: ["Workers are running"],
+  latest: ["Theme agreed"],
+  next: ["Inspect worker results"],
+};
+const progress = (region: HTMLElement) =>
+  [...region.querySelectorAll("li[data-progress]")].map(
+    (li) => `${li.getAttribute("data-progress")}:${li.textContent}`,
+  );
+
+it("shows working progress with rings before checks, and optional Next", async () => {
+  const slot = await mount({ recap: WORKING });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  expect(region.textContent).toContain("Working");
+  expect(region.textContent).not.toContain("Nothing needed");
+  expect(progress(region)).toEqual([
+    "active:In progress: Workers are running",
+    "done:Done: Theme agreed",
+  ]);
+  expect(slot.getByRole("heading", { name: "Progress" })).toBeTruthy();
+  expect(slot.getByRole("heading", { name: "Next" })).toBeTruthy();
+  expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
+  expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
+  cleanup();
+  const without = await mount({ recap: { ...WORKING, next: [] } });
+  await without.findByRole("region", { name: "Latest recap" });
+  expect(without.queryByRole("heading", { name: "Next" })).toBeNull();
+});
+
+it("shows the goal and only in-progress items in the compact working card", async () => {
+  const slot = await mount({ layout: "minimal", recap: WORKING });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  expect(slot.getByRole("heading", { name: "Building the card" })).toBeTruthy();
+  expect(progress(region)).toEqual(["active:In progress: Workers are running"]);
+  expect(region.textContent).not.toContain("Inspect worker results");
+  expect(slot.queryByRole("heading", { name: "Progress" })).toBeNull();
+  expect(region.className).toContain("py-2");
+});
+
+it("shows the goal, results, and an icon-only Archive in the compact complete card", async () => {
+  const slot = await mount({ layout: "minimal", archivable: true });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  expect(slot.getByRole("heading", { name: "Building the card" })).toBeTruthy();
+  expect(progress(region)).toEqual(["done:Done: Card renders"]);
+  const archive = await slot.findByRole("button", { name: "Archive" });
+  expect(archive.textContent).toBe("");
+  fireEvent.click(archive);
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls).toContainEqual({
+      method: "archive",
+      input: { threadId: "t1", recapId: "r1" },
+    }),
+  );
+});
+
+it("shows the goal and only the review steps in the compact review card", async () => {
+  const slot = await mount({
+    layout: "minimal",
+    archivable: true,
+    recap: { state: "review", review: ["Open Settings"] },
+  });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  expect(slot.getByRole("heading", { name: "Building the card" })).toBeTruthy();
+  expect(region.textContent).toContain("Open Settings");
+  expect(region.textContent).not.toContain("Card renders");
+  expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
+  expect(
+    (await slot.findByRole("button", { name: "Archive" })).textContent,
+  ).toBe("");
+});
 
 it("shows UI review steps without artifact links", async () => {
   const slot = await mount({
@@ -275,14 +322,7 @@ it("shows structured review steps with expected results", async () => {
   expect(slot.getByText("Dark stays selected")).toBeTruthy();
 });
 
-it("drops the goal heading in the minimal layout", async () => {
-  const slot = await mount({ layout: "minimal" });
-  const region = await slot.findByRole("region", { name: "Latest recap" });
-  expect(region.textContent).not.toContain("Building the card");
-  expect(region.textContent).toContain("Card renders");
-});
-
-it.each(["full", "minimal"])(
+it.each(["full"])(
   "shows the review check, its links, and archive acceptance in %s",
   async (layout) => {
     const slot = await mount({
@@ -327,7 +367,7 @@ it.each(["full", "minimal"])(
         .closest("li"),
     ).toBeNull();
     const archive = await slot.findByRole("button", { name: "Archive" });
-    // A compact outline button in every layout, so it never outweighs the recap.
+    // A small outline button, so it never outweighs the recap.
     expect(archive.className).toContain("h-8");
     expect(archive.className).toContain("border-input");
     fireEvent.click(archive);

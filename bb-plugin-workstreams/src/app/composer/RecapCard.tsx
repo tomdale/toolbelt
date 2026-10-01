@@ -1,5 +1,13 @@
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  createContext,
+  Fragment,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -36,7 +44,7 @@ import { ActivityThreadLink } from "../page/ActivityThreadLink.tsx";
 import type { HeldSpace } from "./recapMotion.ts";
 
 const CARD_CLASS =
-  "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border px-4 py-3 text-foreground";
+  "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border text-foreground";
 
 /**
  * Each state's accent colors the card's border, background, state line, row
@@ -72,8 +80,12 @@ const ACCENT: Record<
   },
 };
 
-function cardClass(state: Recap["state"]) {
-  return cn(CARD_CLASS, ACCENT[state].card);
+function cardClass(state: Recap["state"], layout: RecapLayout) {
+  return cn(
+    CARD_CLASS,
+    layout === "minimal" ? "px-3 py-2" : "px-4 py-3",
+    ACCENT[state].card,
+  );
 }
 
 // What happened is the card's primary text.
@@ -81,6 +93,16 @@ const BODY_CLASS =
   "text-[clamp(0.625rem,calc(0.4375rem+0.9375cqi),0.8125rem)] leading-[1.5] [text-wrap:pretty]";
 const GOAL_CLASS =
   "text-[clamp(0.8125rem,calc(0.5rem+1.75cqi),1.0625rem)] leading-[1.4] [text-wrap:wrap]";
+// The compact layout steps every size down so the card stays short.
+const COMPACT_BODY_CLASS =
+  "text-[clamp(0.625rem,calc(0.375rem+0.875cqi),0.75rem)] leading-[1.45] [text-wrap:pretty]";
+const COMPACT_GOAL_CLASS =
+  "text-[clamp(0.75rem,calc(0.4375rem+1.5cqi),0.9375rem)] leading-[1.35] [text-wrap:wrap]";
+
+/** True inside a compact card; selects the smaller type scale. */
+const CompactContext = createContext(false);
+const useBodyClass = () =>
+  useContext(CompactContext) ? COMPACT_BODY_CLASS : BODY_CLASS;
 
 const MARKDOWN_CLASS =
   "text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
@@ -127,12 +149,14 @@ function Sha({ sha }: { sha: string }) {
 function RecapText({
   text,
   className = "",
-  typeClass = BODY_CLASS,
+  typeClass,
 }: {
   text: string;
   className?: string;
   typeClass?: string;
 }) {
+  const scale = useBodyClass();
+  typeClass ??= scale;
   const segments = recapSegments(text);
   if (segments.length === 1 && segments[0]!.kind === "markdown")
     return (
@@ -196,24 +220,33 @@ function Glyph({ path, className }: { path: string; className: string }) {
   );
 }
 const CHECK = "M3.5 8.5 6.5 11.5 12.5 4.5";
+/** A ring: work still in progress. */
+const ACTIVE = "M8 5.25a2.75 2.75 0 1 0 0 5.5 2.75 2.75 0 1 0 0-5.5Z";
 const FILE =
   "M9.5 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5Z M9.5 1.5V5H13";
 const LINK =
   "M6.5 9.5a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-.5.5 M9.5 6.5a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l.5-.5";
 
 /** Where the turn's result stands, above the goal. */
-function StateLine({ state }: { state: Recap["state"] }) {
+function StateLine({
+  state,
+  clearance,
+}: {
+  state: Recap["state"];
+  clearance: string;
+}) {
   return (
     <p
       className={cn(
-        "pr-7 text-[11px] font-medium leading-[1.6]",
+        "text-[11px] font-medium leading-[1.6]",
+        clearance,
         ACCENT[state].text,
       )}
     >
       {state === "review"
         ? "Ready for Review"
         : state === "continuing"
-          ? "Work continuing"
+          ? "Working"
           : "Complete"}
     </p>
   );
@@ -230,36 +263,49 @@ function Row({
   accent: string;
   children: ReactNode;
 }) {
+  const compact = useContext(CompactContext);
   return (
-    <section className={label ? ROW_CLASS : "py-2"}>
+    <section
+      className={cn(label ? ROW_CLASS : "py-2", compact && "py-1 first:pt-1.5")}
+    >
       {label ? <h3 className={cn(LABEL_CLASS, accent)}>{label}</h3> : null}
       <div className="min-w-0">{children}</div>
     </section>
   );
 }
 
-/** Finished results use checks; ongoing progress uses neutral bullets. */
+/**
+ * Progress items: rings for work still in progress, then checks for finished
+ * results, both in the state's accent text color.
+ */
 function Results({
-  items,
+  active = [],
+  done,
   accent,
-  continuing = false,
 }: {
-  items: string[];
+  active?: string[];
+  done: string[];
   accent: string;
-  continuing?: boolean;
 }) {
+  const body = useBodyClass();
+  const items = [
+    ...active.map((text) => ({ text, path: ACTIVE, label: "In progress" })),
+    ...done.map((text) => ({ text, path: CHECK, label: "Done" })),
+  ];
   return (
     <ul className="m-0 list-none space-y-0.5 p-0">
       {items.map((item, index) => (
         <li
           key={index}
-          className={`grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 ${BODY_CLASS} text-foreground`}
+          data-progress={item.path === ACTIVE ? "active" : "done"}
+          className={`grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 ${body} text-foreground`}
         >
           <Glyph
-            path={continuing ? "M7 8h2" : CHECK}
+            path={item.path}
             className={cn("mt-[0.2em] h-3.5 w-3.5", accent)}
           />
-          <RecapText text={item} />
+          <span className="sr-only">{item.label}: </span>
+          <RecapText text={item.text} />
         </li>
       ))}
     </ul>
@@ -283,9 +329,10 @@ function StepText({ item }: { item: ReviewStep }) {
 
 /** Review steps: one reads as plain text, more as a list. */
 function Steps({ items }: { items: ReviewStep[] }) {
+  const body = useBodyClass();
   if (items.length === 1)
     return (
-      <div className={`${BODY_CLASS} text-foreground`}>
+      <div className={`${body} text-foreground`}>
         <StepText item={items[0]!} />
       </div>
     );
@@ -294,7 +341,7 @@ function Steps({ items }: { items: ReviewStep[] }) {
       {items.map((item, index) => (
         <li
           key={index}
-          className={`grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 ${BODY_CLASS} text-foreground`}
+          className={`grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 ${body} text-foreground`}
         >
           <span
             aria-hidden="true"
@@ -363,60 +410,66 @@ function Links({
 }
 
 /**
- * The state line and goal, then labeled rows: what was done and what to
- * review. Optional links identify the review targets and go with the steps.
+ * The state line and goal, then the rows for the recap's state. Full shows
+ * every row with labels: Progress and Next while working, Done and Review for
+ * review, results alone when complete. Compact keeps the essential row
+ * unlabeled: in-progress items while working, the review steps for review,
+ * results when complete.
  */
 function RecapSummary({
   recap,
   layout,
   files,
+  clearance,
 }: {
   recap: Recap;
   layout: RecapLayout;
   files: RecapFiles | null;
+  /** Room the top line leaves for the corner buttons. */
+  clearance: string;
 }) {
-  const goal = layout === "full" ? recap.goal : null;
+  const compact = layout === "minimal";
+  const body = compact ? COMPACT_BODY_CLASS : BODY_CLASS;
   const review = recap.state === "review" && recap.review.length > 0;
-  const continuing = recap.state === "continuing";
+  const working = recap.state === "continuing";
+  const next = working ? (recap.next ?? []) : [];
   const accent = ACCENT[recap.state];
   const links =
     review && recap.links.length > 0 ? (
       <Links links={recap.links} files={files} />
     ) : null;
-  return (
-    <div>
-      {/* The top line clears the dismiss button in the corner. */}
-      <StateLine state={recap.state} />
-      {goal ? (
-        <div
-          role="heading"
-          aria-level={2}
-          className="pr-7 font-medium tracking-[-0.006em] text-foreground"
-        >
-          <RecapText
-            text={goal}
-            className="w-full max-w-none"
-            typeClass={GOAL_CLASS}
-          />
-        </div>
-      ) : null}
-      <div className={cn("mt-1.5 [&>section+section]:border-t", accent.rules)}>
+  let rows: ReactNode;
+  if (compact) {
+    rows = working ? (
+      <Row accent={accent.text}>
+        <Results active={recap.active} done={[]} accent={accent.text} />
+      </Row>
+    ) : review ? (
+      <Row accent={accent.text}>
+        <Steps items={recap.review} />
+        {links}
+      </Row>
+    ) : (
+      <Row accent={accent.text}>
+        <Results done={recap.latest} accent={accent.text} />
+      </Row>
+    );
+  } else {
+    rows = (
+      <>
         <Row
-          label={continuing ? "Progress" : review ? "Done" : undefined}
+          label={working ? "Progress" : review ? "Done" : undefined}
           accent={accent.text}
         >
           <Results
-            items={recap.latest}
+            active={working ? recap.active : []}
+            done={recap.latest}
             accent={accent.text}
-            continuing={continuing}
           />
         </Row>
-        {continuing ? (
+        {next.length ? (
           <Row label="Next" accent={accent.text}>
-            <Steps items={recap.next ?? []} />
-            <p className={cn("mt-1 text-muted-foreground", BODY_CLASS)}>
-              Nothing needed from you
-            </p>
+            <Steps items={next} />
           </Row>
         ) : null}
         {review ? (
@@ -425,8 +478,38 @@ function RecapSummary({
             {links}
           </Row>
         ) : null}
+      </>
+    );
+  }
+  return (
+    <CompactContext.Provider value={compact}>
+      {/* The top line clears the corner buttons. */}
+      <StateLine state={recap.state} clearance={clearance} />
+      <div
+        role="heading"
+        aria-level={2}
+        className={cn(
+          "font-medium tracking-[-0.006em] text-foreground",
+          clearance,
+        )}
+      >
+        <RecapText
+          text={recap.goal}
+          className="w-full max-w-none"
+          typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
+        />
       </div>
-    </div>
+      <div
+        className={cn(
+          compact ? "mt-0.5" : "mt-1.5",
+          "[&>section+section]:border-t",
+          accent.rules,
+          body,
+        )}
+      >
+        {rows}
+      </div>
+    </CompactContext.Provider>
   );
 }
 
@@ -483,6 +566,9 @@ function useRecap(threadId: string | null) {
   return { ...state, dismiss, restore };
 }
 
+const CORNER_BUTTON =
+  "absolute top-2.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50";
+
 type CardProps = {
   recap: Recap;
   layout: RecapLayout;
@@ -502,17 +588,39 @@ function CardBody({
   onArchive,
   onDismiss,
 }: CardProps & { onArchive?: () => void; onDismiss?: () => void }) {
+  const compact = layout === "minimal";
+  const compactArchive = compact && showArchive;
   return (
     <>
       <div className="@max-[20rem]/recap:[&_*]:!text-[0.625rem] @max-[20rem]/recap:[&_*]:!font-normal @max-[20rem]/recap:[&_*]:!leading-[1.5] @max-[20rem]/recap:[&_*]:!tracking-normal">
-        <RecapSummary recap={recap} layout={layout} files={files} />
+        <RecapSummary
+          recap={recap}
+          layout={layout}
+          files={files}
+          clearance={compactArchive ? "pr-14" : "pr-7"}
+        />
       </div>
+      {compactArchive ? (
+        // Compact cards keep Archive beside dismiss, icon only, so it adds
+        // no footer height.
+        <button
+          type="button"
+          className={cn(CORNER_BUTTON, "right-9")}
+          aria-label="Archive"
+          title="Archive"
+          disabled={archiveBusy}
+          onClick={onArchive}
+        >
+          <Icon name="Archive" aria-hidden className="size-3.5" />
+        </button>
+      ) : null}
       {/* The footer strip runs edge to edge under the rows, so the card
           without Archive (or an error) stays short. */}
-      {showArchive || archiveError ? (
+      {(showArchive && !compact) || archiveError ? (
         <div
           className={cn(
-            "-mx-4 -mb-3 mt-1.5 flex items-center justify-end gap-3 rounded-b-[7px] border-t px-3 py-2",
+            compact ? "-mx-3 -mb-2" : "-mx-4 -mb-3",
+            "mt-1.5 flex items-center justify-end gap-3 rounded-b-[7px] border-t px-3 py-2",
             ACCENT[recap.state].footer,
           )}
         >
@@ -524,7 +632,7 @@ function CardBody({
               {archiveError}
             </p>
           ) : null}
-          {showArchive ? (
+          {showArchive && !compact ? (
             // Outline, so it offers the next step without outweighing the
             // recap.
             <Button
@@ -542,7 +650,7 @@ function CardBody({
       ) : null}
       <button
         type="button"
-        className="absolute right-2.5 top-2.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className={cn(CORNER_BUTTON, "right-2.5")}
         aria-label="Dismiss recap"
         title="Dismiss recap"
         onClick={onDismiss}
@@ -579,7 +687,7 @@ export function RecapCardPreview({
   className?: string;
 }) {
   return (
-    <div inert className={cn(cardClass(recap.state), className)}>
+    <div inert className={cn(cardClass(recap.state, layout), className)}>
       <CardBody
         recap={recap}
         layout={layout}
@@ -825,7 +933,7 @@ export function RecapCard() {
         <div key="shown" ref={slotRef} className="flow-root" style={FIRST}>
           <div
             ref={cardRef}
-            className={cardClass(frame.recap.state)}
+            className={cardClass(frame.recap.state, frame.layout)}
             role="region"
             aria-label="Latest recap"
           >
@@ -859,7 +967,9 @@ export function RecapCard() {
               inert
               className="pointer-events-none absolute inset-x-0 bottom-0"
             >
-              <div className={cardClass(hold.ghost.recap.state)}>
+              <div
+                className={cardClass(hold.ghost.recap.state, hold.ghost.layout)}
+              >
                 <CardBody {...hold.ghost} />
               </div>
             </div>

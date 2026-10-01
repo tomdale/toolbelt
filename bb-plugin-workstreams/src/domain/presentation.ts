@@ -80,6 +80,6 @@ export function workStateMark(
 ): { glyph: string | null; label: string } {
   if (reported && state === "done") return REPORTED_DONE;
   if (reported && state === "in_progress")
-    return { glyph: "↻", label: "Work continuing" };
+    return { glyph: "↻", label: "Working" };
   return WORK_STATE[state];
 }
