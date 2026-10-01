@@ -55,7 +55,9 @@ it("installs with current storage and no retired state or banner tables", async 
     expect(names.some((n) => n.startsWith("ws_notebook"))).toBe(false);
     expect(names).not.toContain("ws_proposal");
     expect(names).not.toContain("ws_snooze");
-    expect(names).toContain("ws_recap");
+    expect(names).not.toContain("ws_recap");
+    expect(names).not.toContain("ws_archive_dismissed");
+    expect(names).toContain("ws_agent_recap");
     expect(names).toContain("ws_journal");
   } finally {
     await host.harness.lifecycle.dispose();

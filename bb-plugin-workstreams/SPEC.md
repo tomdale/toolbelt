@@ -130,8 +130,10 @@ environments.
   24 hours. Any non-archived member, including hidden threads, blocks cleanup.
   Threads are preserved. Undo restores names, metadata and eligible membership
   with fresh native section IDs.
-- **I6. Freshness.** Derived data (recap, state, subject, drift, title) is keyed
-  to the thread's revision. Stale data renders as _pending_, never as current.
+- **I6. Freshness.** Derived data (analysis's summary, state, subject, drift,
+  title) is keyed to the thread's revision. Stale data renders as _pending_,
+  never as current. An agent recap belongs to the turn that reported it, and
+  fresh input clears it (§10.2).
 - **I7. Journal.** Every mutation is written to the journal (§11.5), with undo
   wherever BB allows it.
 - **I8. One projection.** The sidebar and the page render from one pure
@@ -139,11 +141,11 @@ environments.
 
 ## 5. Thread roles and injected behavior
 
-Workstreams registers **no agent tools**. Agents use the `bb` CLI, which they
-already use for everything else: BB's own spawn for delegation, and
-`bb workstreams handoff` for out-of-scope work. Workstreams contributes only
-short, per-thread instructions through `bb.agents.configure`. `configure` is
-synchronous, and its context contains
+Workstreams registers one agent tool, `WorkstreamsRecap` (§10.2), for every
+thread except side chats. For everything else agents use the `bb` CLI: BB's own
+spawn for delegation, and `bb workstreams handoff` for out-of-scope work.
+Workstreams contributes the tool and short, per-thread instructions through
+`bb.agents.configure`. `configure` is synchronous, and its context contains
 `thread { id, title, parentThreadId, sourceThreadId }`, `project`,
 `environment { path, branchName }`, `origin`, and `pluginMetadata`. It **does
 not include `sectionId` or visibility** _(spike)_, so role and workstream come
@@ -327,19 +329,19 @@ without another model call. See
 
 **Steady state.**
 
-| Change                                                                      | Signal                                                               | Reaction                                                                                       |
-| --------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Thread created through intake or a handoff                                  | RPC or CLI call                                                      | Placed by the router (provenance `router` or `handoff`)                                        |
-| Child created by any source                                                 | `thread.created`                                                     | No structural change. Analyze it on its first idle.                                            |
-| Top-level thread created elsewhere (BB's native composer, CLI, automations) | `thread.created`, then the first `thread.idle`                       | Respect its existing section; otherwise leave it Unsorted.                                     |
-| Visible fork                                                                | `thread.created` with `sourceThreadId`                               | Preserve the creator's placement; otherwise leave it Unsorted                                  |
-| User sends a message                                                        | `message.dispatch` (observe and always `proceed`) or `thread.active` | Mark analysis pending. Clear any inferred "needs decision".                                    |
-| Turn completes                                                              | `thread.idle` (`lastAssistantText` included)                         | Per-thread analysis (§10), debounced about 5 s, at most 4 concurrent                           |
-| Pending approval or question                                                | `interaction.pending`                                                | Show in Needs you immediately                                                                  |
-| Turn fails                                                                  | `thread.failed` / `turn.failed`                                      | Show an error indicator. No analysis.                                                          |
-| Moves, retitles, reparents, section changes                                 | **None**, so the reconciler catches them                             | Record as provenance `user`, never override (a retitle locks the title, §10.1), update the map |
-| Archive, unarchive, delete                                                  | Lifecycle events                                                     | Update views, re-analyze if stale, purge on delete.                                            |
-| The plugin was offline                                                      | Load                                                                 | Full reconcile, then analyze every thread whose revision is newer than its last analysis       |
+| Change                                                                      | Signal                                                                            | Reaction                                                                                                                                     |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Thread created through intake or a handoff                                  | RPC or CLI call                                                                   | Placed by the router (provenance `router` or `handoff`)                                                                                      |
+| Child created by any source                                                 | `thread.created`                                                                  | No structural change. Analyze it on its first idle.                                                                                          |
+| Top-level thread created elsewhere (BB's native composer, CLI, automations) | `thread.created`, then the first `thread.idle`                                    | Respect its existing section; otherwise leave it Unsorted.                                                                                   |
+| Visible fork                                                                | `thread.created` with `sourceThreadId`                                            | Preserve the creator's placement; otherwise leave it Unsorted                                                                                |
+| User sends a message                                                        | `message.dispatch` (proceeds except for stale recap reminders) or `thread.active` | Mark analysis pending. Clear any inferred "needs decision" and the agent recap.                                                              |
+| Turn completes                                                              | `thread.idle` (`lastAssistantText` included)                                      | Per-thread analysis (§10), debounced about 5 s, at most 4 concurrent. A reminder if the turn ended without a recap or question card (§10.2). |
+| Pending approval or question                                                | `interaction.pending`                                                             | Show in Needs you immediately. A question card ends the turn properly (§10.2).                                                               |
+| Turn fails                                                                  | `thread.failed` / `turn.failed`                                                   | Show an error indicator. No analysis.                                                                                                        |
+| Moves, retitles, reparents, section changes                                 | **None**, so the reconciler catches them                                          | Record as provenance `user`, never override (a retitle locks the title, §10.1), update the map                                               |
+| Archive, unarchive, delete                                                  | Lifecycle events                                                                  | Update views, re-analyze if stale, purge on delete.                                                                                          |
+| The plugin was offline                                                      | Load                                                                              | Full reconcile, then analyze every thread whose revision is newer than its last analysis                                                     |
 
 **Reconciler.** A deterministic diff that calls no model. It runs on load, every
 60 s while a client is connected, and on page focus. It pages through
@@ -381,6 +383,10 @@ native section IDs; unused homes qualify for reviewed cleanup under I5 and the
   current revision. A child's question folds into its parent when the parent has
   a newer turn that also needs a decision ("via ‹child›"). The comparison uses
   timestamps only.
+- **Agent recaps outrank analysis.** While an idle thread has an agent recap for
+  its latest turn, the recap's state (complete → `done`, review → `review`) and
+  first Latest line replace analysis's state, ask and summary in the sidebar,
+  the page, and the CLI.
 - **Model:** a setting. Use the fastest model that passes the eval (candidate:
   Gemini 3.1 Flash-Lite). Changing the prompt or model requires passing the
   private reference set and `eval/delegation.json`. The input never includes the
@@ -413,6 +419,38 @@ treated as BB's own.
 Each retitle is journaled (`retitle`, provenance `auto`) with Undo, which
 restores the previous title while it is still the one Workstreams wrote.
 
+### 10.2 Agent recaps
+
+The thread's own agent reports how each turn ended. Every thread except a side
+chat gets the `WorkstreamsRecap` tool and its instructions when its provider
+session is constructed, which enrolls the thread for reminders.
+
+- **Endings.** A turn ends with a question card still open (BB's native
+  question, or Toolbelt's AskUserQuestion), or with a recap whose state is
+  `complete` (the latest request is fully done) or `review` (a finished result
+  waits on the user to inspect, test, merge, or ship).
+- **Recap.** `goal` (≤ 80 characters), `latest` (1–3 lines, ≤ 120 each),
+  `review` (≤ 160, required for review: what to check and the expected result),
+  and `links` (≤ 8 absolute file paths or HTTPS URLs). Closing periods are
+  dropped.
+- **Currency.** A recap is stored with the turn that reported it. Any fresh
+  input (`message.dispatch` other than a reminder) clears it, so a stored recap
+  always describes the latest turn. Dismissing hides the card on every client
+  and keeps the recap's sidebar state.
+- **Reminders.** BB has no completion veto, so the turn's final reply is already
+  visible. On `thread.idle` after a completed turn that ended with neither,
+  Workstreams sends an agent-only reminder, up to a configurable number per turn
+  (default 3, 0–10). The budget persists in SQLite, is reserved before sending,
+  and resets on fresh input. Each reminder carries an epoch and token that
+  `message.dispatch` checks, so input that arrived first rejects it; a queued
+  reminder is recognized by a text marker because submission metadata is
+  transient. Failed and interrupted turns, hidden, archived, and busy threads,
+  threads with queued messages, and threads not enrolled get no reminders. When
+  the budget runs out, the card says so.
+- **Settings.** The Recap section: whether agents end turns with a recap (off
+  removes the tool at each session's next start and stops reminders at once),
+  reminders per turn, and the card layout (Full, or Minimal without the goal).
+
 ## 11. Surfaces
 
 1. **Sidebar thread list** (`experimental_threadList`):
@@ -432,10 +470,11 @@ restores the previous title while it is still the one Workstreams wrote.
      workstreams sit after placed ones.
    - An Unsorted band, a Dormant fold, and a Snoozed fold (collapsed by default,
      §11.1).
-   - Rows show BB's `indicator` glyph plus a work-state glyph (with a legend),
-     provider icon, branch/PR, draft, shortcut pill, unread state, nesting,
-     split drag, the keyboard DOM attributes, and Snooze and Archive buttons on
-     hover.
+   - Rows show BB's `indicator` glyph plus a work-state glyph (with a legend): ✓
+     complete and ◇ review from an agent recap, else ◆ decision, ◇ review and ⏸
+     blocked from analysis, provider icon, branch/PR, draft, shortcut pill,
+     unread state, nesting, split drag, the keyboard DOM attributes, and Snooze
+     and Archive buttons on hover.
    - Context menu: Move to workstream… · Rename · Pin · Read/unread · Snooze ›
      (or Wake now) · Archive · Delete · Open parent.
 2. **Workstreams page** (the Monday-morning view):
@@ -443,8 +482,8 @@ restores the previous title while it is still the one Workstreams wrote.
    - Each workstream lists "pick back up" rows: title · where it stopped · age.
    - Search with `/`.
    - Tabs for Map (the workstream editor) and Activity.
-3. **Thread header:** a parent link (setting), recap controls, and the snooze
-   split button (§11.1).
+3. **Thread header:** a parent link (setting) and the snooze split button
+   (§11.1).
 4. **CLI:**
    `bb workstreams list | show | edit | new | handoff | file | log | analyze | rebuild | trace`,
    built with `defineCli`.
@@ -492,6 +531,18 @@ restores the previous title while it is still the one Workstreams wrote.
      either way. Nothing is recorded while the setting is off. Retention: 7 days
      or 1,000 traces.
 
+7. **Recap card** (a composer banner): the agent recap's Goal heading, Latest
+   lines, a **Review** section with the recap's links, and Archive and Dismiss
+   centered underneath. It stays up while the user drafts and hides while a
+   message sends or the thread runs, while a question card is open, and in the
+   inline message editor; hiding never moves the thread. **Archive** shows when
+   the server confirms that the thread and every child and lifecycle dependent
+   are idle with no queued work, interactions, background work, unfinished goal
+   or pending todos, and that each dependent is complete (its own recap, else
+   current analysis); hidden dependents block it. Archiving a review recap
+   accepts its result. Continuing the thread withdraws Archive for that recap.
+   Workstreams never archives on its own.
+
 ### 11.1 Snooze
 
 Snoozing puts a thread away until later. A snoozed thread leaves For you,
@@ -533,12 +584,14 @@ entry point is a Workstreams header action.
 | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
 | Workstream map, saved organizing preview, analysis cache, title ownership, journal and Activity log, reconciler cursor, debug traces | Plugin SQLite (`bb.storage.database()`) with migrations                  |
 | Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }`                                           | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
-| Manual order, thread snoozes, and Snooze settings                                                                                    | Plugin SQLite, `ws_meta` values                                          |
+| Manual order, thread snoozes, Snooze and Recap settings                                                                              | Plugin SQLite, `ws_meta` values                                          |
+| Agent recaps and their reminder budgets (§10.2)                                                                                      | Plugin SQLite, `ws_agent_recap`                                          |
 | Collapse state and UI preferences                                                                                                    | Client local storage                                                     |
 
 Durable organization consists of the native sections, scope metadata,
-placements, organizing preview and journal. Thread recaps and analysis are
-separate caches. Migrations preserve their append-only statement IDs.
+placements, organizing preview and journal. Agent recaps and analysis are
+per-turn state kept apart from it. Migrations preserve their append-only
+statement IDs.
 
 ## 13. Architecture
 

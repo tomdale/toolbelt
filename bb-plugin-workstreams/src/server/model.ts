@@ -8,7 +8,6 @@ import {
   parseAnalysis,
   type AnalysisInput,
 } from "../domain/analysis.ts";
-import { parseRecap, recapPrompt, type RecapInput } from "../domain/recap.ts";
 import {
   organizePrompt,
   parseOrganization,
@@ -35,10 +34,6 @@ export const MODEL_CALLS = {
   analysis: {
     prompt: (input: AnalysisInput) => analysisPrompt(input),
     parse: (text: string, input: AnalysisInput) => parseAnalysis(text, input),
-  },
-  recap: {
-    prompt: (input: RecapInput) => recapPrompt(input),
-    parse: (text: string) => parseRecap(text),
   },
   route: {
     prompt: (input: RouteInput) => routePrompt(input),
@@ -71,8 +66,6 @@ export function summarize(
   input: unknown,
 ): string | null {
   switch (kind) {
-    case "recap":
-      return "recap";
     case "analysis": {
       const a = value as OutputOf<"analysis">;
       return [

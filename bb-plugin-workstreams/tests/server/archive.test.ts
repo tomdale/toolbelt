@@ -1,88 +1,91 @@
 import { afterEach, expect, it } from "vitest";
+import {
+  makeMessageDispatchHookContext,
+  makePluginAgentConfigurationContext,
+} from "@get-bb/plugin-sdk/testing";
+import { RECAP_TOOL } from "../../src/domain/recap.ts";
 import { fakeWorld } from "./fake-bb.ts";
 
 const worlds: Awaited<ReturnType<typeof fakeWorld>>[] = [];
 afterEach(async () => {
   for (const w of worlds.splice(0)) await w.harness.lifecycle.dispose();
 });
-async function world(state = "done") {
-  const w = await fakeWorld({
-    complete: () =>
-      JSON.stringify({
-        recap: "Finished.",
-        state,
-        needsYou: null,
-        subject: "Alpha",
-        drift: null,
-      }),
-  });
+type World = Awaited<ReturnType<typeof fakeWorld>>;
+
+/** Reports `state` from the thread's agent for its latest turn. */
+async function report(w: World, threadId: string, state = "complete") {
+  await w.harness.behavior.resolveAgentConfiguration(
+    makePluginAgentConfigurationContext({
+      thread: { id: threadId, parentThreadId: null },
+    }),
+  );
+  w.turn(threadId);
+  await w.harness.behavior.callAgentTool(
+    RECAP_TOOL,
+    {
+      state,
+      goal: "Answering a question",
+      latest: ["Answered it"],
+      ...(state === "review" ? { review: "Read the answer" } : {}),
+    },
+    { threadId },
+  );
+}
+
+async function world(state = "complete") {
+  const w = await fakeWorld();
   worlds.push(w);
   w.addThread("t1", { status: "idle", latestAttentionAt: 500 });
-  w.converse("t1", ["Answer my question"], "Answered completely.");
   await w.harness.behavior.callRpc("refresh", null);
-  await w.harness.behavior.runCli(["analyze", "t1"]);
+  await report(w, "t1", state);
   return w;
 }
-const suggestions = async (w: Awaited<ReturnType<typeof world>>) =>
-  await w.harness.behavior
-    .callRpc("archiveStatus", { threadId: "t1" })
-    .then((value) => {
-      const { revision } = value as { revision: number | null };
-      return revision === null ? {} : { t1: revision };
-    });
-
-it("proposes a finished thread, but never archives without a click", async () => {
-  const w = await world();
-  expect(await suggestions(w)).toEqual({ t1: 500 });
-  expect(w.threads.get("t1")!.archivedAt).toBeNull();
-  await w.harness.behavior.callRpc("archiveSuggestion", {
+const recapId = async (w: World) =>
+  (
+    (await w.harness.behavior.callRpc("recap_get", { threadId: "t1" })) as {
+      recap: { id: string };
+    }
+  ).recap.id;
+const suggestions = async (w: World) => {
+  const { recapId: id } = (await w.harness.behavior.callRpc("archiveStatus", {
     threadId: "t1",
-    revision: 500,
-    action: "archive",
+  })) as { recapId: string | null };
+  return id === null ? {} : { t1: id };
+};
+const archive = async (w: World, id?: string) =>
+  w.harness.behavior.callRpc("archive", {
+    threadId: "t1",
+    recapId: id ?? (await recapId(w)),
   });
+
+it("offers Archive on a complete recap, but never archives without a click", async () => {
+  const w = await world();
+  expect(await suggestions(w)).toEqual({ t1: await recapId(w) });
+  expect(w.threads.get("t1")!.archivedAt).toBeNull();
+  await archive(w);
   expect(w.threads.get("t1")!.archivedAt).not.toBeNull();
-  expect(await suggestions(w)).toEqual({});
-});
-
-it("persists dismissal for that turn and permits a later finished turn", async () => {
-  const w = await world();
-  await w.harness.behavior.callRpc("archiveSuggestion", {
-    threadId: "t1",
-    revision: 500,
-    action: "dismiss",
-  });
-  expect(await suggestions(w)).toEqual({});
-  // Reclassification at the same revision must not resurrect a dismissal.
-  await w.harness.behavior.runCli(["analyze", "t1"]);
-  expect(await suggestions(w)).toEqual({});
-  w.threads.set("t1", { ...w.threads.get("t1")!, latestAttentionAt: 600 });
-  await w.harness.behavior.runCli(["analyze", "t1"]);
-  expect(await suggestions(w)).toEqual({ t1: 600 });
-  expect(w.threads.get("t1")!.archivedAt).toBeNull();
 });
 
 it("lets the user accept a reviewed result by archiving", async () => {
   const w = await world("review");
-  expect(await suggestions(w)).toEqual({ t1: 500 });
-  expect(w.threads.get("t1")!.archivedAt).toBeNull();
-  await w.harness.behavior.callRpc("archiveSuggestion", {
-    threadId: "t1",
-    revision: 500,
-    action: "archive",
-  });
+  expect(await suggestions(w)).toEqual({ t1: await recapId(w) });
+  await archive(w);
   expect(w.threads.get("t1")!.archivedAt).not.toBeNull();
 });
 
-it.each(["needs_decision", "blocked", "in_progress"])(
-  "does not propose %s work",
-  async (state) => {
-    expect(await suggestions(await world(state))).toEqual({});
-  },
-);
+it("offers nothing without a recap for the latest turn, or for a stale one", async () => {
+  const w = await world();
+  const id = await recapId(w);
+  await w.harness.inspection.registrations.hooks["message.dispatch"]!(
+    makeMessageDispatchHookContext({ thread: w.threads.get("t1")! }),
+  );
+  expect(await suggestions(w)).toEqual({});
+  await expect(archive(w, id)).rejects.toThrow(/current/);
+  expect(w.threads.get("t1")!.archivedAt).toBeNull();
+});
 
 it.each([
   { status: "active" },
-  { latestAttentionAt: 600 },
   { queuedWork: "waiting" },
   { queuedWork: "failed" },
   { hasPendingInteraction: true },
@@ -92,13 +95,7 @@ it.each([
   const w = await world();
   w.threads.set("t1", { ...w.threads.get("t1")!, ...patch } as never);
   expect(await suggestions(w)).toEqual({});
-  await expect(
-    w.harness.behavior.callRpc("archiveSuggestion", {
-      threadId: "t1",
-      revision: 500,
-      action: "archive",
-    }),
-  ).rejects.toThrow(/work|current/);
+  await expect(archive(w)).rejects.toThrow(/work|current/);
   expect(w.threads.get("t1")!.archivedAt).toBeNull();
 });
 
@@ -124,6 +121,14 @@ it("does not archive children or lifecycle dependents with unfinished work", asy
     status: "active",
   });
   expect(await suggestions(w)).toEqual({});
+});
+
+it("accepts children that their agents reported complete", async () => {
+  const w = await world();
+  w.addThread("child", { parentThreadId: "t1", status: "idle" });
+  expect(await suggestions(w)).toEqual({});
+  await report(w, "child");
+  expect(await suggestions(w)).toEqual({ t1: await recapId(w) });
 });
 
 it("suppresses suggestions when outstanding work cannot be read", async () => {
@@ -155,13 +160,7 @@ it("rejects work introduced during archive validation", async () => {
       w.addThread("new-child", { parentThreadId: "t1", status: "active" });
     return { goal: null, pendingTodos: null };
   });
-  await expect(
-    w.harness.behavior.callRpc("archiveSuggestion", {
-      threadId: "t1",
-      revision: 500,
-      action: "archive",
-    }),
-  ).rejects.toThrow(/current/);
+  await expect(archive(w)).rejects.toThrow(/current/);
   expect(w.threads.get("t1")!.archivedAt).toBeNull();
 });
 
@@ -171,5 +170,5 @@ it("accepts completed structured tasks and goals", async () => {
     goal: { status: "complete" },
     pendingTodos: { items: [{ status: "completed" }] },
   }));
-  expect(await suggestions(w)).toEqual({ t1: 500 });
+  expect(await suggestions(w)).toEqual({ t1: await recapId(w) });
 });

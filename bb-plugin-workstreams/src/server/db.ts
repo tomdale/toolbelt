@@ -260,6 +260,23 @@ const MIGRATIONS = [
   "DELETE FROM ws_trace_link WHERE trace_id IN (SELECT id FROM ws_trace WHERE kind IN ('organize-map','organize-assign','file-unsorted','describe','supervision'))",
   "DELETE FROM ws_trace WHERE kind IN ('organize-map','organize-assign','file-unsorted','describe','supervision')",
   "UPDATE ws_journal SET status = 'dismissed' WHERE action = 'proposal' AND status = 'pending'",
+  `CREATE TABLE ws_agent_recap (
+    thread_id TEXT PRIMARY KEY,
+    epoch INTEGER NOT NULL DEFAULT 0,
+    intercepts INTEGER NOT NULL DEFAULT 0,
+    checked_seq INTEGER NOT NULL DEFAULT 0,
+    accepted_turn TEXT,
+    recap TEXT,
+    dismissed INTEGER NOT NULL DEFAULT 0,
+    enrolled INTEGER NOT NULL DEFAULT 0,
+    capped INTEGER NOT NULL DEFAULT 0,
+    correction_token TEXT,
+    input_key TEXT
+  )`,
+  "DROP TABLE IF EXISTS ws_recap",
+  "DROP TABLE IF EXISTS ws_archive_dismissed",
+  "DELETE FROM ws_trace_link WHERE trace_id IN (SELECT id FROM ws_trace WHERE kind = 'recap')",
+  "DELETE FROM ws_trace WHERE kind = 'recap'",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

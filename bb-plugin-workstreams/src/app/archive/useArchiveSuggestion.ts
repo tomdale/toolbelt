@@ -1,46 +1,32 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  experimental_usePluginId,
-  experimental_useSidebarThreads,
-} from "@get-bb/plugin-sdk/app";
-import { isCurrent } from "../../domain/analysis.ts";
+import { useEffect, useState } from "react";
+import { experimental_useSidebarThreads } from "@get-bb/plugin-sdk/app";
+import type { Recap } from "../../domain/recap.ts";
 import { useServerState } from "../useWorkstreams.ts";
 
-function readDismissed(storageKey: string): Set<string> {
-  try {
-    return new Set(
-      JSON.parse(sessionStorage.getItem(storageKey) ?? "[]") as string[],
-    );
-  } catch {
-    return new Set();
-  }
-}
+/**
+ * Recaps whose Archive the user passed up by continuing the thread. Clearing
+ * the draft doesn't bring the button back; the next recap can offer it again.
+ */
+const declined = new Set<string>();
 
+/**
+ * Archive on the recap card: offered once the server confirms the thread has no outstanding work, and hidden while the
+ * user continues the thread.
+ */
 export function useArchiveSuggestion(
   threadId: string | null,
+  recap: Recap | null,
   continuing = false,
 ) {
-  const { rpc, server, refresh } = useServerState();
-  const pluginId = experimental_usePluginId();
-  const storageKey = `${pluginId}:archive-dismissed`;
-  const dismissed = useRef(readDismissed(storageKey));
+  const { rpc, refresh } = useServerState();
   const { threads } = experimental_useSidebarThreads({
     experimental_lifecycles: ["active"],
   });
-  const analysis = threadId ? server.analysis[threadId] : undefined;
   const thread = threads.find((t) => t.id === threadId);
-  const acceptsResult =
-    analysis?.state === "done" || analysis?.state === "review";
-  const [suggestion, setSuggestion] = useState<{
-    threadId: string;
-    revision: number | null;
-  } | null>(null);
+  const recapId = recap?.id ?? null;
+  const [eligible, setEligible] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [settled, setSettled] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const revision =
-    suggestion?.threadId === threadId ? suggestion.revision : null;
-  const key = `${threadId}:${analysis?.revision}`;
   const activeWork =
     thread !== undefined &&
     (thread.status !== "idle" ||
@@ -48,132 +34,44 @@ export function useArchiveSuggestion(
       thread.queuedWork !== "none" ||
       thread.hasPendingInteraction ||
       Object.values(thread.activity).some((count) => count > 0));
-
-  useEffect(() => {
-    if (
-      !threadId ||
-      !acceptsResult ||
-      !(continuing || activeWork) ||
-      busy ||
-      dismissed.current.has(key)
-    )
-      return;
-    // Continuation intent dismisses the analyzed turn even before archiveStatus
-    // returns. Clearing the draft or remounting must not resurrect that button.
-    dismissed.current.add(key);
-    setSettled(key);
-    try {
-      sessionStorage.setItem(
-        storageKey,
-        JSON.stringify([...dismissed.current].slice(-100)),
-      );
-    } catch {}
-  }, [
-    threadId,
-    acceptsResult,
-    analysis?.revision,
-    continuing,
-    activeWork,
-    busy,
-    key,
-    rpc,
-    storageKey,
-  ]);
-
-  useEffect(() => {
-    if (!threadId || !acceptsResult || !dismissed.current.has(key)) return;
-    let disposed = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let delay = 1000;
-    const persist = async () => {
-      try {
-        await rpc.call("archiveSuggestion", {
-          threadId,
-          revision: analysis.revision,
-          action: "dismiss",
-        });
-      } catch {
-        if (disposed) return;
-        // Retry while this analyzed turn is mounted; the local copy hides it
-        // immediately and lets a remount retry after a connection failure.
-        timer = setTimeout(() => void persist(), delay);
-        delay = Math.min(delay * 2, 30000);
-      }
-    };
-    void persist();
-    return () => {
-      disposed = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [threadId, acceptsResult, analysis?.revision, settled, key, rpc]);
+  if (recapId && continuing && !busy) declined.add(recapId);
+  const offered =
+    threadId !== null &&
+    recapId !== null &&
+    !declined.has(recapId) &&
+    !continuing &&
+    !activeWork;
 
   useEffect(() => {
     let canceled = false;
-    setSuggestion(null);
-    if (
-      threadId &&
-      acceptsResult &&
-      !continuing &&
-      !activeWork &&
-      !dismissed.current.has(key)
-    ) {
-      void rpc
-        .call("archiveStatus", { threadId })
-        .then(({ revision }) => {
-          if (!canceled && !dismissed.current.has(key))
-            setSuggestion({ threadId, revision });
-        })
-        .catch(() => {});
-    }
+    setEligible(null);
+    if (!offered) return;
+    void rpc
+      .call("archiveStatus", { threadId })
+      .then((status) => {
+        if (!canceled) setEligible(status.recapId);
+      })
+      .catch(() => {});
     return () => {
       canceled = true;
     };
   }, [
+    offered,
     threadId,
-    analysis?.revision,
-    acceptsResult,
-    thread?.latestAttentionAt,
-    thread?.status,
-    thread?.runtimeStatus,
-    thread?.queuedWork,
-    thread?.hasPendingInteraction,
-    thread?.isArchived,
-    thread?.isHidden,
-    thread?.activity.goals,
-    thread?.activity.planMode,
-    thread?.activity.backgroundAgents,
-    thread?.activity.backgroundCommands,
-    thread?.activity.workflows,
-    continuing,
-    activeWork,
-    key,
+    recapId,
     rpc,
+    thread?.latestAttentionAt,
+    thread?.isArchived,
   ]);
-  useEffect(() => {
-    setError(null);
-  }, [key]);
+  useEffect(() => setError(null), [recapId]);
 
-  const visible =
-    !continuing &&
-    !activeWork &&
-    threadId !== null &&
-    revision !== null &&
-    thread !== undefined &&
-    !thread.isArchived &&
-    !thread.isHidden &&
-    isCurrent(analysis, thread) &&
-    acceptsResult &&
-    analysis.revision === revision &&
-    settled !== key &&
-    !dismissed.current.has(key);
-
-  const decide = async (action: "archive") => {
-    if (!visible || !threadId || revision === null || busy) return;
+  const visible = offered && eligible === recapId;
+  const archive = async () => {
+    if (!visible || !threadId || !recapId || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await rpc.call("archiveSuggestion", { threadId, revision, action });
-      setSettled(key);
+      await rpc.call("archive", { threadId, recapId });
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -181,5 +79,5 @@ export function useArchiveSuggestion(
       setBusy(false);
     }
   };
-  return { visible, busy, error, decide };
+  return { visible, busy, error, archive };
 }

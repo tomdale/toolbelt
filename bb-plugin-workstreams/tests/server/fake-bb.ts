@@ -50,6 +50,8 @@ export async function fakeWorld(
   const spawned: Record<string, unknown>[] = [];
   const sent: Record<string, unknown>[] = [];
   const markedUnread: string[] = [];
+  /** Each thread's latest agent turn: its number and how it ended. */
+  const turns = new Map<string, { n: number; status: string }>();
   const sections: Section[] = [];
   let nextSection = 1;
   const addThread = (id: string, overrides: Partial<Thread> = {}) => {
@@ -159,12 +161,38 @@ export async function fakeWorld(
           output: conversations.get(threadId)?.output ?? null,
         }),
         events: {
-          list: async ({ threadId }: { threadId: string }) =>
-            (conversations.get(threadId)?.requests ?? []).map((value, i) => ({
-              seq: i + 1,
-              type: "client/turn/requested",
-              data: { input: text(value) },
-            })),
+          list: async ({
+            threadId,
+            types,
+          }: {
+            threadId: string;
+            types?: string[];
+          }) => {
+            const type = types?.[0];
+            if (type === "turn/started" || type === "turn/completed") {
+              const turn = turns.get(threadId);
+              if (!turn) return [];
+              const started = type === "turn/started";
+              return [
+                {
+                  id: `e${turn.n}`,
+                  threadId,
+                  seq: turn.n * 10 + (started ? 1 : 2),
+                  scope: { kind: "turn", turnId: `${threadId}-t${turn.n}` },
+                  type,
+                  data: started ? {} : { status: turn.status },
+                  createdAt: 0,
+                },
+              ];
+            }
+            return (conversations.get(threadId)?.requests ?? []).map(
+              (value, i) => ({
+                seq: i + 1,
+                type: "client/turn/requested",
+                data: { input: text(value) },
+              }),
+            );
+          },
         },
         list: async (args: {
           archived?: boolean;
@@ -244,8 +272,15 @@ export async function fakeWorld(
     requests: string[],
     output: string | null = "Done.",
   ) => conversations.set(id, { requests, output });
+  /** Starts the thread's next agent turn, ending it with `status`. */
+  const turn = (id: string, status = "completed") => {
+    const n = (turns.get(id)?.n ?? 0) + 1;
+    turns.set(id, { n, status });
+    return `${id}-t${n}`;
+  };
   return {
     ...host,
+    turn,
     threads,
     sections,
     addThread,

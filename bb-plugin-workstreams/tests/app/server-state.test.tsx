@@ -45,6 +45,7 @@ function state(revision = 1): ServerState {
     workstreams: {},
     placements: {},
     analysis: {},
+    recaps: {},
     driftDismissed: {},
     bootstrapped: true,
     lastReconciledAt: revision,

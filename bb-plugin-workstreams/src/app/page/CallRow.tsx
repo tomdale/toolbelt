@@ -14,10 +14,6 @@ const EVENT: Record<TraceKind, { label: string; description: string }> = {
     description:
       "The model assessed this thread’s progress, workstream, and possible follow-ups. This is an assessment, not proof that a change was applied.",
   },
-  recap: {
-    label: "Thread recap",
-    description: "The model produced the returning developer's thread recap.",
-  },
   route: {
     label: "Destination selection",
     description:

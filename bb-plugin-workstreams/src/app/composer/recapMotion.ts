@@ -14,7 +14,6 @@
 const EXIT_MS = 420;
 const ENTER_MS = 360;
 const RESIZE_MS = 380;
-const CROSSFADE_MS = 300;
 const REDUCED_MS = 150;
 /** Fast start so the card answers the first keystroke, long gentle tail. */
 const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
@@ -163,23 +162,6 @@ export function followResizes(frame: HTMLElement, body: HTMLElement) {
   };
 }
 
-/** Brings new contents into a resizing frame, e.g. a recap over its skeleton. */
-export function crossfadeIn(body: HTMLElement) {
-  if (reducedMotion())
-    return run(body, [{ opacity: 0 }, { opacity: 1 }], {
-      duration: REDUCED_MS,
-      easing: "linear",
-    });
-  return run(
-    body,
-    [
-      { opacity: 0, filter: "blur(4px)" },
-      { opacity: 1, filter: "blur(0px)" },
-    ],
-    { duration: CROSSFADE_MS, easing: EASE_OUT },
-  );
-}
-
 /**
  * The gap the stack's grid places beside the slot. It outlasts the slot's
  * height (a zero-height grid item still has gaps), so it is part of the
@@ -202,23 +184,6 @@ function gridGap(slot: HTMLElement): number {
     return count;
   };
   return items(grid) > 1 ? Number.parseFloat(style.rowGap) || 0 : 0;
-}
-
-/**
- * Shortens a hold's `slot` by what `below` adds to the stack (its height,
- * its margins, and the grid gap between them), so the stack's total height doesn't change
- * when `below` appears in the same commit as the slot. For Generate Recap
- * taking a dismissed card's place.
- */
-export function makeRoomBelow(slot: HTMLElement, below: HTMLElement) {
-  const height = slot.getBoundingClientRect().height;
-  // Margins count too: the stack's grid lays items out by their margin box.
-  const style = getComputedStyle(below);
-  const margins =
-    (Number.parseFloat(style.marginTop) || 0) +
-    (Number.parseFloat(style.marginBottom) || 0);
-  const taken = below.getBoundingClientRect().height + margins + gridGap(slot);
-  slot.style.height = `${Math.max(0, height - taken)}px`;
 }
 
 export type HeldSpace = {

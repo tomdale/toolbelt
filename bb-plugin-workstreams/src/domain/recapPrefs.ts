@@ -1,12 +1,12 @@
 /**
  * How recaps behave, chosen in the Recap settings section. Stored in plugin
  * storage rather than declarative settings because the section draws its own
- * controls (layout previews, a live automatic toggle) and saves each change
- * immediately.
+ * controls (layout previews) and saves each change immediately, and because
+ * the synchronous `configure` callback reads them.
  */
 import { z } from "zod";
 
-export const RECAP_LAYOUTS = ["detailed", "compact", "minimal"] as const;
+export const RECAP_LAYOUTS = ["full", "minimal"] as const;
 export type RecapLayout = (typeof RECAP_LAYOUTS)[number];
 
 export const RECAP_LAYOUT_OPTIONS: readonly {
@@ -15,46 +15,40 @@ export const RECAP_LAYOUT_OPTIONS: readonly {
   description: string;
 }[] = [
   {
-    value: "detailed",
-    label: "Detailed",
-    description: "Goal, latest results, and the Open and Done list.",
+    value: "full",
+    label: "Full",
+    description: "Goal, latest results, review, and deliverables.",
   },
   {
-    value: "compact",
-    label: "Compact",
-    description: "Goal and latest results.",
+    value: "minimal",
+    label: "Minimal",
+    description: "Everything except the goal heading.",
   },
-  { value: "minimal", label: "Minimal", description: "Latest results only." },
 ];
 
-export const QUIET_SECONDS = { min: 5, max: 600, fallback: 30 } as const;
-export const MIN_TURNS = { min: 1, max: 20, fallback: 3 } as const;
-
-const bounded = (range: { min: number; max: number; fallback: number }) =>
-  z
-    .number()
-    .int()
-    .catch(range.fallback)
-    .transform((value) => Math.min(range.max, Math.max(range.min, value)));
+export const CORRECTIONS = { min: 0, max: 10, fallback: 3 } as const;
 
 export const recapPrefsSchema = z.object({
-  /** Recap each thread after it has been quiet; off shows Generate Recap. */
-  automatic: z.boolean().catch(true),
-  layout: z.enum(RECAP_LAYOUTS).catch("detailed"),
-  /** Seconds a thread must stay idle before an automatic recap. */
-  quietSeconds: bounded(QUIET_SECONDS),
-  /** User turns a thread needs before automatic recaps start. */
-  minTurns: bounded(MIN_TURNS),
+  /** Agents get the recap tool and are asked for a recap after each turn. */
+  required: z.boolean().catch(true),
+  /** Automatic reminders per turn when an agent ends it without a recap. */
+  corrections: z
+    .number()
+    .int()
+    .catch(CORRECTIONS.fallback)
+    .transform((value) =>
+      Math.min(CORRECTIONS.max, Math.max(CORRECTIONS.min, value)),
+    ),
+  layout: z.enum(RECAP_LAYOUTS).catch("full"),
 });
 export type RecapPrefs = z.infer<typeof recapPrefsSchema>;
 
 export function parseRecapPrefs(raw: unknown): RecapPrefs {
   const value = raw && typeof raw === "object" ? raw : {};
   return recapPrefsSchema.parse({
-    automatic: true,
-    layout: "detailed",
-    quietSeconds: QUIET_SECONDS.fallback,
-    minTurns: MIN_TURNS.fallback,
+    required: true,
+    corrections: CORRECTIONS.fallback,
+    layout: "full",
     ...value,
   });
 }

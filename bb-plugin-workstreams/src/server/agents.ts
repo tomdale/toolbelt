@@ -5,7 +5,7 @@
  * `configure` is synchronous and its context has no section or visibility,
  * so role and workstream come from the thread's metadata plus the
  * reconciler's SQLite snapshot of visible threads. A thread in neither (a
- * hidden helper, or one created seconds ago) gets nothing until its session
+ * hidden helper, or one created seconds ago) gets no role until its session
  * next starts. Side chats never get instructions.
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
@@ -15,6 +15,7 @@ import {
   type ThreadRole,
 } from "../domain/instructions.ts";
 import type { Database } from "./db.ts";
+import type { AgentRecaps } from "./recap.ts";
 
 type Sdk = BbPluginApi["sdk"];
 type Seen = {
@@ -90,17 +91,37 @@ export function roleOf(
   };
 }
 
-export function registerAgentInstructions(bb: BbPluginApi, db: Database): void {
+/**
+ * Each session's role instructions (SPEC §5) and the recap tool (SPEC §10.2).
+ * Every thread except a side chat gets the recap tool, including threads too
+ * new to have a role yet.
+ */
+export function registerAgentInstructions(
+  bb: BbPluginApi,
+  db: Database,
+  recaps: AgentRecaps,
+): void {
   bb.agents.configure((context) => {
+    const sideChat =
+      context.origin.kind === "fork" && context.origin.pluginId === "side-chat";
+    const recap = recaps.configure(context.thread.id, !sideChat);
     const role = roleOf(db, {
       thread: context.thread,
       project: context.project,
       origin: context.origin,
       pluginMetadata: context.pluginMetadata as Record<string, unknown>,
     });
-    return role
-      ? { tools: [], skills: [], instructions: instructionsFor(role) }
-      : { tools: [], skills: [] };
+    const instructions = [
+      role ? instructionsFor(role) : null,
+      recap.instructions,
+    ]
+      .filter((text): text is string => text !== null)
+      .join("\n\n");
+    return {
+      tools: recap.tools,
+      skills: [],
+      ...(instructions ? { instructions } : {}),
+    };
   });
 }
 

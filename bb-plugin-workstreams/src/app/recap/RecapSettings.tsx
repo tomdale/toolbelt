@@ -1,13 +1,12 @@
 /**
- * The Recap settings section: the layout as picture cards, the automatic
- * switch, and the automatic timing. Every change saves immediately; existing
- * recaps are not regenerated.
+ * The Recap settings section: whether agents end each turn with a recap,
+ * how many reminders a turn without one gets, and the card's layout as
+ * picture cards. Every change saves immediately.
  */
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
-  MIN_TURNS,
-  QUIET_SECONDS,
+  CORRECTIONS,
   RECAP_LAYOUT_OPTIONS,
   type RecapLayout,
   type RecapPrefs,
@@ -22,27 +21,18 @@ function LayoutPreview({ layout }: { layout: RecapLayout }) {
       aria-hidden="true"
       className="flex h-14 flex-col justify-center rounded-md border border-sky-400 bg-sky-50/40 px-2.5 dark:border-sky-500/80 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(29.3%_0.066_243.157))]"
     >
-      {layout !== "minimal" ? (
+      {layout === "full" ? (
         <div
           className={`mb-2 h-1.5 w-1/2 ${bar} !bg-sky-900/30 dark:!bg-sky-200/35`}
         />
       ) : null}
-      <div
-        className={cn(
-          "grid gap-2",
-          layout === "detailed" && "grid-cols-[1.2fr_1fr]",
-        )}
-      >
-        <div className="space-y-1">
-          <div className={`h-1 w-full ${bar}`} />
-          <div className={`h-1 w-3/4 ${bar}`} />
-        </div>
-        {layout === "detailed" ? (
-          <div className="space-y-1 border-l border-sky-900/10 pl-2 dark:border-sky-200/10">
-            <div className={`h-1 w-5/6 ${bar}`} />
-            <div className={`h-1 w-2/3 ${bar}`} />
-          </div>
-        ) : null}
+      <div className="space-y-1">
+        <div className={`h-1 w-full ${bar}`} />
+        <div className={`h-1 w-3/4 ${bar}`} />
+      </div>
+      <div className="mt-2 flex justify-center gap-1">
+        <div className={`h-1.5 w-5 ${bar}`} />
+        <div className={`h-1.5 w-5 ${bar}`} />
       </div>
     </div>
   );
@@ -113,7 +103,7 @@ export function RecapSettings() {
         <p className="text-xs text-muted-foreground">
           How much of each recap to show above the composer.
         </p>
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2">
           {RECAP_LAYOUT_OPTIONS.map((option) => {
             const selected = option.value === prefs.layout;
             return (
@@ -152,63 +142,42 @@ export function RecapSettings() {
       </div>
       <div className="flex items-start justify-between gap-4 border-t border-border pt-4">
         <div>
-          <p className="font-medium text-foreground">Automatic recaps</p>
+          <p className="font-medium text-foreground">End turns with a recap</p>
           <p className="text-xs text-muted-foreground">
-            {prefs.automatic
-              ? "Recap a thread above the composer once it has been quiet."
-              : "Off: a Generate Recap button appears above the composer instead."}
+            {prefs.required
+              ? "Agents report each turn as complete or ready for review, or ask through a question card. Applies to each thread's next session."
+              : "Off: agents don't get the recap tool, and threads show no recap card."}
           </p>
         </div>
         <input
           type="checkbox"
-          aria-label="Automatic recaps"
-          checked={prefs.automatic}
+          aria-label="End turns with a recap"
+          checked={prefs.required}
           onChange={(event) =>
-            change({ automatic: event.currentTarget.checked })
+            change({ required: event.currentTarget.checked })
           }
           className="mt-0.5 h-4 w-4 cursor-pointer accent-foreground"
         />
       </div>
-      <div
+      <label
         className={cn(
-          "grid gap-4 transition-opacity sm:grid-cols-2",
-          !prefs.automatic && "opacity-50",
+          "block space-y-1.5 transition-opacity",
+          !prefs.required && "opacity-50",
         )}
       >
-        <label className="space-y-1.5">
-          <span className="block font-medium text-foreground">
-            Quiet period
-          </span>
-          <span className="block text-xs text-muted-foreground">
-            Seconds a thread stays idle before it's recapped (
-            {QUIET_SECONDS.min}–{QUIET_SECONDS.max}).
-          </span>
-          <BoundedNumberInput
-            label="Quiet period in seconds"
-            value={prefs.quietSeconds}
-            range={QUIET_SECONDS}
-            disabled={!prefs.automatic}
-            onCommit={(quietSeconds) => change({ quietSeconds })}
-          />
-        </label>
-        <label className="space-y-1.5">
-          <span className="block font-medium text-foreground">
-            Minimum messages
-          </span>
-          <span className="block text-xs text-muted-foreground">
-            Your messages a thread needs before automatic recaps start (
-            {MIN_TURNS.min}–{MIN_TURNS.max}). Generate Recap works on any
-            thread.
-          </span>
-          <BoundedNumberInput
-            label="Minimum messages"
-            value={prefs.minTurns}
-            range={MIN_TURNS}
-            disabled={!prefs.automatic}
-            onCommit={(minTurns) => change({ minTurns })}
-          />
-        </label>
-      </div>
+        <span className="block font-medium text-foreground">Reminders</span>
+        <span className="block text-xs text-muted-foreground">
+          How many times to remind an agent that ends a turn without a recap (
+          {CORRECTIONS.min}–{CORRECTIONS.max}; 0 never reminds).
+        </span>
+        <BoundedNumberInput
+          label="Reminders per turn"
+          value={prefs.corrections}
+          range={CORRECTIONS}
+          disabled={!prefs.required}
+          onCommit={(corrections) => change({ corrections })}
+        />
+      </label>
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {error}

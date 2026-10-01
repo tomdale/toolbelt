@@ -197,7 +197,7 @@
 
 /* The For you amber. Every surface that means "this thread is waiting on
    you" uses it: the For you block, its header and Show more, the group count
-   pill, the decision mark, and the recap card's For you section. It is
+   pill, and the decision mark. It is
    amber pulled a quarter of the way toward the foreground, soft enough that
    BB's blue unread dot doesn't clash with it. */
 :root {
@@ -280,7 +280,7 @@
   }
 }
 
-/* Work state from analysis (see WORK_STATE). */
+/* Work state from the agent's recap or analysis (see workStateMark). */
 .ws-work {
   font-size: 10px;
   line-height: 1;
@@ -294,6 +294,10 @@
 .ws-work-blocked,
 .ws-work-done {
   color: var(--muted-foreground);
+}
+.ws-work-complete {
+  color: var(--ws-complete, #30a46c);
+  font-weight: 600;
 }
 
 /* Pull request number, tinted by state. */
@@ -574,37 +578,6 @@
   }
 }
 
-.ws-recap-card {
-  margin: 8px 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
-  border-radius: 8px;
-  background: var(--muted, rgba(128, 128, 128, 0.06));
-  font-size: 12px;
-  line-height: 1.45;
-}
-.ws-recap-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-}
-.ws-recap-header h3 {
-  margin: 0;
-  font-weight: 600;
-}
-.ws-recap-body {
-  margin-top: 6px;
-  display: grid;
-  gap: 4px;
-}
-.ws-recap-body p {
-  margin: 0;
-}
-.ws-recap-done {
-  opacity: 0.7;
-}
-
 /*
  * New work's banner is the placement UI, so BB's own project and environment
  * pickers (the start of the row under the prompt box) would duplicate it. BB
@@ -857,24 +830,6 @@
 .ws-intake-menu button:hover .ws-intake-hollow,
 .ws-intake-menu button:focus .ws-intake-hollow {
   color: #e3b84a;
-}
-
-/* Generate Recap appearing under a dismissed recap card. */
-.ws-fade-in {
-  animation: ws-fade-in 240ms ease-out 80ms both;
-}
-@keyframes ws-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ws-fade-in {
-    animation: none;
-  }
 }
 
 /* A row with children and a status mark shows the disclosure chevron in

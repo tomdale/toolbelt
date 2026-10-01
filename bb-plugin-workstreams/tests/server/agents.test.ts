@@ -66,18 +66,19 @@ describe("configure", () => {
       }),
     );
 
-  it("gives task threads their workstream and delegates their parent, with no tools", async () => {
+  it("gives task threads their workstream and delegates their parent, with the recap tool", async () => {
     const w = await setup();
     const task = await resolve(w, { id: "task" });
     expect(task.instructions).toContain(
       'task thread in the "Alpha" workstream',
     );
-    expect(task.tools).toEqual([]);
+    expect(task.tools.map((tool) => tool.name)).toEqual(["WorkstreamsRecap"]);
+    expect(task.instructions).toContain("End every turn with WorkstreamsRecap");
     const kid = await resolve(w, { id: "kid", parentThreadId: "task" });
     expect(kid.instructions).toContain('delegated subtask of "Fix tabs"');
   });
 
-  it("stays out of side chats and threads it doesn't know", async () => {
+  it("stays out of side chats, and gives unknown threads only the recap", async () => {
     const w = await setup();
     const side = await resolve(
       w,
@@ -87,8 +88,11 @@ describe("configure", () => {
       },
     );
     expect(side.instructions).toBeNull();
+    expect(side.tools).toEqual([]);
+    // A thread with no role yet still ends its turns with a recap.
     const unknown = await resolve(w, { id: "hidden-helper" });
-    expect(unknown.instructions).toBeNull();
+    expect(unknown.instructions).not.toContain("workstream");
+    expect(unknown.instructions).toContain("WorkstreamsRecap");
   });
 
   it("trusts task metadata for a thread the reconciler hasn't seen yet", async () => {
@@ -117,7 +121,7 @@ describe("configure", () => {
         },
       },
     );
-    expect(copy.instructions).toBeNull();
+    expect(copy.instructions).not.toContain("Alpha");
   });
 });
 

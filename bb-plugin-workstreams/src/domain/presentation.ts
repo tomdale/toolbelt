@@ -53,9 +53,10 @@ export function relativeAge(at: number, now: number): string {
 }
 
 /**
- * Work-state glyphs from per-thread analysis, drawn beside BB's own status
- * mark. `in_progress` and `done` draw nothing: most threads are in one of
- * those states, so a mark on them would be noise.
+ * Work-state glyphs, drawn beside BB's own status mark. `in_progress` and an
+ * inferred `done` draw nothing: most threads are in one of those states, so
+ * a mark on them would be noise. A thread whose agent reported its turn
+ * complete draws REPORTED_DONE instead.
  */
 export const WORK_STATE: Record<
   "needs_decision" | "review" | "blocked" | "in_progress" | "done",
@@ -68,3 +69,14 @@ export const WORK_STATE: Record<
   in_progress: { glyph: null, label: "In progress" },
   done: { glyph: null, label: "Done" },
 };
+
+/** A turn the thread's agent reported complete in its recap. */
+export const REPORTED_DONE = { glyph: "\u2713", label: "Complete" } as const;
+
+/** The mark for a work state, given whether the thread's agent reported it. */
+export function workStateMark(
+  state: keyof typeof WORK_STATE,
+  reported: boolean,
+): { glyph: string | null; label: string } {
+  return reported && state === "done" ? REPORTED_DONE : WORK_STATE[state];
+}

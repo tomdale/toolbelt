@@ -8,7 +8,7 @@ import { actOn, registerCli } from "./cli.ts";
 import { isCurrent } from "../domain/analysis.ts";
 import { refreshShapes, registerAgentInstructions } from "./agents.ts";
 import { Analyzer } from "./analyzer.ts";
-import { ArchiveSuggestions } from "./archive.ts";
+import { RecapArchive } from "./archive.ts";
 import { Bootstrap } from "./bootstrap.ts";
 import { sectionMembers } from "./cleanup.ts";
 import { WorkstreamMap } from "./map.ts";
@@ -22,7 +22,7 @@ import { loadOrder, saveOrder } from "./order.ts";
 import { loadSpinner, saveSpinner } from "./spinner.ts";
 import { UserError, WorkstreamService } from "./service.ts";
 import { TraceStore } from "./trace.ts";
-import { RecapScheduler } from "./recap.ts";
+import { AgentRecaps } from "./recap.ts";
 import { loadRecapPrefs, saveRecapPrefs } from "./recapPrefs.ts";
 import { ThreadSnoozes, loadSnoozePrefs, saveSnoozePrefs } from "./snooze.ts";
 
@@ -71,13 +71,6 @@ export default async function plugin(bb: BbPluginApi) {
       type: "select",
       label: "Analysis model",
       description: "Summarizes each thread after every turn.",
-      options: [...MODELS],
-      default: MODELS[0],
-    },
-    recapModel: {
-      type: "select",
-      label: "Recap model",
-      description: "Generates the full thread recap after it is quiet.",
       options: [...MODELS],
       default: MODELS[0],
     },
@@ -207,29 +200,21 @@ export default async function plugin(bb: BbPluginApi) {
     info: (message) => bb.log.info(message),
   });
   bb.onDispose(() => analyzer.dispose());
-  const recaps = new RecapScheduler({
-    sdk: () => bb.sdk,
+  const recaps = new AgentRecaps({
+    bb,
     db,
-    model: async () => (await settings.get()).recapModel,
-    inference,
     prefs: () => loadRecapPrefs(db),
-    triage: (threadId) => {
-      const result = analyzer.get(threadId);
-      return result
-        ? { state: result.state, needsYou: result.needsYou }
-        : undefined;
-    },
     onChange: notify,
-    log: (message) => bb.log.warn(message),
   });
+  recaps.register();
   bb.onDispose(() => recaps.dispose());
-  const archives = new ArchiveSuggestions({
+  const archives = new RecapArchive({
     sdk: () => bb.sdk,
-    db,
+    recaps,
     analyzer,
     onChange: notify,
   });
-  registerAgentInstructions(bb, db);
+  registerAgentInstructions(bb, db, recaps);
   const map = new WorkstreamMap(db);
   const bootstrap = new Bootstrap({
     db,
@@ -257,6 +242,8 @@ export default async function plugin(bb: BbPluginApi) {
   // filed where the preview said: via the banner's submit data, or, for a
   // plain Enter, by matching the prompt. The hook itself always proceeds.
   bb.experimental_hooks.on("message.dispatch", async (ctx) => {
+    const correction = recaps.onDispatch(ctx);
+    if (correction) return correction;
     // Sending a snoozed thread a message means you're back on it.
     if (
       ctx.initiator === "user" &&
@@ -388,24 +375,25 @@ export default async function plugin(bb: BbPluginApi) {
       );
   });
   bb.events.on("thread.archived", ({ thread }) => {
+    recaps.onArchived(thread.id);
     if (snoozes.clear(thread.id)) notify();
   });
+  bb.events.on("interaction.pending", ({ thread, interaction }) =>
+    recaps.onInteractionPending(thread.id, interaction),
+  );
   bb.events.on("thread.deleted", ({ thread }) => {
     snoozes.clear(thread.id);
     analyzer.forget(thread.id);
-    recaps.disposeThread(thread.id);
-    archives.forget(thread.id);
+    recaps.forget(thread.id);
     service.forget(thread.id);
   });
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
-    if (thread.visibility !== "hidden") {
-      analyzer.onIdle(thread, lastAssistantText);
-      if (loadRecapPrefs(db).automatic) recaps.onIdle(thread.id);
-    }
+    if (thread.visibility === "hidden") return;
+    analyzer.onIdle(thread, lastAssistantText);
+    return recaps.onIdle(thread.id);
   });
   bb.events.on("thread.active", ({ thread }) => {
     analyzer.onActive(thread.id);
-    recaps.onActive(thread.id);
   });
 
   const userFacing = async <T>(work: () => Promise<T>): Promise<T> => {
@@ -483,26 +471,26 @@ export default async function plugin(bb: BbPluginApi) {
         });
       }),
     recap_get: async ({ threadId }) => {
-      const analysis = analyzer.get(threadId);
+      const thread = await bb.sdk.threads.get({ threadId });
+      const stored = recaps.get(threadId);
+      const { capped, corrections } = recaps.capped(threadId);
       return {
-        recap: await recaps.getFresh(threadId),
-        generating: recaps.generating(threadId),
-        needsInput:
-          analysis?.state === "needs_decision" ? analysis.needsYou : null,
+        recap: stored && !stored.dismissed ? stored.recap : null,
+        capped: capped && thread.status === "idle",
+        corrections,
+        environmentId: thread.environmentId,
       };
     },
-    recap_generate: async ({ threadId }) => {
-      const recap = await recaps.generate(threadId, { onDemand: true });
-      return {
-        recap,
-        generated: recap !== null,
-        reason: recap ? null : "not_generated",
-      };
-    },
+    recap_dismiss: ({ threadId, recapId }) =>
+      userFacing(async () => {
+        recaps.dismiss(threadId, recapId);
+        return { ok: true as const };
+      }),
     state: async () => ({
       ...service.state(),
       workstreams: Object.fromEntries(map.list().map((r) => [r.sectionId, r])),
       analysis: analyzer.all(),
+      recaps: recaps.all(),
       driftDismissed: Object.fromEntries(
         (
           db
@@ -550,6 +538,9 @@ export default async function plugin(bb: BbPluginApi) {
     setRecapPrefs: async ({ patch }) => {
       const prefs = saveRecapPrefs(db, patch);
       bb.realtime.publish("recapPrefs", { prefs });
+      // Corrections and the card follow at once; the tool follows each
+      // session's next start.
+      notify();
       return { prefs };
     },
     spinner: async () => ({ spinner: loadSpinner(db) }),
@@ -657,8 +648,8 @@ export default async function plugin(bb: BbPluginApi) {
         return { threadId: acted.threadId };
       }),
     archiveStatus: ({ threadId }) => archives.status(threadId),
-    archiveSuggestion: ({ threadId, revision, action }) =>
-      userFacing(() => archives.decide(threadId, revision, action)),
+    archive: ({ threadId, recapId }) =>
+      userFacing(() => archives.archive(threadId, recapId)),
     bootstrap: (input) =>
       userFacing(async () => {
         // Model steps take seconds and report progress over realtime; a
@@ -738,6 +729,7 @@ export default async function plugin(bb: BbPluginApi) {
     service,
     journal,
     analyzer,
+    recaps,
     bootstrap,
     map,
     router,

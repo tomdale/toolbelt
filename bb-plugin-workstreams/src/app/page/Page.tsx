@@ -11,7 +11,12 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
 import { rankGroups, type Group } from "../../domain/project.ts";
-import { WORK_STATE, relativeAge } from "../../domain/presentation.ts";
+import {
+  REPORTED_DONE,
+  WORK_STATE,
+  relativeAge,
+  workStateMark,
+} from "../../domain/presentation.ts";
 import { StatusMark } from "../sidebar/StatusMark.tsx";
 import { useWorkstreams, type WorkView } from "../useWorkstreams.ts";
 import { Activity } from "./Activity.tsx";
@@ -174,7 +179,10 @@ export function WorkstreamsPage({
               </p>
             ) : null}
             <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-              {Object.entries(WORK_STATE)
+              {[
+                ...Object.entries(WORK_STATE),
+                ["complete", REPORTED_DONE] as const,
+              ]
                 .filter(([, v]) => v.glyph)
                 .map(([key, v]) => (
                   <span key={key}>
@@ -268,7 +276,9 @@ function WorkstreamCard({
         {roots.map((row) => {
           const view = work(row.thread);
           const state =
-            view.kind === "current" ? WORK_STATE[view.analysis.state] : null;
+            view.kind === "current"
+              ? workStateMark(view.analysis.state, view.reported)
+              : null;
           const folded = via.get(row.thread.id);
           return (
             <li
@@ -295,7 +305,7 @@ function WorkstreamCard({
                   >
                     {state?.glyph && view.kind === "current" ? (
                       <span
-                        className={`ws-work ws-work-${view.analysis.state} inline-flex size-3.5 shrink-0 items-center justify-center`}
+                        className={`ws-work ws-work-${view.reported && view.analysis.state === "done" ? "complete" : view.analysis.state} inline-flex size-3.5 shrink-0 items-center justify-center`}
                         role="img"
                         aria-label={state.label}
                         title={state.label}

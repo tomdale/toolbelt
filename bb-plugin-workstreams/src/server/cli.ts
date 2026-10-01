@@ -2,6 +2,8 @@
  * `bb workstreams …` for Tom, scripts, and agents. Output is bounded: lists
  * are capped and titles truncated.
  */
+import { reportedAnalysis } from "../domain/recap.ts";
+import type { AgentRecaps } from "./recap.ts";
 import {
   PluginCliError,
   cliCommand,
@@ -127,6 +129,7 @@ export function registerCli(
     service,
     journal,
     analyzer,
+    recaps,
     bootstrap,
     map,
     router,
@@ -135,6 +138,7 @@ export function registerCli(
     service: WorkstreamService;
     journal: Journal;
     analyzer: Analyzer;
+    recaps: AgentRecaps;
     bootstrap: Bootstrap;
     map: WorkstreamMap;
     router: Router;
@@ -147,7 +151,21 @@ export function registerCli(
       listSections(bb.sdk),
     ]);
     const now = Date.now();
-    const analysis = analyzer.all();
+    const analyzed = analyzer.all();
+    const reported = recaps.all();
+    // The agent's recap of an idle thread outranks analysis, as in the sidebar.
+    const analysis: Record<string, StoredAnalysis> = { ...analyzed };
+    for (const thread of threads) {
+      const recap = reported[thread.id];
+      if (recap && thread.status === "idle")
+        analysis[thread.id] = reportedAnalysis(
+          recap,
+          thread,
+          isCurrent(analyzed[thread.id], thread)
+            ? analyzed[thread.id]
+            : undefined,
+        );
+    }
     return {
       now,
       sections,

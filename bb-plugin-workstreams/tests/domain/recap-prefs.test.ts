@@ -3,20 +3,22 @@ import { parseRecapPrefs } from "../../src/domain/recapPrefs.ts";
 
 it("fills defaults for missing or invalid preferences", () => {
   expect(parseRecapPrefs(null)).toEqual({
-    automatic: true,
-    layout: "detailed",
-    quietSeconds: 30,
-    minTurns: 3,
+    required: true,
+    corrections: 3,
+    layout: "full",
   });
-  expect(parseRecapPrefs({ layout: "huge", automatic: "yes" })).toMatchObject({
-    automatic: true,
-    layout: "detailed",
+  expect(parseRecapPrefs({ layout: "huge", required: "yes" })).toMatchObject({
+    required: true,
+    layout: "full",
   });
 });
 
-it("clamps timing to its ranges", () => {
-  expect(parseRecapPrefs({ quietSeconds: 1, minTurns: 99 })).toMatchObject({
-    quietSeconds: 5,
-    minTurns: 20,
-  });
+it("keeps a stored minimal layout and reads other stored layouts as full", () => {
+  expect(parseRecapPrefs({ layout: "minimal" }).layout).toBe("minimal");
+  expect(parseRecapPrefs({ layout: "compact" }).layout).toBe("full");
+});
+
+it("clamps reminders to their range", () => {
+  expect(parseRecapPrefs({ corrections: 99 }).corrections).toBe(10);
+  expect(parseRecapPrefs({ corrections: -1 }).corrections).toBe(0);
 });
