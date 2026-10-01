@@ -123,12 +123,15 @@ type Item =
 export function Activity({
   rpc,
   focus = null,
+  modelCalls = false,
   sections = [],
   workstreamOf,
 }: {
   rpc: ReturnType<typeof useRpc<RpcContract>>;
   /** An activity entry to highlight. */
   focus?: string | null;
+  /** Show model calls initially (Debug mode links). */
+  modelCalls?: boolean;
   sections?: readonly PluginSidebarSection[];
   /** A thread's workstream, for filtering model calls by workstream. */
   workstreamOf?: (threadId: string) => string | null;
@@ -138,7 +141,7 @@ export function Activity({
   const [workstream, setWorkstream] = useState("");
   const [action, setAction] = useState("");
   const [needsReview, setNeedsReview] = useState(focus !== null);
-  const [showCalls, setShowCalls] = useState(true);
+  const [showCalls, setShowCalls] = useState(modelCalls);
   const [callKind, setCallKind] = useState<TraceKind | "">("");
   const [failuresOnly, setFailuresOnly] = useState(false);
   const [traceLimit, setTraceLimit] = useState(TRACE_PAGE);
@@ -264,7 +267,7 @@ export function Activity({
       <div
         role="group"
         aria-label="Activity filters"
-        className="grid grid-cols-1 items-center gap-3 text-xs text-muted-foreground sm:flex sm:flex-wrap"
+        className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground"
       >
         <select
           aria-label="Filter by workstream"
@@ -322,7 +325,7 @@ export function Activity({
             checked={external}
             onChange={(event) => setExternal(event.target.checked)}
           />
-          Include changes made outside Workstreams
+          Outside changes
         </label>
         {debug ? (
           <label className="flex items-center gap-1.5">
@@ -342,7 +345,7 @@ export function Activity({
           </label>
         ) : null}
       </div>
-      {debug ? (
+      {debug && showCalls ? (
         <div className="mt-3 rounded-md border border-border bg-state-hover/30 p-3 text-xs text-muted-foreground">
           <ActivityTerm
             label="Debug events"
@@ -426,14 +429,16 @@ export function Activity({
         </p>
       ) : null}
       {entries && items.length === 0 ? (
-        <p className="mt-4 text-sm text-muted-foreground">No activity yet.</p>
+        <p className="mt-10 text-center text-sm text-muted-foreground">
+          No activity yet.
+        </p>
       ) : null}
       {days.map(({ label, items: list }) => (
-        <section key={label} className="mt-4">
-          <h3 className="mb-1 text-xs font-semibold text-muted-foreground">
+        <section key={label} className="mt-6">
+          <h3 className="mb-1 px-2 text-xs font-medium text-muted-foreground">
             {label}
           </h3>
-          <ul className="divide-y divide-border">
+          <ul>
             {list.map((item) => {
               if (item.kind === "call")
                 return <CallRow key={item.trace.id} trace={item.trace} />;
@@ -442,7 +447,7 @@ export function Activity({
                 <li
                   key={entry.id}
                   className={cn(
-                    "grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 py-3 pl-2 text-sm sm:gap-x-3 sm:grid-cols-[4.5rem_minmax(0,1fr)_auto]",
+                    "group/entry grid grid-cols-[3.5rem_minmax(0,1fr)_auto] items-baseline gap-x-3 rounded-md px-2 py-2 text-[13px] hover:bg-state-hover/50",
                     (entry.status === "undone" ||
                       entry.status === "dismissed") &&
                       "opacity-60",
@@ -452,7 +457,7 @@ export function Activity({
                   )}
                 >
                   <time
-                    className="w-16 shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground"
+                    className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground"
                     dateTime={new Date(entry.at).toISOString()}
                     title={new Date(entry.at).toLocaleString()}
                     aria-label={new Date(entry.at).toLocaleString()}
@@ -462,17 +467,17 @@ export function Activity({
                       minute: "2-digit",
                     })}
                   </time>
-                  <div className="col-start-2 row-start-1 min-w-0">
-                    <div className="mb-1 text-xs text-muted-foreground">
-                      <ActivityTerm
-                        label={ACTION_LABEL[entry.action]}
-                        description={ACTION_HELP[entry.action]}
-                      />
-                    </div>
+                  <div className="min-w-0">
                     <div className="break-words">
+                      <span className="mr-1.5 text-xs text-muted-foreground">
+                        <ActivityTerm
+                          label={ACTION_LABEL[entry.action]}
+                          description={ACTION_HELP[entry.action]}
+                        />
+                      </span>
                       <span>{entry.rationale}</span>
                       {entry.threads.length ? (
-                        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
+                        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
                           {entry.threads.map((thread) => (
                             <ActivityThreadLink
                               key={thread.id}
@@ -525,24 +530,25 @@ export function Activity({
                       ) : null}
                     </div>
                   </div>
-                  <span className="col-start-2 mt-1 flex flex-wrap items-center gap-2 border-t border-border pt-1 text-xs sm:col-start-3 sm:row-start-1 sm:mt-0 sm:border-0 sm:pt-0 sm:flex-col sm:items-end">
-                    <span className="text-muted-foreground">Change status</span>
-                    <span
-                      className={cn(
-                        "text-muted-foreground",
-                        (entry.status === "failed" ||
-                          entry.status === "partial") &&
-                          "text-destructive",
-                      )}
-                    >
-                      <ActivityTerm {...ENTRY_STATUS[entry.status]} />
-                    </span>
+                  <span className="flex items-center gap-2 text-xs">
+                    {entry.status !== "applied" ? (
+                      <span
+                        className={cn(
+                          "text-muted-foreground",
+                          (entry.status === "failed" ||
+                            entry.status === "partial") &&
+                            "text-destructive",
+                        )}
+                      >
+                        <ActivityTerm {...ENTRY_STATUS[entry.status]} />
+                      </span>
+                    ) : null}
                     {entry.undo &&
                     ["applied", "partial", "failed"].includes(entry.status) ? (
                       <button
                         type="button"
                         onClick={() => void undo(entry)}
-                        className="text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                        className="text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover/entry:opacity-100"
                       >
                         Undo
                       </button>

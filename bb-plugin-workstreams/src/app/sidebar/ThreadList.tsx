@@ -750,6 +750,7 @@ export function WorkstreamsThreadList({
                           />
                           <WorkstreamName
                             name={group.name}
+                            muted
                             className="flex-1 text-[12px]"
                           />
                           <span className="tabular-nums">
@@ -1072,7 +1073,7 @@ function WorkstreamGroup({
             <WorkstreamName
               name={group.name}
               muted={muted}
-              className="text-[13px]"
+              className="text-[13px] font-semibold"
             />
           </button>
           {onNewThread ? (

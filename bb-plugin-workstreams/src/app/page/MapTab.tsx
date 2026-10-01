@@ -7,7 +7,7 @@ import type { useRpc } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import type { MapRecord } from "../../server/map.ts";
 import { InspectButton } from "../debug/InspectButton.tsx";
-import { primaryButton, secondaryButton } from "./controls.ts";
+import { ghostButton, primaryButton } from "./controls.ts";
 import { Organize } from "./Organize.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
 
@@ -23,16 +23,22 @@ export function MapTab({
   bootstrapped: boolean;
 }) {
   return (
-    <div className="mt-5 flex flex-col gap-6">
+    <div className="mt-6 flex flex-col gap-8">
       <Organize rpc={rpc} bootstrapped={bootstrapped} />
       <section aria-label="Workstream map">
-        <h2 className="border-b border-border pb-1 text-sm font-semibold">
-          Workstreams
+        <h2 className="px-2 pb-1.5 text-xs font-medium text-muted-foreground">
+          Current workstreams
         </h2>
-        <ul className="divide-y divide-border">
-          {records.map((record) => (
-            <MapRow key={record.sectionId} rpc={rpc} record={record} />
-          ))}
+        <ul>
+          {[...records]
+            .sort(
+              (a, b) =>
+                b.evidence.threadCount - a.evidence.threadCount ||
+                a.name.localeCompare(b.name),
+            )
+            .map((record) => (
+              <MapRow key={record.sectionId} rpc={rpc} record={record} />
+            ))}
         </ul>
       </section>
     </div>
@@ -66,24 +72,29 @@ function MapRow({ rpc, record }: { rpc: Rpc; record: MapRecord }) {
     }
   };
   return (
-    <li className="py-2 text-sm">
+    <li className="group/map rounded-md px-2 py-1.5 text-[13px] hover:bg-state-hover/50">
       <div className="flex items-baseline gap-2">
-        <WorkstreamName name={record.name} className="font-medium" />
-        <span className="text-xs text-muted-foreground">
-          {record.evidence.threadCount} thread
-          {record.evidence.threadCount === 1 ? "" : "s"}
-          {record.projects.length
-            ? ` · ${record.projects.length} project${record.projects.length === 1 ? "" : "s"}`
-            : ""}
-          {record.createdBy === "workstreams"
-            ? " · created by Workstreams"
-            : ""}
+        <WorkstreamName
+          name={record.name}
+          muted={record.evidence.threadCount === 0}
+          className="font-medium"
+        />
+        <span className="text-[11px] tabular-nums text-muted-foreground">
+          {record.evidence.threadCount || "Empty"}
         </span>
         <span className="flex-1" />
+        {record.description && record.descriptionSource === "generated" ? (
+          <InspectButton
+            target={{ link: { kind: "section", ref: record.sectionId } }}
+            title={`Model calls for ${record.name}`}
+            label="Inspect the model calls that described this workstream"
+            className="opacity-0 group-hover/map:opacity-60"
+          />
+        ) : null}
         {!editing ? (
           <button
             type="button"
-            className="text-xs text-primary hover:underline"
+            className="text-xs text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover/map:opacity-100"
             onClick={() => setEditing(true)}
           >
             Edit
@@ -91,7 +102,7 @@ function MapRow({ rpc, record }: { rpc: Rpc; record: MapRecord }) {
         ) : null}
       </div>
       {editing ? (
-        <div className="mt-1.5 flex flex-col gap-1.5">
+        <div className="mt-2 flex flex-col gap-2">
           <label className="text-xs text-muted-foreground">
             Description
             <input
@@ -114,7 +125,14 @@ function MapRow({ rpc, record }: { rpc: Rpc; record: MapRecord }) {
               {error}
             </p>
           ) : null}
-          <div className="flex gap-2">
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className={ghostButton}
+              onClick={() => setEditing(false)}
+            >
+              Cancel
+            </button>
             <button
               type="button"
               className={primaryButton}
@@ -122,42 +140,13 @@ function MapRow({ rpc, record }: { rpc: Rpc; record: MapRecord }) {
             >
               Save
             </button>
-            <button
-              type="button"
-              className={secondaryButton}
-              onClick={() => setEditing(false)}
-            >
-              Cancel
-            </button>
           </div>
         </div>
-      ) : (
-        <>
-          <p className="text-xs text-muted-foreground">
-            {record.description ?? "No description yet."}
-            {record.descriptionSource === "user" ? " (yours)" : ""}
-            {record.description && record.descriptionSource === "generated" ? (
-              <InspectButton
-                target={{ link: { kind: "section", ref: record.sectionId } }}
-                title={`Model calls for ${record.name}`}
-                label="Inspect the model calls that described this workstream"
-                className="ml-1 align-middle"
-              />
-            ) : null}
-          </p>
-          {record.subjects.length || record.aliases.length ? (
-            <p className="mt-0.5 text-xs text-muted-foreground/80">
-              {record.subjects.length
-                ? `Subjects: ${record.subjects.join(", ")}`
-                : ""}
-              {record.subjects.length && record.aliases.length ? " · " : ""}
-              {record.aliases.length
-                ? `Also called: ${record.aliases.join(", ")}`
-                : ""}
-            </p>
-          ) : null}
-        </>
-      )}
+      ) : record.description ? (
+        <p className="truncate text-xs text-muted-foreground">
+          {record.description}
+        </p>
+      ) : null}
     </li>
   );
 }

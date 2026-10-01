@@ -12,11 +12,12 @@ import {
 import { cn } from "@/lib/utils";
 import { rankGroups, type Group } from "../../domain/project.ts";
 import {
-  REPORTED_DONE,
-  WORK_STATE,
   relativeAge,
+  statusRole,
   workStateMark,
 } from "../../domain/presentation.ts";
+import { Icon } from "@/components/ui/icon";
+import { primaryButton } from "./controls.ts";
 import { StatusMark } from "../sidebar/StatusMark.tsx";
 import { useWorkstreams, type WorkView } from "../useWorkstreams.ts";
 import { Activity } from "./Activity.tsx";
@@ -28,20 +29,24 @@ import { WorkstreamName } from "../WorkstreamName.tsx";
 type Tab = "overview" | "map" | "activity";
 const TAB_LABEL: Record<Tab, string> = {
   overview: "Overview",
-  map: "Map",
+  map: "Organize",
   activity: "Activity",
 };
 
 /**
  * `subPath` deep links select the map or activity view.
- * Model-call inspection lives in Activity and the Understanding workbench.
  */
-function tabOf(subPath: string): { tab: Tab; focus: string | null } {
+function tabOf(subPath: string): {
+  tab: Tab;
+  focus: string | null;
+  modelCalls?: boolean;
+} {
   const [head, ...rest] = subPath.split("/");
   if (head === "map") return { tab: "map", focus: null };
   if (head === "activity")
     return { tab: "activity", focus: rest.join("/") || null };
-  if (head === "debug") return { tab: "activity", focus: null };
+  if (head === "debug")
+    return { tab: "activity", focus: null, modelCalls: true };
   return { tab: "overview", focus: null };
 }
 
@@ -95,24 +100,16 @@ export function WorkstreamsPage({
 
   return (
     <div className="h-full min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto box-border w-full max-w-4xl px-4 pb-10 pt-4 md:px-6">
-        <header className="flex flex-wrap items-end gap-3">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold">Workstreams</h1>
-            <p className="text-xs text-muted-foreground">
-              {threadCount} threads · {projection.groups.length} workstreams
-              {needs ? ` · ${needs} need${needs === 1 ? "s" : ""} you` : ""}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setNewWork(true)}
-            className="rounded-md border border-border px-2.5 py-1 text-sm hover:bg-state-hover"
+      <div className="mx-auto box-border w-full max-w-3xl px-5 pb-16 pt-6 md:px-8">
+        <header className="flex items-center gap-3">
+          <h1 className="text-[15px] font-semibold tracking-tight">
+            Workstreams
+          </h1>
+          <div
+            role="tablist"
+            aria-label="Workstreams views"
+            className="flex rounded-lg bg-state-hover/60 p-0.5 text-[13px]"
           >
-            ＋ New
-          </button>
-          <NewWorkDialog open={newWork} onClose={() => setNewWork(false)} />
-          <div role="tablist" className="flex gap-1 text-sm">
             {tabs.map((id) => (
               <button
                 key={id}
@@ -121,9 +118,9 @@ export function WorkstreamsPage({
                 aria-selected={tab === id}
                 onClick={() => setTab(id)}
                 className={cn(
-                  "rounded-md px-2.5 py-1",
+                  "rounded-md px-2.5 py-0.5 transition-colors",
                   tab === id
-                    ? "bg-state-active text-foreground"
+                    ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -131,68 +128,80 @@ export function WorkstreamsPage({
               </button>
             ))}
           </div>
-          {tab === "overview" ? (
-            <input
-              ref={search}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search  /"
-              aria-label="Search threads and workstreams"
-              className="h-8 w-48 rounded-md border border-input bg-transparent px-2 text-sm"
-            />
-          ) : null}
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={() => setNewWork(true)}
+            className={primaryButton}
+          >
+            New work
+          </button>
+          <NewWorkDialog open={newWork} onClose={() => setNewWork(false)} />
         </header>
         {tab === "overview" ? (
-          <div className="mt-5 flex flex-col gap-6">
+          <div className="mt-6">
+            <label className="flex h-8 items-center gap-2 rounded-md border border-input px-2.5 text-sm focus-within:border-ring">
+              <Icon
+                name="Search"
+                className="size-3.5 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              <input
+                ref={search}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search"
+                aria-label="Search threads and workstreams"
+                className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
+              />
+              <kbd className="rounded border border-border px-1 font-sans text-[11px] text-muted-foreground">
+                /
+              </kbd>
+            </label>
             {!ws.server.bootstrapped && ws.status === "ready" ? (
               <button
                 type="button"
                 onClick={() => setTab("map")}
-                className="rounded-lg border border-border px-3 py-2 text-left text-sm hover:bg-state-hover"
+                className="mt-6 w-full rounded-lg border border-border px-4 py-3 text-left text-sm hover:bg-state-hover"
               >
                 <span className="font-medium">Organize your workstreams</span>
                 <span className="block text-xs text-muted-foreground">
-                  One reviewed pass files your threads; Workstreams keeps them
-                  current after that.
+                  One reviewed pass groups your open threads by product.
                 </span>
               </button>
             ) : null}
-            {ranked.map((group) => (
-              <WorkstreamCard
-                key={group.id}
-                group={group}
-                description={
-                  ws.server.workstreams[group.id]?.description ?? null
-                }
-                now={ws.now}
-                work={ws.work}
-                via={projection.needsYouVia}
-              />
-            ))}
+            <div className="mt-6 flex flex-col gap-7">
+              {ranked.map((group) => (
+                <WorkstreamCard
+                  key={group.id}
+                  group={group}
+                  now={ws.now}
+                  work={ws.work}
+                  via={projection.needsYouVia}
+                />
+              ))}
+            </div>
             {ranked.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {query ? "No matches." : "No active threads."}
+              <p className="mt-10 text-center text-sm text-muted-foreground">
+                {query ? "No matches." : "No open threads."}
               </p>
             ) : null}
             {projection.dormant.length > 0 && !query ? (
-              <p className="text-xs text-muted-foreground">
-                Dormant: {projection.dormant.map((g) => g.name).join(", ")}
-              </p>
+              <details className="group mt-8 text-xs text-muted-foreground">
+                <summary className="flex w-fit cursor-pointer list-none items-center gap-1 hover:text-foreground [&::-webkit-details-marker]:hidden">
+                  <Icon
+                    name="ChevronRight"
+                    className="size-3 transition-transform group-open:rotate-90"
+                    aria-hidden
+                  />
+                  {projection.dormant.length} quiet workstream
+                  {projection.dormant.length === 1 ? "" : "s"}
+                </summary>
+                <p className="mt-2 pl-4 leading-relaxed">
+                  {projection.dormant.map((g) => g.name).join(" · ")}
+                </p>
+              </details>
             ) : null}
-            <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-              {[
-                ...Object.entries(WORK_STATE),
-                ["complete", REPORTED_DONE] as const,
-              ]
-                .filter(([, v]) => v.glyph)
-                .map(([key, v]) => (
-                  <span key={key}>
-                    <span className={`ws-work ws-work-${key}`}>{v.glyph}</span>{" "}
-                    {v.label}
-                  </span>
-                ))}
-              <span>Italic: updating after new activity</span>
-            </p>
           </div>
         ) : tab === "map" ? (
           <MapTab
@@ -204,6 +213,7 @@ export function WorkstreamsPage({
           <Activity
             rpc={ws.rpc}
             focus={linked.tab === "activity" ? linked.focus : null}
+            modelCalls={linked.modelCalls ?? false}
             sections={ws.sections}
             workstreamOf={(id) =>
               ws.projection.rowOf.get(id)?.workstreamId ?? null
@@ -217,13 +227,11 @@ export function WorkstreamsPage({
 
 function WorkstreamCard({
   group,
-  description,
   now,
   work,
   via,
 }: {
   group: Group<PluginSidebarThread>;
-  description: string | null;
   now: number;
   work: (thread: PluginSidebarThread) => WorkView;
   via: ReadonlyMap<string, readonly PluginSidebarThread[]>;
@@ -258,82 +266,79 @@ function WorkstreamCard({
     .sort((a, b) => Number(asks(b)) - Number(asks(a)));
   return (
     <section aria-label={group.name}>
-      <div className="flex items-baseline gap-2 border-b border-border pb-1">
-        <h2 className="text-sm font-semibold">
+      <div className="flex items-baseline gap-2 px-2 pb-1.5">
+        <h2 className="min-w-0 text-[13px] font-semibold">
           <WorkstreamName name={group.name} />
         </h2>
-        <span className="text-xs text-muted-foreground">
-          {group.total} thread{group.total === 1 ? "" : "s"}
-          {group.needsYou
-            ? ` · ${group.needsYou} need${group.needsYou === 1 ? "s" : ""} you`
-            : ""}
-          {group.lastActiveAt
-            ? ` · ${relativeAge(group.lastActiveAt, now)}`
-            : ""}
+        {group.needsYou ? (
+          <span className="ws-amber-pill rounded-full px-1.5 text-[11px] font-medium tabular-nums">
+            {group.needsYou}
+          </span>
+        ) : null}
+        <span className="text-[12px] tabular-nums text-muted-foreground">
+          {group.total}
         </span>
       </div>
-      {description ? (
-        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-      ) : null}
-      <ul className="mt-1">
+      <ul>
         {roots.map((row) => {
           const view = work(row.thread);
           const state =
             view.kind === "current"
               ? workStateMark(view.analysis.state, view.reported)
               : null;
-          const folded = via.get(row.thread.id);
+          const children = childCount.get(row.thread.id) ?? 0;
+          const runtime = statusRole(row.thread.indicator);
           return (
-            <li
-              key={row.thread.id}
-              className="group/row flex items-center gap-1"
-            >
+            <li key={row.thread.id} className="group/row relative">
               <button
                 type="button"
                 onClick={() => navigate.toThread(row.thread.id)}
-                className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm hover:bg-state-hover"
+                className="grid w-full grid-cols-[1rem_minmax(0,1fr)_auto] items-baseline gap-x-2.5 rounded-md px-2 py-1.5 text-left hover:bg-state-hover"
               >
-                <StatusMark
-                  indicator={row.thread.indicator}
-                  label={row.thread.indicatorLabel}
-                />
-                <span className="flex min-w-0 flex-1 flex-col">
+                <span className="flex h-4 items-center justify-center self-start pt-0.5">
+                  {runtime ? (
+                    <StatusMark
+                      indicator={row.thread.indicator}
+                      label={row.thread.indicatorLabel}
+                    />
+                  ) : state?.glyph && view.kind === "current" ? (
+                    <span
+                      className={`ws-work ws-work-${view.reported && view.analysis.state === "done" ? "complete" : view.analysis.state} text-[11px]`}
+                      role="img"
+                      aria-label={state.label}
+                      title={state.label}
+                    >
+                      {state.glyph}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="min-w-0">
                   <span
                     className={cn(
-                      "flex min-w-0 items-center gap-1.5",
+                      "flex min-w-0 items-baseline gap-1.5 text-[13px]",
                       row.thread.isUnread
-                        ? "font-medium"
+                        ? "font-medium text-foreground"
                         : "text-foreground/90",
                     )}
                   >
-                    {state?.glyph && view.kind === "current" ? (
-                      <span
-                        className={`ws-work ws-work-${view.reported && view.analysis.state === "done" ? "complete" : view.analysis.state} inline-flex size-3.5 shrink-0 items-center justify-center`}
-                        role="img"
-                        aria-label={state.label}
-                        title={state.label}
-                      >
-                        {state.glyph}
-                      </span>
-                    ) : null}
                     <span className="min-w-0 truncate">
                       {row.thread.displayTitle}
                     </span>
+                    {children ? (
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        +{children} child{" "}
+                        {children === 1 ? "thread" : "threads"}
+                      </span>
+                    ) : null}
                   </span>
                   <WhereItStopped
                     view={view}
-                    folded={folded}
+                    folded={via.get(row.thread.id)}
                     child={childAsk.get(row.thread.id)}
                     work={work}
                   />
                 </span>
-                {childCount.get(row.thread.id) ? (
-                  <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
-                    +{childCount.get(row.thread.id)} child{" "}
-                    {childCount.get(row.thread.id) === 1 ? "thread" : "threads"}
-                  </span>
-                ) : null}
-                <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
+                <span className="text-[11px] tabular-nums text-muted-foreground">
                   {relativeAge(row.thread.latestAttentionAt, now)}
                 </span>
               </button>
@@ -341,7 +346,7 @@ function WorkstreamCard({
                 target={{ link: { kind: "thread", ref: row.thread.id } }}
                 title={`Model calls for ${row.thread.displayTitle}`}
                 label={`Inspect model calls for ${row.thread.displayTitle}`}
-                className="text-muted-foreground opacity-0 group-hover/row:opacity-55 focus-visible:opacity-100"
+                className="absolute right-10 top-1.5 text-muted-foreground opacity-0 group-hover/row:opacity-60 focus-visible:opacity-100"
               />
             </li>
           );
@@ -372,7 +377,7 @@ function WhereItStopped({
   const ownAsk = view.kind === "current" ? view.analysis.needsYou : null;
   if (ownAsk)
     return (
-      <span className="truncate text-xs text-muted-foreground">
+      <span className="block truncate text-xs text-amber-600 dark:text-amber-400">
         {ownAsk}
         {folded?.length ? ` (via ${folded[0]!.displayTitle})` : ""}
       </span>
@@ -382,7 +387,7 @@ function WhereItStopped({
     const ask =
       childView.kind === "current" ? childView.analysis.needsYou : null;
     return (
-      <span className="truncate text-xs text-muted-foreground">
+      <span className="block truncate text-xs text-amber-600 dark:text-amber-400">
         via {child.displayTitle}: {ask ?? "waiting for you"}
       </span>
     );
@@ -391,8 +396,8 @@ function WhereItStopped({
   return (
     <span
       className={cn(
-        "truncate text-xs text-muted-foreground",
-        view.kind === "pending" && "italic opacity-70",
+        "block truncate text-xs text-muted-foreground",
+        view.kind === "pending" && "opacity-60",
       )}
     >
       {analysis.recap}

@@ -1,8 +1,20 @@
 import { cn } from "@/lib/utils";
 
+/** Splits "<Owner>: <Area>" into its parts; null for a plain name. */
+export function splitWorkstreamName(
+  name: string,
+): { owner: string; area: string } | null {
+  const at = name.indexOf(":");
+  if (at <= 0) return null;
+  const owner = name.slice(0, at).trim();
+  const area = name.slice(at + 1).trim();
+  return owner && area ? { owner, area } : null;
+}
+
 /**
- * Renders a workstream name, giving colon-prefixed sub-areas ("<Product>: <Area>")
- * a distinct visual treatment where the product anchor is quiet and the area is prominent.
+ * A workstream's name. An area of a larger product ("Workstreams: Recaps")
+ * shows the owner subdued before the area, without the colon; the colon is
+ * kept in the accessible text so screen readers hear the full name.
  */
 export function WorkstreamName({
   name,
@@ -13,51 +25,28 @@ export function WorkstreamName({
   className?: string;
   muted?: boolean;
 }) {
-  const colonIdx = name.indexOf(":");
-  if (colonIdx > 0 && colonIdx < name.length - 1) {
-    const prefix = name.slice(0, colonIdx).trim();
-    const suffix = name.slice(colonIdx + 1).trim();
+  const parts = splitWorkstreamName(name);
+  if (!parts)
     return (
       <span
         className={cn(
-          "inline-flex items-baseline min-w-0 max-w-full truncate",
+          "truncate",
+          muted ? "text-muted-foreground" : "text-foreground",
           className,
         )}
       >
-        <span
-          className={cn(
-            "font-normal shrink-0",
-            muted ? "text-muted-foreground/70" : "text-muted-foreground",
-          )}
-        >
-          {prefix}
-        </span>
-        <span
-          className="mx-1 font-normal opacity-40 shrink-0"
-          aria-hidden="true"
-        >
-          :
-        </span>
-        <span
-          className={cn(
-            "font-semibold truncate",
-            muted ? "text-muted-foreground" : "text-foreground",
-          )}
-        >
-          {suffix}
-        </span>
+        {name}
       </span>
     );
-  }
   return (
-    <span
-      className={cn(
-        "truncate font-semibold",
-        muted ? "text-muted-foreground" : "text-foreground",
-        className,
-      )}
-    >
-      {name}
+    <span className={cn("truncate", className)}>
+      <span className="font-normal text-muted-foreground/60">
+        {parts.owner}
+      </span>
+      <span className="sr-only">:</span>{" "}
+      <span className={muted ? "text-muted-foreground" : "text-foreground"}>
+        {parts.area}
+      </span>
     </span>
   );
 }

@@ -22,7 +22,7 @@ async function page(summary: string | null, overrides = {}) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   return renderSlot(
     app.navPanels[0]!,
-    { subPath: "activity" },
+    { subPath: "debug" },
     {
       settings: { debug: true },
       rpc: {

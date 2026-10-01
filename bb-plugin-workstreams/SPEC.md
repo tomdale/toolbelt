@@ -361,7 +361,7 @@ New work classifies against that applied map (§6). Manual moves and edits remai
 available. Dormancy and snooze change presentation, not membership.
 
 The organizer defaults to concrete products/projects with simple recognizable
-names. High-volume products (4+ open threads) may subdivide into 2–3 focused
+names. Owners with 4+ roots in two or more capability clusters split into 2–3
 areas in `<Product>: <Area>` format, formatted distinctly in the UI. Features,
 evaluations, memory work and architecture stay with their owning product.
 Substantial independent projects/initiatives can have their own homes. Existing

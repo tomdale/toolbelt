@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRealtime, type useRpc } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import type { BootstrapState } from "../../server/bootstrap.ts";
+import { Icon } from "@/components/ui/icon";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { ghostButton, primaryButton, secondaryButton } from "./controls.ts";
 import { WorkstreamName } from "../WorkstreamName.tsx";
@@ -87,18 +88,21 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
   const titles = new Map(state?.roots.map((r) => [r.id, r.title]));
   const moveById = new Map(preview?.moves.map((m) => [m.threadId, m]));
   const renderThreads = (key: string | null) => (
-    <ul className="mt-2 space-y-1">
+    <ul className="mt-1.5">
       {preview?.assignments
         .filter((a) => a.workstream === key)
         .map((a) => {
           const move = moveById.get(a.threadId);
           return (
-            <li key={a.threadId} className="text-sm">
+            <li key={a.threadId} className="text-[13px]">
               {move ? (
-                <label className="flex items-start gap-2">
+                <label
+                  className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-1 hover:bg-state-hover"
+                  title={a.reason}
+                >
                   <input
                     type="checkbox"
-                    className="ws-check mt-1"
+                    className="ws-check mt-[3px]"
                     checked={overrides[a.threadId] ?? move.accepted}
                     onChange={(e) =>
                       setOverrides((o) => ({
@@ -107,21 +111,18 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
                       }))
                     }
                   />
-                  <span>
-                    {titles.get(a.threadId)}{" "}
-                    <span className="text-xs text-muted-foreground">
-                      from {move.fromName}
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {a.reason}
-                    </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {titles.get(a.threadId)}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    from {move.fromName}
                   </span>
                 </label>
               ) : (
-                <span>
-                  {titles.get(a.threadId)}{" "}
-                  <span className="text-xs text-muted-foreground">
-                    stays here
+                <span className="flex items-center gap-2.5 px-2 py-1 text-muted-foreground">
+                  <span aria-hidden className="size-3.5 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {titles.get(a.threadId)}
                   </span>
                 </span>
               )}
@@ -130,151 +131,185 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
         })}
     </ul>
   );
+  const accepted = preview
+    ? preview.moves.filter((m) => overrides[m.threadId] ?? m.accepted).length
+    : 0;
   return (
-    <section
-      aria-label="Organize"
-      className="rounded-lg border border-border p-4 text-sm"
-    >
-      <div className="flex items-center gap-2">
-        <h2 className="font-medium">Organize workstreams</h2>
-        {state?.traceIds?.length ? (
-          <InspectButton
-            target={{ traceIds: state.traceIds }}
-            title="Organizing pass"
-            label="Inspect organizing pass"
-          />
-        ) : null}
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Scan open threads together, review the whole map, then apply. The map
-        stays put between runs.
-      </p>
-      {working ? (
-        <p role="status" className="my-4">
-          {state.status === "proposing"
-            ? "Building the map and thread placements…"
-            : "Applying the reviewed map…"}
-        </p>
-      ) : null}
+    <section aria-label="Organize" className="text-sm">
+      {!preview ? (
+        <div className="flex items-center gap-4 rounded-lg border border-border px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="flex items-center gap-1.5 font-medium">
+              Organize workstreams
+              {state?.traceIds?.length ? (
+                <InspectButton
+                  target={{ traceIds: state.traceIds }}
+                  title="Organizing pass"
+                  label="Inspect organizing pass"
+                />
+              ) : null}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {working
+                ? state.status === "proposing"
+                  ? "Reading your open threads…"
+                  : "Applying the map…"
+                : state?.status === "applied"
+                  ? "Map applied. Undo it from Activity."
+                  : "Groups open threads by product in one pass. Nothing moves until you apply."}
+            </p>
+          </div>
+          {working ? (
+            <span role="status" className="sr-only">
+              Working
+            </span>
+          ) : null}
+          {state?.status === "failed" || state?.status === "proposing" ? (
+            <button
+              type="button"
+              className={ghostButton}
+              disabled={busy}
+              onClick={() => void send({ action: "cancel" })}
+            >
+              Cancel
+            </button>
+          ) : null}
+          {!working ? (
+            <button
+              type="button"
+              className={
+                state?.status === "applied" ? secondaryButton : primaryButton
+              }
+              disabled={busy}
+              onClick={() => void send({ action: "start" })}
+            >
+              {state?.status === "failed" ? "Start over" : "Organize…"}
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          <div className="sticky top-0 z-10 -mx-1 flex items-center gap-3 border-b border-border bg-background/95 px-1 py-2 backdrop-blur">
+            <div className="min-w-0 flex-1">
+              <h2 className="flex items-center gap-1.5 font-medium">
+                Review the map
+                {state?.traceIds?.length ? (
+                  <InspectButton
+                    target={{ traceIds: state.traceIds }}
+                    title="Organizing pass"
+                    label="Inspect organizing pass"
+                  />
+                ) : null}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {preview.workstreams.length} workstreams · {accepted} of{" "}
+                {preview.moves.length} moves selected
+                {preview.removals?.length
+                  ? ` · ${preview.removals.length} to remove`
+                  : ""}
+              </p>
+            </div>
+            <button
+              type="button"
+              className={ghostButton}
+              disabled={busy}
+              onClick={() => void send({ action: "cancel" })}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className={primaryButton}
+              disabled={busy}
+              onClick={() =>
+                void send({
+                  action: "apply",
+                  runId: state!.startedAt,
+                  overrides: Object.entries(overrides).map(
+                    ([threadId, accepted]) => ({ threadId, accepted }),
+                  ),
+                })
+              }
+            >
+              Apply map
+            </button>
+          </div>
+          <div className="mt-4 flex flex-col gap-5">
+            {preview.workstreams.map((w) => {
+              const renamed = preview.renames.find(
+                (r) => r.sectionId === w.sectionId,
+              );
+              return (
+                <div key={w.key}>
+                  <h4 className="flex items-baseline gap-2 px-2 text-[13px] font-semibold">
+                    <WorkstreamName name={w.name} />
+                    {w.sectionId === null ? (
+                      <span className="rounded bg-primary/15 px-1 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                        New
+                      </span>
+                    ) : null}
+                    {renamed ? (
+                      <span className="text-xs font-normal text-muted-foreground">
+                        was {renamed.from}
+                      </span>
+                    ) : null}
+                  </h4>
+                  <p className="px-2 text-xs text-muted-foreground">
+                    {w.description}
+                  </p>
+                  {renderThreads(w.key)}
+                </div>
+              );
+            })}
+            {preview.assignments.some((a) => a.workstream === null) ? (
+              <div>
+                <h4 className="px-2 text-[13px] font-semibold">Unsorted</h4>
+                {renderThreads(null)}
+              </div>
+            ) : null}
+            {preview.removals?.length ? (
+              <details className="group rounded-md px-2 text-xs text-muted-foreground">
+                <summary className="flex w-fit cursor-pointer list-none items-center gap-1 hover:text-foreground [&::-webkit-details-marker]:hidden">
+                  <Icon
+                    name="ChevronRight"
+                    className="size-3 transition-transform group-open:rotate-90"
+                    aria-hidden
+                  />
+                  Remove {preview.removals.length} unused workstream
+                  {preview.removals.length === 1 ? "" : "s"}
+                </summary>
+                <p className="mt-1.5 pl-4">
+                  Empty, or holding only threads archived over a day ago.
+                  Threads are kept; Undo restores the grouping.
+                </p>
+                <ul className="mt-1.5 pl-4">
+                  {preview.removals.map((r) => (
+                    <li key={r.sectionId} className="py-0.5">
+                      <span className="text-foreground/80">{r.name}</span>
+                      {r.archivedThreads.length
+                        ? ` · ${r.archivedThreads.length} archived`
+                        : ""}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            {!state?.roots.length ? (
+              <p className="text-muted-foreground">No open threads.</p>
+            ) : null}
+          </div>
+        </>
+      )}
       {state?.error ? (
-        <p role="alert" className="my-3 text-destructive">
+        <p role="alert" className="mt-3 text-xs text-destructive">
           {state.error}
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className="my-3 text-destructive">
+        <p role="alert" className="mt-3 text-xs text-destructive">
           {error}
         </p>
       ) : null}
-      {preview ? (
-        <div className="my-4 space-y-4">
-          <h3 className="font-medium">Review the map</h3>
-          <p className="text-xs text-muted-foreground">
-            {preview.workstreams.length} workstreams ·{" "}
-            {state?.roots.length ?? 0} root threads · {preview.moves.length}{" "}
-            proposed moves. Uncheck a move to keep its current home. Children
-            follow their parent.
-          </p>
-          {preview.workstreams.map((w) => (
-            <div key={w.key} className="rounded border border-border p-3">
-              <h4 className="font-medium">
-                <WorkstreamName name={w.name} />
-                {w.sectionId === null ? " · New" : ""}
-              </h4>
-              {preview.renames.find((r) => r.sectionId === w.sectionId) ? (
-                <p className="text-xs text-muted-foreground">
-                  Renamed from{" "}
-                  {
-                    preview.renames.find((r) => r.sectionId === w.sectionId)
-                      ?.from
-                  }
-                </p>
-              ) : null}
-              <p className="text-xs text-muted-foreground">{w.description}</p>
-              {w.aliases.length ? (
-                <p className="text-xs text-muted-foreground">
-                  Also known as: {w.aliases.join(", ")}
-                </p>
-              ) : null}
-              {renderThreads(w.key)}
-            </div>
-          ))}
-          {preview.assignments.some((a) => a.workstream === null) ? (
-            <div className="rounded border border-border p-3">
-              <h4 className="font-medium">Unsorted</h4>
-              {renderThreads(null)}
-            </div>
-          ) : null}
-          {preview.removals?.length ? (
-            <div className="rounded border border-border p-3">
-              <h4 className="font-medium">Remove unused workstreams</h4>
-              <p className="text-xs text-muted-foreground">
-                Threads are preserved. Archived threads become unassigned; Undo
-                restores their grouping. Apply rechecks eligibility.
-              </p>
-              <ul className="mt-2 space-y-2">
-                {preview.removals.map((r) => (
-                  <li key={r.sectionId}>
-                    <strong>{r.name}</strong>
-                    <span className="block text-xs text-muted-foreground">
-                      {r.archivedThreads.length
-                        ? `${r.archivedThreads.length} archived threads · latest archive ${new Date(r.latestArchivedAt!).toLocaleString()} (over 24 hours ago)`
-                        : "Empty"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {!state?.roots.length ? <p>No open threads to organize.</p> : null}
-        </div>
-      ) : null}
-      {state?.status === "applied" ? (
-        <p className="my-3">Map applied. Undo is available in Activity.</p>
-      ) : null}
-      <div className="mt-4 flex justify-end gap-2">
-        {preview ||
-        state?.status === "failed" ||
-        state?.status === "proposing" ? (
-          <button
-            type="button"
-            className={ghostButton}
-            disabled={busy}
-            onClick={() => void send({ action: "cancel" })}
-          >
-            Cancel
-          </button>
-        ) : null}
-        {preview ? (
-          <button
-            type="button"
-            className={primaryButton}
-            disabled={busy}
-            onClick={() =>
-              void send({
-                action: "apply",
-                runId: state!.startedAt,
-                overrides: Object.entries(overrides).map(
-                  ([threadId, accepted]) => ({ threadId, accepted }),
-                ),
-              })
-            }
-          >
-            Apply map
-          </button>
-        ) : !working ? (
-          <button
-            type="button"
-            className={
-              state?.status === "applied" ? secondaryButton : primaryButton
-            }
-            disabled={busy}
-            onClick={() => void send({ action: "start" })}
-          >
-            {state?.status === "failed" ? "Start over" : "Organize…"}
-          </button>
-        ) : null}
-      </div>
     </section>
   );
 }

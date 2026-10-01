@@ -46,7 +46,7 @@ async function page(rpc: Record<string, unknown>) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   return renderSlot(
     app.navPanels[0]!,
-    { subPath: "activity" },
+    { subPath: "debug" },
     {
       settings: { debug: true },
       rpc: {
