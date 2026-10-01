@@ -6,7 +6,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   experimental_useSidebarThreads,
-  useSettings,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import type { Placement } from "../server/service.ts";
@@ -22,6 +21,7 @@ import {
   type ThreadSnooze,
 } from "../domain/snooze.ts";
 import { useSharedServerState } from "./serverState.ts";
+import { usePrefs } from "./prefs.ts";
 
 export type ServerState = {
   workstreams: Record<string, MapRecord>;
@@ -105,7 +105,7 @@ export function useNow(intervalMs = 60_000): number {
 export function useWorkstreams() {
   const { status, threads, sections, projects } =
     experimental_useSidebarThreads();
-  const settings = useSettings();
+  const { prefs } = usePrefs();
   const now = useNow();
   const { rpc, server, refresh, reorder, setSnooze } = useServerState();
 
@@ -167,14 +167,23 @@ export function useWorkstreams() {
           );
         },
         order,
+        recentLimit: prefs?.sidebar.recentLimit,
         snoozedUntil: (thread) => {
           const snooze = snoozes[thread.id];
           return isSnoozed(snooze, thread, now) ? snooze!.until : undefined;
         },
       }),
-    [placed, sections, now, analysis, recaps, order, snoozes],
+    [
+      placed,
+      sections,
+      now,
+      analysis,
+      recaps,
+      order,
+      snoozes,
+      prefs?.sidebar.recentLimit,
+    ],
   );
-  const values = (settings.values ?? {}) as Record<string, unknown>;
   return {
     status,
     projection,
@@ -194,9 +203,9 @@ export function useWorkstreams() {
       return isSnoozed(snooze, thread, now) ? snooze : undefined;
     },
     snoozePrefs: server.snoozePrefs,
-    showForYou: values.showForYou !== false,
-    showRecent: values.showRecent !== false,
-    showParentThreadLink: values.showParentThreadLink === true,
+    showForYou: prefs?.sidebar.showForYou ?? true,
+    showRecent: prefs?.sidebar.showRecent ?? true,
+    showParentThreadLink: prefs?.threads.showParentLink ?? false,
   };
 }
 

@@ -1,11 +1,11 @@
-/** Debug mode (SPEC §11.6): the setting and what an inspector can open. */
-import { useSettings } from "@get-bb/plugin-sdk/app";
+/** Debug mode (SPEC §11.6): the preference and what an inspector can open. */
 import type { TraceLink } from "../../domain/trace.ts";
+import { usePrefs } from "../prefs.ts";
 
-/** Whether the `debug` setting is on; inspect buttons render only then. */
+/** Whether debug is on; inspect buttons render only then. */
 export function useDebugMode(): boolean {
-  const { values } = useSettings();
-  return (values as Record<string, unknown> | undefined)?.debug === true;
+  const { prefs } = usePrefs();
+  return prefs?.advanced.debug ?? false;
 }
 
 /**

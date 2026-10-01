@@ -15,8 +15,9 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { Usage } from "../../domain/trace.ts";
 
-export const SYSTEM_PROMPT =
+export const WORKER_SYSTEM_PROMPT =
   "Classify supplied data. Return only the requested JSON. Never take actions.";
+export const SYSTEM_PROMPT = WORKER_SYSTEM_PROMPT;
 export const PROVIDER = "vercel-ai-gateway";
 /** Reasoning is never requested; see the module comment. */
 export const THINKING = "off";

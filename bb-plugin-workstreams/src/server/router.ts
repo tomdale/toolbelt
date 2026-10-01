@@ -10,6 +10,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { isCurrent } from "../domain/analysis.ts";
+import type { ModelChoice } from "../domain/prefs.ts";
 import { relativeAge } from "../domain/presentation.ts";
 import {
   mentionedTarget,
@@ -151,7 +152,7 @@ export class Router {
       map: WorkstreamMap;
       analyzer: Analyzer;
       inference: Inference;
-      model: () => Promise<string>;
+      model: () => Promise<ModelChoice>;
       homeProjectId: () => Promise<string>;
       now?: () => number;
     },
@@ -465,6 +466,7 @@ export class Router {
       input,
       {
         model,
+        ...(options.about ? { threadId: options.about } : {}),
         label: text.replace(/\s+/g, " "),
         links: options.about ? [{ kind: "thread", ref: options.about }] : [],
         signal: options.signal,

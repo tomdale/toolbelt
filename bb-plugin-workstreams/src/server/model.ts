@@ -27,6 +27,11 @@ import {
   THINKING,
   type Completion,
 } from "./inference/gateway.ts";
+import {
+  gatewayModel,
+  modelChoiceSchema,
+  type ModelChoice,
+} from "../domain/prefs.ts";
 import { UserError } from "./service.ts";
 import { boundedJson, type TraceStore } from "./trace.ts";
 
@@ -53,6 +58,17 @@ export const MODEL_CALLS = {
 >;
 
 type Calls = typeof MODEL_CALLS;
+
+/** Human-readable identity persisted alongside replayable model choices. */
+export function modelLabel(choice: ModelChoice): string {
+  const direct = gatewayModel(choice);
+  return (
+    direct ??
+    (choice.kind === "provider"
+      ? `${choice.providerId}/${choice.model}`
+      : choice.model)
+  );
+}
 export type InputOf<K extends TraceKind> = Parameters<Calls[K]["prompt"]>[0];
 export type OutputOf<K extends TraceKind> = ReturnType<Calls[K]["parse"]>;
 
@@ -106,9 +122,10 @@ type Spec = {
 
 export type Complete = (
   prompt: string,
-  model: string,
+  choice: ModelChoice,
   signal?: AbortSignal,
   maxTokens?: number,
+  context?: { threadId?: string },
 ) => Promise<
   Pick<Completion, "text" | "usage"> &
     Partial<Pick<Completion, "reasoning" | "stopReason">>
@@ -160,7 +177,8 @@ export class Inference {
     kind: K,
     input: InputOf<K>,
     options: {
-      model: string;
+      model: ModelChoice;
+      threadId?: string;
       label?: string;
       links?: readonly TraceLink[];
       /**
@@ -176,6 +194,7 @@ export class Inference {
       parse: (text) => spec.parse(text, input),
       input,
       model: options.model,
+      threadId: options.threadId,
       label: options.label ?? TRACE_KIND_TITLE[kind],
       links: options.links ?? [],
       replayOf: null,
@@ -199,7 +218,9 @@ export class Inference {
       // The stored input keeps the names and ids the parser checks against.
       parse: (text) => spec.parse(text, original.input),
       input: original.input,
-      model: original.model,
+      model:
+        original.modelChoice ??
+        modelChoiceSchema.parse({ kind: "gateway", model: original.model }),
       label: original.label,
       links: [],
       replayOf: original.id,
@@ -273,7 +294,8 @@ export class Inference {
       prompt: string;
       parse: (text: string) => unknown;
       input: unknown;
-      model: string;
+      model: ModelChoice;
+      threadId?: string;
       label: string;
       links: readonly TraceLink[];
       replayOf: string | null;
@@ -301,11 +323,18 @@ export class Inference {
                 kind,
                 status,
                 label: request.label,
-                model: request.model,
+                model: modelLabel(request.model),
+                modelChoice: request.model,
                 durationMs: this.now() - started,
                 replayOf: request.replayOf,
-                provider: PROVIDER,
-                thinking: THINKING,
+                provider:
+                  request.model.kind === "gateway"
+                    ? PROVIDER
+                    : `bb-provider:${request.model.providerId}`,
+                thinking:
+                  request.model.kind === "provider"
+                    ? request.model.reasoningLevel
+                    : THINKING,
                 system: SYSTEM_PROMPT,
                 prompt: request.prompt,
                 input: boundedJson(request.input),
@@ -338,6 +367,7 @@ export class Inference {
         request.model,
         request.signal,
         kind === "organize" ? 32768 : undefined,
+        request.threadId ? { threadId: request.threadId } : undefined,
       );
     } catch (error) {
       if (request.signal?.aborted) throw request.signal.reason;
