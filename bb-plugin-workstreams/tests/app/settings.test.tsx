@@ -94,6 +94,9 @@ it("renders four compact sidebar toggles and saves their preferences", async () 
 
 it("saves all three timestamp choices", async () => {
   const slot = await mount("sidebar");
+  const picker = await slot.findByRole("button", { name: "Timestamp" });
+  expect(picker.classList.contains("w-40")).toBe(true);
+  expect(picker.parentElement?.classList.contains("shrink-0")).toBe(true);
   for (const [label, value] of [
     ["Only on hover", "hover"],
     ["Don't show", "hide"],

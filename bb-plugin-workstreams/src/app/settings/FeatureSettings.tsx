@@ -68,12 +68,14 @@ export function SidebarSettings() {
       {row("Archived", prefs.sidebar.showArchived, (showArchived) =>
         update({ sidebar: { showArchived } }),
       )}
-      <CompactSettingRow
+      <SettingRow
         label="Timestamp"
+        className="min-h-8"
         control={
           <SettingsPicker
             label="Timestamp"
             value={prefs.sidebar.timestamps}
+            className="w-40"
             options={[
               { value: "show", label: "Show" },
               { value: "hover", label: "Only on hover" },
