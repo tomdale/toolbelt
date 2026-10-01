@@ -10,6 +10,10 @@ import { clip, redact } from "./analysis.ts";
 
 export type RouteInput = {
   readonly prompt: string;
+  /**
+   * The user chose "new workstream" as the action, so the model may name one
+   * outside suggest mode. Present only when true.
+   */
   readonly allowNewWorkstream?: boolean;
   /**
    * New work's suggestion: the model names the single most likely home,
@@ -38,6 +42,12 @@ export type RouteInput = {
    * picked one: a strong hint that stays free of the project's name.
    */
   readonly pickedProjectHosts: readonly string[] | null;
+  /**
+   * The workstream already selected for this work (New work's Workstream
+   * field, preset by a workstream's ＋): a hint the model should prefer
+   * when the request fits. Ignored unless it is one of `workstreams`.
+   */
+  readonly selectedWorkstream?: string | null;
 };
 
 const PROMPT_CHARS = 4000;
@@ -85,6 +95,13 @@ export function routePrompt(input: RouteInput): string {
       ? `\nThe user picked a project that hosts these workstreams: ${JSON.stringify(hosts)}. Prefer them when the request fits.`
       : "\nThe user picked a project that hosts no workstream yet."
     : "";
+  const selected =
+    input.selectedWorkstream && offered.has(input.selectedWorkstream)
+      ? clean(input.selectedWorkstream, 80)
+      : null;
+  const focus = selected
+    ? `\nThe user has already selected the workstream ${JSON.stringify(selected)} for this work. Prefer it, or one of its threads, when the request fits; suggest another home only when the request plainly belongs elsewhere.`
+    : "";
   const request = redact(input.prompt).slice(0, PROMPT_CHARS);
   const task = input.suggest
     ? "Suggest the single most likely home: continue an existing thread, start a thread in an existing workstream, or start a new workstream when the request begins a distinct ongoing effort that no listed workstream covers. The user reviews the suggestion before anything changes."
@@ -103,7 +120,7 @@ Workstreams:
 ${workstreams || "(none yet)"}
 
 Active threads:
-${threads || "(none)"}${hint}
+${threads || "(none)"}${hint}${focus}
 Request:
 <<<
 ${request}

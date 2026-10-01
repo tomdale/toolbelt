@@ -170,6 +170,11 @@ export class Router {
       exclude?: string | readonly string[] | null;
       /** A workstream the user already chose; skips the model. */
       workstreamId?: string | null;
+      /**
+       * The workstream New work's field shows (preset by a workstream's ＋).
+       * Unlike `workstreamId` the model is still asked, told to prefer it.
+       */
+      selectedWorkstreamId?: string | null;
       /** Explicit New-work intent from the focused composer. */
       intent?: RouteIntent | null;
       /**
@@ -423,8 +428,13 @@ export class Router {
       : records.filter((r) => r.evidence.threadCount > 0);
     const input: RouteInput = {
       prompt: text,
-      allowNewWorkstream: intent?.action === "new-workstream",
+      ...(intent?.action === "new-workstream"
+        ? { allowNewWorkstream: true }
+        : {}),
       ...(options.suggest ? { suggest: true } : {}),
+      selectedWorkstream: options.selectedWorkstreamId
+        ? (nameOf.get(options.selectedWorkstreamId) ?? null)
+        : null,
       workstreams: populated.map((r) => ({
         name: r.name,
         description: r.description,
@@ -449,16 +459,7 @@ export class Router {
             .map((r) => r.name)
         : null,
     };
-    const empty = populated.filter((r) => r.evidence.threadCount === 0).length;
     const model = await this.deps.model();
-    const offeredThreads = Math.min(input.threads.length, 30);
-    explain(
-      `Asked ${model} with ${input.workstreams.length} workstream${input.workstreams.length === 1 ? "" : "s"}${empty ? ` (${empty} without threads)` : ""} and ${
-        offeredThreads
-          ? `the ${offeredThreads} most recently active thread${offeredThreads === 1 ? "" : "s"}`
-          : "no active threads"
-      }.`,
-    );
     const { value: raw, traceId } = await this.deps.inference.run(
       "route",
       input,
@@ -680,7 +681,7 @@ export class Router {
     const placement = await this.placement(sectionId, code, null);
     explain(
       code
-        ? `Code work goes to "${record?.name}"'s primary project, in its ${placement?.label ?? "default environment"}.`
+        ? `Code work goes to "${record?.name}"'s primary project (where most of its threads run), in its ${placement?.label ?? "default environment"}.`
         : `It isn't code work, so it goes to the home project or the personal workspace (${placement?.label ?? "none"}).`,
     );
     return placement;

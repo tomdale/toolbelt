@@ -65,6 +65,15 @@ it("limits host hints to offered homes and sanitizes names throughout context", 
   expect(prompt).not.toContain("Dormant private home");
   expect(prompt.length).toBeLessThan(5000);
 });
+it("names a selected workstream only when it is offered", () => {
+  const workstreams = [{ name: "Alpha", description: null, subjects: [] }];
+  expect(
+    routePrompt({ ...input, workstreams, selectedWorkstream: "Alpha" }),
+  ).toContain('already selected the workstream "Alpha"');
+  expect(
+    routePrompt({ ...input, workstreams, selectedWorkstream: "Gone" }),
+  ).not.toContain("already selected");
+});
 it("permits proposed creation only for an explicit create action", () => {
   const response = JSON.stringify({
     outcome: "new-workstream",

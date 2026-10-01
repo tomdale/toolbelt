@@ -296,8 +296,7 @@ function changedFields(a: unknown, b: unknown): string[] {
   );
 }
 
-/** One recorded model call in full; also embedded by New work in Debug mode. */
-export function TraceDetail({
+function TraceDetail({
   rpc,
   id,
   close,

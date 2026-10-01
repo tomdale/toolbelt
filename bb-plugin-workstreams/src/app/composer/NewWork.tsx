@@ -83,9 +83,10 @@ function NewWork({
     const draftKey = crypto.randomUUID();
     return new NewWorkModel(
       {
-        route: async (prompt) =>
+        route: async (prompt, selectedWorkstreamId) =>
           (await rpc.call("route", {
             prompt,
+            selectedWorkstreamId,
             suggest: true,
             draftKey,
           })) as RouteDecision,
@@ -165,7 +166,7 @@ function NewWork({
           <div className="flex px-3.5">{picker}</div>
         )}
         <SuggestionRow newWork={newWork} />
-        {debug ? <NewWorkDebug newWork={newWork} onClose={onClose} /> : null}
+        {debug ? <NewWorkDebug newWork={newWork} /> : null}
       </div>
     </NewWorkContext.Provider>
   );

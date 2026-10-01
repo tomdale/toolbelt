@@ -121,6 +121,30 @@ describe("suggest", () => {
     expect(routePrompt(w)).toContain('"Billing"');
   });
 
+  it("asks the model to prefer the workstream the field shows", async () => {
+    const { w, alpha } = await setup({
+      outcome: "new-thread",
+      workstream: "Alpha",
+      title: "Parser fix",
+      code: true,
+      confidence: "high",
+      reason: "Selected and fits",
+    });
+    const decision = (await w.harness.behavior.callRpc("route", {
+      prompt: "Fix the parser",
+      selectedWorkstreamId: alpha.id,
+      suggest: true,
+    })) as Record<string, unknown>;
+    // Unlike `workstreamId`, the selection doesn't skip the model.
+    expect(decision).toMatchObject({
+      outcome: "new-thread",
+      sectionId: alpha.id,
+    });
+    expect(routePrompt(w)).toContain(
+      'The user has already selected the workstream "Alpha" for this work.',
+    );
+  });
+
   it("keeps the default classifier from proposing new workstreams", async () => {
     const { w } = await setup({
       outcome: "new-workstream",
@@ -215,12 +239,9 @@ describe("Debug mode", () => {
     };
     expect(durationMs).toBeGreaterThanOrEqual(0);
     expect(notes).toEqual([
-      expect.stringMatching(
-        /^Asked .+ with 1 workstream and the 1 most recently active thread\.$/,
-      ),
       "The model answered unsure, with 1 candidate.",
       "The model was unsure among 1 candidate; suggesting the first, which it lists as the likeliest.",
-      `Code work goes to "Alpha"'s primary project, in its checkout.`,
+      `Code work goes to "Alpha"'s primary project (where most of its threads run), in its checkout.`,
     ]);
   });
 

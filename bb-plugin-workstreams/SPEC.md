@@ -251,8 +251,10 @@ host-owned; Workstreams contributes its intake UI only inside its own dialog.
 **Inputs.**
 
 - The prompt.
-- Explicit choices: a project the user picked is a strong hint, and `@thread` or
-  `@section` mentions short-circuit the router.
+- Explicit choices: a project the user picked is a strong hint, the workstream
+  in New work's Workstream field (preset by the ＋ that opened it) is a hint the
+  model prefers when the request fits, and `@thread` or `@section` mentions
+  short-circuit the router.
 - The workstream map (§7).
 - Active task threads (title, workstream, one-line recap, state, age).
 
@@ -535,16 +537,17 @@ it.
      opens a side pane with those calls: the thread header, Activity entries,
      the organizing review, generated descriptions, Overview rows, and the
      sidebar row menu.
-   - New work instead adds a collapsed Debug section under the composer. It says
-     why the suggestion is or isn't showing; shows the route decision (outcome,
-     confidence, reason, subject, placement, time) with the server's numbered
-     notes on how it was reached (a mention short-circuit, what the model was
-     offered and answered, each rewrite such as an unsure answer becoming its
-     first candidate, and how the placement was chosen); embeds the decision's
-     recorded model call; shows the dialog's state; and lists every
-     classification (including superseded ones), acceptance, dismissal,
-     workstream choice and submit with its inputs, result or error, and
-     duration. Copy diagnostics copies all of it as JSON. The Activity log lists
+   - New work instead adds a collapsed Debug section under the composer. Its
+     summary names the decision and whether the suggestion shows. Open, it shows
+     the result (outcome, confidence, project and environment, the reason), the
+     inputs the model was given (the request, the selected workstream, the
+     project hint, how many workstreams and threads were offered, the model and
+     its time), the server's numbered notes on each deterministic step (a
+     mention short-circuit, the model's raw answer, each rewrite such as an
+     unsure answer becoming its first candidate, and where the placement came
+     from), and, collapsed, the exact prompt and raw response. Copy diagnostics
+     copies that with the dialog's state and its log of classifications,
+     acceptances, workstream choices and submits as JSON. The Activity log lists
      each call in place among the changes, with a one-line summary of what the
      model decided (or why it failed) and a "Model calls" filter. Debug-only
      Activity controls filter calls by kind and failures, show the count and

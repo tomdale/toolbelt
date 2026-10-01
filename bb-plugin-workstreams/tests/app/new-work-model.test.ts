@@ -9,6 +9,7 @@ import {
   shownSuggestion,
   suggestionFrom,
   type NewWorkDeps,
+  type WorkstreamChoice,
 } from "../../src/app/composer/new-work.ts";
 import type { RouteDecision } from "../../src/server/router.ts";
 import { DEBOUNCE_MS, SHORT_PAUSE_MS } from "../../src/app/composer/timing.ts";
@@ -66,7 +67,10 @@ const request = (text: string): NewThreadRequest => ({
   input: [{ type: "text", text, mentions: [] }],
 });
 
-function setup(route: (prompt: string) => Promise<RouteDecision>) {
+function setup(
+  route: (prompt: string) => Promise<RouteDecision>,
+  workstream: WorkstreamChoice = null,
+) {
   const deps = {
     route: vi.fn(route),
     cancelRoute: vi.fn(),
@@ -77,7 +81,7 @@ function setup(route: (prompt: string) => Promise<RouteDecision>) {
     startThread: vi.fn(async () => ({ threadId: "thr_new" })),
     sendToThread: vi.fn(async () => {}),
   } satisfies NewWorkDeps;
-  const newWork = new NewWork(deps);
+  const newWork = new NewWork(deps, workstream);
   const composer = {
     submit: vi.fn(async () => {
       // BB's composer calls the dialog's onSubmit with its request.
@@ -105,12 +109,32 @@ describe("classification", () => {
     await vi.advanceTimersByTimeAsync(SHORT_PAUSE_MS - 1);
     expect(deps.route).not.toHaveBeenCalled();
     await pause(1);
-    expect(deps.route).toHaveBeenCalledExactlyOnceWith("Fix the");
+    expect(deps.route).toHaveBeenCalledExactlyOnceWith("Fix the", null);
     expect(shownSuggestion(newWork.snapshot())).toMatchObject({
       kind: "workstream",
       sectionId: "sec_a",
       name: "Alpha",
     });
+  });
+
+  it("tells the router which workstream the field shows", async () => {
+    const { deps, newWork } = setup(async () => inAlpha, {
+      id: "sec_b",
+      name: "Beta",
+    });
+    newWork.observe("Fix the parser in Beta");
+    await pause(DEBOUNCE_MS);
+    expect(deps.route).toHaveBeenLastCalledWith(
+      "Fix the parser in Beta",
+      "sec_b",
+    );
+    newWork.selectWorkstream({ id: "sec_a", name: "Alpha" });
+    newWork.observe("Fix the parser in Alpha");
+    await pause(DEBOUNCE_MS);
+    expect(deps.route).toHaveBeenLastCalledWith(
+      "Fix the parser in Alpha",
+      "sec_a",
+    );
   });
 
   it("keeps the last suggestion up while newer text is classified", async () => {
@@ -371,8 +395,16 @@ describe("Debug mode's record", () => {
     expect(
       newWork.snapshot().events.map((e) => [e.kind, e.status, e.input]),
     ).toEqual([
-      ["classify", "superseded", { prompt: "Fix the parser in Alpha" }],
-      ["classify", "ok", { prompt: "Fix the parser in Alpha, and the lexer" }],
+      [
+        "classify",
+        "superseded",
+        { prompt: "Fix the parser in Alpha", workstream: null },
+      ],
+      [
+        "classify",
+        "ok",
+        { prompt: "Fix the parser in Alpha, and the lexer", workstream: null },
+      ],
     ]);
     expect(newWork.snapshot().events[1]!.output).toMatchObject({
       decision: { id: "d_thread" },

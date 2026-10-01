@@ -88,7 +88,7 @@ export function suggestionFrom(decision: RouteDecision): Suggestion | null {
 }
 
 /**
- * One thing the dialog did, for Debug mode: a classification of the draft,
+ * One thing the dialog did, for Debug mode's Copy diagnostics: a classification of the draft,
  * accepting or dismissing a suggestion, picking or creating a workstream, or
  * a submit. Each records its inputs and its result or error.
  */
@@ -140,8 +140,12 @@ export type NewWorkState = {
 };
 
 export type NewWorkDeps = {
-  /** Classifies `prompt` for a suggestion. A newer call supersedes it. */
-  route(prompt: string): Promise<RouteDecision>;
+  /**
+   * Classifies `prompt` for a suggestion, telling the model to prefer
+   * `workstreamId` (the field's value) when the request fits. A newer call
+   * supersedes it.
+   */
+  route(prompt: string, workstreamId: string | null): Promise<RouteDecision>;
   /** Aborts the classification in flight. */
   cancelRoute(): void;
   /** Resolves with the name BB stored, which may be normalized. */
@@ -476,9 +480,10 @@ export class NewWork {
     this.pending = true;
     this.set({ classifying: true });
     const prompt = this.state.text;
-    const finish = this.begin("classify", { prompt });
+    const workstream = this.state.workstream;
+    const finish = this.begin("classify", { prompt, workstream });
     try {
-      const decision = await this.deps.route(prompt);
+      const decision = await this.deps.route(prompt, workstream?.id ?? null);
       if (mine !== this.generation) {
         finish("superseded", { output: decision });
         return;
