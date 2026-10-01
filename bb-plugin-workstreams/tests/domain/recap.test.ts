@@ -71,3 +71,23 @@ it("reads a stored single review line as one step", () => {
   ]);
   expect(recapSchema.parse({ ...stored, review: null }).review).toEqual([]);
 });
+
+it("keeps structured review steps and writes their expectations", () => {
+  const input = recapInputSchema.parse({
+    state: "review",
+    goal: "Adding dark mode",
+    latest: ["Theme toggle works"],
+    review: [
+      { step: "Open Appearance.", expect: "Dark is available." },
+      "Reload Settings",
+    ],
+  });
+  const recap = toRecap(input, { id: "r", turnId: "t", at: 1 });
+  expect(recap.review).toEqual([
+    { step: "Open Appearance", expect: "Dark is available" },
+    "Reload Settings",
+  ]);
+  expect(recapMarkdown(recap)).toContain(
+    "- Open Appearance — expect Dark is available",
+  );
+});

@@ -46,8 +46,14 @@ const EXAMPLES: readonly Example[] = [
         "Every settings panel follows the system theme by default",
       ],
       review: [
-        "Open Settings → Appearance and choose Dark; expect every settings panel to use the dark theme",
-        "Reload Settings; expect Dark to remain selected and the panels to keep their dark theme",
+        {
+          step: "Open Settings → Appearance and choose Dark",
+          expect: "Every settings panel uses the dark theme",
+        },
+        {
+          step: "Reload Settings",
+          expect: "Dark stays selected and the panels stay dark",
+        },
       ],
       links: [],
     },

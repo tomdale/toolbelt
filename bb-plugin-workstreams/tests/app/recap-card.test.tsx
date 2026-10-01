@@ -175,6 +175,22 @@ it("shows UI review steps without artifact links", async () => {
   expect(slot.queryByRole("list", { name: "Links" })).toBeNull();
 });
 
+it("shows structured review steps with expected results", async () => {
+  const slot = await mount({
+    recap: {
+      state: "review",
+      review: [
+        { step: "Open Appearance", expect: "Dark is available" },
+        { step: "Reload Settings", expect: "Dark stays selected" },
+      ],
+    },
+  });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  expect(region.querySelectorAll("ol > li")).toHaveLength(2);
+  expect(slot.getAllByText("Expect")).toHaveLength(2);
+  expect(slot.getByText("Dark stays selected")).toBeTruthy();
+});
+
 it("drops the goal heading in the minimal layout", async () => {
   const slot = await mount({ layout: "minimal" });
   const region = await slot.findByRole("region", { name: "Latest recap" });
