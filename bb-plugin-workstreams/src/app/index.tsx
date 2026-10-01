@@ -19,6 +19,7 @@ import {
   OrganizeSettings,
   SidebarSettings,
   ThreadsSettings,
+  WorkingIndicatorSettings,
 } from "./settings/FeatureSettings.tsx";
 import { WorkstreamsThreadList } from "./sidebar/ThreadList.tsx";
 import { RecapSettings } from "./recap/RecapSettings.tsx";
@@ -97,8 +98,13 @@ export default definePluginApp((app) => {
   });
   app.slots.settingsSection({
     id: "sidebar",
-    title: "Sidebar",
+    title: "Show in Sidebar",
     component: SidebarSettings,
+  });
+  app.slots.settingsSection({
+    id: "working-indicator",
+    title: "Working Indicator",
+    component: WorkingIndicatorSettings,
   });
   app.slots.settingsSection({
     id: "threads",

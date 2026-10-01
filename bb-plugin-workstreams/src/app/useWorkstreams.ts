@@ -206,6 +206,8 @@ export function useWorkstreams() {
     snoozePrefs: server.snoozePrefs,
     showForYou: prefs?.sidebar.showForYou ?? true,
     showRecent: prefs?.sidebar.showRecent ?? true,
+    showSnoozed: prefs?.sidebar.showSnoozed ?? true,
+    showArchived: prefs?.sidebar.showArchived ?? true,
     showParentThreadLink: prefs?.threads.showParentLink ?? false,
   };
 }

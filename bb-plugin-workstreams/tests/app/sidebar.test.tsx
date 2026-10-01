@@ -101,6 +101,8 @@ async function mount(
           sidebar: {
             showForYou: true,
             showRecent: options.settings?.showRecent !== false,
+            showSnoozed: options.settings?.showSnoozed !== false,
+            showArchived: options.settings?.showArchived !== false,
             recentLimit: 5,
           },
           threads: {
@@ -193,6 +195,36 @@ const groupRows = (slot: Awaited<ReturnType<typeof mount>>, name: string) =>
     .map((a) => a.getAttribute("aria-label"));
 
 describe("thread list", () => {
+  it("does not request or render archived threads when their fold is hidden", async () => {
+    const fetchNextPage = vi.fn(async () => undefined);
+    const slot = await mount(
+      [
+        sidebarThread("archived", {
+          title: "Archived task",
+          isArchived: true,
+          archivedAt: 100,
+        }),
+        sidebarThread("active", { title: "Active task" }),
+      ],
+      {
+        settings: { showArchived: false },
+        archived: {
+          status: "ready",
+          hasNextPage: true,
+          isFetchingNextPage: false,
+          isFetchNextPageError: false,
+          fetchNextPage,
+        },
+      },
+    );
+    await waitFor(() =>
+      expect(slot.queryByRole("button", { name: /^Archived\d*$/ })).toBeNull(),
+    );
+    expect(slot.queryByText("Archived task")).toBeNull();
+    expect(fetchNextPage).not.toHaveBeenCalled();
+    slot.lifecycle.unmount();
+  });
+
   it("shows archived threads grouped by workstream and loads another page", async () => {
     const fetchNextPage = vi.fn(async () => undefined);
     const slot = await mount(
@@ -237,7 +269,7 @@ describe("thread list", () => {
         sidebarThread("active", { sectionId: "sec_a", title: "Active task" }),
       ],
       {
-        settings: { showRecent: false },
+        settings: { showRecent: false, showArchived: true },
         archived: {
           status: "ready",
           hasNextPage: true,
@@ -1112,6 +1144,23 @@ describe("snoozing", () => {
         "On update",
       ),
     ).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
+  it("hides snoozed threads without resurfacing them in other groups", async () => {
+    const slot = await mount(threads(), {
+      settings: { showSnoozed: false },
+      snoozes: { nap: { until: later(), attentionAt: 0, at: 0 } },
+    });
+    await waitFor(() =>
+      expect(groupRows(slot, "Alpha")).toEqual(["Asking task"]),
+    );
+    expect(slot.queryByRole("button", { name: /^Snoozed\d*$/ })).toBeNull();
+    expect(slot.queryAllByRole("link", { name: "Napping task" })).toHaveLength(
+      0,
+    );
+    expect(groupRows(slot, "Recent")).toEqual(["Other task"]);
+    expect(groupRows(slot, "Alpha")).toEqual(["Asking task"]);
     slot.lifecycle.unmount();
   });
 

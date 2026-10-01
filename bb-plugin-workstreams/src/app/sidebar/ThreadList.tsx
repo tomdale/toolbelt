@@ -164,7 +164,7 @@ export function WorkstreamsThreadList({
 }: PluginThreadListProps) {
   const ws = useWorkstreams();
   const archived = experimental_useSidebarThreads({
-    experimental_lifecycles: ["archived"],
+    experimental_lifecycles: ws.showArchived ? ["archived"] : [],
   });
   const actions = experimental_useSidebarThreadActions();
   const navigate = useBbNavigate();
@@ -266,9 +266,9 @@ export function WorkstreamsThreadList({
     shownBefore.current = new Set(focus.shown.map((row) => row.thread.id));
   });
   if (!focus.active && showElsewhere) setShowElsewhere(false);
-  const archivedThreads = archived.threads.filter(
-    (thread) => thread.isArchived && !thread.isHidden,
-  );
+  const archivedThreads = ws.showArchived
+    ? archived.threads.filter((thread) => thread.isArchived && !thread.isHidden)
+    : [];
   const archivedById = new Map(
     archivedThreads.map((thread) => [thread.id, thread]),
   );
@@ -898,7 +898,8 @@ export function WorkstreamsThreadList({
             </SortableContext>
           </Band>
         ) : null}
-        {archived.experimental_archived?.status !== "error" &&
+        {ws.showArchived &&
+        archived.experimental_archived?.status !== "error" &&
         (archivedThreads.length > 0 ||
           archived.experimental_archived?.status === "loading" ||
           archived.experimental_archived?.hasNextPage) ? (
@@ -1001,7 +1002,7 @@ export function WorkstreamsThreadList({
             ) : null}
           </Band>
         ) : null}
-        {projection.snoozed.length > 0 ? (
+        {ws.showSnoozed && projection.snoozed.length > 0 ? (
           <Band
             title="Snoozed"
             flipKey="snoozed"
