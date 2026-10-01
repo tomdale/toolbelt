@@ -182,7 +182,7 @@ export function RecapPreview({ layout }: { layout: RecapLayout }) {
               aria-label={`${position + 1} of ${EXAMPLES.length}: ${example.label}`}
               aria-hidden={active ? undefined : true}
               className={cn(
-                "flex min-w-0 flex-col justify-end [grid-area:1/1]",
+                "flex min-w-0 flex-col justify-center [grid-area:1/1]",
                 !active && "invisible",
               )}
             >
