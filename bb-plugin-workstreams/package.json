@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Workstreams",
-    "description": "Your BB threads organized into workstreams, kept current as you work.",
+    "description": "Organize open BB threads in one reviewed pass, then route new work into stable homes.",
     "branding": {
       "icon": "Layers"
     },

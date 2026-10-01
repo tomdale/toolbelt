@@ -14,7 +14,6 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import type { Usage } from "../../domain/trace.ts";
-import { agentResponseSchema, type AgentRequest, type AgentResponse } from "../../domain/learner-protocol.ts";
 
 export const SYSTEM_PROMPT =
   "Classify supplied data. Return only the requested JSON. Never take actions.";
@@ -76,22 +75,6 @@ export async function gatewayKey(
   return env.AI_GATEWAY_API_KEY?.trim() || null;
 }
 
-/** One native tool-use turn. Tools execute on the server, not the host. */
-export async function gatewayAgentTurn(request: AgentRequest & { apiKey: string; signal?: AbortSignal }): Promise<AgentResponse> {
-  const res = await fetch(GATEWAY_URL, {
-    method: "POST", signal: request.signal,
-    headers: { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": request.apiKey },
-    body: JSON.stringify({ model: request.model, system: request.system, messages: request.messages, tools: request.tools, max_tokens: MAX_TOKENS }),
-  });
-  if (!res.ok) throw new Error(`AI Gateway returned ${res.status}.`);
-  const body = await res.json() as { content: unknown[]; stop_reason?: string; usage?: { input_tokens?: number; output_tokens?: number }; provider_metadata?: { gateway?: { cost?: number | string } } };
-  return agentResponseSchema.parse({
-    content: body.content.filter(block => block && typeof block === "object" && ["text", "tool_use"].includes((block as { type: string }).type)),
-    stopReason: body.stop_reason ?? null,
-    usage: { input: body.usage?.input_tokens ?? 0, output: body.usage?.output_tokens ?? 0, cost: Number(body.provider_metadata?.gateway?.cost ?? 0) || 0 },
-  });
-}
-
 export async function gatewayComplete(request: {
   prompt: string;
   model: string;
@@ -103,6 +86,7 @@ export async function gatewayComplete(request: {
    * opposite of Gemini; only the evals use this so far.
    */
   disableThinking?: boolean;
+  maxTokens?: number;
 }): Promise<Completion> {
   const res = await fetch(GATEWAY_URL, {
     method: "POST",
@@ -116,7 +100,7 @@ export async function gatewayComplete(request: {
       model: request.model,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: request.prompt }],
-      max_tokens: MAX_TOKENS,
+      max_tokens: request.maxTokens ?? MAX_TOKENS,
       ...(request.disableThinking ? { thinking: { type: "disabled" } } : {}),
     }),
   });

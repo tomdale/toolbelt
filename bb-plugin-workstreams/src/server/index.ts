@@ -10,7 +10,6 @@ import { refreshShapes, registerAgentInstructions } from "./agents.ts";
 import { Analyzer } from "./analyzer.ts";
 import { ArchiveSuggestions } from "./archive.ts";
 import { Bootstrap } from "./bootstrap.ts";
-import { Evolution } from "./evolution.ts";
 import { WorkstreamMap } from "./map.ts";
 import { Router, type RouteDecision } from "./router.ts";
 import { rpcContract } from "./contract.ts";
@@ -24,12 +23,7 @@ import { UserError, WorkstreamService } from "./service.ts";
 import { TraceStore } from "./trace.ts";
 import { RecapScheduler } from "./recap.ts";
 import { loadRecapPrefs, saveRecapPrefs } from "./recapPrefs.ts";
-import { Notebooks } from "./notebooks.ts";
-import {
-  ThreadSnoozes,
-  loadSnoozePrefs,
-  saveSnoozePrefs,
-} from "./snooze.ts";
+import { ThreadSnoozes, loadSnoozePrefs, saveSnoozePrefs } from "./snooze.ts";
 
 export { rpcContract } from "./contract.ts";
 
@@ -41,12 +35,11 @@ const RECONCILE_DEBOUNCE_MS = 1_500;
  * the default. Add one only after it passes.
  */
 export const MODELS = ["google/gemini-3.1-flash-lite"] as const;
-/** Stronger fast models for the one-time assignment (SPEC D7). */
+/** Bounded organizing uses Flash-Lite by default; callers can opt into a stronger model. */
 export const ORGANIZE_MODELS = [
-  "openai/gpt-6-sol-fast",
   "google/gemini-3.1-flash-lite",
+  "openai/gpt-6-sol-fast",
 ] as const;
-const EVOLVE_DEBOUNCE_MS = 15_000;
 /** The furthest out a snooze can wake. */
 const MAX_SNOOZE_MS = 366 * 24 * 60 * 60 * 1000;
 
@@ -80,13 +73,6 @@ export default async function plugin(bb: BbPluginApi) {
       options: [...MODELS],
       default: MODELS[0],
     },
-    understandingAutomatic: {
-      type: "boolean",
-      label: "Learn from conversations",
-      description:
-        "Let the learner read conversations, follow connections, and write thread notebooks and a shared brief. Uses paid model calls.",
-      default: true,
-    },
     recapModel: {
       type: "select",
       label: "Recap model",
@@ -116,28 +102,12 @@ export default async function plugin(bb: BbPluginApi) {
       options: [...ORGANIZE_MODELS],
       default: ORGANIZE_MODELS[0],
     },
-    evolution: {
-      type: "select",
-      label: "Workstream changes",
-      description:
-        "When the notebook supervisor finds a useful regrouping: apply it with an Undo banner, or ask first.",
-      options: ["auto", "ask"],
-      default: "auto",
-    },
     homeProjectId: {
       type: "project",
       label: "Home project",
       description:
         'Where work with no code target starts. Blank starts it in a fresh personal workspace ("Don\'t work in a project").',
       default: "",
-    },
-    sensitivity: {
-      type: "select",
-      label: "Change sensitivity",
-      description:
-        "How readily the supervisor proposes regrouping, and how often it considers changed notebooks: responsive, balanced, or conservative.",
-      options: ["responsive", "balanced", "conservative"],
-      default: "responsive",
     },
     debug: {
       type: "boolean",
@@ -188,10 +158,10 @@ export default async function plugin(bb: BbPluginApi) {
   };
   const traces = new TraceStore(db);
   const inference = new Inference({
-    complete: async (prompt, model, signal) =>
+    complete: async (prompt, model, signal, maxTokens) =>
       hostRpc.call(
         "complete",
-        { prompt, model },
+        { prompt, model, ...(maxTokens ? { maxTokens } : {}) },
         { hostId: await analysisHost(), timeoutMs: 95_000, signal },
       ),
     traces,
@@ -200,35 +170,12 @@ export default async function plugin(bb: BbPluginApi) {
   });
   // Retention also applies while Debug mode is off and nothing is recorded.
   traces.prune({ force: true });
-  const notebooks = new Notebooks({
-    sdk: () => bb.sdk,
-    db,
-    turn: async (request, signal) =>
-      hostRpc.call("agentTurn", request, {
-        hostId: await analysisHost(),
-        timeoutMs: 95000,
-        signal,
-      }),
-    model: async () => (await settings.get()).model,
-    onChange: notify,
-    log: (message) => bb.log.warn(message),
-  });
-  bb.onDispose(() => notebooks.dispose());
-  let evolveSoon = () => {};
   const analyzer = new Analyzer({
     sdk: () => bb.sdk,
     db,
     model: async () => (await settings.get()).model,
     inference,
-    observe: async (threadId) => {
-      if ((await settings.get()).understandingAutomatic)
-        await notebooks.observe(threadId);
-    },
-    context: () => notebooks.context(),
-    onChange: () => {
-      notify();
-      evolveSoon();
-    },
+    onChange: notify,
     onResult: (threadId, result) => {
       if (!result.title) return;
       void settings
@@ -290,30 +237,10 @@ export default async function plugin(bb: BbPluginApi) {
     map,
     inference,
     model: async () => (await settings.get()).organizeModel,
-    context: () => notebooks.context(),
-    notebook: (threadId) => notebooks.get(threadId),
+    projects: async () => bb.sdk.projects.list(),
     onChange: notify,
   });
-  const evolution = new Evolution({
-    sdk: () => bb.sdk,
-    db,
-    service,
-    journal,
-    map,
-    analyzer,
-    bootstrap,
-    inference,
-    model: async () => (await settings.get()).model,
-    context: () => notebooks.context(),
-    notebook: (threadId) => notebooks.get(threadId),
-    settings: async () => {
-      const values = await settings.get();
-      return { evolution: values.evolution, sensitivity: values.sensitivity };
-    },
-    onChange: notify,
-    log: (message) => bb.log.warn(message),
-  });
-  bb.onDispose(() => evolution.dispose());
+  bb.onDispose(() => bootstrap.dispose());
   const router = new Router({
     sdk: () => bb.sdk,
     service,
@@ -323,7 +250,6 @@ export default async function plugin(bb: BbPluginApi) {
     inference,
     model: async () => (await settings.get()).model,
     homeProjectId: async () => (await settings.get()).homeProjectId ?? "",
-    context: () => notebooks.context(),
   });
   // A thread the native composer just created from a previewed prompt is
   // filed where the preview said: via the banner's submit data, or, for a
@@ -399,18 +325,6 @@ export default async function plugin(bb: BbPluginApi) {
           placement: null,
         };
   };
-  let evolveTimer: ReturnType<typeof setTimeout> | null = null;
-  evolveSoon = () => {
-    if (evolveTimer) return;
-    evolveTimer = setTimeout(() => {
-      evolveTimer = null;
-      void evolution.tick();
-    }, EVOLVE_DEBOUNCE_MS);
-  };
-  bb.onDispose(() => {
-    if (evolveTimer) clearTimeout(evolveTimer);
-  });
-
   let timer: ReturnType<typeof setTimeout> | null = null;
   const reconcileSoon = (delay = RECONCILE_DEBOUNCE_MS) => {
     if (timer) clearTimeout(timer);
@@ -426,57 +340,18 @@ export default async function plugin(bb: BbPluginApi) {
           ).catch((error: unknown) =>
             bb.log.warn(`Project shape check failed: ${String(error)}`),
           );
-          return evolution.tick();
+          map.refresh(service.threads(), analyzer.all());
         })
         .catch((error: unknown) =>
           bb.log.warn(`Reconcile failed: ${String(error)}`),
         );
     }, delay);
   };
-  // Rotate through historical threads so bounded extraction can finish even
-  // when no further turns occur. One catch-up pass at a time, two threads per
-  // minute; Understanding serializes model work and backs off failed scans.
-  let understandingOffset = 0;
-  let understandingCatchingUp = false;
-  let disposed = false;
-  const catchUpUnderstanding = async () => {
-    if (disposed || understandingCatchingUp) return;
-    understandingCatchingUp = true;
-    try {
-      if (!(await settings.get()).understandingAutomatic || disposed) return;
-      const eligible = service
-        .threads()
-        .filter(
-          (thread) =>
-            thread.status === "idle" &&
-            notebooks.needsObservation(thread.id, thread.latestAttentionAt),
-        )
-        .sort((a, b) => a.id.localeCompare(b.id));
-      for (let i = 0; i < Math.min(2, eligible.length); i++) {
-        if (disposed) return;
-        const thread = eligible[understandingOffset % eligible.length]!;
-        understandingOffset++;
-        try {
-          await notebooks.observe(thread.id);
-        } catch (error) {
-          bb.log.warn(
-            `Understanding catch-up failed for ${thread.id}: ${String(error)}`,
-          );
-        }
-      }
-    } finally {
-      understandingCatchingUp = false;
-    }
-  };
   const interval = setInterval(() => {
     reconcileSoon(0);
     traces.prune();
-    void catchUpUnderstanding().catch((error) =>
-      bb.log.warn(`Understanding catch-up failed: ${String(error)}`),
-    );
   }, RECONCILE_EVERY_MS);
   bb.onDispose(() => {
-    disposed = true;
     clearInterval(interval);
     if (timer) clearTimeout(timer);
   });
@@ -517,7 +392,6 @@ export default async function plugin(bb: BbPluginApi) {
     snoozes.clear(thread.id);
     analyzer.forget(thread.id);
     recaps.disposeThread(thread.id);
-    notebooks.forget(thread.id);
     archives.forget(thread.id);
     service.forget(thread.id);
   });
@@ -627,7 +501,6 @@ export default async function plugin(bb: BbPluginApi) {
       ...service.state(),
       workstreams: Object.fromEntries(map.list().map((r) => [r.sectionId, r])),
       analysis: analyzer.all(),
-      proposals: evolution.proposals(),
       driftDismissed: Object.fromEntries(
         (
           db
@@ -784,13 +657,6 @@ export default async function plugin(bb: BbPluginApi) {
     archiveStatus: ({ threadId }) => archives.status(threadId),
     archiveSuggestion: ({ threadId, revision, action }) =>
       userFacing(() => archives.decide(threadId, revision, action)),
-    proposal: ({ id, action }) =>
-      userFacing(async () => {
-        if (action === "accept") await evolution.accept(id);
-        else if (action === "dismiss") evolution.dismiss(id);
-        else evolution.acknowledge(id);
-        return { ok: true as const };
-      }),
     bootstrap: (input) =>
       userFacing(async () => {
         // Model steps take seconds and report progress over realtime; a
@@ -811,11 +677,8 @@ export default async function plugin(bb: BbPluginApi) {
           if (refusal) throw refusal;
         };
         if (input.action === "start") await settle(bootstrap.start());
-        else if (input.action === "assign")
-          await settle(bootstrap.assign(input.decisions));
         else if (input.action === "apply")
-          await settle(bootstrap.apply(input.overrides));
-        else if (input.action === "skip") bootstrap.skip();
+          await settle(bootstrap.apply(input.overrides, input.runId));
         else if (input.action === "cancel") bootstrap.cancel();
         return { state: bootstrap.state(), bootstrapped: bootstrap.isDone() };
       }),
@@ -853,34 +716,19 @@ export default async function plugin(bb: BbPluginApi) {
     undo: ({ entryId }) =>
       userFacing(async () => {
         const entry = await service.undo(entryId);
-        evolution.settleUndone();
+        map.refresh(service.threads(), analyzer.all());
         return { entry };
       }),
     refresh: async () => {
       const changed = await service.reconcile();
       await sweepSnoozes();
-      await evolution.tick();
+      map.refresh(service.threads(), analyzer.all());
       return { changed };
     },
     traces: async (input) => ({ traces: traces.list(input) }),
     trace: async ({ id }) => ({ trace: traces.get(id) }),
     traceReplay: ({ id }) =>
       userFacing(async () => ({ trace: await inference.replay(id) })),
-    notebookOverview: async ({ query, offset }) =>
-      notebooks.overview(query, offset),
-    notebook: async ({ threadId }) => ({
-      notebook: notebooks.get(threadId),
-      versions: notebooks.versions(threadId),
-    }),
-    notebookBriefVersions: async () => ({ versions: notebooks.versions(null) }),
-    notebookLearn: ({ threadId }) =>
-      userFacing(async () => {
-        await notebooks.observe(threadId);
-        return notebooks.overview();
-      }),
-    notebookAsk: ({ question }) => userFacing(() => notebooks.ask(question)),
-    notebookRun: async ({ id }) => ({ run: notebooks.run(id) }),
-    notebookCancel: async ({ id }) => ({ cancelled: notebooks.cancel(id) }),
     traceClear: async () => ({ removed: traces.clear() }),
   });
 
@@ -892,6 +740,5 @@ export default async function plugin(bb: BbPluginApi) {
     map,
     router,
     traces,
-    notebooks,
   });
 }

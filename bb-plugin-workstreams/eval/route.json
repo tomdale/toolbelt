@@ -95,7 +95,7 @@
       "id": "new-product",
       "prompt": "Start a new project: a tiny CLI called Tern that syncs my reading list from Pocket to a markdown file.",
       "expect": {
-        "outcome": "new-workstream"
+        "outcome": "unsure"
       }
     },
     {
@@ -118,7 +118,7 @@
       "id": "errand",
       "prompt": "Compare three standing desks under $600 and recommend one.",
       "expect": {
-        "outcome": ["new-workstream", "unsure"],
+        "outcome": "unsure",
         "code": false
       }
     },

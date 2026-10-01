@@ -18,35 +18,15 @@ const EVENT: Record<TraceKind, { label: string; description: string }> = {
     label: "Thread recap",
     description: "The model produced the returning developer's thread recap.",
   },
-  supervision: {
-    label: "Organization supervision",
-    description:
-      "The model considered the current notebooks and active work, and proposed useful regrouping. Application is recorded separately with Undo.",
-  },
   route: {
     label: "Destination selection",
     description:
-      "The model suggested where a new request belongs: an existing thread, a new thread, or a new workstream.",
+      "The model classified a request against the applied map or left its destination undecided.",
   },
-  "organize-map": {
-    label: "Organization plan",
+  organize: {
+    label: "Organization preview",
     description:
-      "The model proposed how to organize workstreams. This records the proposal, not its application.",
-  },
-  "organize-assign": {
-    label: "Thread assignment",
-    description:
-      "The model suggested workstreams for threads during an organizing run.",
-  },
-  "file-unsorted": {
-    label: "Unsorted thread filing",
-    description:
-      "The model suggested where threads without a workstream belong. Applied moves appear as separate events.",
-  },
-  describe: {
-    label: "Description drafting",
-    description:
-      "The model drafted workstream descriptions from the work in their threads.",
+      "One pass proposed the whole map and thread placements. Apply is a separate user action.",
   },
 };
 const STATES: Record<string, { label: string; description: string }> = {

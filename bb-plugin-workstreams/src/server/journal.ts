@@ -46,6 +46,21 @@ export const statusSchema = z.enum([
 
 const stepSchema = z.discriminatedUnion("kind", [
   z.object({
+    kind: z.literal("metadata"),
+    sectionId: z.string(),
+    from: z.object({
+      description: z.string().nullable(),
+      aliases: z.array(z.string()),
+      source: z.enum(["user", "generated"]),
+    }),
+    to: z.object({
+      description: z.string().nullable(),
+      aliases: z.array(z.string()),
+      source: z.enum(["user", "generated"]),
+      revision: z.number(),
+    }),
+  }),
+  z.object({
     kind: z.literal("move"),
     moves: z.array(
       z.object({

@@ -132,7 +132,6 @@ export class Router {
       inference: Inference;
       model: () => Promise<string>;
       homeProjectId: () => Promise<string>;
-      context?: (query: string) => string;
       now?: () => number;
     },
   ) {}
@@ -370,16 +369,16 @@ export class Router {
       });
 
     const picked = selectedProject;
+    const populated = records.filter((r) => r.evidence.threadCount > 0);
     const input: RouteInput = {
       prompt: text,
-      understanding: this.deps.context?.(text),
-      workstreams: records
-        .filter((r) => r.evidence.threadCount > 0 || r.description)
-        .map((r) => ({
-          name: r.name,
-          description: r.description,
-          subjects: r.subjects,
-        })),
+      allowNewWorkstream: intent?.action === "new-workstream",
+      workstreams: populated.map((r) => ({
+        name: r.name,
+        description: r.description,
+        subjects: r.subjects,
+        aliases: r.aliases,
+      })),
       threads: tasks.map((t) => {
         const a = analysis[t.id];
         const current = isCurrent(a, t);
@@ -393,15 +392,21 @@ export class Router {
         };
       }),
       pickedProjectHosts: picked
-        ? records
+        ? populated
             .filter((r) => r.projects.some((p) => p.projectId === picked))
             .map((r) => r.name)
         : null,
     };
-    const { value: raw, traceId } = await this.deps.inference.run("route", input, {
-      model: await this.deps.model(), label: text.replace(/\s+/g," "),
-      links: options.about ? [{ kind: "thread", ref: options.about }] : [], signal: options.signal,
-    });
+    const { value: raw, traceId } = await this.deps.inference.run(
+      "route",
+      input,
+      {
+        model: await this.deps.model(),
+        label: text.replace(/\s+/g, " "),
+        links: options.about ? [{ kind: "thread", ref: options.about }] : [],
+        signal: options.signal,
+      },
+    );
     const idOf = new Map(records.map((r) => [r.name, r.sectionId]));
     const titleOf = new Map(threads.map((t) => [t.id, t]));
     const base = {

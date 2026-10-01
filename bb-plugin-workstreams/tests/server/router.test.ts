@@ -85,9 +85,8 @@ describe("route", () => {
 
   it("sends work with no code target to a fresh personal workspace, or the home project", async () => {
     const answer = {
-      outcome: "new-workstream",
-      name: "Trip planning",
-      description: "Travel",
+      outcome: "new-thread",
+      workstream: "Alpha",
       title: "Plan the Lisbon trip",
       code: false,
       confidence: "high",
@@ -209,10 +208,15 @@ describe("execute", () => {
       confidence: "high",
       reason: "New product",
     });
-    const decision = await route(w, "Start a new Gamma service next to Alpha");
+    const intent = { action: "new-workstream" };
+    const decision = (await w.harness.behavior.callRpc("route", {
+      prompt: "Start a new Gamma service next to Alpha",
+      intent,
+    })) as Decision;
     await w.harness.behavior.callRpc("routeExecute", {
       decisionId: decision.id,
       prompt: "Start a new Gamma service next to Alpha",
+      intent,
     });
     const gamma = w.sections.find((s) => s.name === "Gamma")!;
     expect(w.spawned[0]).toMatchObject({
@@ -807,7 +811,8 @@ describe("New work shipping regressions", () => {
         outcome: "new-thread",
         sectionId: null,
         workstream: null,
-        placement: { projectId: "proj_1" },
+        placement:
+          outcome === "new-workstream" ? null : { projectId: "proj_1" },
       });
     });
   }
@@ -1274,7 +1279,7 @@ for (const mention of ["@thread:a1", "@section:sec_1"]) {
   });
 }
 
-it("uses an independent name override for an inferred new workstream during execution", async () => {
+it("an inferred novel home stays unsure even with an independent name override", async () => {
   const { w } = await setup(rawOutcomes["new-workstream"]);
   const prompt = "Start a new effort alongside Alpha";
   const intent = { workstreamName: "Chosen effort" };
@@ -1282,17 +1287,9 @@ it("uses an independent name override for an inferred new workstream during exec
     prompt,
     intent,
   })) as Decision;
-  expect(decision).toMatchObject({
-    outcome: "new-workstream",
-    name: "Chosen effort",
-  });
-  await w.harness.behavior.callRpc("routeExecute", {
-    decisionId: decision.id,
-    prompt,
-    intent,
-  });
-  expect(w.sections.some((s) => s.name === "Chosen effort")).toBe(true);
-  expect(w.sections.some((s) => s.name === "Gamma")).toBe(false);
+  expect(decision).toMatchObject({ outcome: "unsure" });
+  expect(w.sections.map((s) => s.name)).toEqual(["Alpha"]);
+  expect(w.spawned).toHaveLength(0);
 });
 
 it("an independent name override leaves other inferred actions unchanged", async () => {

@@ -3,13 +3,7 @@
  * attention, then recency; each lists its threads to pick back up. The
  * Activity tab shows the journal.
  */
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   useBbNavigate,
   type PluginNavPanelProps,
@@ -24,18 +18,16 @@ import { Activity } from "./Activity.tsx";
 import { MapTab } from "./MapTab.tsx";
 import { NewWorkDialog } from "../composer/NewWork.tsx";
 import { InspectButton } from "../debug/InspectButton.tsx";
-import { Understanding } from "../understanding/Understanding.tsx";
 
-type Tab = "overview" | "map" | "activity" | "understanding";
+type Tab = "overview" | "map" | "activity";
 const TAB_LABEL: Record<Tab, string> = {
   overview: "Overview",
   map: "Map",
   activity: "Activity",
-  understanding: "Understanding",
 };
 
 /**
- * `subPath` deep links: map, activity, and understanding detail routes.
+ * `subPath` deep links select the map or activity view.
  * Model-call inspection lives in Activity and the Understanding workbench.
  */
 function tabOf(subPath: string): { tab: Tab; focus: string | null } {
@@ -43,7 +35,6 @@ function tabOf(subPath: string): { tab: Tab; focus: string | null } {
   if (head === "map") return { tab: "map", focus: null };
   if (head === "activity")
     return { tab: "activity", focus: rest.join("/") || null };
-  if (head === "understanding") return { tab: "understanding", focus: null };
   if (head === "debug") return { tab: "activity", focus: null };
   return { tab: "overview", focus: null };
 }
@@ -54,7 +45,7 @@ export function WorkstreamsPage({
   const ws = useWorkstreams();
   const linked = tabOf(subPath);
   const [tab, setTab] = useState<Tab>(linked.tab);
-  const tabs: Tab[] = ["overview", "map", "activity", "understanding"];
+  const tabs: Tab[] = ["overview", "map", "activity"];
   const [newWork, setNewWork] = useState(false);
   useLayoutEffect(() => setTab(tabOf(subPath).tab), [subPath]);
   const [query, setQuery] = useState("");
@@ -200,12 +191,9 @@ export function WorkstreamsPage({
             records={Object.values(ws.server.workstreams)}
             bootstrapped={ws.server.bootstrapped}
           />
-        ) : tab === "understanding" ? (
-          <Understanding rpc={ws.rpc} subPath={subPath} />
         ) : (
           <Activity
             rpc={ws.rpc}
-            proposals={ws.server.proposals}
             focus={linked.tab === "activity" ? linked.focus : null}
             sections={ws.sections}
             workstreamOf={(id) =>

@@ -1,9 +1,7 @@
-# Workstreams v2 specification
+# Workstreams specification
 
-Status: **approved 2026-09-29**. This document defines Workstreams v2, a rewrite
-of the Workstreams BB plugin. It is the contract that implementation, tests, and
-reviews check against. §17 lists every decision; Tom made or accepted all of
-them.
+This document defines the plugin's user-facing contracts. The organizing flow
+and its bounds are detailed in [Organizing workstreams](docs/organization.md).
 
 ## 1. Purpose
 
@@ -16,15 +14,17 @@ context constantly. Workstreams answers five questions at a glance:
 - What needs Tom now?
 - Where does new work go?
 
-Workstreams also keeps that organization current as work happens, without manual
-"Analyze" or "Organize" runs.
+Workstreams organizes open threads on explicit request. One model pass proposes
+the whole map and placements; the user previews and applies the result. Between
+runs, membership stays fixed while recaps and attention indicators stay current.
 
 Workstreams has four responsibilities:
 
 1. **Organize** threads into workstreams (native BB sections) and keep them
    there.
 2. **Route** new work: continue an existing thread, start a thread in a
-   workstream, or start a new workstream.
+   workstream, or leave the choice unresolved. Explicit user creation can start
+   a new workstream.
 3. **Equip** task threads to delegate subtasks and hand off out-of-scope
    requests.
 4. **Show** state through the sidebar thread list, the Workstreams page, and
@@ -100,7 +100,7 @@ environments.
 | **Delegate**     | A child of a task thread, created for a separable subtask                                                                                                                                                       | BB `parentThreadId` + `lifecycleOwnerThreadId`                |
 | **Sibling**      | A task thread spun off from another thread for out-of-scope work                                                                                                                                                | Metadata `spawnedFrom`. This is **not** a parent link.        |
 | **Home project** | Where work with no code target goes. **Default: none.** Such work goes to BB's personal project ("Don't work in a project") in a fresh personal workspace. The optional `homeProjectId` setting overrides this. | Plugin setting (optional)                                     |
-| **Unsorted**     | Unsectioned roots. A safety valve that is kept near-empty.                                                                                                                                                      | Derived                                                       |
+| **Unsorted**     | Unsectioned roots awaiting an explicit placement or organizing run.                                                                                                                                             | Derived                                                       |
 
 **Invariants.** Tests enforce each one.
 
@@ -115,9 +115,7 @@ environments.
 - **I3. Explicit moves only.** A filed thread moves only through one of these:
   - (a) placement at creation, by the router (intake or handoff);
   - (b) an explicit move by the user or an agent;
-  - (c) auto-filing of an Unsorted root;
-  - (d) an **evolution proposal**, accepted by the user or auto-applied under §9
-    policy.
+  - (c) Apply on a reviewed organizing preview.
 
   Analysis alone never moves a thread; it only adds evidence. The one change it
   can lead to is a thread's title, under the retitle policy (§10.1). Every
@@ -149,11 +147,11 @@ not include `sectionId` or visibility** _(spike)_, so role and workstream come
 from metadata plus a synchronous SQLite cache. Command details live in `--help`
 and the generated `plugin-commands` skill, not in the instructions.
 
-| Thread                      | Instructions (≤ 4096 characters)                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Thread                      | Instructions (≤ 4096 characters)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Task (top-level, visible)   | "You are a task thread in **‹workstream›** (‹one-line description›). When the user requests or approves delegating separable subtasks to child threads, use `bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"`, always choosing the environment explicitly: ‹shape guidance›. Then coordinate and integrate here. If the user asks for something outside this thread's task or workstream, don't do it here: pass their request verbatim to `bb workstreams handoff --request-stdin` and reply with the link it prints." |
-| Delegate (child)            | "You are a delegated subtask of ‹parent›. Report results to it. Hand off out-of-scope requests with `bb workstreams handoff`. Don't spawn further threads."                                                                                                                                                                                                                                                                                                                                               |
-| Hidden, side chat, internal | none                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Delegate (child)            | "You are a delegated subtask of ‹parent›. Report results to it. Hand off out-of-scope requests with `bb workstreams handoff`. Don't spawn further threads."                                                                                                                                                                                                                                                                                                                                                                                    |
+| Hidden, side chat, internal | none                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 The ‹shape guidance› text depends on the project shape (§3):
 
@@ -183,7 +181,7 @@ membership.
 - The caller is `ctx.threadId` (from `BB_THREAD_ID`). The router (§6) excludes
   the caller as a target and records the new thread as `spawnedFrom` the caller.
 - Agent handoffs can't use the intake preview, so the policy is:
-  - `new-thread` and `new-workstream` act immediately (journaled, undoable);
+  - `new-thread` acts immediately (journaled, undoable);
   - `continue` acts only at high confidence, and otherwise falls back to
     `new-thread`;
   - `unsure` makes no change: it prints the candidates and exits with a distinct
@@ -218,7 +216,8 @@ drift flag (§10) is the safety net.
 
 ## 6. Intake router
 
-One router serves four entry points:
+One router serves three entry points. BB's native New thread composer remains
+host-owned; Workstreams contributes its intake UI only inside its own dialog.
 
 1. **Workstreams ＋ New**, on the page and the sidebar. It embeds
    `experimental_NewThreadComposer` and previews server routing while the draft
@@ -228,7 +227,7 @@ One router serves four entry points:
    a new thread, previewed by the same routing call in the target's workstream
    (or in its project when it has none). A composer action beside Create thread,
    or ⌘⏎ (Ctrl+⏎ elsewhere), sends the draft to the suggested thread instead
-   through the same composer submit path, so attachments and mentions travel with
+   through the composer's own submit, so attachments and mentions travel with
    it. A suggestion shown while the draft reroutes is for older text, so
    continuing it first routes the current text straight to that thread without
    classifying it again. Compact action and labelled destination controls allow
@@ -239,9 +238,10 @@ One router serves four entry points:
    unassigned destination, distinct from unresolved routing; creation requires a
    chosen or confidently inferred project. Existing-thread placement is locked
    and its execution settings apply; ignored creation controls are hidden.
-   Pending, ambiguous and failed routes disable submission before draft
-   clearing. The submit label names the current action: Create thread, Send
-   message or Create workstream.
+   Pending, ambiguous and failed routes block execution. The banner names the
+   current action; BB's native submit label remains unchanged. A CSS adapter
+   dims readiness and hides duplicate placement controls; early Enter rejects
+   with draft restoration.
 2. **`bb workstreams handoff`**, called by agents (§5).
 3. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
 
@@ -293,34 +293,34 @@ Plugin SQLite, keyed by `sectionId`. The name mirrors BB.
   evidence: { repos[], paths[], threadCount, lastActiveAt }, createdBy: "user" | "workstreams", updatedAt }
 ```
 
-| Event                                        | Update                                                                                                    |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Bootstrap                                    | Proposal reviewed once (§8)                                                                               |
-| A user creates a section in BB               | The reconciler adds a record. The description is generated lazily.                                        |
-| The router or a handoff creates a workstream | Section and record, with a description generated from the prompt                                          |
-| A thread is filed or created                 | Deterministic evidence update                                                                             |
-| Evidence changes materially                  | Lazy description refresh, **only when `descriptionSource` is `generated`**                                |
-| The user edits a workstream                  | The edit always wins (`descriptionSource: user`)                                                          |
-| A section is renamed or deleted in BB        | The reconciler mirrors the rename, or drops the record. Former members fall to Unsorted with suggestions. |
-| A spin-out is accepted                       | The source description narrows, e.g. "… BB Recap and the Workstreams plugin have their own workstreams".  |
+| Event                                 | Update                                                                                       |
+| ------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Bootstrap                             | Proposal reviewed once (§8)                                                                  |
+| A user creates a section in BB        | The reconciler adds a record; scope can be edited or supplied by an explicit organizing run. |
+| Explicit Create workstream            | Section and record, with a description from the previewed action.                            |
+| A thread is filed or created          | Deterministic evidence update                                                                |
+| Organization is applied               | Reviewed descriptions and aliases are stored with Undo.                                      |
+| The user edits a workstream           | The edit always wins (`descriptionSource: user`)                                             |
+| A section is renamed or deleted in BB | The reconciler mirrors the rename or drops the record; unassigned roots remain Unsorted.     |
 
 ## 8. Keeping state current
 
-**One-time bootstrap** (also available as `bb workstreams rebuild`). Target:
-under 2 minutes, including review.
+**Explicit organization** (also available as `bb workstreams rebuild`).
 
-1. **Deterministic intake.** Read threads and sections, and build the
-   parent/child thread trees. Current placement provenance identifies automatic
-   filings, which can be re-evaluated; manual placements remain authoritative.
-2. **Map proposal.** One model call proposes merges, renames, retirements,
-   descriptions, and project associations.
-3. **Review.** Tom reviews the map on one screen.
-4. **Assignment.** Closed-set model calls, 8 threads per batch and 4 batches at
-   a time, give each root a workstream, `new`, or `unsure`. This step may use a
-   stronger fast model.
-5. **Apply.** Preview the diff, then apply it as one journaled, undoable batch.
+1. Snapshot visible, non-archived threads and existing sections. Build
+   root/child trees and include bounded titles, cached recaps and project
+   context.
+2. One tool-free model response proposes the whole map, descriptions, aliases
+   and exactly one assignment per root. Validate the full response before use.
+3. Preview the map and placements together. Every root is shown, including those
+   staying put. The user can uncheck moves or cancel without changing the map.
+4. Apply the saved preview as one journaled batch. Changed map metadata requires
+   a fresh preview; threads changed since the snapshot are skipped. Undo
+   includes names, new sections, placements, descriptions and aliases.
 
-The bootstrap runs the §9 evolution engine with relaxed thresholds.
+`rebuild --apply --run-id <startedAt>` applies the reviewed saved preview
+without another model call. See
+[organizing bounds and criteria](docs/organization.md).
 
 **Steady state.**
 
@@ -328,8 +328,8 @@ The bootstrap runs the §9 evolution engine with relaxed thresholds.
 | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Thread created through intake or a handoff                                                | RPC or CLI call                                                      | Placed by the router (provenance `router` or `handoff`)                                        |
 | Child created by any source                                                               | `thread.created`                                                     | No structural change. Analyze it on its first idle.                                            |
-| Top-level thread created elsewhere (BB's native composer, CLI, automations) | `thread.created`, then the first `thread.idle`                       | Respect a section that is already set. Otherwise classify it, then auto-file or suggest (§17). |
-| Visible fork                                                                              | `thread.created` with `sourceThreadId`                               | Default to the source's workstream                                                             |
+| Top-level thread created elsewhere (BB's native composer, CLI, automations) | `thread.created`, then the first `thread.idle`                       | Respect its existing section; otherwise leave it Unsorted.                                     |
+| Visible fork                                                                              | `thread.created` with `sourceThreadId`                               | Preserve the creator's placement; otherwise leave it Unsorted                                  |
 | User sends a message                                                                      | `message.dispatch` (observe and always `proceed`) or `thread.active` | Mark analysis pending. Clear any inferred "needs decision".                                    |
 | Turn completes                                                                            | `thread.idle` (`lastAssistantText` included)                         | Per-thread analysis (§10), debounced about 5 s, at most 4 concurrent                           |
 | Pending approval or question                                                              | `interaction.pending`                                                | Show in Needs you immediately                                                                  |
@@ -343,67 +343,17 @@ The bootstrap runs the §9 evolution engine with relaxed thresholds.
 `threads.list` and `threadSections.list`, compares them with plugin records, and
 records user moves. It is idempotent.
 
-## 9. Workstream evolution
+## 9. Stable membership
 
-The map evolves incrementally as work accumulates. Three kinds of change are
-kept separate:
+Turn completion, cached-analysis changes, timers and reconciliation do not
+create sections or move roots. Explicit organizing considers the whole map (§8);
+New work classifies against that applied map (§6). Manual moves and edits remain
+available. Dormancy and snooze change presentation, not membership.
 
-| Kind                 | Example                                       | Mechanism                                               |
-| -------------------- | --------------------------------------------- | ------------------------------------------------------- |
-| Thread drift         | One thread's work moves to another workstream | Per-thread drift flag, with Hand off / Move / Dismiss   |
-| Map evolution        | A cluster in BB & plugins becomes BB Recap    | Workstream-level proposals                              |
-| Classification noise | The model disagrees with itself               | Suppressed: membership is never re-derived turn by turn |
-
-**Evidence and reasoning.** The supervisor considers the current map, active
-root titles and recaps, per-thread notebooks, and shared brief. Workstreams
-represent coherent ongoing efforts; several may belong to one product. It can
-propose spin-outs, moves, and merges when that helps retrieval and navigation.
-No product-label count or repository-path identity determines the proposal.
-
-**Actions.** Spin-out creates a workstream and moves a coherent group of roots.
-Move files roots into an existing effort. Merge brings all eligible source work
-into an existing effort. User-written descriptions constrain intended scope;
-recent manual/external placement remains protected. Dormant is a view rule, not
-a model mutation.
-
-Sensitivity controls confidence and review cadence. Changed notebooks or active
-work make another review useful; unchanged snapshots do not incur a model call
-each reconcile. Failed reviews retain no actionable unvalidated response.
-
-**Surfacing.**
-
-- A yellow **floating banner** appears on each affected thread. It is anchored
-  below the thread header through `experimental_threadHeaderAction` and a portal
-  _(spike: works)_.
-  - Pending:
-    `✦ This thread and 2 others look like BB Recap work. Spin out a BB Recap workstream?  [Spin out] [Review…] [Not now]`
-  - Applied: `✦ Moved from BB & plugins → BB Recap  [Undo] [OK]`. There is no
-    action label or timestamp; the Activity log carries those.
-  - The banner collapses to a header pill (`✦ BB Recap?`).
-  - It never takes focus.
-  - On phone widths only the pill shows.
-  - `useSidebarSplitLayout()` returns `null` when the window isn't split, so the
-    banner aligns its right edge under the pill and centers over the pane only
-    in split view _(spike)_.
-- Affected sidebar rows get a small yellow dot.
-- The intake preview offers the proposal when it applies.
-- The Activity log lists every proposal.
-- **Auto-apply.** Proposals whose evidence accumulated outside intake are
-  applied automatically, with an Undo banner. The alternative, prompting first,
-  is a setting.
-- Accepting runs a preflight revision check, applies the change as one journaled
-  batch, skips threads that changed and reports them, and can be undone as a
-  whole.
-- Dismissing or undoing suppresses the same suggestion until its relevant
-  evidence changes.
-
-**Anti-churn rules.**
-
-- At most one open proposal per workstream, and at most 3 globally.
-- A thread the user moved in the last 14 days is excluded.
-- Every proposal is revalidated when it is shown and when it is applied.
-- The model identifies useful groupings; deterministic validation checks action
-  IDs, membership, manual authority, stale changes, and safe application.
+The organizer favors broad recognizable efforts with distinct scopes. Existing
+section IDs are reused when their efforts survive. Empty omitted sections remain
+available for archived history and explicit selection, but do not compete as
+inferred New work destinations.
 
 ## 10. Per-thread analysis
 
@@ -475,8 +425,8 @@ restores the previous title while it is still the one Workstreams wrote.
      the context menu). Manual order is plugin state shared across clients;
      unplaced roots sit above placed ones in the default order, and unplaced
      workstreams sit after placed ones.
-   - An Unsorted band, a Dormant fold, a Snoozed fold (collapsed by default,
-     §11.1), and a yellow dot on rows affected by a proposal.
+   - An Unsorted band, a Dormant fold, and a Snoozed fold (collapsed by default,
+     §11.1).
    - Rows show BB's `indicator` glyph plus a work-state glyph (with a legend),
      provider icon, branch/PR, draft, shortcut pill, unread state, nesting,
      split drag, the keyboard DOM attributes, and Snooze and Archive buttons on
@@ -488,8 +438,8 @@ restores the previous title while it is still the one Workstreams wrote.
    - Each workstream lists "pick back up" rows: title · where it stopped · age.
    - Search with `/`.
    - Tabs for Map (the workstream editor) and Activity.
-3. **Thread header:** a parent link (setting), the proposal pill, the floating
-   banner, and the snooze split button (§11.1).
+3. **Thread header:** a parent link (setting), recap controls, and the snooze
+   split button (§11.1).
 4. **CLI:**
    `bb workstreams list | show | edit | new | handoff | file | log | analyze | rebuild | trace`,
    built with `defineCli`.
@@ -511,27 +461,25 @@ restores the previous title while it is still the one Workstreams wrote.
      failed. Calls never request reasoning; a model that returns a reasoning
      summary anyway has it recorded. A call aborted because its draft changed is
      not recorded.
-   - Links tie traces to what they explain: threads, journal entries, proposals,
-     workstream descriptions, and organizing runs. Analysis results and routing
-     decisions carry their own trace id, and a proposal links the analyses whose
-     subjects raised it.
+   - Links tie traces to threads, journal entries and organizing runs. Analysis
+     results and routing decisions carry their own trace ID.
    - Each surface that shows a model's decision gets a small inspect button that
-     opens a side pane with those calls: the thread header, the drift and
-     proposal banners and New work, Activity entries, the
-     organizing review, generated descriptions, Overview rows, and the sidebar
-     row menu. The Activity log lists each call in place among the changes, with
-     a one-line summary of what the model decided (or why it failed) and a
-     "Model calls" filter. Debug-only Activity controls filter calls by kind and
-     failures, show the count and cost of visible calls, load older traces, and
-     clear traces without deleting journal entries. Model rows use a quiet
-     surface tint and Model badge, and show an event name, subject, and labeled
-     assessment, distinct from applied changes. Related threads use BB-style
-     thread-reference pills with host-owned link navigation. Information buttons
-     explain event and lifecycle terms on hover and keyboard focus. Model,
-     duration, token usage, and cost appear under collapsed Technical details.
-     Journal change status is separate from assessed thread state; raw JSON is a
-     nested disclosure. There is no separate Debug tab; `debug` page links open
-     Activity. `bb workstreams trace` prints recorded calls.
+     opens a side pane with those calls: the thread header,
+     New work, Activity entries, the organizing review, generated
+     descriptions, Overview rows, and the sidebar row menu. The Activity log
+     lists each call in place among the changes, with a one-line summary of what
+     the model decided (or why it failed) and a "Model calls" filter. Debug-only
+     Activity controls filter calls by kind and failures, show the count and
+     cost of visible calls, load older traces, and clear traces without deleting
+     journal entries. Model rows use a quiet surface tint and Model badge, and
+     show an event name, subject, and labeled assessment, distinct from applied
+     changes. Related threads use BB-style thread-reference pills with
+     host-owned link navigation. Information buttons explain event and lifecycle
+     terms on hover and keyboard focus. Model, duration, token usage, and cost
+     appear under collapsed Technical details. Journal change status is separate
+     from assessed thread state; raw JSON is a nested disclosure. There is no
+     separate Debug tab; `debug` page links open Activity.
+     `bb workstreams trace` prints recorded calls.
    - "Run again" sends a recorded prompt to its model again and records the
      answer as a replay of the original. A replay changes nothing Workstreams
      stores.
@@ -576,23 +524,24 @@ entry point is a Workstreams header action.
 
 ## 12. Storage
 
-| Data                                                                                                                  | Store                                                                    |
-| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Workstream map, analysis cache, title ownership, journal and Activity log, proposals, reconciler cursor, debug traces | Plugin SQLite (`bb.storage.database()`) with migrations                  |
-| Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }`                            | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
-| Manual order, thread snoozes, and Snooze settings                                                                     | Plugin SQLite, `ws_meta` values                                          |
-| Collapse state and UI preferences                                                                                     | Client local storage                                                     |
+| Data                                                                                                                                 | Store                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| Workstream map, saved organizing preview, analysis cache, title ownership, journal and Activity log, reconciler cursor, debug traces | Plugin SQLite (`bb.storage.database()`) with migrations                  |
+| Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }`                                           | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
+| Manual order, thread snoozes, and Snooze settings                                                                                    | Plugin SQLite, `ws_meta` values                                          |
+| Collapse state and UI preferences                                                                                                    | Client local storage                                                     |
 
-Obsolete state/banner tables are migrated and dropped during installation;
-current data is owned by the workstream journal, placements, and notebooks.
+Durable organization consists of the native sections, scope metadata,
+placements, organizing preview and journal. Thread recaps and analysis are
+separate caches. Migrations preserve their append-only statement IDs.
 
 ## 13. Architecture
 
 ```
 bb-plugin-workstreams/
-  src/domain/    tree · project (thread trees → groups and bands) · attention · rank · evolution · schemas   ← pure; most tests live here
-  src/server/    index · map · journal · reconciler · analyzer (idle queue) · router · evolution-runner · inference/{host,pi,prompts} · rpc · cli · agents (configure instructions)
-  src/app/       index · useWorkstreams (live hook + one state RPC + realtime) · sidebar/* · page/* · header/* (pill + floating banner) · composer/* (New work intake and thread cards)
+  src/domain/    tree · project (thread trees → groups and bands) · organize · analysis · router · schemas
+  src/server/    index · map · journal · service · analyzer · router · bootstrap · inference/{host,gateway} · cli · agents
+  src/app/       index · useWorkstreams (live hook + one state RPC + realtime) · sidebar/* · page/* · header/* (parent link) · composer/* (New work intake and thread cards)
   tests/         domain (real exported snapshots) · server (mock SDK) · app (renderSlot)
 ```
 
@@ -610,16 +559,10 @@ bb-plugin-workstreams/
 - the eval harness, export and fixture replay, the 32-thread reference set, and
   `eval/delegation.json`.
 
-## 14. Learning and supervision
+## 14. Organization quality
 
-The learner writes plain thread notebooks and a shared brief. Notes describe
-user goals, product meaning, decisions, outcomes, and uncertainty. AGENTS.md,
-skills, and project guidance own agent operating procedure; notebooks refer to
-those authorities rather than duplicate checklists or lifecycle rules.
-
-Routing, analysis, reviewed organization, and periodic supervision consume the
-shared understanding. Learning does not mutate sections; organizational actions
-flow through the journal and safe batch application.
-
-See [organization parity](docs/supervision-parity.md) for the preserved feature
-contracts and the intentional retirement of obsolete cleanup commands.
+Evaluate the map holistically: recognizable homes, distinct scopes, coherent
+membership and useful Unsorted decisions. Use real snapshot replay outside the
+public repository. Compare repeated runs for stability and inspect cost/latency;
+model confidence alone does not establish useful organization. Background turns
+and reconciliation must leave thread membership unchanged.

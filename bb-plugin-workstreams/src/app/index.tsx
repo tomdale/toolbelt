@@ -1,13 +1,11 @@
 // Workstreams frontend entry: the sidebar thread list, the Workstreams page,
-// thread header actions (parent link, proposal, recap, snooze), and the
+// thread header actions (parent link, recap, snooze), and the
 // settings sections.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ServerStateRealtime } from "./serverState.ts";
 import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
-import { ProposalBanner } from "./header/ProposalBanner.tsx";
 import { RecapCard } from "./composer/RecapCard.tsx";
-import { AutomaticFilingCard } from "./composer/AutomaticFilingCard.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
 import { SpinnerSettings } from "./settings/SpinnerSettings.tsx";
 import { WorkstreamsThreadList } from "./sidebar/ThreadList.tsx";
@@ -29,11 +27,6 @@ export default definePluginApp((app) => {
     component: ServerStateRealtime,
   });
   app.composer.customize({
-    id: "automatic-filing",
-    scopes: ["thread"],
-    banners: [{ id: "filing", chrome: "bare", component: AutomaticFilingCard }],
-  });
-  app.composer.customize({
     id: "recap",
     scopes: ["thread"],
     banners: [{ id: "recap", chrome: "bare", component: RecapCard }],
@@ -42,11 +35,6 @@ export default definePluginApp((app) => {
     id: "parent-thread",
     title: "Parent thread",
     component: ParentThreadLink,
-  });
-  app.slots.experimental_threadHeaderAction({
-    id: "workstream-proposal",
-    title: "Workstream proposal",
-    component: ProposalBanner,
   });
   app.slots.experimental_threadHeaderAction({
     id: "recap",

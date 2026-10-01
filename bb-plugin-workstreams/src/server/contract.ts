@@ -16,12 +16,7 @@ import {
 } from "../domain/trace.ts";
 import type { Environment } from "./router.ts";
 import { entrySchema, sourceSchema } from "./journal.ts";
-import {
-  notebookOverviewSchema,
-  notebookSchema,
-  notebookVersionSchema,
-  learningRunSchema,
-} from "../domain/notebooks.ts";
+import { organizeProposalSchema } from "../domain/organize.ts";
 
 const placementSchema = z.object({
   sectionId: z.string().nullable(),
@@ -79,40 +74,12 @@ const recordSchema = z.object({
   updatedAt: z.number(),
 });
 
-const proposalSchema = z.object({
-  id: z.string(),
-  kind: z.enum(["spin-out", "move", "merge"]),
-  status: z.enum([
-    "pending",
-    "applying",
-    "applied",
-    "partial",
-    "undone",
-    "dismissed",
-    "expired",
-  ]),
-  subject: z.string(),
-  sourceSectionId: z.string().nullable(),
-  sourceName: z.string(),
-  targetSectionId: z.string().nullable(),
-  targetName: z.string(),
-  threadIds: z.array(z.string()),
-  entryId: z.string().nullable(),
-  acknowledged: z.boolean(),
-  text: z.string(),
-  accept: z.string(),
-  updatedAt: z.number(),
-  traceIds: z.array(z.string()),
-  reason: z.string().default(""),
-  confidence: z.number().min(0).max(1).default(0),
-});
-
 const moveSchema = z.object({
   threadId: z.string(),
   title: z.string(),
   from: z.string().nullable(),
   fromName: z.string(),
-  to: z.string(),
+  to: z.string().nullable(),
   toName: z.string(),
   reason: z.string(),
   accepted: z.boolean(),
@@ -122,15 +89,7 @@ const moveSchema = z.object({
 
 const bootstrapSchema = z
   .object({
-    status: z.enum([
-      "proposing",
-      "review",
-      "assigning",
-      "preview",
-      "applying",
-      "applied",
-      "failed",
-    ]),
+    status: z.enum(["proposing", "preview", "applying", "applied", "failed"]),
     startedAt: z.number(),
     updatedAt: z.number(),
     error: z.string().nullable(),
@@ -139,40 +98,38 @@ const bootstrapSchema = z
         id: z.string(),
         title: z.string(),
         sectionId: z.string().nullable(),
-        provenance: z.enum(["user", "auto", "unfiled"]),
       }),
     ),
-    descriptions: z.record(z.string(), z.string()),
-    changes: z.array(
-      z
-        .object({
-          id: z.string(),
-          accepted: z.boolean(),
-          kind: z.enum(["rename", "merge", "create"]),
-        })
-        .passthrough(),
+    mapSnapshot: z.array(
+      z.object({
+        sectionId: z.string(),
+        name: z.string(),
+        description: z.string().nullable(),
+        aliases: z.array(z.string()),
+        descriptionSource: z.enum(["user", "generated"]),
+      }),
     ),
     preview: z
       .object({
+        workstreams: z
+          .array(
+            organizeProposalSchema.shape.workstreams.element.extend({
+              description: z.string().max(300),
+            }),
+          )
+          .max(100),
+        assignments: organizeProposalSchema.shape.assignments,
         creates: z.array(
-          z.object({ name: z.string(), description: z.string().nullable() }),
+          z.object({ name: z.string(), description: z.string() }),
         ),
         renames: z.array(
           z.object({ sectionId: z.string(), from: z.string(), to: z.string() }),
         ),
         moves: z.array(moveSchema),
-        unsure: z.array(z.object({ threadId: z.string(), title: z.string() })),
       })
       .nullable(),
     entryId: z.string().nullable(),
-    seconds: z.object({
-      intake: z.number(),
-      map: z.number(),
-      assign: z.number(),
-      apply: z.number(),
-    }),
     traceIds: z.array(z.string()).default([]),
-    mapTraceId: z.string().nullable().default(null),
   })
   .nullable();
 
@@ -428,7 +385,6 @@ export const rpcContract = defineRpcContract({
       workstreams: z.record(z.string(), recordSchema),
       placements: z.record(z.string(), placementSchema),
       analysis: z.record(z.string(), analysisSchema),
-      proposals: z.array(proposalSchema),
       /** Drift flags dismissed, by thread: the target that was dismissed. */
       driftDismissed: z.record(z.string(), z.string()),
       bootstrapped: z.boolean(),
@@ -515,34 +471,27 @@ export const rpcContract = defineRpcContract({
     }),
     output: z.object({ ok: z.literal(true) }),
   },
-  proposal: {
-    input: z.object({
-      id: z.string().min(1),
-      action: z.enum(["accept", "dismiss", "acknowledge"]),
-    }),
-    output: z.object({ ok: z.literal(true) }),
-  },
   bootstrap: {
     input: z.discriminatedUnion("action", [
       z.object({ action: z.literal("get") }),
       z.object({ action: z.literal("start") }),
-      z.object({
-        action: z.literal("assign"),
-        decisions: z.array(
-          z.object({
-            id: z.string(),
-            accepted: z.boolean(),
-            name: z.string().max(80).optional(),
-          }),
-        ),
-      }),
-      z.object({
+      z.strictObject({
         action: z.literal("apply"),
-        overrides: z.array(
-          z.object({ threadId: z.string(), accepted: z.boolean() }),
-        ),
+        runId: z.number().int().nonnegative(),
+        overrides: z
+          .array(
+            z.strictObject({
+              threadId: z.string().min(1).max(200),
+              accepted: z.boolean(),
+            }),
+          )
+          .max(500)
+          .refine(
+            (items) =>
+              new Set(items.map((i) => i.threadId)).size === items.length,
+            "Duplicate thread overrides",
+          ),
       }),
-      z.object({ action: z.literal("skip") }),
       z.object({ action: z.literal("cancel") }),
     ]),
     output: z.object({ state: bootstrapSchema, bootstrapped: z.boolean() }),
@@ -613,40 +562,6 @@ export const rpcContract = defineRpcContract({
   traceReplay: {
     input: z.object({ id: z.string().min(1) }),
     output: z.object({ trace: traceSchema }),
-  },
-  notebookOverview: {
-    input: z.object({
-      query: z.string().max(2000).optional(),
-      offset: z.number().int().min(0).max(100000).optional(),
-    }),
-    output: notebookOverviewSchema,
-  },
-  notebook: {
-    input: z.object({ threadId: z.string().min(1).max(200) }),
-    output: z.object({
-      notebook: notebookSchema.nullable(),
-      versions: z.array(notebookVersionSchema),
-    }),
-  },
-  notebookBriefVersions: {
-    input: z.null(),
-    output: z.object({ versions: z.array(notebookVersionSchema) }),
-  },
-  notebookLearn: {
-    input: z.object({ threadId: z.string().min(1).max(200) }),
-    output: notebookOverviewSchema,
-  },
-  notebookAsk: {
-    input: z.object({ question: z.string().trim().min(1).max(4000) }),
-    output: learningRunSchema,
-  },
-  notebookRun: {
-    input: z.object({ id: z.string().min(1).max(200) }),
-    output: z.object({ run: learningRunSchema.nullable() }),
-  },
-  notebookCancel: {
-    input: z.object({ id: z.string().min(1).max(200) }),
-    output: z.object({ cancelled: z.boolean() }),
   },
   traceClear: {
     input: z.null(),

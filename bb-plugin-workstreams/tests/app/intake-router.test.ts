@@ -161,7 +161,7 @@ it("real continuation of a suggestion for older text sends the current text", as
   ]);
   intake.dispose();
 });
-it("real route/execute applies an independent inferred workstream name edit", async () => {
+it("explicit creation accepts a workstream name edit", async () => {
   const { intake, execute, w } = await setup({
     outcome: "new-workstream",
     name: "Offline sync",
@@ -171,6 +171,8 @@ it("real route/execute applies an independent inferred workstream name edit", as
     confidence: "high",
     reason: "New work",
   });
+  intake.selectAction("new-workstream");
+  intake.selectProject("proj_1");
   intake.observe("Start a spike on offline synchronization");
   await intake.resolve();
   synchronize(intake);

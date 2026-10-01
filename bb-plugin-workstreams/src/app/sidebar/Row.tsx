@@ -81,7 +81,6 @@ export function Row({
   context,
   attention,
   work,
-  proposal,
   showStatusSlot = true,
   subtitle,
   snoozeAction,
@@ -101,8 +100,6 @@ export function Row({
    */
   attention?: boolean;
   work?: WorkView;
-  /** Banner text of a proposal that involves this thread. */
-  proposal?: string;
   /**
    * False when no row in this list has a status mark: the slot collapses,
    * animated, so titles sit flush left.
@@ -253,9 +250,6 @@ export function Row({
       </span>
       {/* Shown until the hover buttons take their place, as in BB's row. */}
       <span className="pointer-events-none relative flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70 empty:hidden group-hover/row:hidden group-has-[:focus-visible]/row:hidden group-has-[[data-state=open]]/row:hidden">
-        {proposal ? (
-          <span className="ws-proposal-dot" role="img" aria-label={proposal} />
-        ) : null}
         {rowStatus ? (
           <span title={rowStatus.label} aria-label={rowStatus.label} role="img">
             <Icon name={rowStatus.icon} className="size-3" />
