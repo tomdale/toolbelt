@@ -68,6 +68,28 @@ export function SidebarSettings() {
       {row("Archived", prefs.sidebar.showArchived, (showArchived) =>
         update({ sidebar: { showArchived } }),
       )}
+      <CompactSettingRow
+        label="Timestamp"
+        control={
+          <SettingsPicker
+            label="Timestamp"
+            value={prefs.sidebar.timestamps}
+            options={[
+              { value: "show", label: "Show" },
+              { value: "hover", label: "Only on hover" },
+              { value: "hide", label: "Don't show" },
+            ]}
+            onChange={(timestamps) => {
+              if (
+                timestamps === "show" ||
+                timestamps === "hover" ||
+                timestamps === "hide"
+              )
+                update({ sidebar: { timestamps } });
+            }}
+          />
+        }
+      />
     </SectionRows>
   );
 }

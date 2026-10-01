@@ -66,7 +66,12 @@ design and the contract the code is checked against.
     **Wake now** ends any snooze.
   - **Show in Sidebar** also controls the **Archived** fold; when hidden,
     Workstreams does not request archived pages. **Working Indicator** controls
-    the working thread spinner animation and colors.
+    the working thread spinner animation and colors. **Timestamp** chooses Show
+    (the default), Only on hover, or Don't show for thread ages. Hover-only ages
+    also appear on keyboard focus. Workstream names and shortcut hints remain
+    visible regardless of this setting.
+  - Workstream headers show total and waiting-on-you counts only while
+    collapsed.
   - Rows show BB's status, a work-state mark (✓ complete, ◇ review, and ↻
     working from the agent's recap; ◆ decision, ◇ review, ⏸ blocked from
     analysis when a thread has no recap; hover for where it stopped), unread

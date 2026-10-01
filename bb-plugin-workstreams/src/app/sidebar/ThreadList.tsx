@@ -1455,7 +1455,7 @@ function WorkstreamGroup({
               <Icon name="Plus" className="size-3.5" />
             </button>
           ) : null}
-          {group.needsYou > 0 ? (
+          {collapsed && group.needsYou > 0 ? (
             <span
               className={cn(
                 "rounded-full px-1.5 text-[11px] font-medium tabular-nums transition-colors duration-300",
@@ -1468,7 +1468,7 @@ function WorkstreamGroup({
               {group.needsYou}
             </span>
           ) : null}
-          {group.total > 0 ? (
+          {collapsed && group.total > 0 ? (
             <span className="text-[11px] tabular-nums text-muted-foreground/70">
               {group.total}
             </span>

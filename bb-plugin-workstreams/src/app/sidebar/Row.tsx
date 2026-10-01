@@ -19,6 +19,7 @@ import {
 } from "../../domain/presentation.ts";
 import type { WorkView } from "../useWorkstreams.ts";
 import { StatusMark } from "./StatusMark.tsx";
+import { usePrefs } from "../prefs.ts";
 import { SnoozeIcon, WakeIcon } from "../snooze/icons.tsx";
 import { HoverAction, HoverMenuButton } from "./HoverActions.tsx";
 
@@ -128,6 +129,8 @@ export function Row({
   disclosure?: { expanded: boolean; toggle: () => void };
   onNavigate: () => void;
 }) {
+  const { prefs } = usePrefs();
+  const timestamps = prefs?.sidebar.timestamps ?? "show";
   const shownState = shownWorkState(work, attention);
   const reported = work?.kind === "current" && work.reported;
   const state = shownState ? workStateMark(shownState, reported) : null;
@@ -307,17 +310,22 @@ export function Row({
       </span>
       {/* A fixed-width column, so ages line up down the list; only a
           four-digit age like "100w" widens it. */}
-      <span className="ws-row-aside pointer-events-none relative flex min-w-6 shrink-0 items-center justify-end text-right text-[11px] tabular-nums text-muted-foreground/70">
-        {shortcut ? (
-          <span className="rounded border border-border px-1 text-[10px]">
-            {shortcut.label}
-          </span>
-        ) : context ? (
-          <span className="block max-w-24 truncate">{context}</span>
-        ) : (
-          relativeAge(thread.latestAttentionAt, now)
-        )}
-      </span>
+      {shortcut || context || timestamps !== "hide" ? (
+        <span
+          data-timestamp={shortcut || context ? undefined : timestamps}
+          className="ws-row-aside pointer-events-none relative flex min-w-6 shrink-0 items-center justify-end text-right text-[11px] tabular-nums text-muted-foreground/70"
+        >
+          {shortcut ? (
+            <span className="rounded border border-border px-1 text-[10px]">
+              {shortcut.label}
+            </span>
+          ) : context ? (
+            <span className="block max-w-24 truncate">{context}</span>
+          ) : (
+            relativeAge(thread.latestAttentionAt, now)
+          )}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -92,6 +92,28 @@ it("renders four compact sidebar toggles and saves their preferences", async () 
   ]);
 });
 
+it("saves all three timestamp choices", async () => {
+  const slot = await mount("sidebar");
+  for (const [label, value] of [
+    ["Only on hover", "hover"],
+    ["Don't show", "hide"],
+    ["Show", "show"],
+  ]) {
+    fireEvent.click(await slot.findByRole("button", { name: "Timestamp" }));
+    fireEvent.click(await slot.findByRole("option", { name: label }));
+    await waitFor(() =>
+      expect(slot.getByRole("button", { name: "Timestamp" }).textContent).toBe(
+        label,
+      ),
+    );
+    expect(
+      slot.inspection.rpcCalls
+        .filter((call) => call.method === "setPrefs")
+        .at(-1)?.input,
+    ).toEqual({ patch: { sidebar: { timestamps: value } } });
+  }
+});
+
 it("clamps the Recent stepper to 1–20 and hides it when Recent is off", async () => {
   const slot = await mount("sidebar");
   const recent = await slot.findByRole("switch", { name: "Recent" });

@@ -1,3 +1,12 @@
+.ws-row [data-timestamp="hover"] {
+  display: none;
+}
+.ws-row:hover [data-timestamp="hover"],
+.ws-row:has(:focus-visible) [data-timestamp="hover"],
+.ws-row:has([data-state="open"]) [data-timestamp="hover"] {
+  display: flex;
+}
+
 /* Status marks: BB's resolved thread status, drawn by this plugin. */
 .ws-status-slot {
   position: relative;
