@@ -13,6 +13,7 @@ import {
 } from "@dnd-kit/sortable";
 import {
   experimental_useSidebarThreadActions,
+  experimental_useSidebarThreads,
   useBbNavigate,
   type PluginSidebarThread,
   type PluginThreadListProps,
@@ -44,7 +45,7 @@ import { SnoozeMenuItems, plainMenuKit } from "../snooze/SnoozeMenuItems.tsx";
 type ThreadGroup = Group<PluginSidebarThread>;
 type ThreadRow = RowModel<PluginSidebarThread>;
 /** Where a row is drawn: its workstream group, or one of the overlays. */
-type Placement = "group" | "needs-you" | "recent" | "snoozed";
+type Placement = "group" | "needs-you" | "recent" | "snoozed" | "archived";
 
 const groupKey = (id: string) => `ws:${id}`;
 const treeKey = (id: string) => `t:${id}`;
@@ -95,6 +96,9 @@ export function WorkstreamsThreadList({
   onNavigate,
 }: PluginThreadListProps) {
   const ws = useWorkstreams();
+  const archived = experimental_useSidebarThreads({
+    experimental_lifecycles: ["archived"],
+  });
   const actions = experimental_useSidebarThreadActions();
   const navigate = useBbNavigate();
   const { isCollapsed, toggle } = useCollapsed();
@@ -113,6 +117,38 @@ export function WorkstreamsThreadList({
   );
   const { projection, sections, now } = ws;
   const nameOf = new Map(sections.map((s) => [s.id, s.name]));
+  const archivedThreads = archived.threads.filter(
+    (thread) => thread.isArchived && !thread.isHidden,
+  );
+  const archivedById = new Map(
+    archivedThreads.map((thread) => [thread.id, thread]),
+  );
+  const archivedWorkstreamOf = (thread: PluginSidebarThread) => {
+    let root = thread;
+    const seen = new Set([thread.id]);
+    while (root.parentThreadId && !seen.has(root.parentThreadId)) {
+      const parent = archivedById.get(root.parentThreadId);
+      if (!parent) break;
+      seen.add(parent.id);
+      root = parent;
+    }
+    return root.sectionId;
+  };
+  const archivedGroups = sections
+    .map((section) => ({
+      id: section.id,
+      name: section.name,
+      threads: archivedThreads
+        .filter((thread) => archivedWorkstreamOf(thread) === section.id)
+        .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0)),
+    }))
+    .filter((group) => group.threads.length > 0);
+  const unsortedArchived = archivedThreads
+    .filter((thread) => {
+      const sectionId = archivedWorkstreamOf(thread);
+      return !sectionId || !nameOf.has(sectionId);
+    })
+    .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0));
 
   const descendants = descendantsOf([
     ...[...projection.groups, projection.unsorted, ...projection.dormant].map(
@@ -226,6 +262,7 @@ export function WorkstreamsThreadList({
    */
   const snoozeActionOf = (row: ThreadRow, placement: Placement) => {
     const snooze = ws.snoozeOf(row.thread);
+    if (placement === "archived") return undefined;
     if (placement === "snoozed" && !snooze) return undefined;
     const menu = (
       <SnoozeMenuItems
@@ -259,7 +296,7 @@ export function WorkstreamsThreadList({
     };
   };
   const contextOf = (row: ThreadRow, placement: Placement) => {
-    if (placement === "group") return undefined;
+    if (placement === "group" || placement === "archived") return undefined;
     if (placement !== "snoozed") return workstreamName(row);
     const snooze = ws.snoozeOf(row.thread);
     return snooze ? shortWake(snooze.until, now) : undefined;
@@ -291,6 +328,7 @@ export function WorkstreamsThreadList({
       handlers={handlers}
       snooze={ws.snoozeOf(row.thread)}
       morningHour={snoozePrefs.morningHour}
+      showArchive={placement !== "archived"}
     >
       <li ref={handle?.ref} {...handle?.listeners} className="list-none">
         <Row
@@ -304,6 +342,7 @@ export function WorkstreamsThreadList({
           showStatusSlot={showStatusSlot}
           subtitle={placement === "needs-you" ? askOf(row) : null}
           snoozeAction={snoozeActionOf(row, placement)}
+          showArchive={placement !== "archived"}
           disclosure={
             placement !== "recent" && descendants.has(row.thread.id)
               ? {
@@ -533,6 +572,97 @@ export function WorkstreamsThreadList({
                 </li>
               ))}
             </SortableContext>
+          </Band>
+        ) : null}
+        {archived.experimental_archived?.status !== "error" &&
+        (archivedGroups.length > 0 ||
+          unsortedArchived.length > 0 ||
+          archived.experimental_archived?.status === "loading" ||
+          archived.experimental_archived?.hasNextPage) ? (
+          <Band
+            title="Archived"
+            count={archivedThreads.length}
+            collapsed={isCollapsed("__archived", true)}
+            toggle={() => toggle("__archived", true)}
+          >
+            {[
+              ...archivedGroups,
+              ...(unsortedArchived.length > 0
+                ? [
+                    {
+                      id: "__unsorted",
+                      name: "Unsorted",
+                      threads: unsortedArchived,
+                    },
+                  ]
+                : []),
+            ].map((group) => {
+              const key = `archived:${group.id}`;
+              const collapsed = isCollapsed(key, true);
+              return (
+                <li key={key} className="list-none">
+                  <section
+                    aria-label={`Archived ${group.name}`}
+                    className="px-1"
+                  >
+                    <button
+                      type="button"
+                      aria-expanded={!collapsed}
+                      onClick={() => toggle(key, true)}
+                      className="flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-left text-[12px] font-medium text-muted-foreground hover:bg-sidebar-accent/60"
+                    >
+                      <Icon
+                        name={collapsed ? "ChevronRight" : "ChevronDown"}
+                        className="size-3"
+                      />
+                      <span className="flex-1 truncate">{group.name}</span>
+                      <span className="tabular-nums">
+                        {group.threads.length}
+                      </span>
+                    </button>
+                    {collapsed ? null : (
+                      <ul className="mt-0.5">
+                        {group.threads.map((thread) =>
+                          renderRow(
+                            {
+                              thread,
+                              depth: 0,
+                              hasChildren: false,
+                              workstreamId: archivedWorkstreamOf(thread),
+                              needsYou: false,
+                            },
+                            "archived",
+                            undefined,
+                            false,
+                          ),
+                        )}
+                      </ul>
+                    )}
+                  </section>
+                </li>
+              );
+            })}
+            {archived.experimental_archived?.status === "loading" ? (
+              <li className="list-none px-2 py-1 text-xs text-muted-foreground">
+                Loading archived threads…
+              </li>
+            ) : null}
+            {archived.experimental_archived?.hasNextPage ? (
+              <li className="list-none px-2 pt-1">
+                <button
+                  type="button"
+                  disabled={archived.experimental_archived.isFetchingNextPage}
+                  onClick={() =>
+                    void archived.experimental_archived?.fetchNextPage()
+                  }
+                  className="w-full rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground disabled:opacity-50"
+                >
+                  {archived.experimental_archived.isFetchingNextPage
+                    ? "Loading…"
+                    : "Load more archived threads"}
+                </button>
+              </li>
+            ) : null}
           </Band>
         ) : null}
         {projection.snoozed.length > 0 ? (
