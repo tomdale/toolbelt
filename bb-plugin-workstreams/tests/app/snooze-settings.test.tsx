@@ -36,17 +36,14 @@ const lastPatch = (slot: Awaited<ReturnType<typeof mount>>) =>
 
 it("saves the click-to-snooze choice and the morning hour", async () => {
   const slot = await mount();
-  const select = await slot.findByRole("combobox", { name: "Click to snooze" });
-  await waitFor(() =>
-    expect((select as HTMLSelectElement).value).toBe("tomorrow"),
-  );
-  fireEvent.change(select, { target: { value: "3h" } });
+  const select = await slot.findByRole("button", { name: "Click to snooze" });
+  fireEvent.click(select);
+  fireEvent.click(await slot.findByRole("option", { name: "3 hours" }));
   await waitFor(() =>
     expect(lastPatch(slot)).toEqual({ patch: { default: "3h" } }),
   );
-  fireEvent.change(slot.getByRole("combobox", { name: "Mornings start at" }), {
-    target: { value: "7" },
-  });
+  fireEvent.click(slot.getByRole("button", { name: "Mornings start at" }));
+  fireEvent.click(await slot.findByRole("option", { name: "7 AM" }));
   await waitFor(() =>
     expect(lastPatch(slot)).toEqual({ patch: { morningHour: 7 } }),
   );
