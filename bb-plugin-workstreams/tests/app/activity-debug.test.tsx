@@ -128,7 +128,10 @@ it("filters internal calls, exposes metadata and event internals, and opens the 
   expect(within(callRow).getByText("Input tokens")).toBeTruthy();
   expect(within(callRow).getByText("Output tokens")).toBeTruthy();
   fireEvent.click(
-    within(callRow).getByRole("button", { name: "Inspect this model call" }),
+    // Debug mode arrives with the asynchronously loaded preferences.
+    await within(callRow).findByRole("button", {
+      name: "Inspect this model call",
+    }),
   );
   const pane = await within(document.body).findByRole("dialog");
   expect(await within(pane).findByLabelText("Prompt")).toHaveProperty(
