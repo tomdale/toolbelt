@@ -118,15 +118,13 @@ export function parseOrganization(
     const name = w.name.toLowerCase();
     if (keys.has(w.key) || usedNames.has(name))
       throw new Error("Organizer returned duplicate workstreams.");
+    // Exact existing names identify their native section without a model guess.
+    if (names.has(name)) w.sectionId = names.get(name)!;
     if (
       w.sectionId !== null &&
       (!existing.has(w.sectionId) || sections.has(w.sectionId))
     )
       throw new Error("Organizer returned an unknown or repeated section.");
-    if (names.has(name) && names.get(name) !== w.sectionId)
-      throw new Error(
-        "Organizer must reuse the existing section for that name.",
-      );
     keys.add(w.key);
     usedNames.add(name);
     if (w.sectionId) sections.add(w.sectionId);
