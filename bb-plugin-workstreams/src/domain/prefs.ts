@@ -66,7 +66,7 @@ const recentLimit = z
  */
 const GROUPS = {
   sidebar: {
-    /** The For you section: threads waiting on the user. */
+    /** The For You section: threads waiting on the user. */
     showForYou: [z.boolean(), true],
     /** The Recent band: the most recently active threads. */
     showRecent: [z.boolean(), true],

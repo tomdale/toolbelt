@@ -195,8 +195,8 @@
   }
 }
 
-/* The For you amber. Every surface that means "this thread is waiting on
-   you" uses it: the For you block, its header and Show more, the group count
+/* The For You amber. Every surface that means "this thread is waiting on
+   you" uses it: the For You block, its header and Show more, the group count
    pill, and the decision mark. It is
    amber pulled a quarter of the way toward the foreground, soft enough that
    BB's blue unread dot doesn't clash with it. */
@@ -215,7 +215,7 @@
   background-color: color-mix(in oklab, var(--ws-amber) 20%, transparent);
 }
 
-/* The For you block: the most timely threads. No outline or solid fill,
+/* The For You block: the most timely threads. No outline or solid fill,
    just a soft amber wash that fades out toward the bottom right, plus a
    slow, faint shimmer that sweeps across every few seconds. */
 .ws-needs {
@@ -231,7 +231,7 @@
   );
 }
 
-/* The Recent block: the For you block's shape and wash in the foreground
+/* The Recent block: the For You block's shape and wash in the foreground
    color instead of amber, and without the shimmer. */
 .ws-band-neutral {
   background-image: linear-gradient(

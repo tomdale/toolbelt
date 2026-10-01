@@ -18,7 +18,7 @@ design and the contract the code is checked against.
     it and start the thread; on a thread suggestion ⌘⏎ sends the draft there and
     closes the dialog. A new workstream is created first. A workstream's **＋**
     preselects it.
-  - **For you**: a pending approval or question, or a thread whose latest turn
+  - **For You**: a pending approval or question, or a thread whose latest turn
     asks you to decide something. These rows sit at the top in an amber block
     with a slow shimmer, under an always-open header, each naming its
     workstream. The block shows five rows, with Show more for the rest. A
@@ -26,7 +26,7 @@ design and the contract the code is checked against.
     in the block through read and status updates until you deselect it or select
     another thread; snoozing or archiving still puts it away immediately. The
     Sidebar settings section can hide it.
-  - **Recent**: the most recently active threads not already in For you, up to
+  - **Recent**: the most recently active threads not already in For You, up to
     the configurable limit in Sidebar settings.
   - **One group per workstream**, in BB's section order until you drag a header
     to reorder them. Each thread tree is filed under its root thread's section,
@@ -37,7 +37,7 @@ design and the contract the code is checked against.
   - **Unsorted** and a collapsed **Dormant** fold (no threads, or none touched
     in 30 days).
   - A collapsed **Snoozed** fold. Snoozing a thread takes it (and its children)
-    out of For you, Recent, and its group until it wakes. Hover a row and click
+    out of For You, Recent, and its group until it wakes. Hover a row and click
     its alarm clock to snooze with your default (Tomorrow morning unless
     changed), or rest the pointer on it for a menu of quick choices. Right-click
     → **Snooze** lists them all: 30 minutes, 1 hour, 3 hours, Tomorrow morning,

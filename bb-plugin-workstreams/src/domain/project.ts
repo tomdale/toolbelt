@@ -5,7 +5,7 @@
  * sidebar groups them: build the complete parent/child forest first, then file
  * each tree under its root's section (SPEC I2). Every visible, non-archived
  * thread appears in exactly one group row (SPEC I1), or in Snoozed: a snoozed
- * thread leaves its group, with its descendants, until it wakes. For you and
+ * thread leaves its group, with its descendants, until it wakes. For You and
  * Recent are overlays that reference the group rows; they never replace them,
  * and never show snoozed threads.
  */
@@ -68,7 +68,7 @@ export type Projection<T extends WorkstreamThread> = {
   readonly rowOf: ReadonlyMap<string, Row<T>>;
   /**
    * Children whose question folded into their parent's newer one, keyed by
-   * parent id. Folded children stay in their group but leave the For you
+   * parent id. Folded children stay in their group but leave the For You
    * band and counts, so one decision isn't counted twice.
    */
   readonly needsYouVia: ReadonlyMap<string, readonly T[]>;
