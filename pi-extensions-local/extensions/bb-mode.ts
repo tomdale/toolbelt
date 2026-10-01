@@ -15,7 +15,7 @@ const DISABLED_IN_BB = new Set([
 export default function bbMode(pi: ExtensionAPI): void {
 	if (!process.env.BB_THREAD_ID) return;
 
-	function filterTools(): void {
+	function filterActiveTools(): void {
 		const current = pi.getActiveTools();
 		if (current.some((t) => DISABLED_IN_BB.has(t))) {
 			pi.setActiveTools(current.filter((t) => !DISABLED_IN_BB.has(t)));
@@ -23,15 +23,18 @@ export default function bbMode(pi: ExtensionAPI): void {
 	}
 
 	pi.on("session_start", async () => {
-		filterTools();
+		filterActiveTools();
 	});
 
 	pi.on("before_agent_start", async (event) => {
-		filterTools();
+		filterActiveTools();
 		if (event.systemPromptOptions?.selectedTools) {
-			event.systemPromptOptions.selectedTools = event.systemPromptOptions.selectedTools.filter(
-				(t) => !DISABLED_IN_BB.has(t),
-			);
+			const tools = event.systemPromptOptions.selectedTools;
+			for (let i = tools.length - 1; i >= 0; i--) {
+				if (DISABLED_IN_BB.has(tools[i]!)) {
+					tools.splice(i, 1);
+				}
+			}
 		}
 	});
 }
