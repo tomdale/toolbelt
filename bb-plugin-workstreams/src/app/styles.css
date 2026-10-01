@@ -216,95 +216,79 @@
 }
 
 /* The Up Next block: the threads waiting on Tom, and the sidebar's most
-   important element. An amber card with a hairline amber edge and a soft
-   glow below it, a pinging dot in the header, and a slow, faint shimmer that
-   sweeps across every few seconds. The card and each row flash amber when
-   they mount, so a thread arriving here catches the eye. */
+   important element. It follows the Geist warning note: a flat card tinted
+   with BB's theme attention color, a hairline border in that color, and a
+   solid status dot. Colors come from theme tokens (`--attention`,
+   `--sidebar`, `--foreground`), so every BB theme restyles it. Motion is
+   reserved for arrival: the card's border brightens once, and a new row
+   rises in with a short blur. */
 .ws-needs {
-  --ws-needs-tone: var(--ws-amber);
+  --ws-needs-tone: var(--attention, var(--ws-amber));
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  border-radius: 10px;
-  background-image: linear-gradient(
-    160deg,
-    color-mix(in oklab, var(--ws-needs-tone) 17%, transparent) 0%,
-    color-mix(in oklab, var(--ws-needs-tone) 7%, transparent) 70%
+  border: 1px solid color-mix(in oklab, var(--ws-needs-tone) 38%, transparent);
+  border-radius: 8px;
+  background-color: color-mix(
+    in oklab,
+    var(--ws-needs-tone) 7%,
+    var(--sidebar, transparent)
   );
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklab, var(--ws-needs-tone) 34%, transparent),
-    0 6px 20px -10px color-mix(in oklab, var(--ws-needs-tone) 55%, transparent);
-  animation: ws-needs-arrive 1.4s cubic-bezier(0.23, 1, 0.32, 1);
+  animation: ws-needs-arrive 900ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 @keyframes ws-needs-arrive {
   0% {
-    box-shadow:
-      inset 0 0 0 1px var(--ws-needs-tone),
-      0 0 0 4px color-mix(in oklab, var(--ws-needs-tone) 40%, transparent);
+    border-color: var(--ws-needs-tone);
   }
 }
 .ws-needs-heading {
-  color: var(--ws-amber);
-  letter-spacing: 0.06em;
-}
-/* The waiting-thread count: a solid amber pill. */
-.ws-needs-count {
-  display: inline-flex;
-  min-width: 16px;
-  height: 16px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  padding: 0 5px;
-  background-color: var(--ws-amber);
-  color: var(--background, #1e1e1e);
-  font-size: 10px;
-  font-weight: 700;
+  color: var(--foreground);
 }
 .ws-needs-dot {
-  position: relative;
-  background-color: var(--ws-amber);
+  background-color: var(--ws-needs-tone, var(--ws-amber));
+  box-shadow: 0 0 0 2px
+    color-mix(in oklab, var(--ws-needs-tone, var(--ws-amber)) 25%, transparent);
 }
-.ws-needs-dot::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background-color: var(--ws-amber);
-  animation: ws-needs-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+/* The waiting-thread count, as a Geist badge in the attention color. */
+.ws-needs-count {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  padding: 0 5px;
+  background-color: color-mix(in oklab, var(--ws-needs-tone) 18%, transparent);
+  color: var(--ws-needs-tone);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 500;
 }
-@keyframes ws-needs-ping {
-  75%,
-  100% {
-    transform: scale(2.6);
-    opacity: 0;
-  }
-}
-/* Rows tint amber rather than BB's gray, so the card reads as one piece. */
 .ws-needs .ws-row {
-  animation: ws-needs-row-arrive 1.6s ease-out;
+  animation: ws-needs-row-arrive 240ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .ws-needs .ws-row:hover {
-  background-color: color-mix(in oklab, var(--ws-amber) 12%, transparent);
+  background-color: color-mix(in oklab, var(--foreground) 6%, transparent);
 }
 .ws-needs .ws-row.bg-sidebar-accent {
-  background-color: color-mix(in oklab, var(--ws-amber) 20%, transparent);
+  background-color: color-mix(in oklab, var(--foreground) 9%, transparent);
 }
 @keyframes ws-needs-row-arrive {
   0% {
-    background-color: color-mix(in oklab, var(--ws-amber) 40%, transparent);
+    opacity: 0;
+    transform: translateY(4px);
+    filter: blur(2px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .ws-needs,
-  .ws-needs .ws-row,
-  .ws-needs-dot::after {
+  .ws-needs .ws-row {
     animation: none;
   }
 }
 
 /* The Recent block: a quiet wash in the foreground color, without the Up
-   Next card's edge, glow, or motion. */
+   Next card's border or motion. */
 .ws-band-neutral {
   background-image: linear-gradient(
     160deg,
@@ -312,44 +296,6 @@
     color-mix(in oklab, var(--foreground, #ededed) 3%, transparent) 45%,
     transparent 100%
   );
-}
-
-/* The shimmer: a wide, feathered band of light that drifts across the
-   block. */
-.ws-needs::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  pointer-events: none;
-  opacity: 0.85;
-  background-repeat: no-repeat;
-  background-size: 300% 100%;
-  background-image: linear-gradient(
-    110deg,
-    transparent 30%,
-    color-mix(in oklab, var(--ws-needs-tone) 2%, transparent) 40%,
-    color-mix(in oklab, var(--ws-needs-tone) 4%, transparent) 50%,
-    color-mix(in oklab, var(--ws-needs-tone) 2%, transparent) 60%,
-    transparent 70%
-  );
-  animation: ws-needs-shimmer 12.84s cubic-bezier(0.45, 0, 0.25, 1) infinite;
-}
-@keyframes ws-needs-shimmer {
-  0% {
-    background-position: 125% 0;
-  }
-  39.25%,
-  100% {
-    background-position: -25% 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ws-needs::after {
-    animation: none;
-    display: none;
-  }
 }
 
 /* Rows and bands that open and close (see sidebar/motion.ts). The element
