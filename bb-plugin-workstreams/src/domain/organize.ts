@@ -35,7 +35,7 @@ export const organizeProposalSchema = z.object({
     .array(
       z.object({
         threadId: z.string(),
-        owner: z.string().max(80).optional(),
+        owner: z.string().max(80).nullable().optional(),
         workstream: z.string().nullable(),
         reason: z.string().max(200),
       }),

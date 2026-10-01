@@ -82,6 +82,13 @@ describe("whole-map organization", () => {
         .sectionId,
     ).toBe("s1");
   });
+  it("accepts a null owner for an Unsorted root", () => {
+    const result = valid();
+    (result.assignments[1] as Record<string, unknown>).owner = null;
+    expect(() =>
+      parseOrganization(JSON.stringify(result), input),
+    ).not.toThrow();
+  });
   it("drops unused model-proposed homes without changing assignments", () => {
     const result = valid();
     result.assignments[0]!.workstream = null as never;
