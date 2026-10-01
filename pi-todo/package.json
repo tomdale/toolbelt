@@ -27,6 +27,7 @@
     "test": "vitest run"
   },
   "files": [
+    "bb-mode.ts",
     "config.ts",
     "index.ts",
     "locales/",
