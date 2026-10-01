@@ -33,7 +33,34 @@ import { useContinuing } from "./useContinuing.ts";
 import type { HeldSpace } from "./recapMotion.ts";
 
 const CARD_CLASS =
-  "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-sky-400 bg-sky-50/40 px-4 py-3 text-foreground dark:border-sky-500/80 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(29.3%_0.066_243.157))]";
+  "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border px-4 py-3 text-foreground";
+
+/**
+ * Each state's accent colors the card's border, background, state line, row
+ * labels, and row rules; everything else stays neutral. Dark backgrounds mix
+ * the accent's 950 shade into the page background.
+ */
+const ACCENT: Record<
+  Recap["state"],
+  { card: string; text: string; rules: string }
+> = {
+  review: {
+    card: "border-sky-400 bg-sky-50/40 dark:border-sky-500/80 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(29.3%_0.066_243.157))]",
+    text: "text-sky-700 dark:text-sky-300",
+    rules:
+      "[&>section+section]:border-sky-900/10 dark:[&>section+section]:border-sky-200/15",
+  },
+  complete: {
+    card: "border-emerald-400 bg-emerald-50/40 dark:border-emerald-500/70 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(26.2%_0.051_172.552))]",
+    text: "text-emerald-700 dark:text-emerald-300",
+    rules:
+      "[&>section+section]:border-emerald-900/10 dark:[&>section+section]:border-emerald-200/15",
+  },
+};
+
+function cardClass(state: Recap["state"]) {
+  return cn(CARD_CLASS, ACCENT[state].card);
+}
 
 // What happened is the card's primary text.
 const BODY_CLASS =
@@ -66,8 +93,7 @@ function RecapText({
 // Labels sit in a gutter beside their row, and above it on narrow cards.
 const ROW_CLASS =
   "grid grid-cols-[3.25rem_minmax(0,1fr)] gap-x-3 gap-y-0.5 py-2 @max-[24rem]/recap:grid-cols-1";
-const LABEL_CLASS =
-  "pt-px text-[11px] font-medium leading-[1.6] text-muted-foreground";
+const LABEL_CLASS = "pt-px text-[11px] font-medium leading-[1.6]";
 
 function Glyph({ path, className }: { path: string; className: string }) {
   return (
@@ -98,9 +124,7 @@ function StateLine({ state }: { state: Recap["state"] }) {
     <p
       className={cn(
         "pr-7 text-[11px] font-medium leading-[1.6]",
-        review
-          ? "text-sky-700 dark:text-sky-300"
-          : "text-emerald-700 dark:text-emerald-400",
+        ACCENT[state].text,
       )}
     >
       {review ? "Ready for Review" : "Complete"}
@@ -110,18 +134,17 @@ function StateLine({ state }: { state: Recap["state"] }) {
 
 function Row({
   label,
-  className,
-  labelClassName,
+  accent,
   children,
 }: {
   label: string;
-  className?: string;
-  labelClassName?: string;
+  /** The label's accent text color. */
+  accent: string;
   children: ReactNode;
 }) {
   return (
-    <section className={cn(ROW_CLASS, className)}>
-      <h3 className={cn(LABEL_CLASS, labelClassName)}>{label}</h3>
+    <section className={ROW_CLASS}>
+      <h3 className={cn(LABEL_CLASS, accent)}>{label}</h3>
       <div className="min-w-0">{children}</div>
     </section>
   );
@@ -137,7 +160,7 @@ function Results({ items }: { items: string[] }) {
         >
           <Glyph
             path={CHECK}
-            className="mt-[0.2em] h-3.5 w-3.5 text-muted-foreground"
+            className="mt-[0.2em] h-3.5 w-3.5 text-foreground/60"
           />
           <RecapText text={item} />
         </li>
@@ -159,7 +182,7 @@ function Steps({ items }: { items: string[] }) {
         >
           <span
             aria-hidden="true"
-            className="text-[0.85em] font-medium tabular-nums text-muted-foreground"
+            className="text-[0.85em] font-medium tabular-nums text-foreground/60"
           >
             {index + 1}
           </span>
@@ -239,6 +262,7 @@ function RecapSummary({
 }) {
   const goal = layout === "full" ? recap.goal : null;
   const review = recap.review.length > 0;
+  const accent = ACCENT[recap.state];
   const links =
     recap.links.length > 0 ? <Links links={recap.links} files={files} /> : null;
   return (
@@ -258,17 +282,13 @@ function RecapSummary({
           />
         </div>
       ) : null}
-      <div className="mt-1.5 [&>section+section]:border-t [&>section+section]:border-border">
-        <Row label="Done">
+      <div className={cn("mt-1.5 [&>section+section]:border-t", accent.rules)}>
+        <Row label="Done" accent={accent.text}>
           <Results items={recap.latest} />
           {review ? null : links}
         </Row>
         {review ? (
-          <Row
-            label="Review"
-            // Matches the state line, tying the ask to "Ready for Review".
-            labelClassName="text-sky-700 dark:text-sky-300"
-          >
+          <Row label="Review" accent={accent.text}>
             <Steps items={recap.review} />
             {links}
           </Row>
@@ -622,7 +642,7 @@ export function RecapCard() {
         <div key="shown" ref={slotRef} className="flow-root" style={FIRST}>
           <div
             ref={cardRef}
-            className={CARD_CLASS}
+            className={cardClass(frame.recap.state)}
             role="region"
             aria-label="Latest recap"
           >
@@ -656,7 +676,7 @@ export function RecapCard() {
               inert
               className="pointer-events-none absolute inset-x-0 bottom-0"
             >
-              <div className={CARD_CLASS}>
+              <div className={cardClass(hold.ghost.recap.state)}>
                 <CardBody {...hold.ghost} />
               </div>
             </div>
