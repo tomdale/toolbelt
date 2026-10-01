@@ -17,12 +17,12 @@ import { NewWorkDialog } from "../../src/app/composer/NewWork.tsx";
 import type { RouteDecision } from "../../src/server/router.ts";
 import { emptyState } from "./fixtures.ts";
 
-let actions: { id: string; component: React.ComponentType }[] = [];
+let banners: { id: string; component: React.ComponentType }[] = [];
 beforeEach(async () => {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
-  actions = app.composerCustomizations
+  banners = app.composerCustomizations
     .filter((c) => !c.scopes || c.scopes.includes("new-thread"))
-    .flatMap((c) => c.actions ?? []);
+    .flatMap((c) => c.banners ?? []);
 });
 beforeAll(() => {
   // cmdk and Radix measure and scroll elements jsdom doesn't lay out.
@@ -61,6 +61,9 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
     ) {
       return (
         <div data-promptbox-shell="">
+          {banners.map(({ id, component: Banner }) => (
+            <Banner key={id} />
+          ))}
           <form data-promptbox="">
             <StubComposer
               {...props}
@@ -69,9 +72,6 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
                 Promise.resolve(props.onSubmit(request)).catch(() => {})
               }
             />
-            {actions.map(({ id, component: Action }) => (
-              <Action key={id} />
-            ))}
           </form>
           <div>
             <div>

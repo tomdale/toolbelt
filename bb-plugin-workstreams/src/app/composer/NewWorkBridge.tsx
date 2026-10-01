@@ -1,8 +1,9 @@
 /**
  * Connects New work to the composer it embeds. `useComposer()` names the
  * dialog's composer only from inside one of that composer's slots, so this
- * mounts as a composer action, which renders no box when empty. It renders
- * nothing, and only inside New work: every other new-thread composer has no
+ * mounts as a bare composer banner: BB always mounts banners, while composer
+ * actions past its inline limit wait in an overflow menu. It renders nothing,
+ * and does nothing outside New work: every other new-thread composer has no
  * `NewWorkContext`.
  */
 import { useContext, useEffect } from "react";

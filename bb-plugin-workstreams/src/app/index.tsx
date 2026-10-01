@@ -32,7 +32,7 @@ export default definePluginApp((app) => {
   app.composer.customize({
     id: "new-work",
     scopes: ["new-thread"],
-    actions: [{ id: "bridge", component: NewWorkBridge }],
+    banners: [{ id: "bridge", chrome: "bare", component: NewWorkBridge }],
   });
   app.slots.experimental_threadHeaderAction({
     id: "parent-thread",
