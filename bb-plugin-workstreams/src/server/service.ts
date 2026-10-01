@@ -158,8 +158,8 @@ export class WorkstreamService {
       const title = displayTitle(thread);
       const fromName = from
         ? (names.get(from) ?? "a deleted workstream")
-        : "Unsorted";
-      const toName = sectionId ? names.get(sectionId)! : "Unsorted";
+        : "Unfiled";
+      const toName = sectionId ? names.get(sectionId)! : "Unfiled";
       const entry = this.journal.add({
         action: "move",
         source,
@@ -901,7 +901,7 @@ export class WorkstreamService {
 
   /**
    * Journals a thread the router or a handoff created already filed. Undo
-   * moves it to Unsorted; the thread itself stays.
+   * moves it to Unfiled; the thread itself stays.
    */
   recordCreated(
     threadId: string,
@@ -932,7 +932,7 @@ export class WorkstreamService {
     return entry;
   }
 
-  /** Files a root that is still in Unsorted; returns null if it moved on. */
+  /** Files a root that is still in Unfiled; returns null if it moved on. */
   async fileIfUnsorted(
     threadId: string,
     sectionId: string,
@@ -1067,8 +1067,8 @@ export class WorkstreamService {
               ? (names.get(from) ??
                 seenSections.get(from) ??
                 "a deleted workstream")
-              : "Unsorted";
-            const toName = to ? (names.get(to) ?? "a workstream") : "Unsorted";
+              : "Unfiled";
+            const toName = to ? (names.get(to) ?? "a workstream") : "Unfiled";
             const entry = this.journal.add({
               action: "move",
               source: "external",

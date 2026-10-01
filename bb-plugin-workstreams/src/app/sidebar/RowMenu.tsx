@@ -95,7 +95,7 @@ export function RowMenu({
                     disabled={workstreamId === null}
                     onSelect={() => handlers.move(thread, null)}
                   >
-                    Unsorted
+                    Unfiled
                   </Item>
                   <Separator />
                   <Item onSelect={() => handlers.newWorkstream(thread)}>

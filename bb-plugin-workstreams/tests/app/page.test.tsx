@@ -12,7 +12,7 @@ const entry = {
   action: "move",
   source: "user",
   status: "applied",
-  rationale: "Moved from Unsorted to Beta",
+  rationale: "Moved from Unfiled to Beta",
   threads: [{ id: "loose", name: "Loose task" }],
   workstreams: [{ id: "sec_b", name: "Beta" }],
   undo: {
@@ -108,7 +108,7 @@ it("filters with search", async () => {
 it("shows the activity log with undo", async () => {
   const slot = await mount();
   fireEvent.click(slot.getByRole("tab", { name: "Activity" }));
-  expect(await slot.findByText("Moved from Unsorted to Beta")).toBeTruthy();
+  expect(await slot.findByText("Moved from Unfiled to Beta")).toBeTruthy();
   fireEvent.click(slot.getByRole("button", { name: "Undo" }));
   await waitFor(() =>
     expect(
@@ -142,7 +142,7 @@ it("previews the whole map and applies only selected moves", async () => {
   ) => ({
     threadId,
     title: `Title ${threadId}`,
-    from: fromName === "Unsorted" ? null : `sec_${fromName}`,
+    from: fromName === "Unfiled" ? null : `sec_${fromName}`,
     fromName,
     to: `sec_${toName}`,
     toName,
@@ -192,7 +192,7 @@ it("previews the whole map and applies only selected moves", async () => {
       moves: [
         move("t1", "Alpha", "Beta"),
         move("t2", "Alpha", "Beta", { confidence: "medium" }),
-        move("t3", "Unsorted", "Gamma", { to: "new:Gamma" }),
+        move("t3", "Unfiled", "Gamma", { to: "new:Gamma" }),
         // An evolution move: no assignment confidence.
         (({ confidence: _, ...rest }) => rest)(
           move("t4", "Beta", "Gamma", {

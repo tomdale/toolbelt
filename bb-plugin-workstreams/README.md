@@ -30,7 +30,7 @@ design and the contract the code is checked against.
     or right-click it → **Prioritize** (or `bb workstreams prioritize`).
     Prioritized workstreams pin directly below Up Next and keep the flag shown;
     click it again to remove the priority. While any workstream is prioritized,
-    the others (with Unsorted and Dormant) are hidden behind **Show lower
+    the others (with Unfiled and Dormant) are hidden behind **Show lower
     priority workstreams** below the prioritized ones; it reveals them
     collapsed, and hiding them again resets that. While any of them has a thread
     in Up Next, Up Next shows only prioritized threads; the toggle counts the
@@ -45,10 +45,12 @@ design and the contract the code is checked against.
     its group or drop it on another group to move it there; its children come
     with it, and threads you never placed stay newest first above the ones you
     did.
-  - **Empty workstreams** follow populated groups, with an inline **New work**
-    button scoped to that workstream and no zero thread count.
-  - **Unsorted** and a collapsed **Dormant** fold for populated workstreams with
-    no threads touched in 30 days.
+  - **Unfiled**: threads in no workstream, as a group after the populated
+    workstreams. It appears only while it has threads.
+  - **Empty workstreams** follow Unfiled, with an inline **New work** button
+    scoped to that workstream and no zero thread count.
+  - A collapsed **Dormant** fold for populated workstreams with no threads
+    touched in 30 days.
   - A collapsed **Snoozed** fold. Snoozing a thread takes it (and its children)
     out of Up Next, Recent, and its group until it wakes. **Show in Sidebar**
     can hide the fold without showing those threads elsewhere. Hover a row and
@@ -135,7 +137,7 @@ design and the contract the code is checked against.
   scans open thread roots and proposes a coherent map with descriptions, aliases
   and placements. Review the whole map, uncheck unwanted moves, then Apply as
   one undoable batch. Between runs, membership stays fixed. Unassigned roots
-  remain Unsorted. Homes default to concrete products/projects; high-volume
+  remain Unfiled. Homes default to concrete products/projects; high-volume
   products may subdivide into `<Product>: <Area>` homes, formatted distinctly in
   the UI; substantial initiatives can stand alone. Apply also removes previewed
   empty homes or archived-only homes whose newest archive is over 24 hours old,
@@ -189,7 +191,7 @@ changes should pass the eval (`eval/README.md`).
 ```sh
 bb workstreams list [--json]                   # workstreams with counts
 bb workstreams show <workstream> [--json]      # threads nested, with where each stopped
-bb workstreams file <thread> <workstream>      # file a root thread; `unsorted` removes it
+bb workstreams file <thread> <workstream>      # file a root thread; `unfiled` removes it
 bb workstreams edit <workstream> [--description <text>] [--alias <a,b>]
 bb workstreams prioritize <workstream> [--off] # pin it and focus Up Next on it
 bb workstreams new "<prompt>" [--workstream <w>] [--project <id>] [--dry-run]

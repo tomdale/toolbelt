@@ -1,7 +1,7 @@
 /**
  * The Workstreams sidebar thread list: the Up Next section, the prioritized
  * workstreams, and the Recent band, then one group per remaining workstream
- * (BB section, in the user's drag-and-drop order, else BB's), Unsorted, a
+ * (BB section, in the user's drag-and-drop order, else BB's), Unfiled, a
  * Dormant fold, and a Snoozed fold. Up Next and Recent are overlays: every
  * visible thread appears in exactly one group, or in Snoozed (SPEC I1).
  *
@@ -35,6 +35,7 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
+  UNFILED_NAME,
   focusNeeds,
   type Group,
   type Row as RowModel,
@@ -402,7 +403,7 @@ export function WorkstreamsThreadList({
     });
 
   const workstreamName = (row: ThreadRow) =>
-    row.workstreamId ? nameOf.get(row.workstreamId) : "Unsorted";
+    row.workstreamId ? nameOf.get(row.workstreamId) : UNFILED_NAME;
   /** What an Up Next thread asks of Tom, from its current analysis. */
   const askOf = (row: ThreadRow) => {
     const work = ws.work(row.thread);
@@ -578,12 +579,12 @@ export function WorkstreamsThreadList({
     }
     return [...groups.entries()]
       .sort(([a], [b]) =>
-        (a ? (nameOf.get(a) ?? "Unsorted") : "Unsorted").localeCompare(
-          b ? (nameOf.get(b) ?? "Unsorted") : "Unsorted",
+        (a ? (nameOf.get(a) ?? UNFILED_NAME) : UNFILED_NAME).localeCompare(
+          b ? (nameOf.get(b) ?? UNFILED_NAME) : UNFILED_NAME,
         ),
       )
       .map(([id, groupTrees]) => {
-        const name = id ? (nameOf.get(id) ?? "Unsorted") : "Unsorted";
+        const name = id ? (nameOf.get(id) ?? UNFILED_NAME) : UNFILED_NAME;
         return (
           <li key={`${placement}:${id ?? "unsorted"}`} className="list-none">
             <section
@@ -682,7 +683,11 @@ export function WorkstreamsThreadList({
 
   const pinnedGroups = projection.groups.filter((group) => group.prioritized);
   const otherGroups = projection.groups.filter((group) => !group.prioritized);
-  // With any workstream prioritized, the rest (with Unsorted and Dormant)
+  // Unfiled, a group only while it has threads, sits between the populated
+  // workstreams and the empty ones.
+  const populatedGroups = otherGroups.filter((group) => group.total > 0);
+  const emptyGroups = otherGroups.filter((group) => group.total === 0);
+  // With any workstream prioritized, the rest (with Unfiled and Dormant)
   // sit hidden behind a toggle below the prioritized ones.
   const tiered = pinnedGroups.length > 0;
   if (!tiered && (showLower || lowerExpanded.size > 0)) {
@@ -781,10 +786,10 @@ export function WorkstreamsThreadList({
     >
       <div className="flex flex-col gap-2">
         <SortableContext
-          items={otherGroups.map((group) => groupKey(group.id))}
+          items={populatedGroups.map((group) => groupKey(group.id))}
           strategy={verticalListSortingStrategy}
         >
-          {otherGroups.map((group) =>
+          {populatedGroups.map((group) =>
             renderSortableGroup(group, activeGroupProps(group)),
           )}
         </SortableContext>
@@ -808,6 +813,14 @@ export function WorkstreamsThreadList({
             )}
           </DropTarget>
         ) : null}
+        <SortableContext
+          items={emptyGroups.map((group) => groupKey(group.id))}
+          strategy={verticalListSortingStrategy}
+        >
+          {emptyGroups.map((group) =>
+            renderSortableGroup(group, activeGroupProps(group)),
+          )}
+        </SortableContext>
         {projection.dormant.length > 0 ? (
           <Band
             title="Dormant"
@@ -993,7 +1006,7 @@ export function WorkstreamsThreadList({
                     ? [
                         {
                           id: "__unsorted",
-                          name: "Unsorted",
+                          name: UNFILED_NAME,
                           threads: unsortedArchived,
                         },
                       ]

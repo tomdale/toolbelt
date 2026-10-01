@@ -39,7 +39,7 @@ describe("moving threads", () => {
     expect(entry).toMatchObject({
       action: "move",
       source: "user",
-      rationale: "Moved from Unsorted to Alpha",
+      rationale: "Moved from Unfiled to Alpha",
     });
     const state = await rpc<{ placements: Record<string, { source: string }> }>(
       w,
@@ -177,7 +177,7 @@ describe("reconciler", () => {
         .map((e) => e.rationale)
         .sort(),
     ).toEqual([
-      "Moved from Unsorted to Alpha Two outside Workstreams",
+      "Moved from Unfiled to Alpha Two outside Workstreams",
       "Renamed Alpha to Alpha Two outside Workstreams",
     ]);
     // Only the root's move is recorded; the child's section doesn't group it.
@@ -229,19 +229,22 @@ describe("cli", () => {
     const list = await cli(["list"]);
     expect(list.exitCode).toBe(0);
     expect(list.stdout).toMatch(/Alpha\s+2 threads/);
-    expect(list.stdout).toMatch(/Unsorted\s+1 thread /);
+    expect(list.stdout).toMatch(/Unfiled\s+1 thread /);
 
     const show = await cli(["show", "alpha"]);
     expect(show.stdout).toContain("Root task");
     expect(show.stdout).toMatch(/\n {2}Kid task/);
 
+    expect((await cli(["show", "unfiled"])).stdout).toContain("Loose task");
+    expect((await cli(["show", "unsorted"])).stdout).toContain("Loose task");
+
     const filed = await cli(["file", "loose", "Alpha"]);
-    expect(filed.stdout).toBe("Moved from Unsorted to Alpha");
+    expect(filed.stdout).toBe("Moved from Unfiled to Alpha");
     const missing = await cli(["file", "loose", "Nope"]);
     expect(missing.exitCode).not.toBe(0);
 
     const logged = await cli(["log"]);
-    expect(logged.stdout).toContain("Moved from Unsorted to Alpha");
+    expect(logged.stdout).toContain("Moved from Unfiled to Alpha");
   });
 
   it("prioritizes a workstream and lists it first", async () => {

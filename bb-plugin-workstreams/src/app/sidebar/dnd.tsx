@@ -39,7 +39,7 @@ export type DragData =
   /** `pinned`: a prioritized workstream, which reorders only among its tier. */
   | { type: "group"; groupId: string; pinned?: boolean }
   | { type: "thread"; threadId: string; groupId: string }
-  /** A group that takes thread drops but does not itself reorder (Unsorted). */
+  /** A group that takes thread drops but does not itself reorder (Unfiled). */
   | { type: "target"; groupId: string };
 
 export type Drop =

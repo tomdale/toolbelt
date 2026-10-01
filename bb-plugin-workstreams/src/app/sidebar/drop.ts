@@ -18,7 +18,7 @@ import type { ReorderChange } from "../useWorkstreams.ts";
 import type { Drop } from "./dnd.tsx";
 
 export type DropPlan = {
-  /** A root filed into another workstream (null section = Unsorted). */
+  /** A root filed into another workstream (null section = Unfiled). */
   move: { threadId: string; sectionId: string | null } | null;
   reorder: ReorderChange | null;
 };

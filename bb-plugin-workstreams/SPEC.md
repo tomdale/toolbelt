@@ -100,14 +100,14 @@ environments.
 | **Delegate**     | A child of a task thread, created for a separable subtask                                                                                                                                                                  | BB `parentThreadId` + `lifecycleOwnerThreadId`                |
 | **Sibling**      | A task thread spun off from another thread for out-of-scope work                                                                                                                                                           | Metadata `spawnedFrom`. This is **not** a parent link.        |
 | **Home project** | Where work with no code target goes. **Default: none.** Such work goes to BB's personal project ("Don't work in a project") in a fresh personal workspace. The optional `newWork.homeProjectId` preference overrides this. | Plugin preference (optional)                                  |
-| **Unsorted**     | Unsectioned roots awaiting an explicit placement or organizing run.                                                                                                                                                        | Derived                                                       |
+| **Unfiled**      | Unsectioned roots awaiting an explicit placement or organizing run.                                                                                                                                                        | Derived                                                       |
 
 **Invariants.** Tests enforce each one.
 
 - **I1. Exactly once.** Every visible, non-archived thread appears in exactly
-  one workstream group (Unsorted and Dormant included), or in Snoozed (§11.1).
-  It nests under its parent when the parent is visible and active; otherwise it
-  is a root. Orphans and cycles render deterministically. Up Next and Recent are
+  one workstream group (Unfiled and Dormant included), or in Snoozed (§11.1). It
+  nests under its parent when the parent is visible and active; otherwise it is
+  a root. Orphans and cycles render deterministically. Up Next and Recent are
   overlays that repeat rows from the groups; they never replace them, and never
   show snoozed threads.
 - **I2. Tree membership.** A tree's workstream is its root's section.
@@ -312,7 +312,7 @@ Plugin SQLite, keyed by `sectionId`. The name mirrors BB.
 | A thread is filed or created          | Deterministic evidence update                                                                |
 | Organization is applied               | Reviewed descriptions and aliases are stored with Undo.                                      |
 | The user edits a workstream           | The edit always wins (`descriptionSource: user`)                                             |
-| A section is renamed or deleted in BB | The reconciler mirrors the rename or drops the record; unassigned roots remain Unsorted.     |
+| A section is renamed or deleted in BB | The reconciler mirrors the rename or drops the record; unassigned roots remain Unfiled.      |
 
 ## 8. Keeping state current
 
@@ -340,8 +340,8 @@ without another model call. See
 | Thread created through New work                                             | RPC call                                                                          | Filed in the workstream the user chose (provenance `user`)                                                                                   |
 | Thread created through `bb workstreams new` or a handoff                    | RPC or CLI call                                                                   | Placed by the router (provenance `router` or `handoff`)                                                                                      |
 | Child created by any source                                                 | `thread.created`                                                                  | No structural change. Analyze it on its first idle.                                                                                          |
-| Top-level thread created elsewhere (BB's native composer, CLI, automations) | `thread.created`, then the first `thread.idle`                                    | Respect its existing section; otherwise leave it Unsorted.                                                                                   |
-| Visible fork                                                                | `thread.created` with `sourceThreadId`                                            | Preserve the creator's placement; otherwise leave it Unsorted                                                                                |
+| Top-level thread created elsewhere (BB's native composer, CLI, automations) | `thread.created`, then the first `thread.idle`                                    | Respect its existing section; otherwise leave it Unfiled.                                                                                    |
+| Visible fork                                                                | `thread.created` with `sourceThreadId`                                            | Preserve the creator's placement; otherwise leave it Unfiled                                                                                 |
 | User sends a message                                                        | `message.dispatch` (proceeds except for stale recap reminders) or `thread.active` | Mark analysis pending. Clear any inferred "needs decision" and the agent recap.                                                              |
 | Turn completes                                                              | `thread.idle` (`lastAssistantText` included)                                      | Per-thread analysis (§10), debounced about 5 s, at most 4 concurrent. A reminder if the turn ended without a recap or question card (§10.2). |
 | Pending approval or question                                                | `interaction.pending`                                                             | Show in Up Next immediately. A question card ends the turn properly (§10.2).                                                                 |
@@ -507,7 +507,7 @@ it.
      never go dormant. The header's flag button toggles priority: it appears on
      hover, and stays shown, filled, on a prioritized workstream as its mark.
      The header menu's Prioritize and `bb workstreams prioritize` do the same.
-     While any workstream is prioritized, the other workstreams, Unsorted, and
+     While any workstream is prioritized, the other workstreams, Unfiled, and
      Dormant are hidden behind a subtle "Show lower priority workstreams"
      link-style toggle directly below the prioritized ones (Recent follows it).
      Revealing shows them all collapsed; expansions there are per reveal and
@@ -533,8 +533,10 @@ it.
      the context menu). Manual order is plugin state shared across clients;
      unplaced roots sit above placed ones in the default order, and unplaced
      workstreams sit after placed ones.
-   - An Unsorted band, a Dormant fold, and a Snoozed fold (collapsed by default,
-     §11.1).
+   - Unfiled, a virtual group of unsectioned roots, after the populated
+     workstreams and before the empty ones; it shows only while it has threads.
+     The CLI accepts `unfiled` (or `unsorted`) for it.
+   - A Dormant fold and a Snoozed fold (collapsed by default, §11.1).
    - Rows show BB's `indicator` glyph plus a work-state glyph (with a legend): ✓
      complete, ◇ review and ↻ continuing from an agent recap, else ◆ decision, ◇
      review and ⏸ blocked from analysis, provider icon, branch/PR, draft,
@@ -706,7 +708,7 @@ bb-plugin-workstreams/
 ## 14. Organization quality
 
 Evaluate the map holistically: recognizable homes, distinct scopes, coherent
-membership and useful Unsorted decisions. Use real snapshot replay outside the
+membership and useful Unfiled decisions. Use real snapshot replay outside the
 public repository. Compare repeated runs for stability and inspect cost/latency;
 model confidence alone does not establish useful organization. Background turns
 and reconciliation must leave thread membership unchanged.

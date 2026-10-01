@@ -41,6 +41,13 @@ const TITLE_MAX = 80;
 const clip = (text: string) =>
   text.length <= TITLE_MAX ? text : `${text.slice(0, TITLE_MAX - 1)}…`;
 
+/**
+ * Whether a workstream argument names the Unfiled group. `unsorted`, its
+ * former name, still works in scripts.
+ */
+const isUnfiled = (arg: string) =>
+  ["unfiled", "unsorted"].includes(arg.trim().toLowerCase());
+
 function resolveWorkstream(sections: Section[], arg: string): Section | null {
   const lowered = arg.trim().toLowerCase();
   return (
@@ -235,7 +242,7 @@ export function registerCli(
             {
               name: "workstream",
               description:
-                "Workstream name or section id; `unsorted` for unsectioned threads",
+                "Workstream name or section id; `unfiled` for threads in no workstream",
               required: true,
             },
           ],
@@ -243,23 +250,19 @@ export function registerCli(
           async run({ positionals, options }) {
             const { now, sections, projection, analysis } = await load();
             const arg = positionals.workstream;
-            const group =
-              arg.toLowerCase() === "unsorted"
-                ? projection.unsorted
-                : (() => {
-                    const section = resolveWorkstream(sections, arg);
-                    if (!section)
-                      throw new PluginCliError(
-                        `No workstream named "${arg}".`,
-                        {
-                          code: "workstream_not_found",
-                          hint: "Run `bb workstreams list` to see workstream names and ids.",
-                        },
-                      );
-                    return [...projection.groups, ...projection.dormant].find(
-                      (g) => g.id === section.id,
-                    )!;
-                  })();
+            const group = isUnfiled(arg)
+              ? projection.unsorted
+              : (() => {
+                  const section = resolveWorkstream(sections, arg);
+                  if (!section)
+                    throw new PluginCliError(`No workstream named "${arg}".`, {
+                      code: "workstream_not_found",
+                      hint: "Run `bb workstreams list` to see workstream names and ids.",
+                    });
+                  return [...projection.groups, ...projection.dormant].find(
+                    (g) => g.id === section.id,
+                  )!;
+                })();
             const rows = group.rows.slice(0, 200);
             if (options.json)
               return {
@@ -305,21 +308,17 @@ export function registerCli(
             {
               name: "workstream",
               description:
-                "Workstream name or section id; `unsorted` to remove it from any workstream",
+                "Workstream name or section id; `unfiled` to remove it from any workstream",
               required: true,
             },
           ],
           options: { json: { type: "boolean", description: "Print JSON" } },
           async run({ positionals, options }) {
             const sections = await listSections(bb.sdk);
-            const target =
-              positionals.workstream.toLowerCase() === "unsorted"
-                ? null
-                : resolveWorkstream(sections, positionals.workstream);
-            if (
-              target === null &&
-              positionals.workstream.toLowerCase() !== "unsorted"
-            )
+            const target = isUnfiled(positionals.workstream)
+              ? null
+              : resolveWorkstream(sections, positionals.workstream);
+            if (target === null && !isUnfiled(positionals.workstream))
               throw new PluginCliError(
                 `No workstream named "${positionals.workstream}".`,
                 {
@@ -712,7 +711,7 @@ export function registerCli(
               ),
               ...p.assignments
                 .filter((a) => a.workstream === null)
-                .map((a) => `  Unsorted: ${a.threadId}`),
+                .map((a) => `  Unfiled: ${a.threadId}`),
               ...(options.apply
                 ? []
                 : [

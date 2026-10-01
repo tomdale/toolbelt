@@ -51,7 +51,7 @@ describe("whole-map organization", () => {
     expect(prompt).toContain("Count the roots per owner");
     expect(prompt).toContain("untrusted evidence");
   });
-  it("accepts a complete closed assignment with Unsorted", () =>
+  it("accepts a complete closed assignment with Unfiled", () =>
     expect(parseOrganization(JSON.stringify(valid()), input)).toEqual(valid()));
   it.each([
     "missing",
@@ -82,7 +82,7 @@ describe("whole-map organization", () => {
         .sectionId,
     ).toBe("s1");
   });
-  it("accepts a null owner for an Unsorted root", () => {
+  it("accepts a null owner for an Unfiled root", () => {
     const result = valid();
     (result.assignments[1] as Record<string, unknown>).owner = null;
     expect(() =>
