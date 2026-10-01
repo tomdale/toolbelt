@@ -3,6 +3,7 @@
  * sections), records every change in the journal, and reconciles with changes
  * made elsewhere. See SPEC.md.
  */
+import { randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { actOn, registerCli } from "./cli.ts";
 import { isCurrent } from "../domain/analysis.ts";
@@ -29,94 +30,33 @@ import {
   saveRecapPrefs,
 } from "./recapPrefs.ts";
 import { ThreadSnoozes, loadSnoozePrefs, saveSnoozePrefs } from "./snooze.ts";
+import { hasPrefs, loadPrefs, savePrefs, seedPrefs } from "./prefs.ts";
+import { gatewayModel, type ModelChoice } from "../domain/prefs.ts";
+import { runWorker as completeWithWorker } from "./inference/worker.ts";
 
 export { rpcContract } from "./contract.ts";
 
 const RECONCILE_EVERY_MS = 60_000;
 const RECONCILE_DEBOUNCE_MS = 1_500;
 
-/**
- * Models that pass the analysis eval (eval/README.md, SPEC §10); the first is
- * the default. Add one only after it passes.
- */
-export const MODELS = ["google/gemini-3.1-flash-lite"] as const;
-/** Organizing is an explicit, infrequent action, so it defaults to the stronger model: Flash-Lite does not reliably split large products into areas. */
-export const ORGANIZE_MODELS = [
-  "openai/gpt-6-sol-fast",
-  "google/gemini-3.1-flash-lite",
-] as const;
 /** The furthest out a snooze can wake. */
 const MAX_SNOOZE_MS = 366 * 24 * 60 * 60 * 1000;
 
 export default async function plugin(bb: BbPluginApi) {
-  const settings = bb.settings.define({
-    showParentThreadLink: {
-      type: "boolean",
-      label: "Show parent thread link in thread header",
-      description:
-        "Show a link to the parent thread in the header of child threads.",
-      default: false,
-    },
-    showForYou: {
-      type: "boolean",
-      label: "Show the For you section in the sidebar",
-      description:
-        "Threads waiting on you: an open approval or question, or a decision the thread asked for.",
-      default: true,
-    },
-    showRecent: {
-      type: "boolean",
-      label: "Show the Recent band in the sidebar",
-      description:
-        "The five most recently active threads, excluding ones already in For you.",
-      default: true,
-    },
-    model: {
-      type: "select",
-      label: "Analysis model",
-      description: "Summarizes each thread after every turn.",
-      options: [...MODELS],
-      default: MODELS[0],
-    },
-    autoTitle: {
-      type: "boolean",
-      label: "Keep thread titles current",
-      description:
-        "Title untitled threads, and retitle a thread when its work moves on. Titles you set yourself are never changed.",
-      default: true,
-    },
-    hostId: {
-      type: "string",
-      label: "Analysis machine ID",
-      description:
-        "The machine whose Pi runs analysis. Blank uses the only connected machine.",
-      default: "",
-    },
-    organizeModel: {
-      type: "select",
-      label: "Organizing model",
-      description:
-        "Proposes the workstream map and files threads when you organize, once.",
-      options: [...ORGANIZE_MODELS],
-      default: ORGANIZE_MODELS[0],
-    },
-    homeProjectId: {
-      type: "project",
-      label: "Home project",
-      description:
-        'Where work with no code target starts. Blank starts it in a fresh personal workspace ("Don\'t work in a project").',
-      default: "",
-    },
-    debug: {
-      type: "boolean",
-      label: "Debug mode",
-      description:
-        "Record every model call's prompt, reasoning, and response, and show an inspect button wherever Workstreams used a model. Records include redacted thread excerpts and are kept for 7 days.",
-      default: false,
-    },
-  });
-
   const db = openDatabase(bb);
+  if (!hasPrefs(db)) {
+    try {
+      const legacy = await bb.sdk.plugins.getSettings({
+        pluginId: "workstreams",
+      });
+      seedPrefs(db, legacy.values);
+    } catch (error) {
+      bb.log.warn(
+        `Could not migrate Workstreams settings; using defaults: ${String(error)}`,
+      );
+      seedPrefs(db, null);
+    }
+  }
   const journal = new Journal(db);
   const notify = () => bb.realtime.publish("changed", {});
   const service = new WorkstreamService(() => bb.sdk, db, journal, notify);
@@ -137,12 +77,13 @@ export default async function plugin(bb: BbPluginApi) {
         );
   };
 
+  const currentPrefs = () => loadPrefs(db);
   const hostRpc = bb.hosts.experimental_client({ contract: hostContract });
   const analysisHost = async (): Promise<string> => {
     const connected = (await bb.sdk.hosts.list()).filter(
       (host) => host.status === "connected",
     );
-    const { hostId } = await settings.get();
+    const { hostId } = currentPrefs().advanced;
     const host = hostId.trim()
       ? connected.find((h) => h.id === hostId.trim())
       : connected.length === 1
@@ -154,16 +95,56 @@ export default async function plugin(bb: BbPluginApi) {
       );
     return host.id;
   };
+  const completeWorker = async (
+    prompt: string,
+    choice: ModelChoice,
+    signal?: AbortSignal,
+    context?: { threadId?: string },
+  ) => {
+    let projectId: string | undefined;
+    let environmentId: string | undefined;
+    if (context?.threadId) {
+      const subject = await bb.sdk.threads.get({
+        threadId: context.threadId,
+        signal,
+      });
+      projectId = subject.projectId;
+      environmentId = subject.environmentId ?? undefined;
+    }
+    if (!projectId) {
+      const homeProjectId = currentPrefs().newWork.homeProjectId;
+      const projects = await bb.sdk.projects.list();
+      projectId =
+        (homeProjectId &&
+        projects.some((project) => project.id === homeProjectId)
+          ? homeProjectId
+          : undefined) ?? projects[0]?.id;
+    }
+    if (!projectId)
+      throw new Error("No project is available for a Workstreams worker.");
+    return completeWithWorker(
+      bb.sdk,
+      prompt,
+      choice,
+      projectId,
+      environmentId,
+      signal,
+    );
+  };
   const traces = new TraceStore(db);
   const inference = new Inference({
-    complete: async (prompt, model, signal, maxTokens) =>
-      hostRpc.call(
-        "complete",
-        { prompt, model, ...(maxTokens ? { maxTokens } : {}) },
-        { hostId: await analysisHost(), timeoutMs: 95_000, signal },
-      ),
+    complete: async (prompt, choice, signal, maxTokens, context) => {
+      const direct = gatewayModel(choice);
+      if (direct !== null)
+        return hostRpc.call(
+          "complete",
+          { prompt, model: direct, ...(maxTokens ? { maxTokens } : {}) },
+          { hostId: await analysisHost(), timeoutMs: 95_000, signal },
+        );
+      return completeWorker(prompt, choice, signal, context);
+    },
     traces,
-    debug: async () => (await settings.get()).debug === true,
+    debug: async () => currentPrefs().advanced.debug,
     log: (message) => bb.log.warn(message),
   });
   // Retention also applies while Debug mode is off and nothing is recorded.
@@ -171,14 +152,13 @@ export default async function plugin(bb: BbPluginApi) {
   const analyzer = new Analyzer({
     sdk: () => bb.sdk,
     db,
-    model: async () => (await settings.get()).model,
+    model: async () => currentPrefs().threads.analysisModel,
     inference,
     onChange: notify,
     onResult: (threadId, result) => {
       if (!result.title) return;
-      void settings
-        .get()
-        .then(async ({ autoTitle }) => {
+      void Promise.resolve(currentPrefs().threads.autoTitle)
+        .then(async (autoTitle) => {
           if (!autoTitle) {
             inference.annotate(result.traceId, {
               title: "not applied: the autoTitle setting is off",
@@ -228,7 +208,7 @@ export default async function plugin(bb: BbPluginApi) {
     analyzer,
     map,
     inference,
-    model: async () => (await settings.get()).organizeModel,
+    model: async () => currentPrefs().organize.model,
     projects: async () => bb.sdk.projects.list(),
     members: (sectionId) => sectionMembers(bb.sdk, sectionId),
     onChange: notify,
@@ -241,8 +221,8 @@ export default async function plugin(bb: BbPluginApi) {
     map,
     analyzer,
     inference,
-    model: async () => (await settings.get()).model,
-    homeProjectId: async () => (await settings.get()).homeProjectId ?? "",
+    model: async () => currentPrefs().newWork.suggestionsModel,
+    homeProjectId: async () => currentPrefs().newWork.homeProjectId,
   });
   // A thread the native composer just created from a previewed prompt is
   // filed where the preview said: via the banner's submit data, or, for a
@@ -289,6 +269,18 @@ export default async function plugin(bb: BbPluginApi) {
         }, 0);
     }
     return { action: "proceed" };
+  });
+  const noSuggestionDecision = (): RouteDecision => ({
+    id: randomUUID(),
+    outcome: "new-thread",
+    sectionId: null,
+    workstream: null,
+    title: "",
+    placement: null,
+    confidence: "low",
+    reason: "Suggestions are turned off.",
+    subject: null,
+    traceId: null,
   });
   const choose = (
     decision: RouteDecision,
@@ -444,7 +436,10 @@ export default async function plugin(bb: BbPluginApi) {
           fromDecisionId,
         };
         const routed = async (signal?: AbortSignal) => {
-          const debug = suggest && (await settings.get()).debug === true;
+          const prefs = currentPrefs();
+          if (suggest && !prefs.newWork.suggestions)
+            return noSuggestionDecision();
+          const debug = suggest && prefs.advanced.debug;
           const notes: string[] = [];
           const started = Date.now();
           const decision = await router.route(prompt, {
@@ -598,6 +593,18 @@ export default async function plugin(bb: BbPluginApi) {
       notify();
       return { order };
     },
+    prefs: async () => ({ prefs: currentPrefs() }),
+    setPrefs: async ({ patch }) => {
+      const prefs = savePrefs(db, patch);
+      bb.realtime.publish("prefs", { prefs });
+      notify();
+      return { prefs };
+    },
+    machines: async () => ({
+      machines: (await bb.sdk.hosts.list())
+        .filter((host) => host.status === "connected")
+        .map(({ id, name }) => ({ id, name })),
+    }),
     recapPrefs: async () => ({ prefs: loadRecapPrefs(db) }),
     setRecapPrefs: async ({ patch }) => {
       const prefs = saveRecapPrefs(db, patch);

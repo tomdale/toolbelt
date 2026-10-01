@@ -3,6 +3,7 @@
  * calls and the inspector that shows them. Pure, so the app can import it.
  */
 import { z } from "zod";
+import { modelChoiceSchema } from "./prefs.ts";
 
 export const usageSchema = z.object({
   input: z.number(),
@@ -65,6 +66,8 @@ export const traceSchema = traceSummarySchema.extend({
   response: z.string().nullable(),
   reasoning: z.string().nullable(),
   stopReason: z.string().nullable(),
+  /** The selected BB model, retained so provider-backed traces can replay. */
+  modelChoice: modelChoiceSchema.optional(),
   /** The validated output, exactly as the parser returned it. */
   parsed: z.unknown(),
   /** What Workstreams stored or decided from it, when that differs. */

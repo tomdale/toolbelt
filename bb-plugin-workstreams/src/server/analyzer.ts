@@ -11,9 +11,10 @@
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { AnalysisInput, ThreadAnalysis } from "../domain/analysis.ts";
+import type { ModelChoice } from "../domain/prefs.ts";
 import type { Database } from "./db.ts";
 import { displayTitle, type InventoryThread } from "./inventory.ts";
-import { type Inference } from "./model.ts";
+import { modelLabel, type Inference } from "./model.ts";
 
 type Sdk = BbPluginApi["sdk"];
 
@@ -78,7 +79,7 @@ export class Analyzer {
       sdk: () => Sdk;
       db: Database;
       inference: Inference;
-      model: () => Promise<string>;
+      model: () => Promise<ModelChoice>;
       /** Incremental evidence is optional; failure leaves triage available. */
       onChange: () => void;
       /** A new result was stored for the thread's current turn. */
@@ -272,6 +273,7 @@ export class Analyzer {
         input.prompt,
         {
           model,
+          threadId,
           label: input.prompt.title,
           links: [{ kind: "thread", ref: threadId }],
         },
@@ -289,7 +291,7 @@ export class Analyzer {
         driftSectionId,
         revision,
         at: this.now(),
-        model,
+        model: modelLabel(model),
         traceId,
       };
       if (this.disposed || this.forgotten.has(threadId)) return null;

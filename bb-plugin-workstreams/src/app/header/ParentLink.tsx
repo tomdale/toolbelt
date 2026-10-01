@@ -1,9 +1,9 @@
 import {
   experimental_useSidebarThreadActions,
   experimental_useSidebarThreads,
-  useSettings,
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
+import { usePrefs } from "../prefs.ts";
 
 /** Stable per-thread hue, so a parent's disc keeps its color everywhere. */
 function threadHue(id: string): number {
@@ -22,10 +22,8 @@ export function ParentThreadLink({
   threadId,
   isCompactViewport,
 }: PluginThreadHeaderActionProps) {
-  const { values } = useSettings();
-  const enabled =
-    (values as Record<string, unknown> | undefined)?.showParentThreadLink ===
-    true;
+  const { prefs } = usePrefs();
+  const enabled = prefs?.threads.showParentLink ?? false;
   const { threads } = experimental_useSidebarThreads({
     experimental_lifecycles: ["active"],
   });

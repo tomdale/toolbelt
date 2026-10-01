@@ -1,4 +1,5 @@
 import { buildForest, flatten } from "../domain/tree.ts";
+import type { ModelChoice } from "../domain/prefs.ts";
 import type { OrganizeInput, OrganizeProposal } from "../domain/organize.ts";
 import type { Analyzer } from "./analyzer.ts";
 import {
@@ -64,7 +65,7 @@ export class Bootstrap {
       analyzer: Analyzer;
       map: WorkstreamMap;
       inference: Inference;
-      model: () => Promise<string>;
+      model: () => Promise<ModelChoice>;
       projects?: () => Promise<{ id: string; name: string }[]>;
       members: (sectionId: string) => Promise<CleanupMember[]>;
       onChange: () => void;
