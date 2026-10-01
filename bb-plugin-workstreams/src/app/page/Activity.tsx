@@ -473,6 +473,7 @@ export function Activity({
                         <ActivityTerm
                           label={ACTION_LABEL[entry.action]}
                           description={ACTION_HELP[entry.action]}
+                          quiet
                         />
                       </span>
                       <span>{entry.rationale}</span>
@@ -494,7 +495,7 @@ export function Activity({
                         </span>
                       ) : null}
                       {debug ? (
-                        <details className="mt-1 text-xs text-muted-foreground">
+                        <details className="mt-1 text-xs text-muted-foreground [&:not([open])]:opacity-0 focus-within:opacity-100 group-hover/entry:opacity-100">
                           <summary className="w-fit cursor-pointer rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
                             Technical details
                           </summary>

@@ -1,11 +1,17 @@
 import * as Tooltip from "@radix-ui/react-tooltip";
 
+/**
+ * A term with an explanatory tooltip. `quiet` hides the info button until
+ * its Activity row is hovered or focused, so a long log stays calm.
+ */
 export function ActivityTerm({
   label,
   description,
+  quiet = false,
 }: {
   label: string;
   description: string;
+  quiet?: boolean;
 }) {
   return (
     <span className="inline-flex items-center gap-1">
@@ -16,7 +22,7 @@ export function ActivityTerm({
             <button
               type="button"
               aria-label={`About ${label}`}
-              className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring${quiet ? " opacity-0 focus-visible:opacity-100 group-hover/entry:opacity-100" : ""}`}
             >
               <span
                 aria-hidden="true"
