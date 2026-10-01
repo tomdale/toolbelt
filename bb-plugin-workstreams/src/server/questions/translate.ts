@@ -7,8 +7,8 @@ import {
   type ToolInput,
   type ToolResult,
   type ToolResultAnnotation,
-} from "./contracts.js";
-import { NOT_UNIQUE_MESSAGE } from "./tool-definition.js";
+} from "./contracts.ts";
+import { NOT_UNIQUE_MESSAGE } from "./tool-definition.ts";
 
 export function validateToolInput(input: ToolInput): string | null {
   const prompts = input.questions.map((question) => question.question);

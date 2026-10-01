@@ -5,17 +5,30 @@ import {
   type FakePluginHost,
   makePluginAgentConfigurationContext,
 } from "@get-bb/plugin-sdk/testing";
-import plugin, { TOOL_NAME } from "./server.js";
-import { QUESTION_INSTRUCTIONS } from "./tool-definition.js";
+import {
+  TOOL_NAME,
+  questionConfig,
+  registerQuestionTool,
+} from "../../../src/server/questions/tool.ts";
+import { QUESTION_INSTRUCTIONS } from "../../../src/server/questions/tool-definition.ts";
 import {
   ASK_USER_QUESTION_RENDERER_ID,
   toolInputSchema,
   type InteractionPayload,
   type ToolResult,
-} from "./contracts.js";
+} from "../../../src/server/questions/contracts.ts";
+
+/** The question tool alone, configured the way Workstreams configures it. */
+function plugin(bb: Parameters<typeof registerQuestionTool>[0]) {
+  registerQuestionTool(bb);
+  bb.agents.configure((context) => ({
+    ...questionConfig(context.provider.capabilities.supportsNativeUserQuestion),
+    skills: [],
+  }));
+}
 
 function createHost(): FakePluginHost {
-  const host = createFakePluginHost({ pluginId: "ask-user-question" });
+  const host = createFakePluginHost({ pluginId: "workstreams" });
   plugin(host.bb as unknown as Parameters<typeof plugin>[0]);
   return host;
 }
@@ -193,16 +206,30 @@ describe("asking a question", () => {
     async (optionCount) => {
       const host = createHost();
       const call = host.harness.callAgentTool(TOOL_NAME, {
-        questions: [{ ...questions[0], options: questions[0]!.options.slice(0, optionCount) }],
+        questions: [
+          {
+            ...questions[0],
+            options: questions[0]!.options.slice(0, optionCount),
+          },
+        ],
       });
-      await vi.waitFor(() => expect(host.harness.pendingInteractions).toHaveLength(1));
+      await vi.waitFor(() =>
+        expect(host.harness.pendingInteractions).toHaveLength(1),
+      );
       const pending = host.harness.pendingInteractions[0]!;
-      expect((pending.payload as InteractionPayload).questions[0]).toMatchObject({
-        options: expect.any(Array), allowFreeText: true,
+      expect(
+        (pending.payload as InteractionPayload).questions[0],
+      ).toMatchObject({
+        options: expect.any(Array),
+        allowFreeText: true,
       });
-      expect((pending.payload as InteractionPayload).questions[0]?.options).toHaveLength(optionCount);
+      expect(
+        (pending.payload as InteractionPayload).questions[0]?.options,
+      ).toHaveLength(optionCount);
       expect(pending.timeoutMs).toBe(60 * 60 * 1000);
-      host.harness.submitInteraction(pending.id, { answers: { q0: { selected: [], freeText: "My required input" } } });
+      host.harness.submitInteraction(pending.id, {
+        answers: { q0: { selected: [], freeText: "My required input" } },
+      });
       expect(JSON.parse(await resultText(await call)).answers).toEqual({
         "Which database should we use?": "My required input",
       });
@@ -277,8 +304,11 @@ describe("asking a question", () => {
   });
 
   it("leaves approvals unresolved when the interaction expires", async () => {
-    const host = createFakePluginHost({ pluginId: "toolbelt-ask-user-question" });
-    host.bb.ui.requestInput = async () => ({ outcome: "cancelled", reason: "timeout" });
+    const host = createFakePluginHost({ pluginId: "workstreams" });
+    host.bb.ui.requestInput = async () => ({
+      outcome: "cancelled",
+      reason: "timeout",
+    });
     plugin(host.bb as unknown as Parameters<typeof plugin>[0]);
     const result = await host.harness.callAgentTool(TOOL_NAME, { questions });
     expect(result).toMatchObject({ isError: true });
@@ -301,7 +331,7 @@ describe("asking a question", () => {
   });
 
   it("explains the collision when a second question races the first", async () => {
-    const host = createFakePluginHost({ pluginId: "ask-user-question" });
+    const host = createFakePluginHost({ pluginId: "workstreams" });
     host.bb.ui.requestInput = () =>
       Promise.reject(
         new Error("Thread thr-test is already awaiting user interaction"),

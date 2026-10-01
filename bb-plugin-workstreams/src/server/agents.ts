@@ -17,6 +17,7 @@ import {
 import { isWorkstreamsWorker } from "../domain/worker.ts";
 import type { Database } from "./db.ts";
 import type { AgentRecaps } from "./recap.ts";
+import { questionConfig } from "./questions/tool.ts";
 
 type Sdk = BbPluginApi["sdk"];
 type Seen = {
@@ -93,7 +94,8 @@ export function roleOf(
 }
 
 /**
- * Each session's role instructions (SPEC §5) and the recap tool (SPEC §10.2).
+ * Each session's role instructions (SPEC §5), the question tool, and the
+ * recap tool (SPEC §10.2).
  * Every non-worker thread except a side chat gets the recap tool, including
  * threads too new to have a role yet.
  */
@@ -114,14 +116,18 @@ export function registerAgentInstructions(
       origin: context.origin,
       pluginMetadata: context.pluginMetadata as Record<string, unknown>,
     });
+    const questions = questionConfig(
+      context.provider.capabilities.supportsNativeUserQuestion,
+    );
     const instructions = [
       role ? instructionsFor(role) : null,
+      questions.instructions,
       recap.instructions,
     ]
       .filter((text): text is string => text !== null)
       .join("\n\n");
     return {
-      tools: recap.tools,
+      tools: [...questions.tools, ...recap.tools],
       skills: [],
       ...(instructions ? { instructions } : {}),
     };

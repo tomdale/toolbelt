@@ -65,6 +65,13 @@ design and the contract the code is checked against.
     settings (BB's own by default). Hover a row for its Snooze and Archive
     buttons; right-click to move, rename, pin, mark read, snooze, archive, or
     delete.
+- **Question cards**: agents without a native question tool get
+  `AskUserQuestion`, which asks one to four questions with suggested answers and
+  freeform input. The card appears above the composer in the recap card's place
+  and style, with an amber accent; the thread reads as waiting until it is
+  answered or dismissed. Number keys pick options, and ⌘⏎ (Ctrl+⏎) in the
+  freeform field submits or advances. A dismissed or expired card tells the
+  agent the input is still unresolved.
 - **Workstreams page** (`/plugins/workstreams/home`):
   - **Overview**: workstreams ranked by what needs you, each thread with where
     it stopped. Search with `/`.

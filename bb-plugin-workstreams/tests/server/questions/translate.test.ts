@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { toolInputSchema } from "./contracts.js";
-import { NOT_UNIQUE_MESSAGE } from "./tool-definition.js";
+import { toolInputSchema } from "../../../src/server/questions/contracts.ts";
+import { NOT_UNIQUE_MESSAGE } from "../../../src/server/questions/tool-definition.ts";
 import {
   MAX_INTERACTION_PAYLOAD_BYTES,
   PreviewTooLargeError,
@@ -9,7 +9,7 @@ import {
   buildInteractionTitle,
   buildToolResult,
   validateToolInput,
-} from "./translate.js";
+} from "../../../src/server/questions/translate.ts";
 
 function parseInput(input: unknown) {
   const parsed = toolInputSchema.safeParse(input);

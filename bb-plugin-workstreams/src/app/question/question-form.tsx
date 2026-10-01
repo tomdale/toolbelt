@@ -2,11 +2,11 @@ import type {
   Question,
   QuestionOption,
   QuestionAnswer,
-} from "./question-form-state";
+} from "./question-form-state.ts";
 import {
   useQuestionFormHost,
   type QuestionShortcut,
-} from "./question-form-host";
+} from "./question-form-host.tsx";
 import {
   useCallback,
   useEffect,
@@ -17,10 +17,10 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from "react";
-import { Button } from "./button";
-import { Icon } from "./icon";
-import { usePointerCoarse } from "./hooks/use-pointer-coarse";
-import { cn } from "../../lib/utils";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { usePointerCoarse } from "@/components/ui/hooks/use-pointer-coarse";
+import { cn } from "@/lib/utils";
 import {
   answerStateFor,
   buildQuestionAnswers,
@@ -29,18 +29,18 @@ import {
   resolveQuestionShortcutChoice,
   type QuestionAnswerState,
   type QuestionFormState,
-} from "./question-form-state";
+} from "./question-form-state.ts";
 
 const OTHER_OPTION_LABEL = "Other…";
 const FREE_TEXT_MIN_HEIGHT = 84;
 const FREE_TEXT_MAX_HEIGHT = 158;
 const PREVIEW_MAX_HEIGHT = 220;
 
-// The Workstreams recap card's type scale, sized to the form's container.
-const BODY_CLASS =
-  "text-[clamp(0.75rem,calc(0.5rem+0.9375cqi),0.8125rem)] leading-[1.5] [text-wrap:pretty]";
-const GOAL_CLASS =
-  "text-[clamp(0.875rem,calc(0.5rem+1.75cqi),1.0625rem)] leading-[1.4]";
+// A step below the recap card's type scale: a question card carries more
+// lines than a recap, so options stay compact.
+const PROMPT_CLASS = "text-[13.5px] leading-[1.4] [text-wrap:pretty]";
+const LABEL_CLASS = "text-[12.5px] leading-[1.45]";
+const DESCRIPTION_CLASS = "text-[11.5px] leading-[1.45] [text-wrap:pretty]";
 
 interface QuestionOptionRowProps {
   checked: boolean;
@@ -84,7 +84,7 @@ function QuestionOptionRow({
       aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
       onClick={onSelect}
       className={cn(
-        "flex w-full items-start gap-2.5 rounded-md border px-2.5 py-1.5 text-left transition-colors",
+        "flex w-full items-start gap-2 rounded-md border px-2 py-1 text-left transition-colors",
         checked
           ? "border-amber-500/40 bg-amber-500/[0.07] dark:border-amber-300/30 dark:bg-amber-300/[0.06]"
           : "border-transparent hover:bg-foreground/[0.04]",
@@ -92,21 +92,28 @@ function QuestionOptionRow({
     >
       <span
         className={cn(
-          "mt-0.5 flex size-4 shrink-0 items-center justify-center border",
+          "mt-[3px] flex size-3.5 shrink-0 items-center justify-center border",
           multiSelect ? "rounded" : "rounded-full",
           checked
             ? "border-amber-600 bg-amber-600 text-white dark:border-amber-400 dark:bg-amber-400 dark:text-amber-950"
             : "border-foreground/25",
         )}
       >
-        {checked ? <Icon name="Check" className="size-3" aria-hidden /> : null}
+        {checked ? (
+          <Icon name="Check" className="size-2.5" aria-hidden />
+        ) : null}
       </span>
       <span className="min-w-0 flex-1">
-        <span className={cn("block font-medium text-foreground", BODY_CLASS)}>
+        <span className={cn("block font-medium text-foreground", LABEL_CLASS)}>
           {label}
         </span>
         {description ? (
-          <span className={cn("mt-0.5 block text-muted-foreground", BODY_CLASS)}>
+          <span
+            className={cn(
+              "mt-px block text-muted-foreground",
+              DESCRIPTION_CLASS,
+            )}
+          >
             {description}
           </span>
         ) : null}
@@ -259,13 +266,13 @@ function QuestionInputBlock({
           aria-level={2}
           className={cn(
             "font-medium tracking-[-0.006em] text-foreground",
-            GOAL_CLASS,
+            PROMPT_CLASS,
           )}
         >
           {question.prompt}
         </div>
       ) : null}
-      <div className="mt-2 space-y-0.5">
+      <div className="-mx-2 mt-1.5 space-y-px">
         {options.map((option: QuestionOption, index) => {
           const checked = state.selected.includes(option.value);
           return (
@@ -308,7 +315,7 @@ function QuestionInputBlock({
           }}
           onKeyDown={handleFreeTextKeyDown}
           placeholder="Type your own answer…"
-          className="mt-2 w-full resize-none overflow-y-auto rounded-md border border-border bg-background/60 px-3 py-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:border-ring/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
+          className="mt-2 w-full resize-none overflow-y-auto rounded-md border border-border bg-background/60 px-2.5 py-1.5 text-[12.5px] leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:border-ring/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
           style={{
             minHeight: `${FREE_TEXT_MIN_HEIGHT}px`,
             maxHeight: `${FREE_TEXT_MAX_HEIGHT}px`,
@@ -453,7 +460,7 @@ export function QuestionForm({
         event.preventDefault();
         handleAdvance();
       }}
-      className="flex max-h-[calc(100dvh-6rem)] min-h-0 flex-col text-foreground focus-visible:outline-none"
+      className="flex max-h-[min(32rem,60dvh)] min-h-0 flex-col text-foreground focus-visible:outline-none"
     >
       {totalQuestions > 1 ? (
         <QuestionTabs
@@ -480,8 +487,8 @@ export function QuestionForm({
         />
       </div>
       {/* An edge-to-edge footer strip like the recap card's, offset by the
-          host shell's px-3 pb-3 padding. */}
-      <div className="-mx-3 -mb-3 mt-3 flex shrink-0 items-center justify-between gap-2 rounded-b-[7px] border-t border-amber-900/10 bg-amber-500/[0.05] px-3 py-2 dark:border-amber-200/15 dark:bg-amber-300/[0.04]">
+          card's px-4 py-3 padding. */}
+      <div className="-mx-4 -mb-3 mt-2.5 flex shrink-0 items-center justify-between gap-2 rounded-b-[7px] border-t border-amber-900/10 bg-amber-500/[0.05] px-3 py-1.5 dark:border-amber-200/15 dark:bg-amber-300/[0.04]">
         <Button
           type="button"
           size="sm"

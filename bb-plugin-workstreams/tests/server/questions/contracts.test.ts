@@ -3,7 +3,7 @@ import {
   interactionPayloadSchema,
   interactionResponseSchema,
   MAX_OPTIONS,
-} from "./contracts.js";
+} from "../../../src/server/questions/contracts.ts";
 
 describe("ask-user-question contracts", () => {
   it("accepts a payload with options, previews, and free text", () => {

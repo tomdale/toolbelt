@@ -73,7 +73,10 @@ describe("configure", () => {
     expect(task.instructions).toContain(
       'task thread in the "Alpha" workstream',
     );
-    expect(task.tools.map((tool) => tool.name)).toEqual(["WorkstreamsRecap"]);
+    expect(task.tools.map((tool) => tool.name)).toEqual([
+      "WorkstreamsRecap",
+      "AskUserQuestion",
+    ]);
     expect(task.instructions).toContain("End every turn with WorkstreamsRecap");
     const kid = await resolve(w, { id: "kid", parentThreadId: "task" });
     expect(kid.instructions).toContain('delegated subtask of "Fix tabs"');
@@ -103,7 +106,10 @@ describe("configure", () => {
     ).toBeUndefined();
 
     const normal = await resolve(w, { id: "ordinary" });
-    expect(normal.tools.map((tool) => tool.name)).toEqual(["WorkstreamsRecap"]);
+    expect(normal.tools.map((tool) => tool.name)).toEqual([
+      "WorkstreamsRecap",
+      "AskUserQuestion",
+    ]);
     expect(normal.instructions).toContain(
       "End every turn with WorkstreamsRecap",
     );
@@ -118,8 +124,9 @@ describe("configure", () => {
         origin: { kind: "fork", pluginId: "side-chat" },
       },
     );
-    expect(side.instructions).toBeNull();
-    expect(side.tools).toEqual([]);
+    // Side chats can still ask questions, but get no role or recap.
+    expect(side.instructions).not.toContain("WorkstreamsRecap");
+    expect(side.tools.map((tool) => tool.name)).toEqual(["AskUserQuestion"]);
     // A thread with no role yet still ends its turns with a recap.
     const unknown = await resolve(w, { id: "hidden-helper" });
     expect(unknown.instructions).not.toContain("workstream");

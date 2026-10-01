@@ -443,7 +443,7 @@ thread in its fork chain must meet the creation test; an unreadable chain fails
 it.
 
 - **Endings.** A turn ends with a question card still open (BB's native
-  question, or Toolbelt's AskUserQuestion), or with a recap whose state is
+  question, or Workstreams' own AskUserQuestion), or with a recap whose state is
   `complete` (the latest request is fully done) or `review` (a finished result
   waits on the user to inspect, test, merge, or ship), or `continuing` (active
   background work or scheduled continuation, with nothing needed from the user;
