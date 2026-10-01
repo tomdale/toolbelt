@@ -1,4 +1,4 @@
-import type { Dispatch, RefObject, SetStateAction } from "react";
+import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -63,19 +63,86 @@ function RecapText({
   );
 }
 
-function Bullets({ items }: { items: string[] }) {
-  if (items.length === 1)
-    return <RecapText text={items[0]!} className="text-foreground" />;
+// Labels sit in a gutter beside their row, and above it on narrow cards.
+const ROW_CLASS =
+  "grid grid-cols-[3.75rem_minmax(0,1fr)] gap-x-3 gap-y-0.5 py-1.5 @max-[24rem]/recap:grid-cols-1";
+const LABEL_CLASS =
+  "pt-px text-[11px] font-medium leading-[1.6] text-sky-900/55 dark:text-sky-200/50";
+
+function Glyph({ path, className }: { path: string; className: string }) {
   return (
-    <ul className="space-y-1">
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={path} />
+    </svg>
+  );
+}
+const CHECK = "M3.5 8.5 6.5 11.5 12.5 4.5";
+const EYE =
+  "M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8Z M8 9.75a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z";
+const CIRCLE_CHECK =
+  "M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Z M5.5 8.25 7.25 10l3.25-3.75";
+const FILE =
+  "M9.5 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5Z M9.5 1.5V5H13";
+const LINK =
+  "M6.5 9.5a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-.5.5 M9.5 6.5a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l.5-.5";
+
+/** Where the turn's result stands, above the goal. */
+function StateLine({ state }: { state: Recap["state"] }) {
+  const review = state === "review";
+  return (
+    <p
+      className={cn(
+        "flex items-center gap-1.5 pr-7 text-[11px] font-medium leading-[1.6]",
+        review
+          ? "text-sky-700 dark:text-sky-300"
+          : "text-emerald-700 dark:text-emerald-400",
+      )}
+    >
+      <Glyph path={review ? EYE : CIRCLE_CHECK} className="h-3.5 w-3.5" />
+      {review ? "Ready for review" : "Complete"}
+    </p>
+  );
+}
+
+function Row({
+  label,
+  className,
+  labelClassName,
+  children,
+}: {
+  label: string;
+  className?: string;
+  labelClassName?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className={cn(ROW_CLASS, className)}>
+      <h3 className={cn(LABEL_CLASS, labelClassName)}>{label}</h3>
+      <div className="min-w-0">{children}</div>
+    </section>
+  );
+}
+
+function Results({ items }: { items: string[] }) {
+  return (
+    <ul className="space-y-0.5">
       {items.map((item, index) => (
         <li
           key={index}
-          className={`grid grid-cols-[12px_minmax(0,1fr)] gap-x-2 ${BODY_CLASS} text-foreground`}
+          className={`grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 ${BODY_CLASS} text-foreground`}
         >
-          <span
-            aria-hidden="true"
-            className="ml-[4px] mt-[0.65em] h-1 w-1 rounded-full bg-current opacity-60"
+          <Glyph
+            path={CHECK}
+            className="mt-[0.2em] h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400"
           />
           <RecapText text={item} />
         </li>
@@ -84,6 +151,33 @@ function Bullets({ items }: { items: string[] }) {
   );
 }
 
+/** Review steps: one reads as plain text, more as a list. */
+function Steps({ items }: { items: string[] }) {
+  if (items.length === 1)
+    return <RecapText text={items[0]!} className="text-foreground" />;
+  return (
+    <ol className="space-y-0.5">
+      {items.map((item, index) => (
+        <li
+          key={index}
+          className={`grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 ${BODY_CLASS} text-foreground`}
+        >
+          <span
+            aria-hidden="true"
+            className="text-[0.85em] font-medium tabular-nums text-sky-700 dark:text-sky-300"
+          >
+            {index + 1}
+          </span>
+          <RecapText text={item} />
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+const CHIP_CLASS =
+  "inline-flex max-w-full items-center gap-1.5 truncate rounded-full no-underline hover:no-underline border border-sky-900/15 bg-background/60 px-2 py-px text-[11.5px] font-medium leading-[1.6] text-sky-700 hover:border-sky-900/30 dark:border-sky-200/20 dark:text-sky-300 dark:hover:border-sky-200/40";
+
 function Links({
   links,
   files,
@@ -91,26 +185,38 @@ function Links({
   links: RecapLink[];
   files: RecapFiles | null;
 }) {
-  if (links.length === 0) return null;
   return (
-    <ul
-      aria-label="Links"
-      className={`mt-1.5 flex flex-wrap gap-x-4 gap-y-1 ${BODY_CLASS} font-medium text-sky-700 dark:text-sky-300`}
-    >
+    <ul aria-label="Links" className="flex flex-wrap gap-1.5">
       {links.map((link, index) => {
-        const target = link.location.startsWith("https://")
-          ? null
-          : fileTarget(link.location, files);
+        const web = link.location.startsWith("https://");
+        const target = web ? null : fileTarget(link.location, files);
+        const label = (
+          <>
+            <Glyph
+              path={web ? LINK : FILE}
+              className="h-3 w-3 shrink-0 opacity-70"
+            />
+            <span className="truncate">{link.title}</span>
+          </>
+        );
         return (
-          <li key={index} className="min-w-0 truncate">
-            {link.location.startsWith("https://") ? (
-              <UrlLink href={link.location}>{link.title}</UrlLink>
+          <li key={index} className="min-w-0 max-w-full">
+            {web ? (
+              <UrlLink href={link.location} className={CHIP_CLASS}>
+                {label}
+              </UrlLink>
             ) : target ? (
-              <FileLink target={target} title={link.location}>
-                {link.title}
+              <FileLink
+                target={target}
+                title={link.location}
+                className={CHIP_CLASS}
+              >
+                {label}
               </FileLink>
             ) : (
-              <span title={link.location}>{link.title}</span>
+              <span title={link.location} className={CHIP_CLASS}>
+                {label}
+              </span>
             )}
           </li>
         );
@@ -119,7 +225,10 @@ function Links({
   );
 }
 
-/** The goal as a heading, the latest results, then the review steps. */
+/**
+ * The state line and goal, then labeled rows: what was done, what to review
+ * (tinted, since it's the one thing asked of the user), and links.
+ */
 function RecapSummary({
   recap,
   layout,
@@ -132,6 +241,8 @@ function RecapSummary({
   const goal = layout === "full" ? recap.goal : null;
   return (
     <div>
+      {/* The top line clears the dismiss button in the corner. */}
+      <StateLine state={recap.state} />
       {goal ? (
         <div
           role="heading"
@@ -145,20 +256,26 @@ function RecapSummary({
           />
         </div>
       ) : null}
-      {/* The first line clears the dismiss button in the corner. */}
-      <section className={goal ? "mt-1.5" : "pr-7"}>
-        <h3 className="sr-only">Latest</h3>
-        <Bullets items={recap.latest} />
-      </section>
-      {recap.review.length > 0 ? (
-        <section className="mt-2.5 text-foreground">
-          <h3 className={`${BODY_CLASS} font-medium`}>Review</h3>
-          <Bullets items={recap.review} />
-          <Links links={recap.links} files={files} />
-        </section>
-      ) : (
-        <Links links={recap.links} files={files} />
-      )}
+      <div className="mt-1 [&>section+section]:border-t [&>section+section]:border-sky-900/10 dark:[&>section+section]:border-sky-200/10">
+        <Row label="Done">
+          <Results items={recap.latest} />
+        </Row>
+        {recap.review.length > 0 ? (
+          <Row
+            label="Review"
+            // The tint replaces the hairlines on both sides of this row.
+            className="!my-1 -mx-2 rounded-md !border-transparent bg-sky-900/[0.06] px-2 dark:bg-sky-200/[0.07] [&+section]:!border-transparent"
+            labelClassName="text-sky-700 dark:text-sky-300"
+          >
+            <Steps items={recap.review} />
+          </Row>
+        ) : null}
+        {recap.links.length > 0 ? (
+          <Row label="Links">
+            <Links links={recap.links} files={files} />
+          </Row>
+        ) : null}
+      </div>
     </div>
   );
 }

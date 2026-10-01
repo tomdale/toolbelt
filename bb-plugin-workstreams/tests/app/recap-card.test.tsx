@@ -128,6 +128,10 @@ it("shows the goal, latest results, and Dismiss under them", async () => {
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(slot.getByRole("heading", { name: "Building the card" })).toBeTruthy();
   expect(region.textContent).toContain("Card renders");
+  expect(region.textContent).toContain("Complete");
+  expect(slot.getByRole("heading", { name: "Done" })).toBeTruthy();
+  expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
+  expect(slot.queryByRole("heading", { name: "Links" })).toBeNull();
   expect(slot.getByRole("button", { name: "Dismiss recap" })).toBeTruthy();
   expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
 });
@@ -157,7 +161,9 @@ it.each(["full", "minimal"])(
       },
     });
     const region = await slot.findByRole("region", { name: "Latest recap" });
-    expect(region.textContent).toContain("Review");
+    expect(region.textContent).toContain("Ready for review");
+    expect(slot.getByRole("heading", { name: "Review" })).toBeTruthy();
+    expect(slot.getByRole("heading", { name: "Links" })).toBeTruthy();
     expect(region.textContent).toContain(
       "Open Recent; confirm only top-level threads appear",
     );
@@ -194,8 +200,9 @@ it("lists several review steps", async () => {
   const steps = [...region.querySelectorAll("section")].find((section) =>
     section.textContent?.startsWith("Review"),
   )!;
+  // Steps are numbered in order.
   expect([...steps.querySelectorAll("li")].map((li) => li.textContent)).toEqual(
-    ["Open New work and type a request", "Expand Debug"],
+    ["1Open New work and type a request", "2Expand Debug"],
   );
 });
 

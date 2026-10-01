@@ -67,17 +67,19 @@ design and the contract the code is checked against.
   **Review** steps naming what to inspect or try and the expected result, and
   links to files or pages. One Latest result or Review step reads as plain text,
   more as a list. File links inside the thread's workspace open there, others
-  through its machine. It shows above the composer with a dismiss ✕ in its
-  corner and, when the thread can be archived, **Archive** centered under it;
-  its state marks the sidebar row. Each recap also stays in the thread as a
-  tinted **Recap** tool row; expand it to read the recap. Fresh input clears the
-  card. A turn that ends without either gets an agent-only reminder, three by
-  default (Settings → **Recap**: on/off, reminders 0–10, and a Full or Minimal
-  layout without the goal). BB reports turn completion after the fact, so the
-  turn's own reply is already visible when the reminder arrives. The tool
-  reaches each thread when its provider session next starts. Reminders go only
-  to threads that certainly have it: threads created since recaps were turned
-  on, and threads whose agent has called it.
+  through its machine. The card shows it as a state line (Ready for review or
+  Complete), the goal, and labeled Done, Review (tinted) and Links rows, above
+  the composer, with a dismiss ✕ in its corner and, when the thread can be
+  archived, **Archive** centered under it; its state marks the sidebar row. Each
+  recap also stays in the thread as a tinted **Recap** tool row; expand it to
+  read the recap. Fresh input clears the card. A turn that ends without either
+  gets an agent-only reminder, three by default (Settings → **Recap**: on/off,
+  reminders 0–10, and a Full or Minimal layout without the goal). BB reports
+  turn completion after the fact, so the turn's own reply is already visible
+  when the reminder arrives. The tool reaches each thread when its provider
+  session next starts. Reminders go only to threads that certainly have it:
+  threads created since recaps were turned on, and threads whose agent has
+  called it.
 - **Archive**: on a complete or review recap, when BB has no unfinished tasks,
   goals, queued messages, interactions, or background work, and every child and
   lifecycle dependent is complete. Archiving a review recap accepts its result.
