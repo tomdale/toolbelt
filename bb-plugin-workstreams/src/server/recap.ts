@@ -20,6 +20,7 @@ import {
   RECAP_TOOL,
   RECAP_TOOL_DESCRIPTION,
   recapInputSchema,
+  recapMarkdown,
   recapSchema,
   toRecap,
   type Recap,
@@ -85,9 +86,12 @@ export class AgentRecaps {
     this.deps.bb.agents.registerTool({
       name: RECAP_TOOL,
       description: RECAP_TOOL_DESCRIPTION,
+      // A visible row keeps each recap in the thread's timeline. BB renders
+      // plugin tool rows itself, so the title is fixed and the recap is the
+      // row's output.
       presentation: {
-        label: { pending: "Writing recap", completed: "Wrote recap" },
-        suppress: true,
+        label: { pending: "Writing recap", completed: "Recap" },
+        tint: { light: "#0284c7", dark: "#38bdf8" },
       },
       parameters: recapInputSchema,
       execute: async (input, ctx) => {
@@ -103,7 +107,7 @@ export class AgentRecaps {
             "The conversation changed; report the recap for the current turn.",
           );
         this.deps.onChange();
-        return "The recap is shown to the user. End the turn with a brief final reply.";
+        return recapMarkdown(recap);
       },
     });
   }

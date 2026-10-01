@@ -101,6 +101,25 @@ export function toRecap(
   };
 }
 
+/**
+ * The recap as short Markdown: the tool call's output, which BB shows in the
+ * call's timeline row so the recap stays in the thread after the card is
+ * gone. The agent reads it back as the call's result.
+ */
+export function recapMarkdown(recap: Recap): string {
+  const state = recap.state === "complete" ? "Complete" : "Ready for review";
+  return [
+    `**${state}** · ${recap.goal}`,
+    ...recap.latest.map((line) => `- ${line}`),
+    recap.review ? `\n**Review:** ${recap.review}` : null,
+    recap.links.length
+      ? `\n${recap.links.map((link) => `[${link.title}](${link.location})`).join(" · ")}`
+      : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join("\n");
+}
+
 /** The tool's description, as the agent sees it in its tool list. */
 export const RECAP_TOOL_DESCRIPTION =
   "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar.";

@@ -6,4 +6,6 @@ BB plugin checks: the package's typecheck, test, and build scripts, then `script
 
 Pi package checks: the package's declared scripts, then `pi -p --no-session -ne -e <task>/<package> --model vercel-ai-gateway/openai/gpt-6-luna-fast 'Reply with exactly: ok'`, which loads only the task copy and must print `ok` with no "Failed to load extension" warning. Pi picks up main in a new session or after `/reload`. `pi-todo/`'s `test` script runs only inside the upstream rpiv-mono workspace, whose harness (`test/setup.ts`, `@juicesharp/rpiv-test-utils`) it imports.
 
+When a BB Plugin SDK limit shapes a plugin's design, add an entry to `docs/bb-sdk-wishlist.md` with the use case, the limit and its evidence, the workaround, and a possible API. Tom decides which entries go to the BB team and when, so record limits there rather than filing requests upstream.
+
 Package-type guides: `.agents/skills/{pi-plugins,claude-plugins,codex-plugins}`.

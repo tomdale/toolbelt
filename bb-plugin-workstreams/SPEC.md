@@ -438,6 +438,11 @@ session is constructed, which enrolls the thread for reminders.
   `review` (≤ 160, required for review: what to check and the expected result),
   and `links` (≤ 8 absolute file paths or HTTPS URLs). Closing periods are
   dropped.
+- **Timeline row.** The tool call stays in the thread as a tinted row titled
+  Recap, whose output is the recap as short Markdown, so the recap remains
+  readable after the conversation moves on. BB renders plugin tool rows with
+  fixed titles and looks up custom row renderers by the thread's provider
+  plugin, so the state and goal appear only in the expanded row.
 - **Currency.** A recap is stored with the turn that reported it. Any fresh
   input (`message.dispatch` other than a reminder) clears it, so a stored recap
   always describes the latest turn. Dismissing hides the card on every client
