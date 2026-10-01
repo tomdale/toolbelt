@@ -63,7 +63,9 @@ const reviewStepSchema = z.union([
   z
     .object({
       step: line(160).describe("What the user does or inspects"),
-      expect: line(160).optional().describe("The result the user should see"),
+      expect: line(160)
+        .optional()
+        .describe("The result the user should see, as the user should read it"),
     })
     .strict(),
 ]);
@@ -257,7 +259,7 @@ export function toRecap(
 /** A review step as one Markdown line. */
 export function reviewStepText(step: ReviewStep): string {
   if (typeof step === "string") return step;
-  return step.expect ? `${step.step} — expect ${step.expect}` : step.step;
+  return step.expect ? `${step.step} — ${step.expect}` : step.step;
 }
 
 export function recapMarkdown(recap: Recap): string {

@@ -48,11 +48,11 @@ const EXAMPLES: readonly Example[] = [
       review: [
         {
           step: "Open Settings → Appearance and choose Dark",
-          expect: "Every settings panel uses the dark theme",
+          expect: "Every settings panel should switch to the dark theme",
         },
         {
           step: "Reload Settings",
-          expect: "Dark stays selected and the panels stay dark",
+          expect: "Dark should stay selected after the page reloads",
         },
       ],
       links: [],
