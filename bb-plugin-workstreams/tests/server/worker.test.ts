@@ -34,7 +34,8 @@ it("uses the worker path only when gatewayModel returns null", async () => {
         kind: "provider",
         providerId: "openai",
         model: "gpt-5.5",
-        reasoningLevel: "high",
+        reasoningLevel: "medium",
+        serviceTier: "fast",
       },
     },
   });
@@ -45,6 +46,9 @@ it("uses the worker path only when gatewayModel returns null", async () => {
     visibility: "hidden",
     permissionMode: "accept-edits",
     projectId: "proj_1",
+    model: "gpt-5.5",
+    reasoningLevel: "medium",
+    serviceTier: "fast",
     pluginMetadata: {
       [WORKER_THREAD_MARKER.key]: WORKER_THREAD_MARKER.value,
     },

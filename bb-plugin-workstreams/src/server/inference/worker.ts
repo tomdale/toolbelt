@@ -36,34 +36,36 @@ export async function resolveExecution(
         }
       : { providerId: choice.providerId, ...(signal ? { signal } : {}) },
   );
-  let model = catalog.models.find(
+  const model = catalog.models.find(
     (candidate) =>
       candidate.model === choice.model || candidate.id === choice.model,
   );
-  if (!model) {
-    model =
-      catalog.models.find((candidate) => candidate.isDefault) ??
-      catalog.models[0];
-  }
   if (!model)
-    throw new Error(`No model is available for provider ${choice.providerId}.`);
+    throw new Error(
+      `Model ${choice.model} is unavailable for provider ${choice.providerId}. Choose another model.`,
+    );
   const supported = model.supportedReasoningEfforts.map(
     (item) => item.reasoningEffort,
   );
-  const reasoningLevel = (
-    supported.length === 0 ||
-    !supported.includes(choice.reasoningLevel as Reasoning)
-      ? model.defaultReasoningEffort
-      : choice.reasoningLevel
-  ) as Reasoning;
+  if (
+    !supported.includes(choice.reasoningLevel as Reasoning) &&
+    !(supported.length === 0 && choice.reasoningLevel === "none")
+  )
+    throw new Error(
+      `Model ${choice.model} does not support reasoning level ${choice.reasoningLevel}. Choose a supported level.`,
+    );
+  const reasoningLevel = choice.reasoningLevel as Reasoning;
   const provider = catalog.providers.find(
     (candidate) => candidate.id === choice.providerId,
   );
-  const serviceTier =
+  if (
     choice.serviceTier &&
-    provider?.serviceTiers?.some((tier) => tier.id === choice.serviceTier)
-      ? (choice.serviceTier as ServiceTier)
-      : undefined;
+    !provider?.serviceTiers?.some((tier) => tier.id === choice.serviceTier)
+  )
+    throw new Error(
+      `Provider ${choice.providerId} does not support service tier ${choice.serviceTier}. Choose a supported tier.`,
+    );
+  const serviceTier = choice.serviceTier as ServiceTier | undefined;
   return {
     providerId: choice.providerId,
     model: model.model,

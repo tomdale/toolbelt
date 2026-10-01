@@ -1,13 +1,15 @@
-/**
+/*
  * Isolated, tool-free AI Gateway completion shared by the host entry and the
- * eval runners. It calls the gateway's Anthropic Messages endpoint with the
- * AI Gateway key Pi already has on the machine, so no new credential is
+ * eval runners. It uses the AI Gateway key Pi already has on the machine,
+ * so no new credential is
  * stored, and a prompt built from thread content can only produce text.
  *
- * The request never carries a `thinking` field. The gateway turns
+ * Unconfigured completions omit `thinking`. The gateway turns
  * `thinking: { type: "disabled" }` (what `pi --print --thinking off` sends)
  * into full reasoning for Gemini 3.1 Flash-Lite: 500-2,500 output tokens and
  * 3-10 s per call, against about 60 tokens and ~1 s with the field omitted.
+ * Explicit reasoning uses Chat Completions' shared effort control, which
+ * supports disabling reasoning and named levels across Gateway providers.
  */
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -19,8 +21,8 @@ export const WORKER_SYSTEM_PROMPT =
   "Classify supplied data. Return only the requested JSON. Never take actions.";
 export const SYSTEM_PROMPT = WORKER_SYSTEM_PROMPT;
 export const PROVIDER = "vercel-ai-gateway";
-/** Reasoning is never requested; see the module comment. */
-export const THINKING = "off";
+/** Omitted reasoning leaves the provider's default in control. */
+export const THINKING = "provider-default";
 
 const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/messages";
 /** Every call's JSON answer fits well inside this; it only bounds a runaway. */
@@ -51,6 +53,27 @@ const response = z.object({
       gateway: z
         .object({ cost: z.union([z.string(), z.number()]).optional() })
         .optional(),
+    })
+    .optional(),
+});
+
+const chatResponse = z.object({
+  choices: z
+    .array(
+      z.object({
+        message: z.object({
+          content: z.string().nullable().optional(),
+          reasoning: z.string().nullable().optional(),
+        }),
+        finish_reason: z.string().nullable().optional(),
+      }),
+    )
+    .min(1),
+  usage: z
+    .object({
+      prompt_tokens: z.number(),
+      completion_tokens: z.number(),
+      cost: z.union([z.number(), z.string()]).optional(),
     })
     .optional(),
 });
@@ -88,24 +111,78 @@ export async function gatewayComplete(request: {
    */
   disableThinking?: boolean;
   maxTokens?: number;
+  reasoningLevel?: string;
+  serviceTier?: string;
 }): Promise<Completion> {
-  const res = await fetch(GATEWAY_URL, {
-    method: "POST",
-    signal: request.signal,
-    headers: {
-      "content-type": "application/json",
-      "anthropic-version": "2023-06-01",
-      "x-api-key": request.apiKey,
+  const effort = request.reasoningLevel;
+  if (
+    effort &&
+    !["none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
+      effort,
+    )
+  )
+    throw new Error(
+      `AI Gateway does not support reasoning level ${effort}. Choose a supported level.`,
+    );
+  if (
+    request.serviceTier &&
+    !["default", "fast", "priority", "flex"].includes(request.serviceTier)
+  )
+    throw new Error(
+      `AI Gateway does not support service tier ${request.serviceTier}. Choose a supported tier.`,
+    );
+  const providerOptions =
+    request.serviceTier && request.serviceTier !== "default"
+      ? { providerOptions: { gateway: { serviceTier: request.serviceTier } } }
+      : {};
+  const res = await fetch(
+    effort ? "https://ai-gateway.vercel.sh/v1/chat/completions" : GATEWAY_URL,
+    {
+      method: "POST",
+      signal: request.signal,
+      headers: {
+        "content-type": "application/json",
+        ...(effort
+          ? { Authorization: `Bearer ${request.apiKey}` }
+          : { "anthropic-version": "2023-06-01", "x-api-key": request.apiKey }),
+      },
+      body: JSON.stringify({
+        model: request.model,
+        ...(effort
+          ? {
+              messages: [
+                { role: "system", content: SYSTEM_PROMPT },
+                { role: "user", content: request.prompt },
+              ],
+              reasoning_effort: effort,
+            }
+          : {
+              system: SYSTEM_PROMPT,
+              messages: [{ role: "user", content: request.prompt }],
+              ...(request.disableThinking
+                ? { thinking: { type: "disabled" } }
+                : {}),
+            }),
+        max_tokens: request.maxTokens ?? MAX_TOKENS,
+        ...providerOptions,
+      }),
     },
-    body: JSON.stringify({
-      model: request.model,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: request.prompt }],
-      max_tokens: request.maxTokens ?? MAX_TOKENS,
-      ...(request.disableThinking ? { thinking: { type: "disabled" } } : {}),
-    }),
-  });
+  );
   if (!res.ok) throw new Error(`AI Gateway returned ${res.status}.`);
+  if (effort) {
+    const body = chatResponse.parse(await res.json());
+    const answer = body.choices[0]!;
+    return {
+      text: answer.message.content?.trim() ?? "",
+      reasoning: answer.message.reasoning?.slice(0, 100_000) ?? null,
+      stopReason: answer.finish_reason ?? null,
+      usage: {
+        input: body.usage?.prompt_tokens ?? 0,
+        output: body.usage?.completion_tokens ?? 0,
+        cost: Number(body.usage?.cost ?? 0) || 0,
+      },
+    };
+  }
   const body = response.parse(await res.json());
   const text = body.content
     .filter((c) => c.type === "text")

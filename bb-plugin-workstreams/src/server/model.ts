@@ -328,7 +328,8 @@ export class Inference {
                 durationMs: this.now() - started,
                 replayOf: request.replayOf,
                 provider:
-                  request.model.kind === "gateway"
+                  request.model.kind === "gateway" ||
+                  gatewayModel(request.model) !== null
                     ? PROVIDER
                     : `bb-provider:${request.model.providerId}`,
                 thinking:

@@ -43,7 +43,10 @@ export default experimental_defineHostEntry({
           childRepos++;
       return { exists: true, rootRepo: entries.includes(".git"), childRepos };
     },
-    complete: async ({ prompt, model, maxTokens }, ctx) => {
+    complete: async (
+      { prompt, model, maxTokens, reasoningLevel, serviceTier },
+      ctx,
+    ) => {
       const apiKey = await gatewayKey();
       if (!apiKey) throw new Error(NO_KEY);
       // The server aborts a call whose answer no longer matters (the draft
@@ -57,12 +60,20 @@ export default experimental_defineHostEntry({
           prompt,
           model,
           maxTokens,
+          reasoningLevel,
+          serviceTier,
           apiKey,
           signal,
         });
       } catch (error) {
         if (ctx.signal.aborted) throw error;
-        throw new Error(FAILURE);
+        throw new Error(
+          signal.aborted
+            ? "Model request timed out after 90 seconds. No fallback model was used."
+            : error instanceof Error
+              ? error.message
+              : FAILURE,
+        );
       }
     },
   },

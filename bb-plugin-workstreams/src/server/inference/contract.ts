@@ -8,6 +8,8 @@ export const hostContract = defineRpcContract({
     input: z
       .object({
         prompt: z.string().max(320_000),
+        reasoningLevel: z.string().min(1).max(50).optional(),
+        serviceTier: z.string().min(1).max(50).optional(),
         maxTokens: z.number().int().min(1024).max(32768).optional(),
         model: z
           .string()
