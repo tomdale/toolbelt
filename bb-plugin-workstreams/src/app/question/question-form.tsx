@@ -83,12 +83,7 @@ function QuestionOptionRow({
       aria-pressed={checked}
       aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
       onClick={onSelect}
-      className={cn(
-        "flex w-full items-start gap-2 rounded-md border px-2 py-1 text-left transition-colors",
-        checked
-          ? "border-amber-500/40 bg-amber-500/[0.07] dark:border-amber-300/30 dark:bg-amber-300/[0.06]"
-          : "border-transparent hover:bg-foreground/[0.04]",
-      )}
+      className="flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-1 text-left disabled:cursor-default"
     >
       <span
         className={cn(
