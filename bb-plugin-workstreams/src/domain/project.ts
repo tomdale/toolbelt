@@ -219,6 +219,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
   };
 
   const groups: Group<T>[] = [];
+  const empty: Group<T>[] = [];
   const dormant: Group<T>[] = [];
   const orderedSections = applyOrder(
     sections,
@@ -229,9 +230,11 @@ export function projectWorkstreams<T extends WorkstreamThread>(
   for (const section of orderedSections) {
     const g = group(section.id, section.name);
     const quiet = options.now - g.lastActiveAt > dormantAfterMs;
-    if (g.total === 0 || (quiet && g.needsYou === 0)) dormant.push(g);
+    if (g.total === 0) empty.push(g);
+    else if (quiet && g.needsYou === 0) dormant.push(g);
     else groups.push(g);
   }
+  groups.push(...empty);
 
   const byAttention = (a: Row<T>, b: Row<T>) =>
     b.thread.latestAttentionAt - a.thread.latestAttentionAt ||

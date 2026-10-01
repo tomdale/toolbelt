@@ -34,8 +34,10 @@ design and the contract the code is checked against.
     its group or drop it on another group to move it there; its children come
     with it, and threads you never placed stay newest first above the ones you
     did.
-  - **Unsorted** and a collapsed **Dormant** fold (no threads, or none touched
-    in 30 days).
+  - **Empty workstreams** follow populated groups, with an inline **New work**
+    button scoped to that workstream and no zero thread count.
+  - **Unsorted** and a collapsed **Dormant** fold for populated workstreams with
+    no threads touched in 30 days.
   - A collapsed **Snoozed** fold. Snoozing a thread takes it (and its children)
     out of For You, Recent, and its group until it wakes. Hover a row and click
     its alarm clock to snooze with your default (Tomorrow morning unless
