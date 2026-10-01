@@ -15,8 +15,41 @@ export const RECAP_TOOL = "WorkstreamsRecap";
 export const RECAP_STATES = ["complete", "review"] as const;
 export type RecapState = (typeof RECAP_STATES)[number];
 
+/**
+ * Recap lines are inline Markdown: `code`, emphasis, [links](url), and
+ * `@thread:<id>` mentions, which BB renders as thread chips. Newlines are
+ * collapsed, so block syntax never applies.
+ *
+ * The line as a reader sees it, without Markdown syntax or link
+ * destinations, for limits and for surfaces that show plain text.
+ */
+export function plainText(markdown: string): string {
+  return markdown
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/<(https?:\/\/[^>\s]+)>/g, "$1")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/(\*\*|__|~~)(?=\S)(.+?)(?<=\S)\1/g, "$2")
+    .replace(/(^|[^\w*])[*_](?=\S)(.+?)(?<=\S)[*_](?![\w*])/g, "$1$2")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Visible length, with a mention counted as the short chip it renders as. */
+const visibleLength = (markdown: string) =>
+  plainText(markdown).replace(/@(thread|project|section):[\w-]+/g, "@chip")
+    .length;
+
 // Tool parameters avoid transforms so BB can describe them as JSON Schema.
-const line = (max: number) => z.string().trim().min(1).max(max);
+// `max` bounds the visible text; the raw cap leaves room for link targets.
+const line = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(max * 4 + 2048)
+    .refine((text) => visibleLength(text) <= max, {
+      message: `Keep the visible text to ${max} characters or fewer.`,
+    });
 /** One line without the closing period models add despite instructions. */
 const tidy = (text: string) =>
   text
@@ -106,8 +139,9 @@ export const recapInputSchema = z
         steps.length <= 3 &&
         steps.every((step) =>
           typeof step === "string"
-            ? step.length <= 160
-            : step.step.length <= 160 && (step.expect?.length ?? 0) <= 160,
+            ? visibleLength(step) <= 160
+            : visibleLength(step.step) <= 160 &&
+              visibleLength(step.expect ?? "") <= 160,
         )
       );
     },
@@ -219,7 +253,7 @@ export function recapMarkdown(recap: Recap): string {
 
 /** The tool's description, as the agent sees it in its tool list. */
 export const RECAP_TOOL_DESCRIPTION =
-  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar. For review, send each distinct action as a separate review item so the card shows a numbered list; use { step, expect } to show an expected result separately.";
+  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar. For review, send each distinct action as a separate review item so the card shows a numbered list; use { step, expect } to show an expected result separately. Text fields render inline Markdown, including links and @thread:<id> mentions.";
 
 /**
  * Instructions for every thread that has the recap tool. They state the
@@ -227,7 +261,7 @@ export const RECAP_TOOL_DESCRIPTION =
  */
 export const RECAP_INSTRUCTIONS = `End every turn with ${RECAP_TOOL}, after completing the work you were authorized to do, unless the turn ends with a question card (AskUserQuestion or your provider's own question tool) still awaiting the user's answer. Ask questions only through such a card, never only in your reply.
 state: complete when the user's latest request is fully done; review when a finished result waits on the user to inspect, test, merge, or ship.
-Write terse fragments in sentence case without closing periods. goal: the thread's durable purpose as a short -ing phrase ("Porting handoffs into Workstreams"). latest: one to three concrete results of work actually done, about 12 words each, most important first. review (required for review): one to three steps, each saying how to inspect or try the requested result and what to expect, about 20 words each. Send each distinct action as its own array item; separate items render as a numbered list, while punctuation inside one item does not split it. A step may be a string or { step, expect }. For UI review, give steps to reach and exercise the UI.
+Write terse fragments in sentence case without closing periods. Every text field (goal, latest, review step and expect) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips; length limits count visible text, not link targets. Inline links fit any state; the links field below is a separate list of review targets. goal: the thread's durable purpose as a short -ing phrase ("Porting handoffs into Workstreams"). latest: one to three concrete results of work actually done, about 12 words each, most important first. review (required for review): one to three steps, each saying how to inspect or try the requested result and what to expect, about 20 words each. Send each distinct action as its own array item; separate items render as a numbered list, while punctuation inside one item does not split it. A step may be a string or { step, expect }. For UI review, give steps to reach and exercise the UI.
 links: optional, only in the review state and only for artifacts or pages explicitly being asked to be reviewed, as absolute file paths or HTTPS URLs. A changed source file qualifies only when source review is requested. For complete, omit links or send an empty list.
 The user decides whether to archive the thread from the recap. When a question card is dismissed or expires, treat the question as unanswered and unapproved, and continue only work that does not depend on it.`;
 
@@ -250,7 +284,7 @@ export function reportedAnalysis(
     model: "agent",
     traceId: null,
     ...base,
-    recap: recap.latest[0] ?? recap.goal,
+    recap: plainText(recap.latest[0] ?? recap.goal),
     state: recap.state === "complete" ? "done" : "review",
     needsYou: null,
     revision: thread.latestAttentionAt,

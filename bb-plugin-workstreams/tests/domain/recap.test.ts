@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import {
   fileTarget,
+  plainText,
   recapInputSchema,
   recapMarkdown,
   recapSchema,
@@ -89,5 +90,35 @@ it("keeps structured review steps and writes their expectations", () => {
   ]);
   expect(recapMarkdown(recap)).toContain(
     "- Open Appearance — expect Dark is available",
+  );
+});
+
+it("measures inline Markdown by its visible text", () => {
+  const url = `https://example.com/${"a".repeat(200)}`;
+  const latest = `Merged [the fix](${url}) after @thread:thr_abc123def review`;
+  expect(
+    recapInputSchema.safeParse({
+      state: "complete",
+      goal: "Fixing",
+      latest: [latest],
+    }).success,
+  ).toBe(true);
+  expect(
+    recapInputSchema.safeParse({
+      state: "complete",
+      goal: "Fixing",
+      latest: ["x".repeat(121)],
+    }).success,
+  ).toBe(false);
+});
+
+it("strips inline Markdown to plain text", () => {
+  expect(
+    plainText(
+      "Shipped **bold** `code` [link](https://a.b) for @thread:thr_1 _now_",
+    ),
+  ).toBe("Shipped bold code link for @thread:thr_1 now");
+  expect(plainText("keep snake_case_name and 2*3*4")).toBe(
+    "keep snake_case_name and 2*3*4",
   );
 });
