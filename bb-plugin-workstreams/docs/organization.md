@@ -18,10 +18,17 @@ root; an empty inventory needs no model call.
 
 Default to concrete products and projects, named simply. A product's design,
 implementation, evaluations, memory features and maintenance belong together.
-Abstract topics such as governance or architecture are not separate owners.
-Substantial named projects and initiatives can stand alone when they represent
-independent sustained outcomes. Existing folders are fallible context, not a
-reason to preserve misleading boundaries. Ambiguous work belongs in Unsorted.
+Abstract topics such as governance or architecture are not separate owners. When
+a product has high thread volume (e.g. 4+ open threads) spanning distinct
+sustained capability areas, it may subdivide into 2–3 focused homes using the
+colon-prefix format: `<Product>: <Area>` (e.g. `Workstreams: Core` and
+`Workstreams: Learning & Memory`). The UI formats colon-prefixed sub-areas
+distinctly—quiet product prefix, prominent sub-area—and they cluster naturally
+in the sidebar. Smaller products (under 4 threads) stay unified in a single
+home. Substantial named projects and initiatives can stand alone when they
+represent independent sustained outcomes. Existing folders are fallible context,
+not a reason to preserve misleading boundaries. Ambiguous work belongs in
+Unsorted.
 
 The pass accepts at most 500 roots, 500 existing sections and 300,000 characters
 of serialized evidence. Per-thread text is bounded. An oversized inventory fails

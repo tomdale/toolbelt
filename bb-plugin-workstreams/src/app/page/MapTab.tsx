@@ -9,6 +9,7 @@ import type { MapRecord } from "../../server/map.ts";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { primaryButton, secondaryButton } from "./controls.ts";
 import { Organize } from "./Organize.tsx";
+import { WorkstreamName } from "../WorkstreamName.tsx";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 
@@ -67,7 +68,7 @@ function MapRow({ rpc, record }: { rpc: Rpc; record: MapRecord }) {
   return (
     <li className="py-2 text-sm">
       <div className="flex items-baseline gap-2">
-        <span className="font-medium">{record.name}</span>
+        <WorkstreamName name={record.name} className="font-medium" />
         <span className="text-xs text-muted-foreground">
           {record.evidence.threadCount} thread
           {record.evidence.threadCount === 1 ? "" : "s"}

@@ -23,6 +23,7 @@ import { Activity } from "./Activity.tsx";
 import { MapTab } from "./MapTab.tsx";
 import { NewWorkDialog } from "../composer/NewWork.tsx";
 import { InspectButton } from "../debug/InspectButton.tsx";
+import { WorkstreamName } from "../WorkstreamName.tsx";
 
 type Tab = "overview" | "map" | "activity";
 const TAB_LABEL: Record<Tab, string> = {
@@ -258,7 +259,9 @@ function WorkstreamCard({
   return (
     <section aria-label={group.name}>
       <div className="flex items-baseline gap-2 border-b border-border pb-1">
-        <h2 className="text-sm font-semibold">{group.name}</h2>
+        <h2 className="text-sm font-semibold">
+          <WorkstreamName name={group.name} />
+        </h2>
         <span className="text-xs text-muted-foreground">
           {group.total} thread{group.total === 1 ? "" : "s"}
           {group.needsYou

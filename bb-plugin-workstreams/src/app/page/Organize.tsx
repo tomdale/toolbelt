@@ -4,6 +4,7 @@ import type { RpcContract } from "../../server/contract.ts";
 import type { BootstrapState } from "../../server/bootstrap.ts";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { ghostButton, primaryButton, secondaryButton } from "./controls.ts";
+import { WorkstreamName } from "../WorkstreamName.tsx";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 type Command = Parameters<Rpc["call"]>[1];
@@ -177,7 +178,7 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
           {preview.workstreams.map((w) => (
             <div key={w.key} className="rounded border border-border p-3">
               <h4 className="font-medium">
-                {w.name}
+                <WorkstreamName name={w.name} />
                 {w.sectionId === null ? " · New" : ""}
               </h4>
               {preview.renames.find((r) => r.sectionId === w.sectionId) ? (
