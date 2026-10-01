@@ -50,9 +50,27 @@ describe("whole-map organization", () => {
     expect(prompt).toContain("Review");
     expect(prompt).toContain("Count the roots per owner");
     expect(prompt).toContain("untrusted evidence");
+    expect(prompt).toContain(
+      '"threadId":"exact root id","workstream":"w1 or null"',
+    );
+    expect(prompt).toContain("Do not include owners or placement rationales.");
   });
   it("accepts a complete closed assignment with Unfiled", () =>
     expect(parseOrganization(JSON.stringify(valid()), input)).toEqual(valid()));
+  it("keeps model output compact and supplies preview reasons locally", () => {
+    const compact = {
+      workstreams: valid().workstreams,
+      assignments: [
+        { threadId: "t1", workstream: "w" },
+        { threadId: "t2", workstream: null },
+      ],
+    };
+    const parsed = parseOrganization(JSON.stringify(compact), input);
+    expect(parsed.assignments.map((a) => a.reason)).toEqual([
+      "Organized into Product.",
+      "Left unfiled by organizer.",
+    ]);
+  });
   it.each([
     "missing",
     "duplicate",
@@ -81,13 +99,6 @@ describe("whole-map organization", () => {
       parseOrganization(JSON.stringify(result), input).workstreams[0]!
         .sectionId,
     ).toBe("s1");
-  });
-  it("accepts a null owner for an Unfiled root", () => {
-    const result = valid();
-    (result.assignments[1] as Record<string, unknown>).owner = null;
-    expect(() =>
-      parseOrganization(JSON.stringify(result), input),
-    ).not.toThrow();
   });
   it("drops unused model-proposed homes without changing assignments", () => {
     const result = valid();
