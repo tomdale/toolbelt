@@ -305,6 +305,16 @@ describe("thread list", () => {
     expect(slot.queryByRole("button", { name: /Dormant/ })).toBeNull();
     const empty = within(slot.getByRole("region", { name: "Zeta" }));
     expect(empty.queryByText("0")).toBeNull();
+    const header = empty.getByRole("button", { name: "Zeta" });
+    expect(header.hasAttribute("aria-expanded")).toBe(false);
+    expect(header.querySelector('[data-icon^="Chevron"]')).toBeNull();
+    fireEvent.click(header);
+    expect(header.hasAttribute("aria-expanded")).toBe(false);
+    expect(
+      within(slot.getByRole("region", { name: "Beta" }))
+        .getByRole("button", { name: "Beta" })
+        .querySelector('[data-icon="ChevronDown"]'),
+    ).not.toBeNull();
     expect(
       within(slot.getByRole("region", { name: "Beta" })).getByText("1"),
     ).toBeTruthy();
