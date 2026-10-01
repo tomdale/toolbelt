@@ -68,9 +68,17 @@ export function SidebarSettings() {
       {row("Archived", prefs.sidebar.showArchived, (showArchived) =>
         update({ sidebar: { showArchived } }),
       )}
+    </SectionRows>
+  );
+}
+
+export function TimestampSettings() {
+  const { prefs, update } = useFeaturePrefs();
+  if (!prefs) return <Loading />;
+  return (
+    <SectionRows>
       <SettingRow
-        label="Timestamp"
-        className="min-h-8"
+        label="Show timestamp"
         control={
           <SettingsPicker
             label="Timestamp"
