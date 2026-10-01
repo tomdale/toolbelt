@@ -26,9 +26,10 @@ design and the contract the code is checked against.
     in the block through read and status updates until you deselect it or select
     another thread; snoozing or archiving still puts it away immediately. The
     Sidebar settings section can hide it.
-  - **Prioritized workstreams**: right-click a workstream header →
-    **Prioritize** (or `bb workstreams prioritize`). Prioritized workstreams pin
-    directly below Up Next with a flag. While any of them has a thread in Up
+  - **Prioritized workstreams**: hover a workstream header and click its flag,
+    or right-click it → **Prioritize** (or `bb workstreams prioritize`).
+    Prioritized workstreams pin directly below Up Next and keep the flag shown;
+    click it again to remove the priority. While any of them has a thread in Up
     Next, Up Next shows only prioritized threads, and the rest wait behind "N
     more in other workstreams". A prioritized thread arriving never takes away
     the row of the thread you have open; it leaves when you select another. Rows
