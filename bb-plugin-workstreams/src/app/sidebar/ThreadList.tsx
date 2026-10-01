@@ -402,8 +402,9 @@ export function WorkstreamsThreadList({
       },
     });
 
+  /** An unfiled row has no workstream to name, so it shows its age instead. */
   const workstreamName = (row: ThreadRow) =>
-    row.workstreamId ? nameOf.get(row.workstreamId) : UNFILED_NAME;
+    row.workstreamId ? nameOf.get(row.workstreamId) : undefined;
   /** What an Up Next thread asks of Tom, from its current analysis. */
   const askOf = (row: ThreadRow) => {
     const work = ws.work(row.thread);
@@ -894,6 +895,7 @@ export function WorkstreamsThreadList({
               <Band
                 title={UP_NEXT}
                 box="attention"
+                count={focus.shown.length > 1 ? focus.shown.length : undefined}
                 markless={!needsMarks}
                 badge={
                   focus.active ? (
@@ -1172,6 +1174,12 @@ function Band({
   const heading = (
     <>
       <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+        {box === "attention" ? (
+          <span
+            aria-hidden
+            className="ws-needs-dot size-1.5 shrink-0 rounded-full"
+          />
+        ) : null}
         {title}
         {badge}
       </span>
@@ -1195,7 +1203,7 @@ function Band({
             className={cn(
               "flex min-w-0 flex-1 items-center gap-1 py-0.5 pr-1.5 text-[11px] font-semibold uppercase tracking-wide",
               markless ? "pl-3.5" : "pl-1.5",
-              box === "attention" ? "ws-amber-text" : "text-muted-foreground",
+              "text-muted-foreground",
             )}
           >
             {heading}

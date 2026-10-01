@@ -152,7 +152,7 @@ export function Row({
         // Two-line rows give the title a 20px line and center the marks,
         // details, and hover buttons on it (`ws-row-aside`).
         subtitle
-          ? "items-start py-1 [&>.ws-row-aside]:h-5 [&>.ws-status-slot]:mt-[3px]"
+          ? "items-start py-1.5 [&>.ws-row-aside]:h-5 [&>.ws-status-slot]:mt-[3px]"
           : "h-7 items-center",
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
       )}
@@ -251,7 +251,7 @@ export function Row({
           <ThreadTitle threadId={thread.id} />
         </span>
         {subtitle ? (
-          <span className="truncate text-[11.5px] leading-4 text-muted-foreground">
+          <span className="truncate text-[12px] leading-4 text-muted-foreground/80">
             {subtitle}
           </span>
         ) : null}

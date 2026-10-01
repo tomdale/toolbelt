@@ -225,10 +225,16 @@
   overflow: hidden;
   background-image: linear-gradient(
     160deg,
-    color-mix(in oklab, var(--ws-needs-tone) 11%, transparent) 0%,
-    color-mix(in oklab, var(--ws-needs-tone) 5%, transparent) 45%,
+    color-mix(in oklab, var(--ws-needs-tone) 6%, transparent) 0%,
+    color-mix(in oklab, var(--ws-needs-tone) 2%, transparent) 50%,
     transparent 100%
   );
+}
+
+/* The Up Next header's marker: the block's one solid touch of amber. */
+.ws-needs-dot {
+  background-color: var(--ws-amber);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ws-amber) 18%, transparent);
 }
 
 /* The Recent block: the Up Next block's shape and wash in the foreground
@@ -258,7 +264,7 @@
     110deg,
     transparent 30%,
     color-mix(in oklab, var(--ws-needs-tone) 2%, transparent) 40%,
-    color-mix(in oklab, var(--ws-needs-tone) 7%, transparent) 50%,
+    color-mix(in oklab, var(--ws-needs-tone) 4%, transparent) 50%,
     color-mix(in oklab, var(--ws-needs-tone) 2%, transparent) 60%,
     transparent 70%
   );
