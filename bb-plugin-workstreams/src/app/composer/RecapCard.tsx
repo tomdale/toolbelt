@@ -126,7 +126,7 @@ function RecapSummary({
         <div
           role="heading"
           aria-level={2}
-          className="font-medium tracking-[-0.006em] text-sky-700 dark:text-sky-300"
+          className="pr-7 font-medium tracking-[-0.006em] text-sky-700 dark:text-sky-300"
         >
           <RecapText
             text={goal}
@@ -135,7 +135,8 @@ function RecapSummary({
           />
         </div>
       ) : null}
-      <section className={goal ? "mt-1.5" : undefined}>
+      {/* The first line clears the dismiss button in the corner. */}
+      <section className={goal ? "mt-1.5" : "pr-7"}>
         <h3 className="sr-only">Latest</h3>
         <Bullets items={recap.latest} />
       </section>
@@ -229,21 +230,33 @@ function CardBody({
           {archiveError}
         </p>
       ) : null}
-      <div className="mt-3 flex justify-center gap-2">
-        {showArchive ? (
+      {/* Archive is the card's only footer, so a card without it stays short. */}
+      {showArchive ? (
+        <div className="mt-3 flex justify-center">
           <Button size="sm" disabled={archiveBusy} onClick={onArchive}>
             Archive
           </Button>
-        ) : null}
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-label="Dismiss recap"
-          onClick={onDismiss}
+        </div>
+      ) : null}
+      <button
+        type="button"
+        className="absolute right-2.5 top-2.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-sky-900/50 transition-colors hover:bg-sky-900/10 hover:text-sky-900/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:text-sky-200/50 dark:hover:bg-sky-200/10 dark:hover:text-sky-200/80"
+        aria-label="Dismiss recap"
+        title="Dismiss recap"
+        onClick={onDismiss}
+      >
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 16 16"
+          className="h-3.5 w-3.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
         >
-          Dismiss
-        </Button>
-      </div>
+          <path d="M4 4l8 8M12 4l-8 8" />
+        </svg>
+      </button>
     </>
   );
 }
@@ -327,7 +340,8 @@ function useHold(
 
 /**
  * The agent's recap of the thread's latest turn, above the composer, with
- * Archive and Dismiss centered under it. It stays up while the user drafts,
+ * dismiss in its top-right corner and, when the thread can be archived,
+ * Archive centered under it. It stays up while the user drafts,
  * so they can refer to it in their message, and hides once a message is sent
  * or the thread runs, while a question card is open, and inside the inline
  * message editor.
