@@ -72,6 +72,8 @@ async function mount(
     capped?: boolean;
     archivable?: boolean;
     pendingThreadId?: string;
+    threads?: ReturnType<typeof sidebarThread>[];
+    archive?: () => { ok: boolean } | Promise<{ ok: boolean }>;
   } = {},
 ) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
@@ -86,7 +88,8 @@ async function mount(
     {
       composer: { scope: { kind: "thread", threadId: "t1" } },
       sidebarThreads: {
-        threads: [
+        sections: [{ id: "ws", name: "Workstream", createdAt: 0, updatedAt: 0 }],
+        threads: options.threads ?? [
           sidebarThread("t1", {
             latestAttentionAt: 500,
             hasPendingInteraction: options.pendingThreadId === "t1",
@@ -108,7 +111,7 @@ async function mount(
         archiveStatus: () => ({
           recapId: options.archivable ? (recap?.id ?? null) : null,
         }),
-        archive: () => ({ ok: true }),
+        archive: options.archive ?? (() => ({ ok: true })),
         recap_get: () => ({
           recap,
           dismissed,
@@ -128,6 +131,59 @@ async function mount(
     },
   );
 }
+
+it("opens the next thread in the workstream only after archive succeeds", async () => {
+  let resolve!: (value: { ok: boolean }) => void;
+  const archived = new Promise<{ ok: boolean }>((done) => {
+    resolve = done;
+  });
+  const slot = await mount({
+    archivable: true,
+    threads: [
+      sidebarThread("t1", { sectionId: "ws", latestAttentionAt: 500 }),
+      sidebarThread("next", { sectionId: "ws", latestAttentionAt: 400 }),
+      sidebarThread("elsewhere", { latestAttentionAt: 450 }),
+    ],
+    archive: () => archived,
+  });
+  fireEvent.click(await slot.findByRole("button", { name: "Archive" }));
+  expect(slot.inspection.sidebarActionCalls).toEqual([]);
+  resolve({ ok: true });
+  await waitFor(() =>
+    expect(slot.inspection.sidebarActionCalls).toEqual([
+      { method: "open", threadId: "next" },
+    ]),
+  );
+});
+
+it("does not navigate when archive fails", async () => {
+  const slot = await mount({
+    archivable: true,
+    archive: async () => {
+      throw new Error("Outstanding work");
+    },
+  });
+  fireEvent.click(await slot.findByRole("button", { name: "Archive" }));
+  await slot.findByText("Outstanding work");
+  expect(slot.inspection.sidebarActionCalls).toEqual([]);
+});
+
+it("does not leave the workstream when its last thread is archived", async () => {
+  const slot = await mount({
+    archivable: true,
+    threads: [
+      sidebarThread("t1", { sectionId: "ws" }),
+      sidebarThread("elsewhere"),
+    ],
+  });
+  fireEvent.click(await slot.findByRole("button", { name: "Archive" }));
+  await waitFor(() =>
+    expect(
+      slot.inspection.rpcCalls.filter((c) => c.method === "state").length,
+    ).toBeGreaterThan(1),
+  );
+  expect(slot.inspection.sidebarActionCalls).toEqual([]);
+});
 
 it("shows the goal, latest results, and Dismiss under them", async () => {
   const slot = await mount();
