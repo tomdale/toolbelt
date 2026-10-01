@@ -83,7 +83,7 @@ function QuestionOptionRow({
       aria-pressed={checked}
       aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
       onClick={onSelect}
-      className="flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-1 text-left disabled:cursor-default"
+      className="flex w-full cursor-pointer items-start gap-2 rounded-md py-1 text-left disabled:cursor-default"
     >
       <span
         className={cn(
@@ -267,7 +267,7 @@ function QuestionInputBlock({
           {question.prompt}
         </div>
       ) : null}
-      <div className="-mx-2 mt-1.5 space-y-px">
+      <div className="mt-1.5 space-y-px">
         {options.map((option: QuestionOption, index) => {
           const checked = state.selected.includes(option.value);
           return (
