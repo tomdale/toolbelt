@@ -436,7 +436,14 @@ export default async function plugin(bb: BbPluginApi) {
           fromDecisionId,
         };
         const routed = async (signal?: AbortSignal) => {
-          const decision = await router.route(prompt, { ...options, signal });
+          const debug = suggest && (await settings.get()).debug === true;
+          const notes: string[] = [];
+          const started = Date.now();
+          const decision = await router.route(prompt, {
+            ...options,
+            signal,
+            ...(debug ? { explain: (note: string) => notes.push(note) } : {}),
+          });
           // A suggestion is accepted through its own RPCs. Remembering it
           // would let BB's composer file an unrelated thread with this text.
           if (suggest) {
@@ -444,7 +451,12 @@ export default async function plugin(bb: BbPluginApi) {
             if (decision.outcome === "continue" && decision.alternative)
               router.forget(decision.alternative.id);
           }
-          return decision;
+          return debug
+            ? {
+                ...decision,
+                explanation: { notes, durationMs: Date.now() - started },
+              }
+            : decision;
         };
         if (!draftKey) return routed();
         cancelPreview(draftKey);

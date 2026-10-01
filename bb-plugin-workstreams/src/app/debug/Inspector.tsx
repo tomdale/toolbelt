@@ -265,7 +265,7 @@ function TraceList({
   );
 }
 
-const json = (value: unknown) => JSON.stringify(value, null, 2);
+export const json = (value: unknown) => JSON.stringify(value, null, 2);
 
 /** JSON with keys sorted, so two answers compare by content. */
 function canonical(value: unknown): string {
@@ -296,7 +296,8 @@ function changedFields(a: unknown, b: unknown): string[] {
   );
 }
 
-function TraceDetail({
+/** One recorded model call in full; also embedded by New work in Debug mode. */
+export function TraceDetail({
   rpc,
   id,
   close,
@@ -520,7 +521,7 @@ function TraceDetail({
   );
 }
 
-const smallButton =
+export const smallButton =
   "inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2 text-xs hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60";
 
 function Replay({
@@ -548,11 +549,11 @@ function Replay({
   const changed = changedFields(original.parsed, trace.parsed);
   return (
     <li className="rounded-md border border-border">
-      <details className="group">
+      <details className="group/replay">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-2.5 py-1.5 text-xs [&::-webkit-details-marker]:hidden">
           <span
             aria-hidden
-            className="inline-block text-muted-foreground transition-transform group-open:rotate-90"
+            className="inline-block text-muted-foreground transition-transform group-open/replay:rotate-90"
           >
             ›
           </span>
@@ -633,7 +634,7 @@ function Reasoning({ text }: { text: string }) {
   );
 }
 
-function Section({
+export function Section({
   title,
   hint,
   open = false,
@@ -668,7 +669,7 @@ function Section({
  * stays navigable. (BB's source viewer needs a fixed-height container, which
  * these content-sized blocks don't have.)
  */
-function Code({ content, label }: { content: string; label: string }) {
+export function Code({ content, label }: { content: string; label: string }) {
   return (
     <pre
       aria-label={label}

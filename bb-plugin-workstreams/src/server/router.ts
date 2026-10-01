@@ -54,6 +54,11 @@ type Base = {
    * asked (a mention, a chosen workstream) or debug mode is off.
    */
   traceId: string | null;
+  /**
+   * How New work's suggestion was reached, step by step, and how long the
+   * route took. Present only on a suggestion routed in Debug mode.
+   */
+  explanation?: { notes: string[]; durationMs: number };
 };
 
 export type NewThreadDecision = Base & {
@@ -179,6 +184,13 @@ export class Router {
        * is created until the user accepts it.
        */
       suggest?: boolean;
+      /**
+       * Receives one plain-language note per deterministic step between the
+       * draft and the decision (a mention short-circuit, what the model was
+       * offered and answered, each rewrite, how the placement was chosen),
+       * for Debug mode.
+       */
+      explain?: (note: string) => void;
       /** The unsure decision `workstreamId` was picked from; keeps its trace. */
       fromDecisionId?: string | null;
       /** The thread asking (a handoff's caller), for its debug trace. */
@@ -189,6 +201,7 @@ export class Router {
   ): Promise<RouteDecision> {
     const text = prompt.trim();
     if (!text) throw new UserError("Describe the work first.");
+    const explain = options.explain ?? (() => {});
     const records = this.deps.map.list();
     const threads = this.deps.service.threads();
     const intent = options.intent ?? null;
@@ -347,7 +360,10 @@ export class Router {
       intent?.action !== "new-workstream"
     ) {
       const target = threads.find((t) => t.id === mention.threadId);
-      if (target && !excluded.has(target.id))
+      if (target && !excluded.has(target.id)) {
+        explain(
+          `The draft mentions the thread "${target.title}", so the model wasn't asked.`,
+        );
         return remember({
           id: randomUUID(),
           outcome: "continue",
@@ -362,6 +378,7 @@ export class Router {
           subject: null,
           traceId: null,
         });
+      }
     }
     if (
       destination?.kind !== "none" &&
@@ -369,7 +386,12 @@ export class Router {
       "sectionId" in mention &&
       nameOf.has(mention.sectionId) &&
       intent?.action !== "new-workstream"
-    )
+    ) {
+      explain(
+        options.workstreamId
+          ? `The workstream "${nameOf.get(mention.sectionId)}" was chosen, so the model wasn't asked.`
+          : `The draft mentions the workstream "${nameOf.get(mention.sectionId)}", so the model wasn't asked.`,
+      );
       return remember({
         id: randomUUID(),
         outcome: "new-thread",
@@ -377,7 +399,7 @@ export class Router {
         workstream: nameOf.get(mention.sectionId)!,
         title: "",
         placement: options.suggest
-          ? await this.suggestedPlacement(mention.sectionId, true)
+          ? await this.suggestedPlacement(mention.sectionId, true, explain)
           : await this.placement(
               mention.sectionId,
               true,
@@ -391,6 +413,7 @@ export class Router {
           ? (this.byId(options.fromDecisionId)?.traceId ?? null)
           : null,
       });
+    }
 
     const picked = selectedProject;
     // A suggestion may name a workstream the user just made, so it sees
@@ -426,11 +449,21 @@ export class Router {
             .map((r) => r.name)
         : null,
     };
+    const empty = populated.filter((r) => r.evidence.threadCount === 0).length;
+    const model = await this.deps.model();
+    const offeredThreads = Math.min(input.threads.length, 30);
+    explain(
+      `Asked ${model} with ${input.workstreams.length} workstream${input.workstreams.length === 1 ? "" : "s"}${empty ? ` (${empty} without threads)` : ""} and ${
+        offeredThreads
+          ? `the ${offeredThreads} most recently active thread${offeredThreads === 1 ? "" : "s"}`
+          : "no active threads"
+      }.`,
+    );
     const { value: raw, traceId } = await this.deps.inference.run(
       "route",
       input,
       {
-        model: await this.deps.model(),
+        model,
         label: text.replace(/\s+/g, " "),
         links: options.about ? [{ kind: "thread", ref: options.about }] : [],
         signal: options.signal,
@@ -438,6 +471,7 @@ export class Router {
     );
     const idOf = new Map(records.map((r) => [r.name, r.sectionId]));
     const titleOf = new Map(threads.map((t) => [t.id, t]));
+    explain(`The model answered ${describeRaw(raw, titleOf)}.`);
     const base = {
       id: randomUUID(),
       confidence: "low" as const,
@@ -483,6 +517,9 @@ export class Router {
       const record = records.find(
         (r) => r.name.toLowerCase() === raw.name.toLowerCase(),
       )!;
+      explain(
+        `"${raw.name}" is already a workstream, so this starts a thread there instead of creating a duplicate.`,
+      );
       decision = {
         ...base,
         outcome: "new-thread",
@@ -493,7 +530,7 @@ export class Router {
         reason: raw.reason,
         subject: raw.subject,
         placement: options.suggest
-          ? await this.suggestedPlacement(record.sectionId, raw.code)
+          ? await this.suggestedPlacement(record.sectionId, raw.code, explain)
           : await this.placement(
               record.sectionId,
               raw.code,
@@ -508,7 +545,7 @@ export class Router {
         ...raw,
         sectionId,
         placement: options.suggest
-          ? await this.suggestedPlacement(sectionId, raw.code)
+          ? await this.suggestedPlacement(sectionId, raw.code, explain)
           : await this.placement(
               sectionId,
               raw.code,
@@ -518,6 +555,13 @@ export class Router {
       };
     } else if (raw.outcome === "new-workstream") {
       const like = raw.projectLike ? idOf.get(raw.projectLike) : undefined;
+      explain(
+        options.suggest && raw.code && !like
+          ? "It's code work related to no listed workstream, so the project and environment stay as they are."
+          : like
+            ? `Placed like "${raw.projectLike}", whose project it shares.`
+            : "It isn't code work, so it goes to the home project or the personal workspace.",
+      );
       decision = {
         ...base,
         outcome: "new-workstream",
@@ -560,7 +604,7 @@ export class Router {
         ),
       };
     if (options.suggest && decision.outcome === "unsure")
-      decision = await this.likeliest(decision);
+      decision = await this.likeliest(decision, explain);
     decision = this.constrain(decision, intent);
     this.deps.inference.annotate(traceId, {
       decision: { ...decision, traceId: undefined },
@@ -620,16 +664,26 @@ export class Router {
    * workstream's primary project as evidence; without one the suggestion
    * names only the workstream and leaves the user's project as it is.
    */
-  private suggestedPlacement(
+  private async suggestedPlacement(
     sectionId: string,
     code: boolean,
+    explain: (note: string) => void,
   ): Promise<Placement | null> {
-    const primary = this.deps.map
-      .get(sectionId)
-      ?.projects.some((p) => p.role === "primary");
-    return code && !primary
-      ? Promise.resolve(null)
-      : this.placement(sectionId, code, null);
+    const record = this.deps.map.get(sectionId);
+    const primary = record?.projects.find((p) => p.role === "primary");
+    if (code && !primary) {
+      explain(
+        `"${record?.name ?? sectionId}" has no primary project yet, so the project and environment stay as they are.`,
+      );
+      return null;
+    }
+    const placement = await this.placement(sectionId, code, null);
+    explain(
+      code
+        ? `Code work goes to "${record?.name}"'s primary project, in its ${placement?.label ?? "default environment"}.`
+        : `It isn't code work, so it goes to the home project or the personal workspace (${placement?.label ?? "none"}).`,
+    );
+    return placement;
   }
 
   /**
@@ -638,9 +692,18 @@ export class Router {
    */
   private async likeliest(
     decision: Extract<RouteDecision, { outcome: "unsure" }>,
+    explain: (note: string) => void,
   ): Promise<RouteDecision> {
     const top = decision.candidates[0];
-    if (!top) return decision;
+    if (!top) {
+      explain(
+        "The model was unsure and named no candidates, so there's no suggestion.",
+      );
+      return decision;
+    }
+    explain(
+      `The model was unsure among ${decision.candidates.length} candidate${decision.candidates.length === 1 ? "" : "s"}; suggesting the first, which it lists as the likeliest.`,
+    );
     const base = {
       id: decision.id,
       confidence: "low" as const,
@@ -670,7 +733,7 @@ export class Router {
       sectionId: top.sectionId,
       workstream: top.name,
       title: "",
-      placement: await this.suggestedPlacement(top.sectionId, true),
+      placement: await this.suggestedPlacement(top.sectionId, true, explain),
     };
   }
 
@@ -1250,6 +1313,24 @@ export class Router {
     const cutoff = this.now() - MEMORY_MS;
     for (const [id, d] of this.decisions)
       if (d.at < cutoff) this.decisions.delete(id);
+  }
+}
+
+/** One line of what the model answered, for Debug mode's notes. */
+function describeRaw(
+  raw: RawRoute,
+  titleOf: ReadonlyMap<string, { title: string }>,
+): string {
+  const how = "confidence" in raw ? ` (${raw.confidence} confidence)` : "";
+  switch (raw.outcome) {
+    case "continue":
+      return `continue "${titleOf.get(raw.threadId)?.title ?? raw.threadId}"${how}`;
+    case "new-thread":
+      return `start a ${raw.code ? "code" : "non-code"} thread in "${raw.workstream}"${how}`;
+    case "new-workstream":
+      return `start a ${raw.code ? "code" : "non-code"} effort in a new workstream "${raw.name}"${how}`;
+    case "unsure":
+      return `unsure, with ${raw.candidates.length} candidate${raw.candidates.length === 1 ? "" : "s"}`;
   }
 }
 

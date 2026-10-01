@@ -7,6 +7,7 @@ import {
   fireEvent,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type {
@@ -128,7 +129,11 @@ const newBilling: RouteDecision = {
   placement,
 };
 
-function mount(decision: RouteDecision, workstreamId: string | null = null) {
+function mount(
+  decision: RouteDecision,
+  workstreamId: string | null = null,
+  settings: Record<string, boolean> = {},
+) {
   const onClose = vi.fn();
   const rpc = {
     state: vi.fn(() => ({
@@ -145,6 +150,35 @@ function mount(decision: RouteDecision, workstreamId: string | null = null) {
       sectionId: null,
     })),
     sendToThread: vi.fn((_input: unknown) => ({ threadId: "thr_p" })),
+    trace: vi.fn((_input: unknown) => ({
+      trace: {
+        id: "trace_1",
+        at: 1,
+        kind: "route",
+        status: "ok",
+        label: "Also handle CRLF in that fix",
+        model: "test-model",
+        durationMs: 900,
+        replayOf: null,
+        usage: null,
+        error: null,
+        summary: "continue · Parser fix",
+        threads: [],
+        provider: "test",
+        thinking: "off",
+        system: "Return only JSON.",
+        prompt:
+          "Someone is starting new work. Suggest the single most likely home…",
+        input: { threads: [{ id: "thr_p", title: "Parser fix" }] },
+        response: '{"outcome":"continue","threadId":"thr_p"}',
+        reasoning: "**Same task**\n\nThe draft follows up the parser fix.",
+        stopReason: "stop",
+        parsed: { outcome: "continue", threadId: "thr_p" },
+        outcome: null,
+        links: [],
+        replays: [],
+      },
+    })),
     createWorkstream: vi.fn((_input: unknown) => ({
       sectionId: "sec_new",
       entry: { workstreams: [{ id: "sec_new", name: "Billing" }] },
@@ -159,6 +193,7 @@ function mount(decision: RouteDecision, workstreamId: string | null = null) {
       workstreamName: workstreamId ? "Beta" : null,
     },
     {
+      settings,
       composer: { scope: { kind: "new-thread", projectId: "proj_z" } },
       sdk: {
         projects: {
@@ -293,4 +328,49 @@ it("keeps the draft and says why when starting the thread fails", async () => {
     "That workstream no longer exists.",
   );
   expect(onClose).not.toHaveBeenCalled();
+});
+
+it("shows no Debug section while Debug mode is off", async () => {
+  const { slot } = mount(inAlpha);
+  await type(slot, "Fix the parser in Alpha");
+  await suggestion();
+  expect(screen.queryByText("Debug")).toBeNull();
+});
+
+it("explains the suggestion, its model call and the dialog's activity in Debug mode", async () => {
+  const explained: RouteDecision = {
+    ...continueParser,
+    explanation: {
+      notes: [
+        "Asked test-model with 2 workstreams.",
+        "The model answered continue.",
+      ],
+      durationMs: 900,
+    },
+  };
+  const { slot, rpc } = mount(explained, null, { debug: true });
+  await type(slot, "Also handle CRLF in that fix");
+  await suggestion();
+  const debug = screen.getByText("Debug").closest("details")!;
+  expect(debug.open).toBe(false);
+  expect(debug.textContent).toContain("Shown.");
+  expect(debug.textContent).toContain("continue “Parser fix”");
+  expect(debug.textContent).toContain("Asked test-model with 2 workstreams.");
+  expect(debug.textContent).toContain("The model answered continue.");
+  // The model call loads the decision's recorded trace.
+  await waitFor(() =>
+    expect(rpc.trace).toHaveBeenCalledWith({ id: "trace_1" }),
+  );
+  expect(await within(debug).findByText(/The draft follows up/)).toBeTruthy();
+  // Every classification is logged with its prompt and decision.
+  expect(debug.textContent).toMatch(/classify\s*ok/);
+  expect(debug.textContent).toContain(
+    "“Also handle CRLF in that fix” → continue",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss suggestion" }));
+  await waitFor(() =>
+    expect(debug.textContent).toContain(
+      "Hidden: you accepted or dismissed it.",
+    ),
+  );
 });
