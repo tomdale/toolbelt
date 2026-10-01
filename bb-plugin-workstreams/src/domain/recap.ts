@@ -59,8 +59,10 @@ export const recapInputSchema = z
     state: z.enum(RECAP_STATES),
     goal: line(80),
     latest: z.array(line(120)).min(1).max(3),
-    // One step may arrive as a plain string.
-    review: z.union([line(160), z.array(line(160)).min(1).max(3)]).optional(),
+    // A string is one step, or a list some harnesses send JSON-encoded.
+    review: z
+      .union([z.array(line(160)).min(1).max(3), z.string().trim().min(1)])
+      .optional(),
     links: z.array(linkSchema).max(8).default([]),
   })
   .strict()
@@ -68,7 +70,17 @@ export const recapInputSchema = z
     message:
       "A review recap needs review steps: what to check, and the expected result.",
     path: ["review"],
-  });
+  })
+  .refine(
+    (recap) => {
+      const steps = reviewSteps(recap.review);
+      return steps.length <= 3 && steps.every((step) => step.length <= 160);
+    },
+    {
+      message: "Review takes one to three steps of 160 characters or fewer.",
+      path: ["review"],
+    },
+  );
 export type RecapInput = z.infer<typeof recapInputSchema>;
 
 /** A stored recap, tied to the turn that reported it. */
@@ -89,6 +101,26 @@ export const recapSchema = z.object({
 });
 export type Recap = z.infer<typeof recapSchema>;
 
+/** The review as steps, from a list, a single step, or a JSON-encoded list. */
+function reviewSteps(review: string | string[] | undefined): string[] {
+  if (review === undefined) return [];
+  if (Array.isArray(review)) return review;
+  if (review.startsWith("[")) {
+    try {
+      const parsed: unknown = JSON.parse(review);
+      if (
+        Array.isArray(parsed) &&
+        parsed.length > 0 &&
+        parsed.every((step) => typeof step === "string" && step.trim())
+      )
+        return parsed.map((step: string) => step.trim());
+    } catch {
+      // Not JSON: a step that happens to start with a bracket.
+    }
+  }
+  return [review];
+}
+
 export function toRecap(
   input: RecapInput,
   meta: { id: string; turnId: string; at: number },
@@ -98,10 +130,7 @@ export function toRecap(
     state: input.state,
     goal: tidy(input.goal),
     latest: input.latest.map(tidy),
-    review:
-      input.state === "review" && input.review
-        ? [input.review].flat().map(tidy)
-        : [],
+    review: input.state === "review" ? reviewSteps(input.review).map(tidy) : [],
     links: input.links.map((item) => ({
       ...item,
       title: tidy(item.title),
