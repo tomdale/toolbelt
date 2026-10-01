@@ -86,48 +86,36 @@ export default definePluginApp((app) => {
   app.slots.settingsSection({
     id: "sidebar",
     title: "Sidebar",
-    description:
-      "Which threads appear at the top of your sidebar and how working threads look.",
     component: SidebarSettings,
   });
   app.slots.settingsSection({
     id: "threads",
     title: "Threads",
-    description: "Thread titles, analysis, and parent-thread navigation.",
     component: ThreadsSettings,
   });
   app.slots.settingsSection({
     id: "recap",
     title: "Recap",
-    description:
-      "Whether agents write a recap after each turn, how often to remind them, and how recaps appear.",
     component: RecapSettings,
   });
   app.slots.settingsSection({
     id: "snooze",
     title: "Snooze",
-    description:
-      "What a click on a snooze button does, the sidebar's hover menu, and when morning is.",
     component: SnoozeSettings,
   });
   app.slots.settingsSection({
     id: "new-work",
     title: "New work",
-    description:
-      "Choose where new work starts and how Workstreams suggests a home.",
     component: NewWorkSettings,
   });
   app.slots.settingsSection({
     id: "organize",
     title: "Organize",
-    description:
-      "Choose the model that proposes and updates your workstream map.",
     component: OrganizeSettings,
   });
   app.slots.settingsSection({
     id: "advanced",
     title: "Advanced",
-    description: "Machine routing and model-call diagnostics.",
     component: AdvancedSettings,
   });
   app.slots.navPanel({

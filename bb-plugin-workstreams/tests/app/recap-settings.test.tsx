@@ -41,7 +41,10 @@ it("disables reminders when agents don't end turns with a recap", async () => {
   );
   expect(await slot.findByText(/don't get the recap tool/)).toBeTruthy();
   expect(
-    slot.getByRole("textbox", { name: "Reminders per turn" }),
+    slot.getByRole("button", { name: "Increase Reminders per turn" }),
+  ).toHaveProperty("disabled", true);
+  expect(
+    slot.getByRole("button", { name: "Decrease Reminders per turn" }),
   ).toHaveProperty("disabled", true);
 });
 

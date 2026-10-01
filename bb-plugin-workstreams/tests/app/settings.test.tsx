@@ -56,7 +56,9 @@ it("saves Sidebar switches and clamps the Recent stepper to 1–20", async () =>
   const plus = slot.getByRole("button", { name: "Increase threads shown" });
   for (let index = 0; index < 30; index++) fireEvent.click(plus);
   await waitFor(() =>
-    expect(slot.getByLabelText("threads shown").textContent).toBe("20"),
+    expect(
+      slot.getByLabelText("threads shown", { selector: "output" }).textContent,
+    ).toBe("20"),
   );
   expect(plus).toHaveProperty("disabled", true);
   fireEvent.click(recent);
