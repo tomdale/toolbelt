@@ -83,6 +83,7 @@ function setup(
   } satisfies NewWorkDeps;
   const newWork = new NewWork(deps, workstream);
   const composer = {
+    selection: null as ComposerSelection | null,
     submit: vi.fn(async () => {
       // BB's composer calls the dialog's onSubmit with its request.
       await newWork.submit(request(newWork.snapshot().text));
@@ -222,6 +223,60 @@ describe("accepting", () => {
     expect(newWork.snapshot().error).toBeNull();
     expect(composer.focus).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    { decision: inAlpha, submit: false },
+    { decision: inAlpha, submit: true },
+    { decision: newBilling, submit: false },
+    { decision: newBilling, submit: true },
+    {
+      decision: {
+        ...inAlpha,
+        placement: {
+          ...placement,
+          environment: { type: "project-default" as const },
+        },
+      },
+      submit: false,
+    },
+  ])(
+    "preserves execution settings for $decision.outcome, submit=$submit",
+    async ({ decision, submit }) => {
+      const { newWork, composer } = setup(async () => decision);
+      const execution: ComposerSelection = {
+        providerId: "pi",
+        model: "openai/gpt-6-luna",
+        reasoningLevel: "high",
+        serviceTier: "fast",
+        permissionMode: "accept-edits",
+      };
+      composer.selection = {
+        projectId: "proj_old",
+        environment: {
+          type: "host",
+          hostId: "host_old",
+          workspace: { type: "unmanaged", path: "/old-project" },
+        },
+        ...execution,
+      };
+      newWork.observeSelection({ providerId: "codex", model: "old-model" });
+      newWork.observe("Fix the parser in Alpha");
+      await pause(DEBOUNCE_MS);
+      const accepting = newWork.accept({ submit });
+      await vi.advanceTimersByTimeAsync(0);
+      await accepting;
+      const requested = {
+        ...execution,
+        projectId: "proj_a",
+        ...(decision.placement?.environment.type === "project-default"
+          ? {}
+          : { environment: placement.environment }),
+      };
+      expect(composer.setSelection).toHaveBeenCalledExactlyOnceWith(requested);
+      expect(newWork.snapshot().selection).toEqual(requested);
+      expect(composer.submit).toHaveBeenCalledTimes(submit ? 1 : 0);
+    },
+  );
 
   it("creates a new workstream first, then fills the fields", async () => {
     const { deps, newWork, composer } = setup(async () => newBilling);
