@@ -92,15 +92,15 @@ environments.
 
 ## 4. Concepts and invariants
 
-| Concept          | Definition                                                                                                                                                                                                      | Source of truth                                               |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| **Workstream**   | Exactly one native section                                                                                                                                                                                      | BB section, plus a workstream-map record keyed by `sectionId` |
-| **Membership**   | The **root** thread's `sectionId`. Descendants inherit it, and their own `sectionId` is ignored.                                                                                                                | BB, plus provenance in plugin state                           |
-| **Task thread**  | A visible, non-archived, top-level thread (no parent). A workstream has any number of them.                                                                                                                     | Derived                                                       |
-| **Delegate**     | A child of a task thread, created for a separable subtask                                                                                                                                                       | BB `parentThreadId` + `lifecycleOwnerThreadId`                |
-| **Sibling**      | A task thread spun off from another thread for out-of-scope work                                                                                                                                                | Metadata `spawnedFrom`. This is **not** a parent link.        |
-| **Home project** | Where work with no code target goes. **Default: none.** Such work goes to BB's personal project ("Don't work in a project") in a fresh personal workspace. The optional `homeProjectId` setting overrides this. | Plugin setting (optional)                                     |
-| **Unsorted**     | Unsectioned roots awaiting an explicit placement or organizing run.                                                                                                                                             | Derived                                                       |
+| Concept          | Definition                                                                                                                                                                                                                 | Source of truth                                               |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| **Workstream**   | Exactly one native section                                                                                                                                                                                                 | BB section, plus a workstream-map record keyed by `sectionId` |
+| **Membership**   | The **root** thread's `sectionId`. Descendants inherit it, and their own `sectionId` is ignored.                                                                                                                           | BB, plus provenance in plugin state                           |
+| **Task thread**  | A visible, non-archived, top-level thread (no parent). A workstream has any number of them.                                                                                                                                | Derived                                                       |
+| **Delegate**     | A child of a task thread, created for a separable subtask                                                                                                                                                                  | BB `parentThreadId` + `lifecycleOwnerThreadId`                |
+| **Sibling**      | A task thread spun off from another thread for out-of-scope work                                                                                                                                                           | Metadata `spawnedFrom`. This is **not** a parent link.        |
+| **Home project** | Where work with no code target goes. **Default: none.** Such work goes to BB's personal project ("Don't work in a project") in a fresh personal workspace. The optional `newWork.homeProjectId` preference overrides this. | Plugin preference (optional)                                  |
+| **Unsorted**     | Unsectioned roots awaiting an explicit placement or organizing run.                                                                                                                                                        | Derived                                                       |
 
 **Invariants.** Tests enforce each one.
 
@@ -396,10 +396,11 @@ IDs; unused homes qualify for reviewed cleanup under I5 and the
   its latest turn, the recap's state (complete → `done`, review → `review`) and
   first Latest line replace analysis's state, ask and summary in the sidebar,
   the page, and the CLI.
-- **Model:** a setting. Use the fastest model that passes the eval (candidate:
-  Gemini 3.1 Flash-Lite). Changing the prompt or model requires passing the
-  private reference set and `eval/delegation.json`. The input never includes the
-  BB project name.
+- **Model:** the `threads.analysisModel` preference. Gateway-backed choices use
+  a direct completion from the selected analysis machine. Other provider choices
+  run in a hidden BB worker thread. Model changes require passing the private
+  reference set and `eval/delegation.json`. The input never includes the BB
+  project name.
 - **Cost:** about 1 call per completed turn plus 1 per intake.
 
 ### 10.1 Titles
@@ -412,7 +413,7 @@ different work. Related follow-ups and procedural asks keep the title.
 
 A suggestion is applied when all of these hold:
 
-- the `autoTitle` setting is on (default);
+- the `threads.autoTitle` preference is on (default);
 - the thread is still idle at the analyzed revision;
 - the title is not **locked**;
 - the thread is untitled, or Workstreams has not retitled it in the last hour.
@@ -477,9 +478,11 @@ it.
   transient. Failed and interrupted turns, hidden, archived, and busy threads,
   threads with queued messages, and threads without the tool get no reminders.
   When the budget runs out, the card says so.
-- **Settings.** The Recap section: whether agents end turns with a recap (off
-  removes the tool at each session's next start and stops reminders at once),
-  reminders per turn, and the card layout (Full, or Minimal without the goal).
+- **Settings.** Feature-grouped preferences are stored in plugin storage and
+  edited in Workstreams' settings sections. Recap settings remain in the Recap
+  section: whether agents end turns with a recap (off removes the tool at each
+  session's next start and stops reminders at once), reminders per turn, and the
+  card layout (Full, or Minimal without the goal).
 
 ## 11. Surfaces
 
@@ -512,7 +515,7 @@ it.
    - Each workstream lists "pick back up" rows: title · where it stopped · age.
    - Search with `/`.
    - Tabs for Map (the workstream editor) and Activity.
-3. **Thread header:** a parent link (setting) and the snooze split button
+3. **Thread header:** a parent link (preference) and the snooze split button
    (§11.1).
 4. **CLI:**
    `bb workstreams list | show | edit | new | handoff | file | log | analyze | rebuild | trace`,
@@ -526,7 +529,7 @@ it.
    - Filters by workstream, action, and needs-review.
    - Retention: 90 days or 2,000 entries.
    - Moves the reconciler detects appear behind a toggle.
-6. **Debug mode** (the `debug` setting, off by default):
+6. **Debug mode** (the `advanced.debug` preference, off by default):
    - Every model call records a trace: kind, model, timing, token usage, the
      system prompt and prompt exactly as sent, the structured input (redacted,
      long strings bounded), the model's reasoning summary when it returns one,
@@ -569,8 +572,8 @@ it.
      answer as a replay of the original. A replay changes nothing Workstreams
      stores.
    - Tracing never changes behavior: the same prompt goes to the same model
-     either way. Nothing is recorded while the setting is off. Retention: 7 days
-     or 1,000 traces.
+     either way. Nothing is recorded while the preference is off. Retention: 7
+     days or 1,000 traces.
 
 7. **Recap card** (a composer banner), in its state's accent (blue for review,
    green for complete) on its border, background, state line, and row labels: a
@@ -630,7 +633,7 @@ entry point is a Workstreams header action.
 | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
 | Workstream map, saved organizing preview, analysis cache, title ownership, journal and Activity log, reconciler cursor, debug traces | Plugin SQLite (`bb.storage.database()`) with migrations                  |
 | Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }`                                           | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
-| Manual order, thread snoozes, Snooze and Recap settings                                                                              | Plugin SQLite, `ws_meta` values                                          |
+| Manual order, thread snoozes, feature-grouped Workstreams preferences, Snooze and Recap settings                                     | Plugin SQLite, `ws_meta` values                                          |
 | Agent recaps and their reminder budgets (§10.2)                                                                                      | Plugin SQLite, `ws_agent_recap`                                          |
 | Collapse state and UI preferences                                                                                                    | Client local storage                                                     |
 
@@ -644,7 +647,7 @@ statement IDs.
 ```
 bb-plugin-workstreams/
   src/domain/    tree · project (thread trees → groups and bands) · organize · analysis · router · schemas
-  src/server/    index · map · journal · service · analyzer · router · bootstrap · inference/{host,gateway} · cli · agents
+  src/server/    index · prefs · map · journal · service · analyzer · router · bootstrap · inference/{host,gateway,worker} · cli · agents
   src/app/       index · useWorkstreams (live hook + one state RPC + realtime) · sidebar/* · page/* · header/* (parent link) · composer/* (New work intake and thread cards)
   tests/         domain (real exported snapshots) · server (mock SDK) · app (renderSlot)
 ```
@@ -654,10 +657,9 @@ bb-plugin-workstreams/
 
 **Current surfaces:**
 
-- the isolated inference runner (`host.ts`), now a direct AI Gateway call
-  (`gateway.ts`) with Pi's key: `pi --print --thinking off` sends
-  `thinking: disabled`, which the gateway turns into full reasoning for Gemini
-  3.1 Flash-Lite (3-10 s per routing call instead of ~1 s);
+- the hybrid inference path: gateway-backed choices use the isolated host runner
+  and Pi's AI Gateway key; other provider/model choices run in a hidden BB
+  worker thread with the selected execution settings;
 - bounded context and redaction (`context.ts`);
 - the thread-tree builder (exact-once, orphans, cycles);
 - the eval harness, export and fixture replay, the 32-thread reference set, and
