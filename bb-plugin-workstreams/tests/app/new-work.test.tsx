@@ -1,609 +1,296 @@
 // @vitest-environment jsdom
-import { useContext, useMemo } from "react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { useMemo } from "react";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { IntakeContext } from "../../src/app/composer/intake.ts";
+import type {
+  NewThreadComposerProps,
+  PluginBrowserBbSdk,
+} from "@get-bb/plugin-sdk/app";
 import { NewWorkDialog } from "../../src/app/composer/NewWork.tsx";
-import type { PluginBrowserBbSdk } from "@get-bb/plugin-sdk/app";
 import type { RouteDecision } from "../../src/server/router.ts";
 import { emptyState } from "./fixtures.ts";
-let customizations: Awaited<
-  ReturnType<typeof loadPluginApp>
->["composerCustomizations"];
+
+let actions: { id: string; component: React.ComponentType }[] = [];
 beforeEach(async () => {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
-  customizations = app.composerCustomizations.filter(
-    (c) => !c.scopes || c.scopes.includes("new-thread"),
-  );
+  actions = app.composerCustomizations
+    .filter((c) => !c.scopes || c.scopes.includes("new-thread"))
+    .flatMap((c) => c.actions ?? []);
 });
-// The SDK stub omits slot mounting and draft-view publication. Mount the
-// actual registrations so missing modal controls cannot be hidden by the adapter.
-const selectionBehavior = vi.hoisted(() => ({
-  apply: undefined as
-    | undefined
-    | ((
-        selection: import("@get-bb/plugin-sdk/app").ComposerSelection,
-        apply: (
-          selection: import("@get-bb/plugin-sdk/app").ComposerSelection,
-        ) => Promise<import("@get-bb/plugin-sdk/app").ComposerSelection>,
-      ) => Promise<import("@get-bb/plugin-sdk/app").ComposerSelection>),
-}));
-// BB's submit button stays enabled while a draft routes, so tests read
-// readiness from the dialog's intake instead of the button.
-const harness = vi.hoisted(() => ({
-  intake: undefined as
-    undefined | import("../../src/app/composer/intake.ts").Intake,
-}));
-const submitLifecycle = vi.hoisted(() => ({
-  beforeGuard: undefined as
-    | undefined
-    | ((intake: import("../../src/app/composer/intake.ts").Intake) => void),
-  clearDraft: undefined as undefined | (() => void),
-  restoreDraft: undefined as undefined | ((draft: string) => void),
-  busy: false,
-}));
+beforeAll(() => {
+  // cmdk and Radix measure and scroll elements jsdom doesn't lay out.
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+  Element.prototype.scrollIntoView ??= () => {};
+});
+afterEach(cleanup);
+
 vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@get-bb/plugin-sdk/app")>();
-  const Composer = actual.experimental_NewThreadComposer;
+  const StubComposer = actual.experimental_NewThreadComposer;
+  const submitButton = () =>
+    document.querySelector(
+      '[data-testid="bb-new-thread-composer-submit"]',
+    ) as HTMLButtonElement;
   return {
     ...actual,
     useComposer: () => {
       const composer = actual.useComposer();
       return useMemo(() => {
-        // Inherit the native reactive getters rather than snapshotting them.
+        // Inherit the reactive getters; the stub's submit doesn't reach the
+        // dialog's onSubmit, so drive its button as BB drives its pipeline.
         const adapter = Object.create(composer) as typeof composer;
-        adapter.setSelection = (
-          selection: import("@get-bb/plugin-sdk/app").ComposerSelection,
-        ) =>
-          selectionBehavior.apply
-            ? selectionBehavior.apply(selection, (next) =>
-                composer.setSelection(next),
-              )
-            : composer.setSelection(selection);
-        // The stub has no programmatic submit; drive its button as bb's
-        // composer drives its own pipeline.
-        adapter.submit = async () => {
-          (
-            document.querySelector(
-              '[data-testid="bb-new-thread-composer-submit"]',
-            ) as HTMLButtonElement
-          ).click();
-        };
+        adapter.submit = async () => submitButton().click();
         return adapter;
       }, [composer]);
     },
+    // BB's markup around the prompt box: the picker row New work joins.
     experimental_NewThreadComposer: function HostComposer(
-      props: import("@get-bb/plugin-sdk/app").NewThreadComposerProps,
+      props: NewThreadComposerProps,
     ) {
-      const intake = useContext(IntakeContext)!;
-      harness.intake = intake;
       return (
-        <div
-          onChangeCapture={(e) => {
-            if ((e.target as HTMLElement).tagName === "TEXTAREA")
-              intake.observe(
-                (e.target as unknown as HTMLTextAreaElement).value,
-              );
-          }}
-          onKeyDown={(e) => {
-            if (
-              (e.target as HTMLElement).tagName === "TEXTAREA" &&
-              e.key === "Enter" &&
-              !e.shiftKey &&
-              !e.nativeEvent.isComposing
-            ) {
-              e.preventDefault();
-              (
-                e.currentTarget.querySelector(
-                  '[data-testid="bb-new-thread-composer-submit"]',
-                ) as HTMLButtonElement
-              ).click();
-            }
-          }}
-        >
-          {customizations.flatMap((c) =>
-            (c.banners ?? []).map((banner) => {
-              const Banner = banner.component;
-              return <Banner key={`${c.id}:${banner.id}`} />;
-            }),
-          )}
-          <Composer
-            {...props}
-            onSubmit={async (request) => {
-              // Like BB: one submit at a time; the draft clears as onSubmit
-              // starts (BB's clear renders after onSubmit's synchronous part)
-              // and comes back if it rejects.
-              if (submitLifecycle.busy) return;
-              submitLifecycle.busy = true;
-              const draft = (
-                document.querySelector(
-                  '[data-testid="bb-new-thread-composer-input"]',
-                ) as HTMLTextAreaElement
-              ).value;
-              submitLifecycle.beforeGuard?.(intake);
-              const submitted = Promise.resolve(props.onSubmit(request));
-              submitLifecycle.clearDraft?.();
-              try {
-                await submitted;
-              } catch {
-                submitLifecycle.restoreDraft?.(draft);
-              } finally {
-                submitLifecycle.busy = false;
+        <div data-promptbox-shell="">
+          <form data-promptbox="">
+            <StubComposer
+              {...props}
+              // BB catches a rejected submit and restores the draft.
+              onSubmit={(request) =>
+                Promise.resolve(props.onSubmit(request)).catch(() => {})
               }
-            }}
-          />
-          {customizations.flatMap((c) =>
-            (c.actions ?? []).map((action) => {
-              const Action = action.component;
-              return <Action key={`${c.id}:${action.id}`} />;
-            }),
-          )}
+            />
+            {actions.map(({ id, component: Action }) => (
+              <Action key={id} />
+            ))}
+          </form>
+          <div>
+            <div>
+              <button type="button" data-promptbox-project-control="">
+                Project
+              </button>
+            </div>
+            <div>Permission</div>
+          </div>
         </div>
       );
     },
   };
 });
-afterEach(() => {
-  cleanup();
-  selectionBehavior.apply = undefined;
-  submitLifecycle.beforeGuard = undefined;
-  submitLifecycle.clearDraft = undefined;
-  submitLifecycle.restoreDraft = undefined;
-  submitLifecycle.busy = false;
-  harness.intake = undefined;
-});
-const base = {
-  id: "d1",
-  confidence: "high" as const,
-  reason: "",
-  subject: null,
-  traceId: null,
+
+const base = { confidence: "high" as const, reason: "Fits", subject: null };
+const placement = {
+  projectId: "proj_a",
+  environment: {
+    type: "host" as const,
+    hostId: "host_1",
+    workspace: { type: "unmanaged" as const, path: null },
+  },
+  label: "checkout",
 };
-const decision: RouteDecision = {
+const inAlpha: RouteDecision = {
   ...base,
+  id: "d_alpha",
+  traceId: null,
   outcome: "new-thread",
   sectionId: "sec_a",
   workstream: "Alpha",
-  title: "Fix parser",
-  placement: {
-    projectId: "proj_a",
-    environment: { type: "project-default" },
-    label: "checkout",
-  },
+  title: "",
+  placement,
 };
-function mount(
-  route: (args: any) => RouteDecision | Promise<RouteDecision> = () => decision,
-  workstreamId: string | null = null,
-) {
+const continueParser: RouteDecision = {
+  ...base,
+  id: "d_thread",
+  traceId: "trace_1",
+  outcome: "continue",
+  threadId: "thr_p",
+  threadTitle: "Parser fix",
+  workstream: "Alpha",
+  sectionId: "sec_a",
+};
+const newBilling: RouteDecision = {
+  ...base,
+  id: "d_new",
+  traceId: null,
+  outcome: "new-workstream",
+  name: "Billing",
+  description: "Invoices",
+  title: "",
+  placement,
+};
+
+function mount(decision: RouteDecision, workstreamId: string | null = null) {
   const onClose = vi.fn();
-  const execute = vi.fn().mockResolvedValue({ threadId: "thr_new" });
+  const rpc = {
+    state: vi.fn(() => ({
+      ...emptyState(),
+      workstreams: {
+        sec_a: { sectionId: "sec_a", name: "Alpha" },
+        sec_b: { sectionId: "sec_b", name: "Beta" },
+      },
+    })),
+    route: vi.fn((_input: unknown) => decision),
+    routeCancel: vi.fn((_input: unknown) => ({ canceled: true })),
+    startThread: vi.fn((_input: unknown) => ({
+      threadId: "thr_new",
+      sectionId: null,
+    })),
+    sendToThread: vi.fn((_input: unknown) => ({ threadId: "thr_p" })),
+    createWorkstream: vi.fn((_input: unknown) => ({
+      sectionId: "sec_new",
+      entry: { workstreams: [{ id: "sec_new", name: "Billing" }] },
+    })),
+  };
   const slot = renderSlot(
     { component: NewWorkDialog },
     {
       open: true,
       onClose,
       workstreamId,
-      workstreamName: workstreamId ? "Alpha" : null,
+      workstreamName: workstreamId ? "Beta" : null,
     },
     {
-      composer: {
-        scope: { kind: "new-thread", projectId: "stale_host_project" },
-      },
+      composer: { scope: { kind: "new-thread", projectId: "proj_z" } },
       sdk: {
         projects: {
           list: async () => [
-            { id: "proj_a", name: "bb" },
-            {
-              id: "proj_b",
-              name: "sideshow",
-              sources: [{ hostId: "host_b", isDefault: true }],
-            },
-          ],
-        },
-        system: { config: async () => ({ primaryHostId: "host_a" }) },
-        environments: {
-          list: async () => [],
-          listProviders: async () => [
-            {
-              id: "project-checkout",
-              displayName: "Project checkout",
-              availability: { status: "available" },
-              acceptsEmptyInputs: true,
-            },
-            {
-              id: "git-worktree",
-              displayName: "New worktree",
-              availability: { status: "available" },
-              acceptsEmptyInputs: true,
-            },
-          ],
-        },
-        threads: {
-          get: async () => ({
-            id: "thr_a",
-            title: "Parser",
-            sectionId: "sec_a",
-            projectId: "proj_b",
-            environmentId: "env_p",
-            environment: { name: "Parser worktree" },
-          }),
-          defaultExecutionOptions: async () => ({
-            providerId: "codex",
-            model: "gpt-5",
-            reasoningLevel: "medium",
-            permissionMode: "auto",
-          }),
-          list: async () => [
-            {
-              id: "thr_a",
-              title: "Spacing fix",
-              sectionId: "sec_a",
-              projectId: "proj_b",
-              environmentId: "env_a",
-              environmentName: "Spacing worktree",
-            },
+            { id: "proj_a", name: "bb", kind: "standard" },
+            { id: "proj_personal", name: "Personal", kind: "personal" },
           ],
         },
       } as unknown as PluginBrowserBbSdk,
-      rpc: {
-        state: () => ({
-          ...emptyState(),
-          workstreams: {
-            sec_a: { sectionId: "sec_a", name: "Alpha" },
-            sec_b: { sectionId: "sec_b", name: "Beta" },
-          },
-        }),
-        route,
-        routeExecute: execute,
-      },
+      rpc,
     },
   );
-  return { slot, onClose, execute };
+  return { slot, rpc, onClose };
 }
+
 const input = () =>
   screen.getByTestId("bb-new-thread-composer-input") as HTMLTextAreaElement;
-const button = () =>
-  screen.getByTestId("bb-new-thread-composer-submit") as HTMLButtonElement;
-async function type(text = "Fix the parser") {
+async function type(slot: ReturnType<typeof mount>["slot"], text: string) {
   fireEvent.change(input(), { target: { value: text } });
+  await act(() => slot.behavior.setComposerText(text));
 }
-async function ready() {
-  await waitFor(() => expect(harness.intake?.canSubmit()).toBe(true), {
-    timeout: 2000,
+const suggestion = () =>
+  screen.findByRole("button", { name: /^Suggested:/ }, { timeout: 2000 });
+
+it("adds a workstream field at the start of BB's picker row", async () => {
+  mount(inAlpha);
+  const field = await screen.findByRole("button", {
+    name: "Workstream: No workstream",
   });
-}
-async function choose(field: string, option: string) {
-  fireEvent.click(
-    screen.getByRole("button", { name: new RegExp(`^${field}:`) }),
+  const project = screen.getByRole("button", { name: "Project" });
+  expect(field.closest("[data-ws-workstream-slot]")?.nextElementSibling).toBe(
+    project,
   );
-  fireEvent.click(await screen.findByRole("menuitem", { name: option }));
-}
-it("automatic journey submits routed placement and preserves the native request input", async () => {
-  const { slot, execute, onClose } = mount();
-  await type();
-  await ready();
-  fireEvent.keyDown(input(), { key: "Enter" });
-  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
-  expect(execute.mock.calls[0]![0]).toMatchObject({
-    decisionId: "d1",
-    prompt: "Fix the parser",
-    intent: {},
+});
+
+it("starts the thread the pickers show when the suggestion is ignored", async () => {
+  const { slot, rpc, onClose } = mount(inAlpha, "sec_b");
+  await type(slot, "Write the release notes");
+  await suggestion();
+  fireEvent.click(screen.getByTestId("bb-new-thread-composer-submit"));
+  await waitFor(() => expect(rpc.startThread).toHaveBeenCalledTimes(1));
+  expect(rpc.startThread.mock.calls[0]![0]).toMatchObject({
+    sectionId: "sec_b",
     execution: {
-      input: [{ type: "text", text: "Fix the parser", mentions: [] }],
+      projectId: "project-test",
+      input: [{ type: "text", text: "Write the release notes", mentions: [] }],
     },
   });
   expect(onClose).toHaveBeenCalledTimes(1);
-  expect(slot.inspection.navigateCalls).toHaveLength(1);
+  expect(slot.inspection.navigateCalls).toEqual([
+    expect.objectContaining({ threadId: "thr_new" }),
+  ]);
 });
-it("native composer API draft updates trigger routing through reactive getters", async () => {
-  const route = vi.fn().mockResolvedValue(decision);
-  const { slot } = mount(route);
-  await slot.behavior.setComposerText(
-    "Changed through the public composer API",
-  );
-  await waitFor(
-    () =>
-      expect(route).toHaveBeenCalledWith(
-        expect.objectContaining({
-          prompt: "Changed through the public composer API",
-        }),
-      ),
-    { timeout: 2000 },
-  );
-});
-it("a submit that isn't ready is rejected, so BB restores its draft", async () => {
-  const route = vi.fn().mockResolvedValue(decision);
-  const { execute } = mount(route);
-  await type();
-  await ready();
-  submitLifecycle.clearDraft = () =>
-    fireEvent.change(input(), { target: { value: "" } });
-  submitLifecycle.restoreDraft = (draft) =>
-    fireEvent.change(input(), { target: { value: draft } });
-  // The draft starts routing again just as it is sent.
-  submitLifecycle.beforeGuard = (intake) => intake.retry();
-  fireEvent.click(button());
-  await screen.findAllByRole("alert");
-  await waitFor(() => expect(input().value).toBe("Fix the parser"));
-  expect(execute).not.toHaveBeenCalled();
-});
-it("a ready submit claims the draft before BB clears it and dispatches once", async () => {
-  const { execute } = mount();
-  await type();
-  await ready();
-  const order: string[] = [];
-  submitLifecycle.beforeGuard = () => order.push("submit");
-  submitLifecycle.clearDraft = () => {
-    order.push("clear");
-    fireEvent.change(input(), { target: { value: "" } });
-  };
-  execute.mockImplementation(async () => {
-    order.push("dispatch");
-    return { threadId: "created", sectionId: "sec_a" };
+
+it("suggests an existing workstream and fills the fields when clicked", async () => {
+  const { slot, rpc } = mount(inAlpha);
+  await type(slot, "Fix the parser in Alpha");
+  const button = await suggestion();
+  expect(rpc.route.mock.calls[0]![0]).toMatchObject({
+    prompt: "Fix the parser in Alpha",
+    suggest: true,
   });
-  fireEvent.click(button());
-  await waitFor(() => expect(order).toEqual(["submit", "clear", "dispatch"]));
-  expect(execute).toHaveBeenCalledTimes(1);
-  expect(input().value).toBe("");
-});
-it("wrong-workstream override is used by route and execute after prompt edits", async () => {
-  const { slot, execute } = mount();
-  await type();
-  await ready();
-  await choose("Workstream", "Beta");
-  await type("Fix another parser");
-  await ready();
-  fireEvent.click(button());
-  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
-  expect(execute.mock.calls[0]![0].intent.destination).toEqual({
-    kind: "workstream",
-    id: "sec_b",
-  });
-  expect(
-    slot.inspection.rpcCalls.filter((c) => c.method === "route").at(-1)?.input,
-  ).toMatchObject({
-    intent: { destination: { kind: "workstream", id: "sec_b" } },
-  });
-});
-const suggested = () =>
-  vi.fn().mockResolvedValue({
-    ...base,
-    id: "d_continue",
-    outcome: "continue",
-    threadId: "thr_a",
-    threadTitle: "Spacing fix",
-    sectionId: "sec_a",
-    workstream: "Alpha",
-    alternative: { ...decision, id: "d_new", title: "" },
-  });
-it("Enter creates the new thread while a continuation is only suggested", async () => {
-  const route = suggested();
-  const { execute } = mount(route);
-  await type();
-  await ready();
-  expect(route).toHaveBeenCalledWith(
-    expect.objectContaining({ offerNewThread: true }),
-  );
-  expect(screen.getByRole("status").textContent).toContain(
-    "Suggested: continue Spacing fix",
-  );
-  fireEvent.keyDown(input(), { key: "Enter" });
-  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
-  expect(execute.mock.calls[0]![0]).toMatchObject({
-    decisionId: "d_new",
-    intent: {},
-    execution: { projectId: "proj_a" },
-  });
-});
-it.each([
-  [
-    "its button",
-    () =>
-      fireEvent.click(
-        screen.getByRole("button", {
-          name: "Continue Spacing fix instead",
-        }),
-      ),
-  ],
-  [
-    "⌘⏎",
-    () =>
-      fireEvent.keyDown(input(), {
-        key: "Enter",
-        metaKey: true,
-        ctrlKey: true,
-      }),
-  ],
-])("%s sends the draft to the suggested thread instead", async (_, press) => {
-  const route = suggested();
-  const { execute, onClose } = mount(route);
-  await type();
-  await ready();
-  press();
-  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
-  expect(execute.mock.calls[0]![0]).toMatchObject({
-    decisionId: "d_continue",
-    prompt: "Fix the parser",
-    intent: {},
-    execution: {
-      input: [{ type: "text", text: "Fix the parser", mentions: [] }],
-    },
-  });
-  expect(execute.mock.calls[0]![0].execution.projectId).toBeUndefined();
-  expect(onClose).toHaveBeenCalledTimes(1);
-  expect(route).toHaveBeenCalledTimes(1);
-});
-it("same-project manual environment is used instead of stale host environment", async () => {
-  const { execute } = mount();
-  await type();
-  await ready();
-  await choose("Project", "bb");
-  await choose("Environment", "New worktree");
-  await type("Fix another parser");
-  await ready();
-  fireEvent.click(button());
-  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
-  expect(execute.mock.calls[0]![0].intent.placement).toEqual({
-    projectId: "proj_a",
-    environment: {
-      type: "host",
-      hostId: "host_a",
-      workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
-    },
-  });
-});
-it("pending and ambiguous Enter retain the draft, then one submit executes once", async () => {
-  let finish!: (d: RouteDecision) => void;
-  const { execute } = mount(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
-  await type();
-  fireEvent.keyDown(input(), { key: "Enter" });
-  expect(input().value).toBe("Fix the parser");
-  expect(execute).not.toHaveBeenCalled();
-  await waitFor(() => expect(finish).toBeTypeOf("function"), { timeout: 2000 });
-  finish({ ...base, outcome: "unsure", candidates: [] });
+  expect(button.textContent).toContain("Start in Alpha");
   await waitFor(() =>
-    expect(screen.getAllByText("Pick a destination").length).toBeGreaterThan(0),
+    expect(button.textContent).toContain("bb · Project checkout"),
   );
-  fireEvent.keyDown(input(), { key: "Enter" });
-  expect(input().value).toBe("Fix the parser");
-  expect(execute).not.toHaveBeenCalled();
-  const firstFinish = finish;
-  await choose("Destination", "Alpha");
-  await waitFor(() => expect(finish).not.toBe(firstFinish));
-  finish(decision);
-  await ready();
-  fireEvent.click(button());
-  fireEvent.click(button());
-  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
-});
-it("unassigned journey requires project and sends none with latest independent placement", async () => {
-  const { execute } = mount((args) => ({
-    ...decision,
-    sectionId: null,
-    workstream: null,
-    placement: args.intent.placement?.projectId
-      ? { ...decision.placement!, projectId: args.intent.placement.projectId }
-      : null,
-  }));
-  await type();
-  await choose("Destination", "No workstream");
-  await waitFor(
-    () =>
-      expect(screen.getAllByText("Pick a project").length).toBeGreaterThan(0),
-    { timeout: 2000 },
+  expect(button.querySelector("kbd")?.textContent).toMatch(/⏎/);
+  fireEvent.click(button);
+  await screen.findByRole("button", { name: "Workstream: Alpha" });
+  expect(slot.inspection.composer.selections).toEqual([
+    { projectId: "proj_a", environment: placement.environment },
+  ]);
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: /^Suggested:/ })).toBeNull(),
   );
-  expect(harness.intake!.canSubmit()).toBe(false);
-  await choose("Project", "sideshow");
-  await ready();
-  await type("Write a contributor checklist");
-  await ready();
-  fireEvent.click(button());
-  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
-  expect(execute.mock.calls[0]![0].intent).toEqual({
-    destination: { kind: "none" },
-    placement: { projectId: "proj_b" },
-  });
 });
-it("new-workstream journey sends the edited name", async () => {
-  const { execute } = mount(() => ({
-    ...base,
-    outcome: "new-workstream",
-    name: "Offline sync",
-    description: "",
-    title: "Spike",
-    placement: decision.placement,
-  }));
-  await type();
-  await ready();
-  fireEvent.change(screen.getByRole("textbox", { name: "Workstream name" }), {
-    target: { value: "Sync spike" },
-  });
-  await ready();
-  fireEvent.click(button());
-  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
-  expect(execute.mock.calls[0]![0].intent.workstreamName).toBe("Sync spike");
-});
-it("sidebar + keeps explicit destination, Shift+Enter and composing Enter never submit", async () => {
-  const { slot, execute } = mount(undefined, "sec_a");
-  await type();
-  await ready();
-  fireEvent.keyDown(input(), { key: "Enter", shiftKey: true });
-  fireEvent.keyDown(input(), { key: "Enter", isComposing: true });
-  expect(execute).not.toHaveBeenCalled();
-  expect(
-    slot.inspection.rpcCalls.find((c) => c.method === "route")?.input,
-  ).toMatchObject({
-    intent: { destination: { kind: "workstream", id: "sec_a" } },
+
+it("creates a suggested new workstream before filling the fields", async () => {
+  const { slot, rpc } = mount(newBilling);
+  await type(slot, "Add CSV export for invoices");
+  const button = await suggestion();
+  expect(button.textContent).toContain("New workstream Billing");
+  fireEvent.click(button);
+  await screen.findByRole("button", { name: "Workstream: Billing" });
+  expect(rpc.createWorkstream.mock.calls[0]![0]).toEqual({
+    name: "Billing",
+    description: "Invoices",
   });
 });
 
-it("creation Enter waits for deferred native placement acknowledgement without clearing the draft", async () => {
-  let finish!: () => void;
-  selectionBehavior.apply = (selection, apply) =>
-    new Promise((resolve) => {
-      finish = async () => resolve(await apply(selection));
-    });
-  const { execute } = mount();
-  await type();
-  await waitFor(() => expect(finish).toBeTypeOf("function"), { timeout: 2000 });
-  expect(harness.intake!.canSubmit()).toBe(false);
-  fireEvent.keyDown(input(), { key: "Enter" });
-  expect(execute).not.toHaveBeenCalled();
-  expect(input().value).toBe("Fix the parser");
-  finish();
-  await ready();
-  fireEvent.keyDown(input(), { key: "Enter" });
-  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
+it("⌘⏎ sends the draft to a suggested thread and closes", async () => {
+  const { slot, rpc, onClose } = mount(continueParser);
+  await type(slot, "Also handle CRLF in that fix");
+  const button = await suggestion();
+  expect(button.textContent).toContain("Send to Parser fix");
+  fireEvent.keyDown(input(), { key: "Enter", metaKey: true });
+  await waitFor(() => expect(rpc.sendToThread).toHaveBeenCalledTimes(1));
+  expect(rpc.sendToThread.mock.calls[0]![0]).toEqual({
+    threadId: "thr_p",
+    input: [
+      { type: "text", text: "Also handle CRLF in that fix", mentions: [] },
+    ],
+    traceId: "trace_1",
+  });
+  expect(rpc.startThread).not.toHaveBeenCalled();
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
-it("Retry reapplies a rejected native selection when every intent field is manual", async () => {
-  const { execute } = mount();
-  await type();
-  await ready();
-  await choose("Action", "New thread");
-  await choose("Workstream", "Alpha");
-  await choose("Project", "bb");
-  await ready();
-  const attempts = vi.fn().mockRejectedValueOnce(new Error("host unavailable"));
-  selectionBehavior.apply = async (selection, apply) => {
-    if (attempts.mock.calls.length === 0) return attempts();
-    attempts();
-    return apply(selection);
-  };
-  await choose("Environment", "New worktree");
-  await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy(),
+
+it("files the thread in a workstream picked from the field", async () => {
+  const { slot, rpc } = mount(inAlpha);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Workstream: No workstream" }),
   );
-  expect(harness.intake!.canSubmit()).toBe(false);
-  expect(execute).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  await ready();
-  expect(attempts.mock.calls.length).toBeGreaterThan(1);
-  fireEvent.click(button());
-  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
+  fireEvent.click(await screen.findByRole("option", { name: /Beta/ }));
+  await screen.findByRole("button", { name: "Workstream: Beta" });
+  await type(slot, "Write the docs");
+  fireEvent.click(screen.getByTestId("bb-new-thread-composer-submit"));
+  await waitFor(() => expect(rpc.startThread).toHaveBeenCalledTimes(1));
+  expect(rpc.startThread.mock.calls[0]![0]).toMatchObject({
+    sectionId: "sec_b",
+  });
 });
-it("new worktree uses the selected project's source host rather than global primary host", async () => {
-  const { execute } = mount((args) => ({
-    ...decision,
-    placement: {
-      ...decision.placement!,
-      projectId: args.intent.placement?.projectId ?? "proj_a",
-    },
-  }));
-  await type();
-  await ready();
-  await choose("Project", "sideshow");
-  await choose("Environment", "New worktree");
-  await ready();
-  fireEvent.click(button());
-  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
-  expect(execute.mock.calls[0]![0].intent.placement.environment.hostId).toBe(
-    "host_b",
+
+it("keeps the draft and says why when starting the thread fails", async () => {
+  const { slot, rpc, onClose } = mount(inAlpha);
+  rpc.startThread.mockImplementation(() => {
+    throw new Error("That workstream no longer exists.");
+  });
+  await type(slot, "Write the docs");
+  fireEvent.click(screen.getByTestId("bb-new-thread-composer-submit"));
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "That workstream no longer exists.",
   );
+  expect(onClose).not.toHaveBeenCalled();
 });

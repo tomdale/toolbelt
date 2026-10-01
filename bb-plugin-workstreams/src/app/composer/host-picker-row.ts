@@ -1,0 +1,54 @@
+/**
+ * Finds a place for New work's workstream field in BB's own picker row,
+ * before the project picker, so the dialog reads like BB's New thread view
+ * with one more field.
+ *
+ * BB offers plugins no slot in that row. This keeps one anchor element of
+ * ours at the start of the row's left group, located by BB's
+ * `data-promptbox-project-control` marker (or the stock NewThreadPromptBox
+ * structure when no project picker shows), and re-inserts it whenever BB
+ * re-renders the row. BB's React only inserts and removes its own nodes, so
+ * the extra child is left alone. If the markup changes and the row can't be
+ * found, this returns null and the caller renders the field itself.
+ */
+import { useLayoutEffect, useState } from "react";
+
+const ROW_GROUP =
+  "[data-promptbox-shell] > [data-promptbox] + div > :first-child";
+
+function pickerGroup(root: HTMLElement): Element | null {
+  return (
+    root.querySelector("[data-promptbox-project-control]")?.parentElement ??
+    root.querySelector(ROW_GROUP)
+  );
+}
+
+export function useHostPickerRow(root: HTMLElement | null): HTMLElement | null {
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (!root) return;
+    const anchor = document.createElement("span");
+    anchor.setAttribute("data-ws-workstream-slot", "");
+    anchor.style.display = "contents";
+    const place = () => {
+      const group = pickerGroup(root);
+      if (!group) {
+        anchor.remove();
+        setTarget(null);
+        return;
+      }
+      if (group.firstChild !== anchor)
+        group.insertBefore(anchor, group.firstChild);
+      setTarget(anchor);
+    };
+    place();
+    const observer = new MutationObserver(place);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      anchor.remove();
+      setTarget(null);
+    };
+  }, [root]);
+  return target;
+}

@@ -579,257 +579,122 @@
 }
 
 /*
- * New work's banner is the placement UI, so BB's own project and environment
- * pickers (the start of the row under the prompt box) would duplicate it. BB
- * gives plugins no prop for this; the selector follows the stock
- * NewThreadPromptBox markup and, if that changes, degrades to showing both.
- * The permission picker at the end of the row stays.
+ * New work's suggestion: the home classification found for the draft, under
+ * the composer. It is tinted as a proposal rather than a control, and ✦ marks
+ * it as the model's.
  */
-.ws-intake [data-promptbox-shell] > [data-promptbox] + div > :first-child {
-  display: none;
-}
-/*
- * BB gives plugins no way to disable its submit button either. While the
- * draft routes or its placement settles, the button looks and acts disabled;
- * Enter still submits, and the intake rejects it with the reason, which keeps
- * the draft.
- */
-.ws-intake[data-ready="false"] [data-promptbox-submit-action] {
-  /* BB forces the button's opacity from an ancestor utility; filter isn't. */
-  filter: opacity(0.5);
-  pointer-events: none;
-}
-.ws-intake-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-.ws-intake-row {
+.ws-suggestion {
+  --ws-magic: color-mix(
+    in oklab,
+    var(--color-violet-500, oklch(60.6% 0.25 292.717)) 70%,
+    var(--foreground, #ededed)
+  );
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-width: 0;
+  gap: 2px;
+  margin-top: 8px;
+  border: 1px solid color-mix(in oklab, var(--ws-magic) 30%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--ws-magic) 6%, transparent);
+  animation: ws-suggestion-in 180ms ease-out both;
 }
-.ws-intake-field {
-  position: relative;
-  display: inline-flex;
-  min-width: 0;
-  max-width: 100%;
-}
-.ws-intake-action {
-  flex: none;
-}
-.ws-intake-placement-row .ws-intake-field {
-  max-width: calc(50% - 3px);
-}
-.ws-intake-chip {
-  display: inline-flex;
-  align-items: stretch;
-  height: 30px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  min-width: 0;
-  max-width: 100%;
-}
-.ws-intake-trigger {
+.ws-suggestion-accept {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 9px;
+  flex: 1;
   min-width: 0;
-  white-space: nowrap;
-  font-size: 13px;
-  border-radius: 7px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 7px 12px;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.25rem;
+  text-align: left;
+  color: var(--muted-foreground);
   cursor: pointer;
 }
-.ws-intake-trigger:hover,
-.ws-intake-revert:hover {
-  background: var(--accent);
+.ws-suggestion-accept:hover {
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--ws-magic) 8%, transparent);
 }
-.ws-intake-trigger:focus-visible,
-.ws-intake-revert:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
+.ws-suggestion-accept:focus-visible,
+.ws-suggestion-dismiss:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ring);
 }
-.ws-intake-type {
-  flex: none;
-  font-size: 11.5px;
-  color: var(--muted-foreground);
-  white-space: nowrap;
+.ws-suggestion-accept:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
-.ws-intake-value {
+.ws-suggestion-spark {
+  flex-shrink: 0;
+  color: var(--ws-magic);
+}
+.ws-suggestion[data-stale] .ws-suggestion-spark {
+  animation: ws-spark-pulse 1.2s ease-in-out infinite;
+}
+.ws-suggestion-text {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
-.ws-intake-action .ws-intake-value {
-  overflow: visible;
+.ws-suggestion-target {
+  font-weight: 500;
+  color: var(--foreground);
 }
-.ws-intake-star {
-  flex: none;
-  color: #e3b84a;
-}
-.ws-intake-revert {
-  flex: none;
-  width: 26px;
-  border-left: 1px solid var(--border);
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-.ws-intake-revert:hover,
-.ws-intake-hollow:hover {
-  color: #e3b84a;
-}
-.ws-intake-connector {
-  flex: none;
-  font-size: 12.5px;
-  color: var(--muted-foreground);
-}
-.ws-intake-recovery {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-height: 24px;
-  font-size: 12.5px;
-  color: var(--destructive);
-}
-.ws-intake-recovery button {
-  text-decoration: underline;
-  cursor: pointer;
-}
-.ws-intake-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 24px;
-  font-size: 12.5px;
-  color: var(--muted-foreground);
-}
-.ws-intake-status[data-error="true"] {
-  color: var(--destructive);
-}
-.ws-intake-status button {
-  text-decoration: underline;
-  cursor: pointer;
-}
-.ws-intake-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 50;
-  width: min(300px, calc(100vw - 40px));
-  max-height: 330px;
-  overflow: auto;
-  padding: 6px;
-  background: var(--popover);
+.ws-suggestion-kbd {
+  flex-shrink: 0;
+  padding: 0 5px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 16px 40px #0006;
-}
-.ws-intake-menu input {
-  width: 100%;
-  height: 32px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  font-size: 13px;
-}
-.ws-intake-menu button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 8px;
-  text-align: left;
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-  overflow-wrap: anywhere;
-}
-.ws-intake-menu button:hover,
-.ws-intake-menu button:focus {
-  background: var(--accent);
-  outline: 1px solid var(--ring);
-}
-.ws-intake-menu small {
-  display: block;
-  color: var(--muted-foreground);
-}
-.ws-intake-menu-group {
-  padding: 8px 8px 2px;
+  border-radius: 4px;
+  font-family: inherit;
   font-size: 11px;
   color: var(--muted-foreground);
+  background: var(--background);
 }
-.ws-intake-name {
+.ws-suggestion-dismiss {
+  display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 6px;
-  padding-left: 9px;
-}
-.ws-intake-name input {
-  min-width: 0;
-  width: 240px;
-  height: 100%;
-  background: transparent;
-  border: 0;
-  padding: 0 8px 0 0;
-  font-size: 13px;
-}
-.ws-intake-name .ws-intake-revert {
-  align-self: stretch;
-}
-.ws-intake-candidates {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.ws-intake-candidates button {
-  max-width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 5px 9px;
-  font-size: 12.5px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 3px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
   cursor: pointer;
 }
-@media (max-width: 767px) {
-  .ws-intake-row {
-    flex-wrap: wrap;
-    row-gap: 6px;
+.ws-suggestion-dismiss:hover {
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--ws-magic) 10%, transparent);
+}
+.ws-suggestion-error {
+  margin-top: 8px;
+  padding: 0 14px;
+  font-size: 12px;
+  color: var(--destructive);
+}
+@keyframes ws-suggestion-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
   }
-  .ws-intake-destination,
-  .ws-intake-placement-row .ws-intake-field:last-child {
-    flex-basis: 100%;
-  }
-  .ws-intake-placement-row .ws-intake-field {
-    max-width: 100%;
-  }
-  .ws-intake-placement-row .ws-intake-field:not(:last-child) {
-    flex: 1 1 0;
-  }
-  .ws-intake-chip {
-    height: 36px;
-  }
-  .ws-intake-revert {
-    width: 34px;
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
-
-.ws-intake-chip[data-need="true"] {
-  border-color: #6a4a1e;
+@keyframes ws-spark-pulse {
+  50% {
+    opacity: 0.35;
+  }
 }
-.ws-intake-chip[data-need="true"] .ws-intake-type,
-.ws-intake-chip[data-need="true"] .ws-intake-value {
-  color: var(--warning-text, #f0a95a);
-}
-.ws-intake-chip[data-waiting="true"] .ws-intake-type {
-  opacity: 0.55;
-}
-.ws-intake-menu button:hover .ws-intake-hollow,
-.ws-intake-menu button:focus .ws-intake-hollow {
-  color: #e3b84a;
+@media (prefers-reduced-motion: reduce) {
+  .ws-suggestion,
+  .ws-suggestion[data-stale] .ws-suggestion-spark {
+    animation: none;
+  }
 }
 
 /* A row with children and a status mark shows the disclosure chevron in

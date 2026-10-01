@@ -1,5 +1,11 @@
-/** Workstreams intake keeps the draft and its destination in one composer. */
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+/**
+ * The New work dialog: BB's own new-thread composer with a workstream field
+ * beside its project picker, and a suggested home under it once the draft
+ * has been classified.
+ */
+import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import {
   experimental_NewThreadComposer as Composer,
   useBbNavigate,
@@ -15,8 +21,10 @@ import {
 import { Icon } from "@/components/ui/icon";
 import type { RpcContract } from "../../server/contract.ts";
 import type { RouteDecision } from "../../server/router.ts";
-import { Intake, IntakeContext } from "./intake.ts";
-import { IntakeStatus } from "./IntakeBanner.tsx";
+import { useHostPickerRow } from "./host-picker-row.ts";
+import { NewWork as NewWorkModel, NewWorkContext } from "./new-work.ts";
+import { SuggestionRow } from "./Suggestion.tsx";
+import { WorkstreamPicker } from "./WorkstreamPicker.tsx";
 
 export function NewWorkDialog({
   open,
@@ -26,6 +34,7 @@ export function NewWorkDialog({
 }: {
   open: boolean;
   onClose: () => void;
+  /** Preselects this workstream, as a workstream's ＋ does. */
   workstreamId?: string | null;
   workstreamName?: string | null;
 }) {
@@ -55,13 +64,6 @@ export function NewWorkDialog({
   );
 }
 
-function extractPrompt(request: NewThreadRequest): string {
-  return request.input
-    .map((part) => ("text" in part ? part.text : ""))
-    .join("\n")
-    .trim();
-}
-
 function NewWork({
   onClose,
   workstreamId,
@@ -73,103 +75,94 @@ function NewWork({
 }) {
   const rpc = useRpc<RpcContract>();
   const navigate = useBbNavigate();
-  const [intake] = useState(() => {
-    // One routing call per dialog draft; a newer one or a cancel aborts it.
+  const [newWork] = useState(() => {
+    // Routing calls for one dialog share a key, so a newer one, or a cancel,
+    // aborts the model call in flight.
     const draftKey = crypto.randomUUID();
-    return new Intake(
-      async (options) =>
-        (await rpc.call("route", {
-          ...options,
-          offerNewThread: true,
-          draftKey,
-        })) as RouteDecision,
-      workstreamId,
-      workstreamName,
-      () => {
-        void rpc.call("routeCancel", { draftKey }).catch(() => {
-          // A cancel that can't reach the server only costs one wasted call.
-        });
+    return new NewWorkModel(
+      {
+        route: async (prompt) =>
+          (await rpc.call("route", {
+            prompt,
+            suggest: true,
+            draftKey,
+          })) as RouteDecision,
+        cancelRoute: () => {
+          void rpc.call("routeCancel", { draftKey }).catch(() => {
+            // A cancel that can't reach the server only costs one wasted call.
+          });
+        },
+        createWorkstream: async (name, description) => {
+          const created = await rpc.call("createWorkstream", {
+            name,
+            ...(description ? { description } : {}),
+          });
+          return {
+            sectionId: created.sectionId,
+            name: created.entry.workstreams[0]?.name ?? name,
+          };
+        },
+        startThread: (sectionId, request) =>
+          rpc.call("startThread", {
+            sectionId,
+            // The server forwards only the fields spawn takes.
+            execution: JSON.parse(JSON.stringify(request)) as NewThreadRequest &
+              Record<string, unknown>,
+          }),
+        sendToThread: async (threadId, input, traceId) => {
+          await rpc.call("sendToThread", {
+            threadId,
+            input: JSON.parse(JSON.stringify(input)) as unknown[],
+            traceId,
+          });
+        },
       },
+      workstreamId
+        ? { id: workstreamId, name: workstreamName ?? workstreamId }
+        : null,
     );
   });
-  const [error, setError] = useState<string | null>(null);
-  // Each send re-creates the alert so a repeated message is announced again.
-  const [attempt, setAttempt] = useState(0);
-  const intakeState = useSyncExternalStore(intake.subscribe, intake.snapshot);
-  const routeError =
-    intakeState.submitError ?? intakeState.error ?? intakeState.selectionError;
-  // A failed create outlives the preview retry that clears the route error.
-  const message = error ?? routeError;
-  useEffect(() => () => intake.dispose(), [intake]);
+  useEffect(() => () => newWork.dispose(), [newWork]);
+  const [root, setRoot] = useState<HTMLDivElement | null>(null);
+  const pickerRow = useHostPickerRow(root);
 
   const submit = useCallback(
     async (request: NewThreadRequest) => {
-      setError(null);
-      setAttempt((n) => n + 1);
-      const prompt = extractPrompt(request);
-      let executing = false;
       try {
-        const { decision, choice, intent } = await intake.forSubmit(prompt);
-        executing = true;
-        const result = await rpc.call("routeExecute", {
-          decisionId: decision.id,
-          prompt,
-          choice,
-          intent,
-          execution: JSON.parse(
-            JSON.stringify({
-              providerId: request.providerId,
-              model: request.model,
-              reasoningLevel: request.reasoningLevel,
-              permissionMode: request.permissionMode,
-              serviceTier: request.serviceTier,
-              executionInputSources: request.executionInputSources,
-              input: request.input,
-              ...(decision.outcome !== "continue"
-                ? {
-                    projectId: intake.snapshot().project.value,
-                    environment: intake.snapshot().environment.value,
-                  }
-                : {}),
-            }),
-          ),
-        });
-        intake.completeSubmit();
+        const result = await newWork.submit(request);
         onClose();
-        if (result.threadId) navigate.toThread(result.threadId);
+        if (result.kind === "started") navigate.toThread(result.threadId);
+        else
+          toast.success(`Sent to ${result.title}`, {
+            action: {
+              label: "Open",
+              onClick: () => navigate.toThread(result.threadId),
+            },
+          });
       } catch (cause) {
-        if (executing) intake.retry();
-        setError(cause instanceof Error ? cause.message : String(cause));
-        intake.completeSubmit();
-        // Rejection tells the host to preserve attachments, mentions, and text.
+        newWork.reportError(cause);
+        // Rejecting tells BB to keep the draft, attachments and mentions.
         throw cause;
       }
     },
-    [intake, navigate, onClose, rpc],
+    [navigate, newWork, onClose],
   );
+  const picker = <WorkstreamPicker newWork={newWork} />;
   return (
-    <IntakeContext.Provider value={intake}>
-      {/* The intake banner owns placement and readiness; styles.css hides
-          BB's own project and environment pickers inside `.ws-intake` and
-          dims its submit button while the draft can't be sent yet. */}
-      <div className="ws-intake" data-ready={intake.canSubmit()}>
+    <NewWorkContext.Provider value={newWork}>
+      <div ref={setRoot} className="ws-new-work">
         <Composer
           layout="document"
           draftKey={`workstreams-new:${workstreamId ?? "auto"}`}
-          placeholder="What's the work?"
           onSubmit={submit}
         />
-        <IntakeStatus intake={intake} />
-        {message ? (
-          <p
-            key={attempt}
-            role="alert"
-            className="mt-2 px-3.5 text-xs text-destructive"
-          >
-            {message}
-          </p>
-        ) : null}
+        {pickerRow ? (
+          createPortal(picker, pickerRow)
+        ) : (
+          <div className="flex px-3.5">{picker}</div>
+        )}
+        <SuggestionRow newWork={newWork} />
       </div>
-    </IntakeContext.Provider>
+    </NewWorkContext.Provider>
   );
 }

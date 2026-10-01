@@ -18,13 +18,14 @@ import {
 } from "../domain/router.ts";
 import { buildForest } from "../domain/tree.ts";
 import type { Analyzer } from "./analyzer.ts";
-import type { Journal } from "./journal.ts";
+import type { Journal, Source } from "./journal.ts";
 import type { WorkstreamMap } from "./map.ts";
 import { type Inference } from "./model.ts";
 import { UserError, type WorkstreamService } from "./service.ts";
 
 type Sdk = BbPluginApi["sdk"];
 type SpawnArgs = Parameters<Sdk["threads"]["spawn"]>[0];
+type SendArgs = Parameters<Sdk["threads"]["send"]>[0];
 export type Environment = NonNullable<SpawnArgs["environment"]>;
 
 export type Placement = {
@@ -105,6 +106,21 @@ export type RouteSource = "router" | "handoff";
 
 const MEMORY_MS = 15 * 60_000;
 
+/** The `NewThreadRequest` fields `start` forwards to `threads.spawn`. */
+const START_FIELDS = [
+  "projectId",
+  "environment",
+  "input",
+  "prompt",
+  "providerId",
+  "model",
+  "reasoningLevel",
+  "permissionMode",
+  "serviceTier",
+  "executionInputSources",
+  "sendAt",
+] as const satisfies readonly (keyof SpawnArgs)[];
+
 const hash = (text: string) =>
   createHash("sha256").update(text.trim()).digest("hex");
 
@@ -157,6 +173,12 @@ export class Router {
        * the action or destination.
        */
       offerNewThread?: boolean;
+      /**
+       * New work's suggestion: name the single most likely home, which may
+       * be a new workstream, instead of leaving an uncertain choice. Nothing
+       * is created until the user accepts it.
+       */
+      suggest?: boolean;
       /** The unsure decision `workstreamId` was picked from; keeps its trace. */
       fromDecisionId?: string | null;
       /** The thread asking (a handoff's caller), for its debug trace. */
@@ -354,12 +376,14 @@ export class Router {
         sectionId: mention.sectionId,
         workstream: nameOf.get(mention.sectionId)!,
         title: "",
-        placement: await this.placement(
-          mention.sectionId,
-          true,
-          selectedProject,
-          explicitEnvironment,
-        ),
+        placement: options.suggest
+          ? await this.suggestedPlacement(mention.sectionId, true)
+          : await this.placement(
+              mention.sectionId,
+              true,
+              selectedProject,
+              explicitEnvironment,
+            ),
         confidence: "high",
         reason: "The request mentions this workstream.",
         subject: null,
@@ -369,10 +393,15 @@ export class Router {
       });
 
     const picked = selectedProject;
-    const populated = records.filter((r) => r.evidence.threadCount > 0);
+    // A suggestion may name a workstream the user just made, so it sees
+    // empty ones too rather than proposing a duplicate.
+    const populated = options.suggest
+      ? records
+      : records.filter((r) => r.evidence.threadCount > 0);
     const input: RouteInput = {
       prompt: text,
       allowNewWorkstream: intent?.action === "new-workstream",
+      ...(options.suggest ? { suggest: true } : {}),
       workstreams: populated.map((r) => ({
         name: r.name,
         description: r.description,
@@ -463,12 +492,14 @@ export class Router {
         confidence: raw.confidence,
         reason: raw.reason,
         subject: raw.subject,
-        placement: await this.placement(
-          record.sectionId,
-          raw.code,
-          picked,
-          explicitEnvironment,
-        ),
+        placement: options.suggest
+          ? await this.suggestedPlacement(record.sectionId, raw.code)
+          : await this.placement(
+              record.sectionId,
+              raw.code,
+              picked,
+              explicitEnvironment,
+            ),
       };
     } else if (raw.outcome === "new-thread") {
       const sectionId = idOf.get(raw.workstream)!;
@@ -476,12 +507,14 @@ export class Router {
         ...base,
         ...raw,
         sectionId,
-        placement: await this.placement(
-          sectionId,
-          raw.code,
-          picked,
-          explicitEnvironment,
-        ),
+        placement: options.suggest
+          ? await this.suggestedPlacement(sectionId, raw.code)
+          : await this.placement(
+              sectionId,
+              raw.code,
+              picked,
+              explicitEnvironment,
+            ),
       };
     } else if (raw.outcome === "new-workstream") {
       const like = raw.projectLike ? idOf.get(raw.projectLike) : undefined;
@@ -494,13 +527,18 @@ export class Router {
         confidence: raw.confidence,
         reason: raw.reason,
         subject: raw.subject,
-        placement: await this.placement(
-          like ?? null,
-          raw.code,
-          picked,
-          explicitEnvironment,
-          intent?.action === "new-workstream",
-        ),
+        // A suggested code effort with no related workstream has no project
+        // evidence; accepting it leaves the user's project as it is.
+        placement:
+          options.suggest && raw.code && !like
+            ? null
+            : await this.placement(
+                like ?? null,
+                raw.code,
+                picked,
+                explicitEnvironment,
+                intent?.action === "new-workstream",
+              ),
       };
     } else
       decision = {
@@ -521,6 +559,8 @@ export class Router {
               },
         ),
       };
+    if (options.suggest && decision.outcome === "unsure")
+      decision = await this.likeliest(decision);
     decision = this.constrain(decision, intent);
     this.deps.inference.annotate(traceId, {
       decision: { ...decision, traceId: undefined },
@@ -572,6 +612,65 @@ export class Router {
         claim.intent?.placement?.projectId,
         claim.intent?.placement?.environment,
       ),
+    };
+  }
+
+  /**
+   * A suggestion's placement in `sectionId`. Code work needs the
+   * workstream's primary project as evidence; without one the suggestion
+   * names only the workstream and leaves the user's project as it is.
+   */
+  private suggestedPlacement(
+    sectionId: string,
+    code: boolean,
+  ): Promise<Placement | null> {
+    const primary = this.deps.map
+      .get(sectionId)
+      ?.projects.some((p) => p.role === "primary");
+    return code && !primary
+      ? Promise.resolve(null)
+      : this.placement(sectionId, code, null);
+  }
+
+  /**
+   * An unsure decision's first candidate, which the model lists as the
+   * likeliest, as a decision of its own. With no candidates it stays unsure.
+   */
+  private async likeliest(
+    decision: Extract<RouteDecision, { outcome: "unsure" }>,
+  ): Promise<RouteDecision> {
+    const top = decision.candidates[0];
+    if (!top) return decision;
+    const base = {
+      id: decision.id,
+      confidence: "low" as const,
+      reason: decision.reason,
+      subject: decision.subject,
+      traceId: decision.traceId,
+    };
+    if (top.kind === "thread") {
+      const target = this.deps.service
+        .threads()
+        .find((t) => t.id === top.threadId);
+      const sectionId = target?.sectionId ?? null;
+      return {
+        ...base,
+        outcome: "continue",
+        threadId: top.threadId,
+        threadTitle: top.title,
+        sectionId,
+        workstream: sectionId
+          ? (this.deps.map.get(sectionId)?.name ?? null)
+          : null,
+      };
+    }
+    return {
+      ...base,
+      outcome: "new-thread",
+      sectionId: top.sectionId,
+      workstream: top.name,
+      title: "",
+      placement: await this.suggestedPlacement(top.sectionId, true),
     };
   }
 
@@ -746,36 +845,20 @@ export class Router {
       this.claim({ id: decision.id, prompt, intent: options.intent });
     if (!this.claims.delete(claim) || claim.decision.id !== decision.id)
       throw new UserError("That preview expired; route it again.");
-    const sdk = this.deps.sdk();
     const text = options.message ?? prompt;
     if (decision.outcome === "unsure")
       return { threadId: null, sectionId: null };
-    if (decision.outcome === "continue") {
-      const target = await sdk.threads.get({ threadId: decision.threadId });
-      if (target.archivedAt !== null)
-        throw new UserError("That thread is archived.");
-      await sdk.threads.send({
-        threadId: decision.threadId,
-        input: options.execution?.input ?? [
-          { type: "text", text, mentions: [] },
-        ],
-        mode: "queue-if-active",
-      });
-      const logged = this.deps.journal.add({
-        action: "route",
-        source,
-        rationale: `Sent to ${decision.threadTitle}: ${decision.reason}`,
-        threads: [{ id: decision.threadId, name: decision.threadTitle }],
-        workstreams: [],
-        undo: null,
-      });
-      this.deps.inference.link(
-        decision.traceId,
-        { kind: "thread", ref: decision.threadId },
-        { kind: "entry", ref: logged.id },
-      );
-      return { threadId: decision.threadId, sectionId: null };
-    }
+    if (decision.outcome === "continue")
+      return {
+        ...(await this.send(decision.threadId, source, {
+          input: options.execution?.input ?? [
+            { type: "text", text, mentions: [] },
+          ],
+          rationale: `Sent to ${decision.threadTitle}: ${decision.reason}`,
+          traceId: decision.traceId,
+        })),
+        sectionId: null,
+      };
     const placement = decision.placement;
     if (!placement)
       throw new UserError("Choose a project before creating this work.");
@@ -809,7 +892,6 @@ export class Router {
       if (decision.description)
         this.deps.map.describe(sectionId, decision.description);
     } else sectionId = decision.sectionId;
-    const at = this.now();
     const actualSectionId = sectionId;
     // The composer's own input keeps attachments and mentions; otherwise send
     // the text.
@@ -819,24 +901,16 @@ export class Router {
       options.execution.input
         ? { input: options.execution.input }
         : { prompt: text };
-    const thread = await withRetry(() =>
-      sdk.threads.spawn({
+    const thread = await this.spawnFiled(
+      {
         ...options.execution,
         ...body,
         projectId: placement.projectId,
         environment,
-        sectionId: actualSectionId,
-        pluginMetadata: {
-          kind: "task",
-          ...(actualSectionId
-            ? { workstreamAtCreation: actualSectionId }
-            : { unassignedByRouter: true }),
-          filedBy: source,
-          filedAt: at,
-          filedSectionId: actualSectionId,
-          ...(options.spawnedFrom ? { spawnedFrom: options.spawnedFrom } : {}),
-        },
-      } as SpawnArgs),
+      } as SpawnArgs,
+      actualSectionId,
+      source,
+      options.spawnedFrom,
     );
     const logged = this.deps.service.recordCreated(
       thread.id,
@@ -861,6 +935,103 @@ export class Router {
         : []),
     );
     return { threadId: thread.id, sectionId: actualSectionId };
+  }
+
+  /**
+   * Starts New work's thread exactly as the composer resolved it, filed in
+   * `sectionId` or deliberately left without a workstream.
+   */
+  async start(
+    sectionId: string | null,
+    execution: SpawnArgs & { projectId: string; environment: Environment },
+  ): Promise<{ threadId: string; sectionId: string | null }> {
+    const record = sectionId ? this.deps.map.get(sectionId) : null;
+    if (sectionId && !record)
+      throw new UserError("That workstream no longer exists.");
+    // Only fields BB's new-thread request defines reach spawn.
+    const fields = Object.fromEntries(
+      START_FIELDS.filter((key) => execution[key] !== undefined).map((key) => [
+        key,
+        execution[key],
+      ]),
+    ) as unknown as SpawnArgs;
+    const thread = await this.spawnFiled(fields, sectionId, "user");
+    this.deps.service.recordCreated(thread.id, sectionId, "user", {
+      title: thread.title || "New thread",
+      rationale: record
+        ? `Started in ${record.name} from New work`
+        : "Started without a workstream from New work",
+    });
+    return { threadId: thread.id, sectionId };
+  }
+
+  /**
+   * Sends `input` to an existing thread, queued behind any running turn, and
+   * journals it. `traceId` links the routing call that suggested the thread.
+   */
+  async send(
+    threadId: string,
+    source: Source,
+    options: {
+      input: SendArgs["input"];
+      rationale?: string;
+      traceId?: string | null;
+    },
+  ): Promise<{ threadId: string }> {
+    const sdk = this.deps.sdk();
+    const target = await sdk.threads.get({ threadId });
+    if (target.archivedAt !== null)
+      throw new UserError("That thread is archived.");
+    await sdk.threads.send({
+      threadId,
+      input: options.input,
+      mode: "queue-if-active",
+    });
+    const title = target.title ?? target.titleFallback ?? threadId;
+    const logged = this.deps.journal.add({
+      action: "route",
+      source,
+      rationale: options.rationale ?? `Sent to ${title} from New work`,
+      threads: [{ id: threadId, name: title }],
+      workstreams: [],
+      undo: null,
+    });
+    this.deps.inference.link(
+      options.traceId ?? null,
+      { kind: "thread", ref: threadId },
+      { kind: "entry", ref: logged.id },
+    );
+    return { threadId };
+  }
+
+  /**
+   * Spawns a top-level task thread in `sectionId` with the metadata that
+   * records who filed it; a null section marks it deliberately unassigned so
+   * composer filing leaves it alone.
+   */
+  private spawnFiled(
+    args: SpawnArgs,
+    sectionId: string | null,
+    source: Source,
+    spawnedFrom?: string | null,
+  ) {
+    const at = this.now();
+    return withRetry(() =>
+      this.deps.sdk().threads.spawn({
+        ...args,
+        sectionId,
+        pluginMetadata: {
+          kind: "task",
+          ...(sectionId
+            ? { workstreamAtCreation: sectionId }
+            : { unassignedByRouter: true }),
+          filedBy: source,
+          filedAt: at,
+          filedSectionId: sectionId,
+          ...(spawnedFrom ? { spawnedFrom } : {}),
+        },
+      } as SpawnArgs),
+    );
   }
 
   /**
