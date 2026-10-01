@@ -235,6 +235,12 @@ it("shows working progress with rings before checks, and optional Next", async (
     "active:In progress: Workers are running",
     "done:Done: Theme agreed",
   ]);
+  // Active items use a solid dot.
+  expect(
+    region
+      .querySelector('li[data-progress="active"] svg')
+      ?.getAttribute("fill"),
+  ).toBe("currentColor");
   expect(slot.getByRole("heading", { name: "Progress" })).toBeTruthy();
   expect(slot.getByRole("heading", { name: "Next" })).toBeTruthy();
   expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
@@ -249,7 +255,11 @@ it("shows the goal and only in-progress items in the compact working card", asyn
   const slot = await mount({ layout: "minimal", recap: WORKING });
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(slot.getByRole("heading", { name: "Building the card" })).toBeTruthy();
-  expect(progress(region)).toEqual(["active:In progress: Workers are running"]);
+  // One shown item reads as plain text, without a bullet.
+  const only = region.querySelector("[data-progress]")!;
+  expect(only.tagName).toBe("P");
+  expect(only.textContent).toBe("Workers are running");
+  expect(only.querySelector("svg")).toBeNull();
   expect(region.textContent).not.toContain("Inspect worker results");
   expect(slot.queryByRole("heading", { name: "Progress" })).toBeNull();
   expect(region.className).toContain("py-2");
