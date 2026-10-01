@@ -108,8 +108,8 @@ const MARKDOWN_CLASS =
   "text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
 
 /**
- * A commit hash, shortened, with its letters tinted to set them apart from
- * digits rather than styled as a link. A copy icon follows it, and clicking
+ * A commit hash, shortened, in two faint tints that set letters apart from
+ * digits rather than styling it as a link. A copy icon follows it, and clicking
  * copies the full hash.
  */
 function Sha({ sha }: { sha: string }) {
@@ -125,12 +125,15 @@ function Sha({ sha }: { sha: string }) {
           setTimeout(() => setCopied(false), 1200);
         });
       }}
-      className="group/sha inline-flex cursor-pointer items-baseline gap-0.5 font-mono text-[0.923em] text-foreground/80 hover:text-foreground"
+      className="group/sha inline-flex cursor-pointer items-baseline gap-0.5 font-mono text-[0.923em] text-sky-900/75 hover:text-sky-950 dark:text-sky-100/75 dark:hover:text-sky-50"
     >
       <span>
         {[...sha.slice(0, 7)].map((char, index) =>
           /[a-f]/.test(char) ? (
-            <span key={index} className="text-amber-700 dark:text-amber-300">
+            <span
+              key={index}
+              className="text-violet-800/70 dark:text-violet-200/70"
+            >
               {char}
             </span>
           ) : (
