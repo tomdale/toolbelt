@@ -76,6 +76,21 @@ async function world(
 }
 
 describe("agent recaps", () => {
+  it("rejects incomplete state-specific input before recording a recap", async () => {
+    const s = await world();
+    s.w.turn("t1");
+    await expect(
+      s.report({ state: "complete", goal: "Done" }),
+    ).rejects.toThrow();
+    await expect(s.report({ ...RECAP, state: "review" })).rejects.toThrow();
+    await expect(
+      s.report({ state: "continuing", goal: "Working" }),
+    ).rejects.toThrow();
+    expect((await s.card()).recap).toBeNull();
+    await s.report();
+    expect((await s.card()).recap?.state).toBe("complete");
+  });
+
   it("stops a live failing-tool loop and suppresses mandatory recap corrections", async () => {
     const s = await world({ corrections: 0 });
     s.w.turn("t1");

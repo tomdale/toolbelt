@@ -4,15 +4,33 @@ import {
   plainText,
   recapSegments,
   recapInputSchema,
+  recapToolSchema,
   recapMarkdown,
   recapSchema,
   toRecap,
   reportedAnalysis,
 } from "../../src/domain/recap.ts";
 
-it("advertises state-specific fields instead of contradictory optional fields", () => {
-  const schema = recapInputSchema.toJSONSchema({ io: "input" });
+it("advertises named parameters on a concrete root object", () => {
+  const schema = recapToolSchema.toJSONSchema({ io: "input" });
   expect(schema.type).toBe("object");
+  expect(schema).not.toHaveProperty("oneOf");
+  expect(schema).not.toHaveProperty("anyOf");
+  expect(Object.keys(schema.properties!)).toEqual([
+    "state",
+    "goal",
+    "latest",
+    "active",
+    "next",
+    "review",
+    "links",
+  ]);
+  expect(schema.required).toEqual(["state", "goal"]);
+  expect(schema.additionalProperties).toBe(false);
+});
+
+it("validates state-specific fields at execution", () => {
+  const schema = recapInputSchema.toJSONSchema({ io: "input" });
   const variants = schema.oneOf as Array<{
     properties: Record<string, { const?: string; minItems?: number }>;
     required: string[];
