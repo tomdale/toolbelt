@@ -1,203 +1,254 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
-  createFakePluginHost,
-  makeThreadResponse,
+  makeMessageDispatchHookContext,
+  makePluginAgentConfigurationContext,
+  makeQueueEntry,
 } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../../src/server/db.ts";
-import { RecapScheduler } from "../../src/server/recap.ts";
-import { Inference } from "../../src/server/model.ts";
-import { TraceStore } from "../../src/server/trace.ts";
-const cleanups: (() => Promise<void>)[] = [];
+import { RECAP_TOOL } from "../../src/domain/recap.ts";
+import { fakeWorld } from "./fake-bb.ts";
+
+type World = Awaited<ReturnType<typeof fakeWorld>>;
+const worlds: World[] = [];
 afterEach(async () => {
-  vi.useRealTimers();
-  for (const dispose of cleanups.splice(0)) await dispose();
+  for (const w of worlds.splice(0)) await w.harness.lifecycle.dispose();
 });
-const deferred = () => {
-  let resolve!: (text: string) => void;
-  const promise = new Promise<string>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
+
+const RECAP = {
+  state: "complete",
+  goal: "Porting handoffs into Workstreams",
+  latest: ["Moved the recap tool into Workstreams."],
 };
-function setup(
-  complete: () => Promise<string> | string = () =>
-    "Goal: Fixing recap freshness\nLatest: Tests pass",
-) {
-  let thread = makeThreadResponse({
-    id: "t",
-    status: "idle",
-    archivedAt: null,
-    visibility: "visible",
-    latestAttentionAt: 100,
-    updatedAt: 100,
-  });
-  const timeline = vi.fn(async () => ({
-    rows: [
-      {
-        kind: "conversation",
-        threadId: "t",
-        id: "u",
-        role: "user",
-        text: "Fix stale recaps.",
-      },
-      {
-        kind: "conversation",
-        threadId: "t",
-        id: "a",
-        role: "assistant",
-        text: "Fixed.",
-      },
-    ],
-    timelinePage: { hasOlderRows: false, olderCursor: null },
-  }));
-  const get = vi.fn(async () => thread);
-  const host = createFakePluginHost({
-    pluginId: "recap-tests",
-    sdk: { threads: { get, timeline } } as never,
-  });
-  const db = openDatabase(host.bb);
-  const model = vi.fn(complete);
-  const inference = new Inference({
-    traces: new TraceStore(db),
-    debug: async () => false,
-    complete: async () => ({
-      text: await model(),
-      usage: { input: 1, output: 1, cost: 0 },
-    }),
-  });
-  const recaps = new RecapScheduler({
-    sdk: () => host.bb.sdk,
-    db,
-    inference,
-    model: async () => "test",
-    prefs: () => ({ quietSeconds: 30, minTurns: 3 }),
-    triage: () => undefined,
-    onChange: () => {},
-    log: () => {},
-  });
-  cleanups.push(async () => {
-    recaps.dispose();
-    await host.harness.lifecycle.dispose();
-  });
+
+async function world(prefs: Record<string, unknown> = {}) {
+  const w = await fakeWorld();
+  worlds.push(w);
+  w.addThread("t1", { status: "idle", queuedMessageCount: 0 });
+  if (Object.keys(prefs).length)
+    await w.harness.behavior.callRpc("setRecapPrefs", { patch: prefs });
+  const configure = (origin?: { kind: "fork"; pluginId: string }) =>
+    w.harness.behavior.resolveAgentConfiguration(
+      makePluginAgentConfigurationContext({
+        thread: { id: "t1", parentThreadId: null },
+        ...(origin ? { origin } : {}),
+      }),
+    );
+  await configure();
+  const thread = () => w.threads.get("t1")!;
+  const hook = () =>
+    w.harness.inspection.registrations.hooks["message.dispatch"]!;
+  /** The user sends a fresh message. */
+  const dispatch = () =>
+    hook()(makeMessageDispatchHookContext({ thread: thread() }));
+  const idle = () =>
+    w.harness.behavior.emitThreadEvent("thread.idle", {
+      thread: thread(),
+      lastAssistantText: "Done.",
+    });
+  const report = (input: Record<string, unknown> = RECAP) =>
+    w.harness.behavior.callAgentTool(RECAP_TOOL, input, { threadId: "t1" });
+  const card = () =>
+    w.harness.behavior.callRpc("recap_get", { threadId: "t1" }) as Promise<{
+      recap: { id: string; state: string; latest: string[] } | null;
+      capped: boolean;
+      corrections: number;
+    }>;
+  const corrections = () =>
+    w.sent.filter(
+      (send) =>
+        (send.pluginSubmission as { data?: { recapCorrection?: unknown } })
+          ?.data?.recapCorrection,
+    );
   return {
-    recaps,
-    db,
-    timeline,
-    get,
-    model,
-    setThread: (patch: Partial<typeof thread>) => {
-      thread = { ...thread, ...patch };
-    },
+    w,
+    thread,
+    hook,
+    dispatch,
+    idle,
+    report,
+    card,
+    corrections,
+    configure,
   };
 }
 
-describe("recap revision freshness", () => {
-  it("persists generation revision and reads freshness without any timeline scan", async () => {
-    const w = setup();
-    const recap = await w.recaps.generate("t", { onDemand: true });
-    expect(recap).toMatchObject({ revision: 100, turns: 1 });
-    w.timeline.mockClear();
-    w.get.mockClear();
-    expect(await w.recaps.getFresh("t")).toMatchObject({ revision: 100 });
-    expect(w.timeline).not.toHaveBeenCalled();
-    expect(w.get).toHaveBeenCalledTimes(1);
-    w.setThread({ latestAttentionAt: 101 });
-    expect(await w.recaps.getFresh("t")).toBeNull();
-    expect(w.timeline).not.toHaveBeenCalled();
+describe("agent recaps", () => {
+  it("shows the agent's recap for its turn and asks for nothing more", async () => {
+    const s = await world();
+    s.w.turn("t1");
+    await s.report({
+      ...RECAP,
+      latest: ["Moved the recap tool into Workstreams."],
+    });
+    await s.idle();
+    expect(s.corrections()).toHaveLength(0);
+    expect(await s.card()).toMatchObject({
+      recap: {
+        state: "complete",
+        // The closing period is dropped.
+        latest: ["Moved the recap tool into Workstreams"],
+      },
+    });
+    const state = (await s.w.harness.behavior.callRpc("state", null)) as {
+      recaps: Record<string, unknown>;
+    };
+    expect(state.recaps.t1).toMatchObject({ state: "complete" });
   });
-  it("does not display a matching-revision recap for an active, archived, or hidden thread", async () => {
-    const w = setup();
-    await w.recaps.generate("t", { onDemand: true });
-    w.setThread({ status: "active" });
-    expect(await w.recaps.getFresh("t")).toBeNull();
-    w.setThread({ status: "idle", archivedAt: 1 });
-    expect(await w.recaps.getFresh("t")).toBeNull();
-    w.setThread({ archivedAt: null, visibility: "hidden" });
-    expect(await w.recaps.getFresh("t")).toBeNull();
+
+  it("requires a review line for review, and real link locations", async () => {
+    const s = await world();
+    s.w.turn("t1");
+    await expect(s.report({ ...RECAP, state: "review" })).rejects.toThrow();
+    await expect(
+      s.report({
+        ...RECAP,
+        links: [{ title: "Report", location: "javascript:alert(1)" }],
+      }),
+    ).rejects.toThrow();
+    await expect(s.report({ ...RECAP, latest: [] })).rejects.toThrow();
+    await s.report({
+      ...RECAP,
+      state: "review",
+      review: "Open the sidebar and check the ✓ mark",
+      links: [{ title: "Report", location: "/tmp/report.md" }],
+    });
+    expect((await s.card()).recap).toMatchObject({ state: "review" });
   });
-  it("treats old recaps without a revision as stale without fetching history", async () => {
-    const w = setup();
-    w.db
-      .prepare(
-        "INSERT INTO ws_recap(thread_id,summary,generated_at,turns,model)VALUES('t','old',1,99,'old')",
-      )
-      .run();
-    expect(await w.recaps.getFresh("t")).toBeNull();
-    expect(w.timeline).not.toHaveBeenCalled();
-    expect(w.get).not.toHaveBeenCalled();
+
+  it("asks for a missing recap, caps the reminders, and resets on fresh input", async () => {
+    const s = await world({ corrections: 2 });
+    s.w.turn("t1");
+    await s.idle();
+    await s.idle();
+    expect(s.corrections()).toHaveLength(1);
+    expect(s.corrections()[0]).toMatchObject({
+      input: [{ visibility: "agent-only" }],
+    });
+    s.w.turn("t1");
+    await s.idle();
+    expect(s.corrections()).toHaveLength(2);
+    expect((await s.card()).capped).toBe(false);
+    s.w.turn("t1");
+    await s.idle();
+    expect(s.corrections()).toHaveLength(2);
+    expect(await s.card()).toMatchObject({ capped: true, corrections: 2 });
+    await s.dispatch();
+    s.w.turn("t1");
+    await s.idle();
+    expect(s.corrections()).toHaveLength(3);
   });
-  it("hides recap on turn start even if a retry has not advanced revision yet", async () => {
-    const w = setup();
-    await w.recaps.generate("t", { onDemand: true });
-    w.recaps.onActive("t");
-    expect(await w.recaps.getFresh("t")).toBeNull();
-    expect(w.recaps.get("t")?.summary).toContain("freshness");
+
+  it("counts an open question card, even one without a turn of its own", async () => {
+    const s = await world();
+    s.w.turn("t1");
+    await s.w.harness.behavior.emitThreadEvent("interaction.pending", {
+      thread: s.thread(),
+      interaction: {
+        id: "i1",
+        threadId: "t1",
+        turnId: null,
+        status: "pending",
+        payload: { kind: "plugin" },
+        origin: {
+          kind: "plugin",
+          pluginId: "toolbelt-ask-user-question",
+          rendererId: "ask-user-question",
+        },
+      } as never,
+    });
+    await s.idle();
+    expect(s.corrections()).toHaveLength(0);
+    expect((await s.card()).recap).toBeNull();
   });
-  it("rejects changes during generation with the same user-turn count", async () => {
-    const pending = deferred();
-    const w = setup(() => pending.promise);
-    const generation = w.recaps.generate("t", { onDemand: true });
-    await vi.waitFor(() => expect(w.model).toHaveBeenCalled());
-    w.setThread({ latestAttentionAt: 101 });
-    pending.resolve("Latest: Old answer");
-    expect(await generation).toBeNull();
-    expect(w.recaps.get("t")).toBeNull();
+
+  it("proceeds with a current reminder and rejects one that fresh input overtook", async () => {
+    const s = await world();
+    s.w.turn("t1");
+    await s.idle();
+    const sent = s.corrections()[0]!;
+    const reminder = () =>
+      s.hook()(
+        makeMessageDispatchHookContext({
+          thread: s.thread(),
+          experimental_submission: sent.pluginSubmission as never,
+        }),
+      );
+    expect(await reminder()).toEqual({ action: "proceed" });
+    await s.dispatch();
+    expect(await reminder()).toMatchObject({ action: "reject" });
   });
-  it("rejects a thread that becomes active during generation", async () => {
-    const pending = deferred();
-    const w = setup(() => pending.promise);
-    const generation = w.recaps.generate("t", { onDemand: true });
-    await vi.waitFor(() => expect(w.model).toHaveBeenCalled());
-    w.setThread({ status: "active" });
-    pending.resolve("Latest: Old answer");
-    expect(await generation).toBeNull();
-    expect(w.recaps.get("t")).toBeNull();
+
+  it("recognizes a queued reminder by its marker after its metadata is lost", async () => {
+    const s = await world({ corrections: 1 });
+    s.w.turn("t1");
+    await s.idle();
+    const text = (s.corrections()[0]!.input as { text: string }[])[0]!.text;
+    const queued = makeMessageDispatchHookContext({
+      thread: { ...s.thread(), queuedMessageCount: 1 },
+      input: { text },
+      queuedMessages: [makeQueueEntry({ id: "queued-reminder" })],
+      experimental_submission: null,
+    });
+    expect(await s.hook()(queued)).toEqual({ action: "proceed" });
+    s.w.turn("t1");
+    await s.idle();
+    expect(await s.card()).toMatchObject({ capped: true, corrections: 1 });
   });
-  it("does not let an aborted older call overwrite a newer on-demand recap", async () => {
-    const pending = deferred();
-    let calls = 0;
-    const w = setup(() =>
-      ++calls === 1 ? pending.promise : "Latest: New answer",
-    );
-    const old = w.recaps.generate("t", { onDemand: true });
-    await vi.waitFor(() => expect(w.model).toHaveBeenCalledTimes(1));
-    const newer = await w.recaps.generate("t", { onDemand: true });
-    pending.resolve("Latest: Old answer");
-    await old;
-    expect(newer?.summary).toContain("New answer");
-    expect(w.recaps.get("t")?.summary).toContain("New answer");
+
+  it("clears the recap on fresh input; dismissing hides only the card", async () => {
+    const s = await world();
+    s.w.turn("t1");
+    await s.report();
+    const { recap } = await s.card();
+    await s.w.harness.behavior.callRpc("recap_dismiss", {
+      threadId: "t1",
+      recapId: recap!.id,
+    });
+    expect((await s.card()).recap).toBeNull();
+    const state = (await s.w.harness.behavior.callRpc("state", null)) as {
+      recaps: Record<string, unknown>;
+    };
+    expect(state.recaps.t1).toBeDefined();
+    await s.dispatch();
+    const after = (await s.w.harness.behavior.callRpc("state", null)) as {
+      recaps: Record<string, unknown>;
+    };
+    expect(after.recaps.t1).toBeUndefined();
   });
-  it("does not save after deletion or disposal even if the provider ignores abort", async () => {
-    for (const operation of ["delete", "dispose"]) {
-      const pending = deferred();
-      const w = setup(() => pending.promise);
-      const generation = w.recaps.generate("t", { onDemand: true });
-      await vi.waitFor(() => expect(w.model).toHaveBeenCalled());
-      if (operation === "delete") w.recaps.disposeThread("t");
-      else w.recaps.dispose();
-      pending.resolve("Latest: Old answer");
-      await generation;
-      expect(w.recaps.get("t")).toBeNull();
-    }
+
+  it.each(["failed", "interrupted"])(
+    "doesn't remind after %s turns",
+    async (status) => {
+      const s = await world();
+      s.w.turn("t1", status);
+      await s.idle();
+      expect(s.corrections()).toHaveLength(0);
+    },
+  );
+
+  it.each([
+    { visibility: "hidden" },
+    { status: "active" },
+    { queuedMessageCount: 1 },
+  ])("doesn't remind a thread that is %j", async (patch) => {
+    const s = await world();
+    s.w.threads.set("t1", { ...s.thread(), ...patch } as never);
+    s.w.turn("t1");
+    await s.idle();
+    expect(s.corrections()).toHaveLength(0);
   });
-  it("rejects incomplete transcript pagination instead of labelling a partial scan fresh", async () => {
-    const w = setup();
-    w.timeline.mockImplementation(
-      async () =>
-        ({
-          rows: [],
-          timelinePage: { hasOlderRows: true, olderCursor: null },
-        }) as never,
-    );
-    expect(await w.recaps.generate("t", { onDemand: true })).toBeNull();
-    expect(w.model).not.toHaveBeenCalled();
-  });
-  it("preserves automatic minimum turns and permits unchanged on-demand regeneration", async () => {
-    const w = setup();
-    expect(await w.recaps.generate("t")).toBeNull();
-    expect(w.model).not.toHaveBeenCalled();
-    expect(await w.recaps.generate("t", { onDemand: true })).not.toBeNull();
-    expect(await w.recaps.generate("t", { onDemand: true })).not.toBeNull();
-    expect(w.model).toHaveBeenCalledTimes(2);
+
+  it("leaves side chats, and every thread when recaps are off, without the tool or reminders", async () => {
+    const s = await world();
+    const side = await s.configure({ kind: "fork", pluginId: "side-chat" });
+    expect(side.tools).toEqual([]);
+    s.w.turn("t1");
+    await s.idle();
+    expect(s.corrections()).toHaveLength(0);
+
+    const off = await world({ required: false });
+    expect((await off.configure()).tools).toEqual([]);
+    off.w.turn("t1");
+    await off.idle();
+    expect(off.corrections()).toHaveLength(0);
   });
 });

@@ -5,12 +5,7 @@ import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 
 afterEach(cleanup);
 
-const PREFS = {
-  automatic: true,
-  layout: "detailed",
-  quietSeconds: 30,
-  minTurns: 3,
-};
+const PREFS = { required: true, corrections: 3, layout: "full" };
 
 async function mount() {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
@@ -31,21 +26,21 @@ async function mount() {
 
 it("saves a layout pick immediately", async () => {
   const slot = await mount();
-  fireEvent.click(await slot.findByRole("radio", { name: /Compact/ }));
+  fireEvent.click(await slot.findByRole("radio", { name: /Minimal/ }));
   await waitFor(() =>
     expect(
       slot.inspection.rpcCalls.find((c) => c.method === "setRecapPrefs")?.input,
-    ).toEqual({ patch: { layout: "compact" } }),
+    ).toEqual({ patch: { layout: "minimal" } }),
   );
 });
 
-it("describes Generate Recap when automatic recaps are turned off", async () => {
+it("disables reminders when agents don't end turns with a recap", async () => {
   const slot = await mount();
   fireEvent.click(
-    await slot.findByRole("checkbox", { name: "Automatic recaps" }),
+    await slot.findByRole("checkbox", { name: "End turns with a recap" }),
   );
-  expect(await slot.findByText(/Generate Recap button appears/)).toBeTruthy();
+  expect(await slot.findByText(/don't get the recap tool/)).toBeTruthy();
   expect(
-    slot.getByRole("textbox", { name: "Quiet period in seconds" }),
+    slot.getByRole("textbox", { name: "Reminders per turn" }),
   ).toHaveProperty("disabled", true);
 });

@@ -2,6 +2,7 @@ import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { WORK_STATES } from "../domain/analysis.ts";
 import { recapPrefsSchema } from "../domain/recapPrefs.ts";
+import { recapSchema } from "../domain/recap.ts";
 import { snoozePrefsPatchSchema, snoozePrefsSchema } from "../domain/snooze.ts";
 import {
   HEX_COLOR,
@@ -23,15 +24,6 @@ const placementSchema = z.object({
   source: sourceSchema,
   at: z.number(),
   entryId: z.string().nullable(),
-});
-
-const recapSchema = z.object({
-  threadId: z.string(),
-  summary: z.string(),
-  generatedAt: z.number(),
-  turns: z.number(),
-  model: z.string(),
-  revision: z.number().nullable().default(null),
 });
 
 const analysisSchema = z.object({
@@ -363,15 +355,24 @@ export const rpcContract = defineRpcContract({
       sectionId: z.string().nullable(),
     }),
   },
-  /** Plugin-side facts the live sidebar hook doesn't carry. */
+  /**
+   * The recap card's contents: the agent's recap for the thread's latest
+   * turn unless dismissed, and whether corrections ran out without one.
+   */
   recap_get: {
     input: z.object({ threadId: z.string().min(1) }),
     output: z.object({
       recap: recapSchema.nullable(),
-      generating: z.boolean(),
-      /** The analysis's ask when the thread needs a decision from the user. */
-      needsInput: z.string().nullable(),
+      capped: z.boolean(),
+      corrections: z.number(),
+      /** Resolves the recap's file deliverables to workspace links. */
+      environmentId: z.string().nullable(),
     }),
+  },
+  /** Hides the recap card on every client until the next recap. */
+  recap_dismiss: {
+    input: z.object({ threadId: z.string().min(1), recapId: z.string() }),
+    output: z.object({ ok: z.literal(true) }),
   },
   recapPrefs: {
     input: z.null(),
@@ -381,20 +382,14 @@ export const rpcContract = defineRpcContract({
     input: z.object({ patch: recapPrefsSchema.partial() }),
     output: z.object({ prefs: recapPrefsSchema }),
   },
-  recap_generate: {
-    input: z.object({ threadId: z.string().min(1) }),
-    output: z.object({
-      recap: recapSchema.nullable(),
-      generated: z.boolean(),
-      reason: z.string().nullable(),
-    }),
-  },
   state: {
     input: z.null(),
     output: z.object({
       workstreams: z.record(z.string(), recordSchema),
       placements: z.record(z.string(), placementSchema),
       analysis: z.record(z.string(), analysisSchema),
+      /** Agent recaps for each thread's latest turn, dismissed ones included. */
+      recaps: z.record(z.string(), recapSchema).default({}),
       /** Drift flags dismissed, by thread: the target that was dismissed. */
       driftDismissed: z.record(z.string(), z.string()),
       bootstrapped: z.boolean(),
@@ -469,16 +464,14 @@ export const rpcContract = defineRpcContract({
     }),
     output: z.object({ threadId: z.string().nullable() }),
   },
+  /** The recap whose Archive button may show: the thread has no outstanding work. */
   archiveStatus: {
     input: z.object({ threadId: z.string().min(1) }),
-    output: z.object({ revision: z.number().nullable() }),
+    output: z.object({ recapId: z.string().nullable() }),
   },
-  archiveSuggestion: {
-    input: z.object({
-      threadId: z.string().min(1),
-      revision: z.number(),
-      action: z.enum(["archive", "dismiss"]),
-    }),
+  /** Archives the thread from its recap, rechecking outstanding work first. */
+  archive: {
+    input: z.object({ threadId: z.string().min(1), recapId: z.string() }),
     output: z.object({ ok: z.literal(true) }),
   },
   bootstrap: {

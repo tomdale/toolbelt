@@ -12,7 +12,8 @@ import {
 import type { Placement } from "../server/service.ts";
 import type { MapRecord } from "../server/map.ts";
 import { projectWorkstreams, type Projection } from "../domain/project.ts";
-import { isCurrent, needsYou } from "../domain/analysis.ts";
+import { isCurrent } from "../domain/analysis.ts";
+import { reportedAnalysis, type Recap } from "../domain/recap.ts";
 import type { ManualOrder } from "../domain/order.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
 import {
@@ -26,6 +27,8 @@ export type ServerState = {
   workstreams: Record<string, MapRecord>;
   placements: Record<string, Placement>;
   analysis: Record<string, StoredAnalysis>;
+  /** Agent recaps for each thread's latest turn. */
+  recaps: Record<string, Recap>;
   driftDismissed: Record<string, string>;
   bootstrapped: boolean;
   lastReconciledAt: number | null;
@@ -43,21 +46,50 @@ export function useServerState() {
   return useSharedServerState();
 }
 
-/** What a row shows from analysis: nothing, a pending marker, or the result. */
+/**
+ * What a row shows of a thread's work: nothing, a pending marker, or the
+ * current result. `reported` marks a result the thread's agent reported in
+ * its recap rather than one analysis inferred.
+ */
 export type WorkView =
   | { kind: "none" }
   | { kind: "pending"; previous: StoredAnalysis }
-  | { kind: "current"; analysis: StoredAnalysis };
+  | { kind: "current"; analysis: StoredAnalysis; reported: boolean };
 
+/**
+ * The agent's recap of an idle thread's latest turn outranks analysis for
+ * the work state and the row's one-line summary. Analysis still supplies
+ * subject and drift when it is current.
+ */
 export function workView(
   thread: PluginSidebarThread,
   analysis: StoredAnalysis | undefined,
+  recap?: Recap,
 ): WorkView {
-  // A failed turn gets no analysis; BB's own error mark says enough.
-  if (!analysis || thread.status === "error") return { kind: "none" };
+  // A failed turn gets neither; BB's own error mark says enough.
+  if (thread.status === "error") return { kind: "none" };
+  if (recap && thread.status === "idle")
+    return {
+      kind: "current",
+      reported: true,
+      analysis: reportedAnalysis(
+        recap,
+        thread,
+        isCurrent(analysis, thread) ? analysis : undefined,
+      ),
+    };
+  if (!analysis) return { kind: "none" };
   return isCurrent(analysis, thread)
-    ? { kind: "current", analysis }
+    ? { kind: "current", analysis, reported: false }
     : { kind: "pending", previous: analysis };
+}
+
+/** Needs you: a pending interaction, or a current needs-decision result. */
+function needsYou(thread: PluginSidebarThread, work: WorkView): boolean {
+  return (
+    thread.hasPendingInteraction ||
+    (work.kind === "current" && work.analysis.state === "needs_decision")
+  );
 }
 
 /** Re-renders once a minute so ages and dormancy stay current. */
@@ -119,19 +151,23 @@ export function useWorkstreams() {
     [threads, moving],
   );
 
-  const { analysis, order, snoozes } = server;
+  const { analysis, recaps, order, snoozes } = server;
   const projection: Projection<PluginSidebarThread> = useMemo(
     () =>
       projectWorkstreams(placed, sections, {
         now,
-        needsYou: (thread) => needsYou(thread, analysis[thread.id]),
+        needsYou: (thread) =>
+          needsYou(
+            thread,
+            workView(thread, analysis[thread.id], recaps[thread.id]),
+          ),
         order,
         snoozedUntil: (thread) => {
           const snooze = snoozes[thread.id];
           return isSnoozed(snooze, thread, now) ? snooze!.until : undefined;
         },
       }),
-    [placed, sections, now, analysis, order, snoozes],
+    [placed, sections, now, analysis, recaps, order, snoozes],
   );
   const values = (settings.values ?? {}) as Record<string, unknown>;
   return {
@@ -141,7 +177,7 @@ export function useWorkstreams() {
     projects,
     server,
     work: (thread: PluginSidebarThread) =>
-      workView(thread, analysis[thread.id]),
+      workView(thread, analysis[thread.id], recaps[thread.id]),
     now,
     rpc,
     refresh,

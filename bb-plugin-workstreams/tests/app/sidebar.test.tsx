@@ -36,6 +36,7 @@ async function mount(
     spinner?: unknown;
     onNavigate?: () => void;
     analysis?: Record<string, unknown>;
+    recaps?: Record<string, unknown>;
     order?: { workstreams: string[]; threads: Record<string, string[]> };
     snoozes?: Record<
       string,
@@ -78,6 +79,7 @@ async function mount(
         state: () => ({
           ...emptyState(),
           analysis: options.analysis ?? {},
+          recaps: options.recaps ?? {},
           order: {
             workstreams: [...order.workstreams],
             threads: { ...order.threads },
@@ -487,6 +489,56 @@ describe("thread list", () => {
         { name: "Needs your decision" },
       ),
     ).toHaveLength(1);
+    slot.lifecycle.unmount();
+  });
+
+  it("marks the agent's reported state, which outranks analysis", async () => {
+    const at = Date.now();
+    const recap = (state: string) => ({
+      id: `r-${state}`,
+      turnId: "turn",
+      at,
+      state,
+      goal: "Shipping",
+      latest: [`Reported ${state}`],
+      review: state === "review" ? "Try it" : null,
+      links: [],
+    });
+    const slot = await mount(
+      [
+        sidebarThread("asked", { title: "Asked", latestAttentionAt: 100 }),
+        sidebarThread("finished", {
+          title: "Finished",
+          latestAttentionAt: 100,
+        }),
+      ],
+      {
+        // Analysis read the turn as a question; the agent reported it done.
+        analysis: {
+          asked: {
+            recap: "Asked whether to ship.",
+            state: "needs_decision",
+            needsYou: "Ship it?",
+            subject: null,
+            drift: null,
+            driftSectionId: null,
+            revision: 100,
+            at,
+            model: "m",
+          },
+        },
+        recaps: { asked: recap("review"), finished: recap("complete") },
+      },
+    );
+    const group = await slot.findByRole("region", { name: "Unsorted" });
+    expect(slot.queryByRole("region", { name: "For you" })).toBeNull();
+    expect(
+      within(group).getByRole("img", { name: "Ready for your review" }),
+    ).toBeTruthy();
+    expect(within(group).getByRole("img", { name: "Complete" })).toBeTruthy();
+    expect(
+      within(group).getByRole("link", { name: "Finished, Complete" }).title,
+    ).toContain("Reported complete");
     slot.lifecycle.unmount();
   });
 

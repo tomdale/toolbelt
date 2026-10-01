@@ -16,6 +16,7 @@ function emptyState(): ServerState {
     workstreams: {},
     placements: {},
     analysis: {},
+    recaps: {},
     driftDismissed: {},
     bootstrapped: false,
     lastReconciledAt: null,

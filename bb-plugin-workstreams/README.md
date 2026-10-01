@@ -45,10 +45,11 @@ design and the contract the code is checked against.
     timed snooze returns the thread marked unread at its time; "Until it
     updates" returns it at its next activity; sending the thread a message or
     **Wake now** ends any snooze.
-  - Rows show BB's status, a work-state mark from analysis (◆ decision, ◇
-    review, ⏸ blocked; hover for where it stopped), unread state, drafts,
-    shortcuts and pull requests. Pick the working thread's spinner animation and
-    its colors under **Working indicator** in the plugin's settings (BB's own by
+  - Rows show BB's status, a work-state mark (✓ complete and ◇ review from the
+    agent's recap; ◆ decision, ◇ review, ⏸ blocked from analysis when a thread
+    has no recap; hover for where it stopped), unread state, drafts, shortcuts
+    and pull requests. Pick the working thread's spinner animation and its
+    colors under **Working indicator** in the plugin's settings (BB's own by
     default). Hover a row for its Snooze and Archive buttons; right-click to
     move, rename, pin, mark read, snooze, archive, or delete.
 - **Workstreams page** (`/plugins/workstreams/home`):
@@ -58,28 +59,31 @@ design and the contract the code is checked against.
     (below).
   - **Activity**: every change and proposal with its time, rationale, source,
     and Undo, filterable by workstream, action, and needs-review.
+- **Recaps**: every thread except side chats gets a `WorkstreamsRecap` tool, and
+  its agent ends each turn one of three ways: a question card (AskUserQuestion
+  or the provider's own), a **review** recap, or a **complete** recap. A recap
+  is a Goal heading, one to three Latest results, for review a **Review** line
+  naming what to inspect or try and the expected result, and links to files or
+  pages. It shows above the composer with **Archive** and **Dismiss** centered
+  under it, and its state marks the sidebar row. Fresh input clears it. A turn
+  that ends without either gets an agent-only reminder, three by default
+  (Settings → **Recap**: on/off, reminders 0–10, and a Full or Minimal layout
+  without the goal). BB reports turn completion after the fact, so the turn's
+  own reply is already visible when the reminder arrives. The tool reaches each
+  thread when its provider session next starts, and only those threads get
+  reminders.
+- **Archive**: on a complete or review recap, when BB has no unfinished tasks,
+  goals, queued messages, interactions, or background work, and every child and
+  lifecycle dependent is complete. Archiving a review recap accepts its result.
+  Archive rechecks outstanding work. Typing a continuation, adding an
+  attachment, or starting new work withdraws it for that recap; clearing the
+  draft doesn't bring it back. Dismiss hides the card on every client and keeps
+  the sidebar mark. Workstreams never archives automatically.
 - **Analysis**: a few seconds after each turn, one small model call records the
-  thread's recap, work state, subject, and (for top-level threads) whether its
-  latest request drifted to another workstream. Results are tied to the turn
-  they describe and show as updating once a new turn starts. Analysis itself
-  never moves anything.
-- **Review recaps**: a **Review** instruction names what to inspect or try and
-  the expected result. It stays visible in detailed, compact, and minimal
-  layouts.
-- **Archive suggestions**: when classification finds a natural end or a result
-  ready for review, and BB has no unfinished tasks, goals, queued messages,
-  interactions, or background work, an **Archive** button appears on the recap.
-  For review results, clicking accepts the result and closes the thread. Archive
-  rechecks outstanding work and requires completed children and lifecycle
-  dependents. Typing a continuation, adding an attachment, or starting new work
-  dismisses the suggestion for that completed turn; clearing the draft does not
-  bring it back. Reading, scrolling, and focusing the composer do not dismiss
-  it. A later completed turn can produce a new suggestion. Workstreams never
-  archives automatically.
-- **Recap freshness**: stored recaps are shown only for the idle thread revision
-  they summarize. A new turn invalidates the recap, and generation checks the
-  revision again before saving. Freshness reads do not scan conversation
-  history; recaps without a recorded revision regenerate before being shown.
+  thread's one-line summary, work state, subject, and (for top-level threads)
+  whether its latest request drifted to another workstream. Results are tied to
+  the turn they describe and show as updating once a new turn starts. A recap
+  outranks analysis for the work state. Analysis itself never moves anything.
 - **Titles**: the same call suggests a title when a thread has none, its title
   is cut off or too vague, or its latest requests moved onto different work.
   Workstreams applies it (at most once an hour for a titled thread) and logs it
@@ -99,7 +103,7 @@ design and the contract the code is checked against.
   Send there continues the thread. An uncertain route leaves the choice to you.
   Creating a workstream requires the explicit Create workstream action;
   classification cannot silently create a home.
-- **Task threads**: top-level threads get short instructions to delegate
+- **Task threads**: top-level threads also get short instructions to delegate
   subtasks with BB's own `bb thread spawn --parent-self` (with environment
   guidance for the project's shape) and to hand off out-of-scope requests with
   `bb workstreams handoff`. Delegation requires user approval. Delegates are
@@ -189,14 +193,15 @@ node scripts/capture-new-work.mjs /tmp/new-work-shots
   projection shared by the sidebar, page, and CLI), `analysis.ts`,
   `organize.ts`, `router.ts`, `instructions.ts`.
 - `src/server/`: `service.ts` (mutations, batches, undo, reconciler),
-  `analyzer.ts`, `bootstrap.ts`, `router.ts`, `agents.ts` (`configure`),
-  `map.ts`, `journal.ts`, `db.ts` (append-only migrations; the existing
-  migration IDs remain append-only), `cli.ts`, `contract.ts`, `model.ts` (every
-  model call's prompt and parser, and Debug mode's recording), `trace.ts` (the
-  trace store), `inference/` (the host entry that runs Pi).
-- `src/app/`: the sidebar list, the page, the header parent link and recap
-  actions, New work intake, and `debug/` (inspect buttons, the inspector pane),
-  fed by `useWorkstreams.ts`.
+  `analyzer.ts`, `recap.ts` (the recap tool and reminders), `archive.ts`,
+  `bootstrap.ts`, `router.ts`, `agents.ts` (`configure`), `map.ts`,
+  `journal.ts`, `db.ts` (append-only migrations; the existing migration IDs
+  remain append-only), `cli.ts`, `contract.ts`, `model.ts` (every model call's
+  prompt and parser, and Debug mode's recording), `trace.ts` (the trace store),
+  `inference/` (the host entry that runs Pi).
+- `src/app/`: the sidebar list, the page, the header parent link, the recap
+  card, New work intake, and `debug/` (inspect buttons, the inspector pane), fed
+  by `useWorkstreams.ts`.
 
 To check the exact-once guarantee against real data, export a snapshot to
 private storage (it contains thread titles) and point the test at it:

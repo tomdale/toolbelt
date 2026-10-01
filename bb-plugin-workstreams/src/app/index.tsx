@@ -1,5 +1,5 @@
 // Workstreams frontend entry: the sidebar thread list, the Workstreams page,
-// thread header actions (parent link, recap, snooze), and the
+// thread header actions (parent link, snooze), the recap card, and the
 // settings sections.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ServerStateRealtime } from "./serverState.ts";
@@ -12,10 +12,6 @@ import { WorkstreamsPage } from "./page/Page.tsx";
 import { SpinnerSettings } from "./settings/SpinnerSettings.tsx";
 import { WorkstreamsThreadList } from "./sidebar/ThreadList.tsx";
 import { RecapSettings } from "./recap/RecapSettings.tsx";
-import {
-  RecapHeaderAction,
-  headerGenerators,
-} from "./recap/RecapHeaderAction.tsx";
 import {
   SnoozeHeaderAction,
   headerSnoozers,
@@ -43,20 +39,6 @@ export default definePluginApp((app) => {
     id: "parent-thread",
     title: "Parent thread",
     component: ParentThreadLink,
-  });
-  app.slots.experimental_threadHeaderAction({
-    id: "recap",
-    title: "Recap",
-    component: RecapHeaderAction,
-  });
-  app.slots.commandPaletteAction({
-    id: "generate-recap",
-    title: "Workstreams: recap this thread",
-    isAvailable: ({ threadId }) =>
-      threadId !== null && headerGenerators.has(threadId),
-    run: ({ threadId }) => {
-      if (threadId !== null) headerGenerators.get(threadId)?.();
-    },
   });
   app.slots.experimental_threadHeaderAction({
     id: "snooze",
@@ -100,7 +82,7 @@ export default definePluginApp((app) => {
     id: "recap",
     title: "Recap",
     description:
-      "The recap card above each thread's composer: its layout and when it's written.",
+      "The agent's recap above each thread's composer: whether agents write one, reminders, and layout.",
     component: RecapSettings,
   });
   app.slots.settingsSection({

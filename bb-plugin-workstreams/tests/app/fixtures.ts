@@ -60,6 +60,7 @@ export const emptyState = () => ({
   workstreams: {},
   placements: {},
   analysis: {},
+  recaps: {},
   proposals: [],
   bootstrapped: true,
   lastReconciledAt: null,

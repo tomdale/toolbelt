@@ -13,9 +13,9 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
-  WORK_STATE,
   relativeAge,
   statusRole,
+  workStateMark,
 } from "../../domain/presentation.ts";
 import type { WorkView } from "../useWorkstreams.ts";
 import { StatusMark } from "./StatusMark.tsx";
@@ -70,7 +70,10 @@ export function hasStatusMark(
 ): boolean {
   if (hasNativeStatus(thread)) return true;
   const state = shownWorkState(work, attention);
-  return Boolean(state && WORK_STATE[state].glyph);
+  return Boolean(
+    state &&
+    workStateMark(state, work?.kind === "current" && work.reported).glyph,
+  );
 }
 
 export function Row({
@@ -126,7 +129,8 @@ export function Row({
   onNavigate: () => void;
 }) {
   const shownState = shownWorkState(work, attention);
-  const state = shownState ? WORK_STATE[shownState] : null;
+  const reported = work?.kind === "current" && work.reported;
+  const state = shownState ? workStateMark(shownState, reported) : null;
   const recap =
     work?.kind === "current"
       ? work.analysis.recap
@@ -198,7 +202,7 @@ export function Row({
         ) : null}
         {state?.glyph && !nativeStatus ? (
           <span
-            className={`ws-work ws-work-${shownState} relative inline-flex size-3.5 shrink-0 items-center justify-center`}
+            className={`ws-work ws-work-${reported && shownState === "done" ? "complete" : shownState} relative inline-flex size-3.5 shrink-0 items-center justify-center`}
             role="img"
             aria-label={state.label}
             title={state.label}
