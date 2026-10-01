@@ -150,6 +150,28 @@ describe("projectWorkstreams", () => {
     expect(rowIds(p.groups[0]!)).toContain("ask");
   });
 
+  it("limits Recent to top-level threads before applying its limit", () => {
+    const p = projectWorkstreams(
+      [
+        thread("root", { sectionId: "sec_a", latestAttentionAt: now - 10 }),
+        thread("child", {
+          parentThreadId: "root",
+          latestAttentionAt: now,
+        }),
+        ...Array.from({ length: 5 }, (_, i) =>
+          thread(`other${i}`, { latestAttentionAt: now - 20 - i }),
+        ),
+      ],
+      sections,
+      { now, recentLimit: 3 },
+    );
+    expect(p.recent.map((row) => row.thread.id)).toEqual([
+      "root",
+      "other0",
+      "other1",
+    ]);
+  });
+
   it("accepts a custom needs-you predicate", () => {
     const p = projectWorkstreams(
       [thread("x", { sectionId: "sec_a", latestAttentionAt: now })],

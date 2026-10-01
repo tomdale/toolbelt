@@ -239,7 +239,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
   const all = [...rowOf.values()];
   const needsYouRows = all.filter(counts).sort(byAttention);
   const recent = all
-    .filter((row) => !row.needsYou)
+    .filter((row) => row.depth === 0 && !row.needsYou)
     .sort(byAttention)
     .slice(0, recentLimit);
 
