@@ -457,7 +457,7 @@ it.
   review is requested. Continuing recaps require `next` (1–3 agent-owned steps,
   ≤ 160 visible characters each), omit review and links, and show Progress and
   Next with “Nothing needed from you”. Complete recaps have no links. Text
-  fields are inline Markdown (code, emphasis, links, `@thread:<id>` mentions as
+  fields are inline Markdown (code, emphasis, links, `@thread:<id>` mentions and bare commit hashes as
   chips, through BB's Markdown renderer); limits count visible text, and the
   sidebar shows the first line as plain text. Closing periods are dropped. The
   card shows a single Latest line or Review step as plain text and several as a

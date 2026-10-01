@@ -37,7 +37,12 @@ async function mount(bootstrap: (input: unknown) => Promise<RpcResult>) {
     app.navPanels[0]!,
     { subPath: "map" },
     {
-      sidebarThreads: { status: "ready", threads: [], sections: [], projects: [] },
+      sidebarThreads: {
+        status: "ready",
+        threads: [],
+        sections: [],
+        projects: [],
+      },
       rpc: { state: () => ({ state: null }), bootstrap },
     },
   );
@@ -70,10 +75,14 @@ describe("Organize request freshness", () => {
     let gets = 0;
     const slot = await mount(async (input) =>
       (input as { action: string }).action === "get"
-        ? ++gets === 1 ? Promise.resolve({ state: null }) : initial.promise
+        ? ++gets === 1
+          ? Promise.resolve({ state: null })
+          : initial.promise
         : command.promise,
     );
-    await waitFor(() => expect(slot.getByRole("button", { name: "Organize…" })).toBeTruthy());
+    await waitFor(() =>
+      expect(slot.getByRole("button", { name: "Organize…" })).toBeTruthy(),
+    );
     await slot.behavior.emitRealtime("changed", {});
     await waitFor(() => expect(gets).toBe(2));
     fireEvent.click(slot.getByRole("button", { name: "Organize…" }));
@@ -82,9 +91,13 @@ describe("Organize request freshness", () => {
       await Promise.resolve();
     });
     expect(slot.queryByText("old read")).toBeNull();
-    expect(slot.inspection.rpcCalls.some((call) =>
-      call.method === "bootstrap" && (call.input as { action?: string }).action === "start",
-    )).toBe(true);
+    expect(
+      slot.inspection.rpcCalls.some(
+        (call) =>
+          call.method === "bootstrap" &&
+          (call.input as { action?: string }).action === "start",
+      ),
+    ).toBe(true);
     command.resolve({ state: snapshot("command", 2) });
   });
 
@@ -99,7 +112,9 @@ describe("Organize request freshness", () => {
           : read.promise
         : command.promise,
     );
-    await waitFor(() => expect(slot.getByRole("button", { name: "Organize…" })).toBeTruthy());
+    await waitFor(() =>
+      expect(slot.getByRole("button", { name: "Organize…" })).toBeTruthy(),
+    );
     fireEvent.click(slot.getByRole("button", { name: "Organize…" }));
     await slot.behavior.emitRealtime("changed", {});
     read.resolve({ state: snapshot("new read", 3) });
@@ -122,10 +137,14 @@ describe("Organize request freshness", () => {
           : read.promise
         : command.promise,
     );
-    await waitFor(() => expect(slot.getByRole("button", { name: "Organize…" })).toBeTruthy());
+    await waitFor(() =>
+      expect(slot.getByRole("button", { name: "Organize…" })).toBeTruthy(),
+    );
     fireEvent.click(slot.getByRole("button", { name: "Organize…" }));
     command.reject(new Error("command refused"));
-    await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("command refused"));
+    await waitFor(() =>
+      expect(slot.getByRole("alert").textContent).toContain("command refused"),
+    );
     await slot.behavior.emitRealtime("changed", {});
     read.resolve({ state: snapshot(null, 3) });
     await Promise.resolve();
@@ -138,13 +157,17 @@ describe("Organize request freshness", () => {
     let gets = 0;
     const slot = await mount(async (input) =>
       (input as { action: string }).action === "get"
-        ? ++gets === 1 ? older.promise : newer.promise
+        ? ++gets === 1
+          ? older.promise
+          : newer.promise
         : { state: null },
     );
     await waitFor(() => expect(gets).toBe(1));
     await slot.behavior.emitRealtime("changed", {});
     newer.reject(new Error("new read failed"));
-    await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("new read failed"));
+    await waitFor(() =>
+      expect(slot.getByRole("alert").textContent).toContain("new read failed"),
+    );
     await act(async () => {
       older.resolve({ state: snapshot("old success", 1) });
       await Promise.resolve();
@@ -158,13 +181,19 @@ describe("Organize request freshness", () => {
     let gets = 0;
     const slot = await mount(async (input) =>
       (input as { action: string }).action === "get"
-        ? ++gets === 1 ? older.promise : newer.promise
+        ? ++gets === 1
+          ? older.promise
+          : newer.promise
         : { state: null },
     );
     await waitFor(() => expect(gets).toBe(1));
     await slot.behavior.emitRealtime("changed", {});
     newer.reject(new Error("newest read failed"));
-    await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("newest read failed"));
+    await waitFor(() =>
+      expect(slot.getByRole("alert").textContent).toContain(
+        "newest read failed",
+      ),
+    );
     await act(async () => {
       older.reject(new Error("old read failed"));
       await Promise.resolve();
@@ -178,15 +207,25 @@ describe("Organize request freshness", () => {
     let gets = 0;
     const slot = await mount(async (input) =>
       (input as { action: string }).action === "get"
-        ? ++gets === 1 ? Promise.resolve({ state: null }) : recovery.promise
+        ? ++gets === 1
+          ? Promise.resolve({ state: null })
+          : recovery.promise
         : command.promise,
     );
-    await waitFor(() => expect(slot.getByRole("button", { name: "Organize…" })).toBeTruthy());
+    await waitFor(() =>
+      expect(slot.getByRole("button", { name: "Organize…" })).toBeTruthy(),
+    );
     fireEvent.click(slot.getByRole("button", { name: "Organize…" }));
     await act(async () => command.resolve({ state: snapshot(null, 2) }));
     await waitFor(() => expect(gets).toBe(2));
-    await act(async () => recovery.reject(new Error("connection lost after command")));
-    await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("connection lost after command"));
+    await act(async () =>
+      recovery.reject(new Error("connection lost after command")),
+    );
+    await waitFor(() =>
+      expect(slot.getByRole("alert").textContent).toContain(
+        "connection lost after command",
+      ),
+    );
   });
 
   it("handles a read rejection and clears its error after retry succeeds", async () => {
@@ -199,7 +238,9 @@ describe("Organize request freshness", () => {
           : retry.promise
         : { state: null },
     );
-    await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("read offline"));
+    await waitFor(() =>
+      expect(slot.getByRole("alert").textContent).toContain("read offline"),
+    );
     await slot.behavior.emitRealtime("changed", {});
     retry.resolve({ state: null });
     await waitFor(() => expect(slot.queryByRole("alert")).toBeNull());

@@ -27,6 +27,7 @@ const EXAMPLES: readonly Example[] = [
       latest: [
         "Theme toggle saves to the user's preferences",
         "Every settings panel follows the system theme by default",
+        "Shipped in 3f9c2a1e",
       ],
       review: [],
       links: [],

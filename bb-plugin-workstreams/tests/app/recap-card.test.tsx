@@ -466,3 +466,15 @@ it("holds the card's space the moment sending hides it", async () => {
     expect(slot.container.querySelector("[aria-hidden='true']")).toBeNull(),
   );
 });
+
+it("renders commit hashes and thread mentions as chips", async () => {
+  const slot = await mount({
+    recap: { latest: ["Pushed cef48186269c for @thread:other"] },
+  });
+  await slot.findByRole("region", { name: "Latest recap" });
+  const sha = slot.getByRole("button", { name: "Copy commit cef48186269c" });
+  expect(sha.textContent).toBe("cef4818");
+  expect(slot.getByRole("link").getAttribute("href")).toBe(
+    "/projects/proj_1/threads/other",
+  );
+});
