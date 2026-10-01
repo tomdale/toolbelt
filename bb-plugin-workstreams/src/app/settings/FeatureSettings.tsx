@@ -61,7 +61,10 @@ export function SidebarSettings() {
         ) : null}
       </div>
       <div className="min-w-0">
-        <SettingRow label="Working indicator" />
+        <SettingRow
+          label="Working indicator"
+          description="How a working thread is marked in the sidebar."
+        />
         <div className="mt-3">
           <SpinnerSettings />
         </div>
@@ -144,7 +147,7 @@ export function NewWorkSettings() {
       />
       <SettingRow
         label="Suggestions while typing"
-        description="Suggest a project for a new thread as you write."
+        description="Suggest a workstream for a new thread as you write."
         control={
           <SettingSwitch
             label="Suggestions while typing"
@@ -155,7 +158,7 @@ export function NewWorkSettings() {
       />
       <ModelField
         label="Suggestions model"
-        description="Suggests a workstream for a new-thread draft as you type; keep it fast."
+        description="Suggests a workstream for a new-thread draft as you type."
         choice={prefs.newWork.suggestionsModel}
         disabled={!prefs.newWork.suggestions}
         onChange={(suggestionsModel) =>

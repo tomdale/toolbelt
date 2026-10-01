@@ -56,6 +56,8 @@ it("picks up to four hover-menu choices, in menu order", async () => {
   await waitFor(async () =>
     expect((await box(/^1 hour/)).getAttribute("aria-checked")).toBe("true"),
   );
+  expect((await box(/^1 hour/)).className).not.toContain("bg-accent/30");
+  expect((await box(/^30 minutes/)).className).toContain("hover:bg-accent/50");
   fireEvent.click(await box(/^30 minutes/));
   await waitFor(() =>
     expect(lastPatch(slot)).toEqual({

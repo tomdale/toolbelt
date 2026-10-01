@@ -55,11 +55,14 @@ export function SpinnerSettings() {
   return (
     <div className="flex min-w-0 flex-col gap-5">
       <ShapeGrid style={style} onPick={(shape) => change({ shape })} />
-      <Swatches
-        value={style.primary}
-        onPick={(primary) => change({ primary })}
-        customLabel="Custom color"
-      />
+      <fieldset className="min-w-0">
+        <legend className="sr-only">Color</legend>
+        <Swatches
+          value={style.primary}
+          onPick={(primary) => change({ primary })}
+          customLabel="Custom color"
+        />
+      </fieldset>
       {showTrack ? (
         <fieldset ref={trackRef} className="min-w-0">
           <legend className="sr-only">Track color</legend>
@@ -120,7 +123,7 @@ function ShapeGrid({
     <div
       role="radiogroup"
       aria-label="Working indicator style"
-      className="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2"
+      className="grid grid-cols-2 gap-2 min-[520px]:grid-cols-4 xl:grid-cols-7"
     >
       {SPINNER_SHAPES.map((shape) => {
         const { name: label, note } = SHAPE_LABEL[shape];
@@ -130,7 +133,7 @@ function ShapeGrid({
             key={shape}
             title={note}
             className={cn(
-              "relative flex min-w-0 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border px-2 py-2.5 text-xs transition-colors has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring",
+              "relative flex min-w-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring",
               checked
                 ? "border-primary bg-accent text-foreground ring-1 ring-primary/40"
                 : "border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -146,13 +149,15 @@ function ShapeGrid({
             />
             <span
               aria-hidden="true"
-              className="flex size-6 shrink-0 items-center justify-center"
+              className="flex size-4 shrink-0 items-center justify-center"
             >
-              <span className="inline-flex scale-125">
+              <span className="inline-flex scale-[1.1]">
                 <WorkingMark spinner={{ ...style, shape }} />
               </span>
             </span>
-            <span className={checked ? "font-medium" : undefined}>{label}</span>
+            <span className={cn("truncate", checked && "font-medium")}>
+              {label}
+            </span>
           </label>
         );
       })}
@@ -198,6 +203,7 @@ function Swatches<T extends SpinnerTrack>({
         <label
           key={option.value}
           title={option.label}
+          aria-label={option.label}
           className="relative cursor-pointer rounded-full has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring"
         >
           <input
@@ -214,6 +220,7 @@ function Swatches<T extends SpinnerTrack>({
       ))}
       <label
         title={customLabel}
+        aria-label={customLabel}
         className="relative cursor-pointer rounded-full has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring"
       >
         <input

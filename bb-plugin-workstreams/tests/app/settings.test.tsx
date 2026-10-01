@@ -50,6 +50,24 @@ it("registers settings in feature order", async () => {
   ]);
 });
 
+it("renders compact working styles and accessible colored swatches", async () => {
+  const slot = await mount("sidebar");
+  const styles = await slot.findByRole("radiogroup", {
+    name: "Working indicator style",
+  });
+  expect(styles.querySelectorAll("input[type=radio]")).toHaveLength(7);
+  expect(
+    slot.getByText("How a working thread is marked in the sidebar."),
+  ).toBeTruthy();
+  for (const color of ["Green", "Blue"]) {
+    const swatch = slot.getByRole("radio", { name: color });
+    expect(swatch.parentElement?.getAttribute("title")).toBe(color);
+  }
+  expect(
+    styles.parentElement?.querySelector('input[type="color"]'),
+  ).toBeTruthy();
+});
+
 it("saves Sidebar switches and clamps the Recent stepper to 1–20", async () => {
   const slot = await mount("sidebar");
   const recent = await slot.findByRole("switch", { name: "Show Recent" });
@@ -102,6 +120,13 @@ it("saves the Titles and parent-link switches", async () => {
 
 it("saves New work preferences and disables the suggestions model when suggestions are off", async () => {
   const slot = await mount("new-work");
+  await slot.findByRole("switch", { name: "Suggestions while typing" });
+  expect(
+    slot.getByText("Suggest a workstream for a new thread as you write."),
+  ).toBeTruthy();
+  expect(
+    slot.getByText("Suggests a workstream for a new-thread draft as you type."),
+  ).toBeTruthy();
   fireEvent.click(await slot.findByRole("button", { name: "Home project" }));
   fireEvent.click(
     await slot.findByRole("option", { name: "Don't work in a project" }),

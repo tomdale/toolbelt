@@ -76,8 +76,8 @@ const COLOR_CSS: Record<SpinnerColorName, string> = {
   subtle: "color-mix(in oklab, var(--muted-foreground) 50%, transparent)",
   gray: "var(--muted-foreground)",
   text: "var(--foreground, #ededed)",
-  green: "var(--success-foreground, #46a758)",
-  blue: "var(--primary, #3e63dd)",
+  green: "#46a758",
+  blue: "#3e63dd",
   amber: "var(--warning-text, #e0a84f)",
   purple: "oklch(65% 0.2 300)",
 };

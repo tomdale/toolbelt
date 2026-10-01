@@ -80,16 +80,15 @@ export function SnoozeSettings() {
                     disabled
                       ? "cursor-not-allowed text-muted-foreground/60"
                       : "cursor-pointer text-foreground hover:bg-accent/50",
-                    checked && "bg-accent/30",
                   )}
                 >
                   <span
                     aria-hidden="true"
                     className={cn(
-                      "flex size-4 shrink-0 items-center justify-center rounded border",
+                      "flex size-4 shrink-0 items-center justify-center rounded-sm border border-input shadow-xs",
                       checked
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-muted-foreground/50",
+                        ? "border-foreground bg-foreground text-background"
+                        : "bg-background",
                     )}
                   >
                     {checked ? (
