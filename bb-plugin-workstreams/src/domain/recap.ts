@@ -52,7 +52,7 @@ export type RecapLink = z.infer<typeof linkSchema>;
 
 /**
  * The tool's parameters. The limits keep each line glanceable: a goal
- * heading, short results, one acceptance check, and links to what was made.
+ * heading, short results, acceptance checks, and optional review targets.
  */
 export const recapInputSchema = z
   .object({
@@ -63,9 +63,19 @@ export const recapInputSchema = z
     review: z
       .union([z.array(line(160)).min(1).max(3), z.string().trim().min(1)])
       .optional(),
-    links: z.array(linkSchema).max(8).default([]),
+    links: z
+      .array(linkSchema)
+      .max(8)
+      .default([])
+      .describe(
+        "Review state only: optional links to artifacts or pages explicitly being reviewed, as absolute file paths or HTTPS URLs.",
+      ),
   })
   .strict()
+  .refine((recap) => recap.state === "review" || recap.links.length === 0, {
+    message: "Links are review targets and belong only in a review recap.",
+    path: ["links"],
+  })
   .refine((recap) => recap.state !== "review" || recap.review !== undefined, {
     message:
       "A review recap needs review steps: what to check, and the expected result.",
@@ -131,10 +141,10 @@ export function toRecap(
     goal: tidy(input.goal),
     latest: input.latest.map(tidy),
     review: input.state === "review" ? reviewSteps(input.review).map(tidy) : [],
-    links: input.links.map((item) => ({
-      ...item,
-      title: tidy(item.title),
-    })),
+    links:
+      input.state === "review"
+        ? input.links.map((item) => ({ ...item, title: tidy(item.title) }))
+        : [],
   };
 }
 
@@ -153,7 +163,7 @@ export function recapMarkdown(recap: Recap): string {
       : recap.review.length
         ? `\n**Review:**\n${recap.review.map((step) => `- ${step}`).join("\n")}`
         : null,
-    recap.links.length
+    recap.state === "review" && recap.links.length
       ? `\n${recap.links.map((link) => `[${link.title}](${link.location})`).join(" · ")}`
       : null,
   ]
@@ -171,7 +181,8 @@ export const RECAP_TOOL_DESCRIPTION =
  */
 export const RECAP_INSTRUCTIONS = `End every turn with ${RECAP_TOOL}, after completing the work you were authorized to do, unless the turn ends with a question card (AskUserQuestion or your provider's own question tool) still awaiting the user's answer. Ask questions only through such a card, never only in your reply.
 state: complete when the user's latest request is fully done; review when a finished result waits on the user to inspect, test, merge, or ship.
-Write terse fragments in sentence case without closing periods. goal: the thread's durable purpose as a short -ing phrase ("Porting handoffs into Workstreams"). latest: one to three concrete results of work actually done, about 12 words each, most important first. review (required for review): one to three steps, each saying what to inspect or try and the result to expect, about 20 words each. links: files or pages you actually made or changed that the user will open, as absolute file paths or HTTPS URLs.
+Write terse fragments in sentence case without closing periods. goal: the thread's durable purpose as a short -ing phrase ("Porting handoffs into Workstreams"). latest: one to three concrete results of work actually done, about 12 words each, most important first. review (required for review): one to three steps, each saying how to inspect or try the requested result and what to expect, about 20 words each. For UI review, give steps to reach and exercise the UI.
+links: optional, only in the review state and only for artifacts or pages explicitly being asked to be reviewed, as absolute file paths or HTTPS URLs. A changed source file qualifies only when source review is requested. For complete, omit links or send an empty list.
 The user decides whether to archive the thread from the recap. When a question card is dismissed or expires, treat the question as unanswered and unapproved, and continue only work that does not depend on it.`;
 
 /**

@@ -107,6 +107,12 @@ describe("agent recaps", () => {
         links: [{ title: "Report", location: "javascript:alert(1)" }],
       }),
     ).rejects.toThrow();
+    await expect(
+      s.report({
+        ...RECAP,
+        links: [{ title: "Report", location: "/tmp/report.md" }],
+      }),
+    ).rejects.toThrow("Links are review targets");
     await expect(s.report({ ...RECAP, latest: [] })).rejects.toThrow();
     await expect(
       s.report({ ...RECAP, state: "review", review: [] }),
@@ -114,12 +120,12 @@ describe("agent recaps", () => {
     const output = await s.report({
       ...RECAP,
       state: "review",
-      review: ["Open the sidebar.", "Check the ✓ mark"],
+      review: ["Read the report.", "Check that each finding has evidence"],
       links: [{ title: "Report", location: "/tmp/report.md" }],
     });
     expect((await s.card()).recap).toMatchObject({
       state: "review",
-      review: ["Open the sidebar", "Check the ✓ mark"],
+      review: ["Read the report", "Check that each finding has evidence"],
     });
     // The call's output is the recap the timeline row keeps.
     expect(output).toBe(
@@ -128,8 +134,8 @@ describe("agent recaps", () => {
         "- Moved the recap tool into Workstreams",
         "",
         "**Review:**",
-        "- Open the sidebar",
-        "- Check the ✓ mark",
+        "- Read the report",
+        "- Check that each finding has evidence",
         "",
         "[Report](/tmp/report.md)",
       ].join("\n"),
