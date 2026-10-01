@@ -26,7 +26,26 @@ async function mount({
     app.threadHeaderActions[0]!,
     { threadId: "child", projectId: "proj_1", isCompactViewport: compact },
     {
-      settings: enabled ? { showParentThreadLink: true } : {},
+      settings: {},
+      rpc: {
+        prefs: () => ({
+          prefs: {
+            sidebar: { showForYou: true, showRecent: true, recentLimit: 5 },
+            threads: {
+              autoTitle: true,
+              analysisModel: { kind: "gateway", model: "m" },
+              showParentLink: enabled,
+            },
+            newWork: {
+              homeProjectId: "",
+              suggestions: true,
+              suggestionsModel: { kind: "gateway", model: "m" },
+            },
+            organize: { model: { kind: "gateway", model: "m" } },
+            advanced: { hostId: "", debug: false },
+          },
+        }),
+      },
       sidebarThreads: { threads },
     },
   );

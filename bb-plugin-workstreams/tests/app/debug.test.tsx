@@ -51,8 +51,25 @@ async function header(
     slot,
     { threadId: "t1", projectId: "proj_1", isCompactViewport: false },
     {
-      settings,
+      settings: {},
       rpc: {
+        prefs: () => ({
+          prefs: {
+            sidebar: { showForYou: true, showRecent: true, recentLimit: 5 },
+            threads: {
+              autoTitle: true,
+              analysisModel: { kind: "gateway", model: "m" },
+              showParentLink: false,
+            },
+            newWork: {
+              homeProjectId: "",
+              suggestions: true,
+              suggestionsModel: { kind: "gateway", model: "m" },
+            },
+            organize: { model: { kind: "gateway", model: "m" } },
+            advanced: { hostId: "", debug: settings.debug },
+          },
+        }),
         state: () => emptyState(),
         traces: () => ({
           traces: [
@@ -159,8 +176,25 @@ it("opens Activity for debug links and shows debug controls only in Debug mode",
       app.navPanels[0]!,
       { subPath: "debug" },
       {
-        settings: { debug },
+        settings: {},
         rpc: {
+          prefs: () => ({
+            prefs: {
+              sidebar: { showForYou: true, showRecent: true, recentLimit: 5 },
+              threads: {
+                autoTitle: true,
+                analysisModel: { kind: "gateway", model: "m" },
+                showParentLink: false,
+              },
+              newWork: {
+                homeProjectId: "",
+                suggestions: true,
+                suggestionsModel: { kind: "gateway", model: "m" },
+              },
+              organize: { model: { kind: "gateway", model: "m" } },
+              advanced: { hostId: "", debug },
+            },
+          }),
           state: () => emptyState(),
           journal: () => ({ entries: [] }),
           traces: () => ({
@@ -214,8 +248,25 @@ it("lists model calls in the Activity log in Debug mode", async () => {
       app.navPanels[0]!,
       { subPath: "debug" },
       {
-        settings: { debug },
+        settings: {},
         rpc: {
+          prefs: () => ({
+            prefs: {
+              sidebar: { showForYou: true, showRecent: true, recentLimit: 5 },
+              threads: {
+                autoTitle: true,
+                analysisModel: { kind: "gateway", model: "m" },
+                showParentLink: false,
+              },
+              newWork: {
+                homeProjectId: "",
+                suggestions: true,
+                suggestionsModel: { kind: "gateway", model: "m" },
+              },
+              organize: { model: { kind: "gateway", model: "m" } },
+              advanced: { hostId: "", debug },
+            },
+          }),
           state: () => emptyState(),
           journal: () => ({ entries: [entry] }),
           traces: () => ({

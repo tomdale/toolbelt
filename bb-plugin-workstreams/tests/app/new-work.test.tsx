@@ -136,6 +136,23 @@ function mount(
 ) {
   const onClose = vi.fn();
   const rpc = {
+    prefs: vi.fn(() => ({
+      prefs: {
+        sidebar: { showForYou: true, showRecent: true, recentLimit: 5 },
+        threads: {
+          autoTitle: true,
+          analysisModel: { kind: "gateway", model: "m" },
+          showParentLink: false,
+        },
+        newWork: {
+          homeProjectId: "",
+          suggestions: true,
+          suggestionsModel: { kind: "gateway", model: "m" },
+        },
+        organize: { model: { kind: "gateway", model: "m" } },
+        advanced: { hostId: "", debug: settings.debug === true },
+      },
+    })),
     state: vi.fn(() => ({
       ...emptyState(),
       workstreams: {
@@ -199,7 +216,7 @@ function mount(
       workstreamName: workstreamId ? "Beta" : null,
     },
     {
-      settings,
+      settings: {},
       composer: { scope: { kind: "new-thread", projectId: "proj_z" } },
       sdk: {
         projects: {

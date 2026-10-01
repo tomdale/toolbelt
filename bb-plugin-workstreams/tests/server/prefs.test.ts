@@ -1,0 +1,74 @@
+import { describe, expect, it } from "vitest";
+import { DEFAULT_MODELS } from "../../src/domain/prefs.ts";
+import { openDatabase } from "../../src/server/db.ts";
+import {
+  loadPrefs,
+  migrateLegacyPrefs,
+  savePrefs,
+  seedPrefs,
+} from "../../src/server/prefs.ts";
+import { fakeWorld } from "./fake-bb.ts";
+
+describe("Workstreams prefs", () => {
+  it("maps old declarative values without requiring BB settings registration", () => {
+    expect(
+      migrateLegacyPrefs({
+        showParentThreadLink: true,
+        showForYou: false,
+        showRecent: false,
+        model: "google/old-model",
+        autoTitle: false,
+        hostId: "host-a",
+        organizeModel: "openai/old-organize",
+        homeProjectId: "project-a",
+        debug: true,
+      }),
+    ).toEqual({
+      sidebar: { showForYou: false, showRecent: false, recentLimit: 5 },
+      threads: {
+        autoTitle: false,
+        analysisModel: { kind: "gateway", model: "google/old-model" },
+        showParentLink: true,
+      },
+      newWork: {
+        homeProjectId: "project-a",
+        suggestions: true,
+        suggestionsModel: { kind: "gateway", model: "google/old-model" },
+      },
+      organize: { model: { kind: "gateway", model: "openai/old-organize" } },
+      advanced: { hostId: "host-a", debug: true },
+    });
+    expect(migrateLegacyPrefs({}).organize.model).toEqual(
+      DEFAULT_MODELS.organize,
+    );
+  });
+
+  it("merges patches, clamps Recent limits, and seeds only once", async () => {
+    const world = await fakeWorld();
+    const db = openDatabase(world.bb);
+    db.prepare("DELETE FROM ws_meta WHERE key = 'prefs'").run();
+    const seeded = seedPrefs(db, {
+      model: "google/legacy",
+      showParentThreadLink: true,
+      showForYou: false,
+      showRecent: false,
+      autoTitle: false,
+      hostId: "host-a",
+      organizeModel: "openai/organize",
+      homeProjectId: "project-a",
+      debug: true,
+    });
+    expect(seeded.threads.analysisModel).toEqual({
+      kind: "gateway",
+      model: "google/legacy",
+    });
+    expect(
+      savePrefs(db, { sidebar: { recentLimit: 100 } }).sidebar.recentLimit,
+    ).toBe(20);
+    expect(
+      seedPrefs(db, { model: "google/new" }).threads.analysisModel,
+    ).toEqual(seeded.threads.analysisModel);
+    expect(loadPrefs(db).sidebar.recentLimit).toBe(20);
+    await world.harness.lifecycle.dispose();
+  });
+});

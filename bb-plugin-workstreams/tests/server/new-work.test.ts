@@ -279,6 +279,31 @@ describe("suggest", () => {
   });
 });
 
+describe("Suggestions preference", () => {
+  it("returns an empty no-suggestion decision without a model call", async () => {
+    const { w } = await setup(
+      {
+        outcome: "new-thread",
+        workstream: "Alpha",
+        title: "Parser fix",
+        code: true,
+        confidence: "high",
+        reason: "Fits",
+      },
+      { suggestions: false },
+    );
+    const routeCalls = () =>
+      w.completions.filter((call) =>
+        call.prompt.includes("Someone is starting new work"),
+      ).length;
+    const before = routeCalls();
+    const decision = await suggest(w, "Fix the parser");
+    expect(decision).toMatchObject({ outcome: "new-thread", traceId: null });
+    expect(decision.title).toBe("");
+    expect(routeCalls()).toBe(before);
+  });
+});
+
 describe("Debug mode", () => {
   const answer = {
     outcome: "unsure",
