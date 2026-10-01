@@ -8,7 +8,13 @@ import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { RecapCard } from "./composer/RecapCard.tsx";
 import { NewWorkBridge } from "./composer/NewWorkBridge.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
-import { SpinnerSettings } from "./settings/SpinnerSettings.tsx";
+import {
+  AdvancedSettings,
+  NewWorkSettings,
+  OrganizeSettings,
+  SidebarSettings,
+  ThreadsSettings,
+} from "./settings/FeatureSettings.tsx";
 import { WorkstreamsThreadList } from "./sidebar/ThreadList.tsx";
 import { RecapSettings } from "./recap/RecapSettings.tsx";
 import {
@@ -78,10 +84,23 @@ export default definePluginApp((app) => {
     component: WorkstreamsThreadList,
   });
   app.slots.settingsSection({
+    id: "sidebar",
+    title: "Sidebar",
+    description:
+      "Which threads appear at the top of your sidebar and how working threads look.",
+    component: SidebarSettings,
+  });
+  app.slots.settingsSection({
+    id: "threads",
+    title: "Threads",
+    description: "Thread titles, analysis, and parent-thread navigation.",
+    component: ThreadsSettings,
+  });
+  app.slots.settingsSection({
     id: "recap",
     title: "Recap",
     description:
-      "The agent's recap above each thread's composer: whether agents write one, reminders, and layout.",
+      "Whether agents write a recap after each turn, how often to remind them, and how recaps appear.",
     component: RecapSettings,
   });
   app.slots.settingsSection({
@@ -92,10 +111,24 @@ export default definePluginApp((app) => {
     component: SnoozeSettings,
   });
   app.slots.settingsSection({
-    id: "spinner",
-    title: "Working indicator",
-    description: "How Workstreams marks a thread that's working.",
-    component: SpinnerSettings,
+    id: "new-work",
+    title: "New work",
+    description:
+      "Choose where new work starts and how Workstreams suggests a home.",
+    component: NewWorkSettings,
+  });
+  app.slots.settingsSection({
+    id: "organize",
+    title: "Organize",
+    description:
+      "Choose the model that proposes and updates your workstream map.",
+    component: OrganizeSettings,
+  });
+  app.slots.settingsSection({
+    id: "advanced",
+    title: "Advanced",
+    description: "Machine routing and model-call diagnostics.",
+    component: AdvancedSettings,
   });
   app.slots.navPanel({
     id: "home",
