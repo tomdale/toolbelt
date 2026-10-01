@@ -103,6 +103,12 @@ const COMPACT_GOAL_CLASS =
 
 /** True inside a compact card; selects the smaller type scale. */
 const CompactContext = createContext(false);
+type MarkdownDocument = NonNullable<
+  React.ComponentProps<typeof Markdown>["experimental_document"]
+>;
+const MarkdownDocumentContext = createContext<MarkdownDocument | undefined>(
+  undefined,
+);
 const useBodyClass = () =>
   useContext(CompactContext) ? COMPACT_BODY_CLASS : BODY_CLASS;
 
@@ -186,10 +192,12 @@ function RecapText({
   const scale = useBodyClass();
   typeClass ??= scale;
   const segments = recapSegments(text);
+  const experimental_document = useContext(MarkdownDocumentContext);
   if (segments.length === 1 && segments[0]!.kind === "markdown")
     return (
       <Markdown
         content={text}
+        experimental_document={experimental_document}
         className={`min-w-0 ${typeClass} ${MARKDOWN_CLASS} ${className}`}
       />
     );
@@ -215,6 +223,7 @@ function RecapText({
             {body ? (
               <Markdown
                 content={body}
+                experimental_document={experimental_document}
                 className={`!inline !text-[length:inherit] !leading-[inherit] [&_p]:!inline ${MARKDOWN_CLASS}`}
               />
             ) : null}
@@ -473,11 +482,13 @@ function RecapSummary({
   recap,
   layout,
   files,
+  threadId,
   clearance,
 }: {
   recap: Recap;
   layout: RecapLayout;
   files: RecapFiles | null;
+  threadId: string | null;
   /** Room the top line leaves for the corner buttons. */
   clearance: string;
 }) {
@@ -534,35 +545,50 @@ function RecapSummary({
       </>
     );
   }
+  const markdownDocument: MarkdownDocument | undefined =
+    threadId && files?.root
+      ? {
+          threadId,
+          rootPath: files.root,
+          target: {
+            kind: "workspace",
+            environmentId: files.environmentId,
+            // Markdown resolves relative links from the document's directory.
+            path: "__recap__.md",
+          },
+        }
+      : undefined;
   return (
-    <CompactContext.Provider value={compact}>
-      {/* The top line clears the corner buttons. */}
-      <StateLine state={recap.state} clearance={clearance} />
-      <div
-        role="heading"
-        aria-level={2}
-        className={cn(
-          "font-medium tracking-[-0.006em] text-foreground",
-          clearance,
-        )}
-      >
-        <RecapText
-          text={recap.goal}
-          className="w-full max-w-none"
-          typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
-        />
-      </div>
-      <div
-        className={cn(
-          compact ? "mt-0.5" : "mt-1.5",
-          "[&>section+section]:border-t",
-          accent.rules,
-          body,
-        )}
-      >
-        {rows}
-      </div>
-    </CompactContext.Provider>
+    <MarkdownDocumentContext.Provider value={markdownDocument}>
+      <CompactContext.Provider value={compact}>
+        {/* The top line clears the corner buttons. */}
+        <StateLine state={recap.state} clearance={clearance} />
+        <div
+          role="heading"
+          aria-level={2}
+          className={cn(
+            "font-medium tracking-[-0.006em] text-foreground",
+            clearance,
+          )}
+        >
+          <RecapText
+            text={recap.goal}
+            className="w-full max-w-none"
+            typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
+          />
+        </div>
+        <div
+          className={cn(
+            compact ? "mt-0.5" : "mt-1.5",
+            "[&>section+section]:border-t",
+            accent.rules,
+            body,
+          )}
+        >
+          {rows}
+        </div>
+      </CompactContext.Provider>
+    </MarkdownDocumentContext.Provider>
   );
 }
 
@@ -626,6 +652,7 @@ type CardProps = {
   recap: Recap;
   layout: RecapLayout;
   files: RecapFiles | null;
+  threadId: string | null;
   showArchive: boolean;
   archiveBusy: boolean;
   archiveError: string | null;
@@ -635,6 +662,7 @@ function CardBody({
   recap,
   layout,
   files,
+  threadId,
   showArchive,
   archiveBusy,
   archiveError,
@@ -650,6 +678,7 @@ function CardBody({
           recap={recap}
           layout={layout}
           files={files}
+          threadId={threadId}
           clearance={compactArchive ? "pr-14" : "pr-7"}
         />
       </div>
@@ -748,6 +777,7 @@ export function RecapCardPreview({
           recap={recap}
           layout={layout}
           files={null}
+          threadId={null}
           showArchive={showArchive}
           archiveBusy={false}
           archiveError={null}
@@ -904,6 +934,7 @@ export function RecapCard() {
     available && visibleRecap
       ? {
           recap: visibleRecap,
+          threadId,
           layout,
           files,
           showArchive: archive.visible,

@@ -9,8 +9,20 @@ const interactionOverride = vi.hoisted(() => ({
 }));
 vi.mock("@get-bb/plugin-sdk/app", async (importActual) => {
   const actual = await importActual<typeof import("@get-bb/plugin-sdk/app")>();
+  const React = await import("react");
   return {
     ...actual,
+    Markdown: (props: React.ComponentProps<typeof actual.Markdown>) =>
+      React.createElement(
+        "div",
+        {
+          "data-testid": "recap-markdown-document",
+          "data-thread-id": props.experimental_document?.threadId,
+          "data-root-path": props.experimental_document?.rootPath,
+          "data-target": JSON.stringify(props.experimental_document?.target),
+        },
+        React.createElement(actual.Markdown, props),
+      ),
     experimental_useSidebarThreads: () => {
       const state = actual.experimental_useSidebarThreads();
       return interactionOverride.value === null
@@ -362,6 +374,29 @@ it("shows the goal and only the review steps in the compact review card", async 
   expect(
     (await slot.findByRole("button", { name: "Archive" })).textContent,
   ).toBe("");
+});
+
+it("resolves inline recap file links from the thread workspace root", async () => {
+  const slot = await mount({
+    recap: {
+      state: "review",
+      review: [
+        "Inspect [README.md](/work/README.md) and [the guide](docs/guide.md)",
+      ],
+    },
+  });
+  const markdowns = await slot.findAllByTestId("recap-markdown-document");
+  const markdown = markdowns.find((element) =>
+    element.textContent?.includes("Inspect [README.md]"),
+  );
+  expect(markdown).toBeDefined();
+  expect(markdown!.getAttribute("data-thread-id")).toBe("t1");
+  expect(markdown!.getAttribute("data-root-path")).toBe("/work");
+  expect(JSON.parse(markdown!.getAttribute("data-target")!)).toEqual({
+    kind: "workspace",
+    environmentId: "env_1",
+    path: "__recap__.md",
+  });
 });
 
 it("shows UI review steps without artifact links", async () => {
