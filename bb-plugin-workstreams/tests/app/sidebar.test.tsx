@@ -528,6 +528,52 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
+  it("includes unread reported results and open questions in For you", async () => {
+    const at = Date.now();
+    const recap = (state: string) => ({
+      id: `r-${state}`,
+      turnId: "turn",
+      at,
+      state,
+      goal: "Shipping",
+      latest: [`Reported ${state}`],
+      review: state === "review" ? ["Try it"] : [],
+      links: [],
+    });
+    const slot = await mount(
+      [
+        sidebarThread("complete", {
+          title: "Complete",
+          isUnread: true,
+          latestAttentionAt: 100,
+        }),
+        sidebarThread("review", {
+          title: "Review",
+          isUnread: true,
+          latestAttentionAt: 101,
+        }),
+        sidebarThread("question", {
+          title: "Question",
+          hasPendingInteraction: true,
+          isUnread: false,
+          latestAttentionAt: 102,
+        }),
+      ],
+      { recaps: { complete: recap("complete"), review: recap("review") } },
+    );
+    const band = await slot.findByRole("region", { name: "For you" });
+    expect(
+      within(band)
+        .getAllByRole("link")
+        .map((a) => a.getAttribute("aria-label")),
+    ).toEqual([
+      "Question",
+      "Review, Ready for your review",
+      "Complete, Complete",
+    ]);
+    slot.lifecycle.unmount();
+  });
+
   it("marks the agent's reported state, which outranks analysis", async () => {
     const at = Date.now();
     const recap = (state: string) => ({
