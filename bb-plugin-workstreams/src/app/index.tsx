@@ -35,6 +35,7 @@ import {
   NextUpCommandBridge,
   openNextUpThread,
 } from "./upNext/NextUpCommand.tsx";
+import { WORKSTREAM_ICON } from "./workstream-icon.ts";
 import "./styles.css";
 
 export default definePluginApp((app) => {
@@ -166,7 +167,7 @@ export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "home",
     title: "Workstreams",
-    icon: "Layers",
+    icon: WORKSTREAM_ICON,
     path: "home",
     component: WorkstreamsPage,
   });
