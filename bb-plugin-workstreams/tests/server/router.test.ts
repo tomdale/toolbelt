@@ -246,6 +246,10 @@ describe("native composer", () => {
         input: { text: prompt },
         parentThreadId: null,
         origin: "app",
+        experimental_submission: {
+          pluginId: "workstreams",
+          data: { routeId: (await route(w, prompt)).id },
+        },
       }),
     );
     expect(decision).toEqual({ action: "proceed" });
@@ -293,6 +297,189 @@ describe("composer filing guards", () => {
     reason: "Alpha parser work",
   };
   const prompt = "Fix the parser in Alpha so it handles tabs";
+
+  it("excludes a canceled native preview when dispatch has no submit metadata", async () => {
+    const { w } = await setup(answer);
+    await w.harness.behavior.callRpc("route", {
+      prompt,
+      suggest: true,
+      nativeComposer: true,
+      draftKey: "ignored-draft",
+    });
+    await w.harness.behavior.callRpc("routeCancel", {
+      draftKey: "ignored-draft",
+    });
+    const composed = w.addThread("ignored", { createdAt: Date.now() });
+    await w.harness.registrations.hooks["message.dispatch"]!(
+      makeMessageDispatchHookContext({
+        thread: composed,
+        input: { text: prompt },
+        origin: "app",
+        experimental_submission: { pluginId: "workstreams", data: null },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(w.threads.get("ignored")?.sectionId).toBeNull();
+  });
+
+  it("does not file an ordinary submission when an active native preview was never canceled", async () => {
+    const { w } = await setup(answer);
+    await w.harness.behavior.callRpc("route", {
+      prompt,
+      suggest: true,
+      nativeComposer: true,
+      draftKey: "active-draft",
+    });
+    const composed = w.addThread("uncanceled", { createdAt: Date.now() });
+    await w.harness.registrations.hooks["message.dispatch"]!(
+      makeMessageDispatchHookContext({
+        thread: composed,
+        input: { text: prompt },
+        origin: "app",
+        experimental_submission: null,
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(w.threads.get("uncanceled")?.sectionId).toBeNull();
+  });
+
+  it("files a thread when submission contains only a manually chosen sectionId", async () => {
+    const { w } = await setup(answer);
+    const beta = w.addSection("Beta");
+    const composed = w.addThread("manual", { createdAt: Date.now() });
+    const hook = w.harness.registrations.hooks["message.dispatch"]!;
+    const context = makeMessageDispatchHookContext({
+      thread: composed,
+      input: { text: "Some unrelated task text" },
+      origin: "app",
+      experimental_submission: {
+        pluginId: "workstreams",
+        data: { sectionId: beta.id },
+      },
+    });
+    const result = await hook(context);
+    expect(result).toEqual({ action: "proceed" });
+    await hook(context);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(w.threads.get("manual")?.sectionId).toBe(beta.id);
+  });
+
+  it("preserves an existing section when submission contains a manual sectionId for an already sorted thread", async () => {
+    const { w } = await setup(answer);
+    const beta = w.addSection("Beta");
+    const gamma = w.addSection("Gamma");
+    const composed = w.addThread("already-sorted", {
+      createdAt: Date.now(),
+      sectionId: gamma.id,
+    });
+    const hook = w.harness.registrations.hooks["message.dispatch"]!;
+    await hook(
+      makeMessageDispatchHookContext({
+        thread: composed,
+        input: { text: "Already in gamma" },
+        origin: "app",
+        experimental_submission: {
+          pluginId: "workstreams",
+          data: { sectionId: beta.id },
+        },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(w.threads.get("already-sorted")?.sectionId).toBe(gamma.id);
+  });
+
+  it("files an accepted existing workstream suggestion carrying routeId and sectionId", async () => {
+    const { w, alpha } = await setup(answer);
+    const decision = (await w.harness.behavior.callRpc("route", {
+      prompt,
+      suggest: true,
+      nativeComposer: true,
+      draftKey: "accepted-existing",
+    })) as { id: string };
+    const composed = w.addThread("accepted-existing", {
+      createdAt: Date.now(),
+    });
+    const hook = w.harness.registrations.hooks["message.dispatch"]!;
+    const acceptedContext = makeMessageDispatchHookContext({
+      thread: composed,
+      input: { text: prompt },
+      origin: "app",
+      experimental_submission: {
+        pluginId: "workstreams",
+        data: { routeId: decision.id, sectionId: alpha.id },
+      },
+    });
+    await hook(acceptedContext);
+    await hook(acceptedContext);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(w.threads.get("accepted-existing")?.sectionId).toBe(alpha.id);
+  });
+
+  it("ignores experimental submission from another plugin", async () => {
+    const { w, alpha } = await setup(answer);
+    const composed = w.addThread("foreign", { createdAt: Date.now() });
+    const hook = w.harness.registrations.hooks["message.dispatch"]!;
+    await hook(
+      makeMessageDispatchHookContext({
+        thread: composed,
+        input: { text: prompt },
+        origin: "app",
+        experimental_submission: {
+          pluginId: "other-plugin",
+          data: { sectionId: alpha.id },
+        },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(w.threads.get("foreign")?.sectionId).toBeNull();
+  });
+
+  it("files an accepted new workstream without creating it twice", async () => {
+    const { w } = await setup({
+      outcome: "new-workstream",
+      name: "Billing",
+      description: "Invoices",
+      title: "Invoice export",
+      code: true,
+      confidence: "high",
+      reason: "A new effort",
+    });
+    const prompt = "Add invoice export";
+    const decision = await w.harness.behavior.callRpc("route", {
+      prompt,
+      suggest: true,
+      nativeComposer: true,
+      draftKey: "native-draft",
+    });
+    const created = (await w.harness.behavior.callRpc("createWorkstream", {
+      name: "Billing",
+      description: "Invoices",
+    })) as {
+      sectionId: string;
+      entry: { workstreams: { id: string; name: string }[] };
+    };
+    const composed = w.addThread("accepted", { createdAt: Date.now() });
+    const acceptedContext = makeMessageDispatchHookContext({
+      thread: composed,
+      input: { text: prompt },
+      origin: "app",
+      experimental_submission: {
+        pluginId: "workstreams",
+        data: {
+          routeId: (decision as { id: string }).id,
+          sectionId: created.sectionId,
+        },
+      },
+    });
+    const hook = w.harness.registrations.hooks["message.dispatch"]!;
+    await hook(acceptedContext);
+    await hook(acceptedContext);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(
+      w.sections.filter((section) => section.name === "Billing"),
+    ).toHaveLength(1);
+    expect(w.threads.get("accepted")?.sectionId).toBe(created.sectionId);
+  });
 
   it("ignores follow-ups and a decision made for different text", async () => {
     const { w } = await setup(answer);

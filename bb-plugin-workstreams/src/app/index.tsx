@@ -13,6 +13,7 @@ import {
 import { ASK_USER_QUESTION_RENDERER_ID } from "../server/questions/contracts.ts";
 import { QuestionHistoryInline } from "./question/QuestionHistory.tsx";
 import { DeliveredQuestionCards } from "./question/DeliveredQuestion.tsx";
+import { NewThreadRouting } from "./composer/NewThreadRouting.tsx";
 import { NewWorkBridge } from "./composer/NewWorkBridge.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
 import {
@@ -65,11 +66,13 @@ export default definePluginApp((app) => {
     id: ASK_USER_QUESTION_RENDERER_ID,
     component: QuestionInteraction,
   });
-  // Renders nothing; it hands New work the composer its dialog embeds.
   app.composer.customize({
     id: "new-work",
     scopes: ["new-thread"],
-    banners: [{ id: "bridge", chrome: "bare", component: NewWorkBridge }],
+    banners: [
+      { id: "routing", chrome: "bare", component: NewThreadRouting },
+      { id: "bridge", chrome: "bare", component: NewWorkBridge },
+    ],
   });
   app.slots.experimental_threadHeaderAction({
     id: "parent-thread",

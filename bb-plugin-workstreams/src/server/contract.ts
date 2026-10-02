@@ -354,6 +354,8 @@ export const rpcContract = defineRpcContract({
        * goes through `startThread`, `sendToThread` and `createWorkstream`.
        */
       suggest: z.boolean().optional(),
+      /** Keep this preview available for the native composer dispatch hook. */
+      nativeComposer: z.boolean().optional(),
       /**
        * The unsure decision whose candidate `workstreamId` is: its routing
        * call keeps explaining the result (SPEC §11.6).
