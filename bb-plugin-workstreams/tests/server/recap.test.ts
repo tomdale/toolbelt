@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   makeMessageDispatchHookContext,
   makePluginAgentConfigurationContext,
@@ -6,11 +6,13 @@ import {
 } from "@get-bb/plugin-sdk/testing";
 import { RECAP_TOOL } from "../../src/domain/recap.ts";
 import { fakeWorld } from "./fake-bb.ts";
+import plugin from "../../src/server/index.ts";
 
 type World = Awaited<ReturnType<typeof fakeWorld>>;
 const worlds: World[] = [];
 afterEach(async () => {
   for (const w of worlds.splice(0)) await w.harness.lifecycle.dispose();
+  vi.useRealTimers();
 });
 
 const RECAP = {
@@ -75,6 +77,117 @@ async function world(
   };
 }
 
+describe("waiting status checks", () => {
+  const waiting = {
+    state: "waiting",
+    goal: "Waiting for tests",
+    tasks: ["Test worker"],
+    timeout: 10,
+  };
+  const nudges = (s: Awaited<ReturnType<typeof world>>) =>
+    s.w.sent.filter(
+      (send) =>
+        (send.pluginSubmission as { data?: { waitingRecapId?: string } })?.data
+          ?.waitingRecapId,
+    );
+
+  it("nudges once at the deadline and accepts its dispatch", async () => {
+    const s = await world();
+    vi.useFakeTimers();
+    s.w.turn("t1");
+    await s.report(waiting);
+    await s.idle();
+    await vi.advanceTimersByTimeAsync(9999);
+    expect(nudges(s)).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(nudges(s)).toHaveLength(1);
+    await s.idle();
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(nudges(s)).toHaveLength(1);
+    const send = nudges(s)[0]!;
+    const result = await s.hook()(
+      makeMessageDispatchHookContext({
+        thread: s.thread(),
+        experimental_submission: send.pluginSubmission as never,
+      }),
+    );
+    expect(result.action).toBe("proceed");
+    expect((await s.card()).recap).toBeNull();
+  });
+
+  it.each(["input", "turn", "archived", "hidden", "queued", "active"])(
+    "suppresses a stale check after %s",
+    async (change) => {
+      const s = await world();
+      vi.useFakeTimers();
+      s.w.turn("t1");
+      await s.report(waiting);
+      if (change === "input") await s.dispatch();
+      if (change === "turn") s.w.turn("t1");
+      if (change === "archived")
+        s.w.threads.set("t1", { ...s.thread(), archivedAt: Date.now() });
+      if (change === "hidden")
+        s.w.threads.set("t1", { ...s.thread(), visibility: "hidden" });
+      if (change === "queued")
+        s.w.threads.set("t1", { ...s.thread(), queuedMessageCount: 1 });
+      if (change === "active")
+        s.w.threads.set("t1", { ...s.thread(), status: "active" });
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(nudges(s)).toHaveLength(0);
+    },
+  );
+
+  it("recovers a pending deadline on reload without duplicating a sent check", async () => {
+    const s = await world();
+    vi.useFakeTimers();
+    s.w.turn("t1");
+    await s.report(waiting);
+    await vi.advanceTimersByTimeAsync(5000);
+    const replacement = await s.w.harness.lifecycle.reload(plugin);
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(nudges(s)).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(nudges(s)).toHaveLength(1);
+    await replacement.harness.lifecycle.reload(plugin);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(nudges(s)).toHaveLength(1);
+  });
+
+  it("rejects a check whose submission races a newer turn", async () => {
+    const s = await world();
+    vi.useFakeTimers();
+    s.w.turn("t1");
+    await s.report(waiting);
+    await vi.advanceTimersByTimeAsync(10000);
+    s.w.turn("t1");
+    const send = nudges(s)[0]!;
+    const result = await s.hook()(
+      makeMessageDispatchHookContext({
+        thread: s.thread(),
+        experimental_submission: send.pluginSubmission as never,
+      }),
+    );
+    expect(result.action).toBe("reject");
+  });
+
+  it("rejects a check whose submission races fresh input", async () => {
+    const s = await world();
+    vi.useFakeTimers();
+    s.w.turn("t1");
+    await s.report(waiting);
+    await vi.advanceTimersByTimeAsync(10000);
+    await s.dispatch();
+    const send = nudges(s)[0]!;
+    const result = await s.hook()(
+      makeMessageDispatchHookContext({
+        thread: s.thread(),
+        experimental_submission: send.pluginSubmission as never,
+      }),
+    );
+    expect(result.action).toBe("reject");
+  });
+});
+
 describe("agent recaps", () => {
   it("does not send recap corrections while a recovered question awaits an answer", async () => {
     const s = await world();
@@ -110,8 +223,7 @@ describe("agent recaps", () => {
       s.w.turn("t1");
       const output = await s.report({
         ...RECAP,
-        active: empty,
-        next: empty,
+        tasks: empty,
         review: empty,
         links: [],
       });
@@ -119,8 +231,7 @@ describe("agent recaps", () => {
       expect(s.corrections()).toHaveLength(0);
       expect((await s.card()).recap).toMatchObject({
         state: "complete",
-        active: [],
-        next: [],
+        tasks: [],
         review: [],
         links: [],
       });
@@ -221,18 +332,19 @@ describe("agent recaps", () => {
     s.w.turn("t1");
     const output = await s.report({
       ...RECAP,
-      state: "continuing",
+      state: "waiting",
       latest: [],
-      active: ["Workers are running"],
+      tasks: ["Workers are running"],
+      timeout: 60,
     });
     await s.idle();
     expect(s.corrections()).toHaveLength(0);
     expect((await s.card()).recap).toMatchObject({
-      state: "continuing",
-      active: ["Workers are running"],
+      state: "waiting",
+      tasks: ["Workers are running"],
       review: [],
     });
-    expect(output).toContain("**Working**");
+    expect(output).toContain("**Waiting**");
     await s.dispatch();
     expect((await s.card()).recap).toBeNull();
   });

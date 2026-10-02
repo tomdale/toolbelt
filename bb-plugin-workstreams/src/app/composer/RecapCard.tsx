@@ -57,7 +57,7 @@ const ACCENT: Record<
   Recap["state"],
   { card: string; text: string; rules: string; footer: string }
 > = {
-  continuing: {
+  waiting: {
     card: "border-violet-400 bg-violet-50/40 dark:border-violet-500/70 dark:bg-violet-950/20",
     text: "text-violet-700 dark:text-violet-300",
     rules:
@@ -273,26 +273,46 @@ const LINK =
   "M6.5 9.5a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-.5.5 M9.5 6.5a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l.5-.5";
 
 /** Where the turn's result stands, above the goal. */
-function StateLine({
-  state,
-  clearance,
-}: {
-  state: Recap["state"];
-  clearance: string;
-}) {
+function StateLine({ recap, clearance }: { recap: Recap; clearance: string }) {
+  const state = recap.state;
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (state !== "waiting") return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [state, recap.id]);
+  const remaining = Math.max(
+    0,
+    Math.ceil((recap.at + (recap.timeout ?? 0) * 1000 - now) / 1000),
+  );
   return (
     <p
       className={cn(
-        "text-[11px] font-medium leading-[1.6]",
+        "flex items-center gap-1.5 text-[11px] font-medium leading-[1.6]",
         clearance,
         ACCENT[state].text,
       )}
     >
+      {state === "waiting" ? (
+        <Icon
+          name="LoaderCircle"
+          aria-hidden
+          className="size-3 animate-spin motion-reduce:animate-none"
+        />
+      ) : null}
       {state === "review"
         ? "Ready for Review"
-        : state === "continuing"
-          ? "Working"
+        : state === "waiting"
+          ? "Waiting"
           : "Complete"}
+      {state === "waiting" ? (
+        <span className="tabular-nums" aria-label="Status check countdown">
+          {remaining > 0
+            ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`
+            : "Checking status…"}
+        </span>
+      ) : null}
     </p>
   );
 }
@@ -473,10 +493,9 @@ function Links({
 
 /**
  * The state line and goal, then the rows for the recap's state. Full shows
- * every row with labels: Progress and Next while working, Done and Review for
- * review, results alone when complete. Compact keeps the essential row
- * unlabeled: in-progress items while working, the review steps for review,
- * results when complete.
+ * tasks while waiting, Done and Review for review, results alone when complete.
+ * Compact keeps the essential row unlabeled: tasks while waiting, review
+ * steps for review, results when complete.
  */
 function RecapSummary({
   recap,
@@ -495,8 +514,7 @@ function RecapSummary({
   const compact = layout === "minimal";
   const body = compact ? COMPACT_BODY_CLASS : BODY_CLASS;
   const review = recap.state === "review" && recap.review.length > 0;
-  const working = recap.state === "continuing";
-  const next = working ? (recap.next ?? []) : [];
+  const working = recap.state === "waiting";
   const accent = ACCENT[recap.state];
   const links =
     review && recap.links.length > 0 ? (
@@ -506,7 +524,7 @@ function RecapSummary({
   if (compact) {
     rows = working ? (
       <Row accent={accent.text}>
-        <Results active={recap.active} done={[]} accent={accent.text} />
+        <Results active={recap.tasks} done={[]} accent={accent.text} />
       </Row>
     ) : review ? (
       <Row accent={accent.text}>
@@ -522,20 +540,15 @@ function RecapSummary({
     rows = (
       <>
         <Row
-          label={working ? "Progress" : review ? "Done" : undefined}
+          label={working ? "Tasks" : review ? "Done" : undefined}
           accent={accent.text}
         >
           <Results
-            active={working ? recap.active : []}
-            done={recap.latest}
+            active={working ? recap.tasks : []}
+            done={working ? [] : recap.latest}
             accent={accent.text}
           />
         </Row>
-        {next.length ? (
-          <Row label="Next" accent={accent.text}>
-            <Steps items={next} />
-          </Row>
-        ) : null}
         {review ? (
           <Row label="Review" accent={accent.text}>
             <Steps items={recap.review} />
@@ -562,7 +575,7 @@ function RecapSummary({
     <MarkdownDocumentContext.Provider value={markdownDocument}>
       <CompactContext.Provider value={compact}>
         {/* The top line clears the corner buttons. */}
-        <StateLine state={recap.state} clearance={clearance} />
+        <StateLine recap={recap} clearance={clearance} />
         <div
           role="heading"
           aria-level={2}

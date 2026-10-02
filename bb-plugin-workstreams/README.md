@@ -107,22 +107,23 @@ design and the contract the code is checked against.
     and Undo, filterable by workstream, action, and needs-review.
 - **Recaps**: every thread except side chats gets a `WorkstreamsRecap` tool, and
   its agent ends each turn with a question card (AskUserQuestion or the
-  provider's own), a **review**, **complete**, or **continuing** recap.
-  Continuing means background work is active or continuation is scheduled, with
-  nothing needed from the user; the agent verifies this before reporting it. A
-  recap is a Goal heading, one to three Latest results, for review one to three
-  **Review** steps naming what to inspect or try and the expected result, and
-  links to files or pages. Every recap list accepts plain strings or
-  `{ step, expect }` items; `expect` appears as a subdued subrow. Keep distinct
-  results in separate items rather than joining them with semicolons. One Latest
-  result or Review step reads as plain text, more as a list. File links inside
-  the thread's workspace open there, others through its machine. The card shows
-  a state line (Ready for Review, Complete, or Working), the goal, and Done and
-  Review rows for review recaps, with links under Review. Working recaps list
-  one to three in-progress items (solid dots; a lone shown item has no bullet)
-  before any finished ones (checks), four at most, plus optional Next steps.
-  Complete recaps show just results. The **Compact** layout keeps the goal and
-  one essential row in smaller type: active items, results, or review steps,
+  provider's own), a **review**, **complete**, or **waiting** recap. Waiting
+  lists async tasks whose results the agent needs, with a timeout in seconds. A
+  spinner and countdown show when the next status check is due. At the deadline,
+  an agent-only prompt asks the agent to check status if no newer turn has
+  started. Fresh input cancels the check. A recap is a Goal heading, one to
+  three Latest results, for review one to three **Review** steps naming what to
+  inspect or try and the expected result, and links to files or pages. Every
+  recap list accepts plain strings or `{ step, expect }` items; `expect` appears
+  as a subdued subrow. Keep distinct results in separate items rather than
+  joining them with semicolons. One Latest result or Review step reads as plain
+  text, more as a list. File links inside the thread's workspace open there,
+  others through its machine. The card shows a state line (Ready for Review,
+  Complete, or Waiting), the goal, and Done and Review rows for review recaps,
+  with links under Review. Waiting recaps list one to three async tasks (solid
+  dots; a lone shown item has no bullet), with a timeout from 1 to 86400
+  seconds. Complete recaps show just results. The **Compact** layout keeps the
+  goal and one essential row in smaller type: tasks, results, or review steps,
   with an icon-only Archive beside ✕. The card sits above the composer, with a
   dismiss ✕ in its corner and, when the thread can be archived, **Archive** at
   the right of a footer strip along its bottom edge; its state marks the sidebar

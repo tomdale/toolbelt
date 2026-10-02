@@ -244,7 +244,7 @@ export default async function plugin(bb: BbPluginApi) {
   // filed where the preview said: via the banner's submit data, or, for a
   // plain Enter, by matching the prompt. The hook itself always proceeds.
   bb.experimental_hooks.on("message.dispatch", async (ctx) => {
-    const correction = recaps.onDispatch(ctx);
+    const correction = await recaps.onDispatch(ctx);
     if (correction) return correction;
     // Sending a snoozed thread a message means you're back on it.
     if (
