@@ -859,3 +859,12 @@ section[data-testid="plugin-interaction-shell"]:has(.ws-question-portaled) {
 .ws-delivered-question > :not([data-ws-delivered-anchor]) {
   display: none !important;
 }
+.ws-delivered-question-preview {
+  display: inline-flex;
+  align-items: center;
+  border: 1px dashed hsl(var(--border));
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0.15rem 0.45rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8rem;
+}
