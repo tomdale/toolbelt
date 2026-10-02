@@ -25,7 +25,7 @@ import { MapTab } from "./MapTab.tsx";
 import { NewWorkDialog } from "../composer/NewWork.tsx";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
-import { WORKSTREAM_ICON } from "../workstream-icon.ts";
+import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 
 type Tab = "overview" | "map" | "activity";
 const TAB_LABEL: Record<Tab, string> = {
@@ -103,7 +103,8 @@ export function WorkstreamsPage({
     <div className="h-full min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto box-border w-full max-w-3xl px-5 pb-16 pt-6 md:px-8">
         <header className="flex items-center gap-3">
-          <h1 className="text-[15px] font-semibold tracking-tight">
+          <h1 className="flex items-center gap-1.5 text-[15px] font-semibold tracking-tight">
+            <WorkstreamIcon className="size-4 text-foreground" />
             Workstreams
           </h1>
           <div
@@ -269,11 +270,7 @@ function WorkstreamCard({
     <section aria-label={group.name}>
       <div className="flex items-baseline gap-2 px-2 pb-1.5">
         <h2 className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold">
-          <Icon
-            name={WORKSTREAM_ICON}
-            className="size-3.5 shrink-0 text-muted-foreground"
-            aria-hidden
-          />
+          <WorkstreamIcon />
           <WorkstreamName name={group.name} />
         </h2>
         {group.needsYou ? (
