@@ -28,7 +28,7 @@ async function report(w: World, threadId: string, state = "complete") {
       latest: state === "waiting" ? [] : ["Answered it"],
       ...(state === "review" ? { review: "Read the answer" } : {}),
       ...(state === "waiting"
-        ? { tasks: ["Workers are running"], timeout: 60 }
+        ? { task: "Workers are running", timeout: 60 }
         : {}),
     },
     { threadId },

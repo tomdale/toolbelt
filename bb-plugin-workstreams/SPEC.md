@@ -445,8 +445,8 @@ it.
 - **Endings.** A turn ends with a question card still open (BB's native
   question, or Workstreams' own AskUserQuestion), or with a recap whose state is
   `complete` (the latest request is fully done) or `review` (a finished result
-  waits on the user to inspect, test, merge, or ship), or `waiting` (async tasks
-  are running and the agent needs their results; shown as Waiting).
+  waits on the user to inspect, test, merge, or ship), or `waiting` (an async
+  task is running and the agent needs its result; shown as Waiting).
 - **Recap.** `goal` (≤ 80 characters; past tense for complete and review, "-ing"
   while waiting), `latest` (finished results for complete and review, 1–3 lines,
   ≤ 120 each), `review` (1–3 steps, ≤ 160 each, required for review: what to
@@ -458,27 +458,27 @@ it.
   exact message to send, and optional longer explanation shown on hover or in
   the menu; strings remain supported for simple actions. Labels are never
   truncated. If they would wrap or overflow, Workstreams replaces the buttons
-  with one action menu. Clicking sends the message verbatim. Items in `latest`,
-  `tasks`, and `review` accept strings or `{ text, detail }` objects (legacy
+  with one action menu. Clicking sends the message verbatim. Items in `latest`
+  and `review` accept strings or `{ text, detail }` objects (legacy
   `{ step, expect }` is also accepted as an alias). `detail` is optional
   secondary text shown as a bulleted subrow. Separate items render as a list;
   review items are numbered. A single string counts as one item. Keep distinct
   results in separate items rather than joining them with semicolons. UI review
   steps explain how to reach and exercise the UI; source links qualify when
-  source review is requested. Waiting recaps require `tasks` (1–3 async tasks, ≤
-  120 each) and `timeout` (an integer from 1 to 86400 seconds), and omit latest,
-  review, links, and next. The deadline is the recap timestamp plus the timeout.
-  Timers recover on plugin reload. At expiry, a durable reservation permits one
-  agent-only status prompt if the recap and turn are still current and the
-  thread is idle, visible, unarchived, and has no queued work. Dispatch
-  validates the recap and turn again to cancel prompts racing fresh input.
-  Complete recaps have no links. Text fields are inline Markdown (code,
-  emphasis, links, `@thread:<id>` mentions as chips, commit hashes shortened
-  with copy on click, through BB's Markdown renderer); limits count visible
-  text, and the sidebar shows the first line as plain text. Closing periods are
-  dropped. The card shows a single Latest line or Review step as plain text and
-  several as a list. A file link opens in the thread's workspace when its path
-  is inside it, else on the environment's host.
+  source review is requested. Waiting recaps require `task` (one short async
+  task description, ≤ 120 characters) and `timeout` (an integer from 1 to 86400
+  seconds), and omit latest, review, links, and next. The deadline is the recap
+  timestamp plus the timeout. Timers recover on plugin reload. At expiry, a
+  durable reservation permits one agent-only status prompt if the recap and turn
+  are still current and the thread is idle, visible, unarchived, and has no
+  queued work. Dispatch validates the recap and turn again to cancel prompts
+  racing fresh input. Complete recaps have no links. Text fields are inline
+  Markdown (code, emphasis, links, `@thread:<id>` mentions as chips, commit
+  hashes shortened with copy on click, through BB's Markdown renderer); limits
+  count visible text, and the sidebar shows the first line as plain text.
+  Closing periods are dropped. The card shows a single Latest line or Review
+  step as plain text and several as a list. A file link opens in the thread's
+  workspace when its path is inside it, else on the environment's host.
 - **Timeline row.** The tool call stays in the thread as a tinted row titled
   Recap, whose output is the recap as short Markdown, so the recap remains
   readable after the conversation moves on. BB renders plugin tool rows with
@@ -624,26 +624,25 @@ it.
    green for complete, violet for waiting) on its border, background, state
    line, and row labels: a state line (Ready for Review, Complete, or Waiting),
    with the Waiting label; the Goal heading, then rows by layout. Full: Tasks
-   (solid dots; a single task has no bullet) while waiting, with the countdown
-   and Cancel check beside the first task. Cancel check stops the scheduled
-   nudge but leaves the recap visible. A task item `{ text, detail }` renders
-   detail on a second line, suitable for a linked `@thread:<id>` mention;
-   results alone when complete; Done (check-marked) and Review (the requested
-   checks, with optional review-target Links as chips under their steps) for
-   review; labels stack above their rows on narrow cards. Compact uses smaller
-   type and spacing and one unlabeled row: tasks while waiting, results when
-   complete, review steps and links for review. A dismiss ✕ sits in the
-   top-right corner. Archive, when it applies, sits at the right of a footer
-   strip in Full and as an icon-only button beside ✕ in Compact. It stays up
-   while the user drafts and hides while a message sends or the thread runs,
-   while a question card is open, and in the inline message editor; hiding never
-   moves the thread. **Archive** is unavailable for waiting recaps. For complete
-   and review it shows when the server confirms that the thread and every child
-   and lifecycle dependent are idle with no queued work, interactions,
-   background work, unfinished goal or pending todos, and that each dependent is
-   complete (its own recap, else current analysis); hidden dependents block it.
-   Archiving a review recap accepts its result. Continuing the thread withdraws
-   Archive for that recap. Workstreams never archives on its own.
+   while waiting, with the single task description as the title and the
+   countdown and Cancel check beside it. Cancel check stops the scheduled nudge
+   but leaves the recap visible; results alone when complete; Done
+   (check-marked) and Review (the requested checks, with optional review-target
+   Links as chips under their steps) for review; labels stack above their rows
+   on narrow cards. Compact uses smaller type and spacing and one unlabeled row:
+   the task title while waiting, results when complete, review steps and links
+   for review. A dismiss ✕ sits in the top-right corner. Archive, when it
+   applies, sits at the right of a footer strip in Full and as an icon-only
+   button beside ✕ in Compact. It stays up while the user drafts and hides while
+   a message sends or the thread runs, while a question card is open, and in the
+   inline message editor; hiding never moves the thread. **Archive** is
+   unavailable for waiting recaps. For complete and review it shows when the
+   server confirms that the thread and every child and lifecycle dependent are
+   idle with no queued work, interactions, background work, unfinished goal or
+   pending todos, and that each dependent is complete (its own recap, else
+   current analysis); hidden dependents block it. Archiving a review recap
+   accepts its result. Continuing the thread withdraws Archive for that recap.
+   Workstreams never archives on its own.
 
 ### 11.1 Snooze
 
