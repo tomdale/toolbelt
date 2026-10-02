@@ -630,11 +630,14 @@ export function registerCli(
               });
             if (!options["dry-run"])
               takeHandoffSlot(caller, await turnOf(bb, caller));
+            const source = await bb.sdk.threads.get({ threadId: caller });
             const decision = await router
               .route(request, {
                 // Never back to the caller, or to the thread that handed the
-                // caller its work: a handoff doesn't bounce.
+                // caller its work: a handoff doesn't bounce. Keep a filed
+                // caller's handoff in its workstream.
                 exclude: [caller, ...(await handedOffFrom(bb, caller))],
+                workstreamId: source.sectionId ?? null,
                 about: caller,
               })
               .catch(fail);

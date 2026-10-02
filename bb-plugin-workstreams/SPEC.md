@@ -186,6 +186,8 @@ membership.
 - The caller is `ctx.threadId` (from `BB_THREAD_ID`). The router (§6) excludes
   the caller as a target and records the new thread as `spawnedFrom` the caller.
 - Agent handoffs can't use the intake preview, so the policy is:
+  - A filed caller's workstream is the handoff destination; an unfiled caller
+    leaves the destination to the router.
   - `new-thread` acts immediately (journaled, undoable);
   - `continue` acts only at high confidence, and otherwise falls back to
     `new-thread`;
