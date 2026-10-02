@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type {
@@ -185,6 +186,34 @@ describe("question interaction adapter", () => {
     expect(submit.mock.calls[0]?.[0]).toEqual({
       answers: { q0: { selected: [], freeText: "Use our managed service" } },
     });
+  });
+  it("submits a freeform answer on Enter", () => {
+    const submit = vi.fn(async (_value: unknown) => undefined);
+    const slot = render(
+      { questions: [{ ...singleSelect.questions[0]!, options: [] }] },
+      { submit },
+    );
+    const answer = slot.getByLabelText("Database answer");
+    fireEvent.change(answer, { target: { value: "Use our managed service" } });
+
+    expect(fireEvent.keyDown(answer, { key: "Enter" })).toBe(false);
+    expect(submit.mock.calls[0]?.[0]).toEqual({
+      answers: { q0: { selected: [], freeText: "Use our managed service" } },
+    });
+  });
+  it("inserts a newline on Shift+Enter in a freeform answer", async () => {
+    const submit = vi.fn(async (_value: unknown) => undefined);
+    const slot = render(
+      { questions: [{ ...singleSelect.questions[0]!, options: [] }] },
+      { submit },
+    );
+    const answer = slot.getByLabelText("Database answer");
+    const user = userEvent.setup();
+
+    await user.type(answer, "first{Shift>}{Enter}{/Shift}second");
+
+    expect((answer as HTMLTextAreaElement).value).toBe("first\nsecond");
+    expect(submit).not.toHaveBeenCalled();
   });
   it("preserves the answer and displays submission failures", async () => {
     const submit = vi.fn(async () => {

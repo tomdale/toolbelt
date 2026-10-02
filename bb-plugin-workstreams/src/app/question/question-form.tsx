@@ -248,7 +248,8 @@ function QuestionInputBlock({
     if (
       event.nativeEvent.isComposing ||
       event.key !== "Enter" ||
-      (!event.metaKey && !event.ctrlKey)
+      event.shiftKey ||
+      event.altKey
     ) {
       return;
     }
