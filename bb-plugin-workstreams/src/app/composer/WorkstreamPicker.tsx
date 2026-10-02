@@ -6,6 +6,8 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
+import { corpusLabel } from "../../domain/corpus-label.ts";
+import type { CorpusEntity } from "../../domain/corpus.ts";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -43,9 +45,7 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rpc = useRpc<RpcContract>();
-  const [entities, setEntities] = useState<
-    { id: string; name: string; aliases: string[] }[]
-  >([]);
+  const [entities, setEntities] = useState<CorpusEntity[]>([]);
   useEffect(() => {
     if (!open) return;
     let live = true;
@@ -200,7 +200,7 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
                     }}
                     className={ITEM_CLASS}
                   >
-                    {entity.name}
+                    {corpusLabel(entity.id, entities)}
                   </CommandItem>
                 ))}
               </CommandGroup>

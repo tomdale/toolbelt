@@ -162,7 +162,13 @@ function mount(
     })),
     corpus: vi.fn(() => ({
       entities: [
-        { id: "inactive-feature", name: "Shelves", aliases: ["Storage"] },
+        {
+          id: "inactive-feature",
+          name: "Shelves",
+          description: "Feature",
+          parentId: null,
+          aliases: ["Storage"],
+        },
       ],
     })),
     corpusSelect: vi.fn((_input: unknown) => ({
