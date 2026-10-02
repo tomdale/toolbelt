@@ -413,7 +413,13 @@ export class AgentRecaps {
     const stored = this.get(threadId);
     if (stored?.recap.id !== recapId)
       throw new UserError("This recap is no longer current.");
-    if (!stored.recap.next.includes(action))
+    if (
+      !stored.recap.next.some((suggestion) =>
+        typeof suggestion === "string"
+          ? suggestion === action
+          : suggestion.message === action,
+      )
+    )
       throw new UserError("This suggestion is no longer offered.");
     await this.deps.bb.sdk.threads.send({
       threadId,

@@ -757,18 +757,18 @@ it("colors hash digits and letters from settings", async () => {
   );
 });
 
-it("offers the recap's next actions as buttons in the bottom bar", async () => {
+it("shows short Title Case buttons and sends the full action message", async () => {
   const slot = await mount({
     recap: { next: ["Run the full test suite", "Open a pull request"] },
   });
   const region = await slot.findByRole("region", { name: "Latest recap" });
   const list = slot.getByRole("list", { name: "Next actions" });
   expect(region.contains(list)).toBe(true);
-  expect(list.textContent).toContain("Run the full test suite");
-  expect(list.textContent).toContain("Open a pull request");
+  expect(list.textContent).toContain("Run The Full Test…");
+  expect(list.textContent).toContain("Open A Pull Request");
   // With next actions present, Archive yields the bar's right side to them.
   expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
-  fireEvent.click(slot.getByRole("button", { name: "Open a pull request" }));
+  fireEvent.click(slot.getByRole("button", { name: "Open A Pull Request" }));
   await waitFor(() =>
     expect(slot.inspection.rpcCalls).toContainEqual({
       method: "recap_send",
@@ -784,6 +784,82 @@ it("offers the recap's next actions as buttons in the bottom bar", async () => {
   ).toMatchObject({ action: "Open a pull request" });
 });
 
+it("shows concise Title Case labels and sends the full message", async () => {
+  const slot = await mount({
+    recap: {
+      next: [
+        {
+          title: "Run Tests",
+          message: "Run the full test suite and summarize failures",
+          description: "Check for regressions before shipping",
+        },
+      ],
+    },
+  });
+  await slot.findByRole("region", { name: "Latest recap" });
+  const button = slot.getByRole("button", { name: "Run Tests" });
+  expect(button.className).toContain("text-emerald-700");
+  expect(button.getAttribute("title")).toBe(
+    "Check for regressions before shipping",
+  );
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls).toContainEqual({
+      method: "recap_send",
+      input: {
+        threadId: "t1",
+        recapId: "r1",
+        action: "Run the full test suite and summarize failures",
+      },
+    }),
+  );
+});
+
+it("collapses wrapping action buttons into a menu", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.classList.contains("basis-0") ? 80 : 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.hasAttribute("data-next-actions-measure") ? 240 : 0;
+    },
+  );
+  const slot = await mount({
+    recap: {
+      next: [
+        {
+          title: "Run Tests",
+          message: "Run the full test suite",
+          description: "Check for regressions",
+        },
+        {
+          title: "Open Pull Request",
+          message: "Open a pull request for the change",
+        },
+      ],
+    },
+  });
+  await slot.findByRole("region", { name: "Latest recap" });
+  fireEvent(window, new Event("resize"));
+  const trigger = await slot.findByRole("button", { name: "Next actions" });
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  const item = await slot.findByRole("menuitem", { name: /Run Tests/ });
+  expect(item.textContent).toContain("Check for regressions");
+  fireEvent.click(item);
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls).toContainEqual({
+      method: "recap_send",
+      input: {
+        threadId: "t1",
+        recapId: "r1",
+        action: "Run the full test suite",
+      },
+    }),
+  );
+});
+
 it("sends no next actions for a waiting recap", async () => {
   const slot = await mount({
     recap: {
@@ -797,7 +873,7 @@ it("sends no next actions for a waiting recap", async () => {
   expect(slot.queryByRole("list", { name: "Next actions" })).toBeNull();
 });
 
-it("keeps the other next actions idle while one is sending", async () => {
+it("keeps the other next action buttons idle while one is sending", async () => {
   let resolve!: (value: { ok: boolean }) => void;
   const sent = new Promise<{ ok: boolean }>((done) => {
     resolve = done;
@@ -807,13 +883,11 @@ it("keeps the other next actions idle while one is sending", async () => {
     send: () => sent,
   });
   await slot.findByRole("region", { name: "Latest recap" });
-  fireEvent.click(
-    slot.getByRole("button", { name: "Run the full test suite" }),
-  );
+  fireEvent.click(slot.getByRole("button", { name: "Run The Full Test…" }));
   await waitFor(() =>
     expect(
       slot
-        .getByRole("button", { name: "Open a pull request" })
+        .getByRole("button", { name: "Open A Pull Request" })
         .getAttribute("disabled"),
     ).not.toBeNull(),
   );
@@ -821,7 +895,7 @@ it("keeps the other next actions idle while one is sending", async () => {
   await waitFor(() =>
     expect(
       slot
-        .getByRole("button", { name: "Open a pull request" })
+        .getByRole("button", { name: "Open A Pull Request" })
         .getAttribute("disabled"),
     ).toBeNull(),
   );

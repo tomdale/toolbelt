@@ -1,4 +1,5 @@
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   createContext,
   Fragment,
@@ -30,6 +31,7 @@ import {
   type RecapFiles,
   type RecapItem,
   type RecapLink,
+  type NextAction,
 } from "../../domain/recap.ts";
 import type { RecapLayout } from "../../domain/recapPrefs.ts";
 import { useRecapPrefs } from "../recap/prefs.ts";
@@ -44,6 +46,8 @@ import {
 import { useContinuing } from "./useContinuing.ts";
 import { ActivityThreadLink } from "../page/ActivityThreadLink.tsx";
 import type { HeldSpace } from "./recapMotion.ts";
+import { Hint } from "../Hint.tsx";
+import { usePortalScopeProps } from "@/lib/portal-scope";
 
 const CARD_CLASS =
   "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border text-foreground";
@@ -795,42 +799,218 @@ type CardProps = {
   waitingCancelled: boolean;
 };
 
-/**
- * The recap's suggested next actions, left in the bottom bar. One click sends
- * the text as the user's message; while one is sending, the others wait.
- */
+/** The exact user message behind a suggested button. */
+function nextActionMessage(action: NextAction): string {
+  return typeof action === "string" ? action : action.message;
+}
+
+/** The short title shown on a recap action button or menu item. */
+function titleCase(value: string): string {
+  return value
+    .split(/\s+/)
+    .map((word) => {
+      if (!word) return word;
+      const letters = word.replace(/[^a-z]/gi, "");
+      return letters.length > 1 && letters === letters.toLocaleUpperCase()
+        ? word
+        : word[0]!.toLocaleUpperCase() + word.slice(1).toLocaleLowerCase();
+    })
+    .join(" ");
+}
+
+function nextActionTitle(action: NextAction): string {
+  const source = titleCase(typeof action === "string" ? action : action.title);
+  const words = source.split(/\s+/);
+  let short = "";
+  for (const word of words) {
+    const candidate = short ? `${short} ${word}` : word;
+    if (candidate.length > 24 || (short && short.split(" ").length >= 4)) break;
+    short = candidate;
+  }
+  return short.length < source.length
+    ? `${short || source.slice(0, 23).trimEnd()}…`
+    : short;
+}
+
+const NEXT_ACTION_CLASS: Record<Recap["state"], string> = {
+  waiting:
+    "border-violet-700/35 bg-violet-500/10 text-violet-700 hover:bg-violet-500/20 hover:text-violet-700 dark:border-violet-300/35 dark:bg-violet-300/10 dark:text-violet-300 dark:hover:bg-violet-300/20 dark:hover:text-violet-300",
+  review:
+    "border-sky-700/35 bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 hover:text-sky-700 dark:border-sky-300/35 dark:bg-sky-300/10 dark:text-sky-300 dark:hover:bg-sky-300/20 dark:hover:text-sky-300",
+  complete:
+    "border-emerald-700/35 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-700 dark:border-emerald-300/35 dark:bg-emerald-300/10 dark:text-emerald-300 dark:hover:bg-emerald-300/20 dark:hover:text-emerald-300",
+};
+
+function NextActionItem({
+  action,
+  onSend,
+  disabled,
+  state,
+}: {
+  action: NextAction;
+  onSend?: (message: string) => Promise<void>;
+  disabled: boolean;
+  state: Recap["state"];
+}) {
+  const message = nextActionMessage(action);
+  const title = nextActionTitle(action);
+  const button = (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className={cn(
+        "h-7 max-w-48 px-2.5 text-[11.5px] font-semibold",
+        NEXT_ACTION_CLASS[state],
+      )}
+      disabled={disabled || !onSend}
+      onClick={() => {
+        if (onSend) void onSend(message);
+      }}
+    >
+      <span className="truncate">{title}</span>
+    </Button>
+  );
+  const description =
+    typeof action === "string"
+      ? title !== message
+        ? message
+        : null
+      : action.description;
+  return description ? (
+    <Hint label={description} title={description}>
+      {button}
+    </Hint>
+  ) : (
+    button
+  );
+}
+
+/** Actions stay as individual buttons only when all fit on one line. */
 function NextActions({
   actions,
   onSend,
+  state,
 }: {
-  actions: string[];
-  onSend?: (action: string) => Promise<void>;
+  actions: NextAction[];
+  onSend?: (message: string) => Promise<void>;
+  state: Recap["state"];
 }) {
-  const [pending, setPending] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const portalScope = usePortalScopeProps();
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const measureList = root?.querySelector<HTMLElement>(
+      "[data-next-actions-measure]",
+    );
+    if (!root || !measureList) return;
+    const measure = () => {
+      if (root.clientWidth > 0)
+        setMenu(measureList.scrollWidth > root.clientWidth + 1);
+    };
+    window.addEventListener("resize", measure);
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measure);
+    observer?.observe(root);
+    observer?.observe(measureList);
+    requestAnimationFrame(measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      observer?.disconnect();
+    };
+  }, [actions.length]);
+
+  const send = async (message: string) => {
+    if (!onSend || pending) return;
+    setPending(true);
+    try {
+      await onSend(message);
+    } finally {
+      setPending(false);
+    }
+  };
+
   return (
-    <ul
-      aria-label="Next actions"
-      className="m-0 flex min-w-0 list-none flex-wrap items-center gap-1.5 p-0"
-    >
-      {actions.map((action) => (
-        <li key={action} className="min-w-0 max-w-full" title={action}>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 max-w-full bg-background/60 px-2.5 text-[11.5px] font-medium"
-            disabled={!onSend || pending !== null}
-            onClick={() => {
-              if (!onSend) return;
-              setPending(action);
-              void onSend(action).finally(() => setPending(null));
-            }}
-          >
-            <span className="truncate">{action}</span>
-          </Button>
-        </li>
-      ))}
-    </ul>
+    <div ref={rootRef} className="relative min-w-0 flex-1 basis-0">
+      <ul
+        data-next-actions-measure
+        aria-hidden="true"
+        inert
+        className="pointer-events-none absolute left-0 top-0 m-0 flex w-max list-none items-center gap-1.5 p-0 opacity-0"
+      >
+        {actions.map((action, index) => (
+          <li key={index} className="shrink-0">
+            <NextActionItem action={action} disabled state={state} />
+          </li>
+        ))}
+      </ul>
+      {menu ? (
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-7 px-2.5 text-[11.5px] font-semibold",
+                NEXT_ACTION_CLASS[state],
+              )}
+              disabled={pending || !onSend}
+              aria-label="Next actions"
+            >
+              Next Actions{" "}
+              <Icon name="ChevronDown" aria-hidden className="size-3" />
+            </Button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              {...portalScope}
+              align="start"
+              sideOffset={4}
+              className="z-50 min-w-52 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
+            >
+              {actions.map((action, index) => (
+                <DropdownMenu.Item
+                  key={index}
+                  disabled={pending || !onSend}
+                  onSelect={() => void send(nextActionMessage(action))}
+                  className="flex cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-50"
+                >
+                  <span>{nextActionTitle(action)}</span>
+                  {typeof action === "string" ? null : (
+                    <span className="text-xs text-muted-foreground">
+                      {action.description ?? action.message}
+                    </span>
+                  )}
+                </DropdownMenu.Item>
+              ))}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      ) : (
+        <ul
+          data-next-actions-list
+          aria-label="Next actions"
+          className="m-0 flex min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden p-0"
+        >
+          {actions.map((action, index) => (
+            <li key={index} className="shrink-0">
+              <NextActionItem
+                action={action}
+                onSend={send}
+                disabled={pending}
+                state={state}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -894,7 +1074,11 @@ function CardBody({
           )}
         >
           {recap.next.length > 0 ? (
-            <NextActions actions={recap.next} onSend={onSend} />
+            <NextActions
+              actions={recap.next}
+              onSend={onSend}
+              state={recap.state}
+            />
           ) : null}
           {archiveError ? (
             <p

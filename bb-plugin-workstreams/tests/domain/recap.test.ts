@@ -238,6 +238,45 @@ it("omits complete links from normalization and stored recap Markdown", () => {
   );
 });
 
+it("accepts strings or short titles with messages and descriptions", () => {
+  const parsed = recapInputSchema.parse({
+    state: "complete",
+    goal: "Added dark mode",
+    latest: ["Theme toggle works"],
+    next: [
+      "Run the full test suite",
+      {
+        title: "Run Tests",
+        message: "Run the full test suite and show me the result",
+        description: "Check for regressions",
+      },
+    ],
+  });
+  expect(parsed.next).toHaveLength(2);
+  expect(
+    recapInputSchema.safeParse({
+      state: "complete",
+      goal: "Added dark mode",
+      latest: ["Theme toggle works"],
+      next: [
+        {
+          title: "Run The Complete Regression Test Suite",
+          message: "Run tests",
+        },
+      ],
+    }).success,
+  ).toBe(false);
+  const recap = toRecap(parsed, { id: "r", turnId: "t", at: 1 });
+  expect(recap.next[1]).toEqual({
+    title: "Run Tests",
+    message: "Run the full test suite and show me the result",
+    description: "Check for regressions",
+  });
+  expect(recapMarkdown(recap)).toContain(
+    "- Run Tests: Run the full test suite and show me the result (Check for regressions)",
+  );
+});
+
 it("accepts next actions for complete and review, never for waiting", () => {
   const next = ["Run the full test suite", "Open a pull request"];
   for (const state of ["complete", "review"] as const) {

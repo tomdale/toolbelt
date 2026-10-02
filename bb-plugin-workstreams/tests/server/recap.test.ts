@@ -828,6 +828,41 @@ describe("next actions", () => {
     expect((await s.card()).recap).toBeNull();
   });
 
+  it("sends the message from an object suggestion, not its title", async () => {
+    const s = await world();
+    s.w.turn("t1");
+    await s.report({
+      ...RECAP,
+      next: [
+        {
+          title: "Run Tests",
+          message: "Run the full suite and summarize failures",
+          description: "Check for regressions",
+        },
+      ],
+    });
+    const { recap } = await s.card();
+    await s.w.harness.behavior.callRpc("recap_send", {
+      threadId: "t1",
+      recapId: recap!.id,
+      action: "Run the full suite and summarize failures",
+    });
+    expect(s.w.sent.at(-1)?.input).toEqual([
+      {
+        type: "text",
+        text: "Run the full suite and summarize failures",
+        mentions: [],
+      },
+    ]);
+    await expect(
+      s.w.harness.behavior.callRpc("recap_send", {
+        threadId: "t1",
+        recapId: recap!.id,
+        action: "Run Tests",
+      }),
+    ).rejects.toThrow();
+  });
+
   it("rejects a stale recap and an action it no longer offers", async () => {
     const s = await world();
     s.w.turn("t1");
