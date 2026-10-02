@@ -33,6 +33,7 @@ export function deliveredCardRecord(text: string): QuestionHistory | null {
 type Target = {
   host: HTMLElement;
   anchor: HTMLElement;
+  text: string;
   record: QuestionHistory | null;
 };
 
@@ -49,19 +50,32 @@ export function DeliveredQuestionCards() {
       for (const [host, target] of mounted) {
         if (!host.isConnected) {
           target.anchor.remove();
-          host.classList.remove("ws-delivered-question");
+          host.classList.remove("ws-delivered-question-source");
           mounted.delete(host);
           changed = true;
+          continue;
+        }
+        const text = (host.textContent ?? "").trimStart();
+        if (text !== target.text) {
+          const record = deliveredCardRecord(text);
+          const isClippedPreview =
+            !record && (text.endsWith("…") || text.endsWith("..."));
+          if (record || isClippedPreview) {
+            target.text = text;
+            target.record = record;
+            changed = true;
+          }
         }
       }
       for (const row of document.querySelectorAll<HTMLElement>(
         "[data-timeline-row-id]",
       )) {
         if (row.querySelector("[data-ws-delivered-anchor]")) continue;
-        // The smallest complete body excludes the generated-message title and
-        // cannot mistake snippets in tool command text for a delivered answer.
+        // Match an element whose own text begins with the transport prefix.
+        // The card anchor lives beside that element, so the host's renderer can
+        // hide it whether BB emitted nested markup or a direct text node.
         const candidates = Array.from(
-          row.querySelectorAll<HTMLElement>("div"),
+          row.querySelectorAll<HTMLElement>("*"),
         ).reverse();
         for (const host of candidates) {
           if (host.closest("[data-ws-delivered-anchor]") || mounted.has(host))
@@ -78,9 +92,9 @@ export function DeliveredQuestionCards() {
           if (!record && !isClippedPreview) continue;
           const anchor = document.createElement("div");
           anchor.dataset.wsDeliveredAnchor = "";
-          host.append(anchor);
-          host.classList.add("ws-delivered-question");
-          mounted.set(host, { host, anchor, record });
+          host.after(anchor);
+          host.classList.add("ws-delivered-question-source");
+          mounted.set(host, { host, anchor, text, record });
           changed = true;
           break;
         }
@@ -93,13 +107,17 @@ export function DeliveredQuestionCards() {
         queueMicrotask(scan);
       }
     });
-    observer.observe(document.body, { subtree: true, childList: true });
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
     scan();
     return () => {
       active = false;
       observer.disconnect();
       for (const { host, anchor } of mounted.values()) {
-        host.classList.remove("ws-delivered-question");
+        host.classList.remove("ws-delivered-question-source");
         anchor.remove();
       }
     };

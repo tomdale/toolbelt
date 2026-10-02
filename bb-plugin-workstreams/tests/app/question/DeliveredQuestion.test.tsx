@@ -41,7 +41,7 @@ it("replaces the delivered message's raw JSON with inline Q&A and restores host 
   expect(message.getByText("What should we test?")).toBeTruthy();
   expect(message.getByText("Your answer")).toBeTruthy();
   expect(
-    message.container.querySelector(".ws-delivered-question"),
+    message.container.querySelector(".ws-delivered-question-source"),
   ).toBeTruthy();
   expect(
     message.container.querySelectorAll("[data-ws-delivered-anchor]"),
@@ -50,7 +50,9 @@ it("replaces the delivered message's raw JSON with inline Q&A and restores host 
   expect(
     message.container.querySelector("[data-ws-question-history]"),
   ).toBeNull();
-  expect(message.container.querySelector(".ws-delivered-question")).toBeNull();
+  expect(
+    message.container.querySelector(".ws-delivered-question-source"),
+  ).toBeNull();
   expect(message.getByText(JSON.stringify(result))).toBeTruthy();
 });
 it("replaces BB's clipped generated-message preview with an expansion hint", async () => {
@@ -85,6 +87,44 @@ it("replaces BB's clipped generated-message preview with an expansion hint", asy
   expect(
     message.container.querySelector(".ws-delivered-question-preview"),
   ).toBeNull();
+});
+it("replaces direct text-node results as well as nested markup", async () => {
+  const raw = `${prefix}\n\n${JSON.stringify(result)}`;
+  const message = render(
+    <div data-timeline-row-id="thread:direct-text">
+      <div>Delivered AskUserQuestion result</div>
+      <div>{raw}</div>
+    </div>,
+  );
+  const overlay = renderSlot(
+    app.appOverlays.find((p) => p.id === "delivered-questions")!,
+    {},
+  );
+
+  await waitFor(() =>
+    expect(
+      message.container.querySelector("[data-ws-question-history]"),
+    ).toBeTruthy(),
+  );
+  expect(message.getByText("What should we test?")).toBeTruthy();
+  expect(
+    message.container.querySelector(".ws-delivered-question-source"),
+  ).toBeTruthy();
+  expect(
+    message.container.querySelector("[data-ws-delivered-anchor]"),
+  ).toBeTruthy();
+  expect(
+    message.container.querySelector(".ws-delivered-question-source")
+      ?.textContent,
+  ).toBe(raw);
+
+  overlay.lifecycle.unmount();
+  expect(
+    message.container.querySelector(".ws-delivered-question-source"),
+  ).toBeNull();
+  expect(
+    message.container.querySelector("[data-timeline-row-id]")?.textContent,
+  ).toContain(raw);
 });
 it("does not convert malformed transport data or unrelated text", () => {
   expect(deliveredCardRecord("ordinary message")).toBeNull();

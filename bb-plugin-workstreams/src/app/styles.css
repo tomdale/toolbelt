@@ -865,8 +865,9 @@ section[data-testid="plugin-interaction-shell"]:has(.ws-question-portaled) {
 }
 
 /* Keep generated-message content owned by BB, but show the validated Q&A
-   portal instead of its transport JSON. Unmount removes the marker. */
-.ws-delivered-question > :not([data-ws-delivered-anchor]) {
+   portal instead of its transport JSON. The source can contain direct text, so
+   hide the matched element itself; the portal anchor is its sibling. */
+.ws-delivered-question-source {
   display: none !important;
 }
 .ws-delivered-question-preview {
