@@ -889,7 +889,7 @@ export function WorkstreamsThreadList({
           <div
             key={band.key}
             data-flip-key="up-next"
-            className="ws-presence [--ws-presence-gap:0.5rem]"
+            className="ws-presence ws-up-next-sticky [--ws-presence-gap:0.5rem]"
             {...presenceProps(band.phase)}
           >
             <div>
