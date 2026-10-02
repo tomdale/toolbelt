@@ -152,7 +152,7 @@ it("shows where each thread stopped", async () => {
   slot.lifecycle.unmount();
 });
 
-it("previews the whole map and applies only selected moves", async () => {
+it("previews organization in a table without line-item vetoes", async () => {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   const move = (
     threadId: string,
@@ -246,10 +246,8 @@ it("previews the whole map and applies only selected moves", async () => {
   expect(await slot.findByText("The Beta effort")).toBeTruthy();
   expect(slot.getByText("The Gamma effort")).toBeTruthy();
   expect(slot.getByText("Title t5")).toBeTruthy();
-  expect(
-    (slot.getByRole("checkbox", { name: /Title t4/ }) as HTMLInputElement)
-      .checked,
-  ).toBe(false);
+  expect(slot.queryByRole("checkbox")).toBeNull();
+  expect(slot.getByRole("table")).toBeTruthy();
   expect(
     slot.inspection.rpcCalls.some(
       (c) =>
@@ -257,8 +255,7 @@ it("previews the whole map and applies only selected moves", async () => {
         (c.input as { action: string }).action === "apply",
     ),
   ).toBe(false);
-  fireEvent.click(slot.getByRole("checkbox", { name: /Title t1/ }));
-  fireEvent.click(slot.getByRole("button", { name: "Apply map" }));
+  fireEvent.click(slot.getByRole("button", { name: "Apply organization" }));
   await waitFor(() =>
     expect(
       slot.inspection.rpcCalls.find(
@@ -269,7 +266,7 @@ it("previews the whole map and applies only selected moves", async () => {
     ).toEqual({
       action: "apply",
       runId: 0,
-      overrides: [{ threadId: "t1", accepted: false }],
+      overrides: [],
     }),
   );
   slot.lifecycle.unmount();

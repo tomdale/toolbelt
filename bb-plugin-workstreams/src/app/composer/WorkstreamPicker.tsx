@@ -27,7 +27,7 @@ import {
 import { cn } from "@/lib/utils";
 import { WorkstreamName } from "../WorkstreamName.tsx";
 import { NO_WORKSTREAM_ICON, WORKSTREAM_ICON } from "../workstream-icon.ts";
-import { applyOrder } from "../../domain/order.ts";
+import { compareGroupNames } from "../../domain/group-name-order.ts";
 import { useServerState } from "../useWorkstreams.ts";
 import type { NewWork } from "./new-work.ts";
 
@@ -74,15 +74,10 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
   }, [open, rpc]);
   const workstreams = useMemo(
     () =>
-      applyOrder(
-        Object.values(server.workstreams).sort((a, b) =>
-          a.name.localeCompare(b.name),
-        ),
-        server.order.workstreams,
-        (w) => w.sectionId,
-        "last",
+      Object.values(server.workstreams).sort((a, b) =>
+        compareGroupNames(a.name, b.name),
       ),
-    [server.workstreams, server.order.workstreams],
+    [server.workstreams],
   );
   const needle = query.trim().toLowerCase();
   const visible = needle
@@ -92,14 +87,21 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
         ),
       )
     : workstreams;
-  const inactive = entities.filter(
-    (e) =>
-      !workstreams.some((w) => w.name === e.name) &&
-      (!needle ||
-        [e.name, e.description, ...e.aliases].some((n) =>
-          n.toLowerCase().includes(needle),
-        )),
-  );
+  const inactive = entities
+    .filter(
+      (e) =>
+        !workstreams.some((w) => w.name === e.name) &&
+        (!needle ||
+          [e.name, e.description, ...e.aliases].some((n) =>
+            n.toLowerCase().includes(needle),
+          )),
+    )
+    .sort((a, b) =>
+      compareGroupNames(
+        corpusLabel(a.id, entities),
+        corpusLabel(b.id, entities),
+      ),
+    );
   const exact =
     workstreams.some((w) => w.name.toLowerCase() === needle) ||
     entities.some((e) => e.name.toLowerCase() === needle);

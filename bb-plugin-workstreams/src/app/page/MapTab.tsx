@@ -10,6 +10,7 @@ import { InspectButton } from "../debug/InspectButton.tsx";
 import { ghostButton, primaryButton } from "./controls.ts";
 import { Organize } from "./Organize.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
+import { compareGroupNames } from "../../domain/group-name-order.ts";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 
@@ -25,17 +26,13 @@ export function MapTab({
   return (
     <div className="mt-6 flex flex-col gap-8">
       <Organize rpc={rpc} bootstrapped={bootstrapped} />
-      <section aria-label="Workstream map">
+      <section aria-label="Current workstreams">
         <h2 className="px-2 pb-1.5 text-xs font-medium text-muted-foreground">
           Current workstreams
         </h2>
         <ul>
           {[...records]
-            .sort(
-              (a, b) =>
-                b.evidence.threadCount - a.evidence.threadCount ||
-                a.name.localeCompare(b.name),
-            )
+            .sort((a, b) => compareGroupNames(a.name, b.name))
             .map((record) => (
               <MapRow key={record.sectionId} rpc={rpc} record={record} />
             ))}

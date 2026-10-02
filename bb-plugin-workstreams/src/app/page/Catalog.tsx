@@ -3,6 +3,7 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import type { CorpusEntity } from "../../domain/corpus.ts";
 import { corpusLabel } from "../../domain/corpus-label.ts";
+import { compareGroupNames } from "../../domain/group-name-order.ts";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 
@@ -41,7 +42,7 @@ export function Catalog({ rpc }: { rpc: Rpc }) {
             text.toLowerCase().includes(needle),
           ),
       )
-      .sort((a, b) => a.label.localeCompare(b.label));
+      .sort((a, b) => compareGroupNames(a.label, b.label));
   }, [entries, query]);
   return (
     <section className="mt-6" aria-label="Catalog">

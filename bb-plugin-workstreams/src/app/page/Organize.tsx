@@ -6,6 +6,7 @@ import { Icon } from "@/components/ui/icon";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { ghostButton, primaryButton, secondaryButton } from "./controls.ts";
 import { WorkstreamName } from "../WorkstreamName.tsx";
+import { compareGroupNames } from "../../domain/group-name-order.ts";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 type Command = Parameters<Rpc["call"]>[1];
@@ -15,7 +16,6 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const requested = useRef(0);
   const settled = useRef(0);
   const command = useRef(0);
@@ -74,9 +74,6 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
     void read();
   }, [read]);
   useRealtime("changed", () => void read());
-  useEffect(() => {
-    setOverrides({});
-  }, [state?.startedAt]);
   const working = state?.status === "proposing" || state?.status === "applying";
   useEffect(() => {
     if (!working) return;
@@ -96,28 +93,17 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
           return (
             <li key={a.threadId} className="text-[13px]">
               {move ? (
-                <label
-                  className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-1 hover:bg-state-hover"
+                <div
+                  className="flex items-start gap-2.5 px-2 py-1"
                   title={a.reason}
                 >
-                  <input
-                    type="checkbox"
-                    className="ws-check mt-[3px]"
-                    checked={overrides[a.threadId] ?? move.accepted}
-                    onChange={(e) =>
-                      setOverrides((o) => ({
-                        ...o,
-                        [a.threadId]: e.target.checked,
-                      }))
-                    }
-                  />
                   <span className="min-w-0 flex-1 truncate">
                     {titles.get(a.threadId)}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     from {move.fromName}
                   </span>
-                </label>
+                </div>
               ) : (
                 <span className="flex items-center gap-2.5 px-2 py-1 text-muted-foreground">
                   <span aria-hidden className="size-3.5 shrink-0" />
@@ -131,9 +117,7 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
         })}
     </ul>
   );
-  const accepted = preview
-    ? preview.moves.filter((m) => overrides[m.threadId] ?? m.accepted).length
-    : 0;
+  const accepted = preview ? preview.moves.filter((m) => m.accepted).length : 0;
   return (
     <section aria-label="Organize" className="text-sm">
       {!preview ? (
@@ -157,9 +141,9 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
                     : state.progress?.stage === "regrouping"
                       ? "Grouping current tasks by product and feature…"
                       : "Reading your open threads…"
-                  : "Applying the map…"
+                  : "Applying organization…"
                 : state?.status === "applied"
-                  ? "Map applied. Undo it from Activity."
+                  ? "Organization applied. Undo it from Activity."
                   : "Groups open threads by product in one pass. Nothing moves until you apply."}
             </p>
           </div>
@@ -200,7 +184,7 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
           <div className="sticky top-0 z-10 -mx-1 flex items-center gap-3 border-b border-border bg-background/95 px-1 py-2 backdrop-blur">
             <div className="min-w-0 flex-1">
               <h2 className="flex items-center gap-1.5 font-medium">
-                Review the map
+                Review organization
                 {state?.traceIds?.length ? (
                   <InspectButton
                     target={{ traceIds: state.traceIds }}
@@ -211,7 +195,7 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
               </h2>
               <p className="text-xs text-muted-foreground">
                 {preview.workstreams.length} workstreams · {accepted} of{" "}
-                {preview.moves.length} moves selected
+                {preview.moves.length} proposed moves
                 {preview.removals?.length
                   ? ` · ${preview.removals.length} to remove`
                   : ""}
@@ -233,48 +217,77 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
                 void send({
                   action: "apply",
                   runId: state!.startedAt,
-                  overrides: Object.entries(overrides).map(
-                    ([threadId, accepted]) => ({ threadId, accepted }),
-                  ),
+                  overrides: [],
                 })
               }
             >
-              Apply map
+              Apply organization
             </button>
           </div>
-          <div className="mt-4 flex flex-col gap-5">
-            {preview.workstreams.map((w) => {
-              const renamed = preview.renames.find(
-                (r) => r.sectionId === w.sectionId,
-              );
-              return (
-                <div key={w.key}>
-                  <h4 className="flex items-baseline gap-2 px-2 text-[13px] font-semibold">
-                    <WorkstreamName name={w.name} />
-                    {w.sectionId === null ? (
-                      <span className="rounded bg-primary/15 px-1 text-[10px] font-semibold uppercase tracking-wide text-primary">
-                        New
-                      </span>
-                    ) : null}
-                    {renamed ? (
-                      <span className="text-xs font-normal text-muted-foreground">
-                        was {renamed.from}
-                      </span>
-                    ) : null}
-                  </h4>
-                  <p className="px-2 text-xs text-muted-foreground">
-                    {w.description}
-                  </p>
-                  {renderThreads(w.key)}
-                </div>
-              );
-            })}
-            {preview.assignments.some((a) => a.workstream === null) ? (
-              <div>
-                <h4 className="px-2 text-[13px] font-semibold">Unfiled</h4>
-                {renderThreads(null)}
-              </div>
-            ) : null}
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground">
+                  <th className="px-2 py-2 font-medium">Workstream</th>
+                  <th className="px-2 py-2 font-medium">Tasks</th>
+                  <th className="px-2 py-2 font-medium">Proposed placement</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...preview.workstreams]
+                  .sort((a, b) => compareGroupNames(a.name, b.name))
+                  .map((w) => {
+                    const renamed = preview.renames.find(
+                      (r) => r.sectionId === w.sectionId,
+                    );
+                    return (
+                      <tr
+                        key={w.key}
+                        className="border-b border-border align-top"
+                      >
+                        <td className="max-w-64 px-2 py-2">
+                          <div className="flex items-baseline gap-2 font-medium">
+                            <WorkstreamName name={w.name} />
+                            {w.sectionId === null ? (
+                              <span className="rounded bg-primary/15 px-1 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                                New
+                              </span>
+                            ) : null}
+                            {renamed ? (
+                              <span className="text-xs font-normal text-muted-foreground">
+                                was {renamed.from}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-1 text-muted-foreground">
+                            {w.description}
+                          </p>
+                        </td>
+                        <td className="px-2 py-2 tabular-nums">
+                          {
+                            preview.assignments.filter(
+                              (a) => a.workstream === w.key,
+                            ).length
+                          }
+                        </td>
+                        <td className="py-1">{renderThreads(w.key)}</td>
+                      </tr>
+                    );
+                  })}
+                {preview.assignments.some((a) => a.workstream === null) ? (
+                  <tr className="border-b border-border align-top">
+                    <td className="px-2 py-2">Unfiled</td>
+                    <td className="px-2 py-2">
+                      {
+                        preview.assignments.filter((a) => a.workstream === null)
+                          .length
+                      }
+                    </td>
+                    <td>{renderThreads(null)}</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
             {preview.removals?.length ? (
               <details className="group rounded-md px-2 text-xs text-muted-foreground">
                 <summary className="flex w-fit cursor-pointer list-none items-center gap-1 hover:text-foreground [&::-webkit-details-marker]:hidden">
@@ -291,14 +304,16 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
                   Threads are kept; Undo restores the grouping.
                 </p>
                 <ul className="mt-1.5 pl-4">
-                  {preview.removals.map((r) => (
-                    <li key={r.sectionId} className="py-0.5">
-                      <span className="text-foreground/80">{r.name}</span>
-                      {r.archivedThreads.length
-                        ? ` · ${r.archivedThreads.length} archived`
-                        : ""}
-                    </li>
-                  ))}
+                  {[...preview.removals]
+                    .sort((a, b) => compareGroupNames(a.name, b.name))
+                    .map((r) => (
+                      <li key={r.sectionId} className="py-0.5">
+                        <span className="text-foreground/80">{r.name}</span>
+                        {r.archivedThreads.length
+                          ? ` · ${r.archivedThreads.length} archived`
+                          : ""}
+                      </li>
+                    ))}
                 </ul>
               </details>
             ) : null}

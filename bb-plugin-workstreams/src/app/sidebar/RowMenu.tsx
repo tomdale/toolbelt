@@ -10,6 +10,7 @@ import { usePortalScopeProps } from "@/lib/portal-scope";
 import { cn } from "@/lib/utils";
 import { useDebugMode } from "../debug/debug.ts";
 import { snoozeChoices, type ThreadSnooze } from "../../domain/snooze.ts";
+import { compareGroupNames } from "../../domain/group-name-order.ts";
 
 export type RowMenuHandlers = {
   move: (thread: PluginSidebarThread, sectionId: string | null) => void;
@@ -82,15 +83,17 @@ export function RowMenu({
                   {...portalScope}
                   className="z-50 max-h-96 min-w-48 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
                 >
-                  {sections.map((section) => (
-                    <Item
-                      key={section.id}
-                      disabled={section.id === workstreamId}
-                      onSelect={() => handlers.move(thread, section.id)}
-                    >
-                      {section.name}
-                    </Item>
-                  ))}
+                  {[...sections]
+                    .sort((a, b) => compareGroupNames(a.name, b.name))
+                    .map((section) => (
+                      <Item
+                        key={section.id}
+                        disabled={section.id === workstreamId}
+                        onSelect={() => handlers.move(thread, section.id)}
+                      >
+                        {section.name}
+                      </Item>
+                    ))}
                   <Item
                     disabled={workstreamId === null}
                     onSelect={() => handlers.move(thread, null)}

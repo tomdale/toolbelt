@@ -19,6 +19,7 @@ import { ghostButton, secondaryButton } from "./controls.ts";
 import { CallRow } from "./CallRow.tsx";
 import { ActivityTerm } from "./ActivityTerm.tsx";
 import { ActivityThreadLink } from "./ActivityThreadLink.tsx";
+import { compareGroupNames } from "../../domain/group-name-order.ts";
 
 const TRACE_PAGE = 100;
 
@@ -276,11 +277,13 @@ export function Activity({
           className="h-7 rounded-md border border-input bg-transparent px-1"
         >
           <option value="">All workstreams</option>
-          {sections.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
+          {[...sections]
+            .sort((a, b) => compareGroupNames(a.name, b.name))
+            .map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
         </select>
         <select
           aria-label="Filter by action"
