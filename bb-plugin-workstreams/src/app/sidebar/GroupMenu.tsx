@@ -31,7 +31,7 @@ export function GroupMenu({
         >
           {onNewThread ? (
             <ContextMenu.Item className={itemClass} onSelect={onNewThread}>
-              New thread here
+              New thread here…
             </ContextMenu.Item>
           ) : null}
           {priority ? (

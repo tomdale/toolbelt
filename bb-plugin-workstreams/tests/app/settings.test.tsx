@@ -42,7 +42,7 @@ it("registers settings in feature order", async () => {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
   expect(app.settingsSections.map(({ id, title }) => [id, title])).toEqual([
     ["sidebar", "Sidebar"],
-    ["working-indicator", "Working Indicator"],
+    ["working-indicator", "Working indicator"],
     ["threads", "Threads"],
     ["recap", "Recap"],
     ["snooze", "Snooze"],
@@ -102,7 +102,7 @@ it.each([
     "Timestamp",
     "timestamps",
     [
-      ["On Hover", "hover"],
+      ["On hover", "hover"],
       ["Never", "hide"],
       ["Always", "show"],
     ],
@@ -113,7 +113,7 @@ it.each([
     [
       ["Always", "always"],
       ["Never", "never"],
-      ["When Collapsed", "collapsed"],
+      ["When collapsed", "collapsed"],
     ],
   ],
   [
@@ -122,7 +122,7 @@ it.each([
     [
       ["Always", "always"],
       ["Never", "never"],
-      ["When Collapsed", "collapsed"],
+      ["When collapsed", "collapsed"],
     ],
   ],
 ] as const)(

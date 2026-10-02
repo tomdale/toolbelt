@@ -869,7 +869,7 @@ export function WorkstreamsThreadList({
           onClick={() => setNewWork({ workstreamId: null })}
           className="mx-2 flex h-7 items-center gap-1.5 rounded-md px-2 text-left text-[13px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
         >
-          <span aria-hidden="true">＋</span> New work
+          <span aria-hidden="true">＋</span> New work…
         </button>
         <NewWorkDialog
           open={newWork !== null}
