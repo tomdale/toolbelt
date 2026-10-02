@@ -83,6 +83,20 @@ it.each([undefined, null, []])("accepts empty unused arrays: %j", (empty) => {
   }
 });
 
+it.each(["complete", "review"] as const)(
+  "accepts null task in %s recaps from the shared input schema",
+  (state) => {
+    const result = recapInputSchema.safeParse({
+      state,
+      goal: "Finished work",
+      latest: ["Tests passed"],
+      task: null,
+      ...(state === "review" ? { review: "Inspect the result" } : {}),
+    });
+    expect(result.success).toBe(true);
+  },
+);
+
 it("accepts empty review strings only when review is not required", () => {
   for (const state of ["complete", "waiting"] as const) {
     expect(
