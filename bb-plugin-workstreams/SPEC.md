@@ -224,7 +224,9 @@ drift flag (§10) is the safety net.
 ## 6. Intake router
 
 One router serves three entry points. BB's native New thread composer remains
-host-owned; Workstreams contributes its intake UI only inside its own dialog.
+host-owned; Workstreams adds its Workstream field at the start of the native
+composer's picker row (before the project picker) and a suggestion row, and
+otherwise contributes its intake UI inside its own dialog.
 
 1. **Workstreams ＋ New**, on the page and the sidebar. It embeds
    `experimental_NewThreadComposer` unchanged, so it looks and acts like BB's

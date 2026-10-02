@@ -66,6 +66,24 @@ function RootComposer() {
   );
 }
 
+function RootComposerWithPickerRow() {
+  return (
+    <main data-app-composer-role="primary">
+      <div data-promptbox-shell="">
+        <NewThreadRouting />
+        <form data-promptbox="" />
+        <div>
+          <div>
+            <button type="button" data-promptbox-project-control="">
+              Project
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 type Attachment = {
   name: string;
   path: string;
@@ -201,6 +219,25 @@ it("shares the root composer model and accepts a workstream through host submit 
   expect(
     slot.inspection.rpcCalls.filter((call) => call.method === "route"),
   ).toHaveLength(1);
+});
+
+it("places the Workstream picker before the project picker in the host picker row", async () => {
+  mount(workstreamDecision, { component: RootComposerWithPickerRow });
+  const picker = await screen.findByRole("button", {
+    name: "Workstream: No workstream",
+  });
+  const anchor = picker.closest("[data-ws-workstream-slot]");
+  expect(anchor).toBeTruthy();
+  expect(
+    anchor!.compareDocumentPosition(
+      document.querySelector("[data-promptbox-project-control]")!,
+    ) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    document
+      .querySelector("[data-promptbox]")!
+      .compareDocumentPosition(anchor!) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 
 it("leaves an ignored suggestion out of the ordinary host submit metadata", async () => {
