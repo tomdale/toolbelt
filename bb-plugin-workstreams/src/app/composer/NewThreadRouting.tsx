@@ -13,6 +13,8 @@ import type {
 import type { RpcContract } from "../../server/contract.ts";
 import type { RouteDecision } from "../../server/router.ts";
 import { NewWork as NewWorkModel, NewWorkContext } from "./new-work.ts";
+import { createPortal } from "react-dom";
+import { useHostPickerRow } from "./host-picker-row.ts";
 import { NewWorkBridge } from "./NewWorkBridge.tsx";
 import { SuggestionRow } from "./Suggestion.tsx";
 import { WorkstreamPicker } from "./WorkstreamPicker.tsx";
@@ -77,6 +79,7 @@ export function NewThreadRouting() {
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const [checkedRoot, setCheckedRoot] = useState(false);
   const [model, setModel] = useState<NewWorkModel | null>(null);
+  const [composerRoot, setComposerRoot] = useState<HTMLElement | null>(null);
   const composerRef = useRef(composer);
   composerRef.current = composer;
 
@@ -94,6 +97,7 @@ export function NewThreadRouting() {
       return;
     }
     setCheckedRoot(true);
+    setComposerRoot(primary);
     const draftKey = composer.key;
     const nativeModel = new NewWorkModel(
       {
@@ -173,6 +177,7 @@ export function NewThreadRouting() {
     return () => {
       nativeModel.dispose();
       setModel((current) => (current === nativeModel ? null : current));
+      setComposerRoot(null);
     };
   }, [composer, composer.scope.kind, navigate, root, rpc, sdk]);
 
@@ -206,25 +211,34 @@ export function NewThreadRouting() {
     form.addEventListener("submit", submit, true);
     return () => form.removeEventListener("submit", submit, true);
   }, [composer, model, root, state.workstream, state.workstreamWasExplicit]);
+  // The picker row sits below the prompt box, outside this banner, so the
+  // field is portaled into it.
+  const pickerRow = useHostPickerRow(model ? composerRoot : null);
+  const picker = model ? (
+    <>
+      <WorkstreamPicker newWork={model} />
+      <span
+        role="status"
+        aria-live="polite"
+        className="text-xs text-muted-foreground"
+      >
+        {state.classifying ? "Classifying…" : ""}
+      </span>
+    </>
+  ) : null;
   return checkedRoot && !model ? null : (
     <div ref={setRoot}>
       {model ? (
         <NewWorkContext.Provider value={model}>
           <NewWorkBridge />
           <div className="ws-native-new-thread-routing">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3.5">
-              <span className="text-xs text-muted-foreground">
-                New thread in
-              </span>
-              <WorkstreamPicker newWork={model} />
-              <span
-                role="status"
-                aria-live="polite"
-                className="ml-auto text-xs text-muted-foreground"
-              >
-                {state.classifying ? "Classifying…" : ""}
-              </span>
-            </div>
+            {pickerRow ? (
+              createPortal(picker, pickerRow)
+            ) : (
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3.5">
+                {picker}
+              </div>
+            )}
             <SuggestionRow newWork={model} />
             {state.error ? (
               <p role="alert" className="px-3.5 text-sm text-destructive">
