@@ -22,14 +22,16 @@ import { StatusMark } from "../sidebar/StatusMark.tsx";
 import { useWorkstreams, type WorkView } from "../useWorkstreams.ts";
 import { Activity } from "./Activity.tsx";
 import { MapTab } from "./MapTab.tsx";
+import { Catalog } from "./Catalog.tsx";
 import { NewWorkDialog } from "../composer/NewWork.tsx";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
 import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 
-type Tab = "overview" | "map" | "activity";
+type Tab = "overview" | "catalog" | "map" | "activity";
 const TAB_LABEL: Record<Tab, string> = {
   overview: "Overview",
+  catalog: "Catalog",
   map: "Organize",
   activity: "Activity",
 };
@@ -43,6 +45,7 @@ function tabOf(subPath: string): {
   modelCalls?: boolean;
 } {
   const [head, ...rest] = subPath.split("/");
+  if (head === "catalog") return { tab: "catalog", focus: null };
   if (head === "map") return { tab: "map", focus: null };
   if (head === "activity")
     return { tab: "activity", focus: rest.join("/") || null };
@@ -57,7 +60,7 @@ export function WorkstreamsPage({
   const ws = useWorkstreams();
   const linked = tabOf(subPath);
   const [tab, setTab] = useState<Tab>(linked.tab);
-  const tabs: Tab[] = ["overview", "map", "activity"];
+  const tabs: Tab[] = ["overview", "catalog", "map", "activity"];
   const [newWork, setNewWork] = useState(false);
   useLayoutEffect(() => setTab(tabOf(subPath).tab), [subPath]);
   const [query, setQuery] = useState("");
@@ -205,6 +208,8 @@ export function WorkstreamsPage({
               </details>
             ) : null}
           </div>
+        ) : tab === "catalog" ? (
+          <Catalog rpc={ws.rpc} />
         ) : tab === "map" ? (
           <MapTab
             rpc={ws.rpc}

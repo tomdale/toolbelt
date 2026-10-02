@@ -67,12 +67,32 @@ async function mount() {
             },
           },
         }),
+        corpus: () => ({
+          entities: [
+            {
+              id: "known",
+              name: "Quiet product",
+              description: "Retained without current tasks",
+              parentId: null,
+              aliases: [],
+            },
+          ],
+        }),
         journal: () => ({ entries: [entry] }),
         undo: () => ({ entry: { ...entry, id: "e2", action: "undo" } }),
       },
     },
   );
 }
+
+it("opens the Catalog tab and includes products without current workstreams", async () => {
+  const slot = await mount();
+  fireEvent.click(slot.getByRole("tab", { name: "Catalog" }));
+  expect(await slot.findByText("Quiet product")).toBeTruthy();
+  expect(
+    slot.getByRole("tab", { name: "Catalog" }).getAttribute("aria-selected"),
+  ).toBe("true");
+});
 
 it("ranks workstreams by needs-you first and lists roots with child thread counts", async () => {
   const slot = await mount();
