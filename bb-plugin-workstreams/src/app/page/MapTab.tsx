@@ -10,7 +10,6 @@ import { InspectButton } from "../debug/InspectButton.tsx";
 import { ghostButton, primaryButton } from "./controls.ts";
 import { Organize } from "./Organize.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
-import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 
@@ -75,7 +74,6 @@ function MapRow({ rpc, record }: { rpc: Rpc; record: MapRecord }) {
   return (
     <li className="group/map rounded-md px-2 py-1.5 text-[13px] hover:bg-state-hover/50">
       <div className="flex items-baseline gap-2">
-        <WorkstreamIcon className="self-center" />
         <WorkstreamName
           name={record.name}
           muted={record.evidence.threadCount === 0}

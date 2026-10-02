@@ -509,27 +509,6 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
-  it("marks every workstream the sidebar names with the workstream icon", async () => {
-    const slot = await mount([
-      sidebarThread("ask", {
-        sectionId: "sec_a",
-        title: "Asking task",
-        hasPendingInteraction: true,
-        indicator: "waiting-for-input",
-      }),
-      sidebarThread("other", { sectionId: "sec_b", title: "Other task" }),
-    ]);
-    const icon = '[data-icon="workstreams/workstream"]';
-    const heading = (name: string) =>
-      slot.getByRole("region", { name }).querySelector("button");
-    expect(heading("Alpha")?.querySelector(icon)).toBeTruthy();
-    expect(heading("Beta")?.querySelector(icon)).toBeTruthy();
-    // Overlay rows name their workstream where an age would sit.
-    const upNext = slot.getByRole("region", { name: "Up Next" });
-    expect(upNext.querySelector(icon)).toBeTruthy();
-    slot.lifecycle.unmount();
-  });
-
   it("collapses a parent's children in its group", async () => {
     const slot = await mount();
     expect(groupRows(slot, "Alpha")).toEqual(["Root task", "Kid task"]);

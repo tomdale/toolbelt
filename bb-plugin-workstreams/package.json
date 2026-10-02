@@ -12,7 +12,8 @@
     "branding": {
       "icon": "./assets/workstream.svg",
       "experimental_icons": {
-        "workstream": "./assets/workstream.svg"
+        "workstream": "./assets/workstream.svg",
+        "workstream-none": "./assets/workstream-none.svg"
       }
     },
     "server": "./src/server/index.ts",

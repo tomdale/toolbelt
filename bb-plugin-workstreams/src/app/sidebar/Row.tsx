@@ -11,7 +11,6 @@ import {
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
-import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 import { cn } from "@/lib/utils";
 import {
   relativeAge,
@@ -84,7 +83,6 @@ export function Row({
   active,
   now,
   context,
-  contextIsWorkstream = false,
   attention,
   work,
   showStatusSlot = true,
@@ -100,8 +98,6 @@ export function Row({
   now: number;
   /** Shown instead of the age in overlay bands: the row's workstream name. */
   context?: string;
-  /** `context` names a workstream, so it is drawn with the workstream mark. */
-  contextIsWorkstream?: boolean;
   /**
    * The row is in the Up Next section. Every row there needs Tom, so the
    * needs-decision mark is implied and left out, and the title reads at full
@@ -324,12 +320,7 @@ export function Row({
               {shortcut.label}
             </span>
           ) : context ? (
-            <span className="flex max-w-24 items-center gap-1">
-              {contextIsWorkstream ? (
-                <WorkstreamIcon className="size-3" />
-              ) : null}
-              <span className="truncate">{context}</span>
-            </span>
+            <span className="block max-w-24 truncate">{context}</span>
           ) : (
             relativeAge(thread.latestAttentionAt, now)
           )}

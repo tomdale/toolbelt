@@ -269,8 +269,7 @@ function WorkstreamCard({
   return (
     <section aria-label={group.name}>
       <div className="flex items-baseline gap-2 px-2 pb-1.5">
-        <h2 className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold">
-          <WorkstreamIcon />
+        <h2 className="min-w-0 text-[13px] font-semibold">
           <WorkstreamName name={group.name} />
         </h2>
         {group.needsYou ? (

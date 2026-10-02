@@ -240,6 +240,18 @@ it("places the Workstream picker before the project picker in the host picker ro
   ).toBeTruthy();
 });
 
+it("draws the picker with the plugin's declared icons, never BB's fallback", async () => {
+  mount(workstreamDecision);
+  const picker = await screen.findByRole("button", {
+    name: "Workstream: No workstream",
+  });
+  // BB draws an undeclared icon name as a lightning bolt.
+  expect(
+    picker.querySelector('[data-icon="workstreams/workstream-none"]'),
+  ).toBeTruthy();
+  expect(picker.querySelector('[data-icon="CircleDashed"]')).toBeNull();
+});
+
 it("leaves an ignored suggestion out of the ordinary host submit metadata", async () => {
   const { slot, route, startThread } = mount(workstreamDecision);
   await typePrompt(slot, "Fix the parser in Alpha");
