@@ -878,6 +878,7 @@ function NextActions({
   const [pending, setPending] = useState(false);
   const [menu, setMenu] = useState(false);
   const portalScope = usePortalScopeProps();
+  const composer = useComposer();
   const rootRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -913,6 +914,10 @@ function NextActions({
       setPending(false);
     }
   };
+  const compose = (message: string) => {
+    composer.insert(message, { at: "end" });
+    composer.focus();
+  };
 
   return (
     <div ref={rootRef} className="relative min-w-0 flex-1 basis-0">
@@ -923,8 +928,19 @@ function NextActions({
         className="pointer-events-none absolute left-0 top-0 m-0 flex w-max list-none items-center gap-1.5 p-0 opacity-0"
       >
         {actions.map((action, index) => (
-          <li key={index} className="shrink-0">
+          <li key={index} className="flex shrink-0 items-center gap-0.5">
             <NextActionItem action={action} disabled state={state} />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7 shrink-0"
+              aria-hidden="true"
+              tabIndex={-1}
+              disabled
+            >
+              <Icon name="Edit" aria-hidden className="size-3.5" />
+            </Button>
           </li>
         ))}
       </ul>
@@ -955,19 +971,27 @@ function NextActions({
               className="z-50 min-w-52 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
             >
               {actions.map((action, index) => (
-                <DropdownMenu.Item
-                  key={index}
-                  disabled={pending || !onSend}
-                  onSelect={() => void send(nextActionMessage(action))}
-                  className="flex cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-50"
-                >
-                  <span>{nextActionTitle(action)}</span>
-                  {typeof action === "string" ? null : (
-                    <span className="text-xs text-muted-foreground">
-                      {action.description ?? action.message}
-                    </span>
-                  )}
-                </DropdownMenu.Item>
+                <Fragment key={index}>
+                  <DropdownMenu.Item
+                    disabled={pending || !onSend}
+                    onSelect={() => void send(nextActionMessage(action))}
+                    className="flex cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-50"
+                  >
+                    <span>{nextActionTitle(action)}</span>
+                    {typeof action === "string" ? null : (
+                      <span className="text-xs text-muted-foreground">
+                        {action.description ?? action.message}
+                      </span>
+                    )}
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onSelect={() => compose(nextActionMessage(action))}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-50"
+                  >
+                    <Icon name="Edit" aria-hidden className="size-3.5" />
+                    Edit in composer
+                  </DropdownMenu.Item>
+                </Fragment>
               ))}
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
@@ -979,13 +1003,25 @@ function NextActions({
           className="m-0 flex min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden p-0"
         >
           {actions.map((action, index) => (
-            <li key={index} className="shrink-0">
+            <li key={index} className="flex shrink-0 items-center gap-0.5">
               <NextActionItem
                 action={action}
                 onSend={send}
                 disabled={pending}
                 state={state}
               />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+                aria-label={`Edit ${nextActionTitle(action)} in composer`}
+                aria-description="Add this suggested message to the composer without sending"
+                disabled={pending}
+                onClick={() => compose(nextActionMessage(action))}
+              >
+                <Icon name="Edit" aria-hidden className="size-3.5" />
+              </Button>
             </li>
           ))}
         </ul>
@@ -1225,8 +1261,9 @@ function useHold(
 /**
  * The agent's recap of the thread's latest turn, above the composer, with
  * dismiss in its top-right corner and, under the rows, a footer bar with the
- * recap's suggested next actions at the left (each sends its text as the
- * user's message) and, when the thread can be archived, Archive at the right.
+ * recap's suggested next actions at the left (click to send or choose Edit in
+ * composer to add the text to the draft) and, when the thread can be archived,
+ * Archive at the right.
  * It stays up while the user drafts,
  * so they can refer to it in their message, and hides once a message is sent
  * or the thread runs, while a question card is open, and inside the inline

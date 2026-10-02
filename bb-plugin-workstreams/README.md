@@ -127,8 +127,10 @@ design and the contract the code is checked against.
   goal and one essential row in smaller type: the goal, results, or review
   steps, with an icon-only Archive beside ✕. The card sits above the composer,
   with a dismiss ✕ in its corner and, when the thread can be archived,
-  **Archive** at the right of a footer strip along its bottom edge; its state
-  marks the sidebar row. Each recap also stays in the thread as a tinted
+  **Archive** at the right of a footer strip along its bottom edge. Click a
+  suggested action to send it; use its edit button or choose **Edit in
+  composer** from the overflow menu to add its text to the draft instead. Its
+  state marks the sidebar row. Each recap also stays in the thread as a tinted
   **Recap** tool row; expand it to read the recap. Fresh input clears the card.
   A turn that ends without either gets an agent-only reminder, three by default
   (Settings → **Recap**: on/off, reminders 0–10, and a Full or Compact layout).

@@ -81,6 +81,7 @@ const RECAP = {
 async function mount(
   options: {
     layout?: string;
+    composer?: { text?: string };
     hashDigits?: string;
     hashLetters?: string;
     recap?: Record<string, unknown> | null;
@@ -103,7 +104,10 @@ async function mount(
     banner,
     {},
     {
-      composer: { scope: { kind: "thread", threadId: "t1" } },
+      composer: {
+        ...options.composer,
+        scope: { kind: "thread", threadId: "t1" },
+      },
       sidebarThreads: {
         sections: [
           { id: "ws", name: "Workstream", createdAt: 0, updatedAt: 0 },
@@ -836,6 +840,32 @@ it("shows full sentence-case action labels and sends each message", async () => 
   ).toMatchObject({ action: "Open a pull request" });
 });
 
+it("adds a suggested action to the composer without sending", async () => {
+  const slot = await mount({
+    composer: { text: "Already drafting: " },
+    recap: {
+      next: [
+        {
+          title: "Run tests",
+          message: "Run the full test suite and summarize failures",
+        },
+      ],
+    },
+  });
+  const button = await slot.findByRole("button", {
+    name: "Edit Run tests in composer",
+  });
+  fireEvent.click(button);
+
+  expect(slot.inspection.composer.text).toBe(
+    "Already drafting: Run the full test suite and summarize failures",
+  );
+  expect(slot.inspection.composer.focusCount).toBe(1);
+  expect(
+    slot.inspection.rpcCalls.some((call) => call.method === "recap_send"),
+  ).toBe(false);
+});
+
 it("shows a short sentence-case label with neutral styling", async () => {
   const slot = await mount({
     recap: {
@@ -872,6 +902,36 @@ it("shows a short sentence-case label with neutral styling", async () => {
       },
     }),
   );
+});
+
+it("edits an overflow action into the composer without sending", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.classList.contains("basis-0") ? 80 : 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.hasAttribute("data-next-actions-measure") ? 240 : 0;
+    },
+  );
+  const slot = await mount({
+    composer: { text: "Please " },
+    recap: { next: ["Review the diff"] },
+  });
+  await slot.findByRole("region", { name: "Latest recap" });
+  fireEvent(window, new Event("resize"));
+  const trigger = await slot.findByRole("button", { name: "Next actions" });
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  fireEvent.click(
+    await slot.findByRole("menuitem", { name: "Edit in composer" }),
+  );
+
+  expect(slot.inspection.composer.text).toBe("Please Review the diff");
+  expect(slot.inspection.composer.focusCount).toBe(1);
+  expect(
+    slot.inspection.rpcCalls.some((call) => call.method === "recap_send"),
+  ).toBe(false);
 });
 
 it("collapses wrapping action buttons into a menu", async () => {
