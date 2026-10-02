@@ -25,9 +25,11 @@ async function report(w: World, threadId: string, state = "complete") {
     {
       state,
       goal: "Answering a question",
-      latest: ["Answered it"],
+      latest: state === "waiting" ? [] : ["Answered it"],
       ...(state === "review" ? { review: "Read the answer" } : {}),
-      ...(state === "continuing" ? { active: ["Workers are running"] } : {}),
+      ...(state === "waiting"
+        ? { tasks: ["Workers are running"], timeout: 60 }
+        : {}),
     },
     { threadId },
   );
@@ -67,8 +69,8 @@ it("offers Archive on a complete recap, but never archives without a click", asy
   expect(w.threads.get("t1")!.archivedAt).not.toBeNull();
 });
 
-it("never offers or accepts Archive for continuing work, even when BB is idle", async () => {
-  const w = await world("continuing");
+it("never offers or accepts Archive while waiting, even when BB is idle", async () => {
+  const w = await world("waiting");
   expect(await suggestions(w)).toEqual({});
   await expect(archive(w)).rejects.toThrow(/work|current/);
   expect(w.threads.get("t1")!.archivedAt).toBeNull();

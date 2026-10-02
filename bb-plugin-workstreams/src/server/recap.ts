@@ -87,6 +87,11 @@ export class AgentRecaps {
   private readonly pending = new Map<string, Promise<void>>();
   private readonly repeat = new Set<string>();
   private readonly failureGuard: ToolFailureGuard;
+  private readonly waitingTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
+  private readonly waitingChecks = new Set<Promise<void>>();
 
   constructor(
     private readonly deps: {
@@ -113,6 +118,8 @@ export class AgentRecaps {
 
   /** The tool's registration and the instructions that go with it. */
   register(): void {
+    for (const [threadId, recap] of Object.entries(this.all()))
+      this.scheduleWaiting(threadId, recap);
     this.deps.bb.events.on(
       "experimental_thread.events",
       ({ thread, sequence }) => {
@@ -147,6 +154,7 @@ export class AgentRecaps {
           throw new Error(
             "The conversation changed; report the recap for the current turn.",
           );
+        this.scheduleWaiting(ctx.threadId, recap);
         this.deps.onChange();
         return recapMarkdown(recap);
       },
@@ -172,7 +180,41 @@ export class AgentRecaps {
    * The `message.dispatch` decision for a correction this class sent, or null
    * for any other input, which clears the thread's recap.
    */
-  onDispatch(ctx: DispatchContext) {
+  async onDispatch(ctx: DispatchContext) {
+    const queuedWait = ctx.queuedMessages.length
+      ? /^\[Workstreams waiting ([a-f0-9-]+)\]/.exec(ctx.input.text)
+      : null;
+    const submission = ctx.experimental_submission;
+    const waitingId =
+      submission?.pluginId === this.deps.bb.pluginId
+        ? z.object({ waitingRecapId: z.string() }).safeParse(submission.data)
+        : null;
+    const recapId =
+      queuedWait?.[1] ??
+      (waitingId?.success ? waitingId.data.waitingRecapId : null);
+    if (recapId) {
+      const turnId = await this.latestTurn(
+        ctx.thread.id,
+        this.controller.signal,
+      ).catch(() => null);
+      const recap = this.get(ctx.thread.id)?.recap;
+      if (
+        recap?.id !== recapId ||
+        recap.state !== "waiting" ||
+        recap.turnId !== turnId ||
+        ctx.thread.status !== "idle" ||
+        ctx.thread.archivedAt !== null ||
+        ctx.thread.visibility !== "visible" ||
+        ctx.thread.queuedMessageCount > ctx.queuedMessages.length
+      )
+        return {
+          action: "reject",
+          message: "Waiting check cancelled because the conversation changed.",
+        } as const;
+      this.reset(ctx.thread.id, null);
+      this.deps.onChange();
+      return { action: "proceed" } as const;
+    }
     const queued =
       ctx.queuedMessages.length > 0
         ? CORRECTION_MARKER.exec(ctx.input.text)
@@ -243,6 +285,8 @@ export class AgentRecaps {
 
   /** Coalesces idle events per thread; a repeat during a check runs again. */
   onIdle(threadId: string): Promise<void> {
+    const recap = this.get(threadId)?.recap;
+    if (recap) this.scheduleWaiting(threadId, recap);
     this.failureGuard.forget(threadId);
     const running = this.pending.get(threadId);
     if (running) {
@@ -270,6 +314,7 @@ export class AgentRecaps {
   }
 
   onArchived(threadId: string) {
+    this.cancelWaiting(threadId);
     this.failureGuard.forget(threadId);
     this.deps.db
       .prepare("UPDATE ws_agent_recap SET enrolled = 0 WHERE thread_id = ?")
@@ -277,6 +322,7 @@ export class AgentRecaps {
   }
 
   forget(threadId: string) {
+    this.cancelWaiting(threadId);
     this.failureGuard.forget(threadId);
     this.deps.db
       .prepare("DELETE FROM ws_agent_recap WHERE thread_id = ?")
@@ -340,7 +386,10 @@ export class AgentRecaps {
 
   async dispose() {
     this.controller.abort();
+    for (const threadId of this.waitingTimers.keys())
+      this.cancelWaiting(threadId);
     await Promise.allSettled([
+      ...this.waitingChecks,
       ...this.pending.values(),
       this.failureGuard.dispose(),
     ]);
@@ -410,7 +459,7 @@ export class AgentRecaps {
       this.deps.db
         .prepare(
           `UPDATE ws_agent_recap SET accepted_turn = ?, capped = 0,
-             recap = COALESCE(?, recap), dismissed = CASE WHEN ? IS NULL THEN dismissed ELSE 0 END
+             recap = COALESCE(?, recap), waiting_nudged = 0, dismissed = CASE WHEN ? IS NULL THEN dismissed ELSE 0 END
            WHERE thread_id = ? AND epoch = ?`,
         )
         .run(
@@ -428,6 +477,7 @@ export class AgentRecaps {
     const row = this.row(threadId);
     // A queued group dispatches more than once; only its first attempt is new.
     if (inputKey !== null && row.input_key === inputKey) return;
+    this.cancelWaiting(threadId);
     this.failureGuard.forget(threadId);
     this.deps.db
       .prepare(
@@ -436,6 +486,83 @@ export class AgentRecaps {
          WHERE thread_id = ?`,
       )
       .run(inputKey, threadId);
+  }
+
+  private cancelWaiting(threadId: string) {
+    const timer = this.waitingTimers.get(threadId);
+    if (timer) clearTimeout(timer);
+    this.waitingTimers.delete(threadId);
+  }
+
+  private scheduleWaiting(threadId: string, recap: Recap) {
+    this.cancelWaiting(threadId);
+    if (
+      recap.state !== "waiting" ||
+      !recap.timeout ||
+      this.deps.db
+        .prepare(
+          "SELECT 1 FROM ws_agent_recap WHERE thread_id = ? AND waiting_nudged = 1",
+        )
+        .get(threadId)
+    )
+      return;
+    const timer = setTimeout(
+      () => {
+        this.waitingTimers.delete(threadId);
+        const check = this.checkWaiting(threadId, recap)
+          .catch((error: unknown) => {
+            if (!this.controller.signal.aborted)
+              this.deps.bb.log.warn(
+                `Waiting check failed for ${threadId}: ${String(error)}`,
+              );
+          })
+          .finally(() => this.waitingChecks.delete(check));
+        this.waitingChecks.add(check);
+      },
+      Math.max(0, recap.at + recap.timeout * 1000 - Date.now()),
+    );
+    timer.unref();
+    this.waitingTimers.set(threadId, timer);
+  }
+
+  private async checkWaiting(threadId: string, recap: Recap) {
+    const signal = this.controller.signal;
+    const sdk = this.deps.bb.sdk;
+    if ((await this.latestTurn(threadId, signal)) !== recap.turnId) return;
+    const thread = await sdk.threads.get({ threadId, signal });
+    if (
+      signal.aborted ||
+      thread.status !== "idle" ||
+      thread.archivedAt !== null ||
+      thread.visibility !== "visible" ||
+      thread.queuedMessageCount > 0 ||
+      this.get(threadId)?.recap.id !== recap.id
+    )
+      return;
+    // Reserve once durably before sending; a reload cannot duplicate the prompt.
+    const reserved = this.deps.db
+      .prepare(
+        `UPDATE ws_agent_recap SET waiting_nudged = 1
+      WHERE thread_id = ? AND waiting_nudged = 0 AND recap = ?`,
+      )
+      .run(threadId, JSON.stringify(recap)).changes;
+    if (!reserved) return;
+    await sdk.threads.send({
+      threadId,
+      mode: "start",
+      pluginSubmission: {
+        pluginId: this.deps.bb.pluginId,
+        data: { waitingRecapId: recap.id },
+      },
+      input: [
+        {
+          type: "text",
+          visibility: "agent-only",
+          mentions: [],
+          text: `[Workstreams waiting ${recap.id}]\nThe waiting timeout expired. Check the status of the async tasks you reported, continue authorized work if ready, and report a recap. If tasks are still running, report waiting with a realistic timeout.`,
+        },
+      ],
+    });
   }
 
   private async enforce(threadId: string) {

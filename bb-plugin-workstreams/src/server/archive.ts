@@ -65,7 +65,7 @@ export class RecapArchive {
     if (
       !recap ||
       recap.id !== recapId ||
-      recap.state === "continuing" ||
+      recap.state === "waiting" ||
       thread.archivedAt !== null ||
       thread.visibility === "hidden" ||
       !archiveIdle(thread)

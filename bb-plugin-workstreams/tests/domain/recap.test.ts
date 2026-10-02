@@ -20,8 +20,8 @@ it("advertises named parameters on a concrete root object", () => {
     "state",
     "goal",
     "latest",
-    "active",
-    "next",
+    "tasks",
+    "timeout",
     "review",
     "links",
   ]);
@@ -40,15 +40,16 @@ it("validates state-specific fields at execution", () => {
   const branch = (state: string) =>
     variants.find((variant) => variant.properties.state?.const === state)!;
   for (const state of ["complete", "review"]) {
-    expect(branch(state).properties).toHaveProperty("next");
-    expect(branch(state).properties).toHaveProperty("active");
+    expect(branch(state).properties).toHaveProperty("timeout");
+    expect(branch(state).properties).toHaveProperty("tasks");
     expect(branch(state).properties.latest?.minItems).toBe(1);
     expect(branch(state).required).toContain("latest");
     expect(branch(state).additionalProperties).toBe(false);
   }
   expect(branch("review").required).toContain("review");
-  expect(branch("continuing").required).toContain("active");
-  expect(branch("continuing").properties).toHaveProperty("review");
+  expect(branch("waiting").required).toContain("tasks");
+  expect(branch("waiting").required).toContain("timeout");
+  expect(branch("waiting").properties).toHaveProperty("review");
   expect(branch("complete").properties).toHaveProperty("review");
   const review = {
     state: "review",
@@ -64,13 +65,13 @@ it("validates state-specific fields at execution", () => {
 });
 
 it.each([undefined, null, []])("accepts empty unused arrays: %j", (empty) => {
-  for (const state of ["complete", "review", "continuing"] as const) {
+  for (const state of ["complete", "review", "waiting"] as const) {
     const input = {
       state,
       goal: "Fixed recap validation",
-      latest: ["Tests passed"],
-      active: state === "continuing" ? ["Running checks"] : empty,
-      next: empty,
+      latest: state === "waiting" ? [] : ["Tests passed"],
+      tasks: state === "waiting" ? ["Running checks"] : empty,
+      timeout: state === "waiting" ? 60 : undefined,
       review: state === "review" ? ["Inspect the fix"] : empty,
     };
     expect(recapToolSchema.safeParse(input).success).toBe(true);
@@ -79,20 +80,21 @@ it.each([undefined, null, []])("accepts empty unused arrays: %j", (empty) => {
       turnId: "t",
       at: 1,
     });
-    expect(recap.next).toEqual([]);
-    if (state !== "continuing") expect(recap.active).toEqual([]);
+    if (state !== "waiting") expect(recap.tasks).toEqual([]);
     if (state !== "review") expect(recap.review).toEqual([]);
   }
 });
 
 it("accepts empty review strings only when review is not required", () => {
-  for (const state of ["complete", "continuing"] as const) {
+  for (const state of ["complete", "waiting"] as const) {
     expect(
       recapInputSchema.safeParse({
         state,
         goal: "Fixed validation",
-        latest: ["Tests passed"],
-        ...(state === "continuing" ? { active: ["Running checks"] } : {}),
+        latest: state === "waiting" ? [] : ["Tests passed"],
+        ...(state === "waiting"
+          ? { tasks: ["Running checks"], timeout: 60 }
+          : {}),
         review: "",
       }).success,
     ).toBe(true);
@@ -129,9 +131,10 @@ it("rejects substantive unused fields and unknown keys", () => {
 
 it("requires active work for a working recap and maps it to in progress", () => {
   const input = {
-    state: "continuing",
+    state: "waiting",
     goal: "Updating settings",
-    active: ["Workers are building the toggle."],
+    tasks: ["Workers are building the toggle."],
+    timeout: 60,
     links: [],
   };
   const recap = toRecap(recapInputSchema.parse(input), {
@@ -140,40 +143,32 @@ it("requires active work for a working recap and maps it to in progress", () => 
     at: 1,
   });
   expect(recap).toMatchObject({
-    active: ["Workers are building the toggle"],
+    tasks: ["Workers are building the toggle"],
+    timeout: 60,
     latest: [],
-    next: [],
     review: [],
   });
   const markdown = recapMarkdown(recap);
-  expect(markdown).toContain("**Working**");
-  expect(markdown).toContain("- ○ Workers are building the toggle");
+  expect(markdown).toContain("**Waiting**");
+  expect(markdown).toContain("- Workers are building the toggle");
+  expect(markdown).toContain("Check status in 60s");
   expect(markdown).not.toContain("**Next:");
   expect(markdown).not.toContain("Nothing needed");
   const analysis = reportedAnalysis(recap, { latestAttentionAt: 1 });
   expect(analysis.state).toBe("in_progress");
   expect(analysis.recap).toBe("Workers are building the toggle");
 
-  const full = recapInputSchema.parse({
-    ...input,
-    latest: ["Theme agreed"],
-    next: ["Inspect results"],
-  });
-  const fullMarkdown = recapMarkdown(
-    toRecap(full, { id: "r", turnId: "t", at: 1 }),
-  );
-  expect(fullMarkdown).toContain("- ✓ Theme agreed");
-  expect(fullMarkdown).toContain("**Next:**\n- Inspect results");
-
   const rejects = (patch: Record<string, unknown>) =>
     expect(recapInputSchema.safeParse({ ...input, ...patch }).success).toBe(
       false,
     );
-  // Every item done: report complete, not working.
-  rejects({ active: undefined, latest: ["Done"] });
-  rejects({ active: [] });
-  rejects({ active: null });
-  rejects({ active: ["a", "b"], latest: ["c", "d", "e"] });
+  rejects({ tasks: undefined });
+  rejects({ tasks: [] });
+  rejects({ tasks: null });
+  rejects({ latest: ["Done"] });
+  rejects({ next: ["Inspect results"] });
+  for (const timeout of [undefined, null, 0, -1, 1.5, 86401])
+    rejects({ timeout });
   rejects({ review: "Nothing to review" });
   rejects({ links: [{ title: "File", location: "/work/a" }] });
   expect(
@@ -190,7 +185,7 @@ it("marks reported working threads but leaves inferred progress unmarked", async
   const { workStateMark } = await import("../../src/domain/presentation.ts");
   expect(workStateMark("in_progress", true)).toEqual({
     glyph: "↻",
-    label: "Working",
+    label: "Waiting",
   });
   expect(workStateMark("in_progress", false).glyph).toBeNull();
 });
@@ -252,8 +247,6 @@ it("keeps legacy string lists and reads structured review JSON", () => {
     state: "review",
     goal: "Goal",
     latest: ["Legacy result"],
-    active: ["Legacy active item"],
-    next: ["Legacy next item"],
     review: JSON.stringify([
       { step: "Open Settings", expect: "The panel appears" },
     ]),
@@ -262,8 +255,6 @@ it("keeps legacy string lists and reads structured review JSON", () => {
   const recap = recapSchema.parse(stored);
   expect(recap).toMatchObject({
     latest: ["Legacy result"],
-    active: ["Legacy active item"],
-    next: ["Legacy next item"],
     review: [{ step: "Open Settings", expect: "The panel appears" }],
   });
 });
@@ -304,35 +295,25 @@ it("keeps structured review steps and writes their expectations", () => {
   );
 });
 
-it("accepts structured items in every list and preserves string items", () => {
+it("accepts structured and string async task items", () => {
   const parsed = recapInputSchema.parse({
-    state: "continuing",
-    goal: "Implementing structured recap items",
-    active: [{ step: "Building UI", expect: "The card renders subrows" }],
-    latest: [
-      "Parser remains compatible",
-      { step: "Added schema", expect: "All lists accept objects" },
+    state: "waiting",
+    goal: "Waiting for UI and tests",
+    tasks: [
+      { step: "Building UI", expect: "The card renders subrows" },
+      "Running tests",
     ],
-    next: [{ step: "Run tests", expect: "The suite passes" }],
+    timeout: 120,
   });
   const recap = toRecap(parsed, { id: "r", turnId: "t", at: 1 });
-  expect(recap.active).toEqual([
+  expect(recap.tasks).toEqual([
     { step: "Building UI", expect: "The card renders subrows" },
-  ]);
-  expect(recap.latest).toEqual([
-    "Parser remains compatible",
-    { step: "Added schema", expect: "All lists accept objects" },
-  ]);
-  expect(recap.next).toEqual([
-    { step: "Run tests", expect: "The suite passes" },
+    "Running tests",
   ]);
   expect(recapMarkdown(recap)).toContain(
-    "- ○ Building UI\n  - The card renders subrows",
+    "- Building UI\n  - The card renders subrows",
   );
-  expect(recapMarkdown(recap)).toContain(
-    "- ✓ Added schema\n  - All lists accept objects",
-  );
-  expect(recapMarkdown(recap)).toContain("- Run tests\n  - The suite passes");
+  expect(recapMarkdown(recap)).toContain("- Running tests");
 });
 
 it("measures inline Markdown by its visible text", () => {

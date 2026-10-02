@@ -231,25 +231,16 @@ it("renders structured subrows for completed items", async () => {
 it("renders subrows in every recap item list", async () => {
   const slot = await mount({
     recap: {
-      state: "continuing",
-      active: [{ step: "Running tests", expect: "Waiting for the suite" }],
-      latest: [
-        { step: "Implemented the schema", expect: "Strings remain valid" },
-      ],
-      next: [{ step: "Review results", expect: "Check the output" }],
+      state: "waiting",
+      tasks: [{ step: "Running tests", expect: "Waiting for the suite" }],
+      timeout: 60,
+      latest: [],
     },
   });
   const region = await slot.findByRole("region", { name: "Latest recap" });
-  for (const text of [
-    "Running tests",
-    "Waiting for the suite",
-    "Implemented the schema",
-    "Strings remain valid",
-    "Review results",
-    "Check the output",
-  ])
+  for (const text of ["Running tests", "Waiting for the suite"])
     expect(region.textContent).toContain(text);
-  expect(region.querySelectorAll("li[data-progress]")).toHaveLength(2);
+  expect(region.querySelectorAll("[data-progress]")).toHaveLength(1);
 });
 
 it("shows the goal, latest results, and Dismiss under them", async () => {
@@ -295,24 +286,28 @@ it.each(["full", "minimal"])(
 );
 
 const WORKING = {
-  state: "continuing",
-  active: ["Workers are running"],
-  latest: ["Theme agreed"],
-  next: ["Inspect worker results"],
+  state: "waiting",
+  tasks: ["Workers are running", "Tests are running"],
+  timeout: 60,
+  at: Date.now(),
+  latest: [],
 };
 const progress = (region: HTMLElement) =>
   [...region.querySelectorAll("li[data-progress]")].map(
     (li) => `${li.getAttribute("data-progress")}:${li.textContent}`,
   );
 
-it("shows working progress with rings before checks, and optional Next", async () => {
+it("shows waiting tasks, spinner, and countdown without completed or Next rows", async () => {
   const slot = await mount({ recap: WORKING });
   const region = await slot.findByRole("region", { name: "Latest recap" });
-  expect(region.textContent).toContain("Working");
+  expect(region.textContent).toContain("Waiting");
+  expect(slot.getByLabelText("Status check countdown").textContent).toMatch(
+    /^[01]:\d{2}$/,
+  );
   expect(region.textContent).not.toContain("Nothing needed");
   expect(progress(region)).toEqual([
     "active:In progress: Workers are running",
-    "done:Done: Theme agreed",
+    "active:In progress: Tests are running",
   ]);
   // Active items use a solid dot.
   expect(
@@ -320,18 +315,18 @@ it("shows working progress with rings before checks, and optional Next", async (
       .querySelector('li[data-progress="active"] svg')
       ?.getAttribute("fill"),
   ).toBe("currentColor");
-  expect(slot.getByRole("heading", { name: "Progress" })).toBeTruthy();
-  expect(slot.getByRole("heading", { name: "Next" })).toBeTruthy();
+  expect(slot.getByRole("heading", { name: "Tasks" })).toBeTruthy();
+  expect(slot.queryByRole("heading", { name: "Next" })).toBeNull();
+  expect(region.querySelector('[data-progress="done"]')).toBeNull();
   expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
   expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
-  cleanup();
-  const without = await mount({ recap: { ...WORKING, next: [] } });
-  await without.findByRole("region", { name: "Latest recap" });
-  expect(without.queryByRole("heading", { name: "Next" })).toBeNull();
 });
 
-it("shows the goal and only in-progress items in the compact working card", async () => {
-  const slot = await mount({ layout: "minimal", recap: WORKING });
+it("shows the goal and tasks in the compact waiting card", async () => {
+  const slot = await mount({
+    layout: "minimal",
+    recap: { ...WORKING, tasks: ["Workers are running"] },
+  });
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(slot.getByRole("heading", { name: "Building the card" })).toBeTruthy();
   // One shown item reads as plain text, without a bullet.
@@ -340,7 +335,7 @@ it("shows the goal and only in-progress items in the compact working card", asyn
   expect(only.textContent).toBe("Workers are running");
   expect(only.querySelector("svg")).toBeNull();
   expect(region.textContent).not.toContain("Inspect worker results");
-  expect(slot.queryByRole("heading", { name: "Progress" })).toBeNull();
+  expect(slot.queryByRole("heading", { name: "Tasks" })).toBeNull();
   expect(region.className).toContain("py-2");
 });
 

@@ -285,6 +285,10 @@ const MIGRATIONS = [
   "ALTER TABLE ws_question ADD COLUMN outcome TEXT",
   "ALTER TABLE ws_question ADD COLUMN interaction_id TEXT",
   "CREATE INDEX ws_question_interaction ON ws_question(interaction_id)",
+  "ALTER TABLE ws_agent_recap ADD COLUMN waiting_nudged INTEGER NOT NULL DEFAULT 0",
+  // A waiting recap needs an agent-selected timeout before it can schedule a check.
+  `UPDATE ws_agent_recap SET recap = NULL WHERE json_extract(recap, '$.state') = 'continuing'`,
+  `UPDATE ws_agent_recap SET recap = json_remove(recap, '$.active', '$.next') WHERE recap IS NOT NULL`,
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {
