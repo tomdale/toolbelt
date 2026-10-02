@@ -127,7 +127,9 @@ const nextActionSchema = z.union([
     }),
   z
     .object({
-      title: line(80).describe("Short, sentence-case button label"),
+      title: line(28).describe(
+        "Short sentence-case button label, at most 28 characters",
+      ),
       message: line(120).describe(
         "The exact plain-text message sent when clicked",
       ),
@@ -221,7 +223,7 @@ const recapFields = z
       .max(3)
       .default([])
       .describe(
-        "Complete and review only: one to three next actions the user might take or questions they may ask, shown as buttons under the recap. Use { title, message, description? } for a concise sentence-case title, the full message sent verbatim, and an optional short description shown on hover or in the action menu. Strings remain supported as both title and message.",
+        "Complete and review only: one to three next actions the user might take or questions they may ask, shown as buttons under the recap. Use { title, message, description? }: title is a short sentence-case button label of at most 28 characters, message is sent verbatim, and optional description holds longer context shown on hover and in the action menu. Keep button labels very short. Strings remain supported as the same short label and sent message.",
       ),
   })
   .strict();
@@ -450,7 +452,7 @@ export function recapMarkdown(recap: Recap): string {
 
 /** The tool's description, as the agent sees it in its tool list. */
 export const RECAP_TOOL_DESCRIPTION =
-  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar. Lists accept strings or { text, detail } items. The optional detail appears as a subrow. Text fields render inline Markdown, including links and @thread:<id> mentions; for waiting tasks, put a thread mention in detail to show it beneath the task. For complete and review, the optional next lists 1-3 suggested messages. Use { title, message, description? } for a concise sentence-case button label, the exact message to send, and an optional short description shown on hover or in the action menu; strings remain supported.";
+  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar. Lists accept strings or { text, detail } items; optional detail appears as a subrow. Text fields render inline Markdown, including links and @thread:<id> mentions; for waiting tasks, put a thread mention in detail to show it beneath the task. For complete and review, next accepts 1-3 suggested user messages. Prefer { title, message, description? }: title is a short sentence-case button label (at most 28 characters), message is sent verbatim, and optional description holds longer context shown on hover or in the action menu. Keep titles very short; strings remain supported as the same short title and message.";
 
 /**
  * Instructions for every thread that has the recap tool. They state the
@@ -461,7 +463,7 @@ state: complete when the user's latest request is fully done; review when a fini
 Write terse fragments in sentence case without closing periods. Every text field (goal, latest, tasks, review, and detail) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips. A lowercase commit hash, bare or alone in backticks (not in links), shows shortened and highlighted with copy on click. Length limits count visible text, not link targets. Inline links fit any state. The links field is a separate list of review targets. goal: the thread's purpose as a short phrase, past tense for complete and review ("Added dark mode to Settings") and -ing for waiting ("Waiting for Settings tests"). latest: one to three concrete results for complete and review, about 12 words each, most important first. review (required for review): one to three steps saying how to inspect or try the result and what to expect. Every item list accepts strings or { text, detail } objects. Use detail for optional secondary text shown on its own subrow. Keep each item distinct. Use separate items rather than joining results with semicolons. For UI review, give steps to reach and exercise the UI.
 For waiting: tasks (required) names one to three async tasks whose results you need; timeout (required) is the number of seconds until you should check their status, from 1 to 86400. Choose a realistic polling interval. To show a task and its thread on separate lines, use { text: "Waiting for build", detail: "@thread:thr_abc123" }; detail appears beneath the task and resolves to a thread link. The card counts down and automatically prompts you to check status if the same turn is still current when the timeout expires. Omit latest, review, and links.
 links: optional, only in the review state and only for artifacts or pages explicitly being asked to be reviewed, as absolute file paths or HTTPS URLs. A changed source file qualifies only when source review is requested. For complete, omit links or send an empty list.
-next: for complete and review, one to three messages the user might send next — a follow-up action or a question to you. Prefer an object with title (a concise sentence-case button label, at most 80 characters), message (the exact self-contained plain-text message sent verbatim as the user's next message, at most 120 characters), and optional description (a short explanation shown on hover or in the action menu, at most 120 characters). Buttons always show the full title, so keep it brief; put the actual request in message. Strings remain supported as both title and message for simple actions. Omit closing periods. Do not restate choices elsewhere in the recap or offer work you should do yourself. Omit next while waiting.
+next: for complete and review, one to three messages the user might send next — a follow-up action or question. Prefer { title, message, description? }. Keep title a very short sentence-case button label, at most 28 characters (ideally 2–4 words); validation enforces the limit. Put the exact self-contained plain-text request (at most 120 characters) in message; it is sent verbatim. Use optional description (at most 120 characters) for longer context or why the choice may be useful; it appears on hover and in the action menu. Do not cram the message into the title. Strings remain supported for simple actions and are shown as the full label. Omit closing periods. Do not restate choices elsewhere or offer work you should do yourself. Omit next while waiting.
 The user decides whether to archive the thread from the recap. When a question card is dismissed or expires, treat the question as unanswered and unapproved, and continue only work that does not depend on it.`;
 
 /**
