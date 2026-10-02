@@ -269,13 +269,36 @@ export default async function plugin(bb: BbPluginApi) {
       if (metadata.unassignedByRouter === true) return { action: "proceed" };
       const data =
         ctx.experimental_submission?.pluginId === bb.pluginId
-          ? (ctx.experimental_submission.data as { routeId?: string } | null)
+          ? (ctx.experimental_submission.data as {
+              routeId?: string;
+              sectionId?: string;
+            } | null)
           : null;
-      const decision = router.recall({
-        id: data?.routeId ?? null,
-        prompt: ctx.input.text,
-      });
-      if (decision)
+      const decision = data?.routeId
+        ? router.recall({ id: data.routeId, prompt: ctx.input.text })
+        : null;
+      if (decision && data?.sectionId) {
+        const accepted: RouteDecision =
+          decision.outcome === "new-workstream"
+            ? {
+                ...decision,
+                outcome: "new-thread",
+                sectionId: data.sectionId,
+                workstream: decision.name,
+                title: "",
+                placement: decision.placement,
+              }
+            : decision.outcome === "new-thread"
+              ? { ...decision, sectionId: data.sectionId }
+              : decision;
+        setTimeout(() => {
+          router
+            .fileComposed(ctx.thread.id, accepted)
+            .catch((error: unknown) =>
+              bb.log.warn(`Filing a composed thread failed: ${String(error)}`),
+            );
+        }, 0);
+      } else if (decision) {
         setTimeout(() => {
           router
             .fileComposed(ctx.thread.id, decision)
@@ -283,6 +306,15 @@ export default async function plugin(bb: BbPluginApi) {
               bb.log.warn(`Filing a composed thread failed: ${String(error)}`),
             );
         }, 0);
+      } else if (data?.sectionId) {
+        setTimeout(() => {
+          service
+            .fileIfUnsorted(ctx.thread.id, data.sectionId!, "user")
+            .catch((error: unknown) =>
+              bb.log.warn(`Filing a composed thread failed: ${String(error)}`),
+            );
+        }, 0);
+      }
     }
     return { action: "proceed" };
   });
@@ -444,6 +476,7 @@ export default async function plugin(bb: BbPluginApi) {
       intent,
       offerNewThread,
       suggest,
+      nativeComposer,
       fromDecisionId,
       draftKey,
     }) =>
@@ -471,11 +504,13 @@ export default async function plugin(bb: BbPluginApi) {
           });
           // A suggestion is accepted through its own RPCs. Remembering it
           // would let BB's composer file an unrelated thread with this text.
-          if (suggest) {
+          if (suggest && !nativeComposer) {
             router.forget(decision.id);
             if (decision.outcome === "continue" && decision.alternative)
               router.forget(decision.alternative.id);
           }
+          if (suggest && nativeComposer && decision.outcome === "continue")
+            router.forget(decision.id);
           return debug
             ? {
                 ...decision,

@@ -497,3 +497,127 @@ describe("Debug mode's record", () => {
     });
   });
 });
+
+describe("nativeFlow mode", () => {
+  function setupNative(
+    route: (
+      prompt: string,
+      workstreamId: string | null,
+      pickedProjectId?: string | null,
+    ) => Promise<RouteDecision>,
+    workstream: WorkstreamChoice = null,
+  ) {
+    const deps = {
+      route: vi.fn(route),
+      cancelRoute: vi.fn(),
+      createWorkstream: vi.fn(async (name: string) => ({
+        sectionId: "sec_new",
+        name,
+      })),
+      startThread: vi.fn(async () => {
+        throw new Error("Should not be called in native flow");
+      }),
+      sendToThread: vi.fn(async () => {}),
+      sendDraftToThread: vi.fn(async () => {}),
+      submitWithRoute: vi.fn(async () => {}),
+    } satisfies NewWorkDeps;
+    const newWork = new NewWork(deps, workstream, true);
+    const composer = {
+      selection: null as ComposerSelection | null,
+      submit: vi.fn(async () => {}),
+      setSelection: vi.fn(async (selection: ComposerSelection) => selection),
+      focus: vi.fn(),
+    };
+    newWork.attach(composer as unknown as PluginComposerApi);
+    return { deps, newWork, composer };
+  }
+
+  it("passes pickedProjectId to route when classifying", async () => {
+    const { deps, newWork } = setupNative(async () => inAlpha);
+    newWork.observeSelection({ projectId: "proj_picked" });
+    newWork.observe("Fix the parser in Alpha project");
+    await pause(DEBOUNCE_MS);
+    expect(deps.route).toHaveBeenCalledWith(
+      "Fix the parser in Alpha project",
+      null,
+      "proj_picked",
+    );
+  });
+
+  it("tracks workstreamWasExplicit correctly", () => {
+    const { newWork } = setupNative(async () => inAlpha);
+    expect(newWork.snapshot().workstreamWasExplicit).toBe(false);
+
+    const { newWork: explicit } = setupNative(async () => inAlpha, {
+      id: "sec_a",
+      name: "Alpha",
+    });
+    expect(explicit.snapshot().workstreamWasExplicit).toBe(true);
+
+    newWork.selectWorkstream({ id: "sec_b", name: "Beta" });
+    expect(newWork.snapshot().workstreamWasExplicit).toBe(true);
+
+    newWork.selectWorkstream(null);
+    expect(newWork.snapshot().workstreamWasExplicit).toBe(true);
+  });
+
+  it("accepts a continuation by sending draft to thread without host composer submit", async () => {
+    const { deps, newWork, composer } = setupNative(async () => continueParser);
+    newWork.observe("Also handle CRLF line endings");
+    await pause(DEBOUNCE_MS);
+    const accepting = newWork.accept({ submit: true });
+    await vi.advanceTimersByTimeAsync(0);
+    await accepting;
+    expect(deps.sendDraftToThread).toHaveBeenCalledWith("thr_p", "trace_1");
+    expect(composer.submit).not.toHaveBeenCalled();
+    expect(newWork.snapshot().settled).toBe("d_thread");
+    expect(newWork.snapshot().events.at(-1)).toMatchObject({
+      kind: "accept",
+      status: "ok",
+    });
+  });
+
+  it("accepts an existing workstream by calling submitWithRoute", async () => {
+    const { deps, newWork, composer } = setupNative(async () => inAlpha);
+    newWork.observe("Fix tabs in Alpha parser");
+    await pause(DEBOUNCE_MS);
+    const accepting = newWork.accept({ submit: true });
+    await vi.advanceTimersByTimeAsync(0);
+    await accepting;
+    expect(deps.submitWithRoute).toHaveBeenCalledWith("d_alpha", "sec_a");
+    expect(composer.submit).not.toHaveBeenCalled();
+    expect(newWork.snapshot().settled).toBe("d_alpha");
+  });
+
+  it("accepts a new-workstream suggestion by creating it and calling submitWithRoute", async () => {
+    const { deps, newWork, composer } = setupNative(async () => newBilling);
+    newWork.observe("Add invoice export features");
+    await pause(DEBOUNCE_MS);
+    const accepting = newWork.accept({ submit: true });
+    await vi.advanceTimersByTimeAsync(0);
+    await accepting;
+    expect(deps.createWorkstream).toHaveBeenCalledWith("Billing", "Invoices");
+    expect(deps.submitWithRoute).toHaveBeenCalledWith("d_new", "sec_new");
+    expect(composer.submit).not.toHaveBeenCalled();
+    expect(newWork.snapshot().settled).toBe("d_new");
+    expect(newWork.snapshot().workstream).toEqual({
+      id: "sec_new",
+      name: "Billing",
+    });
+  });
+
+  it("reports errors when sendDraftToThread fails in nativeFlow", async () => {
+    const { deps, newWork } = setupNative(async () => continueParser);
+    deps.sendDraftToThread.mockRejectedValueOnce(new Error("Send failed"));
+    newWork.observe("Also handle CRLF line endings");
+    await pause(DEBOUNCE_MS);
+    const accepting = newWork.accept({ submit: true });
+    await vi.advanceTimersByTimeAsync(0);
+    await accepting;
+    expect(newWork.snapshot().error).toBe("Send failed");
+    expect(newWork.snapshot().events.at(-1)).toMatchObject({
+      kind: "accept",
+      status: "failed",
+    });
+  });
+});

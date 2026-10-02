@@ -117,6 +117,7 @@ export type NewWorkState = {
   /** The draft's trimmed plain text, as last observed from the composer. */
   text: string;
   workstream: WorkstreamChoice;
+  workstreamWasExplicit: boolean;
   /** The composer's own picker values. */
   selection: ComposerSelection | null;
   /**
@@ -145,7 +146,11 @@ export type NewWorkDeps = {
    * `workstreamId` (the field's value) when the request fits. A newer call
    * supersedes it.
    */
-  route(prompt: string, workstreamId: string | null): Promise<RouteDecision>;
+  route(
+    prompt: string,
+    workstreamId: string | null,
+    pickedProjectId?: string | null,
+  ): Promise<RouteDecision>;
   /** Aborts the classification in flight. */
   cancelRoute(): void;
   /** Resolves with the name BB stored, which may be normalized. */
@@ -162,6 +167,8 @@ export type NewWorkDeps = {
     input: NewThreadRequest["input"],
     traceId: string | null,
   ): Promise<void>;
+  sendDraftToThread?(threadId: string, traceId: string | null): Promise<void>;
+  submitWithRoute?(routeId: string | null, sectionId?: string): Promise<void>;
 };
 
 export type SubmitResult =
@@ -226,10 +233,12 @@ export class NewWork {
   constructor(
     private deps: NewWorkDeps,
     workstream: WorkstreamChoice = null,
+    private nativeFlow = false,
   ) {
     this.state = {
       text: "",
       workstream,
+      workstreamWasExplicit: workstream !== null,
       selection: null,
       suggestion: null,
       decision: null,
@@ -318,7 +327,11 @@ export class NewWork {
       from: this.state.workstream,
       to: choice,
     })("ok");
-    this.set({ workstream: choice, error: null });
+    this.set({
+      workstream: choice,
+      workstreamWasExplicit: true,
+      error: null,
+    });
   }
 
   reportError(error: unknown) {
@@ -365,18 +378,39 @@ export class NewWork {
     const finish = this.begin("accept", { suggestion, submit });
     try {
       if (suggestion.kind === "thread") {
+        if (this.nativeFlow && this.deps.sendDraftToThread) {
+          await this.deps.sendDraftToThread(
+            suggestion.threadId,
+            suggestion.traceId,
+          );
+          this.set({ settled: suggestion.key });
+          finish("ok", { output: "Sent the draft to the suggested thread." });
+          return;
+        }
         this.sendTarget = suggestion;
         await composer.submit({ experimental_data: null });
         finish("ok", { output: "Submitted the draft to the thread." });
         return;
       }
-      const workstream =
-        suggestion.kind === "workstream"
-          ? { id: suggestion.sectionId, name: suggestion.name }
-          : await this.deps
-              .createWorkstream(suggestion.name, suggestion.description)
-              .then(({ sectionId, name }) => ({ id: sectionId, name }));
-      this.set({ workstream, settled: suggestion.key });
+      let acceptedSectionId: string | undefined;
+      let workstream = this.state.workstream;
+      if (suggestion.kind === "workstream") {
+        workstream = { id: suggestion.sectionId, name: suggestion.name };
+      } else if (this.nativeFlow) {
+        const created = await this.deps.createWorkstream(
+          suggestion.name,
+          suggestion.description,
+        );
+        workstream = { id: created.sectionId, name: created.name };
+        acceptedSectionId = created.sectionId;
+      } else {
+        const created = await this.deps.createWorkstream(
+          suggestion.name,
+          suggestion.description,
+        );
+        workstream = { id: created.sectionId, name: created.name };
+      }
+      this.set({ ...(workstream ? { workstream } : {}) });
       let requested: ComposerSelection | null = null;
       let applied: ComposerSelection | null = null;
       if (suggestion.placement) {
@@ -405,7 +439,15 @@ export class NewWork {
       });
       if (submit) {
         await afterHostCommit();
-        await composer.submit({ experimental_data: null });
+        if (this.nativeFlow && this.deps.submitWithRoute) {
+          await this.deps.submitWithRoute(
+            this.nativeFlow ? suggestion.key : null,
+            acceptedSectionId ?? workstream?.id,
+          );
+          this.set({ settled: suggestion.key });
+        } else {
+          await composer.submit({ experimental_data: null });
+        }
       } else {
         // The suggestion disappears; typing carries on in the draft.
         composer.focus();
@@ -487,9 +529,17 @@ export class NewWork {
     this.set({ classifying: true });
     const prompt = this.state.text;
     const workstream = this.state.workstream;
-    const finish = this.begin("classify", { prompt, workstream });
+    const pickedProjectId = this.state.selection?.projectId ?? null;
+    const finish = this.begin(
+      "classify",
+      this.nativeFlow
+        ? { prompt, workstream, pickedProjectId }
+        : { prompt, workstream },
+    );
     try {
-      const decision = await this.deps.route(prompt, workstream?.id ?? null);
+      const decision = this.nativeFlow
+        ? await this.deps.route(prompt, workstream?.id ?? null, pickedProjectId)
+        : await this.deps.route(prompt, workstream?.id ?? null);
       if (mine !== this.generation) {
         finish("superseded", { output: decision });
         return;
