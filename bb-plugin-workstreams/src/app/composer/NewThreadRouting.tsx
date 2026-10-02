@@ -210,8 +210,13 @@ export function NewThreadRouting() {
         experimental_data: sectionId
           ? {
               sectionId,
-              ...(snapshot.workstream?.subjectId
-                ? { subjectId: snapshot.workstream.subjectId }
+              ...((snapshot.acceptedRoute?.subjectId ??
+              snapshot.workstream?.subjectId)
+                ? {
+                    subjectId:
+                      snapshot.acceptedRoute?.subjectId ??
+                      snapshot.workstream?.subjectId,
+                  }
                 : {}),
               ...(snapshot.acceptedRoute
                 ? { routeId: snapshot.acceptedRoute.routeId }

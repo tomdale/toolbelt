@@ -126,6 +126,15 @@ export class CorpusStore {
         ...discoveredAlias,
         ...aliases,
       ]);
+      if (
+        mergedAliases.some((alias) => {
+          const other = this.resolve(alias, parentId);
+          return other && other.id !== existing.id;
+        })
+      )
+        throw new Error(
+          "Corpus alias already resolves to another identity in this parent scope",
+        );
       const nextDescription = description.trim() || existing.description;
       this.db
         .prepare(

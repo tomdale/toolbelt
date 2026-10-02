@@ -17,6 +17,17 @@ afterEach(async () => {
 });
 
 describe("CorpusStore", () => {
+  it("rejects conflicting aliases on existing identities without changing storage", () => {
+    const { corpus } = store();
+    corpus.remember("Alpha", "first");
+    const beta = corpus.remember("Beta", "second");
+    const before = corpus.list();
+    expect(() => corpus.remember("Alpha", "changed", null, ["Beta"])).toThrow(
+      "alias",
+    );
+    expect(corpus.list()).toEqual(before);
+    expect(corpus.resolve("Beta")?.id).toBe(beta.id);
+  });
   it("reseeds authored metadata without losing identity or parent scope", () => {
     const { corpus } = store();
     corpus.seed([
