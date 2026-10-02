@@ -187,6 +187,35 @@ it("opens the next thread in the workstream only after archive succeeds", async 
   );
 });
 
+it("opens the first remaining Up Next thread after archive", async () => {
+  const slot = await mount({
+    archivable: true,
+    threads: [
+      sidebarThread("t1", { sectionId: "ws", latestAttentionAt: 500 }),
+      sidebarThread("waiting-first", {
+        sectionId: "ws",
+        hasPendingInteraction: true,
+        latestAttentionAt: 400,
+      }),
+      sidebarThread("waiting-second", {
+        sectionId: "ws",
+        hasPendingInteraction: true,
+        latestAttentionAt: 300,
+      }),
+      sidebarThread("same-workstream", {
+        sectionId: "ws",
+        latestAttentionAt: 200,
+      }),
+    ],
+  });
+  fireEvent.click(await slot.findByRole("button", { name: "Archive" }));
+  await waitFor(() =>
+    expect(slot.inspection.sidebarActionCalls).toEqual([
+      { method: "open", threadId: "waiting-first" },
+    ]),
+  );
+});
+
 it("does not navigate when archive fails", async () => {
   const slot = await mount({
     archivable: true,

@@ -30,6 +30,10 @@ import {
   headerSnoozers,
 } from "./snooze/SnoozeHeaderAction.tsx";
 import { SnoozeSettings } from "./snooze/SnoozeSettings.tsx";
+import {
+  NextUpCommandBridge,
+  openNextUpThread,
+} from "./upNext/NextUpCommand.tsx";
 import "./styles.css";
 
 export default definePluginApp((app) => {
@@ -44,6 +48,10 @@ export default definePluginApp((app) => {
   app.slots.experimental_appOverlay({
     id: "server-state",
     component: ServerStateRealtime,
+  });
+  app.slots.experimental_appOverlay({
+    id: "next-up-command",
+    component: NextUpCommandBridge,
   });
   app.composer.customize({
     id: "recap",
@@ -81,6 +89,12 @@ export default definePluginApp((app) => {
     run: ({ threadId }) => {
       if (threadId !== null) headerSnoozers.get(threadId)?.snooze();
     },
+  });
+  app.commands.register({
+    id: "next-up-thread",
+    title: "Workstreams: next Up Next thread",
+    defaultShortcut: { key: "j", mod: true, alt: true },
+    run: ({ threadId }) => openNextUpThread(threadId),
   });
   app.commands.register({
     id: "wake-thread",
