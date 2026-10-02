@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 
 import type { InstalledPlugin, Registry } from "./types.ts";
 
@@ -43,37 +43,73 @@ export function readRegistry(): Registry {
   }
 }
 
-export function writeRegistry(registry: Registry): void {
+function writeRegistry(registry: Registry): void {
+  const temporary = mkdtempSync(join(loaderHome(), ".registry-"));
+  try {
+    const path = join(temporary, "registry.json");
+    writeFileSync(path, JSON.stringify(registry, null, 2) + "\n", "utf8");
+    renameSync(path, registryPath());
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
+/** Serialize the entire registry read-modify-write, not the snapshot build. */
+function withRegistryLock<T>(operation: () => T): T {
   mkdirSync(loaderHome(), { recursive: true });
-  writeFileSync(registryPath(), JSON.stringify(registry, null, 2) + "\n", "utf8");
-}
-
-/** Add or replace a plugin by name, then persist. */
-export function upsertPlugin(plugin: InstalledPlugin): Registry {
-  const registry = readRegistry();
-  const next = registry.plugins.filter((p) => p.name !== plugin.name);
-  next.push(plugin);
-  const updated: Registry = { version: 1, plugins: next };
-  writeRegistry(updated);
-  return updated;
-}
-
-/** Remove a plugin by name, including its staged skill copies. Returns whether anything was removed. */
-export function removePlugin(name: string): boolean {
-  const registry = readRegistry();
-  const removedEntries = registry.plugins.filter((p) => p.name === name);
-  const next = registry.plugins.filter((p) => p.name !== name);
-  const removed = removedEntries.length > 0;
-  if (!removed) return false;
-
-  writeRegistry({ version: 1, plugins: next });
-  // Staged skill copies live under this loader's home; the fetched repo clone
-  // is left in the cache so a later reinstall is cheap.
-  const stageRoot = join(loaderHome(), "skills");
-  for (const entry of removedEntries) {
-    for (const dir of entry.skillDirs) {
-      if (dir.startsWith(stageRoot)) rmSync(dir, { recursive: true, force: true });
+  const lock = join(loaderHome(), "registry.lock");
+  const deadline = Date.now() + 5_000;
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    try {
+      mkdirSync(lock);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (Date.now() >= deadline) {
+        // Never reclaim by age: a paused writer could resume and overwrite a
+        // newer registry. An interrupted writer's lock needs explicit removal.
+        throw new Error(`Registry is locked at ${lock}; if no loader is writing, remove the lock and retry`);
+      }
+      Atomics.wait(sleeper, 0, 0, 10);
     }
   }
-  return removed;
+  try {
+    return operation();
+  } finally {
+    rmSync(lock, { recursive: true, force: true });
+  }
+}
+
+function samePlugin(a: InstalledPlugin, b: InstalledPlugin): boolean {
+  return JSON.stringify({ ...a, installedAt: undefined }) ===
+    JSON.stringify({ ...b, installedAt: undefined });
+}
+
+/** Add or replace a plugin, preserving its timestamp when nothing changed. */
+export function upsertPlugin(plugin: InstalledPlugin, expected?: InstalledPlugin): InstalledPlugin {
+  // Unchanged startups do not even acquire a lock or write registry metadata.
+  const existing = readRegistry().plugins.find((p) => p.name === plugin.name);
+  if (existing && samePlugin(existing, plugin)) return existing;
+  return withRegistryLock(() => {
+    const registry = readRegistry();
+    const current = registry.plugins.find((p) => p.name === plugin.name);
+    if (expected && JSON.stringify(current) !== JSON.stringify(expected)) return current ?? expected;
+    if (current && samePlugin(current, plugin)) return current;
+    const next = registry.plugins.filter((p) => p.name !== plugin.name);
+    next.push(plugin);
+    writeRegistry({ version: 1, plugins: next });
+    return plugin;
+  });
+}
+
+/** Unregister without deleting snapshots still referenced by running sessions. */
+export function removePlugin(name: string): boolean {
+  return withRegistryLock(() => {
+    const registry = readRegistry();
+    const next = registry.plugins.filter((p) => p.name !== name);
+    if (next.length === registry.plugins.length) return false;
+    writeRegistry({ version: 1, plugins: next });
+    return true;
+  });
 }

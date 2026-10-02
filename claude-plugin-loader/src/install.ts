@@ -34,8 +34,7 @@ export function installFromSource(spec: string): InstalledPlugin[] {
 
   const installed: InstalledPlugin[] = [];
   for (const plugin of discovered) {
-    upsertPlugin(plugin);
-    installed.push(plugin);
+    installed.push(upsertPlugin(plugin));
   }
   return installed;
 }
@@ -46,17 +45,25 @@ export function installFromSource(spec: string): InstalledPlugin[] {
  * remain unchanged until the user explicitly installs or updates them.
  */
 export function refreshLocalPlugins(): void {
-  for (const plugin of readRegistry().plugins) {
+  const registry = readRegistry();
+  const refreshed = new Set<string>();
+  for (const plugin of registry.plugins) {
     let source: ResolvedSource;
     try {
       source = parseSource(plugin.source);
     } catch {
       continue;
     }
-    if (source.kind !== "local") continue;
+    if (source.kind !== "local" || refreshed.has(source.path)) continue;
+    refreshed.add(source.path);
 
     try {
-      installFromSource(source.path);
+      for (const candidate of discoverPlugins(source.path, source, plugin.source)) {
+        const expected = registry.plugins.find((p) => p.name === candidate.name);
+        // Refresh may replace an installed record, but must not resurrect a
+        // plugin removed or explicitly reinstalled while discovery was running.
+        if (expected) upsertPlugin(candidate, expected);
+      }
     } catch (error) {
       console.warn(`Could not refresh local Claude plugin ${plugin.name}: ${(error as Error).message}`);
     }
@@ -68,9 +75,9 @@ function registrySource(source: ResolvedSource, spec: string): string {
 }
 
 function discoverPlugins(repoRoot: string, source: ResolvedSource, spec: string): InstalledPlugin[] {
-  const marketplace = readJson<ClaudeMarketplaceManifest>(
-    join(repoRoot, ".claude-plugin", "marketplace.json"),
-  );
+  const marketplacePath = join(repoRoot, ".claude-plugin", "marketplace.json");
+  const marketplaceText = existsSync(marketplacePath) ? readFileSync(marketplacePath, "utf8") : "";
+  const marketplace = parseJson<ClaudeMarketplaceManifest>(marketplaceText);
 
   if (marketplace?.plugins?.length) {
     const results: InstalledPlugin[] = [];
@@ -83,6 +90,7 @@ function discoverPlugins(repoRoot: string, source: ResolvedSource, spec: string)
           fallbackName: entry.name,
           description: entry.description,
           marketplace: marketplace.name,
+          marketplaceText,
           source: registrySource(source, spec),
         }),
       );
@@ -133,16 +141,23 @@ function buildInstalledPlugin(args: {
   fallbackName?: string;
   description?: string;
   marketplace?: string;
+  marketplaceText?: string;
   source: string;
 }): InstalledPlugin {
-  const manifest = readJson<ClaudePluginManifest>(join(args.root, ".claude-plugin", "plugin.json"));
+  const manifestPath = join(args.root, ".claude-plugin", "plugin.json");
+  const manifestText = existsSync(manifestPath) ? readFileSync(manifestPath, "utf8") : "";
+  const manifest = parseJson<ClaudePluginManifest>(manifestText);
   const name = manifest?.name ?? args.fallbackName ?? basename(args.root);
 
   // Skills are staged under a `<plugin>-`-namespaced copy so they never collide
   // with global skills or other plugins. pi scans the staging root, not the
   // originals.
   const sourceSkillDirs = resolveSkillDirs(args.root, manifest);
-  const stagedSkillDir = stageNamespacedSkills(name, args.root, sourceSkillDirs);
+  const stagedSkillDir = stageNamespacedSkills(name, args.root, sourceSkillDirs, [
+    manifestText,
+    args.marketplaceText ?? "",
+    JSON.stringify([args.fallbackName, args.description, args.marketplace]),
+  ]);
 
   return {
     name,
@@ -203,10 +218,9 @@ function toArray(value: string | string[] | undefined): string[] {
   return Array.isArray(value) ? value : [value];
 }
 
-function readJson<T>(path: string): T | null {
-  if (!existsSync(path)) return null;
+function parseJson<T>(text: string): T | null {
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as T;
+    return JSON.parse(text) as T;
   } catch {
     return null;
   }
