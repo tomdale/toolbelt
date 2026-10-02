@@ -821,13 +821,10 @@ function nextActionTitle(action: NextAction): string {
   return typeof action === "string" ? action : action.title;
 }
 
-const NEXT_ACTION_CLASS: Record<Recap["state"], string> = {
-  waiting:
-    "border-border bg-transparent text-violet-700 hover:bg-transparent hover:text-violet-800 dark:text-violet-300 dark:hover:bg-transparent dark:hover:text-violet-200",
-  review:
-    "border-border bg-transparent text-sky-700 hover:bg-transparent hover:text-sky-800 dark:text-sky-300 dark:hover:bg-transparent dark:hover:text-sky-200",
-  complete:
-    "border-border bg-transparent text-emerald-700 hover:bg-transparent hover:text-emerald-800 dark:text-emerald-300 dark:hover:bg-transparent dark:hover:text-emerald-200",
+const NEXT_ACTION_ACCENT: Record<Recap["state"], string> = {
+  waiting: "text-violet-700 dark:text-violet-300",
+  review: "text-sky-700 dark:text-sky-300",
+  complete: "text-emerald-700 dark:text-emerald-300",
 };
 
 function NextActionItem({
@@ -848,10 +845,7 @@ function NextActionItem({
       type="button"
       variant="outline"
       size="sm"
-      className={cn(
-        "h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium",
-        NEXT_ACTION_CLASS[state],
-      )}
+      className="h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground"
       disabled={disabled || !onSend}
       onClick={() => {
         if (onSend) void onSend(message);
@@ -945,15 +939,16 @@ function NextActions({
               type="button"
               variant="outline"
               size="sm"
-              className={cn(
-                "h-7 border-border bg-transparent px-2.5 text-[11.5px] font-medium hover:bg-transparent",
-                NEXT_ACTION_CLASS[state],
-              )}
+              className="h-7 border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground"
               disabled={pending || !onSend}
               aria-label="Next actions"
             >
               Next actions{" "}
-              <Icon name="ChevronDown" aria-hidden className="size-3" />
+              <Icon
+                name="ChevronDown"
+                aria-hidden
+                className={cn("size-3", NEXT_ACTION_ACCENT[state])}
+              />
             </Button>
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>

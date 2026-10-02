@@ -794,7 +794,7 @@ it("shows full sentence-case action labels and sends each message", async () => 
   ).toMatchObject({ action: "Open a pull request" });
 });
 
-it("shows a sentence-case label with neutral border and accent text", async () => {
+it("shows a short sentence-case label with neutral styling", async () => {
   const slot = await mount({
     recap: {
       next: [
@@ -808,11 +808,16 @@ it("shows a sentence-case label with neutral border and accent text", async () =
   });
   await slot.findByRole("region", { name: "Latest recap" });
   const button = slot.getByRole("button", { name: "Run tests" });
-  expect(button.className).toContain("text-emerald-700");
+  expect(button.textContent).toBe("Run tests");
+  expect(button.className).toContain("text-foreground");
+  expect(button.className).not.toContain("text-emerald-700");
   expect(button.className).toContain("border-border");
   expect(button.className).toContain("bg-transparent");
   expect(button.getAttribute("title")).toBe(
     "Check for regressions before shipping",
+  );
+  expect(button.getAttribute("title")).not.toBe(
+    "Run the full test suite and summarize failures",
   );
   fireEvent.click(button);
   await waitFor(() =>
@@ -856,6 +861,8 @@ it("collapses wrapping action buttons into a menu", async () => {
   await slot.findByRole("region", { name: "Latest recap" });
   fireEvent(window, new Event("resize"));
   const trigger = await slot.findByRole("button", { name: "Next actions" });
+  expect(trigger.className).toContain("text-foreground");
+  expect(trigger.textContent).toContain("Next actions");
   fireEvent.keyDown(trigger, { key: "ArrowDown" });
   const item = await slot.findByRole("menuitem", { name: /Run tests/ });
   expect(item.textContent).toContain("Check for regressions");

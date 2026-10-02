@@ -238,7 +238,7 @@ it("omits complete links from normalization and stored recap Markdown", () => {
   );
 });
 
-it("accepts strings or short titles with messages and descriptions", () => {
+it("enforces short sentence-case labels and keeps longer context in descriptions", () => {
   const parsed = recapInputSchema.parse({
     state: "complete",
     goal: "Added dark mode",
