@@ -175,7 +175,7 @@ describe("bb workstreams handoff", () => {
     confidence: "high",
     reason: "Belongs in Alpha",
   };
-  async function setup() {
+  async function setup(callerFiled = true) {
     world = await fakeWorld({
       complete: ({ prompt }) =>
         prompt.includes("Someone is starting new work")
@@ -184,7 +184,11 @@ describe("bb workstreams handoff", () => {
     });
     const w = world;
     const alpha = w.addSection("Alpha");
-    w.addThread("caller", { sectionId: alpha.id, projectId: "proj_1" });
+    w.addThread("caller", {
+      sectionId: callerFiled ? alpha.id : null,
+      projectId: "proj_1",
+    });
+    if (!callerFiled) w.addThread("alpha-peer", { sectionId: alpha.id });
     await w.harness.behavior.callRpc("refresh", null);
     return w;
   }
@@ -212,8 +216,36 @@ describe("bb workstreams handoff", () => {
     expect(spawn!.parentThreadId).toBeUndefined();
   });
 
+  it("keeps handoff threads in the caller's workstream", async () => {
+    world = await fakeWorld({
+      complete: ({ prompt }) =>
+        prompt.includes("Someone is starting new work")
+          ? JSON.stringify({ ...answer, workstream: "Beta" })
+          : JSON.stringify({ recap: "r", state: "done" }),
+    });
+    const w = world;
+    const alpha = w.addSection("Alpha");
+    w.addSection("Beta");
+    w.addThread("caller", { sectionId: alpha.id, projectId: "proj_1" });
+    await w.harness.behavior.callRpc("refresh", null);
+
+    const result = await handoff(w, "Please redo the landing page copy");
+
+    expect(result.exitCode).toBe(0);
+    expect(w.spawned[0]).toMatchObject({ sectionId: alpha.id });
+    expect(w.spawned[0]?.pluginMetadata).toMatchObject({
+      filedBy: "handoff",
+      filedSectionId: alpha.id,
+    });
+    expect(
+      w.completions.some((call) =>
+        call.prompt.includes("Someone is starting new work"),
+      ),
+    ).toBe(false);
+  });
+
   it("never offers the caller as a target and stops after three per turn", async () => {
-    const w = await setup();
+    const w = await setup(false);
     for (let i = 0; i < 3; i++)
       expect((await handoff(w, `Separate request number ${i}`)).exitCode).toBe(
         0,
@@ -234,7 +266,7 @@ describe("bb workstreams handoff", () => {
   });
 
   it("doesn't bounce a handed-off request back to where it came from", async () => {
-    const w = await setup();
+    const w = await setup(false);
     w.addThread("origin", { sectionId: w.sections[0]!.id });
     await w.harness.behavior.callRpc("refresh", null);
     w.harness.sdk.stub("threads.getPluginMetadata", async () => ({
