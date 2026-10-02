@@ -446,6 +446,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({
       recap: recapSchema.nullable(),
       dismissed: z.boolean(),
+      waitingCancelled: z.boolean(),
       capped: z.boolean(),
       corrections: z.number(),
       /** Where the thread's files live, to resolve the recap's file links. */
@@ -460,6 +461,11 @@ export const rpcContract = defineRpcContract({
   },
   /** Hides the current recap card on every client. */
   recap_dismiss: {
+    input: z.object({ threadId: z.string().min(1), recapId: z.string() }),
+    output: z.object({ ok: z.literal(true) }),
+  },
+  /** Cancels the current waiting recap's scheduled status check. */
+  recap_cancel_waiting: {
     input: z.object({ threadId: z.string().min(1), recapId: z.string() }),
     output: z.object({ ok: z.literal(true) }),
   },

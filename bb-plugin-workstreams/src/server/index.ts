@@ -546,6 +546,7 @@ export default async function plugin(bb: BbPluginApi) {
       return {
         recap,
         dismissed: stored?.dismissed ?? false,
+        waitingCancelled: stored?.waitingCancelled ?? false,
         capped: capped && thread.status === "idle",
         corrections,
         files: thread.environmentId
@@ -578,6 +579,11 @@ export default async function plugin(bb: BbPluginApi) {
     recap_send: ({ threadId, recapId, action }) =>
       userFacing(async () => {
         await recaps.sendNext(threadId, recapId, action);
+        return { ok: true as const };
+      }),
+    recap_cancel_waiting: ({ threadId, recapId }) =>
+      userFacing(async () => {
+        recaps.cancelWaiting(threadId, recapId);
         return { ok: true as const };
       }),
     state: async () => ({

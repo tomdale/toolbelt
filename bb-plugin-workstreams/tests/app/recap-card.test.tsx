@@ -98,6 +98,7 @@ async function mount(
   let recap =
     options.recap === null ? null : { ...RECAP, ...(options.recap ?? {}) };
   let dismissed = false;
+  let waitingCancelled = false;
   return renderSlot(
     banner,
     {},
@@ -135,6 +136,7 @@ async function mount(
         recap_get: () => ({
           recap,
           dismissed,
+          waitingCancelled,
           capped: options.capped ?? false,
           corrections: 3,
           files: { environmentId: "env_1", root: "/work", hostId: "host_1" },
@@ -152,6 +154,10 @@ async function mount(
           (() => {
             throw new Error("unexpected recap_send");
           }),
+        recap_cancel_waiting: () => {
+          waitingCancelled = true;
+          return { ok: true };
+        },
       },
     },
   );
@@ -304,16 +310,18 @@ const progress = (region: HTMLElement) =>
     (li) => `${li.getAttribute("data-progress")}:${li.textContent}`,
   );
 
-it("shows waiting tasks, spinner, and countdown without completed or Next rows", async () => {
+it("shows waiting tasks and an inline countdown without completed or Next rows", async () => {
   const slot = await mount({ recap: WORKING });
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(region.textContent).toContain("Waiting");
-  expect(slot.getByLabelText("Status check countdown").textContent).toMatch(
-    /^[01]:\d{2}$/,
-  );
+  const countdown = slot.getByLabelText("Status check countdown");
+  expect(countdown.textContent).toMatch(/Check status in [01]:\d{2}/);
+  expect(countdown.closest("li")).toBe(region.querySelector("[data-progress]"));
+  expect(countdown.parentElement!.parentElement!.className).toContain("flex");
+  expect(region.querySelector("[data-icon='LoaderCircle']")).toBeNull();
   expect(region.textContent).not.toContain("Nothing needed");
   expect(progress(region)).toEqual([
-    "active:In progress: Workers are running",
+    `active:In progress: Workers are running${countdown.textContent}Cancel check`,
     "active:In progress: Tests are running",
   ]);
   // Active items use a solid dot.
@@ -327,7 +335,44 @@ it("shows waiting tasks, spinner, and countdown without completed or Next rows",
   expect(region.querySelector('[data-progress="done"]')).toBeNull();
   expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
   expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
+  expect(slot.getByRole("button", { name: "Cancel check" })).toBeTruthy();
 });
+
+it.each(["full", "minimal"])(
+  "renders a second-line thread mention and cancels without dismissing (%s)",
+  async (layout) => {
+    const slot = await mount({
+      layout,
+      threads: [
+        sidebarThread("t1"),
+        sidebarThread("thr_abc123def", { title: "Test worker" }),
+      ],
+      recap: {
+        ...WORKING,
+        tasks: [{ step: "Testing", expect: "@thread:thr_abc123def" }],
+      },
+    });
+    const region = await slot.findByRole("region", { name: "Latest recap" });
+    expect(region.textContent).toContain("Testing");
+    const mention = await slot.findByText("Test worker");
+    const countdown = slot.getByLabelText("Status check countdown");
+    const taskBody = countdown.parentElement!.parentElement!.parentElement!;
+    expect(taskBody.children).toHaveLength(2);
+    expect(taskBody.children[1]!.contains(mention)).toBe(true);
+    expect(taskBody.children[0]!.contains(mention)).toBe(false);
+    fireEvent.click(slot.getByRole("button", { name: "Cancel check" }));
+    await waitFor(() =>
+      expect(region.textContent).toContain("Status check cancelled"),
+    );
+    expect(region.textContent).toContain("Testing");
+    expect(slot.queryByRole("button", { name: "Dismiss recap" })).toBeTruthy();
+    expect(slot.inspection.rpcCalls).toContainEqual({
+      method: "recap_cancel_waiting",
+      input: { threadId: "t1", recapId: "r1" },
+    });
+    expect(slot.queryByRole("button", { name: "Cancel check" })).toBeNull();
+  },
+);
 
 it("shows the goal and tasks in the compact waiting card", async () => {
   const slot = await mount({
@@ -338,8 +383,8 @@ it("shows the goal and tasks in the compact waiting card", async () => {
   expect(slot.getByRole("heading", { name: "Building the card" })).toBeTruthy();
   // One shown item reads as plain text, without a bullet.
   const only = region.querySelector("[data-progress]")!;
-  expect(only.tagName).toBe("P");
-  expect(only.textContent).toBe("Workers are running");
+  expect(only.tagName).toBe("LI");
+  expect(only.textContent).toContain("Workers are runningCheck status in");
   expect(only.querySelector("svg")).toBeNull();
   expect(region.textContent).not.toContain("Inspect worker results");
   expect(slot.queryByRole("heading", { name: "Tasks" })).toBeNull();

@@ -265,6 +265,97 @@ function Glyph({
   );
 }
 const CHECK = "M3.5 8.5 6.5 11.5 12.5 4.5";
+
+function useWaitingCountdown(recap: Recap, cancelled: boolean) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (recap.state !== "waiting" || cancelled) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [recap.id, recap.state, cancelled]);
+  return Math.max(
+    0,
+    Math.ceil((recap.at + (recap.timeout ?? 0) * 1000 - now) / 1000),
+  );
+}
+
+function WaitingTasks({
+  recap,
+  cancelled,
+  onCancel,
+}: {
+  recap: Recap;
+  cancelled: boolean;
+  onCancel?: () => void;
+}) {
+  const remaining = useWaitingCountdown(recap, cancelled);
+  const body = useBodyClass();
+  const multiple = (recap.tasks?.length ?? 0) > 1;
+  return (
+    <ul className="space-y-1.5">
+      {(recap.tasks ?? []).map((item, index) => (
+        <li
+          key={index}
+          data-progress="active"
+          className={cn(
+            body,
+            multiple &&
+              "grid grid-cols-[0.875rem_minmax(0,1fr)] items-start gap-x-1.5",
+          )}
+        >
+          {multiple ? (
+            <Glyph
+              path={ACTIVE}
+              filled
+              className={`mt-[0.2em] h-3.5 w-3.5 ${ACCENT.waiting.text}`}
+            />
+          ) : null}
+          {multiple ? <span className="sr-only">In progress: </span> : null}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <RecapText text={typeof item === "string" ? item : item.step} />
+              {index === 0 ? (
+                <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1 text-muted-foreground">
+                  {cancelled ? (
+                    <span>Status check cancelled</span>
+                  ) : (
+                    <>
+                      <span
+                        aria-label="Status check countdown"
+                        className="tabular-nums"
+                      >
+                        Check status in{" "}
+                        {remaining > 0
+                          ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`
+                          : "soon"}
+                      </span>
+                      {onCancel ? (
+                        <button
+                          type="button"
+                          className="cursor-pointer rounded border border-border px-1.5 py-0.5 text-[11px] font-medium hover:bg-muted hover:text-foreground"
+                          onClick={onCancel}
+                        >
+                          Cancel check
+                        </button>
+                      ) : null}
+                    </>
+                  )}
+                </span>
+              ) : null}
+            </div>
+            {typeof item !== "string" && item.expect ? (
+              <RecapText
+                text={item.expect}
+                className="mt-0.5 text-muted-foreground"
+              />
+            ) : null}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
 /** A solid dot: work still in progress. */
 const ACTIVE = "M8 5.75a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 1 0 0-4.5Z";
 const FILE =
@@ -275,17 +366,6 @@ const LINK =
 /** Where the turn's result stands, above the goal. */
 function StateLine({ recap, clearance }: { recap: Recap; clearance: string }) {
   const state = recap.state;
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (state !== "waiting") return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [state, recap.id]);
-  const remaining = Math.max(
-    0,
-    Math.ceil((recap.at + (recap.timeout ?? 0) * 1000 - now) / 1000),
-  );
   return (
     <p
       className={cn(
@@ -294,25 +374,11 @@ function StateLine({ recap, clearance }: { recap: Recap; clearance: string }) {
         ACCENT[state].text,
       )}
     >
-      {state === "waiting" ? (
-        <Icon
-          name="LoaderCircle"
-          aria-hidden
-          className="size-3 animate-spin motion-reduce:animate-none"
-        />
-      ) : null}
       {state === "review"
         ? "Ready for Review"
         : state === "waiting"
           ? "Waiting"
           : "Complete"}
-      {state === "waiting" ? (
-        <span className="tabular-nums" aria-label="Status check countdown">
-          {remaining > 0
-            ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`
-            : "Checking status…"}
-        </span>
-      ) : null}
     </p>
   );
 }
@@ -503,6 +569,8 @@ function RecapSummary({
   files,
   threadId,
   clearance,
+  waitingCancelled,
+  onCancelWaiting,
 }: {
   recap: Recap;
   layout: RecapLayout;
@@ -510,6 +578,8 @@ function RecapSummary({
   threadId: string | null;
   /** Room the top line leaves for the corner buttons. */
   clearance: string;
+  waitingCancelled: boolean;
+  onCancelWaiting?: () => void;
 }) {
   const compact = layout === "minimal";
   const body = compact ? COMPACT_BODY_CLASS : BODY_CLASS;
@@ -524,7 +594,11 @@ function RecapSummary({
   if (compact) {
     rows = working ? (
       <Row accent={accent.text}>
-        <Results active={recap.tasks} done={[]} accent={accent.text} />
+        <WaitingTasks
+          recap={recap}
+          cancelled={waitingCancelled}
+          onCancel={onCancelWaiting}
+        />
       </Row>
     ) : review ? (
       <Row accent={accent.text}>
@@ -543,11 +617,15 @@ function RecapSummary({
           label={working ? "Tasks" : review ? "Done" : undefined}
           accent={accent.text}
         >
-          <Results
-            active={working ? recap.tasks : []}
-            done={working ? [] : recap.latest}
-            accent={accent.text}
-          />
+          {working ? (
+            <WaitingTasks
+              recap={recap}
+              cancelled={waitingCancelled}
+              onCancel={onCancelWaiting}
+            />
+          ) : (
+            <Results done={recap.latest} accent={accent.text} />
+          )}
         </Row>
         {review ? (
           <Row label="Review" accent={accent.text}>
@@ -608,6 +686,7 @@ function RecapSummary({
 type RecapResponse = {
   recap: Recap | null;
   dismissed: boolean;
+  waitingCancelled: boolean;
   capped: boolean;
   corrections: number;
   files: RecapFiles | null;
@@ -615,6 +694,7 @@ type RecapResponse = {
 const EMPTY: RecapResponse = {
   recap: null,
   dismissed: false,
+  waitingCancelled: false,
   capped: false,
   corrections: 0,
   files: null,
@@ -659,7 +739,20 @@ function useRecap(threadId: string | null) {
     if (!threadId) return;
     await rpc.call("recap_send", { threadId, recapId, action }).catch(() => {});
   };
-  return { ...state, dismiss, restore, sendNext };
+  const cancelWaiting = async (recapId: string) => {
+    if (!threadId) return;
+    try {
+      await rpc.call("recap_cancel_waiting", { threadId, recapId });
+      setState((current) =>
+        current.recap?.id === recapId
+          ? { ...current, waitingCancelled: true }
+          : current,
+      );
+    } finally {
+      load();
+    }
+  };
+  return { ...state, dismiss, restore, sendNext, cancelWaiting };
 }
 
 const CORNER_BUTTON =
@@ -673,6 +766,7 @@ type CardProps = {
   showArchive: boolean;
   archiveBusy: boolean;
   archiveError: string | null;
+  waitingCancelled: boolean;
 };
 
 /**
@@ -722,13 +816,16 @@ function CardBody({
   showArchive,
   archiveBusy,
   archiveError,
+  waitingCancelled,
   onArchive,
   onDismiss,
   onSend,
+  onCancelWaiting,
 }: CardProps & {
   onArchive?: () => void;
   onDismiss?: () => void;
   onSend?: (action: string) => Promise<void>;
+  onCancelWaiting?: () => void;
 }) {
   const compact = layout === "minimal";
   const compactArchive = compact && showArchive;
@@ -741,6 +838,8 @@ function CardBody({
           files={files}
           threadId={threadId}
           clearance={compactArchive ? "pr-14" : "pr-7"}
+          waitingCancelled={waitingCancelled}
+          onCancelWaiting={onCancelWaiting}
         />
       </div>
       {compactArchive ? (
@@ -852,6 +951,7 @@ export function RecapCardPreview({
           showArchive={showArchive}
           archiveBusy={false}
           archiveError={null}
+          waitingCancelled={false}
         />
       </div>
     </HashColors.Provider>
@@ -967,8 +1067,17 @@ export function RecapCard() {
     isRunning,
   });
   const sending = useContinuing({ drafting: false, isSubmitting, isRunning });
-  const { recap, dismissed, capped, files, dismiss, restore, sendNext } =
-    useRecap(threadId);
+  const {
+    recap,
+    dismissed,
+    capped,
+    files,
+    waitingCancelled,
+    dismiss,
+    restore,
+    cancelWaiting,
+    sendNext,
+  } = useRecap(threadId);
   const { prefs } = useRecapPrefs();
   const layout: RecapLayout = prefs?.layout ?? "full";
   const visibleRecap = dismissed ? null : recap;
@@ -1013,6 +1122,7 @@ export function RecapCard() {
           showArchive: archive.visible,
           archiveBusy: archive.busy,
           archiveError: archive.error,
+          waitingCancelled,
         }
       : null;
 
@@ -1115,6 +1225,9 @@ export function RecapCard() {
                   onArchive={() => void archive.archive()}
                   onDismiss={() => void dismiss(frame.recap.id)}
                   onSend={(action) => sendNext(frame.recap.id, action)}
+                  onCancelWaiting={() =>
+                    void cancelWaiting(frame.recap.id).catch(() => {})
+                  }
                 />
               </div>
             </div>
