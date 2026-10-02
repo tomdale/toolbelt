@@ -170,6 +170,14 @@ export const linkSchema = z
   .strict();
 export type RecapLink = z.infer<typeof linkSchema>;
 
+const waitingAgentSchema = z
+  .object({
+    threadId: z.string().trim().min(1).max(200),
+    task: line(80),
+  })
+  .strict();
+export type WaitingAgent = z.infer<typeof waitingAgentSchema>;
+
 /**
  * The tool's parameters. The limits keep each line glanceable: a goal
  * heading, short results, acceptance checks, and optional review targets.
@@ -178,6 +186,13 @@ const recapFields = z
   .object({
     state: z.enum(RECAP_STATES),
     goal: line(80),
+    waitingAgents: z
+      .array(waitingAgentSchema)
+      .max(8)
+      .optional()
+      .describe(
+        "Waiting only: agents this thread is waiting for, each with a short task and thread ID so the card can link to that agent thread.",
+      ),
     latest: z
       .array(recapItemSchema(120))
       .max(3)
@@ -233,6 +248,7 @@ export const recapInputSchema = z
     recapFields.extend({
       state: z.literal("complete"),
       timeout: z.null().optional(),
+      waitingAgents: z.array(z.never()).max(0).default([]),
       review: z
         .union([z.array(z.never()).max(0), z.literal("")])
         .nullable()
@@ -246,6 +262,7 @@ export const recapInputSchema = z
     recapFields.extend({
       state: z.literal("review"),
       timeout: z.null().optional(),
+      waitingAgents: z.array(z.never()).max(0).default([]),
       latest: recapFields.shape.latest.removeDefault().min(1),
       review: z.union([
         z.array(reviewStepSchema).min(1).max(3),
@@ -293,6 +310,7 @@ export const recapSchema = z
     goal: z.string(),
     /** Legacy Waiting label saved before Waiting reused goal. */
     task: z.string().optional(),
+    waitingAgents: z.array(waitingAgentSchema).optional(),
     latest: z.array(storedRecapItemSchema).default([]),
     timeout: z.number().optional(),
     /** Review steps; empty unless the state is review. */
@@ -304,10 +322,11 @@ export const recapSchema = z
     /** Suggested next messages, offered as buttons; empty while waiting. */
     next: z.array(nextActionSchema).default([]),
   })
-  .transform(({ task, ...recap }) => ({
+  .transform(({ task, waitingAgents, ...recap }) => ({
     ...recap,
     // Stored Waiting recaps may still carry the former separate task field.
     ...(typeof task === "string" ? { goal: task } : {}),
+    ...(waitingAgents ? { waitingAgents } : {}),
   }));
 export type Recap = z.infer<typeof recapSchema>;
 
@@ -360,7 +379,15 @@ export function toRecap(
     state: input.state,
     goal: tidy(input.goal),
     latest: input.latest.map(tidyRecapItem),
-    ...(input.state === "waiting" ? { timeout: input.timeout } : {}),
+    ...(input.state === "waiting"
+      ? {
+          timeout: input.timeout,
+          waitingAgents: (input.waitingAgents ?? []).map((agent) => ({
+            threadId: agent.threadId,
+            task: tidy(agent.task),
+          })),
+        }
+      : { waitingAgents: [] }),
     review:
       input.state === "review"
         ? reviewSteps(input.review).map(tidyRecapItem)
@@ -420,7 +447,12 @@ export function recapMarkdown(recap: Recap): string {
   return [
     `**${state}** · ${recap.goal}`,
     ...(recap.state === "waiting"
-      ? [`Check status in ${recap.timeout}s`]
+      ? [
+          ...(recap.waitingAgents ?? []).map(
+            (agent) => `- ${agent.task} · @thread:${agent.threadId}`,
+          ),
+          `Check status in ${recap.timeout}s`,
+        ]
       : recap.latest.map((item) => `- ${recapItemText(item)}`)),
     recap.review.length === 1
       ? `\n**Review:** ${reviewStepText(recap.review[0]!)}`
@@ -446,7 +478,7 @@ export function recapMarkdown(recap: Recap): string {
 
 /** The tool's description, as the agent sees it in its tool list. */
 export const RECAP_TOOL_DESCRIPTION =
-  "Report the actual end of this turn; the recap drives the thread's visible state and may make it look finished. Use complete only when the user's latest request and the broader task they asked to do are fully done—not merely because you answered one step, gave examples, or reached a natural pause. If the user wants to work through options or examples together, keep collaborating; if their choice or other required input is needed to continue, ask with the question-card tool and end the turn without calling this recap tool. Do not use complete or next as a substitute for that question. Use review only for finished work awaiting inspection, testing, merging, or shipping; use waiting only while an async task is running and you need to check its result. The user sees the recap above the composer and its state in the sidebar. Lists accept strings or { text, detail } items; optional detail appears as a subrow. Text fields render inline Markdown, including links and @thread:<id> mentions. For waiting, use goal as the task description and provide a timeout; goal appears in the card title beside its countdown. For complete and review, next accepts 1-3 optional follow-up messages only after the current request is finished. Prefer { title, message, description? }: title is a short sentence-case button label (at most 28 characters), message is sent verbatim, and optional description holds longer context shown on hover or in the action menu. Keep titles very short; strings remain supported as the same short title and message.";
+  "Report the actual end of this turn; the recap drives the thread's visible state and may make it look finished. Use complete only when the user's latest request and the broader task they asked to do are fully done—not merely because you answered one step, gave examples, or reached a natural pause. If the user wants to work through options or examples together, keep collaborating; if their choice or other required input is needed to continue, ask with the question-card tool and end the turn without calling this recap tool. Do not use complete or next as a substitute for that question. Use review only for finished work awaiting inspection, testing, merging, or shipping; use waiting only while an async task is running and you need to check its result. The user sees the recap above the composer and its state in the sidebar. Lists accept strings or { text, detail } items; optional detail appears as a subrow. Text fields render inline Markdown, including links and @thread:<id> mentions. For waiting, use goal as the task description and provide a timeout; goal appears in the card title beside its countdown. When waiting on agents, include waitingAgents with one { threadId, task } entry per agent so the card can link each task to its agent thread. For complete and review, next accepts 1-3 optional follow-up messages only after the current request is finished. Prefer { title, message, description? }: title is a short sentence-case button label (at most 28 characters), message is sent verbatim, and optional description holds longer context shown on hover or in the action menu. Keep titles very short; strings remain supported as the same short title and message.";
 
 /**
  * Instructions for every thread that has the recap tool. They state the
@@ -455,7 +487,7 @@ export const RECAP_TOOL_DESCRIPTION =
 export const RECAP_INSTRUCTIONS = `End every turn with ${RECAP_TOOL}, after completing the work you were authorized to do, unless the turn ends with a question card (AskUserQuestion or your provider's own question tool) still awaiting the user's answer. Ask questions only through such a card, never only in your reply.
 state: complete when the user's latest request is fully done; review when a finished result waits on the user to inspect, test, merge, or ship; waiting when an async task is running and the agent is waiting for its result. Keep working while there is authorized work you can do, or use a question card when required user input blocks progress.
 Write terse fragments in sentence case without closing periods. Every text field (goal, latest, review, and detail) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips. A lowercase commit hash, bare or alone in backticks (not in links), shows shortened and highlighted with copy on click. Length limits count visible text, not link targets. Inline links fit any state. The links field is a separate list of review targets. goal: the thread's purpose as a short phrase, past tense for complete and review ("Added dark mode to Settings") and -ing for waiting ("Waiting for Settings tests"). latest: one to three concrete results for complete and review, about 12 words each, most important first. review (required for review): one to three steps saying how to inspect or try the result and what to expect. Every item list accepts strings or { text, detail } objects. Use detail for optional secondary text shown on its own subrow. Keep each item distinct. Use separate items rather than joining results with semicolons. For UI review, give steps to reach and exercise the UI.
-For waiting: goal (required) is a short description of the async task whose result you need; timeout (required) is the number of seconds until you should check its status, from 1 to 86400. Choose a realistic polling interval. Goal appears as the card title beside its countdown. The card counts down and automatically prompts you to check status if the same turn is still current when the timeout expires. Omit latest, review, and links.
+For waiting: goal (required) is a short description of the async task whose result you need; timeout (required) is the number of seconds until you should check its status, from 1 to 86400. Choose a realistic polling interval. Goal appears as the card task description beside its countdown. When waiting on agents, include waitingAgents with one { threadId, task } entry per agent so the card can show each task and link to its agent thread; otherwise omit it. The state label names the number of awaited agents when known. The card counts down and automatically prompts you to check status if the same turn is still current when the timeout expires. Omit latest, review, and links.
 links: optional, only in the review state and only for artifacts or pages explicitly being asked to be reviewed, as absolute file paths or HTTPS URLs. A changed source file qualifies only when source review is requested. For complete, omit links or send an empty list.
 next: for complete and review, one to three messages the user might send next — a follow-up action or question. Prefer { title, message, description? }. Keep title a very short sentence-case button label, at most 28 characters (ideally 2–4 words); validation enforces the limit. Put the exact self-contained plain-text request (at most 120 characters) in message; it is sent verbatim. Use optional description (at most 120 characters) for longer context or why the choice may be useful; it appears on hover and in the action menu. Do not cram the message into the title. Strings remain supported for simple actions and are shown as the full label. Omit closing periods. Do not restate choices elsewhere or offer work you should do yourself. Omit next while waiting.
 The user decides whether to archive the thread from the recap. When a question card is dismissed or expires, treat the question as unanswered and unapproved, and continue only work that does not depend on it.`;

@@ -436,6 +436,41 @@ it.each(["full", "minimal"])(
   },
 );
 
+it.each([1, 2])(
+  "labels and links %i awaited agent tasks",
+  async (agentCount) => {
+    const agents = [
+      { threadId: "thr_ui_agent", task: "Building the theme toggle UI" },
+      { threadId: "thr_server_agent", task: "Adding theme preference support" },
+    ].slice(0, agentCount);
+    const slot = await mount({
+      recap: {
+        ...WORKING,
+        goal: "Building the theme toggle",
+        waitingAgents: agents,
+      },
+      threads: [
+        sidebarThread("t1"),
+        sidebarThread("thr_ui_agent", { title: "UI agent" }),
+        sidebarThread("thr_server_agent", { title: "Server agent" }),
+      ],
+    });
+    const region = await slot.findByRole("region", { name: "Latest recap" });
+    expect(region.textContent).toContain(
+      agentCount === 1 ? "Waiting for Agent" : "Waiting for Agents",
+    );
+    expect(slot.getByRole("heading", { name: agents[0]!.task })).toBeTruthy();
+    expect(slot.getByRole("link", { name: "UI agent" })).toBeTruthy();
+    if (agentCount === 2) {
+      expect(slot.getByRole("heading", { name: agents[1]!.task })).toBeTruthy();
+      expect(slot.getByRole("link", { name: "Server agent" })).toBeTruthy();
+    } else {
+      expect(slot.queryByRole("link", { name: "Server agent" })).toBeNull();
+    }
+    expect(slot.getByLabelText("Status check countdown")).toBeTruthy();
+  },
+);
+
 it("shows the Waiting goal as the title in the compact card", async () => {
   const slot = await mount({
     layout: "minimal",
