@@ -231,7 +231,7 @@ export default async function plugin(bb: BbPluginApi) {
     adaptive: () => currentPrefs().organize.adaptivePreview,
     inference,
     model: async () => currentPrefs().organize.model,
-    classificationModel: async () => currentPrefs().newWork.suggestionsModel,
+    classificationModel: async () => currentPrefs().organize.model,
     requests: (threadId) => analyzer.ownershipRequests(threadId),
     policy: () => ({
       capacity: currentPrefs().organize.capacity,
@@ -322,11 +322,8 @@ export default async function plugin(bb: BbPluginApi) {
             );
         }, 0);
       } else if (data?.sectionId) {
-        if (
-          data.subjectId &&
-          corpus.list().some((e) => e.id === data.subjectId)
-        )
-          corpus.assign(ctx.thread.id, data.subjectId);
+        if (data.subjectId && data.subjectId)
+          router.assignSubject(ctx.thread.id, data.subjectId);
         setTimeout(() => {
           service
             .fileIfUnsorted(ctx.thread.id, data.sectionId!, "user")
@@ -890,6 +887,7 @@ export default async function plugin(bb: BbPluginApi) {
       })),
     createWorkstream: ({ name, description, threadId, subjectId }) =>
       userFacing(async () => {
+        if (subjectId) subjectId = router.commitSubject(subjectId);
         if (subjectId && !corpus.list().some((e) => e.id === subjectId))
           throw new Error("Unknown subject identity.");
         const bound = subjectId

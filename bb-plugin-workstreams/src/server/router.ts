@@ -135,6 +135,34 @@ const hash = (text: string) =>
   createHash("sha256").update(text.trim()).digest("hex");
 
 export class Router {
+  private readonly tentativeSubjects = new Map<
+    string,
+    Parameters<CorpusStore["rememberProposal"]>[0]
+  >();
+  private readonly automaticSubjects = new Map<string, string>();
+
+  commitSubject(id: string): string {
+    const resolved = this.automaticSubjects.get(id);
+    if (resolved) return resolved;
+    const proposal = this.tentativeSubjects.get(id);
+    if (!proposal) return id;
+    const entity = this.deps.corpus!.rememberProposal(proposal);
+    this.tentativeSubjects.delete(id);
+    this.automaticSubjects.set(id, entity.id);
+    return entity.id;
+  }
+
+  assignSubject(threadId: string, id: string): void {
+    const tentative = this.tentativeSubjects.has(id);
+    const committed = this.commitSubject(id);
+    this.deps.corpus?.assign(
+      threadId,
+      committed,
+      tentative || this.automaticSubjects.has(id)
+        ? "composer-classification"
+        : undefined,
+    );
+  }
   private readonly decisions = new Map<
     string,
     {
@@ -453,7 +481,21 @@ export class Router {
       const entity = classification.subjectId
         ? corpus.list().find((e) => e.id === classification.subjectId)
         : classification.proposed
-          ? corpus.rememberProposal(classification.proposed)
+          ? (() => {
+              const id = `tentative:${randomUUID()}`;
+              this.tentativeSubjects.set(id, classification.proposed!);
+              if (this.tentativeSubjects.size > 100)
+                this.tentativeSubjects.delete(
+                  this.tentativeSubjects.keys().next().value!,
+                );
+              return {
+                id,
+                name: classification.proposed!.name,
+                description: classification.proposed!.description,
+                parentId: classification.proposed!.parentId,
+                aliases: [],
+              };
+            })()
           : null;
       if (!entity)
         return remember({
@@ -470,7 +512,19 @@ export class Router {
       const activeIds = current.flatMap((r) =>
         groups.has(r.sectionId) ? [groups.get(r.sectionId)!] : [],
       );
-      const home = activeHome(entity.id, activeIds, corpus.list());
+      const home = this.tentativeSubjects.has(entity.id)
+        ? null
+        : activeHome(entity.id, activeIds, corpus.list());
+      const subjectToken = classification.proposed
+        ? entity.id
+        : `automatic:${randomUUID()}`;
+      if (!classification.proposed) {
+        this.automaticSubjects.set(subjectToken, entity.id);
+        if (this.automaticSubjects.size > 100)
+          this.automaticSubjects.delete(
+            this.automaticSubjects.keys().next().value!,
+          );
+      }
       const record =
         records.find((r) => groups.get(r.sectionId) === home) ??
         records.find((r) => groups.get(r.sectionId) === entity.id);
@@ -479,7 +533,7 @@ export class Router {
         confidence: "high" as const,
         reason: "Classified subject independently of current navigation.",
         subject: entity.name,
-        subjectId: entity.id,
+        subjectId: subjectToken,
         traceId,
       };
       const decision: RouteDecision = record
@@ -494,7 +548,22 @@ export class Router {
         : {
             ...base,
             outcome: "new-workstream",
-            name: corpusLabel(entity.id, corpus.list()),
+            name: classification.proposed
+              ? [
+                  classification.proposed.parentId
+                    ? corpusLabel(
+                        classification.proposed.parentId,
+                        corpus.list(),
+                      )
+                    : null,
+                  ...(classification.proposed.ancestors ?? []).map(
+                    (a) => a.name,
+                  ),
+                  entity.name,
+                ]
+                  .filter(Boolean)
+                  .join(": ")
+              : corpusLabel(entity.id, corpus.list()),
             description: entity.description ?? "",
             title: "",
             placement: null,
@@ -1130,10 +1199,12 @@ export class Router {
         execution[key],
       ]),
     ) as unknown as SpawnArgs;
+    const subjectToken = subjectId;
+    if (subjectId) subjectId = this.commitSubject(subjectId);
     if (subjectId && !this.deps.corpus?.list().some((e) => e.id === subjectId))
       throw new UserError("Unknown subject identity.");
     const thread = await this.spawnFiled(fields, sectionId, "user");
-    if (subjectId) this.deps.corpus?.assign(thread.id, subjectId);
+    if (subjectToken) this.assignSubject(thread.id, subjectToken);
     this.deps.service.recordCreated(thread.id, sectionId, "user", {
       title: thread.title || "New thread",
       rationale: record
@@ -1219,12 +1290,14 @@ export class Router {
   async fileComposed(threadId: string, decision: RouteDecision): Promise<void> {
     const entry = this.decisions.get(decision.id);
     if (!entry || entry.used) return;
-    if (decision.subjectId)
+    if (decision.subjectId) {
+      decision.subjectId = this.commitSubject(decision.subjectId);
       this.deps.corpus?.assign(
         threadId,
         decision.subjectId,
         "composer-classification",
       );
+    }
     entry.used = true;
     if (
       decision.subjectId &&

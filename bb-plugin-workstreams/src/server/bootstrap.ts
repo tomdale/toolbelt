@@ -340,11 +340,7 @@ export class Bootstrap {
               version: catalogVersion,
               requests: requestsById.get(thread.id),
               title: thread.title,
-              recap: thread.recap,
               project: thread.project,
-              revision: this.deps.service
-                .threads()
-                .find((t) => t.id === thread.id)?.latestAttentionAt,
             }),
           )
           .digest("hex"),
