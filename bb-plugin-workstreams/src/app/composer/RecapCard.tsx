@@ -26,6 +26,7 @@ import type { RpcContract } from "../../server/contract.ts";
 import { usePendingQuestion } from "../question/pending.ts";
 import {
   fileTarget,
+  itemParts,
   recapSegments,
   type Recap,
   type RecapFiles,
@@ -298,20 +299,17 @@ function WaitingTasks({
   const body = useBodyClass();
   const tasks = recap.tasks ?? [];
   const single = tasks.length === 1 ? tasks[0]! : null;
-  const taskText = (item: RecapItem, className = "") => (
-    <>
-      <RecapText
-        text={typeof item === "string" ? item : item.step}
-        className={className}
-      />
-      {typeof item !== "string" && item.expect ? (
-        <RecapText
-          text={item.expect}
-          className="mt-0.5 text-muted-foreground"
-        />
-      ) : null}
-    </>
-  );
+  const taskText = (item: RecapItem, className = "") => {
+    const { text, detail } = itemParts(item);
+    return (
+      <>
+        <RecapText text={text} className={className} />
+        {detail ? (
+          <RecapText text={detail} className="mt-0.5 text-muted-foreground" />
+        ) : null}
+      </>
+    );
+  };
   return (
     <div className="py-2">
       {single ? (
@@ -471,7 +469,7 @@ function Results({
       </p>
     ) : (
       <div data-progress="active" className={`min-w-0 ${body} text-foreground`}>
-        <StepText item={item} />
+        <ItemText item={item} />
       </div>
     );
   }
@@ -489,23 +487,21 @@ function Results({
             className={cn("mt-[0.2em] h-3.5 w-3.5", accent)}
           />
           <span className="sr-only">{item.label}: </span>
-          <StepText item={item.item} />
+          <ItemText item={item.item} />
         </li>
       ))}
     </ul>
   );
 }
 
-function StepText({ item }: { item: RecapItem }) {
+function ItemText({ item }: { item: RecapItem }) {
   if (typeof item === "string") return <RecapText text={item} />;
+  const { text, detail } = itemParts(item);
   return (
     <div className="min-w-0">
-      <RecapText text={item.step} />
-      {item.expect ? (
-        <RecapText
-          text={item.expect}
-          className="mt-0.5 text-muted-foreground"
-        />
+      <RecapText text={text} />
+      {detail ? (
+        <RecapText text={detail} className="mt-0.5 text-muted-foreground" />
       ) : null}
     </div>
   );
@@ -517,7 +513,7 @@ function Steps({ items }: { items: RecapItem[] }) {
   if (items.length === 1)
     return (
       <div className={`${body} text-foreground`}>
-        <StepText item={items[0]!} />
+        <ItemText item={items[0]!} />
       </div>
     );
   return (
@@ -533,7 +529,7 @@ function Steps({ items }: { items: RecapItem[] }) {
           >
             {index + 1}.
           </span>
-          <StepText item={item} />
+          <ItemText item={item} />
         </li>
       ))}
     </ol>

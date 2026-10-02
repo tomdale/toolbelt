@@ -250,8 +250,8 @@ it("renders structured subrows for completed items", async () => {
     recap: {
       latest: [
         {
-          step: "Changed the recap parser",
-          expect: "Legacy strings still work",
+          text: "Changed the recap parser",
+          detail: "Legacy strings still work",
         },
         "Added compatibility coverage",
       ],
@@ -274,7 +274,7 @@ it("renders subrows in every recap item list", async () => {
   const slot = await mount({
     recap: {
       state: "waiting",
-      tasks: [{ step: "Running tests", expect: "Waiting for the suite" }],
+      tasks: [{ text: "Running tests", detail: "Waiting for the suite" }],
       timeout: 60,
       latest: [],
     },
