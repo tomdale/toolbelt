@@ -12,7 +12,13 @@ export const usageSchema = z.object({
 });
 export type Usage = z.infer<typeof usageSchema>;
 
-export const TRACE_KINDS = ["analysis", "route", "organize"] as const;
+export const TRACE_KINDS = [
+  "analysis",
+  "route",
+  "organize",
+  "classify",
+  "regroup",
+] as const;
 export type TraceKind = (typeof TRACE_KINDS)[number];
 
 /**
@@ -86,6 +92,8 @@ export type NewTrace = Omit<
 
 /** How the inspector and the CLI name each kind of call. */
 export const TRACE_KIND_TITLE: Record<TraceKind, string> = {
+  classify: "Subject classification",
+  regroup: "Active grouping",
   analysis: "Thread analysis",
   route: "Routing",
   organize: "Organize workstreams",
@@ -93,6 +101,8 @@ export const TRACE_KIND_TITLE: Record<TraceKind, string> = {
 
 /** Compact labels for narrow columns, such as the Activity log's. */
 export const TRACE_KIND_SHORT: Record<TraceKind, string> = {
+  classify: "Classification",
+  regroup: "Grouping",
   analysis: "Analysis",
   route: "Routing",
   organize: "Organize",

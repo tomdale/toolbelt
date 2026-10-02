@@ -206,6 +206,28 @@ describe("classification", () => {
 });
 
 describe("accepting", () => {
+  it("retains accepted semantic identity for later Enter and invalidates it on draft changes", async () => {
+    const { newWork, deps } = setup(async () => ({
+      ...inAlpha,
+      subjectId: "feature",
+    }));
+    newWork.observe("Fix the shelves");
+    await pause(SHORT_PAUSE_MS);
+    await newWork.accept({ submit: false });
+    expect(newWork.snapshot().acceptedRoute).toEqual({
+      routeId: inAlpha.id,
+      sectionId: "sec_a",
+      subjectId: "feature",
+    });
+    await newWork.submit(request("Fix the shelves"));
+    expect(deps.startThread).toHaveBeenCalledWith(
+      "sec_a",
+      expect.anything(),
+      "feature",
+    );
+    newWork.observe("A different task");
+    expect(newWork.snapshot().acceptedRoute).toBeNull();
+  });
   it("fills the workstream, project and environment for an existing workstream", async () => {
     const { newWork, composer } = setup(async () => inAlpha);
     newWork.observe("Fix the parser in Alpha");

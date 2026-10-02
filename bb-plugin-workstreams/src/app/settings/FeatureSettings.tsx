@@ -248,6 +248,19 @@ export function NewWorkSettings() {
           update({ newWork: { suggestionsModel } })
         }
       />
+      <SettingRow
+        label="Corpus classification (experimental)"
+        description="Recognize specific retained product and feature identities independently of active groups. Does not suggest thread continuation."
+        control={
+          <SettingSwitch
+            label="Corpus classification"
+            checked={prefs.newWork.corpusClassification}
+            onChange={(corpusClassification) =>
+              update({ newWork: { corpusClassification } })
+            }
+          />
+        }
+      />
     </SectionRows>
   );
 }
@@ -262,6 +275,52 @@ export function OrganizeSettings() {
         description="Proposes the workstream map when you click Organize."
         choice={prefs.organize.model}
         onChange={(model) => update({ organize: { model } })}
+      />
+      <SettingRow
+        label="Adaptive preview (experimental)"
+        description="Classify task subjects, then propose groups using compact concurrent counts. Nothing moves until Apply."
+        control={
+          <SettingSwitch
+            label="Adaptive preview"
+            checked={prefs.organize.adaptivePreview}
+            onChange={(adaptivePreview) =>
+              update({ organize: { adaptivePreview } })
+            }
+          />
+        }
+      />
+      <SettingRow
+        label="Group capacity"
+        description="Maximum concurrent task roots per group in reviewed previews. Indivisible subjects may exceed it."
+        control={
+          <Stepper
+            label="Group capacity"
+            value={prefs.organize.capacity}
+            min={2}
+            max={100}
+            onChange={(capacity) =>
+              update({
+                organize: {
+                  capacity,
+                  collapseAt: Math.min(prefs.organize.collapseAt, capacity - 1),
+                },
+              })
+            }
+          />
+        }
+      />
+      <SettingRow
+        label="Contraction threshold"
+        description="At or below this product task count, previews return to a broad product group."
+        control={
+          <Stepper
+            label="Contraction threshold"
+            value={prefs.organize.collapseAt}
+            min={0}
+            max={prefs.organize.capacity - 1}
+            onChange={(collapseAt) => update({ organize: { collapseAt } })}
+          />
+        }
       />
     </SectionRows>
   );

@@ -40,15 +40,53 @@ export class CorpusStore {
 
   seed(records: readonly CorpusSeed[]): void {
     const seed = this.db.transaction(() => {
+      const existing = this.groups();
       this.db.prepare("DELETE FROM ws_corpus_group").run();
       for (const record of records) {
-        const entity = this.remember(
+        const linked = existing.get(record.sectionId);
+        const entity = linked ? this.getById(linked) : null;
+        if (entity) {
+          const name =
+            entity.parentId === null ? record.name.trim() : entity.name;
+          const aliases = cleanAliases([
+            ...entity.aliases,
+            ...record.aliases,
+            ...(name !== entity.name ? [entity.name] : []),
+          ]).filter((alias) => normalize(alias) !== normalize(name));
+          if (
+            aliases.some((alias) => {
+              const other = this.resolve(alias, entity.parentId);
+              return other && other.id !== entity.id;
+            })
+          )
+            throw new Error(
+              "Corpus metadata aliases conflict with another identity.",
+            );
+          const sameName = this.resolve(name, entity.parentId);
+          if (sameName && sameName.id !== entity.id)
+            throw new Error(
+              "Corpus metadata name conflicts with another identity.",
+            );
+          this.db
+            .prepare(
+              "UPDATE ws_corpus_entity SET name = ?, description = ?, aliases = ? WHERE id = ?",
+            )
+            .run(
+              name,
+              record.description.trim() || entity.description,
+              JSON.stringify(aliases),
+              entity.id,
+            );
+          this.bindGroup(record.sectionId, entity.id);
+          continue;
+        }
+        const discovered = this.remember(
           record.name,
           record.description,
           null,
           record.aliases,
         );
-        this.bindGroup(record.sectionId, entity.id);
+        this.bindGroup(record.sectionId, discovered.id);
       }
     });
     seed();

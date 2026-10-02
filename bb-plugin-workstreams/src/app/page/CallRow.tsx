@@ -9,6 +9,16 @@ import { ActivityTerm } from "./ActivityTerm.tsx";
 import { ActivityThreadLink } from "./ActivityThreadLink.tsx";
 
 const EVENT: Record<TraceKind, { label: string; description: string }> = {
+  classify: {
+    label: "Subject classification",
+    description:
+      "Identifies a product or feature independently of active navigation.",
+  },
+  regroup: {
+    label: "Active grouping preview",
+    description:
+      "Proposes active identities from concurrent subject counts. Apply remains a separate user action.",
+  },
   analysis: {
     label: "Thread assessment",
     description:

@@ -23,6 +23,9 @@ import type { Journal, Source } from "./journal.ts";
 import type { WorkstreamMap } from "./map.ts";
 import { type Inference } from "./model.ts";
 import { UserError, type WorkstreamService } from "./service.ts";
+import type { CorpusStore } from "./corpus.ts";
+import { activeHome } from "../domain/regroup.ts";
+import { corpusLabel } from "../domain/corpus-label.ts";
 
 type Sdk = BbPluginApi["sdk"];
 type SpawnArgs = Parameters<Sdk["threads"]["spawn"]>[0];
@@ -50,6 +53,7 @@ type Base = {
   confidence: "high" | "medium" | "low";
   reason: string;
   subject: string | null;
+  subjectId?: string;
   /**
    * The debug trace of the routing call (SPEC §11.6); null when no model was
    * asked (a mention, a chosen workstream) or debug mode is off.
@@ -147,6 +151,8 @@ export class Router {
   constructor(
     private readonly deps: {
       sdk: () => Sdk;
+      corpus?: CorpusStore;
+      semanticSuggestions?: () => boolean;
       service: WorkstreamService;
       journal: Journal;
       map: WorkstreamMap;
@@ -360,6 +366,7 @@ export class Router {
       : mentionedTarget(text);
     if (
       destination?.kind !== "none" &&
+      !(options.suggest && this.deps.semanticSuggestions?.()) &&
       mention &&
       "threadId" in mention &&
       intent?.action !== "new-thread" &&
@@ -422,6 +429,82 @@ export class Router {
     }
 
     const picked = selectedProject;
+    if (
+      options.suggest &&
+      this.deps.corpus &&
+      this.deps.semanticSuggestions?.()
+    ) {
+      const corpus = this.deps.corpus;
+      corpus.seed(
+        records.map((r) => ({ ...r, description: r.description ?? "" })),
+      );
+      const { value: classification, traceId } = await this.deps.inference.run(
+        "classify",
+        {
+          prompt: text,
+          entities: corpus.list(),
+        },
+        {
+          model: await this.deps.model(),
+          signal: options.signal,
+          label: text.replace(/\s+/g, " "),
+        },
+      );
+      const entity = classification.subjectId
+        ? corpus.list().find((e) => e.id === classification.subjectId)
+        : classification.proposed
+          ? corpus.remember(
+              classification.proposed.name,
+              classification.proposed.description,
+              classification.proposed.parentId,
+            )
+          : null;
+      if (!entity)
+        return remember({
+          id: randomUUID(),
+          outcome: "unsure",
+          candidates: [],
+          confidence: "low",
+          reason: "The subject is not clear enough to classify.",
+          subject: null,
+          traceId,
+        });
+      const groups = corpus.groups();
+      const current = records.filter((r) => r.evidence.threadCount > 0);
+      const activeIds = current.flatMap((r) =>
+        groups.has(r.sectionId) ? [groups.get(r.sectionId)!] : [],
+      );
+      const home = activeHome(entity.id, activeIds, corpus.list());
+      const record =
+        records.find((r) => groups.get(r.sectionId) === home) ??
+        records.find((r) => groups.get(r.sectionId) === entity.id);
+      const base = {
+        id: randomUUID(),
+        confidence: "high" as const,
+        reason: "Classified subject independently of current navigation.",
+        subject: entity.name,
+        subjectId: entity.id,
+        traceId,
+      };
+      const decision: RouteDecision = record
+        ? {
+            ...base,
+            outcome: "new-thread",
+            sectionId: record.sectionId,
+            workstream: record.name,
+            title: "",
+            placement: null,
+          }
+        : {
+            ...base,
+            outcome: "new-workstream",
+            name: corpusLabel(entity.id, corpus.list()),
+            description: entity.description ?? "",
+            title: "",
+            placement: null,
+          };
+      return remember(decision);
+    }
     // A suggestion may name a workstream the user just made, so it sees
     // empty ones too rather than proposing a duplicate.
     const populated = options.suggest
@@ -1039,6 +1122,7 @@ export class Router {
   async start(
     sectionId: string | null,
     execution: SpawnArgs & { projectId: string; environment: Environment },
+    subjectId?: string,
   ): Promise<{ threadId: string; sectionId: string | null }> {
     const record = sectionId ? this.deps.map.get(sectionId) : null;
     if (sectionId && !record)
@@ -1050,7 +1134,10 @@ export class Router {
         execution[key],
       ]),
     ) as unknown as SpawnArgs;
+    if (subjectId && !this.deps.corpus?.list().some((e) => e.id === subjectId))
+      throw new UserError("Unknown subject identity.");
     const thread = await this.spawnFiled(fields, sectionId, "user");
+    if (subjectId) this.deps.corpus?.assign(thread.id, subjectId);
     this.deps.service.recordCreated(thread.id, sectionId, "user", {
       title: thread.title || "New thread",
       rationale: record
@@ -1136,7 +1223,20 @@ export class Router {
   async fileComposed(threadId: string, decision: RouteDecision): Promise<void> {
     const entry = this.decisions.get(decision.id);
     if (!entry || entry.used) return;
+    if (decision.subjectId)
+      this.deps.corpus?.assign(threadId, decision.subjectId);
     entry.used = true;
+    if (
+      decision.subjectId &&
+      decision.outcome === "new-thread" &&
+      decision.sectionId &&
+      this.deps.corpus
+    ) {
+      this.deps.corpus.bindGroup(
+        decision.sectionId,
+        this.deps.corpus.groups().get(decision.sectionId) ?? decision.subjectId,
+      );
+    }
     let sectionId: string | null = null;
     if (decision.outcome === "new-thread") {
       if (!decision.sectionId) return;
@@ -1149,6 +1249,8 @@ export class Router {
       sectionId = created.sectionId;
       if (decision.description)
         this.deps.map.describe(sectionId, decision.description);
+      if (decision.subjectId)
+        this.deps.corpus?.bindGroup(sectionId, decision.subjectId);
     } else if (decision.outcome === "continue") {
       // The user started a new thread instead: keep it with that thread's work.
       const target = this.deps.service

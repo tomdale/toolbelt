@@ -18,7 +18,11 @@ import type {
 import type { Placement, RouteDecision } from "../../server/router.ts";
 import { routeDelay } from "./timing.ts";
 
-export type WorkstreamChoice = { id: string; name: string } | null;
+export type WorkstreamChoice = {
+  id: string;
+  name: string;
+  subjectId?: string;
+} | null;
 
 type SuggestionBase = {
   /** Identifies one classification result, so accepting or dismissing it sticks. */
@@ -132,6 +136,11 @@ export type NewWorkState = {
   /** The key of the suggestion the user accepted or dismissed. */
   settled: string | null;
   accepting: boolean;
+  acceptedRoute: {
+    routeId: string;
+    sectionId: string;
+    subjectId?: string;
+  } | null;
   /** Why the last submit or acceptance failed. */
   error: string | null;
   /** Counts failures, so a repeated message is announced again. */
@@ -157,10 +166,12 @@ export type NewWorkDeps = {
   createWorkstream(
     name: string,
     description: string,
+    subjectId?: string,
   ): Promise<{ sectionId: string; name: string }>;
   startThread(
     sectionId: string | null,
     request: NewThreadRequest,
+    subjectId?: string,
   ): Promise<{ threadId: string }>;
   sendToThread(
     threadId: string,
@@ -245,6 +256,7 @@ export class NewWork {
       classifying: false,
       settled: null,
       accepting: false,
+      acceptedRoute: null,
       error: null,
       errors: 0,
       events: [],
@@ -312,6 +324,7 @@ export class NewWork {
     if (trimmed === this.state.text) return;
     this.set({
       text: trimmed,
+      acceptedRoute: null,
       error: null,
       ...(trimmed ? {} : { suggestion: null, decision: null }),
     });
@@ -329,6 +342,7 @@ export class NewWork {
     })("ok");
     this.set({
       workstream: choice,
+      acceptedRoute: null,
       workstreamWasExplicit: true,
       error: null,
     });
@@ -400,6 +414,9 @@ export class NewWork {
         const created = await this.deps.createWorkstream(
           suggestion.name,
           suggestion.description,
+          ...(this.state.decision?.subjectId
+            ? [this.state.decision.subjectId]
+            : []),
         );
         workstream = { id: created.sectionId, name: created.name };
         acceptedSectionId = created.sectionId;
@@ -407,10 +424,23 @@ export class NewWork {
         const created = await this.deps.createWorkstream(
           suggestion.name,
           suggestion.description,
+          ...(this.state.decision?.subjectId
+            ? [this.state.decision.subjectId]
+            : []),
         );
         workstream = { id: created.sectionId, name: created.name };
       }
-      this.set({ ...(workstream ? { workstream } : {}) });
+      this.set({
+        ...(workstream ? { workstream } : {}),
+        workstreamWasExplicit: true,
+        acceptedRoute: workstream
+          ? {
+              routeId: suggestion.key,
+              sectionId: workstream.id,
+              subjectId: this.state.decision?.subjectId,
+            }
+          : null,
+      });
       let requested: ComposerSelection | null = null;
       let applied: ComposerSelection | null = null;
       if (suggestion.placement) {
@@ -468,6 +498,8 @@ export class NewWork {
   async submit(request: NewThreadRequest): Promise<SubmitResult> {
     if (this.state.error) this.set({ error: null });
     const target = this.sendTarget;
+    const subjectId =
+      this.state.acceptedRoute?.subjectId ?? this.state.workstream?.subjectId;
     this.sendTarget = null;
     this.invalidate();
     const sectionId = this.state.workstream?.id ?? null;
@@ -491,7 +523,11 @@ export class NewWork {
           title: target.title,
         };
       }
-      const { threadId } = await this.deps.startThread(sectionId, request);
+      const { threadId } = await this.deps.startThread(
+        sectionId,
+        request,
+        ...(subjectId ? [subjectId] : []),
+      );
       finish("ok", { output: { started: threadId, sectionId } });
       return { kind: "started", threadId };
     } catch (error) {

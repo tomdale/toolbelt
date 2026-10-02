@@ -3,7 +3,9 @@
  * environment pickers and match them: a muted ghost trigger and a searchable
  * popover list. Searching for a name no workstream has offers to create it.
  */
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useRpc } from "@get-bb/plugin-sdk/app";
+import type { RpcContract } from "../../server/contract.ts";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -40,6 +42,23 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
   const { server } = useServerState();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const rpc = useRpc<RpcContract>();
+  const [entities, setEntities] = useState<
+    { id: string; name: string; aliases: string[] }[]
+  >([]);
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    rpc
+      .call("corpus", null)
+      .then((result) => {
+        if (live) setEntities(result.entities);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [open, rpc]);
   const workstreams = useMemo(
     () =>
       applyOrder(
@@ -56,7 +75,15 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
   const visible = needle
     ? workstreams.filter((w) => w.name.toLowerCase().includes(needle))
     : workstreams;
-  const exact = workstreams.some((w) => w.name.toLowerCase() === needle);
+  const inactive = entities.filter(
+    (e) =>
+      !workstreams.some((w) => w.name === e.name) &&
+      (!needle ||
+        [e.name, ...e.aliases].some((n) => n.toLowerCase().includes(needle))),
+  );
+  const exact =
+    workstreams.some((w) => w.name.toLowerCase() === needle) ||
+    entities.some((e) => e.name.toLowerCase() === needle);
   // A rename elsewhere shows here; a just-created workstream may not be
   // listed yet.
   const label = selected
@@ -66,7 +93,9 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
     setOpen(next);
     if (!next) setQuery("");
   };
-  const pick = (choice: { id: string; name: string } | null) => {
+  const pick = (
+    choice: { id: string; name: string; subjectId?: string } | null,
+  ) => {
     newWork.selectWorkstream(choice);
     openChange(false);
   };
@@ -147,6 +176,30 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
                       )}
                       aria-hidden
                     />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ) : null}
+            {inactive.length ? (
+              <CommandGroup heading="Known products and features">
+                {inactive.map((entity) => (
+                  <CommandItem
+                    key={`entity:${entity.id}`}
+                    value={`entity:${entity.id}`}
+                    onSelect={() => {
+                      void rpc
+                        .call("corpusSelect", { entityId: entity.id })
+                        .then((result) =>
+                          pick({
+                            id: result.sectionId,
+                            name: result.name,
+                            subjectId: entity.id,
+                          }),
+                        );
+                    }}
+                    className={ITEM_CLASS}
+                  >
+                    {entity.name}
                   </CommandItem>
                 ))}
               </CommandGroup>
