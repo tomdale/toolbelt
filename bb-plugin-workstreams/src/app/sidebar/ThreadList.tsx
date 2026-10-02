@@ -252,9 +252,18 @@ export function WorkstreamsThreadList({
       .find((row) => row.thread.id === activeThreadId);
     if (selectedRow) forYouRows.splice(selection.index, 0, selectedRow);
   }
-  const recentRows = projection.recent.filter(
-    (row) => !forYouRows.some((kept) => kept.thread.id === row.thread.id),
-  );
+  const recapCandidates = [
+    ...projection.groups,
+    projection.unsorted,
+    ...projection.dormant,
+  ]
+    .flatMap((group) => group.rows)
+    .filter((row) => ws.server.recaps[row.thread.id])
+    .sort(
+      (a, b) =>
+        b.thread.latestAttentionAt - a.thread.latestAttentionAt ||
+        a.thread.id.localeCompare(b.thread.id),
+    );
   const nameOf = new Map(sections.map((s) => [s.id, s.name]));
   const prioritizedIds = ws.server.order.prioritized;
   const prioritized = new Set(prioritizedIds.filter((id) => nameOf.has(id)));
@@ -269,6 +278,18 @@ export function WorkstreamsThreadList({
     (row) =>
       row.thread.id === activeThreadId &&
       shownBefore.current.has(row.thread.id),
+  );
+  const recapRows = recapCandidates.filter(
+    (row) =>
+      (!focus.active ||
+        (row.workstreamId !== null && prioritized.has(row.workstreamId))) &&
+      !focus.shown.some((shown) => shown.thread.id === row.thread.id),
+  );
+  const shownNeedsRows = [...focus.shown, ...recapRows];
+  const recentRows = projection.recent.filter(
+    (row) =>
+      !forYouRows.some((kept) => kept.thread.id === row.thread.id) &&
+      !recapRows.some((kept) => kept.thread.id === row.thread.id),
   );
   useLayoutEffect(() => {
     shownBefore.current = new Set(focus.shown.map((row) => row.thread.id));
@@ -425,19 +446,19 @@ export function WorkstreamsThreadList({
   // The open thread's row stays visible when newer rows push it past the
   // limit.
   const needsRows = showAllNeeds
-    ? focus.shown
-    : focus.shown.filter(
+    ? shownNeedsRows
+    : shownNeedsRows.filter(
         (row, index) =>
           index < NEEDS_YOU_LIMIT || row.thread.id === activeThreadId,
       );
-  const moreNeeds = focus.shown.length - needsRows.length;
+  const moreNeeds = shownNeedsRows.length - needsRows.length;
   const needsMarks = anyMark(needsRows, "needs-you");
   const rowKey = (row: ThreadRow) => row.thread.id;
-  const showBand = ws.showForYou && focus.shown.length > 0;
+  const showBand = ws.showForYou && shownNeedsRows.length > 0;
   const bandPresence = usePresence(showBand ? ["band"] : [], String);
   const needsPresence = usePresence(needsRows, rowKey);
   const needsControls = usePresence(
-    (showAllNeeds ? focus.shown.length > NEEDS_YOU_LIMIT : moreNeeds > 0)
+    (showAllNeeds ? shownNeedsRows.length > NEEDS_YOU_LIMIT : moreNeeds > 0)
       ? ["more"]
       : [],
     String,
@@ -896,7 +917,9 @@ export function WorkstreamsThreadList({
               <Band
                 title={UP_NEXT}
                 box="attention"
-                count={focus.shown.length > 1 ? focus.shown.length : undefined}
+                count={
+                  shownNeedsRows.length > 1 ? shownNeedsRows.length : undefined
+                }
                 markless={!needsMarks}
                 badge={
                   focus.active ? (

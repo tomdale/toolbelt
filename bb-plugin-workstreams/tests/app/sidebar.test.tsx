@@ -754,6 +754,71 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
+  it("puts read threads with current recaps after higher-priority Up Next threads", async () => {
+    const at = Date.now();
+    const recap = (state: string) => ({
+      id: `r-${state}`,
+      turnId: "turn",
+      at,
+      state,
+      goal: "Shipping",
+      latest: [`Reported ${state}`],
+      review: state === "review" ? ["Try it"] : [],
+      links: [],
+    });
+    const slot = await mount(
+      [
+        sidebarThread("ask", {
+          title: "Unread ask",
+          isUnread: true,
+          latestAttentionAt: 300,
+        }),
+        sidebarThread("complete", {
+          title: "Read complete",
+          latestAttentionAt: 200,
+        }),
+        sidebarThread("waiting", {
+          title: "Read waiting",
+          latestAttentionAt: 100,
+        }),
+        sidebarThread("without-recap", {
+          title: "Read without recap",
+          latestAttentionAt: 50,
+        }),
+      ],
+      {
+        analysis: {
+          ask: {
+            recap: "Asked.",
+            state: "needs_decision",
+            needsYou: "Decide?",
+            subject: null,
+            drift: null,
+            driftSectionId: null,
+            revision: 300,
+            at,
+            model: "m",
+          },
+        },
+        recaps: {
+          complete: recap("complete"),
+          waiting: recap("waiting"),
+        },
+      },
+    );
+    const band = await slot.findByRole("region", { name: "Up Next" });
+    expect(
+      within(band)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("aria-label")),
+    ).toEqual([
+      "Unread ask",
+      "Read complete, Complete",
+      "Read waiting, Waiting",
+    ]);
+    slot.lifecycle.unmount();
+  });
+
   it.each([
     { nextThreadId: "other", readOnSelect: false },
     { nextThreadId: null, readOnSelect: false },
@@ -800,10 +865,12 @@ describe("thread list", () => {
       expect(groupRows(slot, "Recent")).toEqual(["Other"]);
 
       slot.selectThread(nextThreadId);
-      expect(slot.queryByRole("region", { name: "Up Next" })).toBeNull();
-      expect(groupRows(slot, "Recent")).toContain("Updated result, Complete");
+      expect(groupRows(slot, "Up Next")).toContain("Updated result, Complete");
+      expect(groupRows(slot, "Recent")).not.toContain(
+        "Updated result, Complete",
+      );
       slot.selectThread("result");
-      expect(slot.queryByRole("region", { name: "Up Next" })).toBeNull();
+      expect(groupRows(slot, "Up Next")).toContain("Updated result, Complete");
       slot.lifecycle.unmount();
     },
   );
@@ -902,7 +969,13 @@ describe("thread list", () => {
       },
     );
     const group = await slot.findByRole("region", { name: "Unfiled" });
-    expect(slot.queryByRole("region", { name: "Up Next" })).toBeNull();
+    const band = await slot.findByRole("region", { name: "Up Next" });
+    expect(
+      within(band).getByRole("link", { name: "Asked, Ready for your review" }),
+    ).toBeTruthy();
+    expect(
+      within(band).getByRole("link", { name: "Finished, Complete" }),
+    ).toBeTruthy();
     expect(
       within(group).getByRole("img", { name: "Ready for your review" }),
     ).toBeTruthy();
@@ -1555,10 +1628,26 @@ describe("prioritized workstreams", () => {
         asking("a1", "sec_a", 300),
         asking("b1", "sec_b", 200),
         asking("z1", "sec_z", 100),
+        sidebarThread("recap", {
+          title: "Read recap",
+          latestAttentionAt: 50,
+        }),
       ],
       {
         activeThreadId: null,
         order: { workstreams: [], threads: {}, prioritized: ["sec_z"] },
+        recaps: {
+          recap: {
+            id: "read-recap",
+            turnId: "turn",
+            at: 50,
+            state: "complete",
+            goal: "Finished",
+            latest: ["Ready"],
+            review: [],
+            links: [],
+          },
+        },
       },
     );
     await waitFor(() => expect(groupRows(slot, "Up Next")).toEqual(["Ask z1"]));
@@ -1584,14 +1673,37 @@ describe("prioritized workstreams", () => {
     // With no prioritized thread waiting, Up Next shows everything.
     slot.lifecycle.unmount();
     const unfocused = await mount(
-      [asking("a1", "sec_a", 300), asking("b1", "sec_b", 200)],
+      [
+        asking("a1", "sec_a", 300),
+        asking("b1", "sec_b", 200),
+        sidebarThread("recap", {
+          title: "Read recap",
+          latestAttentionAt: 50,
+        }),
+      ],
       {
         activeThreadId: null,
         order: { workstreams: [], threads: {}, prioritized: ["sec_z"] },
+        recaps: {
+          recap: {
+            id: "read-recap",
+            turnId: "turn",
+            at: 50,
+            state: "complete",
+            goal: "Finished",
+            latest: ["Ready"],
+            review: [],
+            links: [],
+          },
+        },
       },
     );
     await waitFor(() =>
-      expect(groupRows(unfocused, "Up Next")).toEqual(["Ask a1", "Ask b1"]),
+      expect(groupRows(unfocused, "Up Next")).toEqual([
+        "Ask a1",
+        "Ask b1",
+        "Read recap, Complete",
+      ]),
     );
     expect(
       unfocused.getByRole("button", {
