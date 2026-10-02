@@ -339,33 +339,57 @@ const progress = (region: HTMLElement) =>
     (li) => `${li.getAttribute("data-progress")}:${li.textContent}`,
   );
 
-it("shows waiting tasks and an inline countdown without completed or Next rows", async () => {
+it("shows multiple waiting tasks as a body-font bullet list with a bare countdown below", async () => {
   const slot = await mount({ recap: WORKING });
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(region.textContent).toContain("Waiting");
   const countdown = slot.getByLabelText("Status check countdown");
-  expect(countdown.textContent).toMatch(/Check status in [01]:\d{2}/);
-  expect(countdown.closest("li")).toBe(region.querySelector("[data-progress]"));
-  expect(countdown.parentElement!.parentElement!.className).toContain("flex");
-  expect(region.querySelector("[data-icon='LoaderCircle']")).toBeNull();
-  expect(region.textContent).not.toContain("Nothing needed");
-  expect(progress(region)).toEqual([
-    `active:In progress: Workers are running${countdown.textContent}Cancel check`,
-    "active:In progress: Tests are running",
-  ]);
-  // Active items use a solid dot.
+  expect(countdown.textContent).toMatch(/^[01]:\d{2}$/);
+  const taskList = region.querySelector("ul")!;
+  expect(taskList.className).toContain("list-disc");
+  expect(taskList.textContent).toContain("Workers are running");
+  expect(taskList.textContent).toContain("Tests are running");
   expect(
-    region
-      .querySelector('li[data-progress="active"] svg')
-      ?.getAttribute("fill"),
-  ).toBe("currentColor");
-  expect(slot.getByRole("heading", { name: "Tasks" })).toBeTruthy();
+    countdown.compareDocumentPosition(taskList) &
+      Node.DOCUMENT_POSITION_PRECEDING,
+  ).toBeTruthy();
+  expect(region.querySelector("[data-icon='LoaderCircle']")).toBeNull();
+  expect(slot.queryByRole("heading", { name: "Tasks" })).toBeNull();
+  expect(
+    slot.queryByRole("heading", { name: "Workers are running" }),
+  ).toBeNull();
   expect(slot.queryByRole("heading", { name: "Next" })).toBeNull();
   expect(region.querySelector('[data-progress="done"]')).toBeNull();
   expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
   expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
-  expect(slot.getByRole("button", { name: "Cancel check" })).toBeTruthy();
+  const cancel = slot.getByRole("button", { name: "Cancel status check" });
+  expect(cancel.textContent).toBe("");
+  expect(cancel.className).toContain("size-5");
 });
+
+it.each(["full", "minimal"])(
+  "uses a single waiting task as the title without showing the goal (%s)",
+  async (layout) => {
+    const slot = await mount({
+      layout,
+      recap: {
+        ...WORKING,
+        goal: "Waiting for background jobs",
+        tasks: ["Build the release"],
+      },
+    });
+    await slot.findByRole("region", { name: "Latest recap" });
+    expect(
+      slot.getByRole("heading", { name: "Build the release" }),
+    ).toBeTruthy();
+    expect(
+      slot.queryByRole("heading", { name: "Waiting for background jobs" }),
+    ).toBeNull();
+    expect(slot.getByLabelText("Status check countdown").textContent).toMatch(
+      /^[01]:\d{2}$/,
+    );
+  },
+);
 
 it.each(["full", "minimal"])(
   "renders a second-line thread mention and cancels without dismissing (%s)",
@@ -385,11 +409,15 @@ it.each(["full", "minimal"])(
     expect(region.textContent).toContain("Testing");
     const mention = await slot.findByText("Test worker");
     const countdown = slot.getByLabelText("Status check countdown");
-    const taskBody = countdown.parentElement!.parentElement!.parentElement!;
-    expect(taskBody.children).toHaveLength(2);
-    expect(taskBody.children[1]!.contains(mention)).toBe(true);
-    expect(taskBody.children[0]!.contains(mention)).toBe(false);
-    fireEvent.click(slot.getByRole("button", { name: "Cancel check" }));
+    const task = region.querySelector('[data-progress="active"]')!;
+    expect(task.contains(mention)).toBe(true);
+    expect(
+      countdown.compareDocumentPosition(task) &
+        Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy();
+    expect(task.textContent).toContain("Testing");
+    expect(task.textContent).not.toContain(countdown.textContent);
+    fireEvent.click(slot.getByRole("button", { name: "Cancel status check" }));
     await waitFor(() =>
       expect(region.textContent).toContain("Status check cancelled"),
     );
@@ -399,25 +427,27 @@ it.each(["full", "minimal"])(
       method: "recap_cancel_waiting",
       input: { threadId: "t1", recapId: "r1" },
     });
-    expect(slot.queryByRole("button", { name: "Cancel check" })).toBeNull();
+    expect(
+      slot.queryByRole("button", { name: "Cancel status check" }),
+    ).toBeNull();
   },
 );
 
-it("shows the goal and tasks in the compact waiting card", async () => {
+it("shows the single task as the title in the compact waiting card", async () => {
   const slot = await mount({
     layout: "minimal",
     recap: { ...WORKING, tasks: ["Workers are running"] },
   });
   const region = await slot.findByRole("region", { name: "Latest recap" });
-  expect(slot.getByRole("heading", { name: "Building the card" })).toBeTruthy();
-  // One shown item reads as plain text, without a bullet.
-  const only = region.querySelector("[data-progress]")!;
-  expect(only.tagName).toBe("LI");
-  expect(only.textContent).toContain("Workers are runningCheck status in");
-  expect(only.querySelector("svg")).toBeNull();
+  expect(
+    slot.getByRole("heading", { name: "Workers are running" }),
+  ).toBeTruthy();
+  expect(slot.queryByRole("heading", { name: "Building the card" })).toBeNull();
+  expect(slot.getByLabelText("Status check countdown").textContent).toMatch(
+    /^[01]:\d{2}$/,
+  );
   expect(region.textContent).not.toContain("Inspect worker results");
   expect(slot.queryByRole("heading", { name: "Tasks" })).toBeNull();
-  expect(region.className).toContain("py-2");
 });
 
 it("shows the goal, results, and an icon-only Archive in the compact complete card", async () => {

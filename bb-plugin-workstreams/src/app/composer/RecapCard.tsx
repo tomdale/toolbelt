@@ -284,76 +284,108 @@ function WaitingTasks({
   recap,
   cancelled,
   onCancel,
+  clearance,
+}: {
+  recap: Recap;
+  cancelled: boolean;
+  onCancel?: () => void;
+  clearance: string;
+}) {
+  const body = useBodyClass();
+  const tasks = recap.tasks ?? [];
+  const single = tasks.length === 1 ? tasks[0]! : null;
+  const taskText = (item: RecapItem, className = "") => (
+    <>
+      <RecapText
+        text={typeof item === "string" ? item : item.step}
+        className={className}
+      />
+      {typeof item !== "string" && item.expect ? (
+        <RecapText
+          text={item.expect}
+          className="mt-0.5 text-muted-foreground"
+        />
+      ) : null}
+    </>
+  );
+  return (
+    <div className="py-2">
+      {single ? (
+        <div
+          role="heading"
+          aria-level={2}
+          data-progress="active"
+          className={cn(
+            "font-medium tracking-[-0.006em] text-foreground",
+            clearance,
+            GOAL_CLASS,
+          )}
+        >
+          {taskText(single)}
+        </div>
+      ) : (
+        <ul
+          className={cn(
+            "m-0 list-disc space-y-0.5 pl-5 text-foreground",
+            clearance,
+            body,
+          )}
+        >
+          {tasks.map((item, index) => (
+            <li key={index} data-progress="active" className="min-w-0">
+              {taskText(item)}
+            </li>
+          ))}
+        </ul>
+      )}
+      <WaitingCountdown
+        recap={recap}
+        cancelled={cancelled}
+        onCancel={onCancel}
+      />
+    </div>
+  );
+}
+
+function WaitingCountdown({
+  recap,
+  cancelled,
+  onCancel,
 }: {
   recap: Recap;
   cancelled: boolean;
   onCancel?: () => void;
 }) {
   const remaining = useWaitingCountdown(recap, cancelled);
-  const body = useBodyClass();
-  const multiple = (recap.tasks?.length ?? 0) > 1;
   return (
-    <ul className="space-y-1.5">
-      {(recap.tasks ?? []).map((item, index) => (
-        <li
-          key={index}
-          data-progress="active"
-          className={cn(
-            body,
-            multiple &&
-              "grid grid-cols-[0.875rem_minmax(0,1fr)] items-start gap-x-1.5",
-          )}
-        >
-          {multiple ? (
-            <Glyph
-              path={ACTIVE}
-              filled
-              className={`mt-[0.2em] h-3.5 w-3.5 ${ACCENT.waiting.text}`}
-            />
+    <div className="mt-2 flex items-center gap-1 text-muted-foreground">
+      {cancelled ? (
+        <span className={`${BODY_CLASS} text-[11px]`}>
+          Status check cancelled
+        </span>
+      ) : (
+        <>
+          <span
+            aria-label="Status check countdown"
+            className="text-xs tabular-nums"
+          >
+            {`${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`}
+          </span>
+          {onCancel ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Cancel status check"
+              className="size-5 text-muted-foreground"
+              onClick={onCancel}
+            >
+              <Icon name="X" aria-hidden className="size-3.5" />
+            </Button>
           ) : null}
-          {multiple ? <span className="sr-only">In progress: </span> : null}
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <RecapText text={typeof item === "string" ? item : item.step} />
-              {index === 0 ? (
-                <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1 text-muted-foreground">
-                  {cancelled ? (
-                    <span>Status check cancelled</span>
-                  ) : (
-                    <>
-                      <span
-                        aria-label="Status check countdown"
-                        className="tabular-nums"
-                      >
-                        Check status in{" "}
-                        {remaining > 0
-                          ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`
-                          : "soon"}
-                      </span>
-                      {onCancel ? (
-                        <button
-                          type="button"
-                          className="cursor-pointer rounded border border-border px-1.5 py-0.5 text-[11px] font-medium hover:bg-muted hover:text-foreground"
-                          onClick={onCancel}
-                        >
-                          Cancel check
-                        </button>
-                      ) : null}
-                    </>
-                  )}
-                </span>
-              ) : null}
-            </div>
-            {typeof item !== "string" && item.expect ? (
-              <RecapText
-                text={item.expect}
-                className="mt-0.5 text-muted-foreground"
-              />
-            ) : null}
-          </div>
-        </li>
-      ))}
-    </ul>
+        </>
+      )}
+    </div>
   );
 }
 /** A solid dot: work still in progress. */
@@ -592,15 +624,7 @@ function RecapSummary({
     ) : null;
   let rows: ReactNode;
   if (compact) {
-    rows = working ? (
-      <Row accent={accent.text}>
-        <WaitingTasks
-          recap={recap}
-          cancelled={waitingCancelled}
-          onCancel={onCancelWaiting}
-        />
-      </Row>
-    ) : review ? (
+    rows = working ? null : review ? (
       <Row accent={accent.text}>
         <Steps items={recap.review} />
         {links}
@@ -613,20 +637,11 @@ function RecapSummary({
   } else {
     rows = (
       <>
-        <Row
-          label={working ? "Tasks" : review ? "Done" : undefined}
-          accent={accent.text}
-        >
-          {working ? (
-            <WaitingTasks
-              recap={recap}
-              cancelled={waitingCancelled}
-              onCancel={onCancelWaiting}
-            />
-          ) : (
+        {working ? null : (
+          <Row label={review ? "Done" : undefined} accent={accent.text}>
             <Results done={recap.latest} accent={accent.text} />
-          )}
-        </Row>
+          </Row>
+        )}
         {review ? (
           <Row label="Review" accent={accent.text}>
             <Steps items={recap.review} />
@@ -654,30 +669,41 @@ function RecapSummary({
       <CompactContext.Provider value={compact}>
         {/* The top line clears the corner buttons. */}
         <StateLine recap={recap} clearance={clearance} />
-        <div
-          role="heading"
-          aria-level={2}
-          className={cn(
-            "font-medium tracking-[-0.006em] text-foreground",
-            clearance,
-          )}
-        >
-          <RecapText
-            text={recap.goal}
-            className="w-full max-w-none"
-            typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
+        {working ? (
+          <WaitingTasks
+            recap={recap}
+            cancelled={waitingCancelled}
+            onCancel={onCancelWaiting}
+            clearance={clearance}
           />
-        </div>
-        <div
-          className={cn(
-            compact ? "mt-0.5" : "mt-1.5",
-            "[&>section+section]:border-t",
-            accent.rules,
-            body,
-          )}
-        >
-          {rows}
-        </div>
+        ) : (
+          <div
+            role="heading"
+            aria-level={2}
+            className={cn(
+              "font-medium tracking-[-0.006em] text-foreground",
+              clearance,
+            )}
+          >
+            <RecapText
+              text={recap.goal}
+              className="w-full max-w-none"
+              typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
+            />
+          </div>
+        )}
+        {rows ? (
+          <div
+            className={cn(
+              compact ? "mt-0.5" : "mt-1.5",
+              "[&>section+section]:border-t",
+              accent.rules,
+              body,
+            )}
+          >
+            {rows}
+          </div>
+        ) : null}
       </CompactContext.Provider>
     </MarkdownDocumentContext.Provider>
   );
