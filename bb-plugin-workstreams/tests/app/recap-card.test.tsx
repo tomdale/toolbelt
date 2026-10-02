@@ -352,9 +352,10 @@ it("shows the task title with countdown and cancel beside it", async () => {
     name: /Workers and tests are running/,
   });
   expect(taskHeading.parentElement?.contains(countdown)).toBe(true);
-  expect(
-    slot.getByRole("button", { name: "Cancel status check" }).textContent,
-  ).toBe("Cancel check");
+  const cancel = slot.getByRole("button", { name: "Cancel status check" });
+  expect(cancel.textContent).toBe("");
+  expect(cancel.querySelector('[data-icon="ClockArrowDown"]')).toBeTruthy();
+  expect(cancel.className).toContain("size-5");
   expect(region.querySelector("[data-icon='LoaderCircle']")).toBeNull();
   expect(slot.queryByRole("heading", { name: "Tasks" })).toBeNull();
   expect(taskHeading).toBeTruthy();
@@ -362,8 +363,6 @@ it("shows the task title with countdown and cancel beside it", async () => {
   expect(region.querySelector('[data-progress="done"]')).toBeNull();
   expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
   expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
-  const cancel = slot.getByRole("button", { name: "Cancel status check" });
-  expect(cancel.textContent).toBe("Cancel check");
 });
 
 it.each(["full", "minimal"])(
@@ -419,7 +418,12 @@ it.each(["full", "minimal"])(
     expect(task.textContent).toContain(countdown.textContent);
     expect(
       slot.getByRole("button", { name: "Cancel status check" }).textContent,
-    ).toBe("Cancel check");
+    ).toBe("");
+    expect(
+      slot
+        .getByRole("button", { name: "Cancel status check" })
+        .querySelector('[data-icon="ClockArrowDown"]'),
+    ).toBeTruthy();
     fireEvent.click(slot.getByRole("button", { name: "Cancel status check" }));
     await waitFor(() =>
       expect(region.textContent).toContain("Status check cancelled"),
