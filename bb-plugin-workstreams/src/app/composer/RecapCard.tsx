@@ -296,14 +296,18 @@ function WaitingTasks({
   onCancel?: () => void;
   clearance: string;
 }) {
+  const compact = useContext(CompactContext);
   const body = useBodyClass();
   const tasks = recap.tasks ?? [];
   const single = tasks.length === 1 ? tasks[0]! : null;
-  const taskText = (item: RecapItem, className = "") => {
+  const taskText = (item: RecapItem, title = false) => {
     const { text, detail } = itemParts(item);
     return (
       <>
-        <RecapText text={text} className={className} />
+        <RecapText
+          text={text}
+          typeClass={title ? (compact ? COMPACT_GOAL_CLASS : GOAL_CLASS) : body}
+        />
         {detail ? (
           <RecapText text={detail} className="mt-0.5 text-muted-foreground" />
         ) : null}
@@ -323,7 +327,7 @@ function WaitingTasks({
             GOAL_CLASS,
           )}
         >
-          {taskText(single)}
+          {taskText(single, true)}
         </div>
       ) : (
         <ul
@@ -382,7 +386,7 @@ function WaitingCountdown({
               className="size-5 text-muted-foreground"
               onClick={onCancel}
             >
-              <Icon name="X" aria-hidden className="size-3.5" />
+              <Icon name="ClockArrowDown" aria-hidden className="size-3.5" />
             </Button>
           ) : null}
         </>

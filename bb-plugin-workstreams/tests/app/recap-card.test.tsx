@@ -365,6 +365,7 @@ it("shows multiple waiting tasks as a body-font bullet list with a bare countdow
   const cancel = slot.getByRole("button", { name: "Cancel status check" });
   expect(cancel.textContent).toBe("");
   expect(cancel.className).toContain("size-5");
+  expect(cancel.querySelector('[data-icon="ClockArrowDown"]')).toBeTruthy();
 });
 
 it.each(["full", "minimal"])(
@@ -379,9 +380,13 @@ it.each(["full", "minimal"])(
       },
     });
     await slot.findByRole("region", { name: "Latest recap" });
+    const taskHeading = slot.getByRole("heading", {
+      name: "Build the release",
+    });
+    expect(taskHeading).toBeTruthy();
     expect(
-      slot.getByRole("heading", { name: "Build the release" }),
-    ).toBeTruthy();
+      taskHeading.querySelector("[data-testid='bb-markdown']")?.className,
+    ).toContain(layout === "minimal" ? "0.6875rem" : "0.8125rem");
     expect(
       slot.queryByRole("heading", { name: "Waiting for background jobs" }),
     ).toBeNull();
@@ -417,6 +422,11 @@ it.each(["full", "minimal"])(
     ).toBeTruthy();
     expect(task.textContent).toContain("Testing");
     expect(task.textContent).not.toContain(countdown.textContent);
+    expect(
+      slot
+        .getByRole("button", { name: "Cancel status check" })
+        .querySelector('[data-icon="ClockArrowDown"]'),
+    ).toBeTruthy();
     fireEvent.click(slot.getByRole("button", { name: "Cancel status check" }));
     await waitFor(() =>
       expect(region.textContent).toContain("Status check cancelled"),
