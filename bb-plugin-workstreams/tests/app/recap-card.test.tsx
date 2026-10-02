@@ -354,7 +354,7 @@ it("shows the Waiting goal with countdown and cancel beside it", async () => {
   expect(goalHeading.parentElement?.contains(countdown)).toBe(true);
   const cancel = slot.getByRole("button", { name: "Cancel status check" });
   expect(cancel.textContent).toBe("");
-  expect(cancel.querySelector('[data-icon="ClockArrowDown"]')).toBeTruthy();
+  expect(cancel.querySelector('[data-icon="CircleX"]')).toBeTruthy();
   expect(cancel.className).toContain("size-5");
   expect(region.querySelector("[data-icon='LoaderCircle']")).toBeNull();
   expect(slot.queryByRole("heading", { name: "Tasks" })).toBeNull();
@@ -418,7 +418,7 @@ it.each(["full", "minimal"])(
     expect(
       slot
         .getByRole("button", { name: "Cancel status check" })
-        .querySelector('[data-icon="ClockArrowDown"]'),
+        .querySelector('[data-icon="CircleX"]'),
     ).toBeTruthy();
     fireEvent.click(slot.getByRole("button", { name: "Cancel status check" }));
     await waitFor(() =>
