@@ -47,7 +47,7 @@ export function instructionsFor(role: ThreadRole): string {
     const parent = role.parentTitle
       ? `"${quote(role.parentTitle)}"`
       : "its parent thread";
-    return `You are a delegated subtask of ${parent}. Report results to it. Hand off out-of-scope requests with \`bb workstreams handoff\`. Don't spawn further threads.`.slice(
+    return `You are a delegated subtask of ${parent}. Report results and scope questions to it. Your parent coordinates ownership and further delegation; ask it before spawning further threads or transferring ownership, and keep execution within your assigned scope.`.slice(
       0,
       MAX,
     );
@@ -59,7 +59,7 @@ export function instructionsFor(role: ThreadRole): string {
           : ""
       }.`
     : "You are a task thread.";
-  return `${where} When the user requests or approves delegating separable subtasks to child threads, use \`bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"\`, always choosing the environment explicitly: ${shapeGuidance(role.shape)}. Then coordinate and integrate here. If the user asks for something outside this thread's task or workstream, don't do it here: pass their request verbatim to \`bb workstreams handoff --request-stdin\` and reply with the link it prints.`.slice(
+  return `${where} When the user requests or approves delegating separable subtasks to child threads, use \`bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"\`, always choosing the environment explicitly: ${shapeGuidance(role.shape)}. Then coordinate and integrate here. This workstream describes where the work is organized. Continue the user's requests here and resolve repository or environment setup as part of the task. Transfer ownership with \`bb workstreams handoff --request-stdin\` only when the user explicitly requests or approves that transfer, then share the returned thread link with the user. Keep coordination lightweight so it does not delay the requested work: for obvious overlap with another active task, use available context or at most one bounded metadata lookup; ordinary requests need no other-thread investigation.`.slice(
     0,
     MAX,
   );
