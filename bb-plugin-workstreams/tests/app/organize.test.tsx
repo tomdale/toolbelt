@@ -49,6 +49,51 @@ async function mount(bootstrap: (input: unknown) => Promise<RpcResult>) {
 }
 
 describe("Organize request freshness", () => {
+  it("shows classification progress and leaves Cancel enabled during a long start call", async () => {
+    const started = deferred<RpcResult>();
+    let running = false;
+    const progress = {
+      ...snapshot(null, 1),
+      status: "proposing",
+      progress: {
+        stage: "classifying",
+        completed: 4,
+        total: 12,
+        cached: 3,
+        unresolved: 1,
+      },
+    };
+    const slot = await mount(async (input) => {
+      const action = (input as { action: string }).action;
+      if (action === "start") {
+        running = true;
+        return started.promise;
+      }
+      if (action === "cancel") {
+        running = false;
+        return { state: null };
+      }
+      return { state: running ? progress : null };
+    });
+    await waitFor(() =>
+      expect(slot.getByRole("button", { name: "Organize…" })).toBeTruthy(),
+    );
+    fireEvent.click(slot.getByRole("button", { name: "Organize…" }));
+    await slot.behavior.emitRealtime("changed", {});
+    await waitFor(() =>
+      expect(
+        slot.getByText(
+          "Classifying tasks 4 of 12 · 3 already classified · 1 unresolved",
+        ),
+      ).toBeTruthy(),
+    );
+    const cancel = slot.getByRole("button", {
+      name: "Cancel",
+    }) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(false);
+    fireEvent.click(cancel);
+    started.resolve({ state: progress });
+  });
   it("publishes the newer read when an older read resolves later", async () => {
     const first = deferred<RpcResult>();
     const second = deferred<RpcResult>();

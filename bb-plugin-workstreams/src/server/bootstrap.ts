@@ -35,6 +35,13 @@ export type BootstrapState = {
   startedAt: number;
   updatedAt: number;
   error: string | null;
+  progress?: {
+    stage: "classifying" | "regrouping";
+    completed: number;
+    total: number;
+    cached: number;
+    unresolved: number;
+  };
   roots: { id: string; title: string; sectionId: string | null }[];
   mapSnapshot: {
     sectionId: string;
@@ -73,6 +80,7 @@ export class Bootstrap {
       policy?: () => { capacity: number; collapseAt: number };
       inference: Inference;
       model: () => Promise<ModelChoice>;
+      classificationModel?: () => Promise<ModelChoice>;
       projects?: () => Promise<{ id: string; name: string }[]>;
       members: (sectionId: string) => Promise<CleanupMember[]>;
       onChange: () => void;
@@ -244,6 +252,7 @@ export class Bootstrap {
       return this.save({
         ...state,
         status: "preview",
+        progress: this.state()?.progress,
         traceIds: result.traceId ? [result.traceId] : [],
         preview: {
           workstreams: proposal.workstreams,
@@ -294,30 +303,78 @@ export class Bootstrap {
     );
     const model = await this.deps.model();
     const subjects = corpus.subjects();
-    for (const thread of input.threads) {
-      if (subjects.has(thread.id)) continue;
-      const { value } = await this.deps.inference.run(
-        "classify",
-        {
-          prompt: `${thread.title}\n${thread.recap ?? ""}`,
-          entities: corpus.list(),
-        },
-        { model, signal, threadId: thread.id, label: thread.title },
-      );
-      const entity = value.subjectId
-        ? corpus.list().find((e) => e.id === value.subjectId)
-        : value.proposed
-          ? corpus.remember(
-              value.proposed.name,
-              value.proposed.description,
-              value.proposed.parentId,
-            )
-          : null;
-      if (entity) {
-        corpus.assign(thread.id, entity.id);
-        subjects.set(thread.id, entity.id);
+    const pending = input.threads.filter((thread) => !subjects.has(thread.id));
+    const cached = input.threads.length - pending.length;
+    let completed = 0;
+    let unresolved = 0;
+    let cursor = 0;
+    const publish = (stage: "classifying" | "regrouping") => {
+      const current = this.state();
+      if (
+        !signal.aborted &&
+        current?.startedAt === startedAt &&
+        current.status === "proposing"
+      )
+        this.save({
+          ...current,
+          progress: {
+            stage,
+            completed,
+            total: pending.length,
+            cached,
+            unresolved,
+          },
+        });
+    };
+    const classificationModel = pending.length
+      ? await (this.deps.classificationModel?.() ?? Promise.resolve(model))
+      : model;
+    publish("classifying");
+    let failure: unknown;
+    const worker = async () => {
+      while (!signal.aborted && !failure && cursor < pending.length) {
+        const thread = pending[cursor++]!;
+        try {
+          const { value } = await this.deps.inference.run(
+            "classify",
+            {
+              prompt: `${thread.title}\n${thread.recap ?? ""}`,
+              entities: corpus.list(),
+            },
+            {
+              model: classificationModel,
+              signal,
+              threadId: thread.id,
+              label: thread.title,
+            },
+          );
+          if (signal.aborted) return;
+          const entity = value.subjectId
+            ? corpus.list().find((e) => e.id === value.subjectId)
+            : value.proposed
+              ? corpus.remember(
+                  value.proposed.name,
+                  value.proposed.description,
+                  value.proposed.parentId,
+                )
+              : null;
+          if (entity) {
+            corpus.assign(thread.id, entity.id);
+            subjects.set(thread.id, entity.id);
+          } else unresolved++;
+          completed++;
+          publish("classifying");
+        } catch (error) {
+          failure ??= error;
+        }
       }
-    }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(3, pending.length) }, worker),
+    );
+    if (signal.aborted) throw new Error("Organizing cancelled.");
+    if (failure) throw failure;
+    publish("regrouping");
     const entities = corpus.list();
     const counts: Record<string, number> = {};
     const analysis = this.deps.analyzer.all();
@@ -354,6 +411,7 @@ export class Bootstrap {
         links: [this.runLink(startedAt)],
       },
     );
+    if (signal.aborted) throw new Error("Organizing cancelled.");
     const selected = value.activeEntityIds;
     const label = (id: string) => corpusLabel(id, entities);
     const workstreams: OrganizeProposal["workstreams"] = selected.map((id) => {

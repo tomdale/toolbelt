@@ -231,6 +231,7 @@ export default async function plugin(bb: BbPluginApi) {
     adaptive: () => currentPrefs().organize.adaptivePreview,
     inference,
     model: async () => currentPrefs().organize.model,
+    classificationModel: async () => currentPrefs().newWork.suggestionsModel,
     policy: () => ({
       capacity: currentPrefs().organize.capacity,
       collapseAt: currentPrefs().organize.collapseAt,

@@ -88,6 +88,15 @@ const moveSchema = z.object({
 const bootstrapSchema = z
   .object({
     status: z.enum(["proposing", "preview", "applying", "applied", "failed"]),
+    progress: z
+      .object({
+        stage: z.enum(["classifying", "regrouping"]),
+        completed: z.number().int().nonnegative(),
+        total: z.number().int().nonnegative(),
+        cached: z.number().int().nonnegative(),
+        unresolved: z.number().int().nonnegative(),
+      })
+      .optional(),
     startedAt: z.number(),
     updatedAt: z.number(),
     error: z.string().nullable(),
