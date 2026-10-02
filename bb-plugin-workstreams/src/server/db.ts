@@ -290,6 +290,22 @@ const MIGRATIONS = [
   `UPDATE ws_agent_recap SET recap = NULL WHERE json_extract(recap, '$.state') = 'continuing'`,
   `UPDATE ws_agent_recap SET recap = json_remove(recap, '$.active', '$.next') WHERE recap IS NOT NULL`,
   "ALTER TABLE ws_agent_recap ADD COLUMN waiting_cancelled INTEGER NOT NULL DEFAULT 0",
+  `CREATE TABLE ws_corpus_entity (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    parent_id TEXT REFERENCES ws_corpus_entity(id),
+    aliases TEXT NOT NULL DEFAULT '[]',
+    UNIQUE(name, parent_id)
+  )`,
+  `CREATE TABLE ws_corpus_group (
+    section_id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL REFERENCES ws_corpus_entity(id)
+  )`,
+  `CREATE TABLE ws_corpus_subject (
+    thread_id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL REFERENCES ws_corpus_entity(id)
+  )`,
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {
