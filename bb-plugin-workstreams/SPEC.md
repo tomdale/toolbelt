@@ -25,8 +25,7 @@ Workstreams has four responsibilities:
 2. **Route** new work: continue an existing thread, start a thread in a
    workstream, or leave the choice unresolved. New work can also suggest a new
    workstream, which is created only when the user accepts it.
-3. **Equip** task threads to delegate subtasks and hand off out-of-scope
-   requests.
+3. **Equip** threads with question and recap tools and their usage guidance.
 4. **Show** state through the sidebar thread list, the Workstreams page, and
    per-thread banners.
 
@@ -75,20 +74,18 @@ what BB allows. Rows marked _(spike)_ were verified against BB 0.44 / SDK
 A project's root is one of three shapes, and each shape allows different
 environments.
 
-| Shape                                                                                                                                                                                    | How Workstreams detects it                                                                                                                                                                        | Shared environment                    | Isolated environment                                                                                                                                                                                                      | Torn down by core                                            |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| **Git checkout**: the project root is a repository                                                                                                                                       | `environments.listProviders({ projectId })` offers `git-worktree` as available, and a cached host probe (`git rev-parse --show-toplevel`) confirms that the root is the top level of a repository | Project checkout                      | BB managed worktree (`--new-environment worktree`), or a Workforest task checkout attached by path                                                                                                                        | Worktree: yes (the branch is kept). Workforest checkout: no. |
-| **Workforest workspace**: the root is a directory of repositories with no root repo, for example `~/Code/Workspaces/vercel-agent/vercel-agent-sdk` (`agents/ api/ front/ integrations/`) | `git-worktree` is unavailable, and the host probe finds no root repository but at least one child repository                                                                                      | Project checkout (the workspace root) | Workforest only: `wf task new <slug> --repo <repo>` for one repository, or `wf new <slug>` for a follow-up workspace across all of them. Attach the result with `--environment <path>`. **BB worktrees are unavailable.** | No. Remove with `wf delete`.                                 |
-| **No project**                                                                                                                                                                           | BB's personal project                                                                                                                                                                             | none                                  | A fresh personal workspace (`--new-environment personal`)                                                                                                                                                                 | Yes                                                          |
+| Shape                                                                                                                                                                                    | How Workstreams detects it                                                                                | Shared environment                    | Isolated environment                                                                                                                                                                                                      | Torn down by core                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| **Git checkout**: the project root is a repository                                                                                                                                       | `environments.listProviders({ projectId })` offers `git-worktree` as available                            | Project checkout                      | BB managed worktree (`--new-environment worktree`), or a Workforest task checkout attached by path                                                                                                                        | Worktree: yes (the branch is kept). Workforest checkout: no. |
+| **Workforest workspace**: the root is a directory of repositories with no root repo, for example `~/Code/Workspaces/vercel-agent/vercel-agent-sdk` (`agents/ api/ front/ integrations/`) | Provider availability determines supported environments; Workforest owns workspace detection and guidance | Project checkout (the workspace root) | Workforest only: `wf task new <slug> --repo <repo>` for one repository, or `wf new <slug>` for a follow-up workspace across all of them. Attach the result with `--environment <path>`. **BB worktrees are unavailable.** | No. Remove with `wf delete`.                                 |
+| **No project**                                                                                                                                                                           | BB's personal project                                                                                     | none                                  | A fresh personal workspace (`--new-environment personal`)                                                                                                                                                                 | Yes                                                          |
 
 - Workstreams always passes an environment explicitly. It never relies on
   `project-default` (I4).
 - Workstreams itself creates only project-checkout, BB-worktree, and
   personal-workspace environments. It never runs `wf`. Workforest checkouts are
-  created by agents following the per-thread instructions (§5) and repository
-  instructions, and cleaned up by whoever created them.
-- The shape is recomputed when the project's providers or root path change, and
-  otherwise cached per project.
+  created under Workforest and repository guidance, and cleaned up by whoever
+  created them.
 
 ## 4. Concepts and invariants
 
@@ -139,43 +136,20 @@ environments.
 - **I8. One projection.** The sidebar and the page render from one pure
   projection function over the same inputs.
 
-## 5. Thread roles and injected behavior
+## 5. Agent tools and explicit transfers
 
-Workstreams registers one agent tool, `WorkstreamsRecap` (§10.2), for every
-thread except side chats. For everything else agents use the `bb` CLI: BB's own
-spawn for delegation, and `bb workstreams handoff` for out-of-scope work.
-Workstreams contributes the tool and short, per-thread instructions through
-`bb.agents.configure`. `configure` is synchronous, and its context contains
-`thread { id, title, parentThreadId, sourceThreadId }`, `project`,
-`environment { path, branchName }`, `origin`, and `pluginMetadata`. It **does
-not include `sectionId` or visibility** _(spike)_, so role and workstream come
-from metadata plus a synchronous SQLite cache. Command details live in `--help`
-and the generated `plugin-commands` skill, not in the instructions.
+Workstreams contributes question and recap configuration through
+`bb.agents.configure`, independently of parent links, workstream placement, or
+project shape. Ordinary threads receive `WorkstreamsRecap` (§10.2) and question
+support. Side-chat forks receive question support without recap enrollment.
+Internal inference workers receive neither tools nor instructions. Providers
+with native question support use that capability; other providers receive the
+`AskUserQuestion` tool and its usage guidance.
 
-| Thread                      | Instructions (≤ 4096 characters)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Task (top-level, visible)   | "You are a task thread in **‹workstream›** (‹one-line description›). When the user requests or approves delegating separable subtasks to child threads, use `bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"`, always choosing the environment explicitly: ‹shape guidance›. Then coordinate and integrate here. If the user asks for something outside this thread's task or workstream, don't do it here: pass their request verbatim to `bb workstreams handoff --request-stdin` and reply with the link it prints." |
-| Delegate (child)            | "You are a delegated subtask of ‹parent›. Report results to it. Hand off out-of-scope requests with `bb workstreams handoff`. Don't spawn further threads."                                                                                                                                                                                                                                                                                                                                                                                    |
-| Hidden, side chat, internal | none                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-
-The ‹shape guidance› text depends on the project shape (§3):
-
-- **Git checkout:** "`--new-environment worktree` for code changes;
-  `--environment "$BB_ENVIRONMENT_ID"` otherwise."
-- **Workforest workspace:** "This project is a multi-repository Workforest
-  workspace, and BB worktrees are unavailable. For isolated code changes, create
-  a checkout with `wf task new <slug> --repo <repo>` (or `wf new <slug>` for a
-  follow-up across the whole workspace), and attach it with
-  `--environment <path>`. Otherwise use `--environment "$BB_ENVIRONMENT_ID"`."
-- **No project:** "`--environment "$BB_ENVIRONMENT_ID"` to share this workspace,
-  or `--new-environment personal`."
-
-**Delegation.** BB's spawn already sets the parent, lifecycle owner, project,
-and environment (_spike S5_). Workstreams recognizes a delegate structurally, by
-its `parentThreadId`, so it doesn't matter how the child was created (the CLI,
-the SDK, another plugin). Core retires the child's environment. The spawn
-command omits `--section`, so the child inherits its workstream through tree
-membership.
+Workstream membership and parent links support navigation. Repository
+instructions and execution plugins own checkout guidance and delegation
+behavior. Command details live in `--help` and the generated `plugin-commands`
+skill.
 
 **Handoff:
 `bb workstreams handoff (--request <text> | --request-stdin) [--note <text>] [--dry-run] [--json]`**
@@ -203,8 +177,6 @@ membership.
 
 - No handoff back to the caller.
 - At most 3 handoffs per turn, counted server-side per `ctx.threadId`.
-- "Delegates don't delegate" is an instruction, not an enforced rule: BB has no
-  hook on thread creation.
 - A handoff spawn retries with backoff while the target's new parent is still
   `starting`: spawning a child in that window returns HTTP 500 _(spike)_.
 
@@ -218,8 +190,9 @@ membership.
 works on macOS, including Claude's sandbox, but other providers' sandboxes may
 require approval to escalate.
 
-**Side quests.** These are handled **prospectively** through handoff. A per-turn
-drift flag (§10) is the safety net.
+**Scope changes.** A per-turn drift flag (§10) offers organizational placement
+updates. Explicit transfers require a user request or approval; the receiving
+thread owns the task and treats the dispatch instruction as fulfilled.
 
 ## 6. Intake router
 

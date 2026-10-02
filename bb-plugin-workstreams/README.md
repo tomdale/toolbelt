@@ -176,11 +176,11 @@ design and the contract the code is checked against.
   typing and suggests one home: a thread to continue, an existing workstream, or
   a new workstream, with a project and environment. Nothing changes until you
   accept it; Enter starts what the pickers show.
-- **Task threads**: top-level threads also get short instructions to delegate
-  subtasks with BB's own `bb thread spawn --parent-self` (with environment
-  guidance for the project's shape) and to hand off out-of-scope requests with
-  `bb workstreams handoff`. Delegation requires user approval. Delegates are
-  told to report to their parent.
+- **Agent tools**: threads receive question support and recap guidance through
+  `bb.agents.configure`, independently of workstream placement or parent links.
+  Side chats receive question support without recap enrollment; internal
+  inference workers receive neither. Repository and environment guidance belongs
+  to repository instructions and the execution plugins.
 - **Parent link** in child threads' headers (the Threads settings section).
 - **Reconciler**: BB emits no events for section changes, so Workstreams
   compares BB's state with its own every minute. Changes made elsewhere are
@@ -258,7 +258,7 @@ node eval/route.ts    # routing eval
 
 - `src/domain/`: pure logic: `tree.ts` (exact-once forests), `project.ts` (the
   projection shared by the sidebar, page, and CLI), `analysis.ts`,
-  `organize.ts`, `router.ts`, `instructions.ts`.
+  `organize.ts`, `router.ts`.
 - `src/server/`: `service.ts` (mutations, batches, undo, reconciler),
   `analyzer.ts`, `recap.ts` (the recap tool and reminders), `archive.ts`,
   `bootstrap.ts`, `router.ts`, `agents.ts` (`configure`), `map.ts`,

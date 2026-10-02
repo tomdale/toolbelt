@@ -126,7 +126,7 @@ describe("idle analysis", () => {
       expect(c.prompt).not.toContain("proj_");
       expect(c.prompt).not.toContain("Zebracorn");
     }
-    // Only the project-shape check lists projects; analysis never reads one.
+    // Thread analysis does not fetch project details.
     expect(
       w.harness.inspection.sdk.calls.filter((c) => c.path === "projects.get"),
     ).toEqual([]);

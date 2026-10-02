@@ -25,13 +25,4 @@ export const hostContract = defineRpcContract({
       stopReason: z.string().max(100).nullable().optional(),
     }),
   },
-  /** What a project root is on disk: a repository, or a directory of them. */
-  probe: {
-    input: z.object({ path: z.string().min(1).max(4096) }).strict(),
-    output: z.object({
-      exists: z.boolean(),
-      rootRepo: z.boolean(),
-      childRepos: z.number().int().nonnegative(),
-    }),
-  },
 });
