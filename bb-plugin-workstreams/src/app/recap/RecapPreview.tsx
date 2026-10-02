@@ -90,7 +90,14 @@ const EXAMPLES: readonly Example[] = [
       turnId: "preview",
       at: Date.now(),
       state: "waiting",
-      goal: "Waiting for the UI and server subagents building the theme toggle",
+      goal: "Building the theme toggle",
+      waitingAgents: [
+        { threadId: "preview-ui-agent", task: "Building the theme toggle UI" },
+        {
+          threadId: "preview-server-agent",
+          task: "Adding theme preference support to the server",
+        },
+      ],
       timeout: 120,
       latest: [],
       review: [],

@@ -29,6 +29,7 @@ it("advertises named parameters on a concrete root object", () => {
   expect(Object.keys(schema.properties!)).toEqual([
     "state",
     "goal",
+    "waitingAgents",
     "latest",
     "timeout",
     "review",
@@ -160,6 +161,31 @@ it("rejects substantive unused fields and unknown keys", () => {
     );
 });
 
+it("stores waiting agents and includes their linked tasks in the recap output", () => {
+  const recap = toRecap(
+    recapInputSchema.parse({
+      state: "waiting",
+      goal: "Building the theme toggle",
+      timeout: 60,
+      waitingAgents: [
+        { threadId: "thr_ui", task: "Building the theme toggle UI" },
+        { threadId: "thr_server", task: "Adding theme preference support" },
+      ],
+    }),
+    { id: "r", turnId: "t", at: 1 },
+  );
+  expect(recap.waitingAgents).toEqual([
+    { threadId: "thr_ui", task: "Building the theme toggle UI" },
+    { threadId: "thr_server", task: "Adding theme preference support" },
+  ]);
+  expect(recapMarkdown(recap)).toContain(
+    "- Building the theme toggle UI · @thread:thr_ui",
+  );
+  expect(recapMarkdown(recap)).toContain(
+    "- Adding theme preference support · @thread:thr_server",
+  );
+});
+
 it("uses the goal as the Waiting title and requires a timeout", () => {
   const input = {
     state: "waiting",
@@ -260,7 +286,7 @@ it("omits complete links from normalization and stored recap Markdown", () => {
     links: [{ title: "Report", location: "/work/report.md" }],
   };
   const recap = toRecap(
-    { ...input, next: [] },
+    { ...input, next: [], waitingAgents: [] },
     { id: "r", turnId: "t", at: 1 },
   );
   expect(recap.links).toEqual([]);

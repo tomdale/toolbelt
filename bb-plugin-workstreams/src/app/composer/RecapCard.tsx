@@ -297,31 +297,62 @@ function WaitingTasks({
   clearance: string;
 }) {
   const compact = useContext(CompactContext);
+  const agents = recap.waitingAgents ?? [];
+  const goalClass = cn(
+    "font-medium tracking-[-0.006em] text-foreground",
+    compact ? COMPACT_GOAL_CLASS : GOAL_CLASS,
+  );
   return (
     <div className={cn("py-2", clearance)}>
-      <div
-        data-progress="active"
-        className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
-      >
+      {agents.length ? (
+        <ul aria-label="Waiting tasks" className="m-0 list-none space-y-2 p-0">
+          {agents.map((agent, index) => (
+            <li key={agent.threadId} className="min-w-0">
+              <div
+                data-progress="active"
+                className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+              >
+                <div role="heading" aria-level={2} className={goalClass}>
+                  <RecapText
+                    text={agent.task}
+                    typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
+                  />
+                </div>
+                {index === 0 ? (
+                  <WaitingCountdown
+                    recap={recap}
+                    cancelled={cancelled}
+                    onCancel={onCancel}
+                  />
+                ) : null}
+              </div>
+              <div className="mt-0.5 pl-0.5 text-muted-foreground">
+                <ActivityThreadLink
+                  threadId={agent.threadId}
+                  fallback="Agent thread"
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
         <div
-          role="heading"
-          aria-level={2}
-          className={cn(
-            "font-medium tracking-[-0.006em] text-foreground",
-            compact ? COMPACT_GOAL_CLASS : GOAL_CLASS,
-          )}
+          data-progress="active"
+          className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
         >
-          <RecapText
-            text={recap.goal}
-            typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
+          <div role="heading" aria-level={2} className={goalClass}>
+            <RecapText
+              text={recap.goal}
+              typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
+            />
+          </div>
+          <WaitingCountdown
+            recap={recap}
+            cancelled={cancelled}
+            onCancel={onCancel}
           />
         </div>
-        <WaitingCountdown
-          recap={recap}
-          cancelled={cancelled}
-          onCancel={onCancel}
-        />
-      </div>
+      )}
     </div>
   );
 }
@@ -388,7 +419,11 @@ function StateLine({ recap, clearance }: { recap: Recap; clearance: string }) {
       {state === "review"
         ? "Ready for Review"
         : state === "waiting"
-          ? "Waiting"
+          ? recap.waitingAgents?.length === 1
+            ? "Waiting for Agent"
+            : recap.waitingAgents && recap.waitingAgents.length > 1
+              ? "Waiting for Agents"
+              : "Waiting"
           : "Complete"}
     </p>
   );
