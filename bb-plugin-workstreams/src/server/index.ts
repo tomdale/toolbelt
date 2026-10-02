@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { actOn, registerCli } from "./cli.ts";
 import { isCurrent } from "../domain/analysis.ts";
-import { refreshShapes, registerAgentInstructions } from "./agents.ts";
+import { registerAgentInstructions } from "./agents.ts";
 import { Analyzer } from "./analyzer.ts";
 import { RecapArchive } from "./archive.ts";
 import { Bootstrap } from "./bootstrap.ts";
@@ -216,7 +216,7 @@ export default async function plugin(bb: BbPluginApi) {
   });
   const questions = new QuestionStore(db, bb);
   registerQuestionTool(bb, questions);
-  registerAgentInstructions(bb, db, recaps);
+  registerAgentInstructions(bb, recaps);
   const map = new WorkstreamMap(db);
   const bootstrap = new Bootstrap({
     db,
@@ -370,11 +370,6 @@ export default async function plugin(bb: BbPluginApi) {
         .then(() => {
           analyzer.catchUp(service.threads());
           void sweepSnoozes();
-          void refreshShapes(bb.sdk, db, async (hostId, path) =>
-            hostRpc.call("probe", { path }, { hostId, timeoutMs: 15_000 }),
-          ).catch((error: unknown) =>
-            bb.log.warn(`Project shape check failed: ${String(error)}`),
-          );
           map.refresh(service.threads(), analyzer.all());
         })
         .catch((error: unknown) =>

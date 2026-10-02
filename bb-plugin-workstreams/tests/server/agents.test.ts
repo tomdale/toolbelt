@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
 import { fakeWorld } from "./fake-bb.ts";
-import { instructionsFor, quote } from "../../src/domain/instructions.ts";
 import { WORKER_THREAD_MARKER } from "../../src/domain/worker.ts";
 
 type World = Awaited<ReturnType<typeof fakeWorld>>;
@@ -9,75 +8,6 @@ let world: World | null = null;
 afterEach(async () => {
   await world?.harness.lifecycle.dispose();
   world = null;
-});
-
-describe("instructions", () => {
-  it("guides delegation by project shape", () => {
-    const task = (shape: "git" | "workforest" | "none") =>
-      instructionsFor({
-        kind: "task",
-        workstream: { name: "Alpha", description: "Alpha product work." },
-        shape,
-      });
-    expect(task("git")).toContain(
-      "`--new-environment worktree` for code changes",
-    );
-    expect(task("workforest")).toContain("wf task new <slug> --repo <repo>");
-    expect(task("workforest")).toContain("BB worktrees are unavailable");
-    expect(task("none")).toContain("`--new-environment personal`");
-    expect(task("git")).toContain(
-      'bb thread spawn --parent-self --lifecycle-owner-thread "$BB_THREAD_ID"',
-    );
-    expect(task("git")).toContain("bb workstreams handoff --request-stdin");
-    expect(task("git").length).toBeLessThanOrEqual(4096);
-  });
-
-  it("keeps delegates from delegating", () => {
-    const text = instructionsFor({ kind: "delegate", parentTitle: "Fix tabs" });
-    expect(text).toContain('delegated subtask of "Fix tabs"');
-    expect(text).toContain("Report results and scope questions to it");
-    expect(text).toContain(
-      "Your parent coordinates ownership and further delegation",
-    );
-    expect(text).toContain(
-      "ask it before spawning further threads or transferring ownership",
-    );
-    expect(text).not.toContain("bb workstreams handoff");
-  });
-
-  it("retains direct requests regardless of organizational placement or workspace shape", () => {
-    for (const shape of ["git", "workforest", "none", "unknown"] as const) {
-      for (const workstream of [
-        null,
-        { name: "Alpha", description: "Alpha work" },
-      ]) {
-        const text = instructionsFor({ kind: "task", workstream, shape });
-        expect(text).toContain("Continue the user's requests here");
-        expect(text).toContain(
-          "resolve repository or environment setup as part of the task",
-        );
-        expect(text).toContain(
-          "only when the user explicitly requests or approves that transfer",
-        );
-        expect(text).toContain("share the returned thread link with the user");
-        expect(text).toContain(
-          "Keep coordination lightweight so it does not delay the requested work",
-        );
-        expect(text).toContain("at most one bounded metadata lookup");
-        expect(text).toContain(
-          "ordinary requests need no other-thread investigation",
-        );
-        expect(text).not.toContain("don't do it here");
-        expect(text.length).toBeLessThanOrEqual(4096);
-      }
-    }
-  });
-
-  it("strips markup and shell syntax from names", () => {
-    expect(quote("Evil `rm -rf` $(x) **bold**\nnext")).toBe(
-      "Evil rm -rf (x) bold next",
-    );
-  });
 });
 
 describe("configure", () => {
@@ -102,19 +32,23 @@ describe("configure", () => {
       }),
     );
 
-  it("gives task threads their workstream and delegates their parent, with the recap tool", async () => {
+  it("configures tools independently of thread hierarchy and workstream placement", async () => {
     const w = await setup();
     const task = await resolve(w, { id: "task" });
-    expect(task.instructions).toContain(
-      'task thread in the "Alpha" workstream',
-    );
+    expect(task.instructions).not.toContain("Alpha");
+    expect(task.instructions).not.toContain("task thread");
+    expect(task.instructions).not.toContain("bb workstreams handoff");
+    expect(task.instructions).not.toContain("wf task new");
     expect(task.tools.map((tool) => tool.name)).toEqual([
       "WorkstreamsRecap",
       "AskUserQuestion",
     ]);
     expect(task.instructions).toContain("End every turn with WorkstreamsRecap");
     const kid = await resolve(w, { id: "kid", parentThreadId: "task" });
-    expect(kid.instructions).toContain('delegated subtask of "Fix tabs"');
+    expect(kid.instructions).toEqual(task.instructions);
+    expect(kid.tools.map((tool) => tool.name)).toEqual(
+      task.tools.map((tool) => tool.name),
+    );
   });
 
   it("keeps worker threads out of recap enrollment and role instructions", async () => {
@@ -171,7 +105,7 @@ describe("configure", () => {
     );
   });
 
-  it("trusts task metadata for a thread the reconciler hasn't seen yet", async () => {
+  it("configures unseen threads independently of role metadata freshness", async () => {
     const w = await setup();
     const fresh = await resolve(
       w,
@@ -184,8 +118,10 @@ describe("configure", () => {
         },
       },
     );
-    expect(fresh.instructions).toContain('"Alpha" workstream');
-    // Stale task metadata on an unseen thread (a hidden fork's copy) is ignored.
+    expect(fresh.instructions).not.toContain("Alpha");
+    expect(fresh.instructions).toContain(
+      "End every turn with WorkstreamsRecap",
+    );
     const copy = await resolve(
       w,
       { id: "hidden-fork" },
@@ -197,7 +133,10 @@ describe("configure", () => {
         },
       },
     );
-    expect(copy.instructions).not.toContain("Alpha");
+    expect(copy.instructions).toEqual(fresh.instructions);
+    expect(copy.tools.map((tool) => tool.name)).toEqual(
+      fresh.tools.map((tool) => tool.name),
+    );
   });
 });
 
