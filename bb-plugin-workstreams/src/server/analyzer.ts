@@ -119,6 +119,31 @@ export class Analyzer {
     return out;
   }
 
+  /** Opening and recent user requests establish what a tool-assisted task concerns. */
+  async ownershipRequests(threadId: string): Promise<string[]> {
+    const sdk = this.deps.sdk();
+    const [history, first] = await Promise.all([
+      sdk.threads.promptHistory({ threadId, limit: "6" }),
+      sdk.threads.events.list({
+        threadId,
+        types: ["client/turn/requested"],
+        order: "asc",
+        limit: "4",
+      }),
+    ]);
+    const opening = first
+      .map((event) =>
+        inputText((event.data as { input?: unknown } | null)?.input),
+      )
+      .find(isUserRequest);
+    const recent = history
+      .map((prompt) => inputText(prompt.input))
+      .filter(isUserRequest)
+      .slice(0, 2)
+      .reverse();
+    return [...new Set([...(opening ? [opening] : []), ...recent])];
+  }
+
   /** Subjects for any threads, archived ones included. */
   subjectsOf(threadIds: readonly string[]): Map<string, string | null> {
     const out = new Map<string, string | null>();

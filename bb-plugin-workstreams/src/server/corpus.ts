@@ -1,3 +1,4 @@
+import { corpusLabel } from "../domain/corpus-label.ts";
 import { randomUUID } from "node:crypto";
 import type { CorpusEntity } from "../domain/corpus.ts";
 import type { Database } from "./db.ts";
@@ -46,8 +47,7 @@ export class CorpusStore {
         const linked = existing.get(record.sectionId);
         const entity = linked ? this.getById(linked) : null;
         if (entity) {
-          const name =
-            entity.parentId === null ? record.name.trim() : entity.name;
+          const name = entity.name;
           const aliases = cleanAliases([
             ...entity.aliases,
             ...record.aliases,
@@ -73,7 +73,7 @@ export class CorpusStore {
             )
             .run(
               name,
-              record.description.trim() || entity.description,
+              entity.description || record.description.trim(),
               JSON.stringify(aliases),
               entity.id,
             );
@@ -90,6 +90,33 @@ export class CorpusStore {
       }
     });
     seed();
+  }
+
+  reset(): void {
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM ws_corpus_subject").run();
+      this.db.prepare("DELETE FROM ws_corpus_group").run();
+      this.db.prepare("UPDATE ws_corpus_entity SET parent_id = NULL").run();
+      this.db.prepare("DELETE FROM ws_corpus_entity").run();
+    })();
+  }
+
+  /** Navigation labels can bind existing identities, never establish semantic knowledge. */
+  syncGroups(records: readonly CorpusSeed[]): void {
+    const entities = this.list();
+    this.db.transaction(() => {
+      const existing = this.groups();
+      this.db.prepare("DELETE FROM ws_corpus_group").run();
+      for (const record of records) {
+        const entity =
+          entities.find((e) => e.id === existing.get(record.sectionId)) ??
+          entities.find(
+            (e) =>
+              normalize(corpusLabel(e.id, entities)) === normalize(record.name),
+          );
+        if (entity) this.bindGroup(record.sectionId, entity.id);
+      }
+    })();
   }
 
   resolve(name: string, parentId: string | null = null): CorpusEntity | null {
@@ -180,6 +207,20 @@ export class CorpusStore {
     return entity;
   }
 
+  rememberProposal(proposal: {
+    name: string;
+    description: string;
+    parentId: string | null;
+    ancestors?: { name: string; description: string }[];
+  }): CorpusEntity {
+    return this.db.transaction(() => {
+      let parent = proposal.parentId;
+      for (const ancestor of proposal.ancestors ?? [])
+        parent = this.remember(ancestor.name, ancestor.description, parent).id;
+      return this.remember(proposal.name, proposal.description, parent);
+    })();
+  }
+
   bindGroup(sectionId: string, entityId: string): void {
     if (!this.getById(entityId))
       throw new Error(`Unknown corpus entity: ${entityId}`);
@@ -201,14 +242,37 @@ export class CorpusStore {
     );
   }
 
-  assign(threadId: string, entityId: string): void {
+  assign(threadId: string, entityId: string, evidence?: string): void {
     if (!this.getById(entityId))
       throw new Error(`Unknown corpus entity: ${entityId}`);
     this.db
       .prepare(
-        "INSERT INTO ws_corpus_subject(thread_id, entity_id) VALUES (?, ?) ON CONFLICT(thread_id) DO UPDATE SET entity_id = excluded.entity_id",
+        "INSERT INTO ws_corpus_subject(thread_id, entity_id, evidence, source) VALUES (?, ?, ?, ?) ON CONFLICT(thread_id) DO UPDATE SET entity_id = excluded.entity_id, evidence = excluded.evidence, source = excluded.source",
       )
-      .run(threadId, entityId);
+      .run(
+        threadId,
+        entityId,
+        evidence ?? null,
+        evidence ? "classified" : "selected",
+      );
+  }
+
+  isFresh(threadId: string, evidence: string): boolean {
+    const row = this.db
+      .prepare(
+        "SELECT evidence, source FROM ws_corpus_subject WHERE thread_id = ?",
+      )
+      .get(threadId) as { evidence: string | null; source: string } | undefined;
+    return (
+      row?.source === "selected" ||
+      (row?.source === "classified" && row.evidence === evidence)
+    );
+  }
+
+  unassign(threadId: string): void {
+    this.db
+      .prepare("DELETE FROM ws_corpus_subject WHERE thread_id = ?")
+      .run(threadId);
   }
 
   subjects(): Map<string, string> {

@@ -22,12 +22,14 @@ const entries = [
 it("shows all known entries and filters inactive features by alias and scope", async () => {
   const call = vi.fn(async () => ({ entities: entries }));
   render(<Catalog rpc={{ call } as never} />);
-  expect(await screen.findByText("Lantern: Shelves")).toBeTruthy();
+  expect(await screen.findByText("Shelves")).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Search products and features"), {
     target: { value: "Storage" },
   });
-  expect(screen.getByText("Lantern: Shelves")).toBeTruthy();
-  expect(screen.queryByText("Lantern", { selector: "h3" })).toBeNull();
+  expect(screen.getByText("Shelves").getAttribute("title")).toBe(
+    "Lantern: Shelves",
+  );
+  expect(screen.getByText("Lantern", { selector: "h3" })).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Search products and features"), {
     target: { value: "unknown" },
   });

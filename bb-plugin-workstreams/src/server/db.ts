@@ -306,6 +306,8 @@ const MIGRATIONS = [
     thread_id TEXT PRIMARY KEY,
     entity_id TEXT NOT NULL REFERENCES ws_corpus_entity(id)
   )`,
+  "ALTER TABLE ws_corpus_subject ADD COLUMN evidence TEXT",
+  "ALTER TABLE ws_corpus_subject ADD COLUMN source TEXT NOT NULL DEFAULT 'legacy'",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {
