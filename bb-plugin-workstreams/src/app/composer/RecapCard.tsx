@@ -655,7 +655,11 @@ function useRecap(threadId: string | null) {
     await rpc.call("recap_restore", { threadId, recapId }).catch(() => {});
     load();
   };
-  return { ...state, dismiss, restore };
+  const sendNext = async (recapId: string, action: string) => {
+    if (!threadId) return;
+    await rpc.call("recap_send", { threadId, recapId, action }).catch(() => {});
+  };
+  return { ...state, dismiss, restore, sendNext };
 }
 
 const CORNER_BUTTON =
@@ -671,6 +675,45 @@ type CardProps = {
   archiveError: string | null;
 };
 
+/**
+ * The recap's suggested next actions, left in the bottom bar. One click sends
+ * the text as the user's message; while one is sending, the others wait.
+ */
+function NextActions({
+  actions,
+  onSend,
+}: {
+  actions: string[];
+  onSend?: (action: string) => Promise<void>;
+}) {
+  const [pending, setPending] = useState<string | null>(null);
+  return (
+    <ul
+      aria-label="Next actions"
+      className="m-0 flex min-w-0 list-none flex-wrap items-center gap-1.5 p-0"
+    >
+      {actions.map((action) => (
+        <li key={action} className="min-w-0 max-w-full" title={action}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 max-w-full bg-background/60 px-2.5 text-[11.5px] font-medium"
+            disabled={!onSend || pending !== null}
+            onClick={() => {
+              if (!onSend) return;
+              setPending(action);
+              void onSend(action).finally(() => setPending(null));
+            }}
+          >
+            <span className="truncate">{action}</span>
+          </Button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function CardBody({
   recap,
   layout,
@@ -681,7 +724,12 @@ function CardBody({
   archiveError,
   onArchive,
   onDismiss,
-}: CardProps & { onArchive?: () => void; onDismiss?: () => void }) {
+  onSend,
+}: CardProps & {
+  onArchive?: () => void;
+  onDismiss?: () => void;
+  onSend?: (action: string) => Promise<void>;
+}) {
   const compact = layout === "minimal";
   const compactArchive = compact && showArchive;
   return (
@@ -710,19 +758,26 @@ function CardBody({
         </button>
       ) : null}
       {/* The footer strip runs edge to edge under the rows, so the card
-          without Archive (or an error) stays short. */}
-      {(showArchive && !compact) || archiveError ? (
+          without next actions, Archive, or an error stays short. Next
+          actions sit left; Archive and an error keep the right. */}
+      {recap.next.length > 0 || (showArchive && !compact) || archiveError ? (
         <div
           className={cn(
             compact ? "-mx-3 -mb-2" : "-mx-4 -mb-3",
-            "mt-1.5 flex items-center justify-end gap-3 rounded-b-[7px] border-t px-3 py-2",
+            "mt-1.5 flex items-center gap-3 rounded-b-[7px] border-t px-3 py-2",
             ACCENT[recap.state].footer,
           )}
         >
+          {recap.next.length > 0 ? (
+            <NextActions actions={recap.next} onSend={onSend} />
+          ) : null}
           {archiveError ? (
             <p
               role="alert"
-              className="mr-auto min-w-0 text-[11px] text-red-700 dark:text-red-300"
+              className={cn(
+                "min-w-0 text-[11px] text-red-700 dark:text-red-300",
+                recap.next.length > 0 ? "ml-auto" : "mr-auto",
+              )}
             >
               {archiveError}
             </p>
@@ -733,7 +788,10 @@ function CardBody({
             <Button
               variant="outline"
               size="sm"
-              className="bg-background/60"
+              className={cn(
+                "bg-background/60",
+                recap.next.length > 0 && "ml-auto",
+              )}
               disabled={archiveBusy}
               onClick={onArchive}
             >
@@ -879,8 +937,10 @@ function useHold(
 
 /**
  * The agent's recap of the thread's latest turn, above the composer, with
- * dismiss in its top-right corner and, when the thread can be archived,
- * Archive at the right of a footer strip under it. It stays up while the user drafts,
+ * dismiss in its top-right corner and, under the rows, a footer bar with the
+ * recap's suggested next actions at the left (each sends its text as the
+ * user's message) and, when the thread can be archived, Archive at the right.
+ * It stays up while the user drafts,
  * so they can refer to it in their message, and hides once a message is sent
  * or the thread runs, while a question card is open, and inside the inline
  * message editor.
@@ -907,7 +967,7 @@ export function RecapCard() {
     isRunning,
   });
   const sending = useContinuing({ drafting: false, isSubmitting, isRunning });
-  const { recap, dismissed, capped, files, dismiss, restore } =
+  const { recap, dismissed, capped, files, dismiss, restore, sendNext } =
     useRecap(threadId);
   const { prefs } = useRecapPrefs();
   const layout: RecapLayout = prefs?.layout ?? "full";
@@ -1054,6 +1114,7 @@ export function RecapCard() {
                   {...frame}
                   onArchive={() => void archive.archive()}
                   onDismiss={() => void dismiss(frame.recap.id)}
+                  onSend={(action) => sendNext(frame.recap.id, action)}
                 />
               </div>
             </div>

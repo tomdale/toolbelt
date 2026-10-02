@@ -452,15 +452,18 @@ it.
   ≤ 120 each), `review` (1–3 steps, ≤ 160 each, required for review: what to
   check and the expected result), and `links` (≤ 8 absolute file paths or HTTPS
   URLs, optional in review only and limited to artifacts or pages explicitly
-  being reviewed). Items in `latest`, `tasks`, and `review` accept strings or
+  being reviewed). `next` (1–3 plain-text messages the user might send next — a
+  follow-up action or a question, ≤ 120 each, complete and review only) renders
+  as buttons in the card's bottom bar; clicking one sends its text verbatim as
+  the user's message. Items in `latest`, `tasks`, and `review` accept strings or
   `{ step, expect }` objects. `expect` is optional secondary text shown as a
   bulleted subrow. Separate items render as a list; review items are numbered. A
   single string counts as one item. Keep distinct results in separate items
   rather than joining them with semicolons. UI review steps explain how to reach
   and exercise the UI; source links qualify when source review is requested.
   Waiting recaps require `tasks` (1–3 async tasks, ≤ 120 each) and `timeout` (an
-  integer from 1 to 86400 seconds), and omit latest, review, and links. The
-  deadline is the recap timestamp plus the timeout. Timers recover on plugin
+  integer from 1 to 86400 seconds), and omit latest, review, links, and next.
+  The deadline is the recap timestamp plus the timeout. Timers recover on plugin
   reload. At expiry, a durable reservation permits one agent-only status prompt
   if the recap and turn are still current and the thread is idle, visible,
   unarchived, and has no queued work. Dispatch validates the recap and turn

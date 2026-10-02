@@ -31,6 +31,7 @@ const EXAMPLES: readonly Example[] = [
       ],
       review: [],
       links: [],
+      next: ["Run the full test suite", "Open a pull request"],
     },
   },
   {
@@ -57,6 +58,7 @@ const EXAMPLES: readonly Example[] = [
         },
       ],
       links: [],
+      next: ["Looks good, merge it", "Why a carousel instead of a list?"],
     },
   },
   {
@@ -73,6 +75,7 @@ const EXAMPLES: readonly Example[] = [
       latest: [],
       review: [],
       links: [],
+      next: [],
     },
   },
 ];

@@ -35,6 +35,7 @@ import {
 } from "../domain/recap.ts";
 import type { RecapPrefs } from "../domain/recapPrefs.ts";
 import type { Database } from "./db.ts";
+import { UserError } from "./service.ts";
 import { ASK_USER_QUESTION_RENDERER_ID } from "./questions/contracts.ts";
 import { ToolFailureGuard } from "./toolFailureGuard.ts";
 
@@ -373,6 +374,25 @@ export class AgentRecaps {
   /** Restores the current recap card on every client. */
   restore(threadId: string, recapId: string) {
     this.setDismissed(threadId, recapId, false);
+  }
+
+  /**
+   * Sends one of the current recap's suggested next actions as the user's
+   * message, queued behind any running turn. Queued behind, because the card
+   * is only shown while the thread is idle; the message dispatches as fresh
+   * input, which clears the recap like any user message.
+   */
+  async sendNext(threadId: string, recapId: string, action: string) {
+    const stored = this.get(threadId);
+    if (stored?.recap.id !== recapId)
+      throw new UserError("This recap is no longer current.");
+    if (!stored.recap.next.includes(action))
+      throw new UserError("This suggestion is no longer offered.");
+    await this.deps.bb.sdk.threads.send({
+      threadId,
+      mode: "queue-if-active",
+      input: [{ type: "text", text: action, mentions: [] }],
+    });
   }
 
   private setDismissed(threadId: string, recapId: string, dismissed: boolean) {

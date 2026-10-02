@@ -75,6 +75,7 @@ const RECAP = {
   latest: ["Card renders"],
   review: [],
   links: [],
+  next: [],
 };
 
 async function mount(
@@ -88,6 +89,7 @@ async function mount(
     pendingThreadId?: string;
     threads?: ReturnType<typeof sidebarThread>[];
     archive?: () => { ok: boolean } | Promise<{ ok: boolean }>;
+    send?: (input: unknown) => { ok: boolean } | Promise<{ ok: boolean }>;
   } = {},
 ) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
@@ -145,6 +147,11 @@ async function mount(
           dismissed = false;
           return { ok: true };
         },
+        recap_send:
+          options.send ??
+          (() => {
+            throw new Error("unexpected recap_send");
+          }),
       },
     },
   );
@@ -643,5 +650,75 @@ it("colors hash digits and letters from settings", async () => {
   expect(sha.style.color).toBe("rgb(17, 34, 51)");
   expect((sha.querySelector("span span") as HTMLElement).style.color).toBe(
     "rgb(68, 85, 102)",
+  );
+});
+
+it("offers the recap's next actions as buttons in the bottom bar", async () => {
+  const slot = await mount({
+    recap: { next: ["Run the full test suite", "Open a pull request"] },
+  });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  const list = slot.getByRole("list", { name: "Next actions" });
+  expect(region.contains(list)).toBe(true);
+  expect(list.textContent).toContain("Run the full test suite");
+  expect(list.textContent).toContain("Open a pull request");
+  // With next actions present, Archive yields the bar's right side to them.
+  expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
+  fireEvent.click(slot.getByRole("button", { name: "Open a pull request" }));
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls).toContainEqual({
+      method: "recap_send",
+      input: {
+        threadId: "t1",
+        recapId: "r1",
+        action: "Open a pull request",
+      },
+    }),
+  );
+  expect(
+    slot.inspection.rpcCalls.find((c) => c.method === "recap_send")?.input,
+  ).toMatchObject({ action: "Open a pull request" });
+});
+
+it("sends no next actions for a waiting recap", async () => {
+  const slot = await mount({
+    recap: {
+      state: "waiting",
+      tasks: ["Running tests"],
+      timeout: 60,
+      latest: [],
+    },
+  });
+  await slot.findByRole("region", { name: "Latest recap" });
+  expect(slot.queryByRole("list", { name: "Next actions" })).toBeNull();
+});
+
+it("keeps the other next actions idle while one is sending", async () => {
+  let resolve!: (value: { ok: boolean }) => void;
+  const sent = new Promise<{ ok: boolean }>((done) => {
+    resolve = done;
+  });
+  const slot = await mount({
+    recap: { next: ["Run the full test suite", "Open a pull request"] },
+    send: () => sent,
+  });
+  await slot.findByRole("region", { name: "Latest recap" });
+  fireEvent.click(
+    slot.getByRole("button", { name: "Run the full test suite" }),
+  );
+  await waitFor(() =>
+    expect(
+      slot
+        .getByRole("button", { name: "Open a pull request" })
+        .getAttribute("disabled"),
+    ).not.toBeNull(),
+  );
+  resolve({ ok: true });
+  await waitFor(() =>
+    expect(
+      slot
+        .getByRole("button", { name: "Open a pull request" })
+        .getAttribute("disabled"),
+    ).toBeNull(),
   );
 });

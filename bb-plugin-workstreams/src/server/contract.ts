@@ -468,6 +468,18 @@ export const rpcContract = defineRpcContract({
     input: z.object({ threadId: z.string().min(1), recapId: z.string() }),
     output: z.object({ ok: z.literal(true) }),
   },
+  /**
+   * Sends one of the current recap's suggested next actions as the user's
+   * message. `action` must be one the recap still offers.
+   */
+  recap_send: {
+    input: z.object({
+      threadId: z.string().min(1),
+      recapId: z.string(),
+      action: z.string().min(1),
+    }),
+    output: z.object({ ok: z.literal(true) }),
+  },
   /** Workstreams' feature-grouped preferences (domain/prefs.ts). */
   prefs: {
     input: z.null(),

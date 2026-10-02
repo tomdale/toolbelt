@@ -645,3 +645,48 @@ describe("agent recaps", () => {
     expect(off.corrections()).toHaveLength(0);
   });
 });
+
+describe("next actions", () => {
+  it("sends a chosen action as the user's message, queued behind any turn", async () => {
+    const s = await world();
+    s.w.turn("t1");
+    await s.report({ ...RECAP, next: ["Run the full test suite"] });
+    const { recap } = await s.card();
+    await s.w.harness.behavior.callRpc("recap_send", {
+      threadId: "t1",
+      recapId: recap!.id,
+      action: "Run the full test suite",
+    });
+    const send = s.w.sent.at(-1)!;
+    expect(send.threadId).toBe("t1");
+    expect(send.mode).toBe("queue-if-active");
+    expect(send.input).toEqual([
+      { type: "text", text: "Run the full test suite", mentions: [] },
+    ]);
+    // The dispatch clears the recap like any fresh user input.
+    s.hook()(makeMessageDispatchHookContext({ thread: s.thread() }));
+    expect((await s.card()).recap).toBeNull();
+  });
+
+  it("rejects a stale recap and an action it no longer offers", async () => {
+    const s = await world();
+    s.w.turn("t1");
+    await s.report({ ...RECAP, next: ["Run the full test suite"] });
+    const { recap } = await s.card();
+    await expect(
+      s.w.harness.behavior.callRpc("recap_send", {
+        threadId: "t1",
+        recapId: recap!.id,
+        action: "Ship it",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      s.w.harness.behavior.callRpc("recap_send", {
+        threadId: "t1",
+        recapId: "stale",
+        action: "Run the full test suite",
+      }),
+    ).rejects.toThrow();
+    expect(s.w.sent).toHaveLength(0);
+  });
+});
