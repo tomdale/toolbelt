@@ -128,17 +128,17 @@ design and the contract the code is checked against.
   steps, with an icon-only Archive beside ✕. The card sits above the composer,
   with a dismiss ✕ in its corner and, when the thread can be archived,
   **Archive** at the right of a footer strip along its bottom edge. Click a
-  suggested action to send it; use its edit button or choose **Edit in
-  composer** from the overflow menu to add its text to the draft instead. Its
-  state marks the sidebar row. Each recap also stays in the thread as a tinted
-  **Recap** tool row; expand it to read the recap. Fresh input clears the card.
-  A turn that ends without either gets an agent-only reminder, three by default
-  (Settings → **Recap**: on/off, reminders 0–10, and a Full or Compact layout).
-  BB reports turn completion after the fact, so the turn's own reply is already
-  visible when the reminder arrives. The tool reaches each thread when its
-  provider session next starts. Reminders go only to threads that certainly have
-  it: threads created since recaps were turned on (for a fork, the thread its
-  fork chain started from), and threads whose agent has called it.
+  suggested action to send it; Shift-click to add its text to the draft instead,
+  or choose **Edit in composer** from the overflow menu. Its state marks the
+  sidebar row. Each recap also stays in the thread as a tinted **Recap** tool
+  row; expand it to read the recap. Fresh input clears the card. A turn that
+  ends without either gets an agent-only reminder, three by default (Settings →
+  **Recap**: on/off, reminders 0–10, and a Full or Compact layout). BB reports
+  turn completion after the fact, so the turn's own reply is already visible
+  when the reminder arrives. The tool reaches each thread when its provider
+  session next starts. Reminders go only to threads that certainly have it:
+  threads created since recaps were turned on (for a fork, the thread its fork
+  chain started from), and threads whose agent has called it.
 - **Archive**: on a complete or review recap, when BB has no unfinished tasks,
   goals, queued messages, interactions, or background work, and every child and
   lifecycle dependent is complete. Archiving a review recap accepts its result.

@@ -826,11 +826,13 @@ const NEXT_ACTION_ACCENT: Record<Recap["state"], string> = {
 function NextActionItem({
   action,
   onSend,
+  onCompose,
   disabled,
   state,
 }: {
   action: NextAction;
   onSend?: (message: string) => Promise<void>;
+  onCompose?: (message: string) => void;
   disabled: boolean;
   state: Recap["state"];
 }) {
@@ -842,26 +844,18 @@ function NextActionItem({
       variant="outline"
       size="sm"
       className="h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground"
-      disabled={disabled || !onSend}
-      onClick={() => {
-        if (onSend) void onSend(message);
+      disabled={disabled || (!onSend && !onCompose)}
+      aria-description="Click to send, Shift-click to edit in composer"
+      onClick={(event) => {
+        if (event.shiftKey) onCompose?.(message);
+        else if (onSend) void onSend(message);
       }}
     >
       <span>{title}</span>
     </Button>
   );
-  const description =
-    typeof action === "string"
-      ? title !== message
-        ? message
-        : null
-      : action.description;
-  return description ? (
-    <Hint label={description} title={description}>
-      {button}
-    </Hint>
-  ) : (
-    button
+  return (
+    <Hint label="Click to send, Shift-click to edit in composer">{button}</Hint>
   );
 }
 
@@ -928,19 +922,8 @@ function NextActions({
         className="pointer-events-none absolute left-0 top-0 m-0 flex w-max list-none items-center gap-1.5 p-0 opacity-0"
       >
         {actions.map((action, index) => (
-          <li key={index} className="flex shrink-0 items-center gap-0.5">
+          <li key={index} className="shrink-0">
             <NextActionItem action={action} disabled state={state} />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-7 shrink-0"
-              aria-hidden="true"
-              tabIndex={-1}
-              disabled
-            >
-              <Icon name="Edit" aria-hidden className="size-3.5" />
-            </Button>
           </li>
         ))}
       </ul>
@@ -1007,21 +990,10 @@ function NextActions({
               <NextActionItem
                 action={action}
                 onSend={send}
+                onCompose={compose}
                 disabled={pending}
                 state={state}
               />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
-                aria-label={`Edit ${nextActionTitle(action)} in composer`}
-                aria-description="Add this suggested message to the composer without sending"
-                disabled={pending}
-                onClick={() => compose(nextActionMessage(action))}
-              >
-                <Icon name="Edit" aria-hidden className="size-3.5" />
-              </Button>
             </li>
           ))}
         </ul>
@@ -1261,9 +1233,9 @@ function useHold(
 /**
  * The agent's recap of the thread's latest turn, above the composer, with
  * dismiss in its top-right corner and, under the rows, a footer bar with the
- * recap's suggested next actions at the left (click to send or choose Edit in
- * composer to add the text to the draft) and, when the thread can be archived,
- * Archive at the right.
+ * recap's suggested next actions at the left (click to send or Shift-click to
+ * add the text to the draft) and, when the thread can be archived, Archive at
+ * the right.
  * It stays up while the user drafts,
  * so they can refer to it in their message, and hides once a message is sent
  * or the thread runs, while a question card is open, and inside the inline
