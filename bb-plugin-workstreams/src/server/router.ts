@@ -435,7 +435,7 @@ export class Router {
       this.deps.semanticSuggestions?.()
     ) {
       const corpus = this.deps.corpus;
-      corpus.seed(
+      corpus.syncGroups(
         records.map((r) => ({ ...r, description: r.description ?? "" })),
       );
       const { value: classification, traceId } = await this.deps.inference.run(
@@ -453,11 +453,7 @@ export class Router {
       const entity = classification.subjectId
         ? corpus.list().find((e) => e.id === classification.subjectId)
         : classification.proposed
-          ? corpus.remember(
-              classification.proposed.name,
-              classification.proposed.description,
-              classification.proposed.parentId,
-            )
+          ? corpus.rememberProposal(classification.proposed)
           : null;
       if (!entity)
         return remember({
@@ -1224,7 +1220,11 @@ export class Router {
     const entry = this.decisions.get(decision.id);
     if (!entry || entry.used) return;
     if (decision.subjectId)
-      this.deps.corpus?.assign(threadId, decision.subjectId);
+      this.deps.corpus?.assign(
+        threadId,
+        decision.subjectId,
+        "composer-classification",
+      );
     entry.used = true;
     if (
       decision.subjectId &&

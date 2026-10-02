@@ -538,6 +538,10 @@ export const rpcContract = defineRpcContract({
       ),
     }),
   },
+  corpusReset: {
+    input: z.object({ confirm: z.literal(true) }),
+    output: z.object({ ok: z.literal(true) }),
+  },
   corpusSelect: {
     input: z.object({ entityId: z.string() }),
     output: z.object({ sectionId: z.string(), name: z.string() }),

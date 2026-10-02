@@ -17,6 +17,44 @@ afterEach(async () => {
 });
 
 describe("CorpusStore", () => {
+  it("builds missing local ancestry and resets all Catalog data only", () => {
+    const { corpus } = store();
+    const child = corpus.rememberProposal({
+      name: "Up Next",
+      description: "Upcoming tasks",
+      parentId: null,
+      ancestors: [
+        { name: "Lantern", description: "Product" },
+        { name: "Sidebar", description: "Navigation" },
+      ],
+    });
+    const product = corpus.resolve("Lantern")!;
+    const sidebar = corpus.resolve("Sidebar", product.id)!;
+    expect(child.parentId).toBe(sidebar.id);
+    corpus.assign("t", child.id, "evidence");
+    corpus.syncGroups([
+      {
+        sectionId: "g",
+        name: "Lantern: Sidebar: Up Next",
+        description: "",
+        aliases: [],
+      },
+    ]);
+    expect(corpus.groups().get("g")).toBe(child.id);
+    corpus.reset();
+    expect(corpus.list()).toEqual([]);
+    expect(corpus.subjects().size).toBe(0);
+    expect(corpus.groups().size).toBe(0);
+    corpus.syncGroups([
+      {
+        sectionId: "g",
+        name: "Core & Architecture",
+        description: "",
+        aliases: [],
+      },
+    ]);
+    expect(corpus.list()).toEqual([]);
+  });
   it("rejects conflicting aliases on existing identities without changing storage", () => {
     const { corpus } = store();
     corpus.remember("Alpha", "first");
@@ -28,7 +66,7 @@ describe("CorpusStore", () => {
     expect(corpus.list()).toEqual(before);
     expect(corpus.resolve("Beta")?.id).toBe(beta.id);
   });
-  it("reseeds authored metadata without losing identity or parent scope", () => {
+  it("keeps semantic names independent of changed navigation labels", () => {
     const { corpus } = store();
     corpus.seed([
       { sectionId: "s", name: "Lantern", description: "old", aliases: [] },
@@ -42,9 +80,9 @@ describe("CorpusStore", () => {
         aliases: ["Light"],
       },
     ]);
-    expect(corpus.resolve("Beacon")?.id).toBe(root.id);
+    expect(corpus.resolve("Beacon")).toBeNull();
     expect(corpus.resolve("Lantern")?.id).toBe(root.id);
-    expect(corpus.resolve("Light")?.description).toBe("new");
+    expect(corpus.resolve("Light")?.description).toBe("old");
     const feature = corpus.remember("Shelves", "feature", root.id);
     corpus.bindGroup("f", feature.id);
     corpus.seed([

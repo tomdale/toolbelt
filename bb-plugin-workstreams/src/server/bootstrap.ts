@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { buildForest, flatten } from "../domain/tree.ts";
 import { isCurrent } from "../domain/analysis.ts";
 import type { ModelChoice } from "../domain/prefs.ts";
@@ -82,6 +83,7 @@ export class Bootstrap {
       model: () => Promise<ModelChoice>;
       classificationModel?: () => Promise<ModelChoice>;
       projects?: () => Promise<{ id: string; name: string }[]>;
+      requests?: (threadId: string) => Promise<string[]>;
       members: (sectionId: string) => Promise<CleanupMember[]>;
       onChange: () => void;
       now?: () => number;
@@ -115,6 +117,17 @@ export class Bootstrap {
     this.deps.onChange();
     return next;
   }
+  resetCatalog(): void {
+    if (this.running)
+      throw new UserError(
+        "Cancel and wait for Organize before resetting the Catalog.",
+      );
+    if (!this.deps.corpus) throw new UserError("Catalog is unavailable.");
+    this.deps.corpus.reset();
+    setMeta(this.deps.db, KEY, "");
+    this.deps.onChange();
+  }
+
   dispose() {
     this.disposed = true;
     this.controller?.abort();
@@ -296,14 +309,50 @@ export class Bootstrap {
     startedAt: number,
   ) {
     const corpus = this.deps.corpus!;
-    corpus.seed(
+    corpus.syncGroups(
       this.deps.map
         .list()
         .map((r) => ({ ...r, description: r.description ?? "" })),
     );
     const model = await this.deps.model();
+    const catalogVersion = "catalog-semantics-v1";
     const subjects = corpus.subjects();
-    const pending = input.threads.filter((thread) => !subjects.has(thread.id));
+    const requestsById = new Map<string, string[]>();
+    let requestCursor = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(3, input.threads.length) }, async () => {
+        while (!signal.aborted && requestCursor < input.threads.length) {
+          const thread = input.threads[requestCursor++]!;
+          requestsById.set(
+            thread.id,
+            (await this.deps.requests?.(thread.id)) ?? [],
+          );
+        }
+      }),
+    );
+    if (signal.aborted) throw new Error("Organizing cancelled.");
+    const evidence = new Map(
+      input.threads.map((thread) => [
+        thread.id,
+        createHash("sha256")
+          .update(
+            JSON.stringify({
+              version: catalogVersion,
+              requests: requestsById.get(thread.id),
+              title: thread.title,
+              recap: thread.recap,
+              project: thread.project,
+              revision: this.deps.service
+                .threads()
+                .find((t) => t.id === thread.id)?.latestAttentionAt,
+            }),
+          )
+          .digest("hex"),
+      ]),
+    );
+    const pending = input.threads.filter(
+      (thread) => !corpus.isFresh(thread.id, evidence.get(thread.id)!),
+    );
     const cached = input.threads.length - pending.length;
     let completed = 0;
     let unresolved = 0;
@@ -335,11 +384,15 @@ export class Bootstrap {
       while (!signal.aborted && !failure && cursor < pending.length) {
         const thread = pending[cursor++]!;
         try {
+          const requests = requestsById.get(thread.id);
+          if (signal.aborted) return;
           const { value } = await this.deps.inference.run(
             "classify",
             {
               prompt: `${thread.title}\n${thread.recap ?? ""}`,
               entities: corpus.list(),
+              project: thread.project,
+              requests,
             },
             {
               model: classificationModel,
@@ -352,16 +405,16 @@ export class Bootstrap {
           const entity = value.subjectId
             ? corpus.list().find((e) => e.id === value.subjectId)
             : value.proposed
-              ? corpus.remember(
-                  value.proposed.name,
-                  value.proposed.description,
-                  value.proposed.parentId,
-                )
+              ? corpus.rememberProposal(value.proposed)
               : null;
           if (entity) {
-            corpus.assign(thread.id, entity.id);
+            corpus.assign(thread.id, entity.id, evidence.get(thread.id)!);
             subjects.set(thread.id, entity.id);
-          } else unresolved++;
+          } else {
+            corpus.unassign(thread.id);
+            subjects.delete(thread.id);
+            unresolved++;
+          }
           completed++;
           publish("classifying");
         } catch (error) {
@@ -375,6 +428,14 @@ export class Bootstrap {
     if (signal.aborted) throw new Error("Organizing cancelled.");
     if (failure) throw failure;
     publish("regrouping");
+    corpus.syncGroups(
+      input.workstreams.map((w) => ({
+        sectionId: w.id,
+        name: w.name,
+        description: w.description ?? "",
+        aliases: w.aliases,
+      })),
+    );
     const entities = corpus.list();
     const counts: Record<string, number> = {};
     const analysis = this.deps.analyzer.all();
@@ -420,7 +481,7 @@ export class Bootstrap {
       return {
         key: id,
         sectionId: existing?.id ?? null,
-        name: existing?.name ?? label(id),
+        name: label(id),
         description: entity.description ?? `Work concerning ${label(id)}`,
         aliases: [...entity.aliases],
       };
@@ -549,7 +610,7 @@ export class Bootstrap {
           if (sectionId) this.deps.corpus.bindGroup(sectionId, home.key);
         }
       }
-      this.deps.corpus?.seed(
+      this.deps.corpus?.syncGroups(
         this.deps.map
           .list()
           .map((r) => ({ ...r, description: r.description ?? "" })),

@@ -232,6 +232,7 @@ export default async function plugin(bb: BbPluginApi) {
     inference,
     model: async () => currentPrefs().organize.model,
     classificationModel: async () => currentPrefs().newWork.suggestionsModel,
+    requests: (threadId) => analyzer.ownershipRequests(threadId),
     policy: () => ({
       capacity: currentPrefs().organize.capacity,
       collapseAt: currentPrefs().organize.collapseAt,
@@ -637,12 +638,16 @@ export default async function plugin(bb: BbPluginApi) {
         return { ok: true as const };
       }),
     corpus: async () => {
-      corpus.seed(
+      corpus.syncGroups(
         map.list().map((r) => ({ ...r, description: r.description ?? "" })),
       );
       return {
         entities: corpus.list().map((e) => ({ ...e, aliases: [...e.aliases] })),
       };
+    },
+    corpusReset: async () => {
+      bootstrap.resetCatalog();
+      return { ok: true as const };
     },
     corpusSelect: async ({ entityId }) => {
       const entity = corpus.list().find((e) => e.id === entityId);

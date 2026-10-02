@@ -33,16 +33,40 @@ export function Catalog({ rpc }: { rpc: Rpc }) {
   const visible = useMemo(() => {
     const all = entries ?? [];
     const needle = query.trim().toLowerCase();
-    return all
-      .map((entity) => ({ entity, label: corpusLabel(entity.id, all) }))
-      .filter(
-        ({ entity, label }) =>
-          !needle ||
-          [label, entity.description, ...entity.aliases].some((text) =>
-            text.toLowerCase().includes(needle),
-          ),
-      )
-      .sort((a, b) => compareGroupNames(a.label, b.label));
+    const matches = new Set(
+      all
+        .filter(
+          (entity) =>
+            !needle ||
+            [
+              corpusLabel(entity.id, all),
+              entity.description,
+              ...entity.aliases,
+            ].some((text) => text.toLowerCase().includes(needle)),
+        )
+        .map((entity) => entity.id),
+    );
+    for (const id of [...matches]) {
+      let parent = all.find((entity) => entity.id === id)?.parentId;
+      const seen = new Set<string>();
+      while (parent && !seen.has(parent)) {
+        seen.add(parent);
+        matches.add(parent);
+        parent = all.find((entity) => entity.id === parent)?.parentId;
+      }
+    }
+    const rows: { entity: CorpusEntity; label: string; depth: number }[] = [];
+    const visit = (parentId: string | null, depth: number) => {
+      for (const entity of all
+        .filter((e) => e.parentId === parentId)
+        .sort((a, b) => compareGroupNames(a.name, b.name))) {
+        if (matches.has(entity.id))
+          rows.push({ entity, label: corpusLabel(entity.id, all), depth });
+        visit(entity.id, depth + 1);
+      }
+    };
+    visit(null, 0);
+    return rows;
   }, [entries, query]);
   return (
     <section className="mt-6" aria-label="Catalog">
@@ -81,9 +105,15 @@ export function Catalog({ rpc }: { rpc: Rpc }) {
         </p>
       ) : (
         <ul className="mt-4 divide-y divide-border">
-          {visible.map(({ entity, label }) => (
-            <li key={entity.id} className="py-3">
-              <h3 className="text-sm font-medium">{label}</h3>
+          {visible.map(({ entity, label, depth }) => (
+            <li
+              key={entity.id}
+              className="py-2"
+              style={{ paddingLeft: depth * 20 }}
+            >
+              <h3 className="text-sm font-medium" title={label}>
+                {entity.name}
+              </h3>
               {entity.description ? (
                 <p className="mt-1 text-xs text-muted-foreground">
                   {entity.description}
