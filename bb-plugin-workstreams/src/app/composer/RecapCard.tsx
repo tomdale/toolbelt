@@ -47,7 +47,6 @@ import {
 import { useContinuing } from "./useContinuing.ts";
 import { ActivityThreadLink } from "../page/ActivityThreadLink.tsx";
 import type { HeldSpace } from "./recapMotion.ts";
-import { Hint } from "../Hint.tsx";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 
 const CARD_CLASS =
@@ -828,13 +827,11 @@ function NextActionItem({
   onSend,
   onCompose,
   disabled,
-  state,
 }: {
   action: NextAction;
   onSend?: (message: string) => Promise<void>;
   onCompose?: (message: string) => void;
   disabled: boolean;
-  state: Recap["state"];
 }) {
   const message = nextActionMessage(action);
   const title = nextActionTitle(action);
@@ -854,9 +851,7 @@ function NextActionItem({
       <span>{title}</span>
     </Button>
   );
-  return (
-    <Hint label="Click to send, ⇧-click to edit in composer">{button}</Hint>
-  );
+  return button;
 }
 
 /** Actions stay as individual buttons only when all fit on one line. */
@@ -871,6 +866,7 @@ function NextActions({
 }) {
   const [pending, setPending] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [helpVisible, setHelpVisible] = useState(false);
   const portalScope = usePortalScopeProps();
   const composer = useComposer();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -914,7 +910,10 @@ function NextActions({
   };
 
   return (
-    <div ref={rootRef} className="relative min-w-0 flex-1 basis-0">
+    <div
+      ref={rootRef}
+      className="relative flex min-w-0 flex-1 basis-0 items-center gap-2"
+    >
       <ul
         data-next-actions-measure
         aria-hidden="true"
@@ -923,7 +922,7 @@ function NextActions({
       >
         {actions.map((action, index) => (
           <li key={index} className="shrink-0">
-            <NextActionItem action={action} disabled state={state} />
+            <NextActionItem action={action} disabled />
           </li>
         ))}
       </ul>
@@ -980,23 +979,45 @@ function NextActions({
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       ) : (
-        <ul
-          data-next-actions-list
-          aria-label="Next actions"
-          className="m-0 flex min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden p-0"
-        >
-          {actions.map((action, index) => (
-            <li key={index} className="flex shrink-0 items-center gap-0.5">
-              <NextActionItem
-                action={action}
-                onSend={send}
-                onCompose={compose}
-                disabled={pending}
-                state={state}
-              />
-            </li>
-          ))}
-        </ul>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <ul
+              data-next-actions-list
+              aria-label="Next actions"
+              className="m-0 inline-flex w-max list-none items-center gap-1.5 p-0"
+              onPointerEnter={() => setHelpVisible(true)}
+              onPointerLeave={() => setHelpVisible(false)}
+              onFocusCapture={() => setHelpVisible(true)}
+              onBlurCapture={(event) => {
+                if (
+                  !event.currentTarget.contains(
+                    event.relatedTarget as Node | null,
+                  )
+                )
+                  setHelpVisible(false);
+              }}
+            >
+              {actions.map((action, index) => (
+                <li key={index} className="shrink-0">
+                  <NextActionItem
+                    action={action}
+                    onSend={send}
+                    onCompose={compose}
+                    disabled={pending}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+          {helpVisible ? (
+            <span
+              aria-hidden="true"
+              className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground"
+            >
+              Click to send · ⇧-click to edit
+            </span>
+          ) : null}
+        </div>
       )}
     </div>
   );
@@ -1234,7 +1255,8 @@ function useHold(
  * The agent's recap of the thread's latest turn, above the composer, with
  * dismiss in its top-right corner and, under the rows, a footer bar with the
  * recap's suggested next actions at the left (click to send or ⇧-click to
- * add the text to the draft) and, when the thread can be archived, Archive at
+ * add the text to the draft, with the modifier hint shown on hover or focus)
+ * and, when the thread can be archived, Archive at
  * the right.
  * It stays up while the user drafts,
  * so they can refer to it in their message, and hides once a message is sent

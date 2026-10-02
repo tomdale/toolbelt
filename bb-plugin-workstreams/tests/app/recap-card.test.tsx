@@ -903,6 +903,13 @@ it("shows a short sentence-case action label with neutral styling", async () => 
   expect(button.getAttribute("aria-description")).toBe(
     "Click to send, ⇧-click to edit in composer",
   );
+  expect(slot.queryByText("Click to send · ⇧-click to edit")).toBeNull();
+  fireEvent.pointerEnter(button, { pointerType: "mouse" });
+  expect(await slot.findByText("Click to send · ⇧-click to edit")).toBeTruthy();
+  fireEvent.pointerLeave(button, { pointerType: "mouse" });
+  await waitFor(() =>
+    expect(slot.queryByText("Click to send · ⇧-click to edit")).toBeNull(),
+  );
   fireEvent.click(button);
   await waitFor(() =>
     expect(slot.inspection.rpcCalls).toContainEqual({
