@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import { nextThreadAfterArchive } from "../../src/domain/archiveNavigation.ts";
+import {
+  nextThreadAfterArchive,
+  nextUpNextThread,
+  nextUpNextThreadAfterArchive,
+} from "../../src/domain/archiveNavigation.ts";
 import { projectWorkstreams, DAY_MS } from "../../src/domain/project.ts";
 import { thread } from "./fixtures.ts";
 
@@ -48,6 +52,35 @@ it("does not select hidden, archived, snoozed threads or the archived subtree", 
     { now: 0, snoozedUntil: (t) => (t.id === "snoozed" ? null : undefined) },
   );
   expect(nextThreadAfterArchive(projection, "first")).toBeNull();
+});
+
+it("prefers Up Next and cycles through visible Up Next rows", () => {
+  const projection = projectWorkstreams(
+    [
+      thread("archived", { sectionId: "ws", hasPendingInteraction: true }),
+      thread("waiting-first", {
+        sectionId: "ws",
+        hasPendingInteraction: true,
+        latestAttentionAt: 200,
+      }),
+      thread("waiting-second", {
+        sectionId: "ws",
+        hasPendingInteraction: true,
+        latestAttentionAt: 100,
+      }),
+    ],
+    sections,
+    { now: 0 },
+  );
+  expect(nextUpNextThreadAfterArchive(projection, "archived")).toBe(
+    "waiting-first",
+  );
+  expect(nextUpNextThread(projection, "waiting-first")?.thread.id).toBe(
+    "waiting-second",
+  );
+  expect(nextUpNextThread(projection, "waiting-second")?.thread.id).toBe(
+    "archived",
+  );
 });
 
 it("advances within Unfiled", () => {

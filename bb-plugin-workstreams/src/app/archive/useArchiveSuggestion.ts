@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { experimental_useSidebarThreadActions } from "@get-bb/plugin-sdk/app";
 import type { Recap } from "../../domain/recap.ts";
-import { nextThreadAfterArchive } from "../../domain/archiveNavigation.ts";
+import {
+  nextThreadAfterArchive,
+  nextUpNextThreadAfterArchive,
+} from "../../domain/archiveNavigation.ts";
 import { useWorkstreams } from "../useWorkstreams.ts";
 
 /**
@@ -19,7 +22,8 @@ export function useArchiveSuggestion(
   recap: Recap | null,
   continuing = false,
 ) {
-  const { rpc, refresh, projection } = useWorkstreams();
+  const ws = useWorkstreams();
+  const { rpc, refresh, projection } = ws;
   const actions = experimental_useSidebarThreadActions();
   const thread = threadId ? projection.rowOf.get(threadId)?.thread : undefined;
   const recapId = recap?.id ?? null;
@@ -69,7 +73,12 @@ export function useArchiveSuggestion(
     if (!visible || !threadId || !recapId || busy) return;
     setBusy(true);
     setError(null);
-    const nextThreadId = nextThreadAfterArchive(projection, threadId);
+    const nextThreadId =
+      nextUpNextThreadAfterArchive(
+        projection,
+        threadId,
+        ws.server.order.prioritized,
+      ) ?? nextThreadAfterArchive(projection, threadId);
     try {
       await rpc.call("archive", { threadId, recapId });
       if (nextThreadId) actions.open(nextThreadId);
