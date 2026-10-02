@@ -39,6 +39,7 @@ export async function fakeWorld(
   options: {
     complete?: FakeCompletion;
     settings?: Record<string, string | boolean>;
+    send?: (args: Record<string, unknown>) => Promise<void>;
   } = {},
 ) {
   const threads = new Map<string, Thread>();
@@ -203,6 +204,7 @@ export async function fakeWorld(
           return thread;
         },
         send: async (args: Record<string, unknown>) => {
+          await options.send?.(args);
           sent.push(args);
           return { status: "sent" };
         },
