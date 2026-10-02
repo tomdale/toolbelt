@@ -24,6 +24,7 @@ it("advertises named parameters on a concrete root object", () => {
     "timeout",
     "review",
     "links",
+    "next",
   ]);
   expect(schema.required).toEqual(["state", "goal"]);
   expect(schema.additionalProperties).toBe(false);
@@ -58,10 +59,6 @@ it("validates state-specific fields at execution", () => {
     review: "Check navigation",
   };
   expect(recapInputSchema.safeParse(review).success).toBe(true);
-  expect(
-    recapInputSchema.safeParse({ ...review, next: ["Check navigation"] })
-      .success,
-  ).toBe(false);
 });
 
 it.each([undefined, null, []])("accepts empty unused arrays: %j", (empty) => {
@@ -119,7 +116,6 @@ it("rejects substantive unused fields and unknown keys", () => {
   };
   for (const patch of [
     { active: ["Running checks"] },
-    { next: ["Run checks"] },
     { review: ["Inspect the fix"] },
     { review: "Inspect the fix" },
     { extra: [] },
@@ -232,11 +228,76 @@ it("omits complete links from normalization and stored recap Markdown", () => {
     latest: ["Report is ready"],
     links: [{ title: "Report", location: "/work/report.md" }],
   };
-  const recap = toRecap(input, { id: "r", turnId: "t", at: 1 });
+  const recap = toRecap(
+    { ...input, next: [] },
+    { id: "r", turnId: "t", at: 1 },
+  );
   expect(recap.links).toEqual([]);
   expect(recapMarkdown({ ...recap, links: input.links })).not.toContain(
     "/work/report.md",
   );
+});
+
+it("accepts next actions for complete and review, never for waiting", () => {
+  const next = ["Run the full test suite", "Open a pull request"];
+  for (const state of ["complete", "review"] as const) {
+    const parsed = recapInputSchema.parse({
+      state,
+      goal: "Added dark mode",
+      latest: ["Theme toggle works"],
+      ...(state === "review" ? { review: ["Try the theme toggle"] } : {}),
+      next,
+    });
+    expect(parsed.next).toEqual(next);
+  }
+  expect(
+    recapInputSchema.safeParse({
+      state: "waiting",
+      goal: "Waiting for tests",
+      tasks: ["Running the suite"],
+      timeout: 120,
+      next: ["Check back later"],
+    }).success,
+  ).toBe(false);
+  expect(
+    recapInputSchema.parse({
+      state: "waiting",
+      goal: "Waiting for tests",
+      tasks: ["Running the suite"],
+      timeout: 120,
+    }).next,
+  ).toEqual([]);
+});
+
+it("tidies next actions and reports them in the recap Markdown", () => {
+  const input = recapInputSchema.parse({
+    state: "complete",
+    goal: "Added dark mode.",
+    latest: ["Theme toggle works"],
+    next: ["Run the full test suite.", "  Open a   pull request  "],
+  });
+  const recap = toRecap(input, { id: "r", turnId: "t", at: 1 });
+  expect(recap.next).toEqual([
+    "Run the full test suite",
+    "Open a pull request",
+  ]);
+  expect(recapMarkdown(recap)).toContain(
+    "**Next:**\n- Run the full test suite\n- Open a pull request",
+  );
+});
+
+it("reads stored recaps without next actions as offering none", () => {
+  const stored = {
+    id: "r",
+    turnId: "t",
+    at: 1,
+    state: "complete",
+    goal: "Goal",
+    latest: ["Done"],
+    review: [],
+    links: [],
+  };
+  expect(recapSchema.parse(stored).next).toEqual([]);
 });
 
 it("keeps legacy string lists and reads structured review JSON", () => {

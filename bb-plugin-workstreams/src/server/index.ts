@@ -575,6 +575,11 @@ export default async function plugin(bb: BbPluginApi) {
         recaps.restore(threadId, recapId);
         return { ok: true as const };
       }),
+    recap_send: ({ threadId, recapId, action }) =>
+      userFacing(async () => {
+        await recaps.sendNext(threadId, recapId, action);
+        return { ok: true as const };
+      }),
     state: async () => ({
       ...service.state(),
       workstreams: Object.fromEntries(map.list().map((r) => [r.sectionId, r])),

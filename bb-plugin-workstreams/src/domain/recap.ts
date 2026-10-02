@@ -153,6 +153,13 @@ const recapFields = z
       .describe(
         "Review state only: optional links to artifacts or pages explicitly being reviewed, as absolute file paths or HTTPS URLs.",
       ),
+    next: z
+      .array(line(120))
+      .max(3)
+      .default([])
+      .describe(
+        "Complete and review only: one to three next actions the user might take or questions they may ask, shown as buttons under the recap. Clicking one sends its text as the user's message.",
+      ),
   })
   .strict();
 
@@ -195,6 +202,7 @@ export const recapInputSchema = z
       tasks: z.array(recapItemSchema(120)).min(1).max(3),
       timeout: z.number().int().min(1).max(86400),
       latest: z.array(z.never()).max(0).default([]),
+      next: z.array(z.never()).max(0).default([]),
       review: z
         .union([z.array(z.never()).max(0), z.literal("")])
         .nullable()
@@ -237,6 +245,8 @@ export const recapSchema = z.object({
     z.array(storedRecapItemSchema),
   ),
   links: z.array(linkSchema),
+  /** Suggested next messages, offered as buttons; empty while waiting. */
+  next: z.array(z.string()).default([]),
 });
 export type Recap = z.infer<typeof recapSchema>;
 
@@ -300,6 +310,7 @@ export function toRecap(
       input.state === "review"
         ? input.links.map((item) => ({ ...item, title: tidy(item.title) }))
         : [],
+    next: input.state === "waiting" ? [] : input.next.map(tidy),
   };
 }
 
@@ -346,6 +357,9 @@ export function recapMarkdown(recap: Recap): string {
     recap.state === "review" && recap.links.length
       ? `\n${recap.links.map((link) => `[${link.title}](${link.location})`).join(" · ")}`
       : null,
+    recap.next.length
+      ? `\n**Next:**\n${recap.next.map((action) => `- ${action}`).join("\n")}`
+      : null,
   ]
     .filter((part): part is string => part !== null)
     .join("\n");
@@ -353,7 +367,7 @@ export function recapMarkdown(recap: Recap): string {
 
 /** The tool's description, as the agent sees it in its tool list. */
 export const RECAP_TOOL_DESCRIPTION =
-  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar. Lists accept strings or { step, expect } items. The optional expect appears as a subrow. Text fields render inline Markdown, including links and @thread:<id> mentions.";
+  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar. Lists accept strings or { step, expect } items. The optional expect appears as a subrow. Text fields render inline Markdown, including links and @thread:<id> mentions. For complete and review, the optional next lists 1-3 suggested next actions shown as buttons that send their text as the user's message.";
 
 /**
  * Instructions for every thread that has the recap tool. They state the
@@ -364,6 +378,7 @@ state: complete when the user's latest request is fully done; review when a fini
 Write terse fragments in sentence case without closing periods. Every text field (goal, latest, tasks, review step and expect) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips. A lowercase commit hash, bare or alone in backticks (not in links), shows shortened and highlighted with copy on click. Length limits count visible text, not link targets. Inline links fit any state. The links field is a separate list of review targets. goal: the thread's purpose as a short phrase, past tense for complete and review ("Added dark mode to Settings") and -ing for waiting ("Waiting for Settings tests"). latest: one to three concrete results for complete and review, about 12 words each, most important first. review (required for review): one to three steps saying how to inspect or try the result and what to expect. Every item list accepts strings or { step, expect } objects. Use expect for optional secondary text shown on its own subrow. Keep each item distinct. Use separate items rather than joining results with semicolons. For UI review, give steps to reach and exercise the UI.
 For waiting: tasks (required) names one to three async tasks whose results you need; timeout (required) is the number of seconds until you should check their status, from 1 to 86400. Choose a realistic polling interval. The card counts down and automatically prompts you to check status if the same turn is still current when the timeout expires. Omit latest, review, and links.
 links: optional, only in the review state and only for artifacts or pages explicitly being asked to be reviewed, as absolute file paths or HTTPS URLs. A changed source file qualifies only when source review is requested. For complete, omit links or send an empty list.
+next: for complete and review, one to three messages the user might send next — a follow-up action or a question to you. Write each as the user would type it: self-contained, plain text, no closing period, 120 characters or fewer. Clicking one sends its text verbatim as the user's message and starts the next turn, so don't restate the choices elsewhere in the recap, and don't use them for things you should do yourself. Omit next while waiting.
 The user decides whether to archive the thread from the recap. When a question card is dismissed or expires, treat the question as unanswered and unapproved, and continue only work that does not depend on it.`;
 
 /**
