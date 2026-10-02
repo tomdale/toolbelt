@@ -224,6 +224,16 @@
   background-color: color-mix(in oklab, var(--ws-amber) 20%, transparent);
 }
 
+/* Keep Up Next visible while workstreams scroll beneath it. The list is the
+   sidebar's own scroll container, so this sticky presence wrapper stays at its
+   top edge without covering the list's controls. */
+.ws-up-next-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--sidebar, var(--background));
+}
+
 /* The Up Next block: the threads waiting on Tom, and the sidebar's most
    important element. It follows the Geist warning note: a flat card tinted
    with BB's theme attention color, and a hairline border in that color. Colors come from theme tokens (`--attention`,
