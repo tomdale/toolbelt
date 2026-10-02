@@ -270,7 +270,7 @@ it("renders structured subrows for completed items", async () => {
   ).toBe("DIV");
 });
 
-it("renders the waiting task as a linked title", async () => {
+it("renders a linked thread mention in the Waiting goal title", async () => {
   const slot = await mount({
     threads: [
       sidebarThread("t1"),
@@ -278,7 +278,7 @@ it("renders the waiting task as a linked title", async () => {
     ],
     recap: {
       state: "waiting",
-      task: "Running tests with @thread:thr_tests",
+      goal: "Running tests with @thread:thr_tests",
       timeout: 60,
       latest: [],
     },
@@ -332,7 +332,7 @@ it.each(["full", "minimal"])(
 
 const WORKING = {
   state: "waiting",
-  task: "Workers and tests are running",
+  goal: "Workers and tests are running",
   timeout: 60,
   at: Date.now(),
   latest: [],
@@ -342,23 +342,23 @@ const progress = (region: HTMLElement) =>
     (li) => `${li.getAttribute("data-progress")}:${li.textContent}`,
   );
 
-it("shows the task title with countdown and cancel beside it", async () => {
+it("shows the Waiting goal with countdown and cancel beside it", async () => {
   const slot = await mount({ recap: WORKING });
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(region.textContent).toContain("Waiting");
   const countdown = slot.getByLabelText("Status check countdown");
   expect(countdown.textContent).toMatch(/^[01]:\d{2}$/);
-  const taskHeading = slot.getByRole("heading", {
+  const goalHeading = slot.getByRole("heading", {
     name: /Workers and tests are running/,
   });
-  expect(taskHeading.parentElement?.contains(countdown)).toBe(true);
+  expect(goalHeading.parentElement?.contains(countdown)).toBe(true);
   const cancel = slot.getByRole("button", { name: "Cancel status check" });
   expect(cancel.textContent).toBe("");
   expect(cancel.querySelector('[data-icon="ClockArrowDown"]')).toBeTruthy();
   expect(cancel.className).toContain("size-5");
   expect(region.querySelector("[data-icon='LoaderCircle']")).toBeNull();
   expect(slot.queryByRole("heading", { name: "Tasks" })).toBeNull();
-  expect(taskHeading).toBeTruthy();
+  expect(goalHeading).toBeTruthy();
   expect(slot.queryByRole("heading", { name: "Next" })).toBeNull();
   expect(region.querySelector('[data-progress="done"]')).toBeNull();
   expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
@@ -366,14 +366,13 @@ it("shows the task title with countdown and cancel beside it", async () => {
 });
 
 it.each(["full", "minimal"])(
-  "uses a single waiting task as the title without showing the goal (%s)",
+  "uses the Waiting goal as the title beside the countdown (%s)",
   async (layout) => {
     const slot = await mount({
       layout,
       recap: {
         ...WORKING,
-        goal: "Waiting for background jobs",
-        task: "Build the release",
+        goal: "Build the release",
       },
     });
     await slot.findByRole("region", { name: "Latest recap" });
@@ -384,9 +383,6 @@ it.each(["full", "minimal"])(
     expect(
       taskHeading.querySelector("[data-testid='bb-markdown']")?.className,
     ).toContain(layout === "minimal" ? "0.6875rem" : "0.8125rem");
-    expect(
-      slot.queryByRole("heading", { name: "Waiting for background jobs" }),
-    ).toBeNull();
     expect(slot.getByLabelText("Status check countdown").textContent).toMatch(
       /^[01]:\d{2}$/,
     );
@@ -404,7 +400,7 @@ it.each(["full", "minimal"])(
       ],
       recap: {
         ...WORKING,
-        task: "Testing while @thread:thr_abc123def runs",
+        goal: "Testing while @thread:thr_abc123def runs",
       },
     });
     const region = await slot.findByRole("region", { name: "Latest recap" });
@@ -440,10 +436,10 @@ it.each(["full", "minimal"])(
   },
 );
 
-it("shows the single task as the title in the compact waiting card", async () => {
+it("shows the Waiting goal as the title in the compact card", async () => {
   const slot = await mount({
     layout: "minimal",
-    recap: { ...WORKING, task: "Workers are running" },
+    recap: { ...WORKING, goal: "Workers are running" },
   });
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(
@@ -882,7 +878,7 @@ it("sends no next actions for a waiting recap", async () => {
   const slot = await mount({
     recap: {
       state: "waiting",
-      task: "Running tests",
+      goal: "Running tests",
       timeout: 60,
       latest: [],
     },

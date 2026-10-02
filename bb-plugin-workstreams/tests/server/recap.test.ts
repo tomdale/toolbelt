@@ -81,8 +81,7 @@ async function world(
 describe("waiting status checks", () => {
   const waiting = {
     state: "waiting",
-    goal: "Waiting for tests",
-    task: "Waiting for test worker",
+    goal: "Waiting for test worker",
     timeout: 10,
   };
   const nudges = (s: Awaited<ReturnType<typeof world>>) =>
@@ -489,15 +488,15 @@ describe("agent recaps", () => {
     const output = await s.report({
       ...RECAP,
       state: "waiting",
+      goal: "Workers are running",
       latest: [],
-      task: "Workers are running",
       timeout: 60,
     });
     await s.idle();
     expect(s.corrections()).toHaveLength(0);
     expect((await s.card()).recap).toMatchObject({
       state: "waiting",
-      task: "Workers are running",
+      goal: "Workers are running",
       review: [],
     });
     expect(output).toContain("**Waiting**");

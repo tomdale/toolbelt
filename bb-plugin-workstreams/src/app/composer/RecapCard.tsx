@@ -312,7 +312,7 @@ function WaitingTasks({
           )}
         >
           <RecapText
-            text={recap.task ?? recap.goal}
+            text={recap.goal}
             typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
           />
         </div>
