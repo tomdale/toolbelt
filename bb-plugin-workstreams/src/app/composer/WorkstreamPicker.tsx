@@ -18,6 +18,7 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { Icon } from "@/components/ui/icon";
+import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 import {
   Popover,
   PopoverContent,
@@ -158,11 +159,7 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
                     onSelect={() => pick({ id: w.sectionId, name: w.name })}
                     className={ITEM_CLASS}
                   >
-                    <Icon
-                      name={WORKSTREAM_ICON}
-                      className="size-4 text-muted-foreground"
-                      aria-hidden
-                    />
+                    <WorkstreamIcon className="size-4" />
                     <WorkstreamName
                       name={w.name}
                       className="min-w-0 flex-1 text-xs"

@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useSdk } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
+import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 import type { Placement } from "../../server/router.ts";
 import { shownSuggestion, type NewWork, type Suggestion } from "./new-work.ts";
 
@@ -206,7 +207,12 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
             </span>
             <span className="ws-suggestion-text">
               <span className="ws-suggestion-action">{described.action}</span>{" "}
-              <span className="ws-suggestion-target">{described.target}</span>
+              <span className="ws-suggestion-target">
+                {suggestion.kind === "thread" ? null : (
+                  <WorkstreamIcon className="mr-1 inline-block size-3 align-[-2px] text-current" />
+                )}
+                {described.target}
+              </span>
               {described.details.map((detail) => (
                 <span key={detail} className="ws-suggestion-detail">
                   {" · "}

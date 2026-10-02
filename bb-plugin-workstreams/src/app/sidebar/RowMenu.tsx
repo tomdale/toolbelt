@@ -6,6 +6,7 @@ import {
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
+import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 import { cn } from "@/lib/utils";
 import { useDebugMode } from "../debug/debug.ts";
@@ -88,6 +89,7 @@ export function RowMenu({
                       disabled={section.id === workstreamId}
                       onSelect={() => handlers.move(thread, section.id)}
                     >
+                      <WorkstreamIcon className="mr-2" />
                       {section.name}
                     </Item>
                   ))}
