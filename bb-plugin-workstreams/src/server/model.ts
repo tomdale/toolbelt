@@ -15,6 +15,16 @@ import {
 } from "../domain/organize.ts";
 import { parseRoute, routePrompt, type RouteInput } from "../domain/router.ts";
 import {
+  classifyPrompt,
+  parseClassification,
+  type ClassifyInput,
+} from "../domain/classify.ts";
+import {
+  regroupPrompt,
+  parseRegroup,
+  type RegroupInput,
+} from "../domain/regroup.ts";
+import {
   TRACE_KIND_TITLE,
   type Trace,
   type TraceKind,
@@ -36,6 +46,15 @@ import { UserError } from "./service.ts";
 import { boundedJson, type TraceStore } from "./trace.ts";
 
 export const MODEL_CALLS = {
+  classify: {
+    prompt: (input: ClassifyInput) => classifyPrompt(input),
+    parse: (text: string, input: ClassifyInput) =>
+      parseClassification(text, input),
+  },
+  regroup: {
+    prompt: (input: RegroupInput) => regroupPrompt(input),
+    parse: (text: string, input: RegroupInput) => parseRegroup(text, input),
+  },
   analysis: {
     prompt: (input: AnalysisInput) => analysisPrompt(input),
     parse: (text: string, input: AnalysisInput) => parseAnalysis(text, input),
@@ -82,6 +101,12 @@ export function summarize(
   input: unknown,
 ): string | null {
   switch (kind) {
+    case "classify": {
+      const result = value as OutputOf<"classify">;
+      return result.subjectId ?? result.proposed?.name ?? "Unresolved subject";
+    }
+    case "regroup":
+      return `${(value as OutputOf<"regroup">).activeEntityIds.length} active groups`;
     case "analysis": {
       const a = value as OutputOf<"analysis">;
       return [

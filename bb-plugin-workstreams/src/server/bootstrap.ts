@@ -1,4 +1,5 @@
 import { buildForest, flatten } from "../domain/tree.ts";
+import { isCurrent } from "../domain/analysis.ts";
 import type { ModelChoice } from "../domain/prefs.ts";
 import type { OrganizeInput, OrganizeProposal } from "../domain/organize.ts";
 import type { Analyzer } from "./analyzer.ts";
@@ -9,6 +10,9 @@ import {
 } from "./cleanup.ts";
 import { getMeta, setMeta, type Database } from "./db.ts";
 import type { WorkstreamMap } from "./map.ts";
+import type { CorpusStore } from "./corpus.ts";
+import { activeHome } from "../domain/regroup.ts";
+import { corpusLabel } from "../domain/corpus-label.ts";
 import { traceIdOf, type Inference } from "./model.ts";
 import {
   UserError,
@@ -64,6 +68,9 @@ export class Bootstrap {
       service: WorkstreamService;
       analyzer: Analyzer;
       map: WorkstreamMap;
+      corpus?: CorpusStore;
+      adaptive?: () => boolean;
+      policy?: () => { capacity: number; collapseAt: number };
       inference: Inference;
       model: () => Promise<ModelChoice>;
       projects?: () => Promise<{ id: string; name: string }[]>;
@@ -170,17 +177,20 @@ export class Bootstrap {
       });
       if (controller.signal.aborted || this.disposed)
         throw new Error("Organizing cancelled.");
-      const result = input.threads.length
-        ? await this.deps.inference.run("organize", input, {
-            model: await this.deps.model(),
-            signal: controller.signal,
-            label: `${roots.length} root threads`,
-            links: [this.runLink(startedAt)],
-          })
-        : {
-            value: { workstreams: [], assignments: [] } as OrganizeProposal,
-            traceId: null,
-          };
+      const result =
+        this.deps.corpus && this.deps.adaptive?.()
+          ? await this.compact(input, controller.signal, startedAt)
+          : input.threads.length
+            ? await this.deps.inference.run("organize", input, {
+                model: await this.deps.model(),
+                signal: controller.signal,
+                label: `${roots.length} root threads`,
+                links: [this.runLink(startedAt)],
+              })
+            : {
+                value: { workstreams: [], assignments: [] } as OrganizeProposal,
+                traceId: null,
+              };
       if (controller.signal.aborted || this.disposed)
         throw new Error("Organizing cancelled.");
       const proposal = result.value;
@@ -271,6 +281,142 @@ export class Bootstrap {
       this.controller = null;
     }
   }
+  private async compact(
+    input: OrganizeInput,
+    signal: AbortSignal,
+    startedAt: number,
+  ) {
+    const corpus = this.deps.corpus!;
+    corpus.seed(
+      this.deps.map
+        .list()
+        .map((r) => ({ ...r, description: r.description ?? "" })),
+    );
+    const model = await this.deps.model();
+    const subjects = corpus.subjects();
+    for (const thread of input.threads) {
+      if (subjects.has(thread.id)) continue;
+      const { value } = await this.deps.inference.run(
+        "classify",
+        {
+          prompt: `${thread.title}\n${thread.recap ?? ""}`,
+          entities: corpus.list(),
+        },
+        { model, signal, threadId: thread.id, label: thread.title },
+      );
+      const entity = value.subjectId
+        ? corpus.list().find((e) => e.id === value.subjectId)
+        : value.proposed
+          ? corpus.remember(
+              value.proposed.name,
+              value.proposed.description,
+              value.proposed.parentId,
+            )
+          : null;
+      if (entity) {
+        corpus.assign(thread.id, entity.id);
+        subjects.set(thread.id, entity.id);
+      }
+    }
+    const entities = corpus.list();
+    const counts: Record<string, number> = {};
+    const analysis = this.deps.analyzer.all();
+    for (const thread of input.threads) {
+      const id = subjects.get(thread.id);
+      const live = this.deps.service.threads().find((t) => t.id === thread.id);
+      const assessment = analysis[thread.id];
+      if (
+        id &&
+        !(live && isCurrent(assessment, live) && assessment?.state === "done")
+      )
+        counts[id] = (counts[id] ?? 0) + 1;
+    }
+    const links = corpus.groups();
+    const active = [
+      ...new Set(
+        input.workstreams.flatMap((w) =>
+          links.has(w.id) ? [links.get(w.id)!] : [],
+        ),
+      ),
+    ];
+    const { value, traceId } = await this.deps.inference.run(
+      "regroup",
+      {
+        entities,
+        counts,
+        active,
+        ...(this.deps.policy?.() ?? { capacity: 6, collapseAt: 3 }),
+      },
+      {
+        model,
+        signal,
+        label: "Concurrent subject groups",
+        links: [this.runLink(startedAt)],
+      },
+    );
+    const selected = value.activeEntityIds;
+    const label = (id: string) => corpusLabel(id, entities);
+    const workstreams: OrganizeProposal["workstreams"] = selected.map((id) => {
+      const existing = input.workstreams.find((w) => links.get(w.id) === id);
+      const entity = entities.find((e) => e.id === id)!;
+      return {
+        key: id,
+        sectionId: existing?.id ?? null,
+        name: existing?.name ?? label(id),
+        description: entity.description ?? `Work concerning ${label(id)}`,
+        aliases: [...entity.aliases],
+      };
+    });
+    if (
+      new Set(workstreams.map((w) => w.name.toLowerCase())).size !==
+      workstreams.length
+    )
+      throw new UserError(
+        "Corpus labels collide. Resolve the identities before applying groups.",
+      );
+    for (const home of workstreams) {
+      if (
+        !home.sectionId &&
+        input.workstreams.some(
+          (w) => w.name.toLowerCase() === home.name.toLowerCase(),
+        )
+      )
+        throw new UserError(
+          "A proposed group name belongs to a different identity.",
+        );
+    }
+    const assignments = input.threads.map((t) => {
+      const id = subjects.get(t.id);
+      const target = id ? activeHome(id, selected, entities) : null;
+      // Completed or unresolved roots retain a home rather than disappearing from navigation.
+      let key = target;
+      if (!key && t.sectionId) {
+        const existing = input.workstreams.find((w) => w.id === t.sectionId);
+        if (existing) {
+          key =
+            workstreams.find((w) => w.sectionId === existing.id)?.key ??
+            `retained:${existing.id}`;
+          if (!workstreams.some((w) => w.key === key))
+            workstreams.push({
+              key,
+              sectionId: existing.id,
+              name: existing.name,
+              description: existing.description ?? existing.name,
+              aliases: existing.aliases,
+            });
+        }
+      }
+      return {
+        threadId: t.id,
+        workstream: key,
+        reason: "Resolved specific subject to current navigation.",
+      };
+    });
+    return {
+      value: { workstreams, assignments } satisfies OrganizeProposal,
+      traceId,
+    };
+  }
   async apply(
     overrides: { threadId: string; accepted: boolean }[] = [],
     runId: number,
@@ -326,7 +472,7 @@ export class Bootstrap {
         expectedMap: current.mapSnapshot,
         removals: preview.removals,
       };
-      const { entry, skipped, cleanupSkipped } =
+      const { entry, skipped, cleanupSkipped, created } =
         await this.deps.service.applyBatch(
           plan,
           "bootstrap",
@@ -337,6 +483,19 @@ export class Bootstrap {
           kind: "entry",
           ref: entry.id,
         });
+      if (this.deps.corpus) {
+        const entities = this.deps.corpus.list();
+        for (const home of preview.workstreams) {
+          if (!entities.some((e) => e.id === home.key)) continue;
+          const sectionId = home.sectionId ?? created.get(newKey(home.key));
+          if (sectionId) this.deps.corpus.bindGroup(sectionId, home.key);
+        }
+      }
+      this.deps.corpus?.seed(
+        this.deps.map
+          .list()
+          .map((r) => ({ ...r, description: r.description ?? "" })),
+      );
       this.deps.map.refresh(
         this.deps.service.threads(),
         this.deps.analyzer.all(),

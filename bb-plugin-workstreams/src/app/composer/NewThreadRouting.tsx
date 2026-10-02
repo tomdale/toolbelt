@@ -114,9 +114,10 @@ export function NewThreadRouting() {
         cancelRoute: () => {
           void rpc.call("routeCancel", { draftKey }).catch(() => {});
         },
-        createWorkstream: async (name, description) => {
+        createWorkstream: async (name, description, subjectId) => {
           const created = await rpc.call("createWorkstream", {
             name,
+            ...(subjectId ? { subjectId } : {}),
             ...(description ? { description } : {}),
           });
           return {
@@ -203,9 +204,20 @@ export function NewThreadRouting() {
     const submit = (event: Event) => {
       event.preventDefault();
       event.stopImmediatePropagation();
-      const sectionId = model.snapshot().workstream?.id;
+      const snapshot = model.snapshot();
+      const sectionId = snapshot.workstream?.id;
       void composerRef.current.submit({
-        experimental_data: sectionId ? { sectionId } : null,
+        experimental_data: sectionId
+          ? {
+              sectionId,
+              ...(snapshot.workstream?.subjectId
+                ? { subjectId: snapshot.workstream.subjectId }
+                : {}),
+              ...(snapshot.acceptedRoute
+                ? { routeId: snapshot.acceptedRoute.routeId }
+                : {}),
+            }
+          : null,
       });
     };
     form.addEventListener("submit", submit, true);
@@ -268,6 +280,7 @@ const EMPTY_STATE = {
   classifying: false,
   settled: null,
   accepting: false,
+  acceptedRoute: null,
   error: null,
   errors: 0,
   events: [],

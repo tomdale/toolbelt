@@ -99,10 +99,14 @@ const GROUPS = {
     /** Suggest a home for a new-thread draft while the user types. */
     suggestions: [z.boolean(), true],
     suggestionsModel: [modelChoiceSchema, DEFAULT_MODELS.suggestions],
+    corpusClassification: [z.boolean(), false],
   },
   organize: {
     /** Proposes the workstream map and files threads when you organize. */
     model: [modelChoiceSchema, DEFAULT_MODELS.organize],
+    adaptivePreview: [z.boolean(), false],
+    capacity: [z.number().int().min(2).max(100), 6],
+    collapseAt: [z.number().int().min(0).max(99), 3],
   },
   advanced: {
     /** The machine whose Pi key runs gateway calls; "" picks the only one. */

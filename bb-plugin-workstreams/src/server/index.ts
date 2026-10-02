@@ -14,6 +14,9 @@ import { Bootstrap } from "./bootstrap.ts";
 import { sectionMembers } from "./cleanup.ts";
 import { WorkstreamMap } from "./map.ts";
 import { Router, type RouteDecision } from "./router.ts";
+import { CorpusStore } from "./corpus.ts";
+import { corpusLabel } from "../domain/corpus-label.ts";
+import { ancestors, activeHome } from "../domain/regroup.ts";
 import { rpcContract } from "./contract.ts";
 import { hostContract } from "./inference/contract.ts";
 import { openDatabase } from "./db.ts";
@@ -218,13 +221,20 @@ export default async function plugin(bb: BbPluginApi) {
   registerQuestionTool(bb, questions);
   registerAgentInstructions(bb, db, recaps);
   const map = new WorkstreamMap(db);
+  const corpus = new CorpusStore(db);
   const bootstrap = new Bootstrap({
     db,
     service,
     analyzer,
     map,
+    corpus,
+    adaptive: () => currentPrefs().organize.adaptivePreview,
     inference,
     model: async () => currentPrefs().organize.model,
+    policy: () => ({
+      capacity: currentPrefs().organize.capacity,
+      collapseAt: currentPrefs().organize.collapseAt,
+    }),
     projects: async () => bb.sdk.projects.list(),
     members: (sectionId) => sectionMembers(bb.sdk, sectionId),
     onChange: notify,
@@ -232,6 +242,8 @@ export default async function plugin(bb: BbPluginApi) {
   bb.onDispose(() => bootstrap.dispose());
   const router = new Router({
     sdk: () => bb.sdk,
+    corpus,
+    semanticSuggestions: () => currentPrefs().newWork.corpusClassification,
     service,
     journal,
     map,
@@ -272,6 +284,7 @@ export default async function plugin(bb: BbPluginApi) {
           ? (ctx.experimental_submission.data as {
               routeId?: string;
               sectionId?: string;
+              subjectId?: string;
             } | null)
           : null;
       const decision = data?.routeId
@@ -307,6 +320,11 @@ export default async function plugin(bb: BbPluginApi) {
             );
         }, 0);
       } else if (data?.sectionId) {
+        if (
+          data.subjectId &&
+          corpus.list().some((e) => e.id === data.subjectId)
+        )
+          corpus.assign(ctx.thread.id, data.subjectId);
         setTimeout(() => {
           service
             .fileIfUnsorted(ctx.thread.id, data.sectionId!, "user")
@@ -548,11 +566,12 @@ export default async function plugin(bb: BbPluginApi) {
           claim,
         });
       }),
-    startThread: ({ sectionId, execution }) =>
+    startThread: ({ sectionId, execution, subjectId }) =>
       userFacing(() =>
         router.start(
           sectionId,
           execution as unknown as Parameters<Router["start"]>[1],
+          subjectId,
         ),
       ),
     sendToThread: ({ threadId, input, traceId }) =>
@@ -621,6 +640,31 @@ export default async function plugin(bb: BbPluginApi) {
         recaps.cancelWaiting(threadId, recapId);
         return { ok: true as const };
       }),
+    corpus: async () => {
+      corpus.seed(
+        map.list().map((r) => ({ ...r, description: r.description ?? "" })),
+      );
+      return {
+        entities: corpus.list().map((e) => ({ ...e, aliases: [...e.aliases] })),
+      };
+    },
+    corpusSelect: async ({ entityId }) => {
+      const entity = corpus.list().find((e) => e.id === entityId);
+      if (!entity) throw new Error("That corpus identity no longer exists.");
+      const groups = corpus.groups();
+      const entities = corpus.list();
+      const home = activeHome(entityId, [...groups.values()], entities);
+      const existing = map.list().find((r) => groups.get(r.sectionId) === home);
+      if (existing)
+        return { sectionId: existing.sectionId, name: existing.name };
+      const rootId = ancestors(entityId, entities).at(-1)!;
+      const label = corpusLabel(rootId, entities);
+      if (map.list().some((r) => r.name.toLowerCase() === label.toLowerCase()))
+        throw new Error("That group label belongs to another identity.");
+      const created = await service.createWorkstream(label, "user");
+      corpus.bindGroup(created.sectionId, rootId);
+      return { sectionId: created.sectionId, name: label };
+    },
     state: async () => ({
       ...service.state(),
       workstreams: Object.fromEntries(map.list().map((r) => [r.sectionId, r])),
@@ -843,9 +887,26 @@ export default async function plugin(bb: BbPluginApi) {
       userFacing(async () => ({
         entry: await service.move(threadId, sectionId, "user"),
       })),
-    createWorkstream: ({ name, description, threadId }) =>
+    createWorkstream: ({ name, description, threadId, subjectId }) =>
       userFacing(async () => {
+        if (subjectId && !corpus.list().some((e) => e.id === subjectId))
+          throw new Error("Unknown subject identity.");
+        const bound = subjectId
+          ? [...corpus.groups()].find(([, id]) => id === subjectId)?.[0]
+          : null;
+        if (
+          subjectId &&
+          map
+            .list()
+            .some(
+              (r) =>
+                r.name.toLowerCase() === name.toLowerCase() &&
+                r.sectionId !== bound,
+            )
+        )
+          throw new Error("That group name belongs to a different identity.");
         const created = await service.createWorkstream(name, "user");
+        if (subjectId) corpus.bindGroup(created.sectionId, subjectId);
         if (description?.trim())
           map.describe(created.sectionId, description.trim());
         if (threadId) await service.move(threadId, created.sectionId, "user");

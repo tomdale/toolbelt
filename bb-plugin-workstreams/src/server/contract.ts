@@ -169,6 +169,7 @@ const routeBase = {
   confidence: z.enum(["high", "medium", "low"]),
   reason: z.string(),
   subject: z.string().nullable(),
+  subjectId: z.string().optional(),
   traceId: z.string().nullable(),
   explanation: z
     .object({ notes: z.array(z.string()), durationMs: z.number() })
@@ -414,6 +415,7 @@ export const rpcContract = defineRpcContract({
    */
   startThread: {
     input: z.object({
+      subjectId: z.string().optional(),
       sectionId: z.string().min(1).nullable(),
       execution: z
         .object({
@@ -512,6 +514,24 @@ export const rpcContract = defineRpcContract({
   setRecapPrefs: {
     input: z.object({ patch: recapPrefsSchema.partial() }),
     output: z.object({ prefs: recapPrefsSchema }),
+  },
+  corpus: {
+    input: z.null(),
+    output: z.object({
+      entities: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          description: z.string(),
+          parentId: z.string().nullable(),
+          aliases: z.array(z.string()),
+        }),
+      ),
+    }),
+  },
+  corpusSelect: {
+    input: z.object({ entityId: z.string() }),
+    output: z.object({ sectionId: z.string(), name: z.string() }),
   },
   state: {
     input: z.null(),
@@ -656,6 +676,7 @@ export const rpcContract = defineRpcContract({
   },
   createWorkstream: {
     input: z.object({
+      subjectId: z.string().optional(),
       name: z.string().min(1).max(200),
       /** The scope the router proposed with a new workstream. */
       description: z.string().max(500).optional(),

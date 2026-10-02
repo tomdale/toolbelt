@@ -17,6 +17,40 @@ afterEach(async () => {
 });
 
 describe("CorpusStore", () => {
+  it("reseeds authored metadata without losing identity or parent scope", () => {
+    const { corpus } = store();
+    corpus.seed([
+      { sectionId: "s", name: "Lantern", description: "old", aliases: [] },
+    ]);
+    const root = corpus.list()[0]!;
+    corpus.seed([
+      {
+        sectionId: "s",
+        name: "Beacon",
+        description: "new",
+        aliases: ["Light"],
+      },
+    ]);
+    expect(corpus.resolve("Beacon")?.id).toBe(root.id);
+    expect(corpus.resolve("Lantern")?.id).toBe(root.id);
+    expect(corpus.resolve("Light")?.description).toBe("new");
+    const feature = corpus.remember("Shelves", "feature", root.id);
+    corpus.bindGroup("f", feature.id);
+    corpus.seed([
+      { sectionId: "s", name: "Beacon", description: "new", aliases: [] },
+      {
+        sectionId: "f",
+        name: "Beacon: Shelves",
+        description: "feature",
+        aliases: [],
+      },
+    ]);
+    expect(corpus.list()).toHaveLength(2);
+    expect(corpus.list().find((e) => e.id === feature.id)?.name).toBe(
+      "Shelves",
+    );
+    expect(corpus.groups().get("f")).toBe(feature.id);
+  });
   it("adds its migration without breaking already-migrated storage", () => {
     const { host } = store();
     const migrate = host.bb.storage.migrate.bind(host.bb.storage);
