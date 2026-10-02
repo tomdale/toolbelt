@@ -623,8 +623,11 @@ it.
 7. **Recap card** (a composer banner), in its state's accent (blue for review,
    green for complete, violet for waiting) on its border, background, state
    line, and row labels: a state line (Ready for Review, Complete, or Waiting),
-   with a spinner and countdown while waiting; the Goal heading, then rows by
-   layout. Full: Tasks (solid dots; a single task has no bullet) while waiting;
+   with the Waiting label; the Goal heading, then rows by layout. Full: Tasks
+   (solid dots; a single task has no bullet) while waiting, with the countdown
+   and Cancel check beside the first task. Cancel check stops the scheduled
+   nudge but leaves the recap visible. A task item `{ text, detail }` renders
+   detail on a second line, suitable for a linked `@thread:<id>` mention;
    results alone when complete; Done (check-marked) and Review (the requested
    checks, with optional review-target Links as chips under their steps) for
    review; labels stack above their rows on narrow cards. Compact uses smaller

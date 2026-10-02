@@ -339,7 +339,7 @@ const progress = (region: HTMLElement) =>
     (li) => `${li.getAttribute("data-progress")}:${li.textContent}`,
   );
 
-it("shows multiple waiting tasks as a body-font bullet list with a bare countdown below", async () => {
+it("shows multiple waiting tasks with countdown and cancel beside the first task", async () => {
   const slot = await mount({ recap: WORKING });
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(region.textContent).toContain("Waiting");
@@ -349,10 +349,10 @@ it("shows multiple waiting tasks as a body-font bullet list with a bare countdow
   expect(taskList.className).toContain("list-disc");
   expect(taskList.textContent).toContain("Workers are running");
   expect(taskList.textContent).toContain("Tests are running");
+  expect(taskList.querySelector("li")?.contains(countdown)).toBe(true);
   expect(
-    countdown.compareDocumentPosition(taskList) &
-      Node.DOCUMENT_POSITION_PRECEDING,
-  ).toBeTruthy();
+    slot.getByRole("button", { name: "Cancel status check" }).textContent,
+  ).toBe("Cancel check");
   expect(region.querySelector("[data-icon='LoaderCircle']")).toBeNull();
   expect(slot.queryByRole("heading", { name: "Tasks" })).toBeNull();
   expect(
@@ -363,9 +363,7 @@ it("shows multiple waiting tasks as a body-font bullet list with a bare countdow
   expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
   expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
   const cancel = slot.getByRole("button", { name: "Cancel status check" });
-  expect(cancel.textContent).toBe("");
-  expect(cancel.className).toContain("size-5");
-  expect(cancel.querySelector('[data-icon="ClockArrowDown"]')).toBeTruthy();
+  expect(cancel.textContent).toBe("Cancel check");
 });
 
 it.each(["full", "minimal"])(
@@ -397,7 +395,7 @@ it.each(["full", "minimal"])(
 );
 
 it.each(["full", "minimal"])(
-  "renders a second-line thread mention and cancels without dismissing (%s)",
+  "renders a task and linked thread on separate lines and cancels without dismissing (%s)",
   async (layout) => {
     const slot = await mount({
       layout,
@@ -407,7 +405,7 @@ it.each(["full", "minimal"])(
       ],
       recap: {
         ...WORKING,
-        tasks: [{ step: "Testing", expect: "@thread:thr_abc123def" }],
+        tasks: [{ text: "Testing", detail: "@thread:thr_abc123def" }],
       },
     });
     const region = await slot.findByRole("region", { name: "Latest recap" });
@@ -416,17 +414,17 @@ it.each(["full", "minimal"])(
     const countdown = slot.getByLabelText("Status check countdown");
     const task = region.querySelector('[data-progress="active"]')!;
     expect(task.contains(mention)).toBe(true);
+    expect(task.contains(countdown)).toBe(true);
+    expect(mention.closest('[class*="text-muted-foreground"]')).toBeTruthy();
     expect(
-      countdown.compareDocumentPosition(task) &
+      mention.compareDocumentPosition(countdown) &
         Node.DOCUMENT_POSITION_PRECEDING,
     ).toBeTruthy();
     expect(task.textContent).toContain("Testing");
-    expect(task.textContent).not.toContain(countdown.textContent);
+    expect(task.textContent).toContain(countdown.textContent);
     expect(
-      slot
-        .getByRole("button", { name: "Cancel status check" })
-        .querySelector('[data-icon="ClockArrowDown"]'),
-    ).toBeTruthy();
+      slot.getByRole("button", { name: "Cancel status check" }).textContent,
+    ).toBe("Cancel check");
     fireEvent.click(slot.getByRole("button", { name: "Cancel status check" }));
     await waitFor(() =>
       expect(region.textContent).toContain("Status check cancelled"),
@@ -450,7 +448,7 @@ it("shows the single task as the title in the compact waiting card", async () =>
   });
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(
-    slot.getByRole("heading", { name: "Workers are running" }),
+    slot.getByRole("heading", { name: /Workers are running/ }),
   ).toBeTruthy();
   expect(slot.queryByRole("heading", { name: "Building the card" })).toBeNull();
   expect(slot.getByLabelText("Status check countdown").textContent).toMatch(

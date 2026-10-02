@@ -74,7 +74,7 @@ it("previews the recap card in each state and the chosen layout", async () => {
     expect(visible()[0]).not.toMatch(/Theme behavior agreed/),
   );
   expect(visible()[0]).toMatch(
-    /Waiting.*theme toggle.*keyboard controls.*2:00/,
+    /Waiting.*theme toggle.*2:00.*keyboard controls/,
   );
   expect(visible()[0]).not.toContain("Adding dark mode");
 });

@@ -122,21 +122,23 @@ design and the contract the code is checked against.
   The card shows a state line (Ready for Review, Complete, or Waiting), the
   goal, and Done and Review rows for review recaps, with links under Review.
   Waiting recaps list one to three async tasks (solid dots; a lone shown item
-  has no bullet), with a timeout from 1 to 86400 seconds. Complete recaps show
-  just results. The **Compact** layout keeps the goal and one essential row in
-  smaller type: tasks, results, or review steps, with an icon-only Archive
-  beside ✕. The card sits above the composer, with a dismiss ✕ in its corner
-  and, when the thread can be archived, **Archive** at the right of a footer
-  strip along its bottom edge; its state marks the sidebar row. Each recap also
-  stays in the thread as a tinted **Recap** tool row; expand it to read the
-  recap. Fresh input clears the card. A turn that ends without either gets an
-  agent-only reminder, three by default (Settings → **Recap**: on/off, reminders
-  0–10, and a Full or Compact layout). BB reports turn completion after the
-  fact, so the turn's own reply is already visible when the reminder arrives.
-  The tool reaches each thread when its provider session next starts. Reminders
-  go only to threads that certainly have it: threads created since recaps were
-  turned on (for a fork, the thread its fork chain started from), and threads
-  whose agent has called it.
+  has no bullet), with the countdown and **Cancel check** beside the first task.
+  Use `{ text, detail }` to put secondary text such as `@thread:<id>` beneath a
+  task as a linked second line. Cancel check stops the scheduled nudge without
+  dismissing the recap. Complete recaps show just results. The **Compact**
+  layout keeps the goal and one essential row in smaller type: tasks, results,
+  or review steps, with an icon-only Archive beside ✕. The card sits above the
+  composer, with a dismiss ✕ in its corner and, when the thread can be archived,
+  **Archive** at the right of a footer strip along its bottom edge; its state
+  marks the sidebar row. Each recap also stays in the thread as a tinted
+  **Recap** tool row; expand it to read the recap. Fresh input clears the card.
+  A turn that ends without either gets an agent-only reminder, three by default
+  (Settings → **Recap**: on/off, reminders 0–10, and a Full or Compact layout).
+  BB reports turn completion after the fact, so the turn's own reply is already
+  visible when the reminder arrives. The tool reaches each thread when its
+  provider session next starts. Reminders go only to threads that certainly have
+  it: threads created since recaps were turned on (for a fork, the thread its
+  fork chain started from), and threads whose agent has called it.
 - **Archive**: on a complete or review recap, when BB has no unfinished tasks,
   goals, queued messages, interactions, or background work, and every child and
   lifecycle dependent is complete. Archiving a review recap accepts its result.
