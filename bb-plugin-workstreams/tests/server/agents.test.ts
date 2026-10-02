@@ -131,6 +131,9 @@ describe("configure", () => {
     const unknown = await resolve(w, { id: "hidden-helper" });
     expect(unknown.instructions).not.toContain("workstream");
     expect(unknown.instructions).toContain("WorkstreamsRecap");
+    expect(unknown.instructions).toContain(
+      "Include one to three relevant next actions whenever the user can take or request one",
+    );
   });
 
   it("trusts task metadata for a thread the reconciler hasn't seen yet", async () => {
