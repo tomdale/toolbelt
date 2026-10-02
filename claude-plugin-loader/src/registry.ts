@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 
 import type { InstalledPlugin, Registry } from "./types.ts";
 
@@ -86,15 +86,58 @@ function samePlugin(a: InstalledPlugin, b: InstalledPlugin): boolean {
     JSON.stringify({ ...b, installedAt: undefined });
 }
 
+function discoveryPath(name: string): string {
+  return join(loaderHome(), "current", encodeURIComponent(name));
+}
+
+function discoveryTarget(name: string): string | null {
+  const path = discoveryPath(name);
+  try {
+    if (!lstatSync(path).isSymbolicLink()) {
+      throw new Error(`Discovery path is not a symlink; leave it untouched: ${path}`);
+    }
+    return readlinkSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function hasDiscoveryLink(plugin: InstalledPlugin): boolean {
+  return discoveryTarget(plugin.name) === (plugin.skillDirs[0] ?? null);
+}
+
+/** Update only the discovery alias; session paths continue to name snapshots. */
+function updateDiscoveryLink(plugin: InstalledPlugin): void {
+  const target = plugin.skillDirs[0];
+  const current = discoveryTarget(plugin.name);
+  if (current === (target ?? null)) return;
+  if (!target) {
+    unlinkSync(discoveryPath(plugin.name));
+    return;
+  }
+  const directory = join(loaderHome(), "current");
+  mkdirSync(directory, { recursive: true });
+  const temporary = mkdtempSync(join(directory, ".link-"));
+  try {
+    const link = join(temporary, "snapshot");
+    symlinkSync(target, link, "dir");
+    renameSync(link, discoveryPath(plugin.name));
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
 /** Add or replace a plugin, preserving its timestamp when nothing changed. */
 export function upsertPlugin(plugin: InstalledPlugin, expected?: InstalledPlugin): InstalledPlugin {
   // Unchanged startups do not even acquire a lock or write registry metadata.
   const existing = readRegistry().plugins.find((p) => p.name === plugin.name);
-  if (existing && samePlugin(existing, plugin)) return existing;
+  if (existing && samePlugin(existing, plugin) && hasDiscoveryLink(existing)) return existing;
   return withRegistryLock(() => {
     const registry = readRegistry();
     const current = registry.plugins.find((p) => p.name === plugin.name);
     if (expected && JSON.stringify(current) !== JSON.stringify(expected)) return current ?? expected;
+    updateDiscoveryLink(plugin);
     if (current && samePlugin(current, plugin)) return current;
     const next = registry.plugins.filter((p) => p.name !== plugin.name);
     next.push(plugin);
@@ -109,6 +152,8 @@ export function removePlugin(name: string): boolean {
     const registry = readRegistry();
     const next = registry.plugins.filter((p) => p.name !== name);
     if (next.length === registry.plugins.length) return false;
+    const target = discoveryTarget(name);
+    if (target !== null) unlinkSync(discoveryPath(name));
     writeRegistry({ version: 1, plugins: next });
     return true;
   });
