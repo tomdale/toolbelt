@@ -12,6 +12,7 @@ import {
 } from "./question/QuestionCard.tsx";
 import { ASK_USER_QUESTION_RENDERER_ID } from "../server/questions/contracts.ts";
 import { QuestionHistoryInline } from "./question/QuestionHistory.tsx";
+import { DeliveredQuestionCards } from "./question/DeliveredQuestion.tsx";
 import { NewWorkBridge } from "./composer/NewWorkBridge.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
 import {
@@ -32,6 +33,10 @@ import { SnoozeSettings } from "./snooze/SnoozeSettings.tsx";
 import "./styles.css";
 
 export default definePluginApp((app) => {
+  app.slots.experimental_appOverlay({
+    id: "delivered-questions",
+    component: DeliveredQuestionCards,
+  });
   app.slots.experimental_timelineRenderer({
     kind: "workstreams/ask-user-question",
     component: QuestionHistoryInline,
