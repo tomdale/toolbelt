@@ -1,0 +1,52 @@
+import { test, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+const home = mkdtempSync(join(tmpdir(), 'cpl-root-'));
+process.env.PI_CLAUDE_PLUGINS_DIR = join(home, 'loader');
+after(() => rmSync(home, { recursive: true, force: true }));
+const { installFromSource } = await import('../dist/install.js');
+const { loadSkills } = await import('@earendil-works/pi-coding-agent');
+
+test('root scripts execute from immutable and stable-link skill paths and invalidate together', () => {
+ const root = join(home, 'plugin');
+ mkdirSync(join(root, 'skills/commit'), {recursive:true});
+ mkdirSync(join(root, 'scripts'), {recursive:true});
+ mkdirSync(join(root, '.claude-plugin'), {recursive:true});
+ writeFileSync(join(root, '.claude-plugin/plugin.json'), JSON.stringify({name:'helpers'}));
+ writeFileSync(join(root, 'skills/commit/SKILL.md'), '---\nname: commit\ndescription: Commit example\n---\nRun ../../scripts/helper.sh\n');
+ const script = join(root, 'scripts/helper.sh');
+ writeFileSync(script, '#!/bin/sh\nprintf first\n'); chmodSync(script,0o755);
+ const [old] = installFromSource(root);
+ const stableSkills = join(process.env.PI_CLAUDE_PLUGINS_DIR,'current/helpers/skills');
+ const helper = (skills) => resolve(skills,'commit','../../scripts/helper.sh');
+ assert.equal(execFileSync(helper(old.skillDirs[0]),{encoding:'utf8'}),'first');
+ assert.equal(execFileSync(helper(stableSkills),{encoding:'utf8'}),'first');
+ const before = statSync(join(old.skillDirs[0],'commit/SKILL.md')).ino;
+ assert.equal(installFromSource(root)[0].skillDirs[0],old.skillDirs[0]);
+ assert.equal(statSync(join(old.skillDirs[0],'commit/SKILL.md')).ino,before);
+ writeFileSync(script,'#!/bin/sh\nprintf second\n');
+ const [changed] = installFromSource(root);
+ assert.notEqual(changed.skillDirs[0],old.skillDirs[0]);
+ assert.equal(execFileSync(helper(old.skillDirs[0]),{encoding:'utf8'}),'first');
+ assert.equal(execFileSync(helper(stableSkills),{encoding:'utf8'}),'second');
+ const result=loadSkills({cwd:home,agentDir:home,includeDefaults:false,skillPaths:[stableSkills,changed.skillDirs[0]]});
+ assert.equal(result.skills.length,1); assert.deepEqual(result.diagnostics,[]);
+ assert.match(readFileSync(join(changed.skillDirs[0],'commit/SKILL.md'),'utf8'), /\.\.\/\.\.\/scripts\/helper.sh/);
+ rmSync(script);
+ const [deleted]=installFromSource(root);
+ assert.notEqual(deleted.skillDirs[0],changed.skillDirs[0]);
+ assert.equal(execFileSync(helper(changed.skillDirs[0]),{encoding:'utf8'}),'second');
+});
+
+test('script traversal errors leave both registry and stable alias on the previous generation', () => {
+ const root=join(home,'broken'); mkdirSync(join(root,'skills/example'),{recursive:true});
+ writeFileSync(join(root,'skills/example/SKILL.md'),'---\nname: example\ndescription: Example\n---\n');
+ const [old]=installFromSource(root);
+ mkdirSync(join(root,'scripts'));
+ execFileSync('ln',['-s','missing',join(root,'scripts/broken')]);
+ assert.throws(()=>installFromSource(root),/ENOENT/);
+ assert.equal(statSync(join(process.env.PI_CLAUDE_PLUGINS_DIR,'current/broken/skills/example/SKILL.md')).ino,statSync(join(old.skillDirs[0],'example/SKILL.md')).ino);
+});

@@ -40,7 +40,7 @@ interface DiscoveredSkill {
 }
 
 // Bump when the namespace transform or snapshot layout changes.
-const STAGE_FORMAT_VERSION = 1;
+const STAGE_FORMAT_VERSION = 2;
 
 interface SnapshotFile {
   path: string;
@@ -87,6 +87,14 @@ export function stageNamespacedSkills(
   }
   if (rewrites.length === 0) return null;
 
+  // Skills and plugin-root scripts share one generation, so ../../scripts
+  // never crosses into mutable state or another plugin's snapshot.
+  for (const file of files) file.path = join("skills", file.path);
+  for (const directory of directories) directory.path = join("skills", directory.path);
+  for (const rewrite of rewrites) rewrite.path = join("skills", rewrite.path);
+  const scripts = join(pluginRoot, "scripts");
+  if (isDir(scripts)) captureDirectory(scripts, "scripts", files, directories, new Set());
+
   const hash = createHash("sha256");
   hash.update(JSON.stringify([STAGE_FORMAT_VERSION, pluginName, pluginRoot, skillDirs, manifestInputs, rewrites]));
   hash.update(JSON.stringify(directories));
@@ -97,7 +105,8 @@ export function stageNamespacedSkills(
   const digest = hash.digest("hex");
   const versions = join(loaderHome(), "skills", ".versions");
   const stageRoot = join(versions, `${namespace}-${digest}`);
-  if (existsSync(join(stageRoot, ".complete"))) return stageRoot;
+  const skillRoot = join(stageRoot, "skills");
+  if (existsSync(join(stageRoot, ".complete"))) return skillRoot;
 
   mkdirSync(versions, { recursive: true });
   const temporary = mkdtempSync(join(versions, `.${namespace}-`));
@@ -119,6 +128,7 @@ export function stageNamespacedSkills(
     for (const directory of directories.reverse()) {
       chmodSync(join(temporary, directory.path), directory.mode);
     }
+    writeFileSync(join(temporary, "skills", ".complete"), digest + "\n");
     writeFileSync(join(temporary, ".complete"), digest + "\n");
     try {
       renameSync(temporary, stageRoot);
@@ -126,7 +136,7 @@ export function stageNamespacedSkills(
       // Another builder may have published the same immutable generation.
       if (!existsSync(join(stageRoot, ".complete"))) throw error;
     }
-    return stageRoot;
+    return skillRoot;
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }

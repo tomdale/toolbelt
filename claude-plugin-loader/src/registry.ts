@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 
 import type { InstalledPlugin, Registry } from "./types.ts";
@@ -103,13 +103,18 @@ function discoveryTarget(name: string): string | null {
   }
 }
 
+function packageSnapshot(plugin: InstalledPlugin): string | undefined {
+  const root = plugin.skillDirs[0];
+  return root && basename(root) === "skills" ? dirname(root) : root;
+}
+
 function hasDiscoveryLink(plugin: InstalledPlugin): boolean {
-  return discoveryTarget(plugin.name) === (plugin.skillDirs[0] ?? null);
+  return discoveryTarget(plugin.name) === (packageSnapshot(plugin) ?? null);
 }
 
 /** Update only the discovery alias; session paths continue to name snapshots. */
 function updateDiscoveryLink(plugin: InstalledPlugin): void {
-  const target = plugin.skillDirs[0];
+  const target = packageSnapshot(plugin);
   const current = discoveryTarget(plugin.name);
   if (current === (target ?? null)) return;
   if (!target) {
