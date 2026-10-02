@@ -118,7 +118,7 @@ describe("question interaction adapter", () => {
     expect(
       getButtonByText(composer, "SQLite").getAttribute("aria-pressed"),
     ).toBe("true");
-    fireEvent.click(getButtonByText(composer, "Submit answer"));
+    fireEvent.click(getButtonByText(composer, "Submit"));
     await vi.waitFor(() => expect(recover).toHaveBeenCalledOnce());
     expect(recover.mock.calls[0]).toEqual([
       expect.objectContaining({
@@ -135,7 +135,7 @@ describe("question interaction adapter", () => {
 
     expect(slot.getAllByText("Which database should we use?")).toHaveLength(2);
     fireEvent.click(getButtonByText(slot, "SQLite"));
-    fireEvent.click(getButtonByText(slot, "Submit answer"));
+    fireEvent.click(getButtonByText(slot, "Submit"));
 
     expect(submit).toHaveBeenCalledTimes(1);
     expect(submit.mock.calls[0]?.[0]).toEqual({
@@ -181,7 +181,7 @@ describe("question interaction adapter", () => {
     fireEvent.change(slot.getByLabelText("Database answer"), {
       target: { value: "Use our managed service" },
     });
-    fireEvent.click(getButtonByText(slot, "Submit answer"));
+    fireEvent.click(getButtonByText(slot, "Submit"));
     expect(submit.mock.calls[0]?.[0]).toEqual({
       answers: { q0: { selected: [], freeText: "Use our managed service" } },
     });
@@ -192,14 +192,14 @@ describe("question interaction adapter", () => {
     });
     const slot = render(singleSelect, { submit });
     fireEvent.click(getButtonByText(slot, "SQLite"));
-    fireEvent.click(getButtonByText(slot, "Submit answer"));
+    fireEvent.click(getButtonByText(slot, "Submit"));
     expect((await slot.findByRole("alert")).textContent).toContain(
       "Could not send your answer",
     );
     expect(getButtonByText(slot, "SQLite").getAttribute("aria-pressed")).toBe(
       "true",
     );
-    fireEvent.click(getButtonByText(slot, "Submit answer"));
+    fireEvent.click(getButtonByText(slot, "Submit"));
     expect(submit).toHaveBeenCalledTimes(2);
   });
   it("cancels the request instead of submitting", () => {
@@ -251,7 +251,7 @@ describe("question interaction adapter", () => {
     expect(card.textContent).toContain("Which database should we use?");
     expect(slot.container.querySelector(".ws-question-portaled")).toBeTruthy();
     fireEvent.click(getButtonByText(composer, "SQLite"));
-    fireEvent.click(getButtonByText(composer, "Submit answer"));
+    fireEvent.click(getButtonByText(composer, "Submit"));
     expect(submit.mock.calls[0]?.[0]).toEqual({
       answers: { q0: { selected: ["q0o1"] } },
     });

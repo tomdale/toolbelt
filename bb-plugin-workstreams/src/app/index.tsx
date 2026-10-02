@@ -127,7 +127,7 @@ export default definePluginApp((app) => {
   });
   app.slots.settingsSection({
     id: "working-indicator",
-    title: "Working Indicator",
+    title: "Working indicator",
     component: WorkingIndicatorSettings,
   });
   app.slots.settingsSection({

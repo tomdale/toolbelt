@@ -556,7 +556,7 @@ export function QuestionForm({
             {disabled ? (
               <Icon name="Spinner" className="size-3 animate-spin" />
             ) : null}
-            {isLast ? "Submit answer" : "Next"}
+            {isLast ? "Submit" : "Next"}
           </Button>
         </div>
       </div>

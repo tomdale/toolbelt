@@ -61,7 +61,7 @@ export function SidebarSettings() {
   );
   const countOptions = [
     { value: "always", label: "Always" },
-    { value: "collapsed", label: "When Collapsed" },
+    { value: "collapsed", label: "When collapsed" },
     { value: "never", label: "Never" },
   ] as const;
   return (
@@ -101,7 +101,7 @@ export function SidebarSettings() {
             prefs.sidebar.timestamps,
             [
               { value: "show", label: "Always" },
-              { value: "hover", label: "On Hover" },
+              { value: "hover", label: "On hover" },
               { value: "hide", label: "Never" },
             ],
             (timestamps) => update({ sidebar: { timestamps } }),

@@ -134,7 +134,7 @@ export function WorkstreamsPage({
             onClick={() => setNewWork(true)}
             className={primaryButton}
           >
-            New work
+            New work…
           </button>
           <NewWorkDialog open={newWork} onClose={() => setNewWork(false)} />
         </header>
