@@ -840,7 +840,7 @@ it("shows full sentence-case action labels and sends each message", async () => 
   ).toMatchObject({ action: "Open a pull request" });
 });
 
-it("adds a suggested action to the composer without sending", async () => {
+it("Shift-clicks a suggested action into the composer without sending", async () => {
   const slot = await mount({
     composer: { text: "Already drafting: " },
     recap: {
@@ -852,10 +852,8 @@ it("adds a suggested action to the composer without sending", async () => {
       ],
     },
   });
-  const button = await slot.findByRole("button", {
-    name: "Edit Run tests in composer",
-  });
-  fireEvent.click(button);
+  const button = await slot.findByRole("button", { name: "Run tests" });
+  fireEvent.click(button, { shiftKey: true });
 
   expect(slot.inspection.composer.text).toBe(
     "Already drafting: Run the full test suite and summarize failures",
@@ -866,7 +864,24 @@ it("adds a suggested action to the composer without sending", async () => {
   ).toBe(false);
 });
 
-it("shows a short sentence-case label with neutral styling", async () => {
+it("sends a suggested action on an ordinary click", async () => {
+  const slot = await mount({ recap: { next: ["Run the full test suite"] } });
+  fireEvent.click(
+    await slot.findByRole("button", { name: "Run the full test suite" }),
+  );
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls).toContainEqual({
+      method: "recap_send",
+      input: {
+        threadId: "t1",
+        recapId: "r1",
+        action: "Run the full test suite",
+      },
+    }),
+  );
+});
+
+it("shows a short sentence-case action label with neutral styling", async () => {
   const slot = await mount({
     recap: {
       next: [
@@ -885,11 +900,8 @@ it("shows a short sentence-case label with neutral styling", async () => {
   expect(button.className).not.toContain("text-emerald-700");
   expect(button.className).toContain("border-border");
   expect(button.className).toContain("bg-transparent");
-  expect(button.getAttribute("title")).toBe(
-    "Check for regressions before shipping",
-  );
-  expect(button.getAttribute("title")).not.toBe(
-    "Run the full test suite and summarize failures",
+  expect(button.getAttribute("aria-description")).toBe(
+    "Click to send, Shift-click to edit in composer",
   );
   fireEvent.click(button);
   await waitFor(() =>
