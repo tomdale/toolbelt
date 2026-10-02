@@ -34,7 +34,18 @@ import type { NewWork } from "./new-work.ts";
 /** BB's option-trigger classes, so the field lines up with the pickers beside it. */
 const TRIGGER_CLASS =
   "h-8 w-fit max-w-full min-w-0 shrink-0 items-center justify-start gap-1 px-1 text-xs leading-tight border-none bg-transparent shadow-none text-muted-foreground hover:text-muted-foreground";
-const ITEM_CLASS = "py-[0.3125rem] text-xs max-md:py-2";
+const ITEM_CLASS = "items-start py-[0.3125rem] text-xs max-md:py-2";
+
+/** A one-or-two-line summary under an item's name, like BB's environment picker. */
+function Description({ text }: { text: string | null | undefined }) {
+  const trimmed = text?.trim();
+  if (!trimmed) return null;
+  return (
+    <span className="line-clamp-2 text-xs font-normal text-muted-foreground">
+      {trimmed}
+    </span>
+  );
+}
 const NONE = "__none__";
 const CREATE = "__create__";
 
@@ -75,13 +86,19 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
   );
   const needle = query.trim().toLowerCase();
   const visible = needle
-    ? workstreams.filter((w) => w.name.toLowerCase().includes(needle))
+    ? workstreams.filter((w) =>
+        [w.name, w.description ?? ""].some((text) =>
+          text.toLowerCase().includes(needle),
+        ),
+      )
     : workstreams;
   const inactive = entities.filter(
     (e) =>
       !workstreams.some((w) => w.name === e.name) &&
       (!needle ||
-        [e.name, ...e.aliases].some((n) => n.toLowerCase().includes(needle))),
+        [e.name, e.description, ...e.aliases].some((n) =>
+          n.toLowerCase().includes(needle),
+        )),
   );
   const exact =
     workstreams.some((w) => w.name.toLowerCase() === needle) ||
@@ -160,10 +177,13 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
                     className={ITEM_CLASS}
                   >
                     <WorkstreamIcon className="size-4" />
-                    <WorkstreamName
-                      name={w.name}
-                      className="min-w-0 flex-1 text-xs"
-                    />
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <WorkstreamName
+                        name={w.name}
+                        className="text-xs font-medium"
+                      />
+                      <Description text={w.description} />
+                    </span>
                     <Icon
                       name="Check"
                       className={cn(
@@ -198,7 +218,12 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
                     }}
                     className={ITEM_CLASS}
                   >
-                    {corpusLabel(entity.id, entities)}
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="truncate font-medium">
+                        {corpusLabel(entity.id, entities)}
+                      </span>
+                      <Description text={entity.description} />
+                    </span>
                   </CommandItem>
                 ))}
               </CommandGroup>
