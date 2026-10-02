@@ -301,6 +301,13 @@ export const routeSchema = z.discriminatedUnion("outcome", [
 ]);
 
 export const rpcContract = defineRpcContract({
+  question_at: {
+    input: z.object({
+      threadId: z.string().min(1),
+      interactionId: z.string().min(1),
+    }),
+    output: questionHistorySchema.nullable(),
+  },
   question_history: {
     input: z.object({ threadId: z.string().min(1) }),
     output: z.array(questionHistorySchema),

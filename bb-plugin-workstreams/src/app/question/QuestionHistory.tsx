@@ -3,115 +3,100 @@ import {
   Markdown,
   useRealtime,
   useRpc,
-  useBbNavigate,
-  type PluginThreadHeaderActionProps,
-  type PluginThreadPanelProps,
+  type PluginTimelineRendererProps,
 } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import type { QuestionHistory } from "../../server/questions/history.ts";
+import { questionResultSchema } from "../../server/questions/history.ts";
+import { buildInteractionPayload } from "../../server/questions/translate.ts";
+import { toolInputSchema } from "../../server/questions/contracts.ts";
 
-export function QuestionHistoryButton({
-  isCompactViewport,
-}: PluginThreadHeaderActionProps) {
-  const navigate = useBbNavigate();
+export function QuestionHistoryCard({ record }: { record: QuestionHistory }) {
   return (
-    <button
-      type="button"
-      className="rounded px-2 py-1 text-xs hover:bg-secondary"
-      title="View saved questions and answers"
-      aria-label="Question history"
-      onClick={() =>
-        navigate.openThreadPanel({
-          actionId: "question-history",
-          title: "Question history",
-          params: null,
-        })
-      }
+    <div
+      data-ws-question-history=""
+      className="my-2 rounded-lg border border-amber-400/50 bg-background p-3 text-foreground"
     >
-      {isCompactViewport ? "Q&A" : "Question history"}
-    </button>
+      <p className="mb-3 text-xs font-medium text-muted-foreground">
+        Question ·{" "}
+        {record.status === "unknown" ? "Answer unavailable" : record.status}
+      </p>
+      <div className="space-y-4">
+        {record.payload.questions.map((q) => (
+          <section key={q.id} className="space-y-2 text-sm">
+            <Markdown content={q.prompt} />
+            {q.options.length ? (
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer">Options offered</summary>
+                <ul className="mt-2 space-y-1">
+                  {q.options.map((o) => (
+                    <li key={o.value}>
+                      <strong>{o.label}</strong> — {o.description}
+                      {o.preview ? (
+                        <pre className="mt-1 overflow-auto whitespace-pre-wrap rounded border border-border p-2">
+                          {o.preview}
+                        </pre>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            <div className="rounded border border-border p-2">
+              <strong className="text-xs">Your answer</strong>
+              <p className="whitespace-pre-wrap text-sm">
+                {record.result?.answers[q.prompt] ??
+                  (record.status === "dismissed"
+                    ? "Dismissed without an answer or approval"
+                    : record.status === "pending"
+                      ? "Awaiting your answer"
+                      : "No answer was retained")}
+              </p>
+            </div>
+          </section>
+        ))}
+      </div>
+    </div>
   );
 }
 
-export function QuestionHistoryPanel({ threadId }: PluginThreadPanelProps) {
+/** BB owns the form row's position; the plugin renders only its saved body. */
+export function QuestionHistoryInline({
+  row,
+  payload,
+  Original,
+}: PluginTimelineRendererProps) {
   const rpc = useRpc<RpcContract>();
-  const [rows, setRows] = useState<QuestionHistory[] | null>(null);
-  const [error, setError] = useState(false);
+  const [record, setRecord] = useState<QuestionHistory | null>(null);
+  const parsed = questionResultSchema.safeParse(payload);
+  const input = parsed.success
+    ? toolInputSchema.safeParse({ questions: parsed.data.questions })
+    : null;
+  const direct: QuestionHistory | null =
+    parsed.success && input?.success
+      ? {
+          id: row.id,
+          at: row.startedAt,
+          status: "answered",
+          payload: buildInteractionPayload(input.data),
+          result: parsed.data,
+        }
+      : null;
   const load = useCallback(async () => {
-    try {
-      const rows = await rpc.call("question_history", { threadId });
-      setRows(rows);
-      setError(false);
-    } catch {
-      setError(true);
-    }
-  }, [rpc, threadId]);
+    const prefix = `${row.threadId}:form:`;
+    if (!row.id.startsWith(prefix)) return;
+    const value = await rpc
+      .call("question_at", {
+        threadId: row.threadId,
+        interactionId: row.id.slice(prefix.length),
+      })
+      .catch(() => null);
+    setRecord(value);
+  }, [rpc, row.id, row.threadId]);
   useEffect(() => {
-    setRows(null);
     void load();
   }, [load]);
   useRealtime("changed", () => void load());
-  return (
-    <div className="space-y-3 p-4 text-foreground">
-      <h2 className="text-sm font-semibold">Question history</h2>
-      <p className="text-xs text-muted-foreground">
-        Saved questions and answers for this thread, including retained older
-        answers. Latest 100 records; older transcript recovery scans the latest
-        200 input and tool events.
-      </p>
-      {error ? (
-        <p role="alert">
-          Could not load question history.{" "}
-          <button onClick={() => void load()}>Retry</button>
-        </p>
-      ) : null}
-      {!rows && !error ? <p role="status">Loading questions…</p> : null}
-      {rows?.length === 0 ? <p>No saved questions yet</p> : null}
-      {rows?.map((row) => (
-        <details
-          key={row.id}
-          open
-          className="rounded-lg border border-border p-3"
-        >
-          <summary className="cursor-pointer text-xs font-medium">
-            {row.payload.questions.map((q) => q.shortLabel).join(" · ")} —{" "}
-            {row.status === "unknown" ? "Answer unavailable" : row.status}
-            {row.at ? ` · ${new Date(row.at).toLocaleString()}` : ""}
-          </summary>
-          <div className="mt-3 space-y-4">
-            {row.payload.questions.map((q) => (
-              <section key={q.id} className="space-y-2 text-sm">
-                <Markdown content={q.prompt} />
-                {q.options.length ? (
-                  <ul className="space-y-1 text-xs text-muted-foreground">
-                    {q.options.map((o) => (
-                      <li key={o.value}>
-                        <strong>{o.label}</strong> — {o.description}
-                        {o.preview ? (
-                          <pre className="mt-1 overflow-auto whitespace-pre-wrap rounded border border-border p-2">
-                            {o.preview}
-                          </pre>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                <div className="rounded border border-amber-400/50 bg-amber-50/20 p-2 dark:bg-transparent">
-                  <strong className="text-xs">Your answer</strong>
-                  <p className="whitespace-pre-wrap text-sm">
-                    {row.result?.answers[q.prompt] ??
-                      (row.status === "dismissed"
-                        ? "Dismissed without an answer or approval"
-                        : row.status === "pending"
-                          ? "Awaiting your answer"
-                          : "No answer was retained")}
-                  </p>
-                </div>
-              </section>
-            ))}
-          </div>
-        </details>
-      ))}
-    </div>
-  );
+  const saved = record ?? direct;
+  return saved ? <QuestionHistoryCard record={saved} /> : <Original />;
 }

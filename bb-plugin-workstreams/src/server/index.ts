@@ -392,9 +392,15 @@ export default async function plugin(bb: BbPluginApi) {
     recaps.onArchived(thread.id);
     if (snoozes.clear(thread.id)) notify();
   });
-  bb.events.on("interaction.pending", ({ thread, interaction }) =>
-    recaps.onInteractionPending(thread.id, interaction),
-  );
+  bb.events.on("interaction.pending", ({ thread, interaction }) => {
+    if (
+      interaction.origin?.kind === "plugin" &&
+      interaction.origin.pluginId === bb.pluginId &&
+      interaction.origin.rendererId === "ask-user-question"
+    )
+      questions.attach(thread.id, interaction.id);
+    return recaps.onInteractionPending(thread.id, interaction);
+  });
   bb.events.on("thread.deleted", ({ thread }) => {
     snoozes.clear(thread.id);
     analyzer.forget(thread.id);
@@ -551,6 +557,8 @@ export default async function plugin(bb: BbPluginApi) {
           : null,
       };
     },
+    question_at: ({ threadId, interactionId }) =>
+      questions.atInteraction(threadId, interactionId),
     question_history: ({ threadId }) => questions.history(threadId),
     question_pending: ({ threadId }) => questions.pending(threadId),
     question_recover: async ({ threadId, id, value, dismiss }) => {

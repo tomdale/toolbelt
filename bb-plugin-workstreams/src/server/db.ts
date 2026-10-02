@@ -283,6 +283,8 @@ const MIGRATIONS = [
   "ALTER TABLE ws_question ADD COLUMN result TEXT",
   "ALTER TABLE ws_question ADD COLUMN created_at INTEGER",
   "ALTER TABLE ws_question ADD COLUMN outcome TEXT",
+  "ALTER TABLE ws_question ADD COLUMN interaction_id TEXT",
+  "CREATE INDEX ws_question_interaction ON ws_question(interaction_id)",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

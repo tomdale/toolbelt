@@ -4,7 +4,13 @@ import { afterEach, expect, it } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 const app = await loadPluginApp(() => import("../../../src/app/index.tsx"));
 afterEach(cleanup);
-it("keeps prompts, suggestions, previews, answers and dismissal readable", async () => {
+it("renders the saved Q&A at the form row without a header or panel", async () => {
+  expect(app.threadHeaderActions.some((p) => p.id === "question-history")).toBe(
+    false,
+  );
+  expect(app.threadPanelActions.some((p) => p.id === "question-history")).toBe(
+    false,
+  );
   const payload = {
     questions: [
       {
@@ -25,43 +31,50 @@ it("keeps prompts, suggestions, previews, answers and dismissal readable", async
     ],
   };
   const slot = renderSlot(
-    app.threadPanelActions.find((p) => p.id === "question-history")!,
-    { threadId: "thread", params: null },
+    app.timelineRenderers.find(
+      (p) => p.kind === "workstreams/ask-user-question",
+    )!,
+    {
+      row: {
+        id: "thread:form:interaction",
+        threadId: "thread",
+        turnId: null,
+        kind: "workstreams/ask-user-question",
+        toolName: null,
+        status: "completed",
+        startedAt: 123,
+        completedAt: null,
+      },
+      payload: null,
+      presentation: null,
+      thread: { id: "thread", providerId: "pi" },
+      Original: () => <p>Original row</p>,
+    },
     {
       rpc: {
-        question_history: () => [
-          {
-            id: "answered",
-            at: 123,
-            status: "answered",
-            payload,
-            result: {
-              questions: [
-                {
-                  question: "Which database?",
-                  header: "Database",
-                  multiSelect: false,
-                  options: [],
-                },
-              ],
-              answers: { "Which database?": "SQLite with replicas" },
-            },
+        question_at: () => ({
+          id: "saved",
+          at: 123,
+          status: "answered",
+          payload,
+          result: {
+            questions: [
+              {
+                question: "Which database?",
+                header: "Database",
+                multiSelect: false,
+                options: [],
+              },
+            ],
+            answers: { "Which database?": "SQLite with replicas" },
           },
-          {
-            id: "dismissed",
-            at: null,
-            status: "dismissed",
-            payload,
-            result: null,
-          },
-        ],
+        }),
       },
     },
   );
   await slot.findByText("SQLite with replicas");
-  expect(slot.getAllByText("Which database?")).toHaveLength(2);
-  expect(slot.getAllByText("CREATE TABLE test;")).toHaveLength(2);
-  expect(
-    slot.getByText("Dismissed without an answer or approval"),
-  ).toBeTruthy();
+  expect(slot.getByText("Which database?")).toBeTruthy();
+  expect(slot.getByText("Options offered")).toBeTruthy();
+  expect(slot.getByText("CREATE TABLE test;")).toBeTruthy();
+  expect(slot.queryByText("Original row")).toBeNull();
 });
