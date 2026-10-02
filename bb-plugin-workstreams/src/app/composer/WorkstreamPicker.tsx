@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { WorkstreamName } from "../WorkstreamName.tsx";
+import { WORKSTREAM_ICON } from "../workstream-icon.ts";
 import { applyOrder } from "../../domain/order.ts";
 import { useServerState } from "../useWorkstreams.ts";
 import type { NewWork } from "./new-work.ts";
@@ -112,7 +113,7 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
         >
           <span className="contents">
             <Icon
-              name={selected ? "Layers" : "CircleDashed"}
+              name={selected ? WORKSTREAM_ICON : "CircleDashed"}
               className="size-3.5 shrink-0"
               aria-hidden
             />
@@ -158,7 +159,7 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
                     className={ITEM_CLASS}
                   >
                     <Icon
-                      name="Layers"
+                      name={WORKSTREAM_ICON}
                       className="size-4 text-muted-foreground"
                       aria-hidden
                     />

@@ -10,7 +10,10 @@
     "name": "Workstreams",
     "description": "Organize open BB threads in one reviewed pass, then route new work into stable homes.",
     "branding": {
-      "icon": "Layers"
+      "icon": "./assets/workstream.svg",
+      "experimental_icons": {
+        "workstream": "./assets/workstream.svg"
+      }
     },
     "server": "./src/server/index.ts",
     "app": "./src/app/index.tsx",
@@ -68,6 +71,7 @@
     "format:check": "prettier --check ."
   },
   "files": [
+    "assets",
     "dist",
     "src",
     "components",

@@ -6,6 +6,7 @@ import { Icon } from "@/components/ui/icon";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { ghostButton, primaryButton, secondaryButton } from "./controls.ts";
 import { WorkstreamName } from "../WorkstreamName.tsx";
+import { WORKSTREAM_ICON } from "../workstream-icon.ts";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 type Command = Parameters<Rpc["call"]>[1];
@@ -242,6 +243,11 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
               return (
                 <div key={w.key}>
                   <h4 className="flex items-baseline gap-2 px-2 text-[13px] font-semibold">
+                    <Icon
+                      name={WORKSTREAM_ICON}
+                      className="size-3.5 shrink-0 self-center text-muted-foreground"
+                      aria-hidden
+                    />
                     <WorkstreamName name={w.name} />
                     {w.sectionId === null ? (
                       <span className="rounded bg-primary/15 px-1 text-[10px] font-semibold uppercase tracking-wide text-primary">

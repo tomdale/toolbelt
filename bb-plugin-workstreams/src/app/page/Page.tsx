@@ -25,6 +25,7 @@ import { MapTab } from "./MapTab.tsx";
 import { NewWorkDialog } from "../composer/NewWork.tsx";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
+import { WORKSTREAM_ICON } from "../workstream-icon.ts";
 
 type Tab = "overview" | "map" | "activity";
 const TAB_LABEL: Record<Tab, string> = {
@@ -267,7 +268,12 @@ function WorkstreamCard({
   return (
     <section aria-label={group.name}>
       <div className="flex items-baseline gap-2 px-2 pb-1.5">
-        <h2 className="min-w-0 text-[13px] font-semibold">
+        <h2 className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold">
+          <Icon
+            name={WORKSTREAM_ICON}
+            className="size-3.5 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
           <WorkstreamName name={group.name} />
         </h2>
         {group.needsYou ? (
