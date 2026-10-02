@@ -359,7 +359,7 @@ function WaitingCountdown({
               className="size-5 text-muted-foreground"
               onClick={onCancel}
             >
-              <Icon name="ClockArrowDown" aria-hidden className="size-3.5" />
+              <Icon name="CircleX" aria-hidden className="size-3.5" />
             </Button>
           ) : null}
         </>
