@@ -7,9 +7,9 @@ Workstreams can retain product and feature identities separately from the sectio
 In Workstreams settings:
 
 - **New work → Corpus classification (experimental)** identifies a specific known subject independently of current groups. A subject can be placed under an existing broader group. This path does not suggest thread continuation and leaves project/environment selections unchanged.
-- **Organize → Adaptive preview (experimental)** classifies roots missing a stored subject, then sends compact subject counts to the selected organizing model. Review the proposal and use Apply to change sections or placements.
+- **Organize → Adaptive preview (experimental)** classifies roots missing a stored subject, then sends current task counts by product and feature to the selected organizing model. Review the proposal and use Apply to change sections or placements.
 
-The default preview capacity is six concurrent roots, with contraction at three roots per product. These values are configurable experimental policy, not a guarantee of human navigation quality. An indivisible subject can exceed capacity in its own group. Known current completed assessments do not add navigation pressure; unresolved and stale assessments are counted conservatively.
+The default preview capacity is six concurrent roots, with contraction at three roots per product. These values are configurable experimental policy, not a guarantee of human navigation quality. An indivisible subject can exceed capacity in its own group. Each independent task is counted once under its specific product or feature, rather than sending its full conversation to the organizing model. “Current” refers to ongoing work, not simultaneous model execution: archived threads and child workers do not inflate these counts. Known current completed assessments do not add navigation pressure; unresolved and stale assessments are counted conservatively.
 
 ## Retained knowledge
 

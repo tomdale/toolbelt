@@ -17,7 +17,7 @@ const EVENT: Record<TraceKind, { label: string; description: string }> = {
   regroup: {
     label: "Active grouping preview",
     description:
-      "Proposes active identities from concurrent subject counts. Apply remains a separate user action.",
+      "Proposes active groups from current task counts by product and feature. Apply remains a separate user action.",
   },
   analysis: {
     label: "Thread assessment",

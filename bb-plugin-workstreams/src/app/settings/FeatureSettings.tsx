@@ -278,7 +278,7 @@ export function OrganizeSettings() {
       />
       <SettingRow
         label="Adaptive preview (experimental)"
-        description="Classify task subjects, then propose groups using compact concurrent counts. Nothing moves until Apply."
+        description="Classify tasks, then propose groups using current task counts by product and feature. Nothing moves until Apply."
         control={
           <SettingSwitch
             label="Adaptive preview"
