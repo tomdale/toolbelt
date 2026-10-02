@@ -300,34 +300,51 @@ function WaitingTasks({
   const body = useBodyClass();
   const tasks = recap.tasks ?? [];
   const single = tasks.length === 1 ? tasks[0]! : null;
-  const taskText = (item: RecapItem, title = false) => {
+  const taskText = (item: RecapItem, index: number) => {
     const { text, detail } = itemParts(item);
     return (
-      <>
-        <RecapText
-          text={text}
-          typeClass={title ? (compact ? COMPACT_GOAL_CLASS : GOAL_CLASS) : body}
-        />
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          {single ? (
+            <div
+              role="heading"
+              aria-level={2}
+              className={cn(
+                "font-medium tracking-[-0.006em] text-foreground",
+                compact ? COMPACT_GOAL_CLASS : GOAL_CLASS,
+              )}
+            >
+              <RecapText
+                text={text}
+                typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
+              />
+            </div>
+          ) : (
+            <RecapText
+              text={text}
+              typeClass={body}
+              className={index === 0 ? "font-medium text-foreground" : ""}
+            />
+          )}
+          {index === 0 ? (
+            <WaitingCountdown
+              recap={recap}
+              cancelled={cancelled}
+              onCancel={onCancel}
+            />
+          ) : null}
+        </div>
         {detail ? (
           <RecapText text={detail} className="mt-0.5 text-muted-foreground" />
         ) : null}
-      </>
+      </div>
     );
   };
   return (
     <div className="py-2">
       {single ? (
-        <div
-          role="heading"
-          aria-level={2}
-          data-progress="active"
-          className={cn(
-            "font-medium tracking-[-0.006em] text-foreground",
-            clearance,
-            GOAL_CLASS,
-          )}
-        >
-          {taskText(single, true)}
+        <div data-progress="active" className={cn(clearance, GOAL_CLASS)}>
+          {taskText(single, 0)}
         </div>
       ) : (
         <ul
@@ -339,16 +356,11 @@ function WaitingTasks({
         >
           {tasks.map((item, index) => (
             <li key={index} data-progress="active" className="min-w-0">
-              {taskText(item)}
+              {taskText(item, index)}
             </li>
           ))}
         </ul>
       )}
-      <WaitingCountdown
-        recap={recap}
-        cancelled={cancelled}
-        onCancel={onCancel}
-      />
     </div>
   );
 }
@@ -364,7 +376,7 @@ function WaitingCountdown({
 }) {
   const remaining = useWaitingCountdown(recap, cancelled);
   return (
-    <div className="mt-2 flex items-center gap-1 text-muted-foreground">
+    <div className="inline-flex items-center gap-1 text-muted-foreground">
       {cancelled ? (
         <span className={`${BODY_CLASS} text-[11px]`}>
           Status check cancelled
@@ -381,12 +393,12 @@ function WaitingCountdown({
             <Button
               type="button"
               variant="ghost"
-              size="icon"
+              size="sm"
               aria-label="Cancel status check"
-              className="size-5 text-muted-foreground"
+              className="h-5 px-1.5 text-[11px] text-muted-foreground"
               onClick={onCancel}
             >
-              <Icon name="ClockArrowDown" aria-hidden className="size-3.5" />
+              Cancel check
             </Button>
           ) : null}
         </>
