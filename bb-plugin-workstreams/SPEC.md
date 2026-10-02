@@ -453,13 +453,14 @@ it.
   check and the expected result), and `links` (≤ 8 absolute file paths or HTTPS
   URLs, optional in review only and limited to artifacts or pages explicitly
   being reviewed). `next` (1–3 user messages, complete and review only) renders
-  as short Title Case buttons in the card's bottom bar, tinted to the recap
-  accent. Use `{ title, message, description? }` for a concise button title, the
-  exact message to send, and an optional hover/menu explanation; strings remain
-  supported for simple actions. Clicking sends the message verbatim. If the
-  buttons would wrap, Workstreams replaces them with one action menu. Items in
-  `latest`, `tasks`, and `review` accept strings or `{ text, detail }` objects
-  (legacy `{ step, expect }` is also accepted as an alias). `detail` is optional
+  as full sentence-case labels on neutral, unfilled buttons; the label text uses
+  the recap accent color. Use `{ title, message, description? }` for the full
+  button label, exact message to send, and optional hover/menu explanation;
+  strings remain supported for simple actions. Labels are never truncated. If
+  they would wrap or overflow, Workstreams replaces the buttons with one action
+  menu. Clicking sends the message verbatim. Items in `latest`, `tasks`, and
+  `review` accept strings or `{ text, detail }` objects (legacy
+  `{ step, expect }` is also accepted as an alias). `detail` is optional
   secondary text shown as a bulleted subrow. Separate items render as a list;
   review items are numbered. A single string counts as one item. Keep distinct
   results in separate items rather than joining them with semicolons. UI review
