@@ -186,7 +186,6 @@ const recapFields = z
         "Completed results for complete and review. Items can be strings or { text, detail } objects with optional secondary text.",
       ),
     task: line(120)
-      .nullable()
       .optional()
       .describe("Waiting only: the async task the agent is waiting on"),
     timeout: z
@@ -236,7 +235,7 @@ export const recapInputSchema = z
   .discriminatedUnion("state", [
     recapFields.extend({
       state: z.literal("complete"),
-      task: z.never().nullable().optional(),
+      task: z.null().optional(),
       timeout: z.null().optional(),
       review: z
         .union([z.array(z.never()).max(0), z.literal("")])
@@ -250,7 +249,7 @@ export const recapInputSchema = z
     }),
     recapFields.extend({
       state: z.literal("review"),
-      task: z.never().nullable().optional(),
+      task: z.null().optional(),
       timeout: z.null().optional(),
       latest: recapFields.shape.latest.removeDefault().min(1),
       review: z.union([

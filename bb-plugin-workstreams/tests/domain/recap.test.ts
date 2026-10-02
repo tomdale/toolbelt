@@ -94,6 +94,15 @@ it.each(["complete", "review"] as const)(
       ...(state === "review" ? { review: "Inspect the result" } : {}),
     });
     expect(result.success).toBe(true);
+    expect(
+      recapToolSchema.safeParse({
+        state,
+        goal: "Finished work",
+        latest: ["Tests passed"],
+        task: null,
+        ...(state === "review" ? { review: "Inspect the result" } : {}),
+      }).success,
+    ).toBe(false);
   },
 );
 
