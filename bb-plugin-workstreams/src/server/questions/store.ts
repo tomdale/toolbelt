@@ -61,6 +61,95 @@ export class QuestionStore {
       : null;
   }
 
+  attach(threadId: string, interactionId: string) {
+    this.db
+      .prepare(
+        "UPDATE ws_question SET interaction_id = ? WHERE thread_id = ? AND status = 'pending'",
+      )
+      .run(interactionId, threadId);
+  }
+
+  async atInteraction(
+    threadId: string,
+    interactionId: string,
+  ): Promise<QuestionHistory | null> {
+    const row = this.db
+      .prepare(
+        "SELECT id, payload, result, created_at, outcome, status FROM ws_question WHERE thread_id = ? AND interaction_id = ?",
+      )
+      .get(threadId, interactionId) as
+      | {
+          id: string;
+          payload: string;
+          result: string | null;
+          created_at: number | null;
+          outcome: QuestionHistory["status"] | null;
+          status: string;
+        }
+      | undefined;
+    if (row)
+      return {
+        id: row.id,
+        at: row.created_at,
+        status:
+          row.status === "pending" || row.status === "sending"
+            ? "pending"
+            : (row.outcome ?? "unknown"),
+        payload: interactionPayloadSchema.parse(JSON.parse(row.payload)),
+        result: row.result
+          ? questionResultSchema.parse(JSON.parse(row.result))
+          : null,
+      };
+    // Old forms lack a durable association. Bound a scan around the exact
+    // interaction, then pair the first delivered answer after that form.
+    const events = await this.bb.sdk.threads.events.list({
+      threadId,
+      types: ["system/interaction/lifecycle", "client/turn/requested"],
+      order: "desc",
+      limit: "100",
+    });
+    const opened = events
+      .filter(
+        (e) =>
+          e.type === "system/interaction/lifecycle" &&
+          e.data.interaction.id === interactionId,
+      )
+      .sort((a, b) => a.seq - b.seq)[0];
+    if (!opened) return null;
+    const next = events
+      .filter(
+        (e) =>
+          e.type === "system/interaction/lifecycle" &&
+          e.data.interaction.origin?.kind === "plugin" &&
+          e.data.interaction.origin.rendererId === "ask-user-question" &&
+          e.data.interaction.id !== interactionId &&
+          e.seq > opened.seq,
+      )
+      .sort((a, b) => a.seq - b.seq)[0];
+    for (const event of events
+      .filter((e) => e.seq > opened.seq && (!next || e.seq < next.seq))
+      .sort((a, b) => a.seq - b.seq)) {
+      if (event.type !== "client/turn/requested") continue;
+      for (const part of event.data.input ?? []) {
+        const result =
+          part.type === "text" ? deliveredQuestionResult(part.text) : null;
+        if (!result) continue;
+        const input = toolInputSchema.safeParse({
+          questions: result.questions,
+        });
+        if (!input.success) continue;
+        return {
+          id: interactionId,
+          at: opened.createdAt,
+          status: "answered",
+          payload: buildInteractionPayload(input.data),
+          result,
+        };
+      }
+    }
+    return null;
+  }
+
   interrupted(id: string) {
     this.live.delete(id);
   }

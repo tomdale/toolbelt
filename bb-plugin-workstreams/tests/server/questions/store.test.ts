@@ -26,6 +26,36 @@ function setup() {
 }
 
 describe("durable questions", () => {
+  it("looks up a saved answer at its exact interaction row", async () => {
+    const { host, store } = setup();
+    const id = store().open("thread", {
+      questions: [
+        {
+          id: "q0",
+          prompt: "Ship it?",
+          shortLabel: "Ship",
+          options: [],
+          multiSelect: false,
+          allowFreeText: true,
+        },
+      ],
+    });
+    store().attach("thread", "interaction");
+    store().finish(
+      id,
+      { ...input, answers: { "Ship it?": "Tomorrow" } },
+      "answered",
+    );
+    expect(await store().atInteraction("thread", "interaction")).toMatchObject({
+      id,
+      status: "answered",
+      result: { answers: { "Ship it?": "Tomorrow" } },
+    });
+    expect(
+      await store().atInteraction("other-thread", "interaction"),
+    ).toBeNull();
+    await host.harness.lifecycle.dispose();
+  });
   it("recovers old detached answers and avoids duplicating them on repeated history reads", async () => {
     const { host, store } = setup();
     const result = { ...input, answers: { "Ship it?": "Yes, tomorrow" } };
