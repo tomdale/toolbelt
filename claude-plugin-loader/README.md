@@ -79,6 +79,16 @@ rename. Simultaneous startups can only discover complete snapshots. Existing
 snapshots are retained, including after removing a plugin, because running
 sessions may still read their files. There is no automatic snapshot cleanup.
 
+Each installed plugin also has a stable discovery symlink at `current/<plugin>`
+under the loader home. Registry updates atomically replace this alias with a link
+to the complete current snapshot; unchanged refreshes leave it untouched. Pi's
+extension still supplies immutable snapshot paths to sessions. External scanners
+can use the stable alias without knowing the current digest. Configure
+`~/.pi/agent/claude-plugins/current/tdx` in Pi's `settings.json.skills` to expose
+`tdx` to stock BB's Pi scanner. Pi deduplicates that alias and the extension's
+snapshot by canonical file path. Removing a plugin removes its alias but retains
+snapshots. A non-symlink at the alias path is a conflict and is never overwritten.
+
 Registry changes are serialized with a directory lock and published by atomic
 file replacement. Lock waits are bounded to five seconds. If a writer is killed
 while holding `registry.lock`, stop loader writers, remove that lock directory,
@@ -100,6 +110,7 @@ Accepted sources match `pi install` shorthands: `git:host/owner/repo@ref`,
 - Installed plugin clones: `~/.pi/agent/claude-plugins/repos/…`
 - Immutable skill snapshots: `~/.pi/agent/claude-plugins/skills/.versions/<plugin>-<digest>/…`
 - Unpublished temporary builds: `skills/.versions/.<plugin>-…` under the same loader home
+- Stable discovery symlinks: `~/.pi/agent/claude-plugins/current/<plugin>`
 - Registry of installed plugins: `~/.pi/agent/claude-plugins/registry.json`
 
 Set `PI_CLAUDE_PLUGINS_DIR` to relocate both (used by the test suite).
