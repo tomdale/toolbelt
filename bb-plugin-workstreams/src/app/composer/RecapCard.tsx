@@ -804,41 +804,18 @@ function nextActionMessage(action: NextAction): string {
   return typeof action === "string" ? action : action.message;
 }
 
-/** The short title shown on a recap action button or menu item. */
-function titleCase(value: string): string {
-  return value
-    .split(/\s+/)
-    .map((word) => {
-      if (!word) return word;
-      const letters = word.replace(/[^a-z]/gi, "");
-      return letters.length > 1 && letters === letters.toLocaleUpperCase()
-        ? word
-        : word[0]!.toLocaleUpperCase() + word.slice(1).toLocaleLowerCase();
-    })
-    .join(" ");
-}
-
+/** The full label shown on a recap action button or menu item. */
 function nextActionTitle(action: NextAction): string {
-  const source = titleCase(typeof action === "string" ? action : action.title);
-  const words = source.split(/\s+/);
-  let short = "";
-  for (const word of words) {
-    const candidate = short ? `${short} ${word}` : word;
-    if (candidate.length > 24 || (short && short.split(" ").length >= 4)) break;
-    short = candidate;
-  }
-  return short.length < source.length
-    ? `${short || source.slice(0, 23).trimEnd()}…`
-    : short;
+  return typeof action === "string" ? action : action.title;
 }
 
 const NEXT_ACTION_CLASS: Record<Recap["state"], string> = {
   waiting:
-    "border-violet-700/35 bg-violet-500/10 text-violet-700 hover:bg-violet-500/20 hover:text-violet-700 dark:border-violet-300/35 dark:bg-violet-300/10 dark:text-violet-300 dark:hover:bg-violet-300/20 dark:hover:text-violet-300",
+    "border-border bg-transparent text-violet-700 hover:bg-transparent hover:text-violet-800 dark:text-violet-300 dark:hover:bg-transparent dark:hover:text-violet-200",
   review:
-    "border-sky-700/35 bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 hover:text-sky-700 dark:border-sky-300/35 dark:bg-sky-300/10 dark:text-sky-300 dark:hover:bg-sky-300/20 dark:hover:text-sky-300",
+    "border-border bg-transparent text-sky-700 hover:bg-transparent hover:text-sky-800 dark:text-sky-300 dark:hover:bg-transparent dark:hover:text-sky-200",
   complete:
-    "border-emerald-700/35 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-700 dark:border-emerald-300/35 dark:bg-emerald-300/10 dark:text-emerald-300 dark:hover:bg-emerald-300/20 dark:hover:text-emerald-300",
+    "border-border bg-transparent text-emerald-700 hover:bg-transparent hover:text-emerald-800 dark:text-emerald-300 dark:hover:bg-transparent dark:hover:text-emerald-200",
 };
 
 function NextActionItem({
@@ -860,7 +837,7 @@ function NextActionItem({
       variant="outline"
       size="sm"
       className={cn(
-        "h-7 max-w-48 px-2.5 text-[11.5px] font-semibold",
+        "h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium",
         NEXT_ACTION_CLASS[state],
       )}
       disabled={disabled || !onSend}
@@ -868,7 +845,7 @@ function NextActionItem({
         if (onSend) void onSend(message);
       }}
     >
-      <span className="truncate">{title}</span>
+      <span>{title}</span>
     </Button>
   );
   const description =
@@ -957,13 +934,13 @@ function NextActions({
               variant="outline"
               size="sm"
               className={cn(
-                "h-7 px-2.5 text-[11.5px] font-semibold",
+                "h-7 border-border bg-transparent px-2.5 text-[11.5px] font-medium hover:bg-transparent",
                 NEXT_ACTION_CLASS[state],
               )}
               disabled={pending || !onSend}
               aria-label="Next actions"
             >
-              Next Actions{" "}
+              Next actions{" "}
               <Icon name="ChevronDown" aria-hidden className="size-3" />
             </Button>
           </DropdownMenu.Trigger>

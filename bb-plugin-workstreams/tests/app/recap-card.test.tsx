@@ -767,18 +767,20 @@ it("colors hash digits and letters from settings", async () => {
   );
 });
 
-it("shows short Title Case buttons and sends the full action message", async () => {
+it("shows full sentence-case action labels and sends each message", async () => {
   const slot = await mount({
     recap: { next: ["Run the full test suite", "Open a pull request"] },
   });
   const region = await slot.findByRole("region", { name: "Latest recap" });
   const list = slot.getByRole("list", { name: "Next actions" });
   expect(region.contains(list)).toBe(true);
-  expect(list.textContent).toContain("Run The Full Test…");
-  expect(list.textContent).toContain("Open A Pull Request");
-  // With next actions present, Archive yields the bar's right side to them.
+  expect(
+    slot.getByRole("button", { name: "Run the full test suite" }).textContent,
+  ).toBe("Run the full test suite");
+  expect(list.textContent).toContain("Run the full test suite");
+  expect(list.textContent).toContain("Open a pull request");
   expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
-  fireEvent.click(slot.getByRole("button", { name: "Open A Pull Request" }));
+  fireEvent.click(slot.getByRole("button", { name: "Open a pull request" }));
   await waitFor(() =>
     expect(slot.inspection.rpcCalls).toContainEqual({
       method: "recap_send",
@@ -794,12 +796,12 @@ it("shows short Title Case buttons and sends the full action message", async () 
   ).toMatchObject({ action: "Open a pull request" });
 });
 
-it("shows concise Title Case labels and sends the full message", async () => {
+it("shows a sentence-case label with neutral border and accent text", async () => {
   const slot = await mount({
     recap: {
       next: [
         {
-          title: "Run Tests",
+          title: "Run tests",
           message: "Run the full test suite and summarize failures",
           description: "Check for regressions before shipping",
         },
@@ -807,8 +809,10 @@ it("shows concise Title Case labels and sends the full message", async () => {
     },
   });
   await slot.findByRole("region", { name: "Latest recap" });
-  const button = slot.getByRole("button", { name: "Run Tests" });
+  const button = slot.getByRole("button", { name: "Run tests" });
   expect(button.className).toContain("text-emerald-700");
+  expect(button.className).toContain("border-border");
+  expect(button.className).toContain("bg-transparent");
   expect(button.getAttribute("title")).toBe(
     "Check for regressions before shipping",
   );
@@ -840,12 +844,12 @@ it("collapses wrapping action buttons into a menu", async () => {
     recap: {
       next: [
         {
-          title: "Run Tests",
+          title: "Run tests",
           message: "Run the full test suite",
           description: "Check for regressions",
         },
         {
-          title: "Open Pull Request",
+          title: "Open pull request",
           message: "Open a pull request for the change",
         },
       ],
@@ -855,7 +859,7 @@ it("collapses wrapping action buttons into a menu", async () => {
   fireEvent(window, new Event("resize"));
   const trigger = await slot.findByRole("button", { name: "Next actions" });
   fireEvent.keyDown(trigger, { key: "ArrowDown" });
-  const item = await slot.findByRole("menuitem", { name: /Run Tests/ });
+  const item = await slot.findByRole("menuitem", { name: /Run tests/ });
   expect(item.textContent).toContain("Check for regressions");
   fireEvent.click(item);
   await waitFor(() =>
@@ -893,11 +897,13 @@ it("keeps the other next action buttons idle while one is sending", async () => 
     send: () => sent,
   });
   await slot.findByRole("region", { name: "Latest recap" });
-  fireEvent.click(slot.getByRole("button", { name: "Run The Full Test…" }));
+  fireEvent.click(
+    slot.getByRole("button", { name: "Run the full test suite" }),
+  );
   await waitFor(() =>
     expect(
       slot
-        .getByRole("button", { name: "Open A Pull Request" })
+        .getByRole("button", { name: "Open a pull request" })
         .getAttribute("disabled"),
     ).not.toBeNull(),
   );
@@ -905,7 +911,7 @@ it("keeps the other next action buttons idle while one is sending", async () => 
   await waitFor(() =>
     expect(
       slot
-        .getByRole("button", { name: "Open A Pull Request" })
+        .getByRole("button", { name: "Open a pull request" })
         .getAttribute("disabled"),
     ).toBeNull(),
   );

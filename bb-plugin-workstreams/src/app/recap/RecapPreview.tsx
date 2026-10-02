@@ -33,12 +33,12 @@ const EXAMPLES: readonly Example[] = [
       links: [],
       next: [
         {
-          title: "Run Tests",
+          title: "Run tests",
           message: "Run the full test suite",
           description: "Check for regressions before shipping",
         },
         {
-          title: "Open Pull Request",
+          title: "Open pull request",
           message: "Open a pull request for this change",
         },
       ],
@@ -70,12 +70,12 @@ const EXAMPLES: readonly Example[] = [
       links: [],
       next: [
         {
-          title: "Looks Good",
+          title: "Looks good",
           message: "Looks good, merge it",
           description: "Accept the reviewed change",
         },
         {
-          title: "Ask a Question",
+          title: "Ask a question",
           message: "Why a carousel instead of a list?",
           description: "Ask about the design choice",
         },

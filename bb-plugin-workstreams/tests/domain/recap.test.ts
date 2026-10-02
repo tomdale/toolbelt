@@ -246,7 +246,7 @@ it("accepts strings or short titles with messages and descriptions", () => {
     next: [
       "Run the full test suite",
       {
-        title: "Run Tests",
+        title: "Run tests",
         message: "Run the full test suite and show me the result",
         description: "Check for regressions",
       },
@@ -260,7 +260,8 @@ it("accepts strings or short titles with messages and descriptions", () => {
       latest: ["Theme toggle works"],
       next: [
         {
-          title: "Run The Complete Regression Test Suite",
+          title:
+            "Run the complete regression test suite with additional coverage over multiple packages for this change",
           message: "Run tests",
         },
       ],
@@ -268,12 +269,12 @@ it("accepts strings or short titles with messages and descriptions", () => {
   ).toBe(false);
   const recap = toRecap(parsed, { id: "r", turnId: "t", at: 1 });
   expect(recap.next[1]).toEqual({
-    title: "Run Tests",
+    title: "Run tests",
     message: "Run the full test suite and show me the result",
     description: "Check for regressions",
   });
   expect(recapMarkdown(recap)).toContain(
-    "- Run Tests: Run the full test suite and show me the result (Check for regressions)",
+    "- Run tests: Run the full test suite and show me the result (Check for regressions)",
   );
 });
 
