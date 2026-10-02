@@ -6,3 +6,10 @@
  * shows a workstream.
  */
 export const WORKSTREAM_ICON = "workstreams/workstream";
+
+/**
+ * The Wave drawn as a dotted line, for the absence of a workstream. BB has no
+ * built-in dashed circle, and an unknown icon name draws BB's lightning-bolt
+ * fallback.
+ */
+export const NO_WORKSTREAM_ICON = "workstreams/workstream-none";

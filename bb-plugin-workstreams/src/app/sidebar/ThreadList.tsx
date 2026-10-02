@@ -33,7 +33,6 @@ import {
   type PluginThreadListProps,
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
-import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 import { cn } from "@/lib/utils";
 import {
   UNFILED_NAME,
@@ -546,7 +545,6 @@ export function WorkstreamsThreadList({
           active={row.thread.id === activeThreadId}
           now={now}
           context={contextOf(row, placement)}
-          contextIsWorkstream={placement !== "group" && placement !== "snoozed"}
           attention={placement === "needs-you"}
           work={ws.work(row.thread)}
           showStatusSlot={showStatusSlot}
@@ -1059,7 +1057,6 @@ export function WorkstreamsThreadList({
                             name={collapsed ? "ChevronRight" : "ChevronDown"}
                             className="size-3"
                           />
-                          <WorkstreamIcon className="size-3" />
                           <WorkstreamName
                             name={group.name}
                             muted
@@ -1436,7 +1433,6 @@ function WorkstreamGroup({
                 className="size-3 shrink-0 text-muted-foreground"
               />
             ) : null}
-            <WorkstreamIcon />
             <WorkstreamName
               name={group.name}
               muted={muted}

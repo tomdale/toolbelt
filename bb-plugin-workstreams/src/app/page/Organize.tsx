@@ -6,7 +6,6 @@ import { Icon } from "@/components/ui/icon";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { ghostButton, primaryButton, secondaryButton } from "./controls.ts";
 import { WorkstreamName } from "../WorkstreamName.tsx";
-import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 type Command = Parameters<Rpc["call"]>[1];
@@ -243,7 +242,6 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
               return (
                 <div key={w.key}>
                   <h4 className="flex items-baseline gap-2 px-2 text-[13px] font-semibold">
-                    <WorkstreamIcon className="self-center" />
                     <WorkstreamName name={w.name} />
                     {w.sectionId === null ? (
                       <span className="rounded bg-primary/15 px-1 text-[10px] font-semibold uppercase tracking-wide text-primary">
@@ -286,11 +284,7 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
                 </p>
                 <ul className="mt-1.5 pl-4">
                   {preview.removals.map((r) => (
-                    <li
-                      key={r.sectionId}
-                      className="flex items-center gap-1.5 py-0.5"
-                    >
-                      <WorkstreamIcon className="size-3" />
+                    <li key={r.sectionId} className="py-0.5">
                       <span className="text-foreground/80">{r.name}</span>
                       {r.archivedThreads.length
                         ? ` · ${r.archivedThreads.length} archived`
