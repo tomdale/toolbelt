@@ -845,7 +845,7 @@ function NextActionItem({
       size="sm"
       className="h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground"
       disabled={disabled || (!onSend && !onCompose)}
-      aria-description="Click to send, Shift-click to edit in composer"
+      aria-description="Click to send, ⇧-click to edit in composer"
       onClick={(event) => {
         if (event.shiftKey) onCompose?.(message);
         else if (onSend) void onSend(message);
@@ -855,7 +855,7 @@ function NextActionItem({
     </Button>
   );
   return (
-    <Hint label="Click to send, Shift-click to edit in composer">{button}</Hint>
+    <Hint label="Click to send, ⇧-click to edit in composer">{button}</Hint>
   );
 }
 
@@ -1233,7 +1233,7 @@ function useHold(
 /**
  * The agent's recap of the thread's latest turn, above the composer, with
  * dismiss in its top-right corner and, under the rows, a footer bar with the
- * recap's suggested next actions at the left (click to send or Shift-click to
+ * recap's suggested next actions at the left (click to send or ⇧-click to
  * add the text to the draft) and, when the thread can be archived, Archive at
  * the right.
  * It stays up while the user drafts,

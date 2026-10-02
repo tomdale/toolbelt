@@ -901,7 +901,7 @@ it("shows a short sentence-case action label with neutral styling", async () => 
   expect(button.className).toContain("border-border");
   expect(button.className).toContain("bg-transparent");
   expect(button.getAttribute("aria-description")).toBe(
-    "Click to send, Shift-click to edit in composer",
+    "Click to send, ⇧-click to edit in composer",
   );
   fireEvent.click(button);
   await waitFor(() =>
