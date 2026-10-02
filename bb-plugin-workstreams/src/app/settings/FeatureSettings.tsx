@@ -249,11 +249,11 @@ export function NewWorkSettings() {
         }
       />
       <SettingRow
-        label="Corpus classification (experimental)"
-        description="Recognize specific retained product and feature identities independently of active groups. Does not suggest thread continuation."
+        label="Catalog classification (experimental)"
+        description="Recognize specific products and features from the Catalog independently of current workstreams. Does not suggest thread continuation."
         control={
           <SettingSwitch
-            label="Corpus classification"
+            label="Catalog classification"
             checked={prefs.newWork.corpusClassification}
             onChange={(corpusClassification) =>
               update({ newWork: { corpusClassification } })
@@ -291,7 +291,7 @@ export function OrganizeSettings() {
       />
       <SettingRow
         label="Group capacity"
-        description="Maximum concurrent task roots per group in reviewed previews. Indivisible subjects may exceed it."
+        description="Maximum current tasks per workstream in reviewed previews. Tasks concerning one indivisible feature may exceed it."
         control={
           <Stepper
             label="Group capacity"
