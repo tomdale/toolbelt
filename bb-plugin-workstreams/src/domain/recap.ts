@@ -58,22 +58,58 @@ const tidy = (text: string) =>
     .replace(/(?<!\.)\.$/, "");
 
 /** One recap list item, optionally with a secondary subrow. */
+const genericRecapItem = (max: number) =>
+  z
+    .object({
+      text: line(max).describe("The item's primary text"),
+      detail: line(max)
+        .optional()
+        .describe("Optional secondary text shown on a subrow"),
+    })
+    .strict();
+
+const legacyRecapItem = (max: number) =>
+  z
+    .object({
+      step: line(max).describe("Legacy alias for text"),
+      expect: line(max).optional().describe("Legacy alias for detail"),
+    })
+    .strict();
+
 const recapItemSchema = (max: number) =>
-  z.union([
-    line(max),
-    z
-      .object({
-        step: line(max).describe("The item's primary text"),
-        expect: line(max)
-          .optional()
-          .describe("Optional secondary text shown on a subrow"),
-      })
-      .strict(),
-  ]);
-export type RecapItem = string | { step: string; expect?: string };
-const storedRecapItemSchema = z.union([
+  z.union([line(max), genericRecapItem(max), legacyRecapItem(max)]);
+
+export type RecapItem =
+  | string
+  | { text: string; detail?: string }
+  | { step: string; expect?: string };
+
+export type StoredRecapItem = string | { text: string; detail?: string };
+
+export function itemParts(item: RecapItem): { text: string; detail?: string } {
+  if (typeof item === "string") return { text: item };
+  if ("text" in item) {
+    return {
+      text: item.text,
+      ...(item.detail !== undefined ? { detail: item.detail } : {}),
+    };
+  }
+  return {
+    text: item.step,
+    ...(item.expect !== undefined ? { detail: item.expect } : {}),
+  };
+}
+
+const storedRecapItemSchema: z.ZodType<StoredRecapItem> = z.union([
   z.string(),
-  z.object({ step: z.string(), expect: z.string().optional() }).strict(),
+  z.object({ text: z.string(), detail: z.string().optional() }).strict(),
+  z
+    .object({ step: z.string(), expect: z.string().optional() })
+    .strict()
+    .transform((item): { text: string; detail?: string } => ({
+      text: item.step,
+      ...(item.expect ? { detail: item.expect } : {}),
+    })),
 ]);
 /** One review action, optionally with the result the user should see. */
 const reviewStepSchema = recapItemSchema(160);
@@ -145,7 +181,7 @@ const recapFields = z
       .max(3)
       .default([])
       .describe(
-        "Completed results for complete and review. Items can be strings or { step, expect } objects with optional secondary text.",
+        "Completed results for complete and review. Items can be strings or { text, detail } objects with optional secondary text.",
       ),
     tasks: z
       .array(recapItemSchema(120))
@@ -153,7 +189,7 @@ const recapFields = z
       .nullable()
       .optional()
       .describe(
-        "Waiting only: one to three async tasks the agent is waiting on",
+        "Waiting only: one to three async tasks the agent is waiting on. Items can be strings or { text, detail } objects with optional secondary text.",
       ),
     timeout: z
       .number()
@@ -171,7 +207,7 @@ const recapFields = z
       .nullable()
       .optional()
       .describe(
-        "Required for review. Send each distinct action as its own array item; separate items render as a numbered list. Items can be strings or { step, expect } objects with optional secondary text.",
+        "Required for review. Send each distinct action as its own array item; separate items render as a numbered list. Items can be strings or { text, detail } objects with optional secondary text.",
       ),
     links: z
       .array(linkSchema)
@@ -291,10 +327,9 @@ function storedRecapItems(value: unknown): unknown {
 
 /** The review as steps, from a list, a single step, or a JSON-encoded list. */
 function recapItemWithin(item: RecapItem, max: number): boolean {
-  return typeof item === "string"
-    ? visibleLength(item) <= max
-    : visibleLength(item.step) <= max &&
-        visibleLength(item.expect ?? "") <= max;
+  if (typeof item === "string") return visibleLength(item) <= max;
+  const { text, detail } = itemParts(item);
+  return visibleLength(text) <= max && visibleLength(detail ?? "") <= max;
 }
 
 function reviewSteps(review: string | ReviewStep[] | undefined): ReviewStep[] {
@@ -362,17 +397,19 @@ export function toRecap(
 /** A recap item with optional secondary text on its own Markdown row. */
 export function recapItemText(item: RecapItem): string {
   if (typeof item === "string") return item;
-  return item.expect ? `${item.step}\n  - ${item.expect}` : item.step;
+  const { text, detail } = itemParts(item);
+  return detail ? `${text}\n  - ${detail}` : text;
 }
 
 /** A review step as readable Markdown. */
 export const reviewStepText = recapItemText;
 
-function tidyRecapItem(item: RecapItem): RecapItem {
+function tidyRecapItem(item: RecapItem): StoredRecapItem {
   if (typeof item === "string") return tidy(item);
+  const { text, detail } = itemParts(item);
   return {
-    step: tidy(item.step),
-    ...(item.expect ? { expect: tidy(item.expect) } : {}),
+    text: tidy(text),
+    ...(detail ? { detail: tidy(detail) } : {}),
   };
 }
 
@@ -413,7 +450,7 @@ export function recapMarkdown(recap: Recap): string {
 
 /** The tool's description, as the agent sees it in its tool list. */
 export const RECAP_TOOL_DESCRIPTION =
-  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar. Lists accept strings or { step, expect } items. The optional expect appears as a subrow. Text fields render inline Markdown, including links and @thread:<id> mentions. For complete and review, the optional next lists 1-3 suggested messages. Use { title, message, description? } for a short 2-4 word Title Case button label (at most 28 characters), the exact message to send, and an optional short description shown on hover or in the action menu; strings remain supported.";
+  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar. Lists accept strings or { text, detail } items. The optional detail appears as a subrow. Text fields render inline Markdown, including links and @thread:<id> mentions. For complete and review, the optional next lists 1-3 suggested messages. Use { title, message, description? } for a short 2-4 word Title Case button label (at most 28 characters), the exact message to send, and an optional short description shown on hover or in the action menu; strings remain supported.";
 
 /**
  * Instructions for every thread that has the recap tool. They state the
@@ -421,7 +458,7 @@ export const RECAP_TOOL_DESCRIPTION =
  */
 export const RECAP_INSTRUCTIONS = `End every turn with ${RECAP_TOOL}, after completing the work you were authorized to do, unless the turn ends with a question card (AskUserQuestion or your provider's own question tool) still awaiting the user's answer. Ask questions only through such a card, never only in your reply.
 state: complete when the user's latest request is fully done; review when a finished result waits on the user to inspect, test, merge, or ship; waiting when async tasks are running and the agent is waiting for their results. Keep working while there is authorized work you can do, or use a question card when required user input blocks progress.
-Write terse fragments in sentence case without closing periods. Every text field (goal, latest, tasks, review step and expect) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips. A lowercase commit hash, bare or alone in backticks (not in links), shows shortened and highlighted with copy on click. Length limits count visible text, not link targets. Inline links fit any state. The links field is a separate list of review targets. goal: the thread's purpose as a short phrase, past tense for complete and review ("Added dark mode to Settings") and -ing for waiting ("Waiting for Settings tests"). latest: one to three concrete results for complete and review, about 12 words each, most important first. review (required for review): one to three steps saying how to inspect or try the result and what to expect. Every item list accepts strings or { step, expect } objects. Use expect for optional secondary text shown on its own subrow. Keep each item distinct. Use separate items rather than joining results with semicolons. For UI review, give steps to reach and exercise the UI.
+Write terse fragments in sentence case without closing periods. Every text field (goal, latest, tasks, review, and detail) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips. A lowercase commit hash, bare or alone in backticks (not in links), shows shortened and highlighted with copy on click. Length limits count visible text, not link targets. Inline links fit any state. The links field is a separate list of review targets. goal: the thread's purpose as a short phrase, past tense for complete and review ("Added dark mode to Settings") and -ing for waiting ("Waiting for Settings tests"). latest: one to three concrete results for complete and review, about 12 words each, most important first. review (required for review): one to three steps saying how to inspect or try the result and what to expect. Every item list accepts strings or { text, detail } objects. Use detail for optional secondary text shown on its own subrow. Keep each item distinct. Use separate items rather than joining results with semicolons. For UI review, give steps to reach and exercise the UI.
 For waiting: tasks (required) names one to three async tasks whose results you need; timeout (required) is the number of seconds until you should check their status, from 1 to 86400. Choose a realistic polling interval. The card counts down and automatically prompts you to check status if the same turn is still current when the timeout expires. Omit latest, review, and links.
 links: optional, only in the review state and only for artifacts or pages explicitly being asked to be reviewed, as absolute file paths or HTTPS URLs. A changed source file qualifies only when source review is requested. For complete, omit links or send an empty list.
 next: for complete and review, one to three messages the user might send next — a follow-up action or a question to you. Prefer an object with title (a short, 2–4 word Title Case button label, at most 28 characters), message (the exact self-contained plain-text message sent verbatim as the user's next message, at most 120 characters), and optional description (a short explanation shown on hover or in the action menu, at most 120 characters). Make the title concise; put details in description and the actual request in message. Strings remain supported as both title and message for simple actions. Omit closing periods. Do not restate choices elsewhere in the recap or offer work you should do yourself. Omit next while waiting.
