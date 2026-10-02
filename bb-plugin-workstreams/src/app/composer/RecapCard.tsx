@@ -354,12 +354,12 @@ function WaitingCountdown({
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="icon"
               aria-label="Cancel status check"
-              className="h-5 px-1.5 text-[11px] text-muted-foreground"
+              className="size-5 text-muted-foreground"
               onClick={onCancel}
             >
-              Cancel check
+              <Icon name="ClockArrowDown" aria-hidden className="size-3.5" />
             </Button>
           ) : null}
         </>
