@@ -213,7 +213,7 @@ function RecapText({
           return (
             <span
               key={index}
-              className="inline-block max-w-[16rem] align-middle [&>a]:text-[0.85em]"
+              className="-my-[0.5em] inline-block max-w-[16rem] align-middle leading-none [&>a]:text-[0.85em]"
             >
               <ActivityThreadLink threadId={segment.threadId} />
             </span>
