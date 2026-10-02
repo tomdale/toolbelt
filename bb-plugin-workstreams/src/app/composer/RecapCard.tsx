@@ -1042,10 +1042,7 @@ function CardBody({
             <Button
               variant="outline"
               size="sm"
-              className={cn(
-                "bg-background/60",
-                recap.next.length > 0 && "ml-auto",
-              )}
+              className="ml-auto bg-background/60"
               disabled={archiveBusy}
               onClick={onArchive}
             >
