@@ -152,7 +152,11 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
             <p className="text-xs text-muted-foreground">
               {working
                 ? state.status === "proposing"
-                  ? "Reading your open threads…"
+                  ? state.progress?.stage === "classifying"
+                    ? `Classifying tasks ${state.progress.completed} of ${state.progress.total} · ${state.progress.cached} already classified${state.progress.unresolved ? ` · ${state.progress.unresolved} unresolved` : ""}`
+                    : state.progress?.stage === "regrouping"
+                      ? "Grouping current tasks by product and feature…"
+                      : "Reading your open threads…"
                   : "Applying the map…"
                 : state?.status === "applied"
                   ? "Map applied. Undo it from Activity."
@@ -161,14 +165,18 @@ export function Organize({ rpc }: { rpc: Rpc; bootstrapped?: boolean }) {
           </div>
           {working ? (
             <span role="status" className="sr-only">
-              Working
+              {state?.progress?.stage === "classifying"
+                ? `Classifying tasks ${state.progress.completed} of ${state.progress.total}`
+                : state?.progress?.stage === "regrouping"
+                  ? "Grouping current tasks"
+                  : "Working"}
             </span>
           ) : null}
           {state?.status === "failed" || state?.status === "proposing" ? (
             <button
               type="button"
               className={ghostButton}
-              disabled={busy}
+              disabled={state?.status === "failed" && busy}
               onClick={() => void send({ action: "cancel" })}
             >
               Cancel
