@@ -603,9 +603,10 @@ export class AgentRecaps {
     const reserved = this.deps.db
       .prepare(
         `UPDATE ws_agent_recap SET waiting_nudged = 1
-      WHERE thread_id = ? AND waiting_nudged = 0 AND waiting_cancelled = 0 AND recap = ?`,
+      WHERE thread_id = ? AND waiting_nudged = 0 AND waiting_cancelled = 0
+        AND json_extract(recap, '$.id') = ?`,
       )
-      .run(threadId, JSON.stringify(recap)).changes;
+      .run(threadId, recap.id).changes;
     if (!reserved) return;
     await sdk.threads.send({
       threadId,
@@ -619,7 +620,7 @@ export class AgentRecaps {
           type: "text",
           visibility: "agent-only",
           mentions: [],
-          text: `[Workstreams waiting ${recap.id}]\nThe waiting timeout expired. Check the status of the async tasks you reported, continue authorized work if ready, and report a recap. If tasks are still running, report waiting with a realistic timeout.`,
+          text: `[Workstreams waiting ${recap.id}]\nThe waiting timeout expired. Check the status of the async task you reported, continue authorized work if ready, and report a recap. If it is still running, report waiting with a realistic timeout.`,
         },
       ],
     });

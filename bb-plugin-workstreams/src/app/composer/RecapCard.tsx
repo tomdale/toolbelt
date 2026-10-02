@@ -297,70 +297,31 @@ function WaitingTasks({
   clearance: string;
 }) {
   const compact = useContext(CompactContext);
-  const body = useBodyClass();
-  const tasks = recap.tasks ?? [];
-  const single = tasks.length === 1 ? tasks[0]! : null;
-  const taskText = (item: RecapItem, index: number) => {
-    const { text, detail } = itemParts(item);
-    return (
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          {single ? (
-            <div
-              role="heading"
-              aria-level={2}
-              className={cn(
-                "font-medium tracking-[-0.006em] text-foreground",
-                compact ? COMPACT_GOAL_CLASS : GOAL_CLASS,
-              )}
-            >
-              <RecapText
-                text={text}
-                typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
-              />
-            </div>
-          ) : (
-            <RecapText
-              text={text}
-              typeClass={body}
-              className={index === 0 ? "font-medium text-foreground" : ""}
-            />
-          )}
-          {index === 0 ? (
-            <WaitingCountdown
-              recap={recap}
-              cancelled={cancelled}
-              onCancel={onCancel}
-            />
-          ) : null}
-        </div>
-        {detail ? (
-          <RecapText text={detail} className="mt-0.5 text-muted-foreground" />
-        ) : null}
-      </div>
-    );
-  };
   return (
-    <div className="py-2">
-      {single ? (
-        <div data-progress="active" className={cn(clearance, GOAL_CLASS)}>
-          {taskText(single, 0)}
-        </div>
-      ) : (
-        <ul
+    <div className={cn("py-2", clearance)}>
+      <div
+        data-progress="active"
+        className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+      >
+        <div
+          role="heading"
+          aria-level={2}
           className={cn(
-            "m-0 list-disc space-y-0.5 pl-5 text-foreground",
-            clearance,
-            body,
+            "font-medium tracking-[-0.006em] text-foreground",
+            compact ? COMPACT_GOAL_CLASS : GOAL_CLASS,
           )}
         >
-          {tasks.map((item, index) => (
-            <li key={index} data-progress="active" className="min-w-0">
-              {taskText(item, index)}
-            </li>
-          ))}
-        </ul>
-      )}
+          <RecapText
+            text={recap.task ?? recap.goal}
+            typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
+          />
+        </div>
+        <WaitingCountdown
+          recap={recap}
+          cancelled={cancelled}
+          onCancel={onCancel}
+        />
+      </div>
     </div>
   );
 }

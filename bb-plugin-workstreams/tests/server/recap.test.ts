@@ -82,7 +82,7 @@ describe("waiting status checks", () => {
   const waiting = {
     state: "waiting",
     goal: "Waiting for tests",
-    tasks: ["Test worker"],
+    task: "Waiting for test worker",
     timeout: 10,
   };
   const nudges = (s: Awaited<ReturnType<typeof world>>) =>
@@ -381,7 +381,6 @@ describe("agent recaps", () => {
       s.w.turn("t1");
       const output = await s.report({
         ...RECAP,
-        tasks: empty,
         review: empty,
         links: [],
       });
@@ -389,7 +388,6 @@ describe("agent recaps", () => {
       expect(s.corrections()).toHaveLength(0);
       expect((await s.card()).recap).toMatchObject({
         state: "complete",
-        tasks: [],
         review: [],
         links: [],
       });
@@ -492,14 +490,14 @@ describe("agent recaps", () => {
       ...RECAP,
       state: "waiting",
       latest: [],
-      tasks: ["Workers are running"],
+      task: "Workers are running",
       timeout: 60,
     });
     await s.idle();
     expect(s.corrections()).toHaveLength(0);
     expect((await s.card()).recap).toMatchObject({
       state: "waiting",
-      tasks: ["Workers are running"],
+      task: "Workers are running",
       review: [],
     });
     expect(output).toContain("**Waiting**");

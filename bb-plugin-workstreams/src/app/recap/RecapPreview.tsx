@@ -91,10 +91,7 @@ const EXAMPLES: readonly Example[] = [
       at: Date.now(),
       state: "waiting",
       goal: "Adding dark mode to the Settings page",
-      tasks: [
-        "UI and server subagents are building the theme toggle",
-        "Add accessible keyboard controls",
-      ],
+      task: "Waiting for the UI and server subagents building the theme toggle",
       timeout: 120,
       latest: [],
       review: [],

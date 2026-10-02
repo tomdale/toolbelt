@@ -9,7 +9,7 @@ import type { ThreadAnalysis } from "./analysis.ts";
 export const RECAP_TOOL = "WorkstreamsRecap";
 
 /**
- * How a turn's result stands: complete, awaiting review, or waiting on async tasks.
+ * How a turn's result stands: complete, awaiting review, or waiting on an async task.
  * A turn that needs the user's answer ends with a question card instead.
  */
 export const RECAP_STATES = ["complete", "review", "waiting"] as const;
@@ -185,14 +185,10 @@ const recapFields = z
       .describe(
         "Completed results for complete and review. Items can be strings or { text, detail } objects with optional secondary text.",
       ),
-    tasks: z
-      .array(recapItemSchema(120))
-      .max(3)
+    task: line(120)
       .nullable()
       .optional()
-      .describe(
-        "Waiting only: one to three async tasks the agent is waiting on. Items can be strings or { text, detail } objects. Put a referenced thread such as @thread:thr_abc123 in detail to render it on a second line under the task.",
-      ),
+      .describe("Waiting only: the async task the agent is waiting on"),
     timeout: z
       .number()
       .int()
@@ -240,7 +236,7 @@ export const recapInputSchema = z
   .discriminatedUnion("state", [
     recapFields.extend({
       state: z.literal("complete"),
-      tasks: z.array(z.never()).max(0).nullable().optional(),
+      task: z.never().optional(),
       timeout: z.null().optional(),
       review: z
         .union([z.array(z.never()).max(0), z.literal("")])
@@ -254,7 +250,7 @@ export const recapInputSchema = z
     }),
     recapFields.extend({
       state: z.literal("review"),
-      tasks: z.array(z.never()).max(0).nullable().optional(),
+      task: z.never().optional(),
       timeout: z.null().optional(),
       latest: recapFields.shape.latest.removeDefault().min(1),
       review: z.union([
@@ -264,7 +260,7 @@ export const recapInputSchema = z
     }),
     recapFields.extend({
       state: z.literal("waiting"),
-      tasks: z.array(recapItemSchema(120)).min(1).max(3),
+      task: line(120),
       timeout: z.number().int().min(1).max(86400),
       latest: z.array(z.never()).max(0).default([]),
       next: z.array(z.never()).max(0).default([]),
@@ -295,24 +291,43 @@ export const recapInputSchema = z
 export type RecapInput = z.infer<typeof recapInputSchema>;
 
 /** A stored recap, tied to the turn that reported it. */
-export const recapSchema = z.object({
-  id: z.string(),
-  turnId: z.string(),
-  at: z.number(),
-  state: z.enum(RECAP_STATES),
-  goal: z.string(),
-  latest: z.array(storedRecapItemSchema).default([]),
-  tasks: z.array(storedRecapItemSchema).optional(),
-  timeout: z.number().optional(),
-  /** Review steps; empty unless the state is review. */
-  review: z.preprocess(
-    (value) => storedRecapItems(value),
-    z.array(storedRecapItemSchema),
-  ),
-  links: z.array(linkSchema),
-  /** Suggested next messages, offered as buttons; empty while waiting. */
-  next: z.array(nextActionSchema).default([]),
-});
+export const recapSchema = z
+  .object({
+    id: z.string(),
+    turnId: z.string(),
+    at: z.number(),
+    state: z.enum(RECAP_STATES),
+    goal: z.string(),
+    latest: z.array(storedRecapItemSchema).default([]),
+    task: z.string().optional(),
+    tasks: z.array(storedRecapItemSchema).optional(),
+    timeout: z.number().optional(),
+    /** Review steps; empty unless the state is review. */
+    review: z.preprocess(
+      (value) => storedRecapItems(value),
+      z.array(storedRecapItemSchema),
+    ),
+    links: z.array(linkSchema),
+    /** Suggested next messages, offered as buttons; empty while waiting. */
+    next: z.array(nextActionSchema).default([]),
+  })
+  .transform(({ task, tasks, ...recap }) => ({
+    ...recap,
+    ...(task !== undefined
+      ? { task }
+      : tasks?.length
+        ? {
+            task: tasks
+              .map((item) => {
+                if (typeof item === "string") return item;
+                return item.detail
+                  ? `${item.text} (${item.detail})`
+                  : item.text;
+              })
+              .join(" · "),
+          }
+        : {}),
+  }));
 export type Recap = z.infer<typeof recapSchema>;
 
 function storedRecapItems(value: unknown): unknown {
@@ -364,7 +379,7 @@ export function toRecap(
     state: input.state,
     goal: tidy(input.goal),
     latest: input.latest.map(tidyRecapItem),
-    tasks: input.state === "waiting" ? input.tasks.map(tidyRecapItem) : [],
+    ...(input.state === "waiting" ? { task: tidy(input.task) } : {}),
     ...(input.state === "waiting" ? { timeout: input.timeout } : {}),
     review:
       input.state === "review"
@@ -424,9 +439,8 @@ export function recapMarkdown(recap: Recap): string {
         : "Ready for review";
   return [
     `**${state}** · ${recap.goal}`,
-    ...(recap.tasks ?? []).map((item) => `- ${recapItemText(item)}`),
     ...(recap.state === "waiting"
-      ? [`Check status in ${recap.timeout}s`]
+      ? [`${recap.task}`, `Check status in ${recap.timeout}s`]
       : recap.latest.map((item) => `- ${recapItemText(item)}`)),
     recap.review.length === 1
       ? `\n**Review:** ${reviewStepText(recap.review[0]!)}`
@@ -452,16 +466,16 @@ export function recapMarkdown(recap: Recap): string {
 
 /** The tool's description, as the agent sees it in its tool list. */
 export const RECAP_TOOL_DESCRIPTION =
-  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar. Lists accept strings or { text, detail } items; optional detail appears as a subrow. Text fields render inline Markdown, including links and @thread:<id> mentions; for waiting tasks, put a thread mention in detail to show it beneath the task. For complete and review, next accepts 1-3 suggested user messages. Prefer { title, message, description? }: title is a short sentence-case button label (at most 28 characters), message is sent verbatim, and optional description holds longer context shown on hover or in the action menu. Keep titles very short; strings remain supported as the same short title and message.";
+  "Report how this turn ended. The user sees the recap above the composer, and its state in the sidebar. Lists accept strings or { text, detail } items; optional detail appears as a subrow. Text fields render inline Markdown, including links and @thread:<id> mentions. For waiting, provide one task description and a timeout; the task appears in the card title beside its countdown. For complete and review, next accepts 1-3 suggested user messages. Prefer { title, message, description? }: title is a short sentence-case button label (at most 28 characters), message is sent verbatim, and optional description holds longer context shown on hover or in the action menu. Keep titles very short; strings remain supported as the same short title and message.";
 
 /**
  * Instructions for every thread that has the recap tool. They state the
  * contract once; the tool's schema carries the limits.
  */
 export const RECAP_INSTRUCTIONS = `End every turn with ${RECAP_TOOL}, after completing the work you were authorized to do, unless the turn ends with a question card (AskUserQuestion or your provider's own question tool) still awaiting the user's answer. Ask questions only through such a card, never only in your reply.
-state: complete when the user's latest request is fully done; review when a finished result waits on the user to inspect, test, merge, or ship; waiting when async tasks are running and the agent is waiting for their results. Keep working while there is authorized work you can do, or use a question card when required user input blocks progress.
-Write terse fragments in sentence case without closing periods. Every text field (goal, latest, tasks, review, and detail) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips. A lowercase commit hash, bare or alone in backticks (not in links), shows shortened and highlighted with copy on click. Length limits count visible text, not link targets. Inline links fit any state. The links field is a separate list of review targets. goal: the thread's purpose as a short phrase, past tense for complete and review ("Added dark mode to Settings") and -ing for waiting ("Waiting for Settings tests"). latest: one to three concrete results for complete and review, about 12 words each, most important first. review (required for review): one to three steps saying how to inspect or try the result and what to expect. Every item list accepts strings or { text, detail } objects. Use detail for optional secondary text shown on its own subrow. Keep each item distinct. Use separate items rather than joining results with semicolons. For UI review, give steps to reach and exercise the UI.
-For waiting: tasks (required) names one to three async tasks whose results you need; timeout (required) is the number of seconds until you should check their status, from 1 to 86400. Choose a realistic polling interval. To show a task and its thread on separate lines, use { text: "Waiting for build", detail: "@thread:thr_abc123" }; detail appears beneath the task and resolves to a thread link. The card counts down and automatically prompts you to check status if the same turn is still current when the timeout expires. Omit latest, review, and links.
+state: complete when the user's latest request is fully done; review when a finished result waits on the user to inspect, test, merge, or ship; waiting when an async task is running and the agent is waiting for its result. Keep working while there is authorized work you can do, or use a question card when required user input blocks progress.
+Write terse fragments in sentence case without closing periods. Every text field (goal, latest, task, review, and detail) renders inline Markdown: \`code\`, **emphasis**, [links](https://…), and @thread:<id> mentions, which show as thread chips. A lowercase commit hash, bare or alone in backticks (not in links), shows shortened and highlighted with copy on click. Length limits count visible text, not link targets. Inline links fit any state. The links field is a separate list of review targets. goal: the thread's purpose as a short phrase, past tense for complete and review ("Added dark mode to Settings") and -ing for waiting ("Waiting for Settings tests"). latest: one to three concrete results for complete and review, about 12 words each, most important first. review (required for review): one to three steps saying how to inspect or try the result and what to expect. Every item list accepts strings or { text, detail } objects. Use detail for optional secondary text shown on its own subrow. Keep each item distinct. Use separate items rather than joining results with semicolons. For UI review, give steps to reach and exercise the UI.
+For waiting: task (required) is a short description of the async task whose result you need; timeout (required) is the number of seconds until you should check its status, from 1 to 86400. Choose a realistic polling interval. The task appears as the card title beside its countdown. The card counts down and automatically prompts you to check status if the same turn is still current when the timeout expires. Omit latest, review, and links.
 links: optional, only in the review state and only for artifacts or pages explicitly being asked to be reviewed, as absolute file paths or HTTPS URLs. A changed source file qualifies only when source review is requested. For complete, omit links or send an empty list.
 next: for complete and review, one to three messages the user might send next — a follow-up action or question. Prefer { title, message, description? }. Keep title a very short sentence-case button label, at most 28 characters (ideally 2–4 words); validation enforces the limit. Put the exact self-contained plain-text request (at most 120 characters) in message; it is sent verbatim. Use optional description (at most 120 characters) for longer context or why the choice may be useful; it appears on hover and in the action menu. Do not cram the message into the title. Strings remain supported for simple actions and are shown as the full label. Omit closing periods. Do not restate choices elsewhere or offer work you should do yourself. Omit next while waiting.
 The user decides whether to archive the thread from the recap. When a question card is dismissed or expires, treat the question as unanswered and unapproved, and continue only work that does not depend on it.`;
@@ -486,7 +500,7 @@ export function reportedAnalysis(
     traceId: null,
     ...base,
     recap: plainText(
-      recapItemText(recap.tasks?.[0] ?? recap.latest[0] ?? recap.goal),
+      recap.task ?? recapItemText(recap.latest[0] ?? recap.goal),
     ),
     state:
       recap.state === "complete"

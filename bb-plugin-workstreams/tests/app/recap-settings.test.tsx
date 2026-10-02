@@ -68,13 +68,11 @@ it("previews the recap card in each state and the chosen layout", async () => {
   expect(visible()[0]).toMatch(/Complete/);
 
   fireEvent.click(slot.getByRole("radio", { name: /Compact/ }));
-  // Compact lists pending tasks and drops any other task details.
+  // Compact keeps the task title alongside its countdown.
   fireEvent.click(slot.getByRole("button", { name: "Previous example" }));
   await waitFor(() =>
     expect(visible()[0]).not.toMatch(/Theme behavior agreed/),
   );
-  expect(visible()[0]).toMatch(
-    /Waiting.*theme toggle.*2:00.*keyboard controls/,
-  );
+  expect(visible()[0]).toMatch(/Waiting.*theme toggle.*2:00/);
   expect(visible()[0]).not.toContain("Adding dark mode");
 });
