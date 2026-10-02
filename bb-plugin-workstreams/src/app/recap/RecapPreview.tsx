@@ -31,7 +31,17 @@ const EXAMPLES: readonly Example[] = [
       ],
       review: [],
       links: [],
-      next: ["Run the full test suite", "Open a pull request"],
+      next: [
+        {
+          title: "Run Tests",
+          message: "Run the full test suite",
+          description: "Check for regressions before shipping",
+        },
+        {
+          title: "Open Pull Request",
+          message: "Open a pull request for this change",
+        },
+      ],
     },
   },
   {
@@ -58,7 +68,18 @@ const EXAMPLES: readonly Example[] = [
         },
       ],
       links: [],
-      next: ["Looks good, merge it", "Why a carousel instead of a list?"],
+      next: [
+        {
+          title: "Looks Good",
+          message: "Looks good, merge it",
+          description: "Accept the reviewed change",
+        },
+        {
+          title: "Ask a Question",
+          message: "Why a carousel instead of a list?",
+          description: "Ask about the design choice",
+        },
+      ],
     },
   },
   {

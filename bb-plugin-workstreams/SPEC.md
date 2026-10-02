@@ -452,29 +452,31 @@ it.
   ≤ 120 each), `review` (1–3 steps, ≤ 160 each, required for review: what to
   check and the expected result), and `links` (≤ 8 absolute file paths or HTTPS
   URLs, optional in review only and limited to artifacts or pages explicitly
-  being reviewed). `next` (1–3 plain-text messages the user might send next — a
-  follow-up action or a question, ≤ 120 each, complete and review only) renders
-  as buttons in the card's bottom bar; clicking one sends its text verbatim as
-  the user's message. Items in `latest`, `tasks`, and `review` accept strings or
-  `{ step, expect }` objects. `expect` is optional secondary text shown as a
-  bulleted subrow. Separate items render as a list; review items are numbered. A
-  single string counts as one item. Keep distinct results in separate items
-  rather than joining them with semicolons. UI review steps explain how to reach
-  and exercise the UI; source links qualify when source review is requested.
-  Waiting recaps require `tasks` (1–3 async tasks, ≤ 120 each) and `timeout` (an
-  integer from 1 to 86400 seconds), and omit latest, review, links, and next.
-  The deadline is the recap timestamp plus the timeout. Timers recover on plugin
-  reload. At expiry, a durable reservation permits one agent-only status prompt
-  if the recap and turn are still current and the thread is idle, visible,
-  unarchived, and has no queued work. Dispatch validates the recap and turn
-  again to cancel prompts racing fresh input. Complete recaps have no links.
-  Text fields are inline Markdown (code, emphasis, links, `@thread:<id>`
-  mentions as chips, commit hashes shortened with copy on click, through BB's
-  Markdown renderer); limits count visible text, and the sidebar shows the first
-  line as plain text. Closing periods are dropped. The card shows a single
-  Latest line or Review step as plain text and several as a list. A file link
-  opens in the thread's workspace when its path is inside it, else on the
-  environment's host.
+  being reviewed). `next` (1–3 user messages, complete and review only) renders
+  as short Title Case buttons in the card's bottom bar, tinted to the recap
+  accent. Use `{ title, message, description? }` for a concise button title, the
+  exact message to send, and an optional hover/menu explanation; strings remain
+  supported for simple actions. Clicking sends the message verbatim. If the
+  buttons would wrap, Workstreams replaces them with one action menu. Items in
+  `latest`, `tasks`, and `review` accept strings or `{ step, expect }` objects.
+  `expect` is optional secondary text shown as a bulleted subrow. Separate items
+  render as a list; review items are numbered. A single string counts as one
+  item. Keep distinct results in separate items rather than joining them with
+  semicolons. UI review steps explain how to reach and exercise the UI; source
+  links qualify when source review is requested. Waiting recaps require `tasks`
+  (1–3 async tasks, ≤ 120 each) and `timeout` (an integer from 1 to 86400
+  seconds), and omit latest, review, links, and next. The deadline is the recap
+  timestamp plus the timeout. Timers recover on plugin reload. At expiry, a
+  durable reservation permits one agent-only status prompt if the recap and turn
+  are still current and the thread is idle, visible, unarchived, and has no
+  queued work. Dispatch validates the recap and turn again to cancel prompts
+  racing fresh input. Complete recaps have no links. Text fields are inline
+  Markdown (code, emphasis, links, `@thread:<id>` mentions as chips, commit
+  hashes shortened with copy on click, through BB's Markdown renderer); limits
+  count visible text, and the sidebar shows the first line as plain text.
+  Closing periods are dropped. The card shows a single Latest line or Review
+  step as plain text and several as a list. A file link opens in the thread's
+  workspace when its path is inside it, else on the environment's host.
 - **Timeline row.** The tool call stays in the thread as a tinted row titled
   Recap, whose output is the recap as short Markdown, so the recap remains
   readable after the conversation moves on. BB renders plugin tool rows with
