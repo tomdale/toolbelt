@@ -111,7 +111,7 @@ it("opens the thread's model calls with reasoning, result, and prompt", async ()
     name: "Model calls for this thread",
   });
   expect(
-    within(pane).getByText("2 model calls recorded in Debug mode"),
+    await within(pane).findByText("2 model calls recorded in Debug mode"),
   ).toBeTruthy();
   const list = within(pane).getByRole("navigation", { name: "Model calls" });
   expect(within(list).getAllByRole("button")).toHaveLength(2);
