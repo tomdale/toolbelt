@@ -33,7 +33,7 @@ export function deliveredCardRecord(text: string): QuestionHistory | null {
 type Target = {
   host: HTMLElement;
   anchor: HTMLElement;
-  record: QuestionHistory;
+  record: QuestionHistory | null;
 };
 
 export function DeliveredQuestionCards() {
@@ -66,10 +66,16 @@ export function DeliveredQuestionCards() {
         for (const host of candidates) {
           if (host.closest("[data-ws-delivered-anchor]") || mounted.has(host))
             continue;
-          const text = host.textContent ?? "";
-          if (!text.trimStart().startsWith(PREFIX)) continue;
+          const text = (host.textContent ?? "").trimStart();
+          if (!text.startsWith(PREFIX)) continue;
           const record = deliveredCardRecord(text);
-          if (!record) continue;
+          // BB's collapsed generated-message preview clips the delivered JSON,
+          // so it cannot produce a complete card until the row is expanded.
+          // Replace that transport excerpt with a useful inline affordance;
+          // clicking it still bubbles to BB's preview expansion handler.
+          const isClippedPreview =
+            !record && (text.endsWith("…") || text.endsWith("..."));
+          if (!record && !isClippedPreview) continue;
           const anchor = document.createElement("div");
           anchor.dataset.wsDeliveredAnchor = "";
           host.append(anchor);
@@ -102,7 +108,13 @@ export function DeliveredQuestionCards() {
     <>
       {targets.map(({ anchor, record }, index) =>
         createPortal(
-          <QuestionHistoryCard record={record} />,
+          record ? (
+            <QuestionHistoryCard record={record} />
+          ) : (
+            <span className="ws-delivered-question-preview">
+              Expand to view the question and answer
+            </span>
+          ),
           anchor,
           String(index),
         ),
