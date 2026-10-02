@@ -1,5 +1,8 @@
 import {
-  cpSync,
+  chmodSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -8,6 +11,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { basename, join } from "node:path";
 
 import { loaderHome } from "./registry.ts";
@@ -35,50 +39,126 @@ interface DiscoveredSkill {
   path: string;
 }
 
+// Bump when the namespace transform or snapshot layout changes.
+const STAGE_FORMAT_VERSION = 1;
+
+interface SnapshotFile {
+  path: string;
+  bytes: Buffer;
+  mode: number;
+}
+
 /**
- * Stage namespaced copies of every skill reachable from `skillDirs` and return
- * the staging root to hand pi. Returns null when no skills are found.
+ * Publish a complete, content-addressed skill snapshot. The returned directory
+ * is never rewritten or removed: running sessions may read its files lazily.
+ * Source bytes are captured once so the digest and staged output cannot diverge
+ * when a source file changes during the build.
  */
 export function stageNamespacedSkills(
   pluginName: string,
   pluginRoot: string,
   skillDirs: string[],
+  manifestInputs: string[] = [],
 ): string | null {
   const namespace = skillNameSegment(pluginName, "plugin");
-  const stageRoot = join(loaderHome(), "skills", namespace);
-  rmSync(stageRoot, { recursive: true, force: true });
-
   const used = new Set<string>();
-  let staged = 0;
+  const files: SnapshotFile[] = [];
+  const directories: { path: string; mode: number }[] = [];
+  const rewrites: { path: string; name: string }[] = [];
 
   for (const dir of skillDirs) {
     for (const skill of discoverSkills(dir, true)) {
-      const namespaced = `${namespace}-${skillNameSegment(skill.name, "skill")}`;
       const destName = uniqueName(used, baseNameFor(skill));
+      const skillFile = skill.kind === "dir" ? join(skill.path, "SKILL.md") : skill.path;
+      const bytes = readFileSync(skillFile);
+      const block = frontmatter(bytes.toString("utf8"));
+      if (!block || !/^description\s*:/m.test(block)) continue;
+      const name = readName(block) ?? skill.name;
+      const path = skill.kind === "dir" ? join(destName, "SKILL.md") : `${destName}.md`;
+      rewrites.push({ path, name: `${namespace}-${skillNameSegment(name, "skill")}` });
 
-      if (skill.kind === "dir") {
-        const dest = join(stageRoot, destName);
-        if (skill.path === pluginRoot) {
-          // A skill rooted at the plugin root: copy only SKILL.md so we don't
-          // duplicate the entire repository. Root skills that lean on sibling
-          // repo files are not supported.
-          mkdirSync(dest, { recursive: true });
-          cpSync(join(skill.path, "SKILL.md"), join(dest, "SKILL.md"));
-        } else {
-          cpSync(skill.path, dest, { recursive: true });
-        }
-        rewriteName(join(dest, "SKILL.md"), namespaced, pluginName, namespace);
+      if (skill.kind === "dir" && skill.path !== pluginRoot) {
+        captureDirectory(skill.path, destName, files, directories, new Set(), bytes);
       } else {
-        mkdirSync(stageRoot, { recursive: true });
-        const dest = join(stageRoot, `${destName}.md`);
-        cpSync(skill.path, dest);
-        rewriteName(dest, namespaced, pluginName, namespace);
+        // Root skills copy only SKILL.md, not the entire source repository.
+        files.push({ path, bytes, mode: statSync(skillFile).mode & 0o777 });
       }
-      staged += 1;
     }
   }
+  if (rewrites.length === 0) return null;
 
-  return staged > 0 ? stageRoot : null;
+  const hash = createHash("sha256");
+  hash.update(JSON.stringify([STAGE_FORMAT_VERSION, pluginName, pluginRoot, skillDirs, manifestInputs, rewrites]));
+  hash.update(JSON.stringify(directories));
+  for (const file of files) {
+    hash.update(JSON.stringify([file.path, file.mode, file.bytes.length]));
+    hash.update(file.bytes);
+  }
+  const digest = hash.digest("hex");
+  const versions = join(loaderHome(), "skills", ".versions");
+  const stageRoot = join(versions, `${namespace}-${digest}`);
+  if (existsSync(join(stageRoot, ".complete"))) return stageRoot;
+
+  mkdirSync(versions, { recursive: true });
+  const temporary = mkdtempSync(join(versions, `.${namespace}-`));
+  try {
+    for (const directory of directories) {
+      mkdirSync(join(temporary, directory.path), { recursive: true });
+    }
+    for (const file of files) {
+      const destination = join(temporary, file.path);
+      mkdirSync(join(destination, ".."), { recursive: true });
+      writeFileSync(destination, file.bytes);
+    }
+    for (const rewrite of rewrites) {
+      rewriteName(join(temporary, rewrite.path), rewrite.name, pluginName, namespace);
+    }
+    for (const file of files) {
+      chmodSync(join(temporary, file.path), file.mode);
+    }
+    for (const directory of directories.reverse()) {
+      chmodSync(join(temporary, directory.path), directory.mode);
+    }
+    writeFileSync(join(temporary, ".complete"), digest + "\n");
+    try {
+      renameSync(temporary, stageRoot);
+    } catch (error) {
+      // Another builder may have published the same immutable generation.
+      if (!existsSync(join(stageRoot, ".complete"))) throw error;
+    }
+    return stageRoot;
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
+function captureDirectory(
+  source: string,
+  destination: string,
+  files: SnapshotFile[],
+  directories: { path: string; mode: number }[],
+  ancestors: Set<string>,
+  skillBytes?: Buffer,
+): void {
+  const canonical = realpathSync(source);
+  if (ancestors.has(canonical)) throw new Error(`Cyclic skill resource directory: ${source}`);
+  const next = new Set(ancestors).add(canonical);
+  directories.push({ path: destination, mode: statSync(source).mode & 0o777 });
+  for (const entry of readdirSync(source).sort()) {
+    const path = join(source, entry);
+    const stat = statSync(path);
+    if (stat.isDirectory()) {
+      captureDirectory(path, join(destination, entry), files, directories, next);
+    } else if (stat.isFile()) {
+      files.push({
+        path: join(destination, entry),
+        bytes: entry === "SKILL.md" && skillBytes ? skillBytes : readFileSync(path),
+        mode: stat.mode & 0o777,
+      });
+    } else {
+      throw new Error(`Unsupported skill resource: ${path}`);
+    }
+  }
 }
 
 /**
@@ -87,8 +167,11 @@ export function stageNamespacedSkills(
  * otherwise top-level `.md` children are skills and subdirectories are searched
  * for SKILL.md roots.
  */
-function discoverSkills(dir: string, topLevel: boolean): DiscoveredSkill[] {
+function discoverSkills(dir: string, topLevel: boolean, ancestors = new Set<string>()): DiscoveredSkill[] {
   if (!isDir(dir)) return [];
+  const canonical = realpathSync(dir);
+  if (ancestors.has(canonical)) throw new Error(`Cyclic skill resource directory: ${dir}`);
+  const next = new Set(ancestors).add(canonical);
 
   const skillMd = join(dir, "SKILL.md");
   if (existsSync(skillMd)) {
@@ -97,10 +180,10 @@ function discoverSkills(dir: string, topLevel: boolean): DiscoveredSkill[] {
   }
 
   const results: DiscoveredSkill[] = [];
-  for (const entry of readdirSync(dir)) {
+  for (const entry of readdirSync(dir).sort()) {
     const full = join(dir, entry);
     if (isDir(full)) {
-      results.push(...discoverSkills(full, false));
+      results.push(...discoverSkills(full, false, next));
     } else if (topLevel && entry.toLowerCase().endsWith(".md") && hasSkillDescription(full)) {
       results.push({ name: readSkillName(full) ?? entry.replace(/\.md$/i, ""), kind: "file", path: full });
     }
@@ -124,7 +207,11 @@ function uniqueName(used: Set<string>, name: string): string {
 function readSkillName(file: string): string | null {
   const match = frontmatter(readFileSafe(file));
   if (!match) return null;
-  const nameLine = match.match(/^name\s*:\s*(.+?)\s*$/m);
+  return readName(match);
+}
+
+function readName(block: string): string | null {
+  const nameLine = block.match(/^name\s*:\s*(.+?)\s*$/m);
   if (!nameLine) return null;
   return nameLine[1].replace(/^["']|["']$/g, "").trim() || null;
 }

@@ -33,7 +33,8 @@ has no in-memory skill API (skills are discovered only as files on disk), so the
 loader stages a copy of each skill with its frontmatter `name` rewritten to
 `<plugin>-<name>` and points pi at the staged copy. The fetched clone is left
 unmodified. A skill's supporting files (`references/`, `scripts/`, etc.) are
-copied alongside it so relative paths keep working.
+copied alongside it so paths within the skill keep working. Files outside the
+skill directory (for example, `../../scripts/` at the plugin root) are not copied.
 
 ### Marketplaces
 
@@ -66,10 +67,22 @@ Inside a pi session:
 
 `install` resolves the plugin, records what it found, and reloads the session so
 the new skills are available immediately (as `/skill:<name>` and to the model).
-Local plugin sources are re-discovered and re-staged automatically during Pi
-startup and reload, so edits in a local checkout are reflected without running
-`install` again. Remote plugin clones remain unchanged until an explicit install
-or update.
+Local plugin sources are checked automatically during Pi startup and reload,
+so edits in a local checkout are reflected without running `install` again.
+Unchanged skills reuse a completed snapshot without rewriting it or the registry.
+Remote plugin clones remain unchanged until an explicit install or update.
+
+Snapshots are identified by a SHA-256 digest of captured file contents, paths,
+permissions, manifest inputs, and the namespace transformation version. A changed
+source produces a new snapshot, built privately and published by an atomic
+rename. Simultaneous startups can only discover complete snapshots. Existing
+snapshots are retained, including after removing a plugin, because running
+sessions may still read their files. There is no automatic snapshot cleanup.
+
+Registry changes are serialized with a directory lock and published by atomic
+file replacement. Lock waits are bounded to five seconds. If a writer is killed
+while holding `registry.lock`, stop loader writers, remove that lock directory,
+and retry; the loader never steals a lock based on its age.
 
 The same operations are available headless via the bundled CLI, which shares one
 registry with the extension:
@@ -85,7 +98,8 @@ Accepted sources match `pi install` shorthands: `git:host/owner/repo@ref`,
 ## Where things live
 
 - Installed plugin clones: `~/.pi/agent/claude-plugins/repos/…`
-- Staged, namespaced skill copies: `~/.pi/agent/claude-plugins/skills/<plugin>/…`
+- Immutable skill snapshots: `~/.pi/agent/claude-plugins/skills/.versions/<plugin>-<digest>/…`
+- Unpublished temporary builds: `skills/.versions/.<plugin>-…` under the same loader home
 - Registry of installed plugins: `~/.pi/agent/claude-plugins/registry.json`
 
 Set `PI_CLAUDE_PLUGINS_DIR` to relocate both (used by the test suite).
@@ -97,6 +111,8 @@ Set `PI_CLAUDE_PLUGINS_DIR` to relocate both (used by the test suite).
   command paths in the registry.
 - **Namespace** (`src/skills.ts`) stages a `<plugin>-`-prefixed copy of each
   skill, since pi can only name a skill from its on-disk `SKILL.md` frontmatter.
+  Captured input bytes determine both the digest and copied output; completed
+  generations are reused and never modified.
 - **Load** (`src/index.ts`) subscribes to pi's `resources_discover` event and
   returns the staged skill directories as `skillPaths` and command paths as
   `promptPaths`. pi scans them with its own loader, so plugin skills are
@@ -116,4 +132,7 @@ The test proves the end-to-end path against the real
 installs the plugin, then loads the registered directories with pi's own
 `loadSkillsFromDir` and checks that skills are discovered namespaced
 (`tdx-refactoring`, `tdx-recap`, `tdx-cruft`) rather than bare, with no skill
-validation warnings.
+validation warnings. Local snapshot tests additionally cover unchanged refresh,
+source and resource edits, permission changes, additions and deletions, failure
+recovery, retained session paths, and concurrent cold/warm startups with registry
+readers and unrelated plugin installs.
