@@ -597,7 +597,7 @@ export function registerCli(
         }),
         handoff: cliCommand({
           summary:
-            "Hand an out-of-scope request to where it belongs: a new thread, a new workstream, or (when sure) an existing thread",
+            "Transfer a request with explicit user approval to a new thread, a new workstream, or an existing thread",
           options: {
             request: {
               type: "string",
@@ -646,7 +646,7 @@ export function registerCli(
               : "";
             // Plugin-sent messages show as the user's (SPEC §5), so the
             // receiving thread is told where this came from.
-            const message = `Handed off from @thread:${caller}${note}. This is now this thread's task; the user continues here, so don't report back there.\n\n${request}`;
+            const message = `Handed off from @thread:${caller}${note}. You own this task and the user continues here. The dispatch to this receiving thread fulfills any instruction in the original request to start or move the work into another thread. Carry out the remaining task here, retaining its execution preferences. Resolve repository or environment setup as part of the task; transfer ownership again only with a further explicit user request or approval.\n\nOriginal user request (preserved verbatim):\n${request}`;
             const acted = await actOn(
               router,
               decision,

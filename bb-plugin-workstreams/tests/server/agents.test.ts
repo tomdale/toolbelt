@@ -35,7 +35,42 @@ describe("instructions", () => {
   it("keeps delegates from delegating", () => {
     const text = instructionsFor({ kind: "delegate", parentTitle: "Fix tabs" });
     expect(text).toContain('delegated subtask of "Fix tabs"');
-    expect(text).toContain("Don't spawn further threads");
+    expect(text).toContain("Report results and scope questions to it");
+    expect(text).toContain(
+      "Your parent coordinates ownership and further delegation",
+    );
+    expect(text).toContain(
+      "ask it before spawning further threads or transferring ownership",
+    );
+    expect(text).not.toContain("bb workstreams handoff");
+  });
+
+  it("retains direct requests regardless of organizational placement or workspace shape", () => {
+    for (const shape of ["git", "workforest", "none", "unknown"] as const) {
+      for (const workstream of [
+        null,
+        { name: "Alpha", description: "Alpha work" },
+      ]) {
+        const text = instructionsFor({ kind: "task", workstream, shape });
+        expect(text).toContain("Continue the user's requests here");
+        expect(text).toContain(
+          "resolve repository or environment setup as part of the task",
+        );
+        expect(text).toContain(
+          "only when the user explicitly requests or approves that transfer",
+        );
+        expect(text).toContain("share the returned thread link with the user");
+        expect(text).toContain(
+          "Keep coordination lightweight so it does not delay the requested work",
+        );
+        expect(text).toContain("at most one bounded metadata lookup");
+        expect(text).toContain(
+          "ordinary requests need no other-thread investigation",
+        );
+        expect(text).not.toContain("don't do it here");
+        expect(text.length).toBeLessThanOrEqual(4096);
+      }
+    }
   });
 
   it("strips markup and shell syntax from names", () => {
@@ -214,6 +249,32 @@ describe("bb workstreams handoff", () => {
       filedBy: "handoff",
     });
     expect(spawn!.parentThreadId).toBeUndefined();
+  });
+
+  it("consumes the dispatch instruction while preserving the task and execution preferences", async () => {
+    const w = await setup();
+    const request =
+      "Start a new thread using the selected model at high effort, then fix the parser error";
+    const result = await handoff(w, request);
+    expect(result.exitCode).toBe(0);
+    const prompt = w.spawned[0]!.prompt;
+    expect(prompt).toContain("You own this task and the user continues here");
+    expect(prompt).toContain(
+      "fulfills any instruction in the original request to start or move the work into another thread",
+    );
+    expect(prompt).toContain(
+      "Carry out the remaining task here, retaining its execution preferences",
+    );
+    expect(prompt).toContain(
+      "Resolve repository or environment setup as part of the task",
+    );
+    expect(prompt).toContain(
+      "only with a further explicit user request or approval",
+    );
+    expect(prompt).toContain(
+      `Original user request (preserved verbatim):\n${request}`,
+    );
+    expect(w.spawned).toHaveLength(1);
   });
 
   it("keeps handoff threads in the caller's workstream", async () => {
