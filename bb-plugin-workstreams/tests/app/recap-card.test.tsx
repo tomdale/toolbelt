@@ -453,6 +453,18 @@ it("shows the Waiting goal as the title in the compact card", async () => {
   expect(slot.queryByRole("heading", { name: "Tasks" })).toBeNull();
 });
 
+it.each([
+  ["without next actions", []],
+  ["with next actions", ["Inspect the result"]],
+])("keeps Archive at the right %s", async (_label, next) => {
+  const slot = await mount({
+    archivable: true,
+    recap: { next },
+  });
+  const archive = await slot.findByRole("button", { name: "Archive" });
+  expect(archive.className).toContain("ml-auto");
+});
+
 it("shows the goal, results, and an icon-only Archive in the compact complete card", async () => {
   const slot = await mount({ layout: "minimal", archivable: true });
   const region = await slot.findByRole("region", { name: "Latest recap" });
