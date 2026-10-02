@@ -160,6 +160,15 @@ function mount(
         sec_b: { sectionId: "sec_b", name: "Beta" },
       },
     })),
+    corpus: vi.fn(() => ({
+      entities: [
+        { id: "inactive-feature", name: "Shelves", aliases: ["Storage"] },
+      ],
+    })),
+    corpusSelect: vi.fn((_input: unknown) => ({
+      sectionId: "sec_a",
+      name: "Alpha",
+    })),
     route: vi.fn((_input: unknown) => decision),
     routeCancel: vi.fn((_input: unknown) => ({ canceled: true })),
     startThread: vi.fn((_input: unknown) => ({
@@ -231,6 +240,24 @@ function mount(
   );
   return { slot, rpc, onClose };
 }
+
+it("finds retained inactive identities by alias without losing explicit subject selection", async () => {
+  const { rpc } = mount(inAlpha);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Workstream: No workstream" }),
+  );
+  const search = await screen.findByRole("combobox", {
+    name: "Search workstreams",
+  });
+  fireEvent.change(search, { target: { value: "Storage" } });
+  fireEvent.click(await screen.findByText("Shelves"));
+  await waitFor(() =>
+    expect(rpc.corpusSelect).toHaveBeenCalledWith({
+      entityId: "inactive-feature",
+    }),
+  );
+  await screen.findByRole("button", { name: "Workstream: Alpha" });
+});
 
 const input = () =>
   screen.getByTestId("bb-new-thread-composer-input") as HTMLTextAreaElement;

@@ -195,7 +195,8 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
                             name: result.name,
                             subjectId: entity.id,
                           }),
-                        );
+                        )
+                        .catch((error) => newWork.reportError(error));
                     }}
                     className={ITEM_CLASS}
                   >
