@@ -53,6 +53,8 @@ type Row = {
   input_key: string | null;
   /** The thread's agent has called the tool, so its session has it. */
   proven: number;
+  waiting_nudged: number;
+  waiting_cancelled: number;
 };
 type DispatchContext = Parameters<
   Parameters<BbPluginApi["experimental_hooks"]["on"]>[1]
@@ -198,11 +200,14 @@ export class AgentRecaps {
         ctx.thread.id,
         this.controller.signal,
       ).catch(() => null);
-      const recap = this.get(ctx.thread.id)?.recap;
+      const stored = this.get(ctx.thread.id);
+      const recap = stored?.recap;
       if (
         recap?.id !== recapId ||
         recap.state !== "waiting" ||
         recap.turnId !== turnId ||
+        this.row(ctx.thread.id).waiting_nudged !== 1 ||
+        stored?.waitingCancelled ||
         ctx.thread.status !== "idle" ||
         ctx.thread.archivedAt !== null ||
         ctx.thread.visibility !== "visible" ||
@@ -315,7 +320,7 @@ export class AgentRecaps {
   }
 
   onArchived(threadId: string) {
-    this.cancelWaiting(threadId);
+    this.cancelWaitingTimer(threadId);
     this.failureGuard.forget(threadId);
     this.deps.db
       .prepare("UPDATE ws_agent_recap SET enrolled = 0 WHERE thread_id = ?")
@@ -323,7 +328,7 @@ export class AgentRecaps {
   }
 
   forget(threadId: string) {
-    this.cancelWaiting(threadId);
+    this.cancelWaitingTimer(threadId);
     this.failureGuard.forget(threadId);
     this.deps.db
       .prepare("DELETE FROM ws_agent_recap WHERE thread_id = ?")
@@ -331,14 +336,23 @@ export class AgentRecaps {
   }
 
   /** The thread's recap for its latest turn, dismissed or not. */
-  get(threadId: string): { recap: Recap; dismissed: boolean } | null {
+  get(
+    threadId: string,
+  ): { recap: Recap; dismissed: boolean; waitingCancelled: boolean } | null {
     const row = this.deps.db
       .prepare(
-        "SELECT recap, dismissed FROM ws_agent_recap WHERE thread_id = ?",
+        "SELECT recap, dismissed, waiting_cancelled FROM ws_agent_recap WHERE thread_id = ?",
       )
-      .get(threadId) as Pick<Row, "recap" | "dismissed"> | undefined;
+      .get(threadId) as
+      Pick<Row, "recap" | "dismissed" | "waiting_cancelled"> | undefined;
     const recap = parse(row?.recap ?? null);
-    return recap ? { recap, dismissed: row!.dismissed === 1 } : null;
+    return recap
+      ? {
+          recap,
+          dismissed: row!.dismissed === 1,
+          waitingCancelled: row!.waiting_cancelled === 1,
+        }
+      : null;
   }
 
   /** Every stored recap, for the sidebar's work state. */
@@ -369,6 +383,19 @@ export class AgentRecaps {
   /** Hides the card on every client; the sidebar keeps the recap's state. */
   dismiss(threadId: string, recapId: string) {
     this.setDismissed(threadId, recapId, true);
+  }
+
+  cancelWaiting(threadId: string, recapId: string) {
+    const current = this.get(threadId);
+    if (current?.recap.id !== recapId || current.recap.state !== "waiting")
+      throw new Error("This waiting check is no longer current.");
+    this.cancelWaitingTimer(threadId);
+    this.deps.db
+      .prepare(
+        "UPDATE ws_agent_recap SET waiting_cancelled = 1 WHERE thread_id = ?",
+      )
+      .run(threadId);
+    this.deps.onChange();
   }
 
   /** Restores the current recap card on every client. */
@@ -407,7 +434,7 @@ export class AgentRecaps {
   async dispose() {
     this.controller.abort();
     for (const threadId of this.waitingTimers.keys())
-      this.cancelWaiting(threadId);
+      this.cancelWaitingTimer(threadId);
     await Promise.allSettled([
       ...this.waitingChecks,
       ...this.pending.values(),
@@ -479,12 +506,17 @@ export class AgentRecaps {
       this.deps.db
         .prepare(
           `UPDATE ws_agent_recap SET accepted_turn = ?, capped = 0,
-             recap = COALESCE(?, recap), waiting_nudged = 0, dismissed = CASE WHEN ? IS NULL THEN dismissed ELSE 0 END
+             recap = COALESCE(?, recap),
+             waiting_nudged = CASE WHEN ? IS NULL THEN waiting_nudged ELSE 0 END,
+             waiting_cancelled = CASE WHEN ? IS NULL THEN waiting_cancelled ELSE 0 END,
+             dismissed = CASE WHEN ? IS NULL THEN dismissed ELSE 0 END
            WHERE thread_id = ? AND epoch = ?`,
         )
         .run(
           turnId,
           recap ? JSON.stringify(recap) : null,
+          recap ? 1 : null,
+          recap ? 1 : null,
           recap ? 1 : null,
           threadId,
           epoch,
@@ -497,28 +529,29 @@ export class AgentRecaps {
     const row = this.row(threadId);
     // A queued group dispatches more than once; only its first attempt is new.
     if (inputKey !== null && row.input_key === inputKey) return;
-    this.cancelWaiting(threadId);
+    this.cancelWaitingTimer(threadId);
     this.failureGuard.forget(threadId);
     this.deps.db
       .prepare(
         `UPDATE ws_agent_recap SET epoch = epoch + 1, intercepts = 0, capped = 0,
-           accepted_turn = NULL, recap = NULL, dismissed = 0, correction_token = NULL, input_key = ?
+           accepted_turn = NULL, recap = NULL, dismissed = 0, waiting_nudged = 0, waiting_cancelled = 0, correction_token = NULL, input_key = ?
          WHERE thread_id = ?`,
       )
       .run(inputKey, threadId);
   }
 
-  private cancelWaiting(threadId: string) {
+  private cancelWaitingTimer(threadId: string) {
     const timer = this.waitingTimers.get(threadId);
     if (timer) clearTimeout(timer);
     this.waitingTimers.delete(threadId);
   }
 
   private scheduleWaiting(threadId: string, recap: Recap) {
-    this.cancelWaiting(threadId);
+    this.cancelWaitingTimer(threadId);
     if (
       recap.state !== "waiting" ||
       !recap.timeout ||
+      this.get(threadId)?.waitingCancelled ||
       this.deps.db
         .prepare(
           "SELECT 1 FROM ws_agent_recap WHERE thread_id = ? AND waiting_nudged = 1",
@@ -556,14 +589,15 @@ export class AgentRecaps {
       thread.archivedAt !== null ||
       thread.visibility !== "visible" ||
       thread.queuedMessageCount > 0 ||
-      this.get(threadId)?.recap.id !== recap.id
+      this.get(threadId)?.recap.id !== recap.id ||
+      this.get(threadId)?.waitingCancelled
     )
       return;
     // Reserve once durably before sending; a reload cannot duplicate the prompt.
     const reserved = this.deps.db
       .prepare(
         `UPDATE ws_agent_recap SET waiting_nudged = 1
-      WHERE thread_id = ? AND waiting_nudged = 0 AND recap = ?`,
+      WHERE thread_id = ? AND waiting_nudged = 0 AND waiting_cancelled = 0 AND recap = ?`,
       )
       .run(threadId, JSON.stringify(recap)).changes;
     if (!reserved) return;

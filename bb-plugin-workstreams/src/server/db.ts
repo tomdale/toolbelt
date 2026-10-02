@@ -289,6 +289,7 @@ const MIGRATIONS = [
   // A waiting recap needs an agent-selected timeout before it can schedule a check.
   `UPDATE ws_agent_recap SET recap = NULL WHERE json_extract(recap, '$.state') = 'continuing'`,
   `UPDATE ws_agent_recap SET recap = json_remove(recap, '$.active', '$.next') WHERE recap IS NOT NULL`,
+  "ALTER TABLE ws_agent_recap ADD COLUMN waiting_cancelled INTEGER NOT NULL DEFAULT 0",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

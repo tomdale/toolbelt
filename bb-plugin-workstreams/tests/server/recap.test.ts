@@ -55,6 +55,7 @@ async function world(
     w.harness.behavior.callRpc("recap_get", { threadId: "t1" }) as Promise<{
       recap: { id: string; state: string; latest: string[] } | null;
       dismissed: boolean;
+      waitingCancelled: boolean;
       capped: boolean;
       corrections: number;
     }>;
@@ -90,6 +91,163 @@ describe("waiting status checks", () => {
         (send.pluginSubmission as { data?: { waitingRecapId?: string } })?.data
           ?.waitingRecapId,
     );
+
+  it("cancels durably without dismissing the card or rescheduling on idle", async () => {
+    const s = await world();
+    vi.useFakeTimers();
+    s.w.turn("t1");
+    await s.report(waiting);
+    const { recap } = await s.card();
+    await s.w.harness.behavior.callRpc("recap_cancel_waiting", {
+      threadId: "t1",
+      recapId: recap!.id,
+    });
+    expect(await s.card()).toMatchObject({
+      recap: { id: recap!.id },
+      dismissed: false,
+      waitingCancelled: true,
+    });
+    await s.idle();
+    const replacement = await s.w.harness.lifecycle.reload(plugin);
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(nudges(s)).toHaveLength(0);
+    expect(
+      await replacement.harness.behavior.callRpc("recap_get", {
+        threadId: "t1",
+      }),
+    ).toMatchObject({
+      recap: { id: recap!.id },
+      dismissed: false,
+      waitingCancelled: true,
+    });
+  });
+
+  it("keeps dismissal independent of cancellation and rejects stale cancel IDs", async () => {
+    const s = await world();
+    vi.useFakeTimers();
+    s.w.turn("t1");
+    await s.report(waiting);
+    const old = (await s.card()).recap!;
+    await s.w.harness.behavior.callRpc("recap_dismiss", {
+      threadId: "t1",
+      recapId: old.id,
+    });
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(nudges(s)).toHaveLength(1);
+    await s.report(waiting);
+    const current = (await s.card()).recap!;
+    await expect(
+      s.w.harness.behavior.callRpc("recap_cancel_waiting", {
+        threadId: "t1",
+        recapId: old.id,
+      }),
+    ).rejects.toThrow("no longer current");
+    expect(await s.card()).toMatchObject({
+      recap: { id: current.id },
+      dismissed: false,
+      waitingCancelled: false,
+    });
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(nudges(s)).toHaveLength(2);
+    await s.report(RECAP);
+    await expect(
+      s.w.harness.behavior.callRpc("recap_cancel_waiting", {
+        threadId: "t1",
+        recapId: (await s.card()).recap!.id,
+      }),
+    ).rejects.toThrow("no longer current");
+  });
+
+  it("cancels while an expired check awaits the thread lookup", async () => {
+    const s = await world();
+    vi.useFakeTimers();
+    s.w.turn("t1");
+    await s.report(waiting);
+    const { recap } = await s.card();
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const lookup = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    s.w.harness.sdk.stub("threads.get", async () => {
+      entered();
+      await gate;
+      return s.thread();
+    });
+    vi.advanceTimersByTime(10000);
+    await lookup;
+    await s.w.harness.behavior.callRpc("recap_cancel_waiting", {
+      threadId: "t1",
+      recapId: recap!.id,
+    });
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(nudges(s)).toHaveLength(0);
+    expect(await s.card()).toMatchObject({
+      recap: { id: recap!.id },
+      dismissed: false,
+      waitingCancelled: true,
+    });
+  });
+
+  it.each([false, true])(
+    "rejects an already submitted check after cancellation (queued: %s)",
+    async (queued) => {
+      const s = await world();
+      vi.useFakeTimers();
+      s.w.turn("t1");
+      await s.report(waiting);
+      await vi.advanceTimersByTimeAsync(10000);
+      const send = nudges(s)[0]!;
+      const { recap } = await s.card();
+      // Pause the dispatch's turn lookup so cancellation wins before its final guard.
+      const events = await s.w.bb.sdk.threads.events.list({
+        threadId: "t1",
+        types: ["turn/started"],
+        order: "desc",
+        limit: "1",
+      });
+      let release!: () => void;
+      let entered!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const lookup = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      s.w.harness.sdk.stub("threads.events.list", async () => {
+        entered();
+        await gate;
+        return events;
+      });
+      const dispatch = s.hook()(
+        makeMessageDispatchHookContext({
+          thread: s.thread(),
+          ...(queued
+            ? {
+                input: { text: `[Workstreams waiting ${recap!.id}]` },
+                queuedMessages: [makeQueueEntry({ id: "q1" })],
+              }
+            : { experimental_submission: send.pluginSubmission as never }),
+        }),
+      );
+      await lookup;
+      await s.w.harness.behavior.callRpc("recap_cancel_waiting", {
+        threadId: "t1",
+        recapId: recap!.id,
+      });
+      release();
+      expect((await dispatch).action).toBe("reject");
+      expect(await s.card()).toMatchObject({
+        recap: { id: recap!.id },
+        dismissed: false,
+        waitingCancelled: true,
+      });
+    },
+  );
 
   it("nudges once at the deadline and accepts its dispatch", async () => {
     const s = await world();
@@ -582,6 +740,7 @@ describe("agent recaps", () => {
     expect(await s.card()).toMatchObject({
       recap: { id: recap!.id },
       dismissed: true,
+      waitingCancelled: false,
     });
     await s.w.harness.behavior.callRpc("recap_restore", {
       threadId: "t1",
@@ -590,6 +749,7 @@ describe("agent recaps", () => {
     expect(await s.card()).toMatchObject({
       recap: { id: recap!.id },
       dismissed: false,
+      waitingCancelled: false,
     });
     await s.w.harness.behavior.callRpc("recap_dismiss", {
       threadId: "t1",
