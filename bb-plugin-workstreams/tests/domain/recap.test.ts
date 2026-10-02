@@ -20,7 +20,6 @@ it("advertises named parameters on a concrete root object", () => {
     "state",
     "goal",
     "latest",
-    "task",
     "timeout",
     "review",
     "links",
@@ -42,13 +41,13 @@ it("validates state-specific fields at execution", () => {
     variants.find((variant) => variant.properties.state?.const === state)!;
   for (const state of ["complete", "review"]) {
     expect(branch(state).properties).toHaveProperty("timeout");
-    expect(branch(state).properties).toHaveProperty("task");
+    expect(branch(state).properties).not.toHaveProperty("task");
     expect(branch(state).properties.latest?.minItems).toBe(1);
     expect(branch(state).required).toContain("latest");
     expect(branch(state).additionalProperties).toBe(false);
   }
   expect(branch("review").required).toContain("review");
-  expect(branch("waiting").required).toContain("task");
+  expect(branch("waiting").required).not.toContain("task");
   expect(branch("waiting").required).toContain("timeout");
   expect(branch("waiting").properties).toHaveProperty("review");
   expect(branch("complete").properties).toHaveProperty("review");
@@ -65,9 +64,8 @@ it.each([undefined, null, []])("accepts empty unused arrays: %j", (empty) => {
   for (const state of ["complete", "review", "waiting"] as const) {
     const input = {
       state,
-      goal: "Fixed recap validation",
+      goal: state === "waiting" ? "Running checks" : "Fixed recap validation",
       latest: state === "waiting" ? [] : ["Tests passed"],
-      task: state === "waiting" ? "Running checks" : undefined,
       timeout: state === "waiting" ? 60 : undefined,
       review: state === "review" ? ["Inspect the fix"] : empty,
     };
@@ -77,32 +75,34 @@ it.each([undefined, null, []])("accepts empty unused arrays: %j", (empty) => {
       turnId: "t",
       at: 1,
     });
-    if (state === "waiting") expect(recap.task).toBe("Running checks");
-    else expect(recap.task).toBeUndefined();
+    expect(recap.goal).toBe(
+      state === "waiting" ? "Running checks" : "Fixed recap validation",
+    );
     if (state !== "review") expect(recap.review).toEqual([]);
   }
 });
 
 it.each(["complete", "review"] as const)(
-  "accepts null task in %s recaps from the shared input schema",
+  "accepts ordinary recap input in the %s state",
   (state) => {
-    const result = recapInputSchema.safeParse({
+    const input = {
       state,
       goal: "Finished work",
       latest: ["Tests passed"],
-      task: null,
       ...(state === "review" ? { review: "Inspect the result" } : {}),
-    });
-    expect(result.success).toBe(true);
+    };
+    expect(recapInputSchema.safeParse(input).success).toBe(true);
+    expect(recapToolSchema.safeParse(input).success).toBe(true);
     expect(
-      recapToolSchema.safeParse({
-        state,
-        goal: "Finished work",
-        latest: ["Tests passed"],
-        task: null,
-        ...(state === "review" ? { review: "Inspect the result" } : {}),
+      recapSchema.safeParse({
+        id: "r",
+        turnId: "t",
+        at: 1,
+        ...input,
+        review: [],
+        links: [],
       }).success,
-    ).toBe(false);
+    ).toBe(true);
   },
 );
 
@@ -113,7 +113,7 @@ it("accepts empty review strings only when review is not required", () => {
         state,
         goal: "Fixed validation",
         latest: state === "waiting" ? [] : ["Tests passed"],
-        ...(state === "waiting" ? { task: "Running checks", timeout: 60 } : {}),
+        ...(state === "waiting" ? { timeout: 60 } : {}),
         review: "",
       }).success,
     ).toBe(true);
@@ -137,8 +137,10 @@ it("rejects substantive unused fields and unknown keys", () => {
     latest: ["Tests passed"],
   };
   for (const patch of [
-    { task: "Running checks" },
-    { tasks: ["Running checks"] },
+    { timeout: 60 },
+    { latest: [] },
+    { timeout: 60 },
+    { latest: [] },
     { review: ["Inspect the fix"] },
     { review: "Inspect the fix" },
     { extra: [] },
@@ -148,11 +150,10 @@ it("rejects substantive unused fields and unknown keys", () => {
     );
 });
 
-it("requires one nonempty task description and a timeout for Waiting", () => {
+it("uses the goal as the Waiting title and requires a timeout", () => {
   const input = {
     state: "waiting",
-    goal: "Updating settings",
-    task: "Workers are building the toggle.",
+    goal: "Waiting for the settings toggle",
     timeout: 60,
     links: [],
   };
@@ -162,28 +163,25 @@ it("requires one nonempty task description and a timeout for Waiting", () => {
     at: 1,
   });
   expect(recap).toMatchObject({
-    task: "Workers are building the toggle",
+    goal: "Waiting for the settings toggle",
     timeout: 60,
     latest: [],
     review: [],
   });
   const markdown = recapMarkdown(recap);
   expect(markdown).toContain("**Waiting**");
-  expect(markdown).toContain("Workers are building the toggle");
-  expect(markdown).not.toContain("- Workers are building");
+  expect(markdown).toContain("Waiting for the settings toggle");
   expect(markdown).toContain("Check status in 60s");
   expect(markdown).not.toContain("**Next:");
   expect(markdown).not.toContain("Nothing needed");
   const analysis = reportedAnalysis(recap, { latestAttentionAt: 1 });
   expect(analysis.state).toBe("in_progress");
-  expect(analysis.recap).toBe("Workers are building the toggle");
+  expect(analysis.recap).toBe("Waiting for the settings toggle");
 
   const rejects = (patch: Record<string, unknown>) =>
     expect(recapInputSchema.safeParse({ ...input, ...patch }).success).toBe(
       false,
     );
-  rejects({ task: undefined });
-  rejects({ task: "" });
   rejects({ latest: ["Done"] });
   rejects({ next: ["Inspect results"] });
   for (const timeout of [undefined, null, 0, -1, 1.5, 86401])
@@ -317,7 +315,6 @@ it("accepts next actions for complete and review, never for waiting", () => {
     recapInputSchema.safeParse({
       state: "waiting",
       goal: "Waiting for tests",
-      task: "Running the suite",
       timeout: 120,
       next: ["Check back later"],
     }).success,
@@ -326,7 +323,6 @@ it("accepts next actions for complete and review, never for waiting", () => {
     recapInputSchema.parse({
       state: "waiting",
       goal: "Waiting for tests",
-      task: "Running the suite",
       timeout: 120,
     }).next,
   ).toEqual([]);
@@ -363,20 +359,20 @@ it("reads stored recaps without next actions as offering none", () => {
   expect(recapSchema.parse(stored).next).toEqual([]);
 });
 
-it("reads legacy waiting task lists as a single task description", () => {
+it("moves the stored Waiting task title into goal", () => {
   const recap = recapSchema.parse({
     id: "r",
     turnId: "t",
     at: 1,
     state: "waiting",
-    goal: "Waiting for tests",
-    tasks: ["Run tests", { text: "Build", detail: "@thread:thr_build" }],
+    goal: "Old waiting goal",
+    task: "Waiting for tests",
     timeout: 60,
     review: [],
     links: [],
   });
-  expect(recap.task).toBe("Run tests · Build (@thread:thr_build)");
-  expect(recap).not.toHaveProperty("tasks");
+  expect(recap.goal).toBe("Waiting for tests");
+  expect(recap).not.toHaveProperty("task");
 });
 
 it("keeps legacy string lists and reads structured review JSON", () => {
@@ -435,15 +431,14 @@ it("keeps structured review steps and writes their expectations", () => {
   );
 });
 
-it("accepts a single Waiting task string", () => {
+it("uses the goal as the single Waiting title", () => {
   const parsed = recapInputSchema.parse({
     state: "waiting",
-    goal: "Waiting for UI and tests",
-    task: "Building UI and running tests in @thread:thr_abc123",
+    goal: "Building UI and running tests in @thread:thr_abc123",
     timeout: 120,
   });
   const recap = toRecap(parsed, { id: "r", turnId: "t", at: 1 });
-  expect(recap.task).toBe(
+  expect(recap.goal).toBe(
     "Building UI and running tests in @thread:thr_abc123",
   );
   expect(recapMarkdown(recap)).toContain("Building UI and running tests");
