@@ -3,6 +3,7 @@ import {
   fileTarget,
   plainText,
   recapSegments,
+  RECAP_TOOL_DESCRIPTION,
   recapInputSchema,
   recapToolSchema,
   recapMarkdown,
@@ -10,6 +11,15 @@ import {
   toRecap,
   reportedAnalysis,
 } from "../../src/domain/recap.ts";
+
+it("explains when to keep collaborating instead of reporting a completed turn", () => {
+  expect(RECAP_TOOL_DESCRIPTION).toContain(
+    "broader task they asked to do are fully done",
+  );
+  expect(RECAP_TOOL_DESCRIPTION).toContain("keep collaborating");
+  expect(RECAP_TOOL_DESCRIPTION).toContain("question-card tool");
+  expect(RECAP_TOOL_DESCRIPTION).toContain("as a substitute for that question");
+});
 
 it("advertises named parameters on a concrete root object", () => {
   const schema = recapToolSchema.toJSONSchema({ io: "input" });
