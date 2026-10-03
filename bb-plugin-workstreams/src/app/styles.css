@@ -583,7 +583,7 @@
   white-space: nowrap;
 }
 .ws-goal-chip[data-visible="true"] {
-  max-width: 26rem;
+  max-width: 22rem;
   opacity: 1;
 }
 .ws-goal-chip__workstream {
