@@ -18,6 +18,8 @@ import {
   UrlLink,
   experimental_FileLink as FileLink,
   experimental_useSidebarThreads,
+  experimental_useProviders,
+  experimental_ProviderIcon as ProviderIcon,
   useComposer,
   useRealtime,
   useRpc,
@@ -296,6 +298,8 @@ export type AgentView = {
   title: string | null;
   /** Where the agent's thread opens; null when it cannot be opened. */
   href: string | null;
+  /** The agent provider the thread runs on, for its icon. */
+  providerId: string | null;
   tone: AgentTone;
   label: string;
 };
@@ -359,6 +363,7 @@ type FetchedAgent = AgentThread & {
   threadId: string;
   projectId: string;
   title: string;
+  providerId: string;
 };
 
 /** How often the card rereads agent threads the sidebar does not carry. */
@@ -418,6 +423,7 @@ function useAgentViews(
       views.set(threadId, {
         title: sidebar.displayTitle,
         href: sidebar.href,
+        providerId: sidebar.providerId,
         ...agentStatus(sidebar),
       });
       continue;
@@ -429,11 +435,24 @@ function useAgentViews(
         ? {
             title: thread.title,
             href: threadHref(thread.projectId, threadId),
+            providerId: thread.providerId,
             ...agentStatus(thread),
           }
         : fetched
-          ? { title: null, href: null, label: "Unavailable", tone: "unknown" }
-          : { title: null, href: null, label: "", tone: "unknown" },
+          ? {
+              title: null,
+              href: null,
+              providerId: null,
+              label: "Unavailable",
+              tone: "unknown",
+            }
+          : {
+              title: null,
+              href: null,
+              providerId: null,
+              label: "",
+              tone: "unknown",
+            },
     );
   }
   return views;
@@ -455,79 +474,104 @@ const AGENT_LABEL: Record<AgentTone, string> = {
   unknown: "text-muted-foreground",
 };
 
+/** The agent's provider icon, badged with its status dot. */
+function AgentAvatar({ view }: { view: AgentView }) {
+  const { providers } = experimental_useProviders();
+  const provider = view.providerId
+    ? (providers.find((p) => p.id === view.providerId) ?? {
+        id: view.providerId,
+      })
+    : null;
+  return (
+    <span aria-hidden className="relative flex size-4 shrink-0">
+      {provider ? (
+        <ProviderIcon
+          providerKind="agent"
+          provider={provider}
+          fallback="UserRound"
+          className="size-4 text-muted-foreground"
+        />
+      ) : (
+        <Icon name="UserRound" className="size-4 text-muted-foreground" />
+      )}
+      <span
+        className={cn(
+          "absolute -bottom-px -right-px size-[7px] rounded-full ring-2 ring-background",
+          AGENT_DOT[view.tone],
+        )}
+      />
+    </span>
+  );
+}
+
 /**
- * The agents a waiting thread is waiting on, one line each. The task links
- * to the agent's thread, whose title shows on hover. A running agent shows
- * only its dot; any other status is named.
+ * The agents a waiting thread is waiting on, one row each: the agent's icon
+ * and thread title, then its task. The whole row opens the agent's thread.
+ * A running agent shows only its dot; any other status is named.
  */
 function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
   const compact = useContext(CompactContext);
   const views = useAgentViews(agents);
+  const body = compact ? COMPACT_BODY_CLASS : BODY_CLASS;
   return (
     <ul
       aria-label="Awaited agents"
-      className={cn(
-        "m-0 list-none divide-y divide-violet-900/10 p-0 dark:divide-violet-200/15",
-        compact ? "mt-1" : "mt-1.5",
-      )}
+      className={cn("-mx-2 m-0 list-none p-0", compact ? "mt-1" : "mt-1.5")}
     >
       {agents.map((agent) => {
         const view = views.get(agent.threadId)!;
-        const running = view.tone === "running";
         return (
           <li
             key={agent.threadId}
             data-agent-status={view.tone}
             className={cn(
-              "group relative flex min-w-0 items-baseline gap-2.5",
+              "group relative flex min-w-0 items-center gap-2 rounded-md px-2",
               compact ? "py-0.5" : "py-1",
+              view.href && "hover:bg-foreground/[0.06]",
             )}
           >
+            <AgentAvatar view={view} />
             <span
-              aria-hidden
               className={cn(
-                "size-[7px] shrink-0 -translate-y-px rounded-full",
-                AGENT_DOT[view.tone],
+                "max-w-[45%] shrink-0 truncate font-medium text-foreground",
+                body,
               )}
-            />
+            >
+              {view.title ?? "Agent"}
+            </span>
             {/* Links inside the task stay clickable above the row's link. */}
             <div
               className={cn(
-                "min-w-0 flex-1 [&_a]:relative [&_a]:z-10",
-                view.href &&
-                  "group-hover:underline group-hover:decoration-foreground/30 group-hover:underline-offset-[3px]",
+                "min-w-0 flex-1 text-muted-foreground [&_a]:relative [&_a]:z-10 [&_p]:truncate",
               )}
             >
-              <RecapText
-                text={agent.task}
-                typeClass={compact ? COMPACT_BODY_CLASS : BODY_CLASS}
-              />
+              <RecapText text={agent.task} typeClass={cn(body, "truncate")} />
             </div>
             {view.label ? (
               <span
                 aria-label="Agent status"
                 className={cn(
                   "shrink-0 text-[11px] font-medium",
-                  running ? "sr-only" : AGENT_LABEL[view.tone],
+                  view.tone === "running" ? "sr-only" : AGENT_LABEL[view.tone],
                 )}
               >
                 {view.label}
               </span>
             ) : null}
             {view.href ? (
-              <UrlLink
-                href={view.href}
-                title={view.title ?? undefined}
-                aria-label={view.title ?? "Agent thread"}
-                className="absolute inset-0 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-              />
-            ) : null}
-            {view.href && running ? (
-              <Icon
-                name="ChevronRight"
-                aria-hidden
-                className="size-3 shrink-0 self-center text-muted-foreground/70 group-hover:text-foreground"
-              />
+              <>
+                <Icon
+                  name="ChevronRight"
+                  aria-hidden
+                  className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                />
+                <UrlLink
+                  href={view.href}
+                  title={`Open ${view.title ?? "agent thread"}`}
+                  aria-label={view.title ?? "Agent thread"}
+                  className="absolute inset-0 rounded-md focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+                />
+              </>
             ) : null}
           </li>
         );
@@ -582,16 +626,22 @@ function WaitingFooter({
         )}
       </span>
       {counting && onCancel ? (
-        <Button
+        // An icon, like BB's other inline controls; the corner X already
+        // means dismiss, so the check gets a timer-off glyph.
+        <button
           type="button"
-          variant="ghost"
-          size="sm"
           aria-label="Cancel status check"
-          className="ml-auto h-6 px-2 text-[11px] font-normal text-muted-foreground"
+          title="Cancel status check"
+          className="ml-auto flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           onClick={onCancel}
         >
-          Cancel
-        </Button>
+          <Icon
+            name="TimerOff"
+            fallback="CircleX"
+            aria-hidden
+            className="size-3.5"
+          />
+        </button>
       ) : null}
       {counting && total > 0 ? (
         // Exactly covers the footer's 1px top border, so it meets the

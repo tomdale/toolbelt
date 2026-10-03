@@ -496,6 +496,7 @@ it("reads hidden agent threads from the server", async () => {
               runtimeStatus: "active",
               hasPendingInteraction: false,
               isArchived: false,
+              providerId: "pi",
             },
           ]
         : [],
@@ -509,7 +510,10 @@ it("reads hidden agent threads from the server", async () => {
     "running",
     "unknown",
   ]);
+  expect(rows[0]!.textContent).toContain("Suite runner");
+  expect(rows[0]!.textContent).toContain("Run the suite");
   expect(rows[0]!.textContent).toContain("Running");
+  expect(rows[1]!.textContent).toContain("Agent");
   expect(rows[1]!.textContent).toContain("Unavailable");
   expect(slot.inspection.rpcCalls).toContainEqual({
     method: "recap_agents",

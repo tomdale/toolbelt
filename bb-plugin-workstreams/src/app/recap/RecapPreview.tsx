@@ -89,12 +89,14 @@ const EXAMPLES: readonly Example[] = [
       "preview-ui-agent": {
         title: "Theme toggle UI",
         href: null,
+        providerId: "pi",
         tone: "done",
         label: "Finished",
       },
       "preview-server-agent": {
         title: "Theme preference API",
         href: null,
+        providerId: "pi",
         tone: "running",
         label: "Running",
       },

@@ -653,6 +653,7 @@ export default async function plugin(bb: BbPluginApi) {
                       .hasPendingInteraction,
                   ),
                   isArchived: thread.archivedAt !== null,
+                  providerId: thread.providerId,
                 },
               ]
             : [],
