@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import {
   Markdown,
   UrlLink,
@@ -1248,7 +1249,10 @@ function CardBody({
   const compactArchive = compact && showArchive;
   return (
     <>
-      <div className="@max-[20rem]/recap:[&_*]:!text-[0.625rem] @max-[20rem]/recap:[&_*]:!font-normal @max-[20rem]/recap:[&_*]:!leading-[1.5] @max-[20rem]/recap:[&_*]:!tracking-normal">
+      {/* The recap text scrolls when it outgrows a share of the screen, so a
+          long recap cannot push the thread out of view. The footer, corner
+          buttons and every action stay outside the scroller. */}
+      <div className="thread-scrollbar max-h-[min(40dvh,22rem)] overflow-y-auto overscroll-contain @max-[20rem]/recap:[&_*]:!text-[0.625rem] @max-[20rem]/recap:[&_*]:!font-normal @max-[20rem]/recap:[&_*]:!leading-[1.5] @max-[20rem]/recap:[&_*]:!tracking-normal">
         <RecapSummary
           recap={recap}
           layout={layout}
@@ -1507,7 +1511,9 @@ export function RecapCard() {
     sendNext,
   } = useRecap(threadId);
   const { prefs } = useRecapPrefs();
-  const layout: RecapLayout = prefs?.layout ?? "full";
+  // A phone has no room for the full card, whatever the preference says.
+  const isPhone = useIsCompactViewport();
+  const layout: RecapLayout = isPhone ? "minimal" : (prefs?.layout ?? "full");
   const visibleRecap = dismissed ? null : recap;
   const archive = useArchiveSuggestion(threadId, visibleRecap, continuing);
   const markerRef = useRef<HTMLDivElement>(null);
@@ -1690,17 +1696,24 @@ export function RecapCard() {
           </div>
         ) : null}
         {!frame && available && dismissed && recap ? (
-          <div
-            className="mx-auto mb-3 flex w-full max-w-4xl justify-end px-1"
-            style={FIRST}
-          >
+          // A zero-height anchor above the composer: the button floats over
+          // the thread's bottom edge, like the scroll-to-latest button, and
+          // takes no space of its own.
+          <div className="relative mx-auto h-0 w-full max-w-4xl" style={FIRST}>
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
-              className="h-7 px-2"
+              className="absolute bottom-3 right-1 h-8 gap-2 rounded-full border-border bg-background px-3.5 text-xs font-medium text-foreground shadow-md hover:bg-accent"
               onClick={() => void restore(recap.id)}
             >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "size-1.5 rounded-full bg-current",
+                  ACCENT[recap.state].text,
+                )}
+              />
               Show recap
             </Button>
           </div>
