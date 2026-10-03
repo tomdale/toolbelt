@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { fakeWorld } from "./fake-bb.ts";
+import { CorpusStore, classificationEvidence } from "../../src/server/corpus.ts";
+import { openDatabase } from "../../src/server/db.ts";
 import type {
   CanonicalAssignment,
   CatalogState,
@@ -328,5 +330,95 @@ describe("Catalog and Task Identity RPC Contract", () => {
     })) as { assignment: CanonicalAssignment };
     expect(rootAssign.assignment.entityId).toBe(feature.id);
     expect(rootAssign.assignment.inheritedFrom).toBeNull();
+  });
+
+  it("taskReclassify on child thread infers and hashes evidence of active root thread, preserving root freshness", async () => {
+    let capturedPrompt = "";
+    let mockEntityId = "";
+    world = await fakeWorld({
+      complete: (call) => {
+        capturedPrompt = call.prompt;
+        return JSON.stringify({
+          subjectId: mockEntityId,
+          proposed: null,
+        });
+      },
+    });
+    const w = world;
+    const db = openDatabase(w.bb);
+    const corpus = new CorpusStore(db);
+
+    const { entity: billing } = (await w.harness.behavior.callRpc(
+      "catalogCreate",
+      {
+        name: "Billing",
+        description: "Billing invoices",
+      },
+    )) as { entity: { id: string } };
+    mockEntityId = billing.id;
+
+    const rootThread = w.addThread("t-root", { title: "Root Billing Work" });
+    const childThread = w.addThread("t-child", {
+      parentThreadId: rootThread.id,
+      title: "Child Typo Fix",
+    });
+
+    w.converse("t-root", ["Please design billing invoice engine"]);
+    w.converse("t-child", ["Fix minor typo in css"]);
+
+    // Populate analysis recap for root and child
+    db.prepare(
+      "INSERT INTO ws_analysis(thread_id, revision, at, result) VALUES (?, 1, 1, ?)",
+    ).run(
+      rootThread.id,
+      JSON.stringify({
+        recap: "Billing system architecture and invoice pipeline",
+        state: "idle",
+        needsYou: null,
+        subject: null,
+        drift: null,
+      }),
+    );
+    db.prepare(
+      "INSERT INTO ws_analysis(thread_id, revision, at, result) VALUES (?, 1, 1, ?)",
+    ).run(
+      childThread.id,
+      JSON.stringify({
+        recap: "CSS color tweak",
+        state: "idle",
+        needsYou: null,
+        subject: null,
+        drift: null,
+      }),
+    );
+
+    // Call taskReclassify on the CHILD thread
+    const reclassRes = (await w.harness.behavior.callRpc("taskReclassify", {
+      threadId: childThread.id,
+    })) as { assignment: CanonicalAssignment };
+
+    // The assignment returned reflects the child thread's inherited assignment
+    expect(reclassRes.assignment.status).toBe("assigned");
+    expect(reclassRes.assignment.entityId).toBe(billing.id);
+    expect(reclassRes.assignment.inheritedFrom).toBe(rootThread.id);
+    expect(reclassRes.assignment.provenance).toBe("automatic");
+
+    // The classifier prompt contained ROOT title and recap, NOT child
+    expect(capturedPrompt).toContain("Root Billing Work");
+    expect(capturedPrompt).toContain("Billing system architecture and invoice pipeline");
+    expect(capturedPrompt).not.toContain("Child Typo Fix");
+    expect(capturedPrompt).not.toContain("CSS color tweak");
+
+    // Compute expected evidence from ROOT thread's evidence
+    const rootEvidence = classificationEvidence({
+      requests: ["Please design billing invoice engine"],
+      title: rootThread.title,
+      project: rootThread.projectId,
+    });
+
+    // Root thread must be fresh against root evidence
+    expect(corpus.isFresh(rootThread.id, rootEvidence)).toBe(true);
+    // Child thread query also resolves through root and is fresh
+    expect(corpus.isFresh(childThread.id, rootEvidence)).toBe(true);
   });
 });
