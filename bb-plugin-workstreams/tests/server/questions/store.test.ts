@@ -14,7 +14,14 @@ function setup() {
   const send = vi.fn(async () => ({ status: "started" }));
   const host = createFakePluginHost({
     pluginId: "workstreams",
-    sdk: { threads: { send, events: { list: async () => [] } } },
+    sdk: {
+      threads: {
+        send,
+        get: async () => ({ projectId: "thread-project" }),
+        events: { list: async () => [] },
+      },
+      projects: { attachments: { copy: async () => undefined } },
+    },
   });
   let store: QuestionStore;
   const plugin = (bb: typeof host.bb) => {

@@ -86,12 +86,16 @@ export function describeAnswers(
   const [first] = payload.questions;
   const title =
     payload.questions.length === 1 && first && entries[0]
-      ? `Answered ${first.prompt} — ${entries[0][1]}`
+      ? `Answered ${first.prompt} — ${entries[0][1] || "Attachment"}`
       : `Answered ${entries.length} of ${payload.questions.length} questions`;
   const detail = payload.questions
     .map((question) => {
       const answer = result.answers[question.prompt];
-      return `- ${question.prompt} — ${answer ?? "no answer"}`;
+      const attachments = result.annotations?.[question.prompt]?.attachments;
+      const attachmentSummary = attachments?.length
+        ? `${attachments.length} attachment${attachments.length === 1 ? "" : "s"}`
+        : null;
+      return `- ${question.prompt} — ${answer || attachmentSummary || "no answer"}`;
     })
     .join("\n");
   return { title, detail, payload: result };
@@ -144,16 +148,39 @@ function buildAnnotation(
     option.preview === undefined ? [] : [option.preview],
   );
   const preview = previews.length > 0 ? previews.join("\n\n") : undefined;
-  if (notes === undefined && preview === undefined) return null;
+  const attachments = answer.attachments?.map((attachment) => ({
+    type: attachment.type,
+    projectId: attachment.projectId,
+    path: attachment.path,
+    name: attachment.name ?? attachment.path.split("/").at(-1) ?? "Attachment",
+    ...(attachment.mimeType ? { mimeType: attachment.mimeType } : {}),
+    ...(attachment.sizeBytes === undefined
+      ? {}
+      : { sizeBytes: attachment.sizeBytes }),
+    ...(attachment.sourceProjectId
+      ? { sourceProjectId: attachment.sourceProjectId }
+      : {}),
+    ...(attachment.sourcePath ? { sourcePath: attachment.sourcePath } : {}),
+  }));
+  if (
+    notes === undefined &&
+    preview === undefined &&
+    (attachments === undefined || attachments.length === 0)
+  )
+    return null;
   return {
     ...(preview === undefined ? {} : { preview }),
     ...(notes === undefined ? {} : { notes }),
+    ...(attachments === undefined || attachments.length === 0
+      ? {}
+      : { attachments }),
   };
 }
 
 export function buildToolResult(
   payload: InteractionPayload,
   response: InteractionResponse,
+  answerProjectId?: string,
 ): ToolResult {
   const answers: Record<string, string> = {};
   const annotations: Record<string, ToolResultAnnotation> = {};
@@ -162,7 +189,7 @@ export function buildToolResult(
     const answer = response.answers[question.id];
     if (answer === undefined) continue;
     const text = buildAnswerText(question, answer);
-    if (text.length === 0) continue;
+    if (text.length === 0 && !answer.attachments?.length) continue;
     answers[question.prompt] = text;
     if (
       payload.questions.length === 1 &&
@@ -172,7 +199,17 @@ export function buildToolResult(
       freeformResponse = answer.freeText;
     }
     const annotation = buildAnnotation(question, answer);
-    if (annotation !== null) annotations[question.prompt] = annotation;
+    if (annotation !== null) {
+      annotations[question.prompt] = answerProjectId
+        ? {
+            ...annotation,
+            attachments: annotation.attachments?.map((attachment) => ({
+              ...attachment,
+              projectId: answerProjectId,
+            })),
+          }
+        : annotation;
+    }
   }
   return {
     questions: payload.questions.map((question) => ({

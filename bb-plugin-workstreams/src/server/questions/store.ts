@@ -9,6 +9,7 @@ import {
   toolInputSchema,
 } from "./contracts.ts";
 import { buildToolResult, buildInteractionPayload } from "./translate.ts";
+import { copyAnswerAttachments } from "./attachments.ts";
 import {
   deliveredQuestionResult,
   questionResultSchema,
@@ -269,15 +270,19 @@ export class QuestionStore {
       throw new Error("This question is no longer pending");
     if (!pending.recoverable)
       throw new Error("Answer the active question card instead");
-    const result = dismiss
-      ? null
-      : buildToolResult(
-          pending.payload,
-          interactionResponseSchema.parse(value),
-        );
-    if (result && Object.keys(result.answers).length === 0)
+    const submitted = dismiss ? null : interactionResponseSchema.parse(value);
+    if (
+      submitted &&
+      !Object.values(submitted.answers).some(
+        (answer) =>
+          answer.selected.length > 0 ||
+          answer.freeText?.trim() ||
+          answer.attachments?.length,
+      )
+    )
       throw new Error("Please answer at least one question");
-    // Claim before sending: simultaneous tabs must not dispatch the same answer.
+    // Claim before attachment copies or sending: simultaneous tabs must not
+    // create duplicate project uploads or dispatch the same answer.
     const claim = this.db
       .prepare(
         "UPDATE ws_question SET status = 'sending' WHERE id = ? AND status = 'pending'",
@@ -285,6 +290,38 @@ export class QuestionStore {
       .run(id);
     if (!claim.changes) throw new Error("This answer is already being sent");
     try {
+      const thread = submitted
+        ? await this.bb.sdk.threads.get({ threadId })
+        : null;
+      const answer = submitted
+        ? await copyAnswerAttachments(this.bb, thread!.projectId, submitted)
+        : null;
+      const result = answer ? buildToolResult(pending.payload, answer) : null;
+      if (result && Object.keys(result.answers).length === 0)
+        throw new Error("Please answer at least one question");
+      const images =
+        !dismiss && answer
+          ? await Promise.all(
+              Object.values(answer.answers)
+                .flatMap((entry) => entry.attachments ?? [])
+                .filter(
+                  (attachment) =>
+                    attachment.type === "localImage" &&
+                    !attachment.mimeType?.startsWith("image/svg"),
+                )
+                .map(async (attachment) => {
+                  const content = await this.bb.sdk.projects.attachments.read({
+                    projectId:
+                      attachment.sourceProjectId ?? attachment.projectId,
+                    path: attachment.sourcePath ?? attachment.path,
+                  });
+                  return {
+                    type: "image" as const,
+                    url: `data:${content.mimeType};base64,${Buffer.from(content.bytes).toString("base64")}`,
+                  };
+                }),
+            )
+          : [];
       await this.bb.sdk.threads.send({
         threadId,
         mode: "auto",
@@ -296,6 +333,7 @@ export class QuestionStore {
               : `My answer to your question (recovered after the question tool was interrupted):\n${JSON.stringify(result)}\nUse this as my answer and resume the work that depended on it.`,
             mentions: [],
           },
+          ...images,
         ],
       });
       this.finish(id, result, dismiss ? "dismissed" : "answered");

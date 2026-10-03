@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type {
@@ -130,6 +129,7 @@ describe("question interaction adapter", () => {
     ]);
     sessionStorage.clear();
   });
+
   it("submits the selected option value", () => {
     const submit = vi.fn(async (_value: unknown) => undefined);
     const slot = render(singleSelect, { submit });
@@ -143,6 +143,7 @@ describe("question interaction adapter", () => {
       answers: { q0: { selected: ["q0o1"] } },
     } satisfies InteractionResponse);
   });
+
   it("passes heading Markdown to the host renderer and keeps the legend readable", () => {
     const prompt =
       "Can you **retry** `vc login` using [the guide](https://example.com)?";
@@ -157,6 +158,7 @@ describe("question interaction adapter", () => {
       "Can you retry vc login using the guide?",
     );
   });
+
   it("keeps Markdown syntax out of question tab tooltips", () => {
     const first = {
       ...singleSelect.questions[0]!,
@@ -169,52 +171,49 @@ describe("question interaction adapter", () => {
       "Can you retry vc login?",
     );
   });
+
   it("shows an awaiting-answer state", () => {
     const slot = render(singleSelect);
     expect(slot.getByRole("status").textContent).toBe("Needs your answer");
   });
-  it("accepts a freeform-only question", () => {
+
+  it("accepts a freeform-only question through the BB composer", () => {
     const submit = vi.fn(async (_value: unknown) => undefined);
     const slot = render(
       { questions: [{ ...singleSelect.questions[0]!, options: [] }] },
       { submit },
     );
-    fireEvent.change(slot.getByLabelText("Database answer"), {
+    fireEvent.change(slot.getByTestId("bb-new-thread-composer-input"), {
       target: { value: "Use our managed service" },
     });
+    fireEvent.click(slot.getByTestId("bb-new-thread-composer-submit"));
     fireEvent.click(getButtonByText(slot, "Submit"));
     expect(submit.mock.calls[0]?.[0]).toEqual({
       answers: { q0: { selected: [], freeText: "Use our managed service" } },
     });
   });
-  it("submits a freeform answer on Enter", () => {
+
+  it("does not treat other questions' drafts as submitted without choosing Other", () => {
     const submit = vi.fn(async (_value: unknown) => undefined);
     const slot = render(
-      { questions: [{ ...singleSelect.questions[0]!, options: [] }] },
+      {
+        questions: [
+          { ...singleSelect.questions[0]!, options: [] },
+          { ...singleSelect.questions[0]!, id: "q1", shortLabel: "Hosting" },
+        ],
+      },
       { submit },
     );
-    const answer = slot.getByLabelText("Database answer");
-    fireEvent.change(answer, { target: { value: "Use our managed service" } });
 
-    expect(fireEvent.keyDown(answer, { key: "Enter" })).toBe(false);
-    expect(submit.mock.calls[0]?.[0]).toEqual({
-      answers: { q0: { selected: [], freeText: "Use our managed service" } },
+    fireEvent.change(slot.getByTestId("bb-new-thread-composer-input"), {
+      target: { value: "Uncommitted first answer" },
     });
-  });
-  it("inserts a newline on Shift+Enter in a freeform answer", async () => {
-    const submit = vi.fn(async (_value: unknown) => undefined);
-    const slot = render(
-      { questions: [{ ...singleSelect.questions[0]!, options: [] }] },
-      { submit },
-    );
-    const answer = slot.getByLabelText("Database answer");
-    const user = userEvent.setup();
+    fireEvent.click(getButtonByText(slot, "Next"));
+    fireEvent.click(getButtonByText(slot, "Submit"));
 
-    await user.type(answer, "first{Shift>}{Enter}{/Shift}second");
-
-    expect((answer as HTMLTextAreaElement).value).toBe("first\nsecond");
     expect(submit).not.toHaveBeenCalled();
   });
+
   it("preserves the answer and displays submission failures", async () => {
     const submit = vi.fn(async () => {
       throw new Error("offline");
@@ -231,6 +230,7 @@ describe("question interaction adapter", () => {
     fireEvent.click(getButtonByText(slot, "Submit"));
     expect(submit).toHaveBeenCalledTimes(2);
   });
+
   it("cancels the request instead of submitting", () => {
     const cancel = vi.fn(async () => undefined);
     const slot = render(singleSelect, { cancel });
@@ -238,6 +238,7 @@ describe("question interaction adapter", () => {
     fireEvent.click(getButtonByText(slot, "Cancel"));
     expect(cancel).toHaveBeenCalledTimes(1);
   });
+
   it("offers a cancel escape rather than blocking the composer", () => {
     const cancel = vi.fn(async () => undefined);
     const slot = renderSlot(app.pendingInteractions[0]!, {

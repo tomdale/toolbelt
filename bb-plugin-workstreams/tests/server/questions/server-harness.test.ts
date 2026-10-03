@@ -28,7 +28,13 @@ function plugin(bb: Parameters<typeof registerQuestionTool>[0]) {
 }
 
 function createHost(): FakePluginHost {
-  const host = createFakePluginHost({ pluginId: "workstreams" });
+  const host = createFakePluginHost({
+    pluginId: "workstreams",
+    sdk: {
+      threads: { get: async () => ({ projectId: "project-test" }) },
+      projects: { attachments: { copy: async () => undefined } },
+    },
+  });
   plugin(host.bb as unknown as Parameters<typeof plugin>[0]);
   return host;
 }

@@ -23,6 +23,7 @@ import { interactionPayloadSchema } from "../../server/questions/contracts.ts";
 import { QuestionForm } from "./question-form.tsx";
 import { usePendingQuestion } from "./pending.ts";
 import type { RpcContract } from "../../server/contract.ts";
+import type { JsonValue } from "@get-bb/plugin-sdk";
 
 /** The recap card's frame (see RecapCard.tsx) in the attention accent. */
 const CARD_CLASS =
@@ -104,6 +105,7 @@ export function QuestionAnchor() {
           <QuestionForm
             key={pending.id}
             persistenceKey={pending.id}
+            composerKey={pending.id}
             questions={pending.payload.questions}
             disabled={busy}
             cancelDisabled={busy}
@@ -165,13 +167,19 @@ export function QuestionInteraction({
             ? (interaction.payload as { durableId: string }).durableId
             : undefined
         }
+        composerKey={
+          typeof (interaction.payload as { durableId?: unknown }).durableId ===
+          "string"
+            ? (interaction.payload as { durableId: string }).durableId
+            : interaction.id
+        }
         questions={parsed.data.questions}
         disabled={busy}
         cancelDisabled={busy}
         onSubmit={(answers) => {
           setBusy(true);
           setError(null);
-          void submit({ answers })
+          void submit(JSON.parse(JSON.stringify({ answers })) as JsonValue)
             .catch(() =>
               setError("Could not send your answer. Please try again."),
             )

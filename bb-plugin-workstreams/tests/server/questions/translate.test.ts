@@ -8,6 +8,7 @@ import {
   buildInteractionPayload,
   buildInteractionTitle,
   buildToolResult,
+  describeAnswers,
   validateToolInput,
 } from "../../../src/server/questions/translate.ts";
 
@@ -304,6 +305,74 @@ describe("buildToolResult", () => {
     expect(result.answers["Which DB?"]).toBe("DuckDB");
     expect(result.annotations).toBeUndefined();
     expect(result.response).toBeUndefined();
+  });
+
+  it("describes attachment-only answers as answered", () => {
+    const single = buildInteractionPayload(
+      parseInput({
+        questions: [
+          {
+            question: "What should I inspect?",
+            header: "Inspect",
+            options: [],
+          },
+        ],
+      }),
+    );
+    const result = buildToolResult(single, {
+      answers: {
+        q0: {
+          selected: [],
+          attachments: [
+            {
+              type: "localFile",
+              projectId: "proj_test",
+              path: "files/trace.log",
+              name: "trace.log",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(result.answers).toEqual({ "What should I inspect?": "" });
+    expect(describeAnswers(single, result)).toMatchObject({
+      title: "Answered What should I inspect? — Attachment",
+      detail: "- What should I inspect? — 1 attachment",
+    });
+  });
+
+  it("retains freeform attachments in the structured result", () => {
+    const result = buildToolResult(payload, {
+      answers: {
+        q0: {
+          selected: [],
+          attachments: [
+            {
+              type: "localImage",
+              projectId: "proj_test",
+              path: "attachments/screenshot.png",
+              name: "screenshot.png",
+              mimeType: "image/png",
+              sizeBytes: 42,
+            },
+          ],
+        },
+        q1: { selected: [] },
+      },
+    });
+
+    expect(result.answers["Which DB?"]).toBe("");
+    expect(result.annotations?.["Which DB?"]?.attachments).toEqual([
+      {
+        type: "localImage",
+        projectId: "proj_test",
+        path: "attachments/screenshot.png",
+        name: "screenshot.png",
+        mimeType: "image/png",
+        sizeBytes: 42,
+      },
+    ]);
   });
 
   it("sets `response` when a lone question is answered with free text only", () => {
