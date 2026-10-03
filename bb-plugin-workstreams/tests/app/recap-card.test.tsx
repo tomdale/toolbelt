@@ -907,8 +907,13 @@ it("shows a short sentence-case action label with neutral styling", async () => 
   fireEvent.pointerEnter(button, { pointerType: "mouse" });
   expect(await slot.findByText("Click to send · ⇧-click to edit")).toBeTruthy();
   fireEvent.pointerLeave(button, { pointerType: "mouse" });
-  await waitFor(() =>
-    expect(slot.queryByText("Click to send · ⇧-click to edit")).toBeNull(),
+  expect(slot.getByText("Click to send · ⇧-click to edit").className).toContain(
+    "opacity-0",
+  );
+  await waitFor(
+    () =>
+      expect(slot.queryByText("Click to send · ⇧-click to edit")).toBeNull(),
+    { timeout: 300 },
   );
   fireEvent.click(button);
   await waitFor(() =>
