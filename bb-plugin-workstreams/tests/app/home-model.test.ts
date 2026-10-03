@@ -381,17 +381,23 @@ describe("home.css", () => {
   });
 
   it("gives every control at least a 44px target", () => {
+    const declarations = (selector: string) =>
+      css.match(
+        new RegExp(`${selector.replace(/[.>]/g, "\\$&")}\\s*\\{([^}]*)\\}`),
+      )?.[1];
     for (const selector of [
+      ".ws-home-link",
       ".ws-home-group-head > button",
       ".ws-home-lower-toggle",
       ".ws-home-more",
       ".ws-home-text-button",
-    ]) {
-      const rule = css.match(
-        new RegExp(`${selector.replace(/[.>]/g, "\\$&")}\\s*\\{([^}]*)\\}`),
+    ])
+      expect(declarations(selector), selector).toMatch(
+        /min-height:\s*(4[4-9]|[5-9]\d)px/,
       );
-      expect(rule, selector).not.toBeNull();
-      expect(rule![1], selector).toMatch(/min-height:\s*(4[4-9]|[5-9]\d)px/);
-    }
+    // A row's disclosure toggle is as tall as its row and at least 44px wide.
+    expect(declarations(".ws-home-fold")).toMatch(
+      /min-width:\s*(4[4-9]|[5-9]\d)px/,
+    );
   });
 });
