@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { fakeWorld } from "./fake-bb.ts";
+import { openDatabase } from "../../src/server/db.ts";
+import { CorpusStore } from "../../src/server/corpus.ts";
 import type { BootstrapState } from "../../src/server/bootstrap.ts";
 type World = Awaited<ReturnType<typeof fakeWorld>>;
 let world: World | null = null;
@@ -22,49 +24,60 @@ const call = async (w: World, input: unknown) => {
   ).state;
 };
 async function setup() {
+  let seededAlphaId = "";
   world = await fakeWorld({
     settings: { debug: true },
     complete: ({ prompt }) => {
-      if (!prompt.includes("Snapshot:\n"))
+      if (prompt.includes("Classify the most specific")) {
+        if (prompt.includes("loose")) {
+          return JSON.stringify({
+            subjectId: null,
+            proposed: { name: "Gamma", description: "Gamma effort" },
+          });
+        }
         return JSON.stringify({
-          recap: "Done",
-          state: "done",
-          subject: "Alpha",
-          drift: null,
+          subjectId: seededAlphaId,
+          proposed: null,
         });
-      const data = JSON.parse(prompt.split("Snapshot:\n")[1]!);
+      }
+      if (prompt.includes("Choose active navigation groups")) {
+        const data = JSON.parse(prompt.split("Snapshot:\n")[1]!);
+        const gamma = data.entities.find((e: { name: string }) => e.name === "Gamma");
+        return JSON.stringify({
+          activeEntityIds: [seededAlphaId, gamma?.id].filter(Boolean),
+        });
+      }
       return JSON.stringify({
-        workstreams: [
-          {
-            key: "a",
-            sectionId: "sec_1",
-            name: "Alpha",
-            description: "Whole Alpha effort",
-            aliases: ["A"],
-          },
-          {
-            key: "g",
-            sectionId: null,
-            name: "Gamma",
-            description: "Gamma effort",
-            aliases: [],
-          },
-        ],
-        assignments: data.threads.map((t: { id: string }) => ({
-          threadId: t.id,
-          workstream: t.id === "stray" ? null : t.id === "loose" ? "g" : "a",
-          reason: "Same effort",
-        })),
+        recap: "Done",
+        state: "done",
+        subject: "Alpha",
+        drift: null,
       });
     },
   });
   const w = world;
   const alpha = w.addSection("Alpha"),
     beta = w.addSection("Beta");
-  w.addThread("mine", { sectionId: beta.id });
-  w.addThread("keep", { sectionId: alpha.id });
-  w.addThread("loose");
-  w.addThread("stray", { sectionId: beta.id });
+  const corpus = new CorpusStore(openDatabase(w.bb));
+  corpus.seed([
+    {
+      sectionId: alpha.id,
+      name: "Alpha",
+      description: "Whole Alpha effort",
+      aliases: ["A"],
+    },
+    {
+      sectionId: beta.id,
+      name: "Beta",
+      description: "Beta effort",
+      aliases: [],
+    },
+  ]);
+  seededAlphaId = corpus.list().find((e) => e.name === "Alpha")!.id;
+  w.addThread("mine", { sectionId: beta.id, title: "mine" });
+  w.addThread("keep", { sectionId: alpha.id, title: "keep" });
+  w.addThread("loose", { title: "loose" });
+  w.addThread("stray", { sectionId: beta.id, title: "stray" });
   w.addThread("child", { parentThreadId: "mine" });
   w.addThread("hidden", { visibility: "hidden" });
   w.addThread("archived", { archivedAt: 1 });
@@ -91,7 +104,7 @@ describe("explicit organizer", () => {
     const applied = await call(w, { action: "apply", overrides: [] });
     expect(applied.status).toBe("applied");
     expect(w.threads.get("mine")?.sectionId).toBe(alpha.id);
-    expect(w.threads.get("stray")?.sectionId).toBeNull();
+    expect(w.threads.get("stray")?.sectionId).toBe(alpha.id);
     expect(w.sections.some((s) => s.name === "Gamma")).toBe(true);
     const db = w.bb.storage.database();
     expect(
@@ -483,11 +496,6 @@ describe("explicit organizer", () => {
     await world.harness.behavior.callRpc("taskAssign", {
       threadId: "t_manual",
       entityId: rootEntityId,
-    });
-
-    // Enable adaptive preview for compact mode
-    await world.harness.behavior.callRpc("setPrefs", {
-      patch: { organize: { adaptivePreview: true } },
     });
 
     const preview = await call(world, { action: "start" });

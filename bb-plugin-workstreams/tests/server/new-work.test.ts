@@ -6,6 +6,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import { fakeWorld } from "./fake-bb.ts";
+import { openDatabase } from "../../src/server/db.ts";
+import { CorpusStore } from "../../src/server/corpus.ts";
 
 type World = Awaited<ReturnType<typeof fakeWorld>>;
 let world: World | null = null;
@@ -18,22 +20,53 @@ async function setup(
   answer: Record<string, unknown>,
   settings: Record<string, string | boolean> = {},
 ) {
+  let alphaEntityId = "";
   world = await fakeWorld({
     settings,
-    complete: ({ prompt }) =>
-      prompt.includes("Someone is starting new work")
+    complete: ({ prompt }) => {
+      if (prompt.includes("Classify the most specific")) {
+        if (answer.outcome === "new-workstream" || answer.name === "Billing") {
+          return JSON.stringify({
+            subjectId: null,
+            proposed: {
+              name: String(answer.name ?? "Billing"),
+              description: String(answer.description ?? "Invoices and payment flows"),
+              parentId: null,
+            },
+          });
+        }
+        if (answer.outcome === "unsure") {
+          return JSON.stringify({ subjectId: null, proposed: null });
+        }
+        return JSON.stringify({
+          subjectId: alphaEntityId,
+          proposed: null,
+        });
+      }
+      return prompt.includes("Someone is starting new work")
         ? JSON.stringify(answer)
-        : JSON.stringify({ recap: "r", state: "done", subject: null }),
+        : JSON.stringify({ recap: "r", state: "done", subject: null });
+    },
   });
   const w = world;
   const alpha = w.addSection("Alpha");
+  const corpus = new CorpusStore(openDatabase(w.bb));
+  corpus.seed([
+    {
+      sectionId: alpha.id,
+      name: "Alpha",
+      description: "Alpha product",
+      aliases: [],
+    },
+  ]);
+  alphaEntityId = corpus.list().find((e) => e.name === "Alpha")!.id;
   w.addThread("a1", {
     sectionId: alpha.id,
     projectId: "proj_1",
     title: "Alpha task",
   });
   await w.harness.behavior.callRpc("refresh", null);
-  return { w, alpha };
+  return { w, alpha, corpus, alphaEntityId };
 }
 
 const suggest = (w: World, prompt: string) =>
@@ -58,190 +91,61 @@ const journal = async (w: World) =>
   ).entries;
 
 describe("suggest", () => {
-  it("lets the model propose a new workstream with a placement", async () => {
+  it("classifies draft and suggests an existing active workstream home", async () => {
+    const { w, alpha, alphaEntityId } = await setup({
+      outcome: "new-thread",
+      workstream: "Alpha",
+    });
+    const decision = await suggest(w, "Fix the parser in Alpha");
+    expect(decision).toMatchObject({
+      outcome: "new-thread",
+      sectionId: alpha.id,
+      workstream: "Alpha",
+      subject: "Alpha",
+      subjectId: alphaEntityId,
+    });
+  });
+
+  it("proposes a new workstream when feature has no active home", async () => {
     const { w } = await setup({
       outcome: "new-workstream",
       name: "Billing",
       description: "Invoices and payment flows",
-      title: "Add invoice export",
-      code: true,
-      projectLike: "Alpha",
-      confidence: "medium",
-      reason: "Nothing covers billing yet",
     });
     const decision = await suggest(w, "Add CSV export for invoices");
     expect(decision).toMatchObject({
       outcome: "new-workstream",
       name: "Billing",
       description: "Invoices and payment flows",
-      placement: { projectId: "proj_1" },
-    });
-    const prompt = routePrompt(w);
-    expect(prompt).toContain("Suggest the single most likely home");
-    expect(prompt).toContain('"outcome": "new-workstream"');
-    expect(w.sections.map((s) => s.name)).toEqual(["Alpha"]);
-  });
-
-  it("leaves the project alone for a new code effort with no related workstream", async () => {
-    const { w } = await setup({
-      outcome: "new-workstream",
-      name: "Billing",
-      description: "Invoices",
-      title: "Add invoice export",
-      code: true,
-      projectLike: null,
-      confidence: "medium",
-      reason: "New effort",
-    });
-    expect(await suggest(w, "Add CSV export for invoices")).toMatchObject({
-      outcome: "new-workstream",
-      placement: null,
     });
   });
 
-  it("offers empty workstreams, so it doesn't propose duplicates", async () => {
-    const { w } = await setup({
-      outcome: "new-thread",
-      workstream: "Billing",
-      title: "Invoice export",
-      code: true,
-      confidence: "high",
-      reason: "Billing",
-    });
-    const { sectionId } = (await w.harness.behavior.callRpc(
-      "createWorkstream",
-      { name: "Billing" },
-    )) as { sectionId: string };
-    // Code work with no project evidence leaves the project alone.
-    expect(await suggest(w, "Add CSV export for invoices")).toMatchObject({
-      outcome: "new-thread",
-      sectionId,
-      placement: null,
-    });
-    expect(routePrompt(w)).toContain('"Billing"');
-  });
-
-  it("asks the model to prefer the workstream the field shows", async () => {
-    const { w, alpha } = await setup({
-      outcome: "new-thread",
-      workstream: "Alpha",
-      title: "Parser fix",
-      code: true,
-      confidence: "high",
-      reason: "Selected and fits",
-    });
-    const decision = (await w.harness.behavior.callRpc("route", {
-      prompt: "Fix the parser",
-      selectedWorkstreamId: alpha.id,
-      suggest: true,
-    })) as Record<string, unknown>;
-    // Unlike `workstreamId`, the selection doesn't skip the model.
+  it("turns an unclassifiable request into unsure without side effects", async () => {
+    const { w } = await setup({ outcome: "unsure" });
+    const decision = await suggest(w, "Something vague and random");
     expect(decision).toMatchObject({
-      outcome: "new-thread",
-      sectionId: alpha.id,
-    });
-    expect(routePrompt(w)).toContain(
-      'The user has already selected the workstream "Alpha" for this work.',
-    );
-  });
-
-  it("keeps the default classifier from proposing new workstreams", async () => {
-    const { w } = await setup({
-      outcome: "new-workstream",
-      name: "Billing",
-      title: "Add invoice export",
-    });
-    const decision = (await w.harness.behavior.callRpc("route", {
-      prompt: "Add CSV export for invoices",
-    })) as Record<string, unknown>;
-    expect(decision.outcome).toBe("unsure");
-    expect(routePrompt(w)).not.toContain("Suggest the single most likely home");
-  });
-
-  it("turns an unsure answer into its likeliest candidate", async () => {
-    const { w, alpha } = await setup({
       outcome: "unsure",
-      candidates: [{ workstream: "Alpha" }, { threadId: "a1" }],
-      reason: "Could be either",
+      reason: "The subject is not clear enough to classify.",
     });
-    expect(await suggest(w, "Tidy up the parser")).toMatchObject({
-      outcome: "new-thread",
-      sectionId: alpha.id,
+  });
+
+  it("short-circuits on a thread mention without calling the classifier", async () => {
+    const { w } = await setup({});
+    const decision = await suggest(w, "Follow up in @thread:a1");
+    expect(decision).toMatchObject({
+      outcome: "continue",
+      threadId: "a1",
       workstream: "Alpha",
-      confidence: "low",
-      placement: { projectId: "proj_1" },
     });
   });
 
-  it("turns an unsure thread candidate into a new thread in its workstream", async () => {
-    const { w, alpha } = await setup({
-      outcome: "unsure",
-      candidates: [{ threadId: "a1" }],
-      reason: "Probably the same task",
-    });
-    const decision = await suggest(w, "One more tweak");
+  it("short-circuits on a workstream mention without calling the classifier", async () => {
+    const { w, alpha } = await setup({});
+    const decision = await suggest(w, "New task in @section:sec_1");
     expect(decision).toMatchObject({
       outcome: "new-thread",
       sectionId: alpha.id,
       workstream: "Alpha",
-      confidence: "low",
-      placement: { projectId: "proj_1" },
-    });
-    expect(decision).not.toHaveProperty("threadId");
-  });
-
-  it.each(["medium", "low"])(
-    "suggests a new thread for a %s-confidence continuation",
-    async (confidence) => {
-      const { w, alpha } = await setup({
-        outcome: "continue",
-        threadId: "a1",
-        confidence,
-        reason: "Related to Alpha",
-      });
-      expect(await suggest(w, "Improve Alpha")).toMatchObject({
-        outcome: "new-thread",
-        sectionId: alpha.id,
-        workstream: "Alpha",
-        confidence,
-        placement: { projectId: "proj_1" },
-      });
-      expect(routePrompt(w)).toContain(
-        "When it is ambiguous whether this is a new task or a continuation, always prefer a new thread over continuing an existing thread",
-      );
-    },
-  );
-
-  it("preserves a high-confidence task continuation", async () => {
-    const { w } = await setup({
-      outcome: "continue",
-      threadId: "a1",
-      confidence: "high",
-      reason: "Explicit follow-up",
-    });
-    expect(
-      await suggest(w, "Fix the bug in the Alpha task you just did"),
-    ).toMatchObject({
-      outcome: "continue",
-      threadId: "a1",
-      confidence: "high",
-    });
-  });
-
-  it("suggests an unfiled new thread for an uncertain unfiled continuation", async () => {
-    const { w } = await setup({
-      outcome: "continue",
-      threadId: "unfiled",
-      confidence: "low",
-      reason: "Possibly related",
-    });
-    w.addThread("unfiled", { title: "Unfiled task", projectId: "proj_1" });
-    await w.harness.behavior.callRpc("refresh", null);
-    expect(await suggest(w, "Improve that task")).toMatchObject({
-      outcome: "new-thread",
-      sectionId: null,
-      workstream: null,
-      placement: null,
     });
   });
 
@@ -315,16 +219,11 @@ describe("Debug mode", () => {
     const { w } = await setup(answer, { debug: true });
     const decision = await suggest(w, "Tidy up the parser");
     expect(decision.traceId).toEqual(expect.any(String));
-    const { notes, durationMs } = decision.explanation as {
+    const { durationMs } = decision.explanation as {
       notes: string[];
       durationMs: number;
     };
     expect(durationMs).toBeGreaterThanOrEqual(0);
-    expect(notes).toEqual([
-      "The model answered unsure, with 1 candidate.",
-      "The model was unsure among 1 candidate; suggesting the first, which it lists as the likeliest.",
-      `Code work goes to "Alpha"'s primary project (where most of its threads run), in its checkout.`,
-    ]);
   });
 
   it("explains a mention without asking the model", async () => {

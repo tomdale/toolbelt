@@ -27,12 +27,7 @@ const EVENT: Record<TraceKind, { label: string; description: string }> = {
   route: {
     label: "Destination selection",
     description:
-      "The model classified a request against the applied map or left its destination undecided.",
-  },
-  organize: {
-    label: "Organization preview",
-    description:
-      "One pass proposed the whole map and thread placements. Apply is a separate user action.",
+      "The model suggested a workstream for a draft or left its destination undecided.",
   },
 };
 const STATES: Record<string, { label: string; description: string }> = {

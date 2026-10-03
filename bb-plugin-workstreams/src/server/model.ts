@@ -8,11 +8,6 @@ import {
   parseAnalysis,
   type AnalysisInput,
 } from "../domain/analysis.ts";
-import {
-  organizePrompt,
-  parseOrganization,
-  type OrganizeInput,
-} from "../domain/organize.ts";
 import { parseRoute, routePrompt, type RouteInput } from "../domain/router.ts";
 import {
   classifyPrompt,
@@ -62,11 +57,6 @@ export const MODEL_CALLS = {
   route: {
     prompt: (input: RouteInput) => routePrompt(input),
     parse: (text: string, input: RouteInput) => parseRoute(text, input),
-  },
-  organize: {
-    prompt: (input: OrganizeInput) => organizePrompt(input),
-    parse: (text: string, input: OrganizeInput) =>
-      parseOrganization(text, input),
   },
 } satisfies Record<
   TraceKind,
@@ -133,10 +123,6 @@ export function summarize(
       return r.outcome === "new-thread"
         ? `new thread in ${r.workstream}${sure}`
         : `new workstream ${r.name}${sure}`;
-    }
-    case "organize": {
-      const proposal = value as OutputOf<"organize">;
-      return `${proposal.workstreams.length} workstreams · ${proposal.assignments.length} threads`;
     }
   }
 }
@@ -392,7 +378,7 @@ export class Inference {
         request.prompt,
         request.model,
         request.signal,
-        kind === "organize" ? 32768 : undefined,
+        undefined,
         request.threadId ? { threadId: request.threadId } : undefined,
       );
     } catch (error) {

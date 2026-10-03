@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PluginBrowserBbSdk } from "@get-bb/plugin-sdk/app";
 import { NewWorkDialog } from "../../src/app/composer/NewWork.tsx";
@@ -37,7 +37,7 @@ function mount(decision: RouteDecision = sampleDecision) {
     prefs: vi.fn(() => ({
       prefs: {
         newWork: {
-          corpusClassification: true,
+          suggestions: true,
           suggestionsModel: { kind: "gateway", model: "m" },
         },
       },
@@ -49,7 +49,7 @@ function mount(decision: RouteDecision = sampleDecision) {
         sec_b: { sectionId: "sec_b", name: "Beta" },
       },
     })),
-    corpus: vi.fn(() => ({
+    catalog: vi.fn(() => ({
       entities: [
         {
           id: "ent_storage",

@@ -73,7 +73,6 @@ describe("Catalog UI & Maintenance", () => {
   it("shows all known entries, full paths, aliases, and searches inactive features", async () => {
     const call = vi.fn(async (method: string) => {
       if (method === "catalog") return catalogState;
-      if (method === "corpus") return { entities: entries };
       return {};
     });
 

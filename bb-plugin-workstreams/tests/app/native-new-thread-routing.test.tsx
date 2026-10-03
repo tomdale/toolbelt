@@ -405,7 +405,7 @@ it("does not render routing controls or intercept submits when inside a dialog",
   expect(route).not.toHaveBeenCalled();
 });
 
-it("submits null metadata when manually clearing workstream back to No workstream", async () => {
+it("submits sectionId: null metadata when manually clearing workstream back to No workstream (Bug 1)", async () => {
   const { slot } = mount(workstreamDecision, {
     workstreams: { beta: { sectionId: "section-beta", name: "Beta" } },
   });
@@ -423,7 +423,9 @@ it("submits null metadata when manually clearing workstream back to No workstrea
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: null,
+    experimental_data: {
+      sectionId: null,
+    },
   });
 });
 

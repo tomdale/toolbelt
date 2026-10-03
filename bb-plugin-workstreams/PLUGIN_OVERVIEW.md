@@ -1,16 +1,25 @@
 # Workstreams
 
-Workstreams organizes open BB threads into recognizable ongoing efforts. Click
-**Organize** to scan the collection in one pass, preview the whole map and
-thread placements, then **Apply map**. The map stays fixed between runs. Each
-workstream is a native BB section, and children follow their root's section.
+Workstreams organizes open BB threads into recognizable ongoing efforts.
+A task concerns one **Product or feature** identity in the Catalog (or is
+unresolved), while its thread occupies a **Workstream** (or is unfiled).
+Identity and section placement are independent.
 
-New work is BB's New thread composer with a Workstream field. When you pause
-typing, it classifies the draft against the applied names, scope descriptions
-and aliases and suggests one home: continue a thread, start in an existing
-workstream, or start a new one. Suggestions can be disabled in New work
+Click **Organize** to classify open threads against the Catalog and group
+them adaptively based on concurrent task counts by product and feature, then
+**Apply organization**. Any Catalog edit bumps revision, safely marking previews
+stale until regenerated. Each workstream is a native BB section, and children
+follow their root's section and inherit its Catalog identity.
+
+The **Catalog** tab maintains all known products and features in an explicit
+hierarchy with descriptions, aliases, and related tasks, and supports scoped
+create, edit, reparent, and merge operations.
+
+New work is BB's New thread composer with a Product or feature field and a
+Workstream field. When you pause typing, it classifies the draft against the
+Catalog and suggests one home. Suggestions can be disabled in New work
 settings; when disabled, typing-pause requests return no suggestion and make no
-model call. Nothing changes until you accept a suggestion.
+model call. Nothing changes until you accept a suggestion or start the thread.
 
 Each thread's agent ends its turns with a question card or a recap: complete, or
 ready for review with Review steps naming what to check. The recap sits above

@@ -160,7 +160,7 @@ function mount(
         sec_b: { sectionId: "sec_b", name: "Beta" },
       },
     })),
-    corpus: vi.fn(() => ({
+    catalog: vi.fn(() => ({
       entities: [
         {
           id: "inactive-feature",
@@ -170,6 +170,9 @@ function mount(
           aliases: ["Storage"],
         },
       ],
+      groups: {},
+      assignments: {},
+      revision: 1,
     })),
     catalogResolve: vi.fn((_input: unknown) => ({
       sectionId: "sec_a",
@@ -368,20 +371,20 @@ it("⌘⏎ starts the thread the automatic pickers show", async () => {
   });
 });
 
-it("creates a proposed workstream when submitting", async () => {
+it("passes proposed workstream to startThread when submitting for rollback safety (Bug 3)", async () => {
   const { slot, rpc } = mount(newBilling);
   await type(slot, "Add CSV export for invoices");
   await screen.findByRole("button", { name: "Workstream: Billing" });
   expect(rpc.createWorkstream).not.toHaveBeenCalled();
   fireEvent.click(screen.getByTestId("bb-new-thread-composer-submit"));
-  await waitFor(() => expect(rpc.createWorkstream).toHaveBeenCalledTimes(1));
-  expect(rpc.createWorkstream.mock.calls[0]![0]).toEqual({
-    name: "Billing",
-    description: "Invoices",
-  });
   await waitFor(() => expect(rpc.startThread).toHaveBeenCalledTimes(1));
+  expect(rpc.createWorkstream).not.toHaveBeenCalled();
   expect(rpc.startThread.mock.calls[0]![0]).toMatchObject({
-    sectionId: "sec_new",
+    sectionId: null,
+    newWorkstream: {
+      name: "Billing",
+      description: "Invoices",
+    },
   });
 });
 

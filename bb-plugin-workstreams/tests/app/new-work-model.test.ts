@@ -271,7 +271,13 @@ describe("accepting", () => {
     expect(deps.startThread).toHaveBeenCalledWith(
       "sec_a",
       expect.anything(),
-      "feature",
+      {
+        identity: {
+          entityId: "feature",
+          proposal: null,
+          provenance: "automatic",
+        },
+      },
     );
     newWork.observe("A different task");
     expect(newWork.snapshot().acceptedRoute).toBeNull();
@@ -506,10 +512,16 @@ describe("submitting", () => {
     });
     expect(deps.createWorkstream).not.toHaveBeenCalled();
     await newWork.submit(request("Add CSV export for invoices"));
-    expect(deps.createWorkstream).toHaveBeenCalledWith("Billing", "Invoices");
+    expect(deps.createWorkstream).not.toHaveBeenCalled();
     expect(deps.startThread).toHaveBeenCalledWith(
-      "sec_new",
+      null,
       expect.anything(),
+      expect.objectContaining({
+        newWorkstream: {
+          name: "Billing",
+          description: "Invoices",
+        },
+      }),
     );
   });
 

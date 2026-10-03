@@ -12,6 +12,8 @@ import { makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import { useComposer } from "@get-bb/plugin-sdk/app";
 import { NewThreadRouting } from "../../src/app/composer/NewThreadRouting.tsx";
 import { fakeWorld } from "../server/fake-bb.ts";
+import { openDatabase } from "../../src/server/db.ts";
+import { CorpusStore } from "../../src/server/corpus.ts";
 
 let world: Awaited<ReturnType<typeof fakeWorld>> | null = null;
 beforeAll(() => {
@@ -50,21 +52,51 @@ async function mount(
   answer: Record<string, unknown>,
   options: { sendFails?: boolean } = {},
 ) {
+  let seededAlphaId = "";
   const send = vi.fn(async () => {
     if (options.sendFails) throw new Error("send failed");
   });
   world = await fakeWorld({
     send,
-    complete: ({ prompt }) =>
-      JSON.stringify(
+    complete: ({ prompt }) => {
+      if (prompt.includes("Classify the most specific")) {
+        if (answer.outcome === "new-workstream" || answer.name === "Billing") {
+          return JSON.stringify({
+            subjectId: null,
+            proposed: { name: String(answer.name ?? "Billing"), description: "" },
+          });
+        }
+        return JSON.stringify({
+          subjectId: seededAlphaId,
+          proposed: null,
+        });
+      }
+      return JSON.stringify(
         prompt.includes("Someone is starting new work")
           ? { confidence: "high", reason: "Same effort", code: true, ...answer }
           : { recap: "r", state: "done", subject: null },
-      ),
+      );
+    },
   });
   const w = world;
   const alpha = w.addSection("Alpha");
   const beta = w.addSection("Beta");
+  const corpus = new CorpusStore(openDatabase(w.bb));
+  corpus.seed([
+    {
+      sectionId: alpha.id,
+      name: "Alpha",
+      description: "Alpha effort",
+      aliases: [],
+    },
+    {
+      sectionId: beta.id,
+      name: "Beta",
+      description: "Beta effort",
+      aliases: [],
+    },
+  ]);
+  seededAlphaId = corpus.list().find((e) => e.name === "Alpha")!.id;
   w.addThread("a1", { sectionId: alpha.id, title: "Alpha task" });
   await w.harness.behavior.callRpc("refresh", null);
   const methods = [
@@ -154,10 +186,10 @@ it("files an untouched automatic destination through host metadata", async () =>
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: {
+    experimental_data: expect.objectContaining({
       routeId: expect.any(String),
       sectionId: alpha.id,
-    },
+    }),
   });
   await dispatch(prompt);
   expect(w.threads.get("composed")?.sectionId).toBe(alpha.id);
@@ -209,7 +241,10 @@ it("accepts a new workstream in the UI and files exactly once even when dispatch
   const billing = w.sections.find((section) => section.name === "Billing")!;
   expect(billing).toBeDefined();
   expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: { routeId: expect.any(String), sectionId: billing.id },
+    experimental_data: expect.objectContaining({
+      routeId: expect.any(String),
+      sectionId: billing.id,
+    }),
   });
   await dispatch(prompt, true);
   expect(
@@ -232,7 +267,7 @@ it("retains the complete draft after a server send failure and can retry success
     { outcome: "continue", threadId: "a1" },
     { sendFails: true },
   );
-  const prompt = "Also handle CRLF in the parser fix";
+  const prompt = "Also handle CRLF in the parser fix @thread:a1";
   await act(() => slot.behavior.setComposerText(prompt));
   const draft = structuredClone(slot.inspection.composer.draft);
   fireEvent.click(
@@ -290,4 +325,29 @@ it("retains the complete draft after a server send failure and can retry success
   expect(slot.inspection.composer.draft.attachments).toEqual([]);
   expect(send).toHaveBeenCalledTimes(2);
   expect(await continuationEntries()).toHaveLength(1);
+});
+
+it("overrides automatic placement with No workstream and transmits sectionId: null (Bug 1)", async () => {
+  const { w, slot, dispatch } = await mount({
+    outcome: "new-thread",
+    workstream: "Alpha",
+    title: "Fix tabs",
+  });
+  const prompt = "Fix the parser in Alpha so it handles tabs";
+  await act(() => slot.behavior.setComposerText(prompt));
+  const wsBtn = await screen.findByRole("button", { name: "Workstream: Alpha" });
+  fireEvent.click(wsBtn);
+  const noneOption = await screen.findByText("No workstream");
+  fireEvent.click(noneOption);
+  await screen.findByRole("button", { name: "Workstream: No workstream" });
+
+  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
+  await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
+  expect(slot.inspection.composer.submits[0]).toEqual({
+    experimental_data: expect.objectContaining({
+      sectionId: null,
+    }),
+  });
+  await dispatch(prompt);
+  expect(w.threads.get("composed")?.sectionId).toBeNull();
 });

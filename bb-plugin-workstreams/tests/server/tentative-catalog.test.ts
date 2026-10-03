@@ -21,9 +21,6 @@ it("keeps draft discoveries tentative and commits ancestry only on submission", 
         },
       }),
   });
-  await world.harness.behavior.callRpc("setPrefs", {
-    patch: { newWork: { corpusClassification: true } },
-  });
   const decision = (await world.harness.behavior.callRpc("route", {
     prompt: "Change upcoming tasks",
     suggest: true,
@@ -34,9 +31,10 @@ it("keeps draft discoveries tentative and commits ancestry only on submission", 
   expect(decision.proposal).toMatchObject({
     name: "Up Next",
   });
-  expect(await world.harness.behavior.callRpc("corpus", null)).toEqual({
-    entities: [],
-  });
+  expect(
+    ((await world.harness.behavior.callRpc("catalog", null)) as { entities: unknown[] })
+      .entities,
+  ).toEqual([]);
   await world.harness.behavior.callRpc("startThread", {
     sectionId: null,
     identity: {
@@ -51,7 +49,7 @@ it("keeps draft discoveries tentative and commits ancestry only on submission", 
       },
     },
   });
-  const result = (await world.harness.behavior.callRpc("corpus", null)) as {
+  const result = (await world.harness.behavior.callRpc("catalog", null)) as {
     entities: { name: string }[];
   };
   expect(result.entities.map((e) => e.name).sort()).toEqual([
