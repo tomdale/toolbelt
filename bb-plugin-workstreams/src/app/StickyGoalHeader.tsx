@@ -40,6 +40,11 @@ const TITLE_BAR_GAP = 16;
 const PINNED_PAD = 0.3;
 /** Below this scroller width the title may wrap to a second line. */
 const NARROW_PX = 560;
+/**
+ * Below this scroller height (a phone on its side, or a soft keyboard up) the
+ * expanded heading would take too much of the timeline, so it stays compact.
+ */
+const SHORT_PX = 400;
 
 /** Heading height in px for a body font size. */
 function headingHeight(
@@ -239,6 +244,8 @@ type Placement = {
   pane: { x: number; y: number; width: number };
   /** The timeline is phone-width: the title may wrap and the bar is cramped. */
   narrow: boolean;
+  /** The timeline is too short to spare room for the expanded heading. */
+  short: boolean;
   /** In the title bar, after the thread title; null when there is no room. */
   bar: { x: number; centerY: number; width: number } | null;
 };
@@ -300,7 +307,12 @@ function measurePlacement(mount: Mount, base: number): Placement {
       }
     }
   }
-  return { pane, bar, narrow: scrollerRect.width < NARROW_PX };
+  return {
+    pane,
+    bar,
+    narrow: scrollerRect.width < NARROW_PX,
+    short: scrollerRect.height < SHORT_PX,
+  };
 }
 
 const samePlacement = (a: Placement | null, b: Placement): boolean =>
@@ -309,6 +321,7 @@ const samePlacement = (a: Placement | null, b: Placement): boolean =>
   Math.abs(a.pane.y - b.pane.y) < 0.5 &&
   Math.abs(a.pane.width - b.pane.width) < 0.5 &&
   a.narrow === b.narrow &&
+  a.short === b.short &&
   (a.bar === null) === (b.bar === null) &&
   (a.bar === null ||
     b.bar === null ||
@@ -392,10 +405,11 @@ export function StickyGoalHeader(): React.ReactElement | null {
     mount?.scroller ?? null,
   );
   const settled = useSettled(mount);
-  // Until settled the heading stays expanded in place.
-  const collapsed = settled && scrolledAway;
   const base = mount?.baseFontSize ?? 14;
   const placement = usePlacement(mount, base);
+  // Until settled the heading stays expanded in place, unless the timeline is
+  // too short for it.
+  const collapsed = (settled && scrolledAway) || (placement?.short ?? false);
 
   const hasEyebrow = !!context?.workstream;
   // On a phone the title may take two lines; it is measured, once placed.
