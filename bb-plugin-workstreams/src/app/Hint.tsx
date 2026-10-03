@@ -95,7 +95,7 @@ export const Hint = forwardRef<
               // A hint that explains a button lands over the recap's own text,
               // so a broad, soft shadow darkens that text enough to read against.
               arrow
-                ? "shadow-[0_6px_32px_8px_rgb(0_0_0/0.3)] dark:shadow-[0_6px_32px_10px_rgb(0_0_0/0.85)]"
+                ? "shadow-[0_8px_36px_12px_rgb(0_0_0/0.4)] dark:shadow-[0_8px_36px_14px_rgb(0_0_0/0.95)]"
                 : "shadow-md",
             )}
           >
