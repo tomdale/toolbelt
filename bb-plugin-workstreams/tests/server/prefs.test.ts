@@ -46,6 +46,28 @@ describe("Workstreams prefs", () => {
     await world.harness.lifecycle.dispose();
   });
 
+  it("shows the header Archive button unless it is turned off", async () => {
+    expect(parsePrefs({}).threads.showArchiveButton).toBe(true);
+    // Preferences stored before the button existed carry no value for it.
+    expect(
+      parsePrefs({ threads: { showParentLink: true } }).threads,
+    ).toMatchObject({ showParentLink: true, showArchiveButton: true });
+
+    const world = await fakeWorld();
+    const db = openDatabase(world.bb);
+    savePrefs(db, { threads: { showArchiveButton: false } });
+    expect(loadPrefs(db).threads).toMatchObject({
+      showArchiveButton: false,
+      showParentLink: false,
+      autoTitle: true,
+    });
+    expect(
+      prefsPatchSchema.safeParse({ threads: { showArchiveButton: "no" } })
+        .success,
+    ).toBe(false);
+    await world.harness.lifecycle.dispose();
+  });
+
   it("maps old declarative values without requiring BB settings registration", () => {
     expect(
       migrateLegacyPrefs({
@@ -75,6 +97,7 @@ describe("Workstreams prefs", () => {
         autoTitle: false,
         analysisModel: { kind: "gateway", model: "google/old-model" },
         showParentLink: true,
+        showArchiveButton: true,
       },
       newWork: {
         homeProjectId: "project-a",

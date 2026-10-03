@@ -195,6 +195,19 @@ export function ThreadsSettings() {
           />
         }
       />
+      <SettingRow
+        label="Show archive button"
+        description="Add an Archive button to thread headers."
+        control={
+          <SettingSwitch
+            label="Show archive button"
+            checked={prefs.threads.showArchiveButton}
+            onChange={(showArchiveButton) =>
+              update({ threads: { showArchiveButton } })
+            }
+          />
+        }
+      />
     </SectionRows>
   );
 }

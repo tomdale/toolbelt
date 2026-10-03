@@ -204,6 +204,23 @@ it("saves the Titles and parent-link switches", async () => {
   expect(slot.getByTestId("bb-provider-model-picker")).toBeTruthy();
 });
 
+it("saves the Show archive button switch, on by default", async () => {
+  const slot = await mount("threads");
+  const toggle = await slot.findByRole("switch", {
+    name: "Show archive button",
+  });
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(toggle);
+  await waitFor(() =>
+    expect(toggle.getAttribute("aria-checked")).toBe("false"),
+  );
+  expect(
+    slot.inspection.rpcCalls
+      .filter((call) => call.method === "setPrefs")
+      .map((call) => call.input),
+  ).toEqual([{ patch: { threads: { showArchiveButton: false } } }]);
+});
+
 it("saves New work preferences and disables the suggestions model when suggestions are off", async () => {
   const slot = await mount("new-work");
   await slot.findByRole("switch", { name: "Suggestions while typing" });
