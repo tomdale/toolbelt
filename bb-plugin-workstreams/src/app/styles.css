@@ -489,7 +489,12 @@
 }
 .ws-sticky-goal-root--animated::before,
 .ws-sticky-goal-root--animated::after {
-  transition: opacity 150ms ease;
+  transition:
+    opacity 150ms ease,
+    top 200ms ease;
+}
+.ws-sticky-goal-root--animated .ws-sticky-goal__plate {
+  transition: transform 200ms ease;
 }
 .ws-sticky-goal {
   position: absolute;
@@ -531,6 +536,7 @@
     opacity 200ms ease;
 }
 @media (prefers-reduced-motion: reduce) {
+  .ws-sticky-goal-root--animated .ws-sticky-goal__plate,
   .ws-sticky-goal-root--animated::before,
   .ws-sticky-goal-root--animated::after,
   .ws-sticky-goal-root--animated .ws-sticky-goal,
@@ -595,6 +601,12 @@
 .ws-sticky-goal__subtitle {
   color: var(--muted-foreground);
   line-height: 1.4;
+}
+/* Off-screen copy of the title, wrapped, to count its lines. */
+.ws-sticky-goal__probe {
+  white-space: normal;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* Parent chip in a child thread's header. */
