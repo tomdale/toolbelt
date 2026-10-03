@@ -74,7 +74,11 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
     await w.harness.behavior.callRpc("refresh", null);
     const storageEntity = corpus.remember("Storage", "Storage product");
     corpus.bindGroup(storageSection.id, storageEntity.id);
-    const shelves = corpus.remember("Shelves", "Shelves feature", storageEntity.id);
+    const shelves = corpus.remember(
+      "Shelves",
+      "Shelves feature",
+      storageEntity.id,
+    );
 
     // Submit thread in broader home "Storage", with specific identity "Shelves"
     const { threadId, sectionId } = (await w.harness.behavior.callRpc(
@@ -411,7 +415,7 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
     });
     const w = world;
     const db = openDatabase(w.bb);
-    savePrefs(db, { newWork: { corpusClassification: true, suggestions: true } });
+    savePrefs(db, { newWork: { suggestions: true } });
     const corpus = new CorpusStore(db);
 
     const unbound = w.addSection("Unbound Navigation");
@@ -433,9 +437,12 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
   });
 
   it("filing in existing unbound section does not bind section to task identity", async () => {
+    let featureId = "";
     world = await fakeWorld({
       settings: { suggestions: true },
       complete: ({ prompt }) => {
+        if (prompt.includes("Classify the most specific"))
+          return JSON.stringify({ subjectId: featureId, proposed: null });
         if (prompt.includes("Someone is starting new work")) {
           return JSON.stringify({
             outcome: "new-thread",
@@ -460,6 +467,7 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
     const legacySection = w.addSection("Unbound Legacy");
     await w.harness.behavior.callRpc("refresh", null);
     const feature = corpus.remember("Auth Feature", "Auth description");
+    featureId = feature.id;
 
     expect(corpus.groups().get(legacySection.id)).toBeUndefined();
     const revBefore = corpus.revision();
@@ -491,7 +499,9 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 30));
 
-    expect(w.threads.get("t-composed-unbound")?.sectionId).toBe(legacySection.id);
+    expect(w.threads.get("t-composed-unbound")?.sectionId).toBe(
+      legacySection.id,
+    );
     expect(corpus.assignment("t-composed-unbound").entityId).toBe(feature.id);
 
     // CRITICAL: The existing section must remain UNBOUND

@@ -52,7 +52,7 @@ export type ActiveGroup = {
 /** Returns ancestor entity IDs from nearest up to root. */
 export function entityAncestors(
   id: string,
-  entities: readonly CorpusEntity[],
+  entities: readonly { id: string; parentId: string | null }[],
 ): string[] {
   const result: string[] = [];
   let current: string | null = id;

@@ -195,11 +195,9 @@ async function mount(
                 kind: "gateway",
                 model: "google/gemini-3.1-flash-lite",
               },
-              corpusClassification: false,
             },
             organize: {
               model: { kind: "gateway", model: "openai/gpt-6-sol-fast" },
-              adaptivePreview: false,
               capacity: 6,
               collapseAt: 3,
             },

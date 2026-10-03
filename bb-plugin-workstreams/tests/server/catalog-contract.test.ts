@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { fakeWorld } from "./fake-bb.ts";
-import { CorpusStore, classificationEvidence } from "../../src/server/corpus.ts";
+import {
+  CorpusStore,
+  classificationEvidence,
+} from "../../src/server/corpus.ts";
 import { openDatabase } from "../../src/server/db.ts";
 import type {
   CanonicalAssignment,
@@ -209,7 +212,7 @@ describe("Catalog and Task Identity RPC Contract", () => {
     expect(updateRes.entity.aliases).toContain("BetaAlias1");
   });
 
-  it("catalog and corpus reads are pure and do not increment catalog revision", async () => {
+  it("catalog and state reads are pure and do not increment catalog revision", async () => {
     world = await fakeWorld({
       complete: () => JSON.stringify({ recap: "r", state: "done" }),
     });
@@ -233,7 +236,7 @@ describe("Catalog and Task Identity RPC Contract", () => {
       )) as CatalogState;
       expect(readCatalog.revision).toBe(initialRev);
 
-      await w.harness.behavior.callRpc("corpus", null);
+      await w.harness.behavior.callRpc("state", null);
     }
   });
 
@@ -405,7 +408,9 @@ describe("Catalog and Task Identity RPC Contract", () => {
 
     // The classifier prompt contained ROOT title and recap, NOT child
     expect(capturedPrompt).toContain("Root Billing Work");
-    expect(capturedPrompt).toContain("Billing system architecture and invoice pipeline");
+    expect(capturedPrompt).toContain(
+      "Billing system architecture and invoice pipeline",
+    );
     expect(capturedPrompt).not.toContain("Child Typo Fix");
     expect(capturedPrompt).not.toContain("CSS color tweak");
 

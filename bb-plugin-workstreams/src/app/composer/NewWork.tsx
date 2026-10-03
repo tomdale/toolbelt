@@ -95,10 +95,9 @@ function NewWork({
             // A cancel that can't reach the server only costs one wasted call.
           });
         },
-        createWorkstream: async (name, description, subjectId) => {
+        createWorkstream: async (name: string, description: string) => {
           const created = await rpc.call("createWorkstream", {
             name,
-            ...(subjectId ? { subjectId } : {}),
             ...(description ? { description } : {}),
           });
           return {
@@ -106,27 +105,13 @@ function NewWork({
             name: created.entry.workstreams[0]?.name ?? name,
           };
         },
-        startThread: (sectionId, request, optionsOrSubjectId) => {
-          const options =
-            typeof optionsOrSubjectId === "object" &&
-            optionsOrSubjectId !== null
-              ? optionsOrSubjectId
-              : typeof optionsOrSubjectId === "string"
-                ? {
-                    identity: {
-                      entityId: optionsOrSubjectId,
-                      provenance: "manual" as const,
-                    },
-                    subjectId: optionsOrSubjectId,
-                  }
-                : undefined;
+        startThread: (sectionId, request, options) => {
           return rpc.call("startThread", {
             sectionId,
             ...(options?.newWorkstream
               ? { newWorkstream: options.newWorkstream }
               : {}),
             ...(options?.identity ? { identity: options.identity } : {}),
-            ...(options?.subjectId ? { subjectId: options.subjectId } : {}),
             // The server forwards only the fields spawn takes.
             execution: JSON.parse(JSON.stringify(request)) as NewThreadRequest &
               Record<string, unknown>,

@@ -1,10 +1,11 @@
 # Workstreams for BB
 
-Workstreams organizes your BB threads into **workstreams** when you ask. A
-single pass proposes the whole map and thread placements; preview it, then
-apply. A workstream is a native BB section, so the built-in sidebar and
-Workstreams always agree on where a thread lives. [SPEC.md](SPEC.md) is the full
-design and the contract the code is checked against.
+Workstreams organizes your BB threads into **workstreams** when you ask.
+Tasks are classified against the Catalog, then grouped adaptively into
+workstreams based on current task counts by product and feature; preview the
+organization, then apply. A workstream is a native BB section, so the built-in
+sidebar and Workstreams always agree on where a thread lives. [SPEC.md](SPEC.md)
+is the full design and the contract the code is checked against.
 
 ## What it does
 
@@ -158,16 +159,23 @@ design and the contract the code is checked against.
   Workstreams applies it (at most once an hour for a titled thread) and logs it
   in Activity with Undo. A title you or an agent set is never changed; clear it
   to hand it back. Turn this off in the Threads settings section.
-- **Organize** (Map tab, or `bb workstreams rebuild`): one bounded model call
-  scans open thread roots and proposes a coherent map with descriptions, aliases
-  and placements. Review the whole map, uncheck unwanted moves, then Apply as
-  one undoable batch. Between runs, membership stays fixed. Unassigned roots
-  remain Unfiled. Homes default to concrete products/projects; high-volume
-  products may subdivide into `<Product>: <Area>` homes, formatted distinctly in
-  the UI; substantial initiatives can stand alone. Apply also removes previewed
-  empty homes or archived-only homes whose newest archive is over 24 hours old,
-  preserving threads and Undo. See
-  [Organizing workstreams](docs/organization.md).
+- **Organize** (Organize tab, or `bb workstreams rebuild`): classifies open
+  thread roots against the Catalog, then regroups them adaptively into
+  workstreams based on concurrent task counts and capacity policy. Review the
+  proposal, inspect specific feature identities and truthful reasons, then
+  Apply as one undoable batch. Between runs, membership stays fixed.
+  Unassigned roots remain Unfiled. Homes default to concrete products/projects;
+  high-volume products may subdivide into `<Product>: <Area>` homes; substantial
+  initiatives can stand alone. Apply also removes previewed empty homes or
+  archived-only homes whose newest archive is over 24 hours old, preserving
+  threads and Undo. Any Catalog edit bumps revision, safely marking previews
+  stale until regenerated. See [Organizing workstreams](docs/organization.md).
+- **Catalog** (Catalog tab, or `bb workstreams catalog list`): the retained
+  hierarchy of known Products and Features, whether or not they have active
+  tasks. Each identity has a name, description, optional parent link, and
+  aliases. The tab provides searching by full path or alias, viewing related
+  tasks, and maintenance dialogs for creating, editing, reparenting, and
+  merging identities.
 - **Model settings**: Threads analysis, New work suggestions, and Organize each
   use their own selected model. Pi AI Gateway models run as direct completions;
   explicit reasoning levels use Gateway's shared effort control, and service
@@ -176,12 +184,13 @@ design and the contract the code is checked against.
   substituting another selection. Built-in model choices leave reasoning at the
   provider default. Gateway may translate effort for the serving model, and a
   requested service tier is not a guarantee of the tier served.
-- **Routing**: New work classifies the draft against the map when you pause
+- **Routing**: New work classifies the draft against the Catalog when you pause
   typing and moves the Automatic pickers to one home: an existing workstream
   with its project and environment, or a new workstream (created when the
   thread starts). Enter starts what the pickers show, so an untouched
   Automatic field files the thread where the router said; a suggested thread
-  waits for an explicit acceptance.
+  waits for an explicit acceptance. Identity selection and section placement are
+  independent.
 - **Agent tools**: threads receive question support and recap guidance through
   `bb.agents.configure`, independently of workstream placement or parent links.
   Side chats receive question support without recap enrollment; internal
@@ -240,6 +249,20 @@ bb workstreams log [--since 7d] [--external]   # the activity log
 bb workstreams undo <entry-id>
 bb workstreams trace [<id>] [--thread <id>] [--entry <id>] [--kind <kind>] [--json]
                                                # Debug mode: recorded model calls
+
+# Catalog maintenance
+bb workstreams catalog list [--json]           # all products and features
+bb workstreams catalog show <id-or-name>       # details, home, and assigned tasks
+bb workstreams catalog create <name> [--parent <p>] [--description <d>] [--aliases <a,b>]
+bb workstreams catalog edit <id-or-name> [--name <n>] [--description <d>] [--aliases <a,b>]
+bb workstreams catalog reparent <id-or-name> --to <new-parent-or-root>
+bb workstreams catalog merge <source> <target> # merge identities and move tasks
+
+# Task identity
+bb workstreams task show <thread-id> [--json]  # canonical product/feature assignment
+bb workstreams task assign <thread-id> <id-or-name> # manually assign identity
+bb workstreams task clear <thread-id>          # clear identity (mark unresolved)
+bb workstreams task reclassify <thread-id> [--identity <id-or-name>] # classify via model
 ```
 
 A workstream argument is a section id or its name (case-insensitive). `new` and

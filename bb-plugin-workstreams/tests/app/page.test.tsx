@@ -67,7 +67,7 @@ async function mount() {
             },
           },
         }),
-        corpus: () => ({
+        catalog: () => ({
           entities: [
             {
               id: "known",
@@ -77,6 +77,9 @@ async function mount() {
               aliases: [],
             },
           ],
+          groups: {},
+          assignments: {},
+          revision: 1,
         }),
         journal: () => ({ entries: [entry] }),
         undo: () => ({ entry: { ...entry, id: "e2", action: "undo" } }),

@@ -14,20 +14,23 @@ context constantly. Workstreams answers five questions at a glance:
 - What needs Tom now?
 - Where does new work go?
 
-Workstreams organizes open threads on explicit request. One model pass proposes
-the whole map and placements; the user previews and applies the result. Between
-runs, membership stays fixed while recaps and attention indicators stay current.
+Workstreams organizes open threads on explicit request. Tasks are classified
+against the Catalog, then grouped adaptively based on current task counts by
+product and feature; the user previews and applies the result. Between runs,
+membership stays fixed while recaps and attention indicators stay current.
 
-Workstreams has four responsibilities:
+Workstreams has five responsibilities:
 
-1. **Organize** threads into workstreams (native BB sections) and keep them
-   there.
-2. **Route** new work: continue an existing thread, start a thread in a
-   workstream, or leave the choice unresolved. New work can also suggest a new
-   workstream, which is created only when the user accepts it.
-3. **Equip** threads with question and recap tools and their usage guidance.
-4. **Show** state through the sidebar thread list, the Workstreams page, and
-   per-thread banners.
+1. **Maintain** a retained hierarchy of known products and features in the
+   Catalog, independently of current navigation.
+2. **Organize** threads adaptively into workstreams (native BB sections) and
+   keep them there.
+3. **Route** new work: recognize products and features from the Catalog,
+   suggest a home or continuation, and keep identity selection independent from
+   placement.
+4. **Equip** threads with question and recap tools and their usage guidance.
+5. **Show** state through the sidebar thread list, the Workstreams page
+   (Overview, Catalog, Organize, Activity), and per-thread banners.
 
 ## 2. Non-goals
 
@@ -89,15 +92,17 @@ environments.
 
 ## 4. Concepts and invariants
 
-| Concept          | Definition                                                                                                                                                                                                                 | Source of truth                                               |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| **Workstream**   | Exactly one native section                                                                                                                                                                                                 | BB section, plus a workstream-map record keyed by `sectionId` |
-| **Membership**   | The **root** thread's `sectionId`. Descendants inherit it, and their own `sectionId` is ignored.                                                                                                                           | BB, plus provenance in plugin state                           |
-| **Task thread**  | A visible, non-archived, top-level thread (no parent). A workstream has any number of them.                                                                                                                                | Derived                                                       |
-| **Delegate**     | A child of a task thread, created for a separable subtask                                                                                                                                                                  | BB `parentThreadId` + `lifecycleOwnerThreadId`                |
-| **Sibling**      | A task thread spun off from another thread for out-of-scope work                                                                                                                                                           | Metadata `spawnedFrom`. This is **not** a parent link.        |
-| **Home project** | Where work with no code target goes. **Default: none.** Such work goes to BB's personal project ("Don't work in a project") in a fresh personal workspace. The optional `newWork.homeProjectId` preference overrides this. | Plugin preference (optional)                                  |
-| **Unfiled**      | Unsectioned roots awaiting an explicit placement or organizing run.                                                                                                                                                        | Derived                                                       |
+| Concept               | Definition                                                                                                                                                                                                                 | Source of truth                                               |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| **Catalog**           | The retained hierarchy of known **Products** and **Features**, whether or not they have active tasks.                                                                                                                      | Plugin SQLite (`ws_corpus_entity`, `ws_corpus_group`)          |
+| **Task identity**     | A task's canonical assignment to a specific Catalog product/feature entity, with status (`assigned` \| `unresolved`) and provenance (`manual` \| `automatic`). Children inherit root semantics.                          | Plugin SQLite (`ws_corpus_subject`)                           |
+| **Workstream**        | Exactly one native section representing a current navigation group.                                                                                                                                                        | BB section, plus a workstream record keyed by `sectionId`      |
+| **Membership**        | The **root** thread's `sectionId`. Descendants inherit it, and their own `sectionId` is ignored.                                                                                                                           | BB, plus provenance in plugin state                           |
+| **Task thread**       | A visible, non-archived, top-level thread (no parent). A workstream has any number of them.                                                                                                                                | Derived                                                       |
+| **Delegate**          | A child of a task thread, created for a separable subtask                                                                                                                                                                  | BB `parentThreadId` + `lifecycleOwnerThreadId`                |
+| **Sibling**           | A task thread spun off from another thread for out-of-scope work                                                                                                                                                           | Metadata `spawnedFrom`. This is **not** a parent link.        |
+| **Home project**      | Where work with no code target goes. **Default: none.** Such work goes to BB's personal project ("Don't work in a project") in a fresh personal workspace. The optional `newWork.homeProjectId` preference overrides this. | Plugin preference (optional)                                  |
+| **Unfiled**           | Unsectioned roots awaiting an explicit placement or organizing run.                                                                                                                                                        | Derived                                                       |
 
 **Invariants.** Tests enforce each one.
 
@@ -107,9 +112,13 @@ environments.
   a root. Orphans and cycles render deterministically. Up Next and Recent are
   overlays that repeat rows from the groups; they never replace them, and never
   show snoozed threads.
-- **I2. Tree membership.** A tree's workstream is its root's section.
-  Workstreams never writes `sectionId` on a child.
-- **I3. Explicit moves only.** A filed thread moves only through one of these:
+- **I2. Tree membership and identity.** A tree's workstream is its root's section.
+  A tree's task identity is its root's canonical Catalog assignment.
+  Children inherit both; Workstreams never writes `sectionId` on a child.
+- **I3. Identity and placement independence.** Selecting or correcting a task's
+  product/feature identity leaves its section placement unchanged; moving a
+  native section preserves its identity.
+- **I4. Explicit moves only.** A filed thread moves only through one of these:
   - (a) placement at creation, by the router (intake or handoff);
   - (b) an explicit move by the user or an agent;
   - (c) Apply on a reviewed organizing preview.
@@ -119,21 +128,25 @@ environments.
   change records its provenance:
   `user | router | handoff | auto | proposal:<id> | bootstrap`.
 
-- **I4. Placement is fixed at creation.** Project and environment are chosen
+- **I5. Preview revision safety.** Organization previews snapshot `catalogRevision`.
+  Any Catalog mutation (entity rename, reparent, merge, task assignment, or clear)
+  increments `catalogRevision`, which marks saved previews as stale (`isStale: true`)
+  and safely prevents applying them until regenerated.
+- **I6. Placement is fixed at creation.** Project and environment are chosen
   once, at creation, and are always passed **explicitly**. Workstreams never
   relies on `project-default`.
-- **I5. Reviewed cleanup.** Apply may remove previewed unused sections:
+- **I7. Reviewed cleanup.** Apply may remove previewed unused sections:
   completely empty, or archived-only with the newest archive strictly older than
   24 hours. Any non-archived member, including hidden threads, blocks cleanup.
   Threads are preserved. Undo restores names, metadata and eligible membership
   with fresh native section IDs.
-- **I6. Freshness.** Derived data (analysis's summary, state, subject, drift,
+- **I8. Freshness.** Derived data (analysis's summary, state, subject, drift,
   title) is keyed to the thread's revision. Stale data renders as _pending_,
   never as current. An agent recap belongs to the turn that reported it, and
   fresh input clears it (§10.2).
-- **I7. Journal.** Every mutation is written to the journal (§11.5), with undo
+- **I9. Journal.** Every mutation is written to the journal (§11.5), with undo
   wherever BB allows it.
-- **I8. One projection.** The sidebar and the page render from one pure
+- **I10. One projection.** The sidebar and the page render from one pure
   projection function over the same inputs.
 
 ## 5. Agent tools and explicit transfers
@@ -203,19 +216,23 @@ otherwise contributes its intake UI inside its own dialog.
 
 1. **New work**, on BB's native New thread view and in Workstreams' ＋ New
    dialog (page and sidebar). Both embed BB's composer — the dialog through
-   `experimental_NewThreadComposer` — with a Workstream field at the start of
-   BB's picker row. The field starts **Automatic** (✦, the magic tint), or at
-   the workstream whose ＋ opened the dialog, and its search can create a
-   workstream by name. When typing pauses, the router classifies the draft.
-   While the field is Automatic, each classification moves the pickers to the
-   home it names: an existing workstream fills the field together with its
-   project and environment, a proposed new workstream shows its name (created
-   when the thread starts), and a classification that names no workstream
+   `experimental_NewThreadComposer` — with a **Product or feature** field and
+   a **Workstream** field at the start of BB's picker row.
+   The Product or feature field identifies the specific Catalog entity
+   independently of navigation placement. The router runs Catalog classification
+   (`classify`) as typing pauses.
+   The Workstream field starts **Automatic** (✦, the magic tint), or at
+   the workstream whose ＋ opened the dialog, and its search can select an
+   existing workstream or propose a new one by name. While the field is
+   Automatic, each classification moves the pickers to the home it names: an
+   existing workstream fills the field together with its project and environment,
+   a proposed new workstream shows its name (created atomically on thread spawn,
+   with rollback on failure), and a classification that names no workstream
    withdraws the previous automatic destination. ⏎ starts the thread exactly as
    the pickers show it, so an untouched Automatic field files the thread where
    the router said; on the native view the destination travels with the host
-   submit and the server's dispatch hook files it. Any manual change — picking
-   a workstream, choosing No workstream, or changing the project or
+   submit metadata and the server's dispatch hook files it. Any manual change —
+   picking a workstream, choosing No workstream, or changing the project or
    environment — pins every picker (ordinary muted treatment) and stops the
    automatic updates; choosing Automatic again unpins. A continue suggestion
    still changes nothing until accepted, because sending to a thread cannot be
@@ -302,15 +319,23 @@ Plugin SQLite, keyed by `sectionId`. The name mirrors BB.
 **Explicit organization** (also available as `bb workstreams rebuild`).
 
 1. Snapshot visible, non-archived threads and existing sections. Build
-   root/child trees and include bounded titles, cached recaps and project
+   root/child trees and include bounded titles, cached recaps, and project
    context.
-2. One tool-free model response proposes the whole map, descriptions, aliases
-   and exactly one assignment per root. Validate the full response before use.
-3. Preview the map and placements together. Every root is shown, including those
-   staying put. The user can uncheck moves or cancel without changing the map.
-4. Apply the saved preview as one journaled batch. Changed map metadata requires
-   a fresh preview; threads changed since the snapshot are skipped. Undo
-   includes names, new sections, placements, descriptions and aliases.
+2. Classify tasks missing a stored subject against the Catalog using `classify`.
+   Compute concurrent task counts by product and feature. Regroup tasks
+   adaptively into workstreams based on capacity and contraction threshold policy
+   via `regroup`.
+3. Preview the workstreams, specific product/feature identities, and placements
+   together. Truthful reasons distinguish classified features from unresolved
+   or completed retention. Unresolved threads in existing sections retain their
+   homes.
+4. Stale preview invalidation: any Catalog mutation (entity rename, reparent,
+   merge, task assignment, or clear) increments `catalogRevision`, which marks
+   saved proposals stale (`isStale: true`) and safely prevents applying until
+   regenerated.
+5. Apply the saved preview as one journaled batch. Changed metadata or concurrent
+   moves require a fresh preview; threads changed since the snapshot are skipped.
+   Undo restores names, new sections, placements, descriptions and aliases.
 
 `rebuild --apply --run-id <startedAt>` applies the reviewed saved preview
 without another model call. See
@@ -543,11 +568,11 @@ it.
    - Workstreams ranked by attention, then by recency.
    - Each workstream lists "pick back up" rows: title · where it stopped · age.
    - Search with `/`.
-   - Tabs for Map (the workstream editor) and Activity.
-3. **Thread header:** a parent link (preference) and the snooze split button
+   - Tabs for Overview, Catalog, Organize, and Activity.
+3. **Thread header:** a parent link (preference), the task's Product/Feature identity badge, and the snooze split button
    (§11.1).
 4. **CLI:**
-   `bb workstreams list | show | edit | prioritize | new | handoff | file | log | analyze | rebuild | trace`,
+   `bb workstreams list | show | edit | prioritize | new | handoff | file | log | analyze | rebuild | trace | catalog (list | show | create | edit | reparent | merge) | task (show | assign | clear | reclassify)`,
    built with `defineCli`.
 5. **Activity log** (page tab and `bb workstreams log`):
    - Covers every change and proposal, newest first, grouped by day.
@@ -669,6 +694,7 @@ entry point is a Workstreams header action.
 
 | Data                                                                                                                                 | Store                                                                    |
 | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| Catalog products and features, task assignments, group bindings, and revision                                                        | Plugin SQLite (`ws_corpus_entity`, `ws_corpus_subject`, `ws_corpus_group`, `ws_meta`) |
 | Workstream map, saved organizing preview, analysis cache, title ownership, journal and Activity log, reconciler cursor, debug traces | Plugin SQLite (`bb.storage.database()`) with migrations                  |
 | Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }`                                           | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
 | Manual order and prioritized workstreams, thread snoozes, feature-grouped Workstreams preferences, Snooze and Recap settings         | Plugin SQLite, `ws_meta` values                                          |
