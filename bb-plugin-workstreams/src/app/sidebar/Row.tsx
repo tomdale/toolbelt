@@ -231,7 +231,7 @@ export function Row({
               event.stopPropagation();
               disclosure.toggle();
             }}
-            className="ws-disclosure absolute inset-0 z-10 flex cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-foreground"
+            className="ws-disclosure absolute inset-0 flex cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-foreground"
           >
             <Icon
               name={disclosure.expanded ? "ChevronDown" : "ChevronRight"}
