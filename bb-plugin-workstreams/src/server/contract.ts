@@ -37,9 +37,9 @@ const analysisSchema = z.object({
   state: z.enum(WORK_STATES),
   needsYou: z.string().nullable(),
   subject: z.string().nullable(),
-  // Results stored before titles were suggested have none.
-  title: z.string().nullable().default(null),
-  // Older analysis rows predate durable goals.
+  // What the thread is for, which is also its title. Older analysis rows
+  // predate goals, and rows from when a thread also had an inferred title
+  // carry a `title` that is not sent.
   goal: z.string().nullable().default(null),
   drift: z
     .object({

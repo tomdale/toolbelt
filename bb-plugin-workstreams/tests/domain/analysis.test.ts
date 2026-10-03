@@ -6,7 +6,9 @@ import {
   conversationBlock,
   isCurrent,
   needsYou,
+  openingGoalPrompt,
   parseAnalysis,
+  parseOpeningGoal,
   type AnalysisInput,
 } from "../../src/domain/analysis.ts";
 
@@ -77,36 +79,35 @@ describe("parseAnalysis", () => {
     ).toBeNull();
   });
 
-  it("cleans a suggested title and drops one too long to use", () => {
-    const raw = (title: unknown) =>
-      JSON.stringify({ recap: "r", state: "done", title });
-    expect(parseAnalysis(raw('"Fix stale  build cache."')).title).toBe(
-      "Fix stale build cache",
+  it("cleans the goal for use as a title and drops one too long to use", () => {
+    const goalOf = (goal: unknown) =>
+      parseAnalysis(JSON.stringify({ recap: "r", state: "done", goal })).goal;
+    expect(goalOf('"Fix stale  build cache."')).toBe("Fix stale build cache");
+    expect(goalOf("Make onboarding easier to complete")).toBe(
+      "Make onboarding easier to complete",
     );
-    expect(parseAnalysis(raw("word ".repeat(30))).title).toBeNull();
-    expect(parseAnalysis(raw("   ")).title).toBeNull();
-    expect(
-      parseAnalysis(JSON.stringify({ recap: "r", state: "done" })).title,
-    ).toBeNull();
-  });
-
-  it("accepts a durable goal, clips long output, and defaults older results", () => {
-    const result = parseAnalysis(
-      JSON.stringify({
-        recap: "r",
-        state: "done",
-        goal: "Make onboarding easier to complete",
-      }),
-    );
-    expect(result.goal).toBe("Make onboarding easier to complete");
-    expect(
-      parseAnalysis(
-        JSON.stringify({ recap: "r", state: "done", goal: "word ".repeat(30) }),
-      ).goal?.length,
-    ).toBeLessThanOrEqual(GOAL_MAX);
+    // Cut at a word, a goal would read as the incomplete kind of title.
+    expect(goalOf("word ".repeat(30))).toBeNull();
+    expect(goalOf("x".repeat(GOAL_MAX))).toHaveLength(GOAL_MAX);
+    expect(goalOf("x".repeat(GOAL_MAX + 1))).toBeNull();
+    expect(goalOf("   ")).toBeNull();
+    expect(goalOf(42)).toBeNull();
     expect(
       parseAnalysis(JSON.stringify({ recap: "r", state: "done" })).goal,
     ).toBeNull();
+  });
+
+  it("reads results stored when a thread also had an inferred title", () => {
+    const stored = parseAnalysis(
+      JSON.stringify({
+        recap: "r",
+        state: "done",
+        title: "Old inferred title",
+        goal: "Make onboarding easier to complete",
+      }),
+    );
+    expect(stored.goal).toBe("Make onboarding easier to complete");
+    expect(stored).not.toHaveProperty("title");
   });
 
   it("keeps an ask only for a needs-decision result", () => {
@@ -137,6 +138,17 @@ describe("analysisPrompt", () => {
     expect(prompt).not.toMatch(/project:/i);
   });
 
+  it("asks for one goal, which is the thread's title, and no separate title", () => {
+    const prompt = analysisPrompt(input());
+    expect(prompt).toContain('"drift": object|null, "goal": string|null}');
+    expect(prompt).not.toContain('"title"');
+    expect(prompt).not.toMatch(/^- title:/m);
+    expect(prompt).toContain("which becomes its title wherever threads");
+    expect(prompt).toContain(`at most ${GOAL_MAX} characters`);
+    expect(prompt).toContain("in sentence case with no closing period");
+    expect(prompt).toContain("Reuse the current title exactly");
+  });
+
   it("passes the previous durable goal as stable context", () => {
     const prompt = analysisPrompt(
       input({ previousGoal: "Make onboarding easier to complete" }),
@@ -145,11 +157,11 @@ describe("analysisPrompt", () => {
       'Previously inferred durable goal: "Make onboarding easier to complete"',
     );
     expect(prompt).toContain(
-      "replace it only when the underlying objective or scope genuinely changes",
+      "only when the underlying objective or scope genuinely changes",
     );
     expect(prompt).toContain("Use a concise phrase of 3–8 words");
     expect(prompt).toContain(
-      "not the conversation or its individual requested changes",
+      "not the conversation, its latest step or status, or its individual requested changes",
     );
     expect(prompt).toContain("shorten it when it exceeds this limit");
   });
@@ -188,7 +200,6 @@ describe("freshness", () => {
     state: "needs_decision" as const,
     needsYou: "Commit?",
     subject: null,
-    title: null,
     goal: null,
     drift: null,
     revision: 100,
@@ -219,5 +230,58 @@ describe("freshness", () => {
     expect(needsYou(thread("idle"), { ...analysis, state: "review" })).toBe(
       false,
     );
+  });
+});
+
+describe("opening goal", () => {
+  it("shows the model the opening request and nothing else", () => {
+    const prompt = openingGoalPrompt({
+      request: "Fix the stale cache in the build tool.",
+    });
+    expect(prompt).toContain("Fix the stale cache in the build tool.");
+    expect(prompt).toContain('Return {"goal": string|null}');
+    for (const absent of [
+      "Workstream",
+      "Last assistant",
+      "Title:",
+      "recap",
+      "drift",
+    ])
+      expect(prompt).not.toContain(absent);
+  });
+
+  it("asks for the same form of goal as the analysis of the finished turn", () => {
+    const form = "Use a concise phrase of 3–8 words, at most";
+    expect(openingGoalPrompt({ request: "x" })).toContain(
+      `${form} ${GOAL_MAX} characters, in sentence case with no closing period`,
+    );
+    expect(analysisPrompt(input())).toContain(
+      `${form} ${GOAL_MAX} characters, in sentence case with no closing period`,
+    );
+    expect(openingGoalPrompt({ request: "x" })).toContain(
+      "null when the request doesn't say what the work is",
+    );
+  });
+
+  it("redacts secrets and bounds a long request", () => {
+    const prompt = openingGoalPrompt({
+      request: `rotate sk-${"c".repeat(40)} then ${"y ".repeat(5_000)}`,
+    });
+    expect(prompt).not.toContain("cccccccccccc");
+    expect(prompt).toContain("[redacted]");
+    expect(prompt.length).toBeLessThan(3_500);
+  });
+
+  it("parses fenced JSON, cleans the goal, and treats a missing one as none", () => {
+    expect(
+      parseOpeningGoal('```json\n{"goal":"\\"Fix stale build cache.\\""}\n```')
+        .goal,
+    ).toBe("Fix stale build cache");
+    expect(parseOpeningGoal('{"goal":null}').goal).toBeNull();
+    expect(parseOpeningGoal("{}").goal).toBeNull();
+    expect(
+      parseOpeningGoal(JSON.stringify({ goal: "word ".repeat(30) })).goal,
+    ).toBeNull();
+    expect(() => parseOpeningGoal("not json")).toThrow();
   });
 });

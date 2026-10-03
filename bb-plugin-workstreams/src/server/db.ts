@@ -308,6 +308,7 @@ const MIGRATIONS = [
   )`,
   "ALTER TABLE ws_corpus_subject ADD COLUMN evidence TEXT",
   "ALTER TABLE ws_corpus_subject ADD COLUMN source TEXT NOT NULL DEFAULT 'legacy'",
+  "ALTER TABLE ws_title ADD COLUMN provisional INTEGER NOT NULL DEFAULT 0",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

@@ -63,3 +63,47 @@ it("installs with current storage and no retired state or banner tables", async 
     await host.harness.lifecycle.dispose();
   }
 });
+it("upgrades title ownership rows without marking any provisional", async () => {
+  const host = createFakePluginHost({ pluginId: "storage-titles" });
+  try {
+    const migrate = host.bb.storage.migrate.bind(host.bb.storage);
+    const spy = vi
+      .spyOn(host.bb.storage, "migrate")
+      .mockImplementation((db, migrations) => {
+        // Storage as it was before titles could be provisional.
+        const boundary = migrations.indexOf(
+          "ALTER TABLE ws_title ADD COLUMN provisional INTEGER NOT NULL DEFAULT 0",
+        );
+        expect(boundary).toBeGreaterThan(0);
+        return migrate(db, migrations.slice(0, boundary));
+      });
+    const db = openDatabase(host.bb);
+    db.prepare(
+      "INSERT INTO ws_title(thread_id,observed,written,locked,retitled_at) VALUES ('t1','Ours','Ours',0,5),('t2','Mine',NULL,1,NULL)",
+    ).run();
+    spy.mockRestore();
+    openDatabase(host.bb);
+    expect(
+      db.prepare("SELECT * FROM ws_title ORDER BY thread_id").all(),
+    ).toEqual([
+      {
+        thread_id: "t1",
+        observed: "Ours",
+        written: "Ours",
+        locked: 0,
+        retitled_at: 5,
+        provisional: 0,
+      },
+      {
+        thread_id: "t2",
+        observed: "Mine",
+        written: null,
+        locked: 1,
+        retitled_at: null,
+        provisional: 0,
+      },
+    ]);
+  } finally {
+    await host.harness.lifecycle.dispose();
+  }
+});

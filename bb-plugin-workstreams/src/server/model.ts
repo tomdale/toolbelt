@@ -5,8 +5,11 @@
  */
 import {
   analysisPrompt,
+  openingGoalPrompt,
   parseAnalysis,
+  parseOpeningGoal,
   type AnalysisInput,
+  type OpeningGoalInput,
 } from "../domain/analysis.ts";
 import { parseRoute, routePrompt, type RouteInput } from "../domain/router.ts";
 import {
@@ -53,6 +56,10 @@ export const MODEL_CALLS = {
   analysis: {
     prompt: (input: AnalysisInput) => analysisPrompt(input),
     parse: (text: string, input: AnalysisInput) => parseAnalysis(text, input),
+  },
+  "opening-goal": {
+    prompt: (input: OpeningGoalInput) => openingGoalPrompt(input),
+    parse: (text: string) => parseOpeningGoal(text),
   },
   route: {
     prompt: (input: RouteInput) => routePrompt(input),
@@ -105,10 +112,14 @@ export function summarize(
         a.drift
           ? `drift → ${a.drift.workstream ?? a.drift.newName} (${a.drift.confidence})`
           : null,
-        a.title ? `new title “${a.title}”` : null,
+        a.goal ? `goal “${a.goal}”` : null,
       ]
         .filter(Boolean)
         .join(" · ");
+    }
+    case "opening-goal": {
+      const goal = (value as OutputOf<"opening-goal">).goal;
+      return goal ? `goal “${goal}”` : "no goal: the request doesn’t say";
     }
     case "route": {
       const r = value as OutputOf<"route">;
@@ -163,6 +174,9 @@ function withTrace(error: unknown, traceId: string | null): unknown {
 const message = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
+const duration = (ms: number) =>
+  ms < 1000 ? `${ms} ms` : `${Math.round(ms / 1000)} seconds`;
+
 export class Inference {
   constructor(
     private readonly deps: {
@@ -197,6 +211,11 @@ export class Inference {
        * rejects with the abort reason and is not traced: it explains nothing.
        */
       signal?: AbortSignal;
+      /**
+       * Gives up on a call that takes longer than this, which fails like any
+       * other failed call (and is traced as one), unlike an abort.
+       */
+      timeoutMs?: number;
     },
   ): Promise<{ value: OutputOf<K>; traceId: string | null }> {
     const spec = MODEL_CALLS[kind] as unknown as Spec;
@@ -211,6 +230,7 @@ export class Inference {
       replayOf: null,
       record: await this.deps.debug(),
       signal: options.signal,
+      timeoutMs: options.timeoutMs,
     });
     if (!result.ok) throw withTrace(result.error, result.traceId);
     return { value: result.value as OutputOf<K>, traceId: result.traceId };
@@ -312,6 +332,7 @@ export class Inference {
       replayOf: string | null;
       record: boolean;
       signal?: AbortSignal;
+      timeoutMs?: number;
     },
   ): Promise<
     | { ok: true; value: unknown; traceId: string | null }
@@ -373,17 +394,41 @@ export class Inference {
           )
         : null;
     let completion: Awaited<ReturnType<Complete>>;
+    // The timeout aborts the request itself, so the host closes it too.
+    const timeout =
+      request.timeoutMs === undefined ? null : new AbortController();
+    const timer =
+      timeout &&
+      setTimeout(
+        () => timeout.abort(new Error("timed out")),
+        request.timeoutMs,
+      );
+    const signal =
+      timeout && request.signal
+        ? AbortSignal.any([request.signal, timeout.signal])
+        : (timeout?.signal ?? request.signal);
     try {
       completion = await this.deps.complete(
         request.prompt,
         request.model,
-        request.signal,
+        signal,
         undefined,
         request.threadId ? { threadId: request.threadId } : undefined,
       );
     } catch (error) {
       if (request.signal?.aborted) throw request.signal.reason;
-      return { ok: false, error, traceId: record("failed", { error }) };
+      const failure = timeout?.signal.aborted
+        ? new Error(
+            `The model didn't answer within ${duration(request.timeoutMs!)}.`,
+          )
+        : error;
+      return {
+        ok: false,
+        error: failure,
+        traceId: record("failed", { error: failure }),
+      };
+    } finally {
+      if (timer) clearTimeout(timer);
     }
     let value: unknown;
     try {

@@ -24,6 +24,11 @@ const EVENT: Record<TraceKind, { label: string; description: string }> = {
     description:
       "The model assessed this thread’s progress, workstream, and possible follow-ups. This is an assessment, not proof that a change was applied.",
   },
+  "opening-goal": {
+    label: "Opening title",
+    description:
+      "The model named this thread from its opening request, before its first turn finished. The analysis of that turn keeps or replaces the title.",
+  },
   route: {
     label: "Destination selection",
     description:
@@ -87,8 +92,12 @@ function CallResult({ trace }: { trace: TraceSummary }) {
   // stay intact under Model result rather than being interpreted as a new state.
   const [state, ...parts] = trace.summary.split(" · ");
   const lifecycle = trace.kind === "analysis" ? STATES[state!] : undefined;
+  // Calls recorded before goals became titles say "new title".
   const suggestions = parts.filter(
-    (part) => part.startsWith("drift → ") || part.startsWith("new title "),
+    (part) =>
+      part.startsWith("drift → ") ||
+      part.startsWith("goal ") ||
+      part.startsWith("new title "),
   );
   const subject = parts
     .filter((part) => !suggestions.includes(part))
@@ -97,7 +106,9 @@ function CallResult({ trace }: { trace: TraceSummary }) {
     return (
       <p className="mt-1 break-words text-xs">
         <span className="text-muted-foreground">Model result: </span>
-        {trace.summary.replace(/(^| · )new: /g, "$1New workstream: ")}
+        {trace.summary
+          .replace(/(^| · )new: /g, "$1New workstream: ")
+          .replace(/^goal /, "Title: ")}
       </p>
     );
   return (
@@ -118,7 +129,7 @@ function CallResult({ trace }: { trace: TraceSummary }) {
           {suggestions
             .join(" · ")
             .replace(/drift → /g, "Different workstream: ")
-            .replace(/new title /g, "Title: ")}
+            .replace(/(^| · )(?:new title|goal) /g, "$1Title: ")}
         </p>
       ) : null}
     </div>

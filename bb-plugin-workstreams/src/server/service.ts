@@ -18,7 +18,7 @@ import {
   type InventoryThread,
 } from "./inventory.ts";
 import type { JournalEntry, Journal, Source, UndoStep } from "./journal.ts";
-import { retitleDecision } from "../domain/titles.ts";
+import { retitleDecision, type RetitleBasis } from "../domain/titles.ts";
 import {
   cleanupCandidate,
   sectionMembers,
@@ -251,14 +251,17 @@ export class WorkstreamService {
   }
 
   /**
-   * Applies a title that analysis suggested for the thread's turn at
-   * `revision`, under the retitle policy (SPEC §10.1). When the policy
-   * declines it, nothing changes and `skipped` says why.
+   * Applies a title that Workstreams inferred as the thread's goal, under the
+   * retitle policy (SPEC §10.1). `revision` is the thread revision the goal
+   * was inferred for, and `basis` says from what: a finished turn's analysis,
+   * or the opening request alone while the first turn runs. When the policy
+   * declines, nothing changes and `skipped` says why.
    */
   retitle(
     threadId: string,
     suggestion: string | null,
     revision: number,
+    basis: RetitleBasis = "analysis",
   ): Promise<{ entry: JournalEntry | null; skipped: string | null }> {
     return this.serial(async () => {
       const sdk = this.sdk();
@@ -281,19 +284,36 @@ export class WorkstreamService {
         },
         suggestion,
         revision,
+        basis,
         now: this.now(),
       });
-      if (!decision.ok || !suggestion)
+      if (!decision.ok || !suggestion) {
+        // The analysis of the first finished turn settles a provisional title
+        // even when it keeps it; any later change is an ordinary retitle.
+        if (
+          !decision.ok &&
+          decision.reason === "unchanged" &&
+          basis === "analysis" &&
+          record.provisional &&
+          thread.status === "idle" &&
+          (thread.latestAttentionAt ?? thread.updatedAt) <= revision
+        )
+          writeTitleRecord(this.db, threadId, {
+            ...record,
+            provisional: false,
+          });
         return {
           entry: null,
           skipped: decision.ok ? "no-suggestion" : decision.reason,
         };
+      }
       await sdk.threads.update({ threadId, title: suggestion });
       writeTitleRecord(this.db, threadId, {
         observed: suggestion,
         written: suggestion,
         locked: false,
         retitledAt: this.now(),
+        provisional: basis === "opening",
       });
       this.seeThread(
         threadId,
@@ -304,9 +324,14 @@ export class WorkstreamService {
       const entry = this.journal.add({
         action: "retitle",
         source: "auto",
-        rationale: thread.title
-          ? `Retitled from ${from}`
-          : "Titled an untitled thread",
+        rationale:
+          basis === "opening"
+            ? "Titled from the opening request"
+            : record.provisional
+              ? `Retitled after the first turn from ${from}`
+              : thread.title
+                ? `Retitled from ${from}`
+                : "Titled an untitled thread",
         threads: [{ id: threadId, name: suggestion }],
         workstreams: [],
         undo: { kind: "retitle", threadId, from: thread.title, to: suggestion },
@@ -475,6 +500,7 @@ export class WorkstreamService {
         written: null,
         locked: true,
         retitledAt: null,
+        provisional: false,
       });
       this.seeThread(
         step.threadId,

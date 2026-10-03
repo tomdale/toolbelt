@@ -462,6 +462,7 @@ export function registerCli(
                   : [
                       `${result.state.replace("_", " ")} · ${result.subject ?? "no subject"} · ${seconds}s · ${result.model}`,
                       result.recap,
+                      ...(result.goal ? [`Goal: ${result.goal}`] : []),
                       ...(result.needsYou
                         ? [`Up Next: ${result.needsYou}`]
                         : []),

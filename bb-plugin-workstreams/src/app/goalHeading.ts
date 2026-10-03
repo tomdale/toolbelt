@@ -88,7 +88,7 @@ export function headingHeight(
   );
 }
 
-/** The collapsed text block (workstream over goal) in px. */
+/** The collapsed text block (workstream over title) in px. */
 export function compactBlock(base: number, eyebrow: Eyebrow | null): number {
   return (
     (eyebrow ? eyebrow.compactBlock : 0) +

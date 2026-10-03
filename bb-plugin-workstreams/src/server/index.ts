@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { actOn, registerCli } from "./cli.ts";
-import { isCurrent } from "../domain/analysis.ts";
+import { GOAL_MAX, isCurrent } from "../domain/analysis.ts";
 import { registerAgentInstructions } from "./agents.ts";
 import { Analyzer } from "./analyzer.ts";
 import { RecapArchive } from "./archive.ts";
@@ -23,9 +23,11 @@ import { hostContract } from "./inference/contract.ts";
 import { openDatabase } from "./db.ts";
 import { Journal } from "./journal.ts";
 import { Inference } from "./model.ts";
+import { OpeningTitles } from "./opening.ts";
 import { loadOrder, saveOrder } from "./order.ts";
 import { loadSpinner, saveSpinner } from "./spinner.ts";
 import { UserError, WorkstreamService } from "./service.ts";
+import type { RetitleBasis } from "../domain/titles.ts";
 import { TraceStore } from "./trace.ts";
 import { AgentRecaps } from "./recap.ts";
 import { registerQuestionTool } from "./questions/tool.ts";
@@ -169,6 +171,39 @@ export default async function plugin(bb: BbPluginApi) {
   });
   // Retention also applies while Debug mode is off and nothing is recorded.
   traces.prune({ force: true });
+  /**
+   * Gives a thread its goal as its title, when the retitle policy and the
+   * `autoTitle` preference allow it, and records the outcome on the call's
+   * trace.
+   */
+  const applyGoal = async (
+    threadId: string,
+    goal: string,
+    revision: number,
+    traceId: string | null | undefined,
+    basis: RetitleBasis,
+  ): Promise<void> => {
+    try {
+      if (!currentPrefs().threads.autoTitle) {
+        inference.annotate(traceId, {
+          title: "not applied: the autoTitle setting is off",
+        });
+        return;
+      }
+      const { entry, skipped } = await service.retitle(
+        threadId,
+        goal,
+        revision,
+        basis,
+      );
+      if (entry) inference.link(traceId, { kind: "entry", ref: entry.id });
+      inference.annotate(traceId, {
+        title: entry ? "applied" : `not applied: ${skipped}`,
+      });
+    } catch (error) {
+      bb.log.warn(`Retitling ${threadId} failed: ${String(error)}`);
+    }
+  };
   const analyzer = new Analyzer({
     sdk: () => bb.sdk,
     db,
@@ -176,33 +211,32 @@ export default async function plugin(bb: BbPluginApi) {
     inference,
     onChange: notify,
     onResult: (threadId, result) => {
-      if (!result.title) return;
-      void Promise.resolve(currentPrefs().threads.autoTitle)
-        .then(async (autoTitle) => {
-          if (!autoTitle) {
-            inference.annotate(result.traceId, {
-              title: "not applied: the autoTitle setting is off",
-            });
-            return;
-          }
-          const { entry, skipped } = await service.retitle(
-            threadId,
-            result.title,
-            result.revision,
-          );
-          if (entry)
-            inference.link(result.traceId, { kind: "entry", ref: entry.id });
-          inference.annotate(result.traceId, {
-            title: entry ? "applied" : `not applied: ${skipped}`,
-          });
-        })
-        .catch((error: unknown) =>
-          bb.log.warn(`Retitling ${threadId} failed: ${String(error)}`),
+      // A goal carried over from before goals were capped can be too long for
+      // a title.
+      if (result.goal && result.goal.length <= GOAL_MAX)
+        void applyGoal(
+          threadId,
+          result.goal,
+          result.revision,
+          result.traceId,
+          "analysis",
         );
     },
     log: (message) => bb.log.warn(message),
     info: (message) => bb.log.info(message),
   });
+  const opening = new OpeningTitles({
+    sdk: () => bb.sdk,
+    db,
+    inference,
+    model: async () => currentPrefs().threads.analysisModel,
+    enabled: () => currentPrefs().threads.autoTitle,
+    analyzed: (threadId) => analyzer.get(threadId) !== undefined,
+    apply: (threadId, goal, revision, traceId) =>
+      applyGoal(threadId, goal, revision, traceId, "opening"),
+    log: (message) => bb.log.warn(message),
+  });
+  bb.onDispose(() => opening.dispose());
   bb.onDispose(() => analyzer.dispose());
   const recaps = new AgentRecaps({
     bb,
@@ -259,6 +293,9 @@ export default async function plugin(bb: BbPluginApi) {
   // filed where the preview said: via the banner's submit data, or, for a
   // plain Enter, by matching the prompt. The hook itself always proceeds.
   bb.experimental_hooks.on("message.dispatch", async (ctx) => {
+    // A thread's first request is the earliest anything can name it. The
+    // naming runs apart from this admission and can't fail it.
+    opening.onDispatch(ctx);
     const correction = await recaps.onDispatch(ctx);
     if (correction) return correction;
     // Sending a snoozed thread a message means you're back on it.
@@ -439,6 +476,7 @@ export default async function plugin(bb: BbPluginApi) {
         .reconcile()
         .then(() => {
           analyzer.catchUp(service.threads());
+          opening.sweep(service.threads());
           void sweepSnoozes();
           map.refresh(service.threads(), analyzer.all());
         })
@@ -501,6 +539,7 @@ export default async function plugin(bb: BbPluginApi) {
   bb.events.on("thread.deleted", ({ thread }) => {
     snoozes.clear(thread.id);
     analyzer.forget(thread.id);
+    opening.forget(thread.id);
     recaps.forget(thread.id);
     service.forget(thread.id);
   });
@@ -511,6 +550,8 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.events.on("thread.active", ({ thread }) => {
     analyzer.onActive(thread.id);
+    // Covers a thread whose first request this run didn't see dispatched.
+    void opening.onRunning(thread);
   });
 
   const userFacing = async <T>(work: () => Promise<T>): Promise<T> => {

@@ -506,7 +506,6 @@ export function reportedAnalysis(
 ): ThreadAnalysis & { driftSectionId: string | null; traceId: string | null } {
   return {
     subject: null,
-    title: null,
     goal: base?.goal ?? null,
     drift: null,
     driftSectionId: null,

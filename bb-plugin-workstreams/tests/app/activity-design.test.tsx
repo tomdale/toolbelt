@@ -100,11 +100,40 @@ it("labels lifecycle and subject, explains review on focus, and hides metrics by
   expect(within(row).getByText("Duration")).toBeTruthy();
 });
 
-it("does not mistake an optional title suggestion for a subject", async () => {
+it("does not mistake a title an earlier analysis suggested for a subject", async () => {
   const slot = await page("done · new title “Parser complete”");
   await slot.findByText("Done");
   expect(slot.queryByText("Subject:")).toBeNull();
   expect(slot.getByText("Title: “Parser complete”")).toBeTruthy();
+});
+
+it("shows the goal an analysis inferred as the title it suggests", async () => {
+  const slot = await page("done · Lumen · goal “Fix stale build cache”");
+  await slot.findByText("Done");
+  expect(slot.getByText("Subject:").parentElement!.textContent).toBe(
+    "Subject: Lumen",
+  );
+  expect(slot.getByText("Title: “Fix stale build cache”")).toBeTruthy();
+});
+
+it("shows what the opening-request call named a thread", async () => {
+  const slot = await page("goal “Fix stale build cache”", {
+    kind: "opening-goal",
+    label: "Fix the stale build cache in the monorepo",
+  });
+  const row = (
+    await slot.findByText("Fix the stale build cache in the monorepo")
+  ).closest("li")!;
+  expect(within(row).getByText("Opening title")).toBeTruthy();
+  expect(within(row).getByText("Model result:")).toBeTruthy();
+  expect(within(row).getByText(/Title: “Fix stale build cache”/)).toBeTruthy();
+  const none = await page("no goal: the request doesn’t say", {
+    kind: "opening-goal",
+    label: "hi",
+  });
+  expect(
+    await none.findByText("no goal: the request doesn’t say"),
+  ).toBeTruthy();
 });
 
 it("preserves unknown summary formats as labeled model results", async () => {

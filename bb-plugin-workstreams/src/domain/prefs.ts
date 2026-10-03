@@ -90,9 +90,9 @@ const GROUPS = {
     waitingCount: [countVisibility, "collapsed"],
   },
   threads: {
-    /** Title untitled threads and retitle them as work moves on. */
+    /** Title untitled threads with their goal and retitle them as work moves on. */
     autoTitle: [z.boolean(), true],
-    /** Summarizes each thread after every turn, and writes titles. */
+    /** Summarizes each thread after every turn, and names threads. */
     analysisModel: [modelChoiceSchema, DEFAULT_MODELS.analysis],
     /** A link to the parent thread in child threads' headers. */
     showParentLink: [z.boolean(), false],
