@@ -284,8 +284,6 @@ function usePlacement(mount: Mount | null, base: number): Placement | null {
     const header = mount.scroller
       .closest("[data-split-pane-id]")
       ?.querySelector<HTMLElement>(":scope > header");
-    // The heading replaces BB's own thread title in the title bar.
-    header?.setAttribute("data-ws-hide-title", "");
     const measure = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
@@ -314,7 +312,6 @@ function usePlacement(mount: Mount | null, base: number): Placement | null {
       resize.disconnect();
       mutations.disconnect();
       window.removeEventListener("resize", measure);
-      header?.removeAttribute("data-ws-hide-title");
     };
   }, [mount, base]);
   return placement;
@@ -381,6 +378,18 @@ export function StickyGoalHeader(): React.ReactElement | null {
       delete mount.root.dataset.collapsed;
     };
   }, [mount, collapsed, fade, height, settled]);
+
+  // The heading replaces BB's own thread title in the title bar, but only
+  // while it is actually drawn: a thread without a goal keeps its title.
+  const showing = !!(mount && context && placement);
+  useLayoutEffect(() => {
+    if (!mount || !showing) return;
+    const header = mount.scroller
+      .closest("[data-split-pane-id]")
+      ?.querySelector<HTMLElement>(":scope > header");
+    header?.setAttribute("data-ws-hide-title", "");
+    return () => header?.removeAttribute("data-ws-hide-title");
+  }, [mount, showing]);
 
   useLayoutEffect(() => {
     if (!mount) return;
