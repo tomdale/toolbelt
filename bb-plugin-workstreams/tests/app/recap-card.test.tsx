@@ -91,6 +91,7 @@ async function mount(
     threads?: ReturnType<typeof sidebarThread>[];
     archive?: () => { ok: boolean } | Promise<{ ok: boolean }>;
     send?: (input: unknown) => { ok: boolean } | Promise<{ ok: boolean }>;
+    agents?: (input: { threadIds: string[] }) => { agents: unknown[] };
   } = {},
 ) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
@@ -158,6 +159,8 @@ async function mount(
           (() => {
             throw new Error("unexpected recap_send");
           }),
+        recap_agents: (input: unknown) =>
+          options.agents?.(input as { threadIds: string[] }) ?? { agents: [] },
         recap_cancel_waiting: () => {
           waitingCancelled = true;
           return { ok: true };
@@ -469,6 +472,47 @@ it.each([1, 2])(
     );
   },
 );
+
+it("reads hidden agent threads from the server", async () => {
+  const slot = await mount({
+    recap: {
+      ...WORKING,
+      waitingAgents: [
+        { threadId: "thr_hidden", task: "Run the suite" },
+        { threadId: "thr_gone", task: "Lint the code" },
+      ],
+    },
+    agents: ({ threadIds }) => ({
+      agents: threadIds.includes("thr_hidden")
+        ? [
+            {
+              threadId: "thr_hidden",
+              projectId: "proj_1",
+              title: "Suite runner",
+              status: "active",
+              runtimeStatus: "active",
+              hasPendingInteraction: false,
+              isArchived: false,
+            },
+          ]
+        : [],
+    }),
+  });
+  const list = await slot.findByRole("list", { name: "Awaited agents" });
+  const link = await slot.findByRole("link", { name: "Suite runner" });
+  expect(link.getAttribute("href")).toBe("/projects/proj_1/threads/thr_hidden");
+  const rows = [...list.querySelectorAll("li")];
+  expect(rows.map((row) => row.getAttribute("data-agent-status"))).toEqual([
+    "running",
+    "unknown",
+  ]);
+  expect(rows[0]!.textContent).toContain("Running");
+  expect(rows[1]!.textContent).toContain("Unavailable");
+  expect(slot.inspection.rpcCalls).toContainEqual({
+    method: "recap_agents",
+    input: { threadIds: ["thr_hidden", "thr_gone"] },
+  });
+});
 
 it.each([
   [{ hasPendingInteraction: true }, "input", "Needs input"],
