@@ -215,6 +215,7 @@ export function WorkstreamsPage({
             rpc={ws.rpc}
             records={Object.values(ws.server.workstreams)}
             bootstrapped={ws.server.bootstrapped}
+            onShowActivity={() => setTab("activity")}
           />
         ) : (
           <Activity

@@ -1,6 +1,7 @@
 /**
- * The Map tab: the workstream editor (SPEC §7) and the one-time organizing
- * flow (§8).
+ * The Organize tab: the organizing flow (SPEC §8) above the editor for each
+ * workstream's description and aliases (§7). The editor hides while a pass
+ * runs or awaits review, since a metadata edit would make the preview stale.
  */
 import { useEffect, useState } from "react";
 import type { useRpc } from "@get-bb/plugin-sdk/app";
@@ -11,6 +12,7 @@ import { ghostButton, primaryButton } from "./controls.ts";
 import { Organize } from "./Organize.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
+import { useThreadTotals, type ThreadTotals } from "./thread-totals.ts";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 
@@ -18,35 +20,82 @@ export function MapTab({
   rpc,
   records,
   bootstrapped,
+  onShowActivity,
 }: {
   rpc: Rpc;
   records: MapRecord[];
   bootstrapped: boolean;
+  onShowActivity?: () => void;
 }) {
+  const totals = useThreadTotals();
+  const unfiled = totals.inSection(null);
   return (
-    <div className="mt-6 flex flex-col gap-8">
-      <Organize rpc={rpc} bootstrapped={bootstrapped} />
-      <section aria-label="Current workstreams">
-        <h2 className="px-2 pb-1.5 text-xs font-medium text-muted-foreground">
-          Current workstreams
-        </h2>
-        <ul>
-          {[...records]
-            .sort((a, b) => compareGroupNames(a.name, b.name))
-            .map((record) => (
-              <MapRow key={record.sectionId} rpc={rpc} record={record} />
-            ))}
-        </ul>
-      </section>
+    <div className="mt-6">
+      <Organize
+        rpc={rpc}
+        bootstrapped={bootstrapped}
+        onShowActivity={onShowActivity}
+      >
+        <section aria-label="Current workstreams">
+          <div className="flex items-baseline gap-2 px-2 pb-1.5">
+            <h2 className="text-xs font-medium text-muted-foreground">
+              Current workstreams
+            </h2>
+            <span className="text-[11px] tabular-nums text-muted-foreground/70">
+              {records.length}
+            </span>
+            <span className="flex-1" />
+            {totals.ready && totals.tasks ? (
+              <span className="text-[11px] tabular-nums text-muted-foreground/70">
+                {countLabel(totals.tasks, totals.childThreads)}
+                {unfiled.tasks ? ` · ${unfiled.tasks} unfiled` : ""}
+              </span>
+            ) : null}
+          </div>
+          <ul>
+            {[...records]
+              .sort((a, b) => compareGroupNames(a.name, b.name))
+              .map((record) => (
+                <MapRow
+                  key={record.sectionId}
+                  rpc={rpc}
+                  record={record}
+                  totals={totals}
+                />
+              ))}
+          </ul>
+        </section>
+      </Organize>
     </div>
   );
 }
 
-function MapRow({ rpc, record }: { rpc: Rpc; record: MapRecord }) {
+/** Task roots, then the child threads that follow them. */
+function countLabel(tasks: number, children: number): string {
+  if (!tasks) return "Empty";
+  const label = `${tasks} ${tasks === 1 ? "task" : "tasks"}`;
+  return children
+    ? `${label} · ${children} child ${children === 1 ? "thread" : "threads"}`
+    : label;
+}
+
+function MapRow({
+  rpc,
+  record,
+  totals,
+}: {
+  rpc: Rpc;
+  record: MapRecord;
+  totals: ThreadTotals;
+}) {
   const [editing, setEditing] = useState(false);
   const [description, setDescription] = useState(record.description ?? "");
   const [aliases, setAliases] = useState(record.aliases.join(", "));
   const [error, setError] = useState<string | null>(null);
+  const live = totals.inSection(record.sectionId);
+  const count = totals.ready
+    ? live
+    : { tasks: record.evidence.threadCount, children: 0 };
   useEffect(() => {
     if (editing) return;
     setDescription(record.description ?? "");
@@ -73,11 +122,11 @@ function MapRow({ rpc, record }: { rpc: Rpc; record: MapRecord }) {
       <div className="flex items-baseline gap-2">
         <WorkstreamName
           name={record.name}
-          muted={record.evidence.threadCount === 0}
+          muted={count.tasks === 0}
           className="font-medium"
         />
-        <span className="text-[11px] tabular-nums text-muted-foreground">
-          {record.evidence.threadCount || "Empty"}
+        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+          {countLabel(count.tasks, count.children)}
         </span>
         <span className="flex-1" />
         {record.description && record.descriptionSource === "generated" ? (
