@@ -18,21 +18,31 @@ export type ClassifyInput = {
   requests?: string[];
 };
 const classificationSchema = z.object({
-  subjectId: z.string().nullable(),
+  subjectId: z.string().nullish(),
   proposed: z
     .object({
       name: z.string().trim().min(1).max(80),
-      description: z.string().trim().max(300),
-      parentId: z.string().nullable(),
+      description: z
+        .string()
+        .trim()
+        .max(300)
+        .nullish()
+        .transform((d) => d ?? ""),
+      parentId: z.string().nullish(),
       ancestors: z
         .array(
           z.object({
             name: z.string().trim().min(1).max(80),
-            description: z.string().trim().max(300),
+            description: z
+              .string()
+              .trim()
+              .max(300)
+              .nullish()
+              .transform((d) => d ?? ""),
           }),
         )
         .max(5)
-        .optional(),
+        .nullish(),
     })
     .nullable(),
 });

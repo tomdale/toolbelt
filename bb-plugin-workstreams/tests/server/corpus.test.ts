@@ -19,6 +19,13 @@ afterEach(async () => {
 describe("CorpusStore", () => {
   it("builds missing local ancestry and resets all Catalog data only", () => {
     const { corpus } = store();
+    const direct = corpus.rememberProposal({
+      name: "Root Item",
+      description: "No ancestors",
+      parentId: null,
+      ancestors: null,
+    });
+    expect(direct.parentId).toBeNull();
     const child = corpus.rememberProposal({
       name: "Up Next",
       description: "Upcoming tasks",

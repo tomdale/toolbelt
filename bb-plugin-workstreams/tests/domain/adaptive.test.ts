@@ -32,6 +32,30 @@ describe("separated classification and grouping", () => {
     expect(
       parseClassification('{"subjectId":"f","proposed":null}', input).subjectId,
     ).toBe("f");
+    expect(
+      parseClassification(
+        '{"subjectId":null,"proposed":{"name":"Bookings","description":"Reservations","parentId":"p","ancestors":null}}',
+        input,
+      ).proposed?.ancestors,
+    ).toBeNull();
+    expect(
+      parseClassification(
+        '{"subjectId":null,"proposed":{"name":"Bookings","description":null,"parentId":null,"ancestors":null}}',
+        input,
+      ).proposed?.description,
+    ).toBe("");
+    expect(
+      parseClassification(
+        '{"subjectId":null,"proposed":{"name":"Bookings","description":"Reservations","parentId":"p"}}',
+        input,
+      ).proposed?.ancestors,
+    ).toBeUndefined();
+    expect(
+      parseClassification(
+        '{"subjectId":null,"proposed":{"name":"Bookings","description":"Reservations","parentId":"p","ancestors":[]}}',
+        input,
+      ).proposed?.ancestors,
+    ).toEqual([]);
     expect(() =>
       parseClassification('{"subjectId":"invented","proposed":null}', input),
     ).toThrow();

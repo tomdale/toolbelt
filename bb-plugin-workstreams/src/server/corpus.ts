@@ -210,11 +210,11 @@ export class CorpusStore {
   rememberProposal(proposal: {
     name: string;
     description: string;
-    parentId: string | null;
-    ancestors?: { name: string; description: string }[];
+    parentId?: string | null;
+    ancestors?: { name: string; description: string }[] | null;
   }): CorpusEntity {
     return this.db.transaction(() => {
-      let parent = proposal.parentId;
+      let parent = proposal.parentId ?? null;
       for (const ancestor of proposal.ancestors ?? [])
         parent = this.remember(ancestor.name, ancestor.description, parent).id;
       return this.remember(proposal.name, proposal.description, parent);

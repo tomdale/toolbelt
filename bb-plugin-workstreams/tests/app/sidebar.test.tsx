@@ -1411,7 +1411,7 @@ describe("snoozing", () => {
     const before = Date.now();
     fireEvent.click(
       within(alpha).getAllByRole("button", {
-        name: /^Snooze until \d/,
+        name: /^Snooze until (?:tomorrow, )?\d/,
       })[0]!,
     );
     await waitFor(() =>
