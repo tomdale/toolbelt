@@ -11,7 +11,8 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { useRpc } from "@get-bb/plugin-sdk/app";
+import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
+import { toast } from "sonner";
 import { Icon } from "@/components/ui/icon";
 import type { RouteInput } from "../../domain/router.ts";
 import type { Trace } from "../../domain/trace.ts";
@@ -116,6 +117,8 @@ function Heading({ children }: { children: ReactNode }) {
 
 export function NewWorkDebug({ newWork }: { newWork: NewWork }) {
   const state = useSyncExternalStore(newWork.subscribe, newWork.snapshot);
+  const rpc = useRpc<RpcContract>();
+  const navigate = useBbNavigate();
   const projects = useProjects();
   const { decision } = state;
   const traceId = decision?.traceId ?? null;
@@ -124,6 +127,7 @@ export function NewWorkDebug({ newWork }: { newWork: NewWork }) {
   const input = (trace?.input ?? null) as Partial<RouteInput> | null;
   const notes = decision?.explanation?.notes ?? [];
   const [copied, setCopied] = useState(false);
+  const [flagging, setFlagging] = useState(false);
   const copy = async () => {
     const { events, ...dialog } = state;
     try {
@@ -137,6 +141,29 @@ export function NewWorkDebug({ newWork }: { newWork: NewWork }) {
     }
   };
   const visibility = suggestionVisibility(state);
+  const flagResult = async () => {
+    if (!decision || flagging) return;
+    setFlagging(true);
+    try {
+      const result = await rpc.call("flagRoute", {
+        diagnostics: json({
+          decision,
+          trace,
+          traceError: loaded?.error ?? null,
+          dialog: state,
+          events: state.events,
+        }),
+        projectId: state.selection?.projectId ?? null,
+      });
+      navigate.toThread(result.threadId);
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "Couldn't report the result.",
+      );
+    } finally {
+      setFlagging(false);
+    }
+  };
   return (
     <details className="ws-new-work-debug group/debug mt-3 rounded-lg border border-dashed border-border">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
@@ -258,7 +285,23 @@ export function NewWorkDebug({ newWork }: { newWork: NewWork }) {
             </div>
           </details>
         ) : null}
-        <div className="mt-3 flex justify-end">
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
+          {decision ? (
+            <button
+              type="button"
+              onClick={() => void flagResult()}
+              disabled={flagging || (!!traceId && !loaded)}
+              title="Creates a triage thread in the Workstreams workstream with this decision and its diagnostics"
+              className={smallButton}
+            >
+              <Icon
+                name={flagging ? "Spinner" : "Bug"}
+                aria-hidden
+                className={`size-3.5 ${flagging ? "animate-spin" : ""}`}
+              />
+              {flagging ? "Creating report…" : "Flag inaccurate result"}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => void copy()}
