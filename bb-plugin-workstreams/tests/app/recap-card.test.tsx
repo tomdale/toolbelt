@@ -64,7 +64,20 @@ afterEach(() => {
   interactionOverride.value = null;
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
+
+// Radix sizes a hint's arrow with a ResizeObserver, which jsdom lacks.
+function stubResizeObserver() {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+}
 
 const RECAP = {
   id: "r1",
@@ -979,6 +992,7 @@ it("sends a suggested action on an ordinary click", async () => {
 });
 
 it("shows a short sentence-case action label with neutral styling", async () => {
+  stubResizeObserver();
   const slot = await mount({
     recap: {
       next: [
@@ -998,21 +1012,15 @@ it("shows a short sentence-case action label with neutral styling", async () => 
   expect(button.className).toContain("border-border");
   expect(button.className).toContain("bg-transparent");
   expect(button.getAttribute("aria-description")).toBeNull();
-  fireEvent.pointerEnter(button, { pointerType: "mouse" });
-  expect(
-    await slot.findByText("Check for regressions before shipping"),
-  ).toBeTruthy();
-  const popover = slot
-    .getByText("Check for regressions before shipping")
-    .closest('[role="dialog"]');
-  expect(popover).toBeTruthy();
-  expect(popover!.className).toContain("bg-popover");
-  expect(popover!.className).toContain("rounded-xl");
-  expect(popover!.className).toContain("shadow-xl");
-  expect(slot.getByText("Suggested action")).toBeTruthy();
-  expect(slot.getByText("⇧").parentElement?.textContent).toContain(
-    "Click to add to composer",
-  );
+  fireEvent.pointerMove(button, {
+    pointerType: "mouse",
+    pointerX: 1,
+    pointerY: 1,
+  });
+  const hint = await slot.findByRole("tooltip", {}, { timeout: 1500 });
+  expect(hint.textContent).toContain("Check for regressions before shipping");
+  expect(hint.textContent).toContain("click to edit first");
+  expect(hint.querySelector('kbd[aria-label="Shift"]')).toBeTruthy();
   fireEvent.click(button);
   await waitFor(() =>
     expect(slot.inspection.rpcCalls).toContainEqual({
@@ -1026,30 +1034,23 @@ it("shows a short sentence-case action label with neutral styling", async () => 
   );
 });
 
-it("sends immediately when clicking an action with an anchored popover", async () => {
-  const slot = await mount({
-    recap: {
-      next: [
-        {
-          title: "Run tests",
-          message: "Run the full test suite",
-          description: "Check the suite before shipping",
-        },
-      ],
-    },
+it("teaches Shift-click on an action without a description and confirms the key", async () => {
+  stubResizeObserver();
+  const slot = await mount({ recap: { next: ["Summarize changes"] } });
+  const button = await slot.findByRole("button", { name: "Summarize changes" });
+  fireEvent.pointerMove(button, {
+    pointerType: "mouse",
+    pointerX: 1,
+    pointerY: 1,
   });
-  const button = await slot.findByRole("button", { name: "Run tests" });
-  fireEvent.click(button);
-  await waitFor(() =>
-    expect(slot.inspection.rpcCalls).toContainEqual({
-      method: "recap_send",
-      input: {
-        threadId: "t1",
-        recapId: "r1",
-        action: "Run the full test suite",
-      },
-    }),
-  );
+  const hint = await slot.findByRole("tooltip", {}, { timeout: 1500 });
+  expect(hint.textContent).toBe("\u21e7click to edit first");
+  const key = () => hint.querySelector('kbd[aria-label="Shift"]')!;
+  expect(key().className).not.toContain("bg-foreground");
+  fireEvent.keyDown(window, { key: "Shift", shiftKey: true });
+  await waitFor(() => expect(key().className).toContain("bg-foreground"));
+  fireEvent.keyUp(window, { key: "Shift", shiftKey: false });
+  await waitFor(() => expect(key().className).not.toContain("bg-foreground"));
 });
 
 it("edits an overflow action into the composer without sending", async () => {
