@@ -12,6 +12,11 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
 import { Icon } from "@/components/ui/icon";
 import {
   Markdown,
@@ -49,7 +54,6 @@ import {
 import { useContinuing } from "./useContinuing.ts";
 import { ActivityThreadLink } from "../page/ActivityThreadLink.tsx";
 import type { HeldSpace } from "./recapMotion.ts";
-import { Hint } from "../Hint.tsx";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 
 const CARD_CLASS =
@@ -1006,13 +1010,62 @@ function NextActionItem({
 }) {
   const message = nextActionMessage(action);
   const title = nextActionTitle(action);
+  const description =
+    typeof action === "string"
+      ? title !== message
+        ? message
+        : null
+      : action.description;
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const cancelClose = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  };
+  const showPopover = () => {
+    cancelClose();
+    setOpen(true);
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => {
+      closeTimer.current = null;
+      setOpen(false);
+    }, 120);
+  };
+  const closeIfFocusLeaves = (event: React.FocusEvent) => {
+    const next = event.relatedTarget;
+    if (
+      next instanceof Node &&
+      (triggerRef.current?.contains(next) || contentRef.current?.contains(next))
+    )
+      return;
+    setOpen(false);
+  };
+  useEffect(
+    () => () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    },
+    [],
+  );
   const button = (
     <Button
+      ref={triggerRef}
       type="button"
       variant="outline"
       size="sm"
       className="h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground"
       disabled={disabled || (!onSend && !onCompose)}
+      onPointerEnter={(event) => {
+        if (description && event.pointerType === "mouse") showPopover();
+      }}
+      onPointerLeave={(event) => {
+        if (description && event.pointerType === "mouse") scheduleClose();
+      }}
+      onFocus={showPopover}
+      onBlur={closeIfFocusLeaves}
       onClick={(event) => {
         if (event.shiftKey) onCompose?.(message);
         else if (onSend) void onSend(message);
@@ -1021,13 +1074,38 @@ function NextActionItem({
       <span>{title}</span>
     </Button>
   );
-  const description =
-    typeof action === "string"
-      ? title !== message
-        ? message
-        : null
-      : action.description;
-  return description ? <Hint label={description}>{button}</Hint> : button;
+  if (!description) return button;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverAnchor asChild>{button}</PopoverAnchor>
+      <PopoverContent
+        ref={contentRef}
+        align="center"
+        side="top"
+        sideOffset={8}
+        collisionPadding={12}
+        className="w-64 rounded-lg border-border bg-popover p-3 text-popover-foreground shadow-lg"
+        onPointerEnter={cancelClose}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse") scheduleClose();
+        }}
+        onFocusCapture={cancelClose}
+        onBlurCapture={closeIfFocusLeaves}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        <p className="text-sm leading-relaxed">{description}</p>
+        {onCompose ? (
+          <div className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-xs text-muted-foreground">
+            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">
+              ⇧
+            </kbd>
+            <span>Click to add to composer</span>
+          </div>
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 /** Actions stay as individual buttons only when all fit on one line. */

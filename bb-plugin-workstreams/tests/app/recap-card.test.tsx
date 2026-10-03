@@ -998,18 +998,19 @@ it("shows a short sentence-case action label with neutral styling", async () => 
   expect(button.className).toContain("border-border");
   expect(button.className).toContain("bg-transparent");
   expect(button.getAttribute("aria-description")).toBeNull();
-  fireEvent.pointerMove(button, {
-    pointerType: "mouse",
-    pointerX: 1,
-    pointerY: 1,
-  });
+  fireEvent.pointerEnter(button, { pointerType: "mouse" });
   expect(
-    await slot.findByText(
-      "Check for regressions before shipping",
-      {},
-      { timeout: 1500 },
-    ),
+    await slot.findByText("Check for regressions before shipping"),
   ).toBeTruthy();
+  const popover = slot.getByText(
+    "Check for regressions before shipping",
+  ).parentElement!;
+  expect(popover.className).toContain("bg-popover");
+  expect(popover.className).toContain("rounded-lg");
+  expect(popover.className).toContain("shadow-lg");
+  expect(slot.getByText("⇧").parentElement?.textContent).toContain(
+    "Click to add to composer",
+  );
   fireEvent.click(button);
   await waitFor(() =>
     expect(slot.inspection.rpcCalls).toContainEqual({
@@ -1018,6 +1019,32 @@ it("shows a short sentence-case action label with neutral styling", async () => 
         threadId: "t1",
         recapId: "r1",
         action: "Run the full test suite and summarize failures",
+      },
+    }),
+  );
+});
+
+it("sends immediately when clicking an action with an anchored popover", async () => {
+  const slot = await mount({
+    recap: {
+      next: [
+        {
+          title: "Run tests",
+          message: "Run the full test suite",
+          description: "Check the suite before shipping",
+        },
+      ],
+    },
+  });
+  const button = await slot.findByRole("button", { name: "Run tests" });
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls).toContainEqual({
+      method: "recap_send",
+      input: {
+        threadId: "t1",
+        recapId: "r1",
+        action: "Run the full test suite",
       },
     }),
   );
