@@ -492,7 +492,6 @@
 .ws-sticky-goal__plate {
   position: absolute;
   inset: 0;
-  border-bottom: 1px solid var(--border);
   background: var(--background);
 }
 .ws-goal-overlay {
