@@ -619,6 +619,35 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
+  it("keeps child disclosures beneath the sticky Up Next card", async () => {
+    const slot = await mount([
+      sidebarThread("parent", {
+        sectionId: "sec_a",
+        title: "Waiting parent",
+        hasPendingInteraction: true,
+        indicator: "waiting-for-input",
+        latestAttentionAt: Date.now() - 2_000,
+      }),
+      sidebarThread("child", {
+        parentThreadId: "parent",
+        sectionId: "sec_a",
+        title: "Child thread",
+        latestAttentionAt: Date.now() - 1_000,
+      }),
+      sidebarThread("other", {
+        sectionId: "sec_b",
+        title: "Other task",
+        latestAttentionAt: Date.now() - 3_000,
+      }),
+    ]);
+    const band = slot.getByRole("region", { name: "Up Next" });
+    const disclosure = within(band).getByRole("button", {
+      name: "Show child threads",
+    });
+    expect(disclosure.className).not.toContain("z-10");
+    slot.lifecycle.unmount();
+  });
+
   it("shows only top-level threads in Recent", async () => {
     const slot = await mount();
     expect(groupRows(slot, "Recent").sort()).toEqual([
