@@ -19,6 +19,8 @@ import {
 import { WorkstreamIcon } from "./WorkstreamIcon.tsx";
 
 const SCROLLER = "[data-thread-window] .thread-scrollbar";
+/** BB's composer shell, which holds the recap and question cards. */
+const COMPOSER = "[data-app-composer]";
 /**
  * BB's sliding app surface. On a phone it translates aside to reveal the
  * sidebar and the right panel, so whatever is drawn over the thread has to
@@ -87,7 +89,11 @@ function useMessageScroller(threadId: string | null): Mount | null {
 
     let current: Mount | null = null;
     const attach = () => {
-      const scrollers = document.querySelectorAll<HTMLElement>(SCROLLER);
+      // The composer's banners (the recap card, question cards) scroll their
+      // own text with the same class; they are never the message scroller.
+      const scrollers = [
+        ...document.querySelectorAll<HTMLElement>(SCROLLER),
+      ].filter((element) => !element.closest(COMPOSER));
       // Until the SDK exposes a pane-scoped mount point, avoid placing this
       // focused-thread heading in an ambiguous multi-pane layout.
       if (scrollers.length !== 1) {
