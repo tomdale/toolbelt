@@ -1,11 +1,8 @@
-import {
-  useBbContext,
-  experimental_useSidebarThreads,
-} from "@get-bb/plugin-sdk/app";
+import { useBbContext } from "@get-bb/plugin-sdk/app";
 import { createPortal } from "react-dom";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { workstreamHue } from "../domain/workstreamHue.ts";
-import { useSharedServerState } from "./serverState.ts";
+import { useEffect, useLayoutEffect, useState } from "react";
+import { useGoalContext } from "./goalContext.ts";
+import { setGoalHeadingCollapsed } from "./stickyGoalState.ts";
 import { WorkstreamIcon } from "./WorkstreamIcon.tsx";
 
 const SCROLLER = "[data-thread-window] .thread-scrollbar";
@@ -17,37 +14,30 @@ function messageColumn(scroller: HTMLElement): HTMLElement | null {
   return column instanceof HTMLElement ? column : null;
 }
 
-// Type sizes as multiples of the timeline's body font size. The heading is
-// always laid out at its expanded size; compacting scales the title and
-// subtitle down from their top-left corners, so every line keeps its place
-// and only shrinks. The workstream line above them neither moves nor resizes.
+// Type sizes as multiples of the timeline's body font size. The expanded
+// heading is the most prominent text on the page: the workstream, a large
+// title, and the current subtask. Scrolled away from the newest message it
+// leaves the page entirely and the title bar carries the workstream and goal
+// (see GoalTitleChip).
 const TITLE_SIZE = 1.5;
 const SUBTITLE_SIZE = 0.92;
 const TITLE_LINE = 4 / 3;
 const SUBTITLE_LINE = 1.4;
 const PAD_TOP = 0.85;
+const PAD_BOTTOM = 0.65;
 const EYEBROW_SIZE = 0.8;
-/** Eyebrow line plus the gap before the title, when there is a workstream. */
+/** Workstream line plus the gap before the title, when there is a workstream. */
 const EYEBROW_BLOCK = 1.25;
-const TITLE_COMPACT_SCALE = 0.6; // 0.9x body text
-const SUBTITLE_COMPACT_SCALE = 0.78; // 0.72x body text
 
 /** Heading height in px for a body font size. */
-function headingHeight(
-  base: number,
-  compact: boolean,
-  hasEyebrow: boolean,
-): number {
-  const title = TITLE_SIZE * TITLE_LINE * (compact ? TITLE_COMPACT_SCALE : 1);
-  const subtitle =
-    SUBTITLE_SIZE * SUBTITLE_LINE * (compact ? SUBTITLE_COMPACT_SCALE : 1);
+function headingHeight(base: number, hasEyebrow: boolean): number {
   return Math.round(
     base *
       (PAD_TOP +
         (hasEyebrow ? EYEBROW_BLOCK : 0) +
-        title +
-        subtitle +
-        (compact ? 0.3 : 0.65)),
+        TITLE_SIZE * TITLE_LINE +
+        SUBTITLE_SIZE * SUBTITLE_LINE +
+        PAD_BOTTOM),
   );
 }
 
@@ -113,9 +103,9 @@ function useMessageScroller(threadId: string | null): Mount | null {
       root.dataset.workstreamsStickyGoal = "";
       const baseFontSize =
         Number.parseFloat(getComputedStyle(column).fontSize) || 14;
-      const initialHeight = headingHeight(baseFontSize, false, true);
+      const initialHeight = headingHeight(baseFontSize, true);
       // The root takes no height of its own: the heading is drawn over the
-      // timeline from a fixed reserved gap, so expanding and compacting never
+      // timeline from a fixed reserved gap, so collapsing and expanding never
       // reflow the messages (which would shift scroll position mid-animation).
       root.style.marginBottom = `${initialHeight}px`;
       const previousScrollPaddingTop =
@@ -152,24 +142,24 @@ function useMessageScroller(threadId: string | null): Mount | null {
   return mount;
 }
 
-// The heading collapses once, rather than tracking the scroll position. It
-// compacts after scrolling this far from the newest message and expands again
-// only when back within the lower threshold, so hovering near the boundary
-// cannot make it flicker.
-const COMPACT_ENTER_PX = 240;
-const COMPACT_EXIT_PX = 120;
+// The heading leaves once, rather than tracking the scroll position. It
+// collapses after scrolling this far from the newest message and returns only
+// when back within the lower threshold, so hovering near the boundary cannot
+// make it flicker.
+const COLLAPSE_ENTER_PX = 240;
+const COLLAPSE_EXIT_PX = 120;
 
 function useScrollState(scroller: HTMLElement | null): {
-  compact: boolean;
+  collapsed: boolean;
   // BB's own overflow fades appear only once content has scrolled out of view,
   // so the fade beneath the heading is on exactly when the timeline is
   // detached from its top.
   fade: boolean;
 } {
-  const [state, setState] = useState({ compact: false, fade: false });
+  const [state, setState] = useState({ collapsed: false, fade: false });
   useEffect(() => {
     if (!scroller) {
-      setState({ compact: false, fade: false });
+      setState({ collapsed: false, fade: false });
       return;
     }
     let frame = 0;
@@ -180,12 +170,12 @@ function useScrollState(scroller: HTMLElement | null): {
         const fromBottom = Math.max(0, range - scroller.scrollTop);
         const fade = scroller.scrollTop > 1;
         setState((prev) => {
-          const compact = prev.compact
-            ? fromBottom > COMPACT_EXIT_PX
-            : fromBottom > COMPACT_ENTER_PX;
-          return prev.compact === compact && prev.fade === fade
+          const collapsed = prev.collapsed
+            ? fromBottom > COLLAPSE_EXIT_PX
+            : fromBottom > COLLAPSE_ENTER_PX;
+          return prev.collapsed === collapsed && prev.fade === fade
             ? prev
-            : { compact, fade };
+            : { collapsed, fade };
         });
       });
     };
@@ -208,110 +198,87 @@ function useScrollState(scroller: HTMLElement | null): {
  */
 export function StickyGoalHeader(): React.ReactPortal | null {
   const { threadId } = useBbContext();
-  const { threads, sections } = experimental_useSidebarThreads();
-  const { server } = useSharedServerState();
+  const context = useGoalContext(threadId);
   const mount = useMessageScroller(threadId);
-  const { compact, fade } = useScrollState(mount?.scroller ?? null);
+  const { collapsed, fade } = useScrollState(mount?.scroller ?? null);
 
-  const context = useMemo(() => {
-    if (!threadId) return null;
-    const thread = threads.find((item) => item.id === threadId);
-    if (!thread) return null;
-    const analysis = server.analysis[threadId];
-    const recap = server.recaps[threadId];
-    const goal =
-      analysis?.goal ??
-      (thread.title ? thread.displayTitle : "Building a clear thread goal");
-    // The current recap supplies the active subtask when it adds information.
-    const subtask = recap?.goal && recap.goal !== goal ? recap.goal : null;
-    const section = thread.sectionId
-      ? sections.find((item) => item.id === thread.sectionId)
-      : null;
-    const workstream = section
-      ? { name: section.name, hue: workstreamHue(section.id) }
-      : null;
-    return { goal, subtask, workstream };
-  }, [threadId, threads, sections, server.analysis, server.recaps]);
+  // Tell the title bar when to take over.
+  useEffect(() => {
+    if (!threadId || !mount) return;
+    setGoalHeadingCollapsed(threadId, collapsed);
+    return () => setGoalHeadingCollapsed(threadId, false);
+  }, [threadId, mount, collapsed]);
 
   const base = mount?.baseFontSize ?? 14;
   const hasEyebrow = !!context?.workstream;
-  const expandedHeight = headingHeight(base, false, hasEyebrow);
-  const compactHeight = headingHeight(base, true, hasEyebrow);
+  const height = headingHeight(base, hasEyebrow);
   const eyebrowBlock = hasEyebrow ? base * EYEBROW_BLOCK : 0;
-  const subtitle = context?.subtask ?? "";
-  const height = compact ? compactHeight : expandedHeight;
-  const titleScale = compact ? TITLE_COMPACT_SCALE : 1;
-  const subtitleScale = compact ? SUBTITLE_COMPACT_SCALE : 1;
-  const titleBlock = base * TITLE_SIZE * TITLE_LINE;
   useLayoutEffect(() => {
     if (!mount) return;
     mount.root.className = "ws-sticky-goal-root";
-    mount.root.dataset.compact = String(compact);
+    mount.root.dataset.collapsed = String(collapsed);
     mount.root.style.setProperty("--ws-sticky-fade", fade ? "1" : "0");
-    // The reserved gap follows the expanded height, which changes only when the
+    // The reserved gap follows the heading height, which changes only when the
     // thread gains or loses a workstream line.
-    mount.root.style.marginBottom = `${expandedHeight}px`;
-    mount.scroller.style.scrollPaddingTop = `${height}px`;
+    mount.root.style.marginBottom = `${height}px`;
+    mount.scroller.style.scrollPaddingTop = collapsed ? "0px" : `${height}px`;
     return () => {
       mount.root.className = "";
       mount.root.style.removeProperty("--ws-sticky-fade");
-      delete mount.root.dataset.compact;
+      delete mount.root.dataset.collapsed;
     };
-  }, [mount, compact, fade, height, expandedHeight]);
+  }, [mount, collapsed, fade, height]);
 
   if (!mount || !context) return null;
-  // The plate slides and the text scales (transforms only), so no layout runs
-  // mid-transition and messages never reflow. Text is anchored at its top-left
-  // and shrinks in place; only the subtitle rises, as the title above it gets
-  // shorter. Widths are widened by the inverse scale so ellipsis points match
-  // the visible size.
+  // Collapsing slides the heading up out of the scroller and fades its text
+  // (transforms and opacity only), so no layout runs mid-transition and
+  // messages never reflow. The plate's feathered fade rides along and ends up
+  // as a soft edge under the title bar.
   return createPortal(
-    <div className="ws-sticky-goal" style={{ height: expandedHeight }}>
+    <div className="ws-sticky-goal" style={{ height }}>
       <div
-        className="ws-sticky-goal__plate"
+        className="ws-sticky-goal__body"
         style={{
-          transform: `translateY(${compact ? compactHeight - expandedHeight : 0}px)`,
+          transform: `translateY(${collapsed ? -height : 0}px)`,
         }}
-      />
-      <div className="ws-sticky-goal__text" style={{ top: base * PAD_TOP }}>
-        {context.workstream && (
-          <div
-            className="ws-sticky-goal__workstream"
-            style={
-              {
-                fontSize: base * EYEBROW_SIZE,
-                "--ws-hue": context.workstream.hue,
-              } as React.CSSProperties
-            }
-          >
-            <WorkstreamIcon className="size-4 text-current" />
-            <span>{context.workstream.name}</span>
-          </div>
-        )}
-        <h2
-          className="ws-sticky-goal__title"
-          style={{
-            top: eyebrowBlock,
-            fontSize: base * TITLE_SIZE,
-            width: `${100 / titleScale}%`,
-            transform: `scale(${titleScale})`,
-            opacity: compact ? 0.88 : 1,
-          }}
+      >
+        <div className="ws-sticky-goal__plate" />
+        <div
+          className="ws-sticky-goal__text"
+          style={{ top: base * PAD_TOP, opacity: collapsed ? 0 : 1 }}
         >
-          {context.goal}
-        </h2>
-        {subtitle && (
-          <div
-            className="ws-sticky-goal__subtitle"
-            style={{
-              fontSize: base * SUBTITLE_SIZE,
-              width: `${100 / subtitleScale}%`,
-              transform: `translateY(${eyebrowBlock + titleBlock * titleScale}px) scale(${subtitleScale})`,
-            }}
+          {context.workstream && (
+            <div
+              className="ws-sticky-goal__workstream"
+              style={
+                {
+                  fontSize: base * EYEBROW_SIZE,
+                  "--ws-hue": context.workstream.hue,
+                } as React.CSSProperties
+              }
+            >
+              <WorkstreamIcon className="size-4 text-current" />
+              <span>{context.workstream.name}</span>
+            </div>
+          )}
+          <h2
+            className="ws-sticky-goal__title"
+            style={{ top: eyebrowBlock, fontSize: base * TITLE_SIZE }}
           >
-            {subtitle}
-          </div>
-        )}
+            {context.goal}
+          </h2>
+          {context.subtask && (
+            <div
+              className="ws-sticky-goal__subtitle"
+              style={{
+                fontSize: base * SUBTITLE_SIZE,
+                transform: `translateY(${eyebrowBlock + base * TITLE_SIZE * TITLE_LINE}px)`,
+              }}
+            >
+              {context.subtask}
+            </div>
+          )}
+        </div>
       </div>
     </div>,
     mount.root,
