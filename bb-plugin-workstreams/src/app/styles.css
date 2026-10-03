@@ -521,14 +521,13 @@
     opacity 200ms ease;
   white-space: nowrap;
 }
-/* Type follows the headings on vercel.com: Geist Sans at a light-medium
-   weight, tracked a little looser than their 24px heading (-0.04em) because
-   this title renders smaller. */
+/* The title takes the theme font (Geist) like the timeline text, at a
+   light-medium weight with tight tracking in the manner of vercel.com's
+   24px heading. */
 .ws-sticky-goal__title {
   margin: 0;
   color: var(--foreground);
-  font-family:
-    "Geist Variable", var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: inherit;
   font-weight: 450;
   letter-spacing: -0.02em;
   line-height: 1.3333;
