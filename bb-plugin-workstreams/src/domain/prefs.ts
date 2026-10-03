@@ -76,6 +76,8 @@ const GROUPS = {
     showSnoozed: [z.boolean(), true],
     /** The Archived fold: threads kept after completion. */
     showArchived: [z.boolean(), true],
+    /** How workstream groups are ordered in the sidebar. */
+    groupSort: [z.enum(["alphabetical", "activity", "manual"]), "alphabetical"],
     /** How many threads the Recent band shows. */
     recentLimit: [recentLimit, RECENT_LIMIT.fallback],
     /** Thread ages on rows: always, on hover or focus, or never. */

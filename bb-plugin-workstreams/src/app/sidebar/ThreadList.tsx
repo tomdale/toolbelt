@@ -166,6 +166,7 @@ export function WorkstreamsThreadList({
   onNavigate,
 }: PluginThreadListProps) {
   const ws = useWorkstreams();
+  const { prefs, save: savePrefs } = usePrefs();
   const archived = experimental_useSidebarThreads({
     experimental_lifecycles: ws.showArchived ? ["archived"] : [],
   });
@@ -704,8 +705,22 @@ export function WorkstreamsThreadList({
     </Sortable>
   );
 
-  const pinnedGroups = projection.groups.filter((group) => group.prioritized);
-  const otherGroups = projection.groups.filter((group) => !group.prioritized);
+  const groupSort = prefs?.sidebar.groupSort ?? "alphabetical";
+  const sortGroups = (groups: readonly ThreadGroup[]) => {
+    if (groupSort === "manual") return [...groups];
+    return [...groups].sort(
+      (a, b) =>
+        (groupSort === "activity"
+          ? b.lastActiveAt - a.lastActiveAt
+          : a.name.localeCompare(b.name)) || a.name.localeCompare(b.name),
+    );
+  };
+  const pinnedGroups = sortGroups(
+    projection.groups.filter((group) => group.prioritized),
+  );
+  const otherGroups = sortGroups(
+    projection.groups.filter((group) => !group.prioritized),
+  );
   // Unfiled, a group only while it has threads, sits between the populated
   // workstreams and the empty ones.
   const populatedGroups = otherGroups.filter((group) => group.total > 0);
@@ -885,13 +900,21 @@ export function WorkstreamsThreadList({
   return (
     <DndContext {...contextProps}>
       <div ref={listRef} className="ws-list flex flex-col gap-2 pb-4 pt-1">
-        <button
-          type="button"
-          onClick={() => setNewWork({ workstreamId: null })}
-          className="mx-2 flex h-7 items-center gap-1.5 rounded-md px-2 text-left text-[13px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
-        >
-          <span aria-hidden="true">＋</span> New work…
-        </button>
+        <div className="mx-2 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setNewWork({ workstreamId: null })}
+            className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-[13px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+          >
+            <span aria-hidden="true">＋</span> New work…
+          </button>
+          <SidebarViewOptionsMenu
+            sort={groupSort}
+            onChange={(groupSort) =>
+              void savePrefs({ sidebar: { groupSort } }).catch(report)
+            }
+          />
+        </div>
         <NewWorkDialog
           open={newWork !== null}
           workstreamId={newWork?.workstreamId ?? null}
@@ -1264,6 +1287,68 @@ function Band({
       </div>
       {collapsed ? null : <ul className="mt-0.5">{children}</ul>}
     </section>
+  );
+}
+
+function SidebarViewOptionsMenu({
+  sort,
+  onChange,
+}: {
+  sort: "alphabetical" | "activity" | "manual";
+  onChange: (sort: "alphabetical" | "activity" | "manual") => void;
+}) {
+  const options = [
+    ["alphabetical", "Name A–Z"],
+    ["activity", "Recent activity"],
+    ["manual", "Manual order"],
+  ] as const;
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          aria-label="Sidebar view options"
+          title="Sidebar view options"
+          onClick={(event) => event.stopPropagation()}
+          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-50 hover:bg-sidebar-accent hover:text-foreground hover:opacity-100 focus-visible:opacity-100"
+        >
+          <Icon name="MoreHorizontal" className="size-3.5" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end"
+          sideOffset={4}
+          aria-label="Sidebar view options"
+          className="z-50 min-w-48 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
+        >
+          <DropdownMenu.Label className="px-2 py-1.5 text-xs text-muted-foreground">
+            Sort workstreams
+          </DropdownMenu.Label>
+          <DropdownMenu.RadioGroup
+            value={sort}
+            onValueChange={(value) =>
+              onChange(value as "alphabetical" | "activity" | "manual")
+            }
+          >
+            {options.map(([value, name]) => (
+              <DropdownMenu.RadioItem
+                key={value}
+                value={value}
+                className="flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent"
+              >
+                <span className="inline-flex size-4 items-center justify-center">
+                  <DropdownMenu.ItemIndicator>
+                    <Icon name="Check" className="size-3.5" />
+                  </DropdownMenu.ItemIndicator>
+                </span>
+                {name}
+              </DropdownMenu.RadioItem>
+            ))}
+          </DropdownMenu.RadioGroup>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 

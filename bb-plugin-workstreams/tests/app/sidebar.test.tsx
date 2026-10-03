@@ -104,6 +104,7 @@ async function mount(
             showSnoozed: options.settings?.showSnoozed !== false,
             showArchived: options.settings?.showArchived !== false,
             recentLimit: 5,
+            groupSort: options.settings?.groupSort ?? "alphabetical",
             timestamps: options.settings?.timestamps ?? "show",
             threadCount: options.settings?.threadCount ?? "collapsed",
             waitingCount: options.settings?.waitingCount ?? "collapsed",
@@ -164,6 +165,48 @@ async function mount(
           secondary: "auto",
         },
       }),
+      setPrefs: (raw: unknown) => {
+        const { patch } = raw as { patch: { sidebar: { groupSort: string } } };
+        return {
+          prefs: {
+            sidebar: {
+              showForYou: true,
+              showRecent: options.settings?.showRecent !== false,
+              showSnoozed: true,
+              showArchived: true,
+              recentLimit: 5,
+              groupSort: patch.sidebar.groupSort,
+              timestamps: "show",
+              threadCount: "collapsed",
+              waitingCount: "collapsed",
+            },
+            threads: {
+              autoTitle: true,
+              analysisModel: {
+                kind: "gateway",
+                model: "google/gemini-3.1-flash-lite",
+              },
+              showParentLink: false,
+            },
+            newWork: {
+              homeProjectId: "",
+              suggestions: true,
+              suggestionsModel: {
+                kind: "gateway",
+                model: "google/gemini-3.1-flash-lite",
+              },
+              corpusClassification: false,
+            },
+            organize: {
+              model: { kind: "gateway", model: "openai/gpt-6-sol-fast" },
+              adaptivePreview: false,
+              capacity: 6,
+              collapseAt: 3,
+            },
+            advanced: { hostId: "", debug: false },
+          },
+        };
+      },
       reorder: (raw: unknown) => {
         const input = raw as {
           kind: string;
@@ -363,6 +406,62 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
+  it("sorts workstreams alphabetically by default and lets the view menu change sorting", async () => {
+    const slot = await mount(
+      [
+        sidebarThread("root", {
+          sectionId: "sec_a",
+          title: "Root task",
+          latestAttentionAt: Date.now() - 1_000,
+        }),
+        sidebarThread("kid", {
+          parentThreadId: "root",
+          sectionId: "sec_b",
+          title: "Kid task",
+          latestAttentionAt: Date.now() - 1_000,
+        }),
+        sidebarThread("beta", {
+          sectionId: "sec_b",
+          title: "Beta task",
+          latestAttentionAt: Date.now() - 2_000,
+        }),
+        sidebarThread("loose", { title: "Loose task" }),
+      ],
+      {
+        settings: { showRecent: false },
+        order: { workstreams: ["sec_z", "sec_b", "sec_a"], threads: {} },
+      },
+    );
+    await waitFor(() =>
+      expect(
+        slot.getAllByRole("region").map((r) => r.getAttribute("aria-label")),
+      ).toEqual(["Alpha", "Beta", "Unfiled", "Zeta"]),
+    );
+    fireEvent.pointerDown(
+      slot.getByRole("button", { name: "Sidebar view options" }),
+      { button: 0, ctrlKey: false },
+    );
+    const menu = await screen.findByRole("menu", {
+      name: "Sidebar view options",
+    });
+    expect(within(menu).getByText("Sort workstreams")).toBeTruthy();
+    fireEvent.click(
+      within(menu).getByRole("menuitemradio", { name: "Recent activity" }),
+    );
+    await waitFor(() =>
+      expect(
+        slot.getAllByRole("region").map((r) => r.getAttribute("aria-label")),
+      ).toEqual(["Alpha", "Beta", "Unfiled", "Zeta"]),
+    );
+    expect(slot.inspection.rpcCalls).toContainEqual(
+      expect.objectContaining({
+        method: "setPrefs",
+        input: { patch: { sidebar: { groupSort: "activity" } } },
+      }),
+    );
+    slot.lifecycle.unmount();
+  });
+
   it("groups whole trees by the root's workstream and hides hidden threads", async () => {
     const slot = await mount(undefined, { settings: { showRecent: false } });
     expect(groupRows(slot, "Alpha")).toEqual(["Root task", "Kid task"]);
@@ -374,7 +473,7 @@ describe("thread list", () => {
 
   it("shows Unfiled, then empty workstreams, after populated ones; empty ones get a scoped New work action and no zero count", async () => {
     const slot = await mount(undefined, {
-      settings: { showRecent: false },
+      settings: { showRecent: false, groupSort: "manual" },
       order: { workstreams: ["sec_z", "sec_b", "sec_a"], threads: {} },
     });
     await waitFor(() =>
@@ -1118,7 +1217,7 @@ describe("thread list", () => {
         sidebarThread("b3", { sectionId: "sec_b", title: "B three" }),
       ],
       {
-        settings: { showRecent: false },
+        settings: { showRecent: false, groupSort: "manual" },
         order: { workstreams: ["sec_b"], threads: { sec_b: ["b3", "b1"] } },
       },
     );
