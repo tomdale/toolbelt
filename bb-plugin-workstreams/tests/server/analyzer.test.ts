@@ -17,6 +17,7 @@ async function setup(complete?: FakeCompletion) {
 
 type Analysis = {
   recap: string;
+  goal: string | null;
   state: string;
   revision: number;
   driftSectionId: string | null;
@@ -51,7 +52,11 @@ describe("idle analysis", () => {
     expect(w.completions[0]!.prompt).toContain("Fixed; tests pass.");
     expect(w.completions[0]!.model).toBe("google/gemini-3.1-flash-lite");
     const { analysis } = await state(w);
-    expect(analysis.t1).toMatchObject({ state: "review", revision: 500 });
+    expect(analysis.t1).toMatchObject({
+      state: "review",
+      revision: 500,
+      goal: "Thread t1",
+    });
   });
 
   it("drops a scheduled run when a new turn starts first", async () => {
@@ -132,6 +137,63 @@ describe("idle analysis", () => {
     ).toEqual([]);
   });
 
+  it("uses the previous durable goal as input and carries it forward when omitted", async () => {
+    let previous: string | null = null;
+    const w = await setup(({ prompt }) => {
+      const match = prompt.match(/Previously inferred durable goal: "([^"]+)"/);
+      previous = match?.[1] ?? null;
+      return JSON.stringify({
+        recap: "Still making progress",
+        state: "in_progress",
+        goal: "Make onboarding easier to complete",
+      });
+    });
+    w.addThread("t1", { latestAttentionAt: 10 });
+    await w.harness.behavior.callRpc("refresh", null);
+    await w.harness.behavior.runCli(["analyze", "t1"]);
+    expect((await state(w)).analysis.t1?.goal).toBe(
+      "Make onboarding easier to complete",
+    );
+    expect(previous).toBeNull();
+
+    const w2 = await setup(() =>
+      JSON.stringify({ recap: "Side question answered", state: "done" }),
+    );
+    w2.addThread("t2", { latestAttentionAt: 10 });
+    await w2.harness.behavior.callRpc("refresh", null);
+    // Seed a prior result to model an existing durable goal.
+    w2.bb.storage
+      .database()
+      .prepare(
+        "INSERT INTO ws_analysis (thread_id, revision, at, result) VALUES (?, ?, ?, ?)",
+      )
+      .run(
+        "t2",
+        9,
+        1,
+        JSON.stringify({
+          recap: "prior",
+          state: "in_progress",
+          needsYou: null,
+          subject: null,
+          title: null,
+          goal: "Make onboarding easier to complete",
+          drift: null,
+          driftSectionId: null,
+          revision: 9,
+          at: 1,
+          model: "test",
+        }),
+      );
+    await w2.harness.behavior.runCli(["analyze", "t2"]);
+    expect(w2.completions.at(-1)?.prompt).toContain(
+      'Previously inferred durable goal: "Make onboarding easier to complete"',
+    );
+    expect((await state(w2)).analysis.t2?.goal).toBe(
+      "Make onboarding easier to complete",
+    );
+  });
+
   it("keeps at most four calls in flight", async () => {
     let inFlight = 0;
     let peak = 0;
@@ -141,7 +203,11 @@ describe("idle analysis", () => {
       peak = Math.max(peak, inFlight);
       await new Promise<void>((resolve) => release.push(resolve));
       inFlight--;
-      return JSON.stringify({ recap: "ok", state: "done" });
+      return JSON.stringify({
+        recap: "ok",
+        state: "done",
+        goal: "A lasting objective",
+      });
     });
     for (let i = 0; i < 7; i++) w.addThread(`t${i}`, { latestAttentionAt: 10 });
     await w.harness.behavior.callRpc("refresh", null);

@@ -3,6 +3,7 @@
 // cards, and the settings sections.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ServerStateRealtime } from "./serverState.ts";
+import { StickyGoalHeader } from "./StickyGoalHeader.tsx";
 import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { RecapCard } from "./composer/RecapCard.tsx";
@@ -50,6 +51,10 @@ export default definePluginApp((app) => {
   app.slots.experimental_appOverlay({
     id: "server-state",
     component: ServerStateRealtime,
+  });
+  app.slots.experimental_appOverlay({
+    id: "sticky-thread-goal",
+    component: StickyGoalHeader,
   });
   app.slots.experimental_appOverlay({
     id: "next-up-command",

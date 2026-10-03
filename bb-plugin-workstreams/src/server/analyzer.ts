@@ -203,15 +203,30 @@ export class Analyzer {
     const stored = new Map(
       (
         this.deps.db
-          .prepare("SELECT thread_id, revision FROM ws_analysis")
-          .all() as { thread_id: string; revision: number }[]
-      ).map((row) => [row.thread_id, row.revision]),
+          .prepare("SELECT thread_id, revision, result FROM ws_analysis")
+          .all() as { thread_id: string; revision: number; result: string }[]
+      ).map((row) => {
+        const result = readResult(row.result);
+        return [
+          row.thread_id,
+          {
+            revision: row.revision,
+            needsGoalBackfill: !result || !Object.hasOwn(result, "goal"),
+          },
+        ] as const;
+      }),
     );
     const now = this.now();
     let queued = 0;
     for (const thread of threads) {
       if (thread.status !== "idle") continue;
-      if ((stored.get(thread.id) ?? -1) >= thread.latestAttentionAt) continue;
+      const previous = stored.get(thread.id);
+      if (
+        previous &&
+        previous.revision >= thread.latestAttentionAt &&
+        !previous.needsGoalBackfill
+      )
+        continue;
       const failed = this.failures.get(thread.id);
       if (
         failed &&
@@ -286,7 +301,13 @@ export class Analyzer {
         return null;
       revision = thread.latestAttentionAt ?? thread.updatedAt;
       const previous = this.get(threadId);
-      if (!force && previous && previous.revision >= revision) return previous;
+      if (
+        !force &&
+        previous &&
+        previous.revision >= revision &&
+        Object.hasOwn(previous, "goal")
+      )
+        return previous;
 
       const started = this.now();
       if (this.disposed || this.forgotten.has(threadId)) return null;
@@ -313,6 +334,10 @@ export class Analyzer {
           : null;
       const result: StoredAnalysis = {
         ...output,
+        goal:
+          output.goal ??
+          input.prompt.previousGoal ??
+          (input.prompt.untitled ? null : input.prompt.title),
         driftSectionId,
         revision,
         at: this.now(),
@@ -430,6 +455,7 @@ export class Analyzer {
       sectionNameById: new Map(sections.map((s) => [s.section_id, s.name])),
       prompt: {
         title: displayTitle(thread),
+        previousGoal: this.get(thread.id)?.goal ?? null,
         untitled: !thread.title,
         workstream: own
           ? {
