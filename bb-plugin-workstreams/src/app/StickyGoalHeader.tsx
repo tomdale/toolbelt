@@ -176,10 +176,9 @@ function useScrollState(scroller: HTMLElement | null): {
 } {
   const [state, setState] = useState({ collapsed: false, fade: false });
   useEffect(() => {
-    if (!scroller) {
-      setState({ collapsed: false, fade: false });
-      return;
-    }
+    // A new scroller (another thread) starts expanded until it is measured.
+    setState({ collapsed: false, fade: false });
+    if (!scroller) return;
     let frame = 0;
     const update = () => {
       cancelAnimationFrame(frame);
@@ -282,6 +281,11 @@ function usePlacement(mount: Mount | null, base: number): Placement | null {
       return;
     }
     let frame = 0;
+    const header = mount.scroller
+      .closest("[data-split-pane-id]")
+      ?.querySelector<HTMLElement>(":scope > header");
+    // The heading replaces BB's own thread title in the title bar.
+    header?.setAttribute("data-ws-hide-title", "");
     const measure = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
@@ -293,9 +297,6 @@ function usePlacement(mount: Mount | null, base: number): Placement | null {
     const resize = new ResizeObserver(measure);
     resize.observe(mount.scroller);
     resize.observe(mount.column);
-    const header = mount.scroller
-      .closest("[data-split-pane-id]")
-      ?.querySelector<HTMLElement>(":scope > header");
     if (header) resize.observe(header);
     // The thread title's width, and the actions beside it, change as titles
     // load and plugins add or drop header actions.
@@ -313,9 +314,27 @@ function usePlacement(mount: Mount | null, base: number): Placement | null {
       resize.disconnect();
       mutations.disconnect();
       window.removeEventListener("resize", measure);
+      header?.removeAttribute("data-ws-hide-title");
     };
   }, [mount, base]);
   return placement;
+}
+
+// How long a newly attached thread holds still before the heading may animate.
+// BB scrolls a fresh thread to its newest message and content keeps loading
+// for a moment; the heading must not glide to match that, only to match the
+// reader's own scrolling.
+const SETTLE_MS = 500;
+
+function useSettled(mount: Mount | null): boolean {
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    setSettled(false);
+    if (!mount) return;
+    const timer = setTimeout(() => setSettled(true), SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [mount]);
+  return settled;
 }
 
 /**
@@ -328,7 +347,12 @@ export function StickyGoalHeader(): React.ReactElement | null {
   const { threadId } = useBbContext();
   const context = useGoalContext(threadId);
   const mount = useMessageScroller(threadId);
-  const { collapsed, fade } = useScrollState(mount?.scroller ?? null);
+  const { collapsed: scrolledAway, fade } = useScrollState(
+    mount?.scroller ?? null,
+  );
+  const settled = useSettled(mount);
+  // Until settled the heading stays expanded in place.
+  const collapsed = settled && scrolledAway;
   const base = mount?.baseFontSize ?? 14;
   const placement = usePlacement(mount, base);
 
@@ -336,7 +360,9 @@ export function StickyGoalHeader(): React.ReactElement | null {
   const height = headingHeight(base, hasEyebrow);
   useLayoutEffect(() => {
     if (!mount) return;
-    mount.root.className = "ws-sticky-goal-root";
+    mount.root.className = settled
+      ? "ws-sticky-goal-root ws-sticky-goal-root--animated"
+      : "ws-sticky-goal-root";
     mount.root.dataset.collapsed = String(collapsed);
     mount.root.style.setProperty("--ws-sticky-fade", fade ? "1" : "0");
     // Expanded, the fade hangs below the plate; collapsed, it sits at the top.
@@ -354,15 +380,17 @@ export function StickyGoalHeader(): React.ReactElement | null {
       mount.root.style.removeProperty("--ws-fade-y");
       delete mount.root.dataset.collapsed;
     };
-  }, [mount, collapsed, fade, height]);
+  }, [mount, collapsed, fade, height, settled]);
 
   useLayoutEffect(() => {
     if (!mount) return;
-    mount.overlay.className = "ws-goal-overlay";
+    mount.overlay.className = settled
+      ? "ws-goal-overlay ws-goal-overlay--animated"
+      : "ws-goal-overlay";
     return () => {
       mount.overlay.className = "";
     };
-  }, [mount]);
+  }, [mount, settled]);
 
   if (!mount || !context || !placement) return null;
 
