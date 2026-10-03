@@ -581,19 +581,18 @@ function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
 }
 
 /**
- * The footer of a waiting card: when the thread next checks on its work and
- * a way to call the check off. Its top rule drains toward the check.
+ * The footer of a waiting card: when the thread next checks on its work. Its
+ * top rule drains toward the check. Dismissing the card or sending a message
+ * cancels the check.
  */
 function WaitingFooter({
   recap,
   compact,
   cancelled,
-  onCancel,
 }: {
   recap: Recap;
   compact: boolean;
   cancelled: boolean;
-  onCancel?: () => void;
 }) {
   const remaining = useWaitingCountdown(recap, cancelled);
   const total = recap.timeout ?? 0;
@@ -631,24 +630,6 @@ function WaitingFooter({
           "Checking now"
         )}
       </span>
-      {counting && onCancel ? (
-        // Sits beside the countdown it cancels. The corner X already means
-        // dismiss, so the check gets a timer-off glyph.
-        <button
-          type="button"
-          aria-label="Cancel status check"
-          title="Cancel status check"
-          className="flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          onClick={onCancel}
-        >
-          <Icon
-            name="TimerOff"
-            fallback="CircleX"
-            aria-hidden
-            className="size-3.5"
-          />
-        </button>
-      ) : null}
       {counting && total > 0 ? (
         <span
           aria-hidden
@@ -1006,7 +987,14 @@ function useRecap(threadId: string | null) {
     if (!threadId) return;
     // Hide at once; retain the recap so the card can be restored.
     setState((current) =>
-      current.recap?.id === recapId ? { ...current, dismissed: true } : current,
+      current.recap?.id === recapId
+        ? {
+            ...current,
+            dismissed: true,
+            waitingCancelled:
+              current.waitingCancelled || current.recap.state === "waiting",
+          }
+        : current,
     );
     await rpc.call("recap_dismiss", { threadId, recapId }).catch(() => {});
     load();
@@ -1025,20 +1013,7 @@ function useRecap(threadId: string | null) {
     if (!threadId) return;
     await rpc.call("recap_send", { threadId, recapId, action }).catch(() => {});
   };
-  const cancelWaiting = async (recapId: string) => {
-    if (!threadId) return;
-    try {
-      await rpc.call("recap_cancel_waiting", { threadId, recapId });
-      setState((current) =>
-        current.recap?.id === recapId
-          ? { ...current, waitingCancelled: true }
-          : current,
-      );
-    } finally {
-      load();
-    }
-  };
-  return { ...state, dismiss, restore, sendNext, cancelWaiting };
+  return { ...state, dismiss, restore, sendNext };
 }
 
 const CORNER_BUTTON =
@@ -1264,12 +1239,10 @@ function CardBody({
   onArchive,
   onDismiss,
   onSend,
-  onCancelWaiting,
 }: CardProps & {
   onArchive?: () => void;
   onDismiss?: () => void;
   onSend?: (action: string) => Promise<void>;
-  onCancelWaiting?: () => void;
 }) {
   const compact = layout === "minimal";
   const compactArchive = compact && showArchive;
@@ -1306,7 +1279,6 @@ function CardBody({
           recap={recap}
           compact={compact}
           cancelled={waitingCancelled}
-          onCancel={onCancelWaiting}
         />
       ) : recap.next.length > 0 || (showArchive && !compact) || archiveError ? (
         <div
@@ -1532,7 +1504,6 @@ export function RecapCard() {
     waitingCancelled,
     dismiss,
     restore,
-    cancelWaiting,
     sendNext,
   } = useRecap(threadId);
   const { prefs } = useRecapPrefs();
@@ -1682,9 +1653,6 @@ export function RecapCard() {
                   onArchive={() => void archive.archive()}
                   onDismiss={() => void dismiss(frame.recap.id)}
                   onSend={(action) => sendNext(frame.recap.id, action)}
-                  onCancelWaiting={() =>
-                    void cancelWaiting(frame.recap.id).catch(() => {})
-                  }
                 />
               </div>
             </div>

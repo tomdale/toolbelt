@@ -380,22 +380,23 @@ export class AgentRecaps {
     };
   }
 
-  /** Hides the card on every client; the sidebar keeps the recap's state. */
+  /**
+   * Hides the card on every client; the sidebar keeps the recap's state.
+   * Dismissing a waiting card also cancels its status check, durably, so a
+   * restored card stays cancelled.
+   */
   dismiss(threadId: string, recapId: string) {
+    if (this.get(threadId)?.recap.state === "waiting") {
+      if (this.get(threadId)?.recap.id !== recapId)
+        throw new Error("This recap is no longer current.");
+      this.cancelWaitingTimer(threadId);
+      this.deps.db
+        .prepare(
+          "UPDATE ws_agent_recap SET waiting_cancelled = 1 WHERE thread_id = ?",
+        )
+        .run(threadId);
+    }
     this.setDismissed(threadId, recapId, true);
-  }
-
-  cancelWaiting(threadId: string, recapId: string) {
-    const current = this.get(threadId);
-    if (current?.recap.id !== recapId || current.recap.state !== "waiting")
-      throw new Error("This waiting check is no longer current.");
-    this.cancelWaitingTimer(threadId);
-    this.deps.db
-      .prepare(
-        "UPDATE ws_agent_recap SET waiting_cancelled = 1 WHERE thread_id = ?",
-      )
-      .run(threadId);
-    this.deps.onChange();
   }
 
   /** Restores the current recap card on every client. */
