@@ -455,21 +455,10 @@ const AGENT_LABEL: Record<AgentTone, string> = {
   unknown: "text-muted-foreground",
 };
 
-/** A status dot; a running agent's dot pulses. */
-function AgentDot({ tone }: { tone: AgentTone }) {
-  return (
-    <span aria-hidden className="relative mt-[0.5em] flex size-2 shrink-0">
-      {tone === "running" ? (
-        <span className="absolute inset-0 rounded-full bg-violet-400/70 motion-safe:animate-ping" />
-      ) : null}
-      <span className={cn("relative size-2 rounded-full", AGENT_DOT[tone])} />
-    </span>
-  );
-}
-
 /**
- * The agents a waiting thread is waiting on, one row each: what the agent is
- * doing now, its task, and a link to its thread.
+ * The agents a waiting thread is waiting on, one line each. The task links
+ * to the agent's thread, whose title shows on hover. A running agent shows
+ * only its dot; any other status is named.
  */
 function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
   const compact = useContext(CompactContext);
@@ -479,59 +468,67 @@ function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
       aria-label="Awaited agents"
       className={cn(
         "m-0 list-none divide-y divide-violet-900/10 p-0 dark:divide-violet-200/15",
-        compact ? "mt-1" : "mt-2",
+        compact ? "mt-1" : "mt-1.5",
       )}
     >
       {agents.map((agent) => {
         const view = views.get(agent.threadId)!;
+        const running = view.tone === "running";
         return (
           <li
             key={agent.threadId}
             data-agent-status={view.tone}
-            className={cn("flex min-w-0 gap-2.5", compact ? "py-1" : "py-1.5")}
+            className={cn(
+              "group relative flex min-w-0 items-baseline gap-2.5",
+              compact ? "py-0.5" : "py-1",
+            )}
           >
-            <AgentDot tone={view.tone} />
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-baseline gap-3">
-                <div className="min-w-0 flex-1">
-                  <RecapText
-                    text={agent.task}
-                    typeClass={compact ? COMPACT_BODY_CLASS : BODY_CLASS}
-                  />
-                </div>
-                {view.label ? (
-                  <span
-                    aria-label="Agent status"
-                    className={cn(
-                      "shrink-0 text-[11px] font-medium",
-                      AGENT_LABEL[view.tone],
-                    )}
-                  >
-                    {view.label}
-                  </span>
-                ) : null}
-              </div>
-              {view.title ? (
-                view.href ? (
-                  <UrlLink
-                    href={view.href}
-                    title={view.title}
-                    className="mt-0.5 inline-flex max-w-full items-center gap-0.5 text-[11px] text-muted-foreground no-underline hover:text-foreground hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                  >
-                    <span className="min-w-0 truncate">{view.title}</span>
-                    <Icon
-                      name="ChevronRight"
-                      aria-hidden
-                      className="size-3 shrink-0"
-                    />
-                  </UrlLink>
-                ) : (
-                  <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                    {view.title}
-                  </span>
-                )
-              ) : null}
+            <span
+              aria-hidden
+              className={cn(
+                "size-[7px] shrink-0 -translate-y-px rounded-full",
+                AGENT_DOT[view.tone],
+              )}
+            />
+            {/* Links inside the task stay clickable above the row's link. */}
+            <div
+              className={cn(
+                "min-w-0 flex-1 [&_a]:relative [&_a]:z-10",
+                view.href &&
+                  "group-hover:underline group-hover:decoration-foreground/30 group-hover:underline-offset-[3px]",
+              )}
+            >
+              <RecapText
+                text={agent.task}
+                typeClass={compact ? COMPACT_BODY_CLASS : BODY_CLASS}
+              />
             </div>
+            {view.label ? (
+              <span
+                aria-label="Agent status"
+                className={cn(
+                  "shrink-0 text-[11px] font-medium",
+                  running ? "sr-only" : AGENT_LABEL[view.tone],
+                )}
+              >
+                {view.label}
+              </span>
+            ) : null}
+            {view.href ? (
+              <UrlLink
+                href={view.href}
+                title={view.title ?? undefined}
+                aria-label={view.title ?? "Agent thread"}
+                className="absolute inset-0 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              />
+            ) : null}
+            {view.href && running ? (
+              <Icon
+                name="ChevronRight"
+                aria-hidden
+                className="size-3 shrink-0 self-center text-muted-foreground/70 group-hover:text-foreground"
+              />
+            ) : null}
           </li>
         );
       })}
@@ -540,8 +537,8 @@ function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
 }
 
 /**
- * The footer of a waiting card: when the thread next checks on its work, a
- * bar that drains toward that check, and a way to call the check off.
+ * The footer of a waiting card: when the thread next checks on its work and
+ * a way to call the check off. Its top rule drains toward the check.
  */
 function WaitingFooter({
   recap,
@@ -556,29 +553,23 @@ function WaitingFooter({
 }) {
   const remaining = useWaitingCountdown(recap, cancelled);
   const total = recap.timeout ?? 0;
-  const agents = recap.waitingAgents?.length ?? 0;
-  const subject =
-    agents === 0
-      ? "Checking status"
-      : agents === 1
-        ? "Checking on the agent"
-        : "Checking on the agents";
   const clock = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
   const counting = !cancelled && remaining > 0;
   return (
     <div
       className={cn(
         compact ? "-mx-3 -mb-2" : "-mx-4 -mb-3",
-        "relative mt-2 flex min-h-9 items-center gap-3 rounded-b-[7px] border-t px-3 py-1 text-[11px] text-muted-foreground",
+        "relative mt-2 flex min-h-8 items-center gap-3 rounded-b-[7px] border-t py-1 pl-4 pr-2 text-[11px] text-muted-foreground",
+        compact && "pl-3",
         ACCENT.waiting.footer,
       )}
     >
       <span>
         {cancelled ? (
-          "Status check cancelled"
+          "Check cancelled"
         ) : counting ? (
           <>
-            {subject} in{" "}
+            Next check{" "}
             <span
               aria-label="Status check countdown"
               className="font-medium tabular-nums text-foreground"
@@ -587,7 +578,7 @@ function WaitingFooter({
             </span>
           </>
         ) : (
-          `${subject} now`
+          "Checking now"
         )}
       </span>
       {counting && onCancel ? (
@@ -595,17 +586,20 @@ function WaitingFooter({
           type="button"
           variant="ghost"
           size="sm"
-          className="ml-auto h-6 px-2 text-[11px] text-muted-foreground"
+          aria-label="Cancel status check"
+          className="ml-auto h-6 px-2 text-[11px] font-normal text-muted-foreground"
           onClick={onCancel}
         >
-          Cancel check
+          Cancel
         </Button>
       ) : null}
       {counting && total > 0 ? (
+        // Exactly covers the footer's 1px top border, so it meets the
+        // card's side border without overlapping it.
         <span
           aria-hidden
           data-testid="status-check-progress"
-          className="pointer-events-none absolute -top-px left-0 h-0.5 bg-violet-500/80 transition-[width] duration-1000 ease-linear motion-reduce:transition-none dark:bg-violet-400/80"
+          className="pointer-events-none absolute -top-px left-0 h-px bg-violet-500 transition-[width] duration-1000 ease-linear motion-reduce:transition-none dark:bg-violet-400"
           style={{ width: `${Math.min(100, (remaining / total) * 100)}%` }}
         />
       ) : null}
@@ -633,11 +627,7 @@ function StateLine({ recap, clearance }: { recap: Recap; clearance: string }) {
       {state === "review"
         ? "Ready for Review"
         : state === "waiting"
-          ? recap.waitingAgents?.length === 1
-            ? "Waiting for Agent"
-            : recap.waitingAgents && recap.waitingAgents.length > 1
-              ? `Waiting for ${recap.waitingAgents.length} Agents`
-              : "Waiting"
+          ? "Waiting"
           : "Complete"}
     </p>
   );

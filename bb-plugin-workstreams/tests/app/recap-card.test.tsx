@@ -361,11 +361,13 @@ it("shows the Waiting goal as the title and the countdown in the footer", async 
   expect(countdown.textContent).toMatch(/^[01]:\d{2}$/);
   expect(goalHeading.contains(countdown)).toBe(false);
   expect(countdown.parentElement?.textContent).toMatch(
-    /^Checking status in [01]:\d{2}$/,
+    /^Next check [01]:\d{2}$/,
   );
   const progress = slot.getByTestId("status-check-progress");
   expect(progress.style.width).toMatch(/%$/);
-  expect(slot.getByRole("button", { name: "Cancel check" })).toBeTruthy();
+  expect(
+    slot.getByRole("button", { name: "Cancel status check" }),
+  ).toBeTruthy();
   expect(slot.queryByRole("list", { name: "Awaited agents" })).toBeNull();
   expect(slot.queryByRole("heading", { name: "Next" })).toBeNull();
   expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
@@ -377,9 +379,11 @@ it("says the check is due once the countdown runs out", async () => {
     recap: { ...WORKING, at: Date.now() - 120_000 },
   });
   const region = await slot.findByRole("region", { name: "Latest recap" });
-  expect(region.textContent).toContain("Checking status now");
+  expect(region.textContent).toContain("Checking now");
   expect(slot.queryByLabelText("Status check countdown")).toBeNull();
-  expect(slot.queryByRole("button", { name: "Cancel check" })).toBeNull();
+  expect(
+    slot.queryByRole("button", { name: "Cancel status check" }),
+  ).toBeNull();
   expect(slot.queryByTestId("status-check-progress")).toBeNull();
 });
 
@@ -406,9 +410,9 @@ it.each(["full", "minimal"])(
   async (layout) => {
     const slot = await mount({ layout, recap: WORKING });
     const region = await slot.findByRole("region", { name: "Latest recap" });
-    fireEvent.click(slot.getByRole("button", { name: "Cancel check" }));
+    fireEvent.click(slot.getByRole("button", { name: "Cancel status check" }));
     await waitFor(() =>
-      expect(region.textContent).toContain("Status check cancelled"),
+      expect(region.textContent).toContain("Check cancelled"),
     );
     expect(region.textContent).toContain("Workers and tests are running");
     expect(slot.queryByRole("button", { name: "Dismiss recap" })).toBeTruthy();
@@ -416,7 +420,9 @@ it.each(["full", "minimal"])(
       method: "recap_cancel_waiting",
       input: { threadId: "t1", recapId: "r1" },
     });
-    expect(slot.queryByRole("button", { name: "Cancel check" })).toBeNull();
+    expect(
+      slot.queryByRole("button", { name: "Cancel status check" }),
+    ).toBeNull();
     expect(slot.queryByLabelText("Status check countdown")).toBeNull();
     expect(slot.queryByTestId("status-check-progress")).toBeNull();
   },
@@ -442,9 +448,7 @@ it.each([1, 2])(
       ],
     });
     const region = await slot.findByRole("region", { name: "Latest recap" });
-    expect(region.textContent).toContain(
-      agentCount === 1 ? "Waiting for Agent" : "Waiting for 2 Agents",
-    );
+    expect(region.textContent).toContain("Waiting");
     expect(
       slot.getByRole("heading", { name: "Building the theme toggle" }),
     ).toBeTruthy();
@@ -455,6 +459,9 @@ it.each([1, 2])(
     );
     expect(rows[0]!.textContent).toContain("Building the theme toggle UI");
     expect(rows[0]!.textContent).toContain("Running");
+    expect(
+      rows[0]!.querySelector("[aria-label='Agent status']")?.className,
+    ).toContain("sr-only");
     expect(slot.getByRole("link", { name: "UI agent" })).toBeTruthy();
     if (agentCount === 2) {
       expect(rows[1]!.textContent).toContain("Adding theme preference support");
@@ -465,11 +472,7 @@ it.each([1, 2])(
     }
     expect(
       slot.getByLabelText("Status check countdown").parentElement?.textContent,
-    ).toMatch(
-      agentCount === 1
-        ? /^Checking on the agent in /
-        : /^Checking on the agents in /,
-    );
+    ).toMatch(/^Next check /);
   },
 );
 
