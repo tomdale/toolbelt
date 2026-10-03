@@ -10,6 +10,7 @@ import {
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { isLastInputKeyboard } from "@/components/ui/overlay-trigger";
 import { usePortalScopeProps } from "@/lib/portal-scope";
+import { cn } from "@/lib/utils";
 
 /**
  * A small tooltip naming one icon control: popover-colored, one line, no
@@ -89,7 +90,11 @@ export const Hint = forwardRef<
             side={side}
             sideOffset={4}
             collisionPadding={8}
-            className="z-50 max-w-64 rounded-md border border-border bg-popover px-2 py-1 text-[11px] leading-4 text-popover-foreground shadow-md"
+            className={cn(
+              "z-50 max-w-64 rounded-md border border-border bg-popover px-2 py-1 text-[11px] leading-4 text-popover-foreground",
+              // A hint over text needs a lift a plain label does not.
+              arrow ? "shadow-xl" : "shadow-md",
+            )}
           >
             {label}
             {arrow ? (

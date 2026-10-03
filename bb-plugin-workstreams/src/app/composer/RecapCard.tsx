@@ -53,7 +53,7 @@ import { Hint } from "../Hint.tsx";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 
 const CARD_CLASS =
-  "@container/recap relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border text-foreground";
+  "@container/recap group/card relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border text-foreground";
 
 /**
  * Each state's accent colors the card's border, background, state line, row
@@ -1080,7 +1080,9 @@ function ActionHint({
   const shift = useShiftHeld();
   return (
     <>
-      {description ? <span className="block">{description}</span> : null}
+      {description ? (
+        <span className="block text-xs leading-[1.35]">{description}</span>
+      ) : null}
       {canCompose ? (
         <span
           className={cn(
@@ -1272,7 +1274,10 @@ function CardBody({
   const compactArchive = compact && showArchive;
   return (
     <>
-      <div className="@max-[20rem]/recap:[&_*]:!text-[0.625rem] @max-[20rem]/recap:[&_*]:!font-normal @max-[20rem]/recap:[&_*]:!leading-[1.5] @max-[20rem]/recap:[&_*]:!tracking-normal">
+      {/* Fades while an action's hint is open, so the hint reads against it
+          instead of over same-colored text. A hint's trigger reports
+          data-state="delayed-open" or "instant-open" while it shows. */}
+      <div className="transition-opacity duration-150 group-has-[[data-next-actions-list]_[data-state*=open]]/card:opacity-40 motion-reduce:transition-none @max-[20rem]/recap:[&_*]:!text-[0.625rem] @max-[20rem]/recap:[&_*]:!font-normal @max-[20rem]/recap:[&_*]:!leading-[1.5] @max-[20rem]/recap:[&_*]:!tracking-normal">
         <RecapSummary
           recap={recap}
           layout={layout}
