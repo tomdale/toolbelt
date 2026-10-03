@@ -507,6 +507,29 @@
     transition: none;
   }
 }
+/* Each workstream's identity color comes from its hue (workstreamHue); the
+   line sits above the title and never moves or resizes with the heading. */
+.ws-sticky-goal__workstream {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.4em;
+  color: oklch(46% 0.16 var(--ws-hue, 250));
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.dark .ws-sticky-goal__workstream {
+  color: oklch(79% 0.13 var(--ws-hue, 250));
+}
+.ws-sticky-goal__workstream > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .ws-sticky-goal__title,
 .ws-sticky-goal__subtitle {
   position: absolute;
