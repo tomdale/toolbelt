@@ -325,9 +325,7 @@ describe("home.css", () => {
     const rules = selectors.filter(touchesBb);
     expect(rules.length).toBeGreaterThanOrEqual(5);
     for (const selector of rules)
-      expect(selector, selector).toMatch(
-        /:has\(\s*(>\s*\[data-bb-plugin-root\]\s*>\s*)?(:is\(\s*)?\[data-ws-home=/,
-      );
+      expect(selector, selector).toMatch(/:has\([\s\S]*\[data-ws-home=/);
   });
 
   it("hides BB's list and spacer only in takeover mode", () => {
@@ -344,12 +342,35 @@ describe("home.css", () => {
     expect(css).not.toMatch(/safe-area-inset-top/);
   });
 
-  it("hides BB's section wrapper only when every section in it is ours and hidden", () => {
+  it("hides BB's section wrapper only when our hidden section is the only one in it", () => {
     const wrapper = selectors.filter((selector) =>
-      selector.startsWith('[data-testid="plugin-homepage-sections"]:not('),
+      selector.startsWith('[data-testid="plugin-homepage-sections"]:has('),
     );
-    expect(wrapper).toHaveLength(1);
-    expect(wrapper[0]).toMatch(/:has\(\s*>\s*section:not\(/);
+    const hides = wrapper.filter((selector) =>
+      /:not\(:has\(> section \+ section\)\)/.test(selector),
+    );
+    expect(hides).toHaveLength(1);
+    expect(hides[0]).toContain('[data-ws-home="hidden"]');
+  });
+
+  /** Whether a :has() sits inside another :has(), however deep. */
+  function nestsHas(selector: string): boolean {
+    const open: boolean[] = [];
+    for (const part of selector.split(/(:has\(|:is\(|:not\(|:where\(|\(|\))/)) {
+      if (part === ":has(") {
+        if (open.includes(true)) return true;
+        open.push(true);
+      } else if (/^(:is\(|:not\(|:where\(|\()$/.test(part)) open.push(false);
+      else if (part === ")") open.pop();
+    }
+    return false;
+  }
+
+  it("never nests :has() inside :has(), which is invalid and would void every rule a minifier merged with it", () => {
+    expect(nestsHas("a:has(b:not(:has(c)))")).toBe(true);
+    expect(nestsHas("a:has(> b > :is(c, d)):not(:has(e))")).toBe(false);
+    for (const selector of selectors)
+      expect(nestsHas(selector), selector).toBe(false);
   });
 
   it("sizes type with BB's tokens, never raw pixel sizes", () => {
