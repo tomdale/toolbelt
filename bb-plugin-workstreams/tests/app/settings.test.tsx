@@ -97,6 +97,25 @@ it("renders four compact sidebar toggles and saves their preferences", async () 
   ]);
 });
 
+it("saves the phone Home screen preference from its own group", async () => {
+  const slot = await mount("sidebar");
+  const group = await slot.findByRole("region", { name: "Home screen" });
+  const toggle = within(group).getByRole("switch", {
+    name: "Up Next and workstreams on phones",
+  });
+  // Home replaces BB's Recent list unless the user turns it off.
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(toggle);
+  await waitFor(() =>
+    expect(
+      slot.inspection.rpcCalls.filter((call) => call.method === "setPrefs"),
+    ).toHaveLength(1),
+  );
+  expect(
+    slot.inspection.rpcCalls.find((call) => call.method === "setPrefs")?.input,
+  ).toEqual({ patch: { sidebar: { phoneHome: false } } });
+});
+
 it.each([
   [
     "Timestamp",

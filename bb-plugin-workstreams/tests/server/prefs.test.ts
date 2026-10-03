@@ -87,6 +87,7 @@ describe("Workstreams prefs", () => {
         showRecent: false,
         showSnoozed: true,
         showArchived: true,
+        phoneHome: true,
         recentLimit: 5,
         groupSort: "alphabetical",
         timestamps: "show",

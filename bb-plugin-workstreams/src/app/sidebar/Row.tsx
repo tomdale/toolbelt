@@ -38,7 +38,7 @@ function prTone(pr: PluginSidebarPullRequest): string {
 }
 
 /** The work state the row shows as a mark, if any. */
-function shownWorkState(
+export function shownWorkState(
   work: WorkView | undefined,
   attention: boolean | undefined,
 ) {
@@ -52,7 +52,7 @@ function shownWorkState(
  * BB's own status is the primary mark: working, unread, waiting, error.
  * Workstreams' assessed state is only shown when BB has none to report.
  */
-function hasNativeStatus(thread: PluginSidebarThread): boolean {
+export function hasNativeStatus(thread: PluginSidebarThread): boolean {
   return (
     Boolean(statusRole(thread.indicator)) ||
     thread.hasPendingInteraction ||

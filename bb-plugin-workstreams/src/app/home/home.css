@@ -1,0 +1,448 @@
+/*
+ * The phone Home screen (src/app/home). Two parts: rules that make BB's
+ * compact home give the section its place, and the section's own look.
+ *
+ * Type uses BB's size tokens (--text-2xs, --text-xs, --text-sm), which already
+ * grow on narrow touch screens, and every control is at least 44px tall.
+ */
+
+/* -------------------------------------------------------------------------
+ * Taking BB's place
+ *
+ * BB's compact home is a composer pinned to the bottom with a scroll viewport
+ * above it, placed a few rows above the composer by inline style and holding
+ * a flat Recent list. While the section runs in its `takeover` mode (it found
+ * itself inside that viewport) the viewport spans the whole screen below the
+ * top controls, BB's list and the spacer above it step aside, and the content
+ * starts at the top. Every rule is scoped by :has() to the section being
+ * mounted there, so nothing changes without it; where :has() or the markup is
+ * missing, the section simply renders below BB's list.
+ * ---------------------------------------------------------------------- */
+[data-testid="root-compose-compact-scroll-viewport"]:has(
+  [data-ws-home="takeover"]
+) {
+  /* Beats BB's inline top, which BB's resize observer rewrites. */
+  top: calc(56px + env(safe-area-inset-top, 0px)) !important;
+}
+[data-testid="root-compose-compact-scroll-viewport"]:has(
+    [data-ws-home="takeover"]
+  )
+  :is(
+    [data-root-compose-mobile-recents],
+    [data-testid="root-compose-compact-recents-offset"]
+  ) {
+  display: none;
+}
+/* BB bottom-justifies its list; Up Next belongs at the top. */
+[data-testid="root-compose-compact-scroll-viewport"]:has(
+    [data-ws-home="takeover"]
+  )
+  [data-testid="root-compose-compact-scroll-content"] {
+  justify-content: flex-start;
+}
+/* The section brings its own headings, and sits flush with the top. */
+[data-testid="plugin-homepage-sections"]:has([data-ws-home="takeover"]) {
+  margin-top: 0;
+}
+section:has(> [data-bb-plugin-root] > [data-ws-home="takeover"]) > h2 {
+  display: none;
+}
+/* Wide windows, the preference off, or nothing to list: no heading either. */
+section:has(> [data-bb-plugin-root] > [data-ws-home="hidden"]) {
+  display: none;
+}
+
+/* -------------------------------------------------------------------------
+ * The screen
+ * ---------------------------------------------------------------------- */
+.ws-home {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 0 16px;
+  color: var(--foreground);
+}
+.ws-home :is(a, button) {
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.ws-home :is(a, button):focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--ring);
+}
+
+.ws-home-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Rows */
+.ws-home-row {
+  display: flex;
+  align-items: stretch;
+  border-radius: 10px;
+}
+.ws-home-link {
+  display: flex;
+  min-width: 0;
+  min-height: 48px;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px calc(10px + var(--ws-depth, 0) * 16px);
+  border-radius: inherit;
+  color: inherit;
+  text-decoration: none;
+}
+.ws-home-row[data-variant="attention"] .ws-home-link {
+  min-height: 56px;
+  padding-block: 8px;
+}
+.ws-home-link:active {
+  background: var(
+    --state-active,
+    color-mix(in oklab, currentColor 10%, transparent)
+  );
+}
+@media (hover: hover) {
+  .ws-home-link:hover {
+    background: var(
+      --state-hover,
+      color-mix(in oklab, currentColor 6%, transparent)
+    );
+  }
+}
+.ws-home-mark {
+  display: flex;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+/* BB's status glyphs and ours are drawn for 14px slots; a touch list reads
+   them a little larger. */
+.ws-home-mark > * {
+  transform: scale(1.15);
+}
+.ws-home-text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+}
+.ws-home-title {
+  overflow: hidden;
+  font-size: var(--text-sm, 0.8125rem);
+  font-weight: 400;
+  line-height: var(--text-sm--line-height, 1.25rem);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in oklab, var(--foreground) 86%, transparent);
+}
+.ws-home-row[data-unread] .ws-home-title {
+  font-weight: 600;
+  color: var(--foreground);
+}
+.ws-home-row[data-variant="attention"] .ws-home-title {
+  font-weight: 500;
+  color: var(--foreground);
+}
+.ws-home-row[data-variant="snoozed"] .ws-home-title {
+  color: var(--muted-foreground);
+}
+.ws-home-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: var(--text-xs, 0.75rem);
+  line-height: var(--text-xs--line-height, 1rem);
+}
+.ws-home-ws {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 65%;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  color: oklch(46% 0.16 var(--ws-hue, 250));
+}
+.dark .ws-home-ws {
+  color: oklch(79% 0.13 var(--ws-hue, 250));
+}
+.ws-home-ws-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: inherit;
+}
+.ws-home-ws-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-home-ask {
+  min-width: 0;
+  flex: 1 1 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-home-ws + .ws-home-ask::before {
+  content: "·";
+  margin-right: 6px;
+}
+.ws-home-age {
+  flex: none;
+  min-width: 2.25ch;
+  text-align: right;
+  font-size: var(--text-xs, 0.75rem);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-xs--line-height, 1rem);
+  color: var(--subtle-foreground, var(--muted-foreground));
+}
+/* Child threads: a trailing toggle, 44px wide, so titles keep their left edge. */
+.ws-home-fold {
+  display: inline-flex;
+  min-width: 52px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 8px;
+  border-radius: 10px;
+  color: var(--muted-foreground);
+  font-size: var(--text-xs, 0.75rem);
+  font-variant-numeric: tabular-nums;
+}
+.ws-home-fold:active {
+  background: var(
+    --state-active,
+    color-mix(in oklab, currentColor 10%, transparent)
+  );
+}
+.ws-home-chevron {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--muted-foreground);
+  transition: transform 150ms ease-out;
+}
+[aria-expanded="true"] > .ws-home-chevron {
+  transform: rotate(90deg);
+}
+
+/* Up Next: the sidebar's amber block, on the page background. */
+.ws-home .ws-needs {
+  margin: 0;
+  padding: 4px;
+  border-radius: 12px;
+  background-color: color-mix(
+    in oklab,
+    var(--ws-needs-tone) 7%,
+    var(--background, transparent)
+  );
+}
+.ws-home-up-next-head {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  font-size: var(--text-sm, 0.8125rem);
+  font-weight: 600;
+  line-height: var(--text-sm--line-height, 1.25rem);
+  color: var(--foreground);
+}
+.ws-home-up-next-head .ws-needs-count {
+  min-width: 22px;
+  height: 22px;
+  margin-left: auto;
+  font-size: var(--text-xs, 0.75rem);
+}
+.ws-home-flag {
+  display: inline-flex;
+  color: var(--muted-foreground);
+}
+.ws-home-flag-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--muted-foreground);
+}
+.ws-home-up-next .ws-home-row + .ws-home-row {
+  border-top: 1px solid
+    color-mix(in oklab, var(--ws-needs-tone) 14%, transparent);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.ws-home-more {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 10px;
+  text-align: left;
+  font-size: var(--text-xs, 0.75rem);
+  line-height: var(--text-xs--line-height, 1rem);
+}
+
+/* Workstreams */
+.ws-home-groups {
+  display: flex;
+  flex-direction: column;
+}
+.ws-home-section-head {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 0 6px;
+}
+.ws-home-section-head h2 {
+  margin: 0;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 500;
+  line-height: var(--text-xs--line-height, 1rem);
+  color: var(--muted-foreground);
+}
+.ws-home-text-button {
+  min-height: 44px;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--muted-foreground);
+}
+.ws-home-text-button:active {
+  background: var(
+    --state-active,
+    color-mix(in oklab, currentColor 10%, transparent)
+  );
+}
+.ws-home-group {
+  border-top: 1px solid var(--border-hairline, var(--border));
+}
+.ws-home-group-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0;
+  background: var(--background);
+  font-size: inherit;
+  font-weight: inherit;
+}
+.ws-home-group-head > button {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 4px;
+  border-radius: 10px;
+  text-align: left;
+}
+.ws-home-group-head > button:active {
+  background: var(
+    --state-active,
+    color-mix(in oklab, currentColor 10%, transparent)
+  );
+}
+.ws-home-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: oklch(64% 0.15 var(--ws-hue, 250));
+}
+.ws-home-group-name {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  font-size: var(--text-sm, 0.8125rem);
+  font-weight: 600;
+  line-height: var(--text-sm--line-height, 1.25rem);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-home-group[data-muted] .ws-home-group-name {
+  color: var(--muted-foreground);
+}
+.ws-home-counts {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.ws-home-pill {
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.375rem;
+}
+.ws-home-pill-quiet {
+  background: color-mix(in oklab, var(--muted-foreground) 15%, transparent);
+  color: var(--muted-foreground);
+}
+.ws-home-total {
+  min-width: 1.5ch;
+  text-align: right;
+  font-size: var(--text-xs, 0.75rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+.ws-home-lower-toggle {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 6px;
+  border-top: 1px solid var(--border-hairline, var(--border));
+  text-align: left;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--muted-foreground);
+}
+.ws-home-fold-section[data-standalone] {
+  margin-top: 4px;
+}
+
+/* States */
+.ws-home-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}
+.ws-home-skeleton > span:not(.sr-only) {
+  height: 48px;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--foreground) 6%, transparent);
+  animation: ws-home-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ws-home-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+.ws-home-error {
+  margin: 0;
+  padding: 12px 6px;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--destructive);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-home-skeleton > span,
+  .ws-home-chevron {
+    animation: none;
+    transition: none;
+  }
+}
