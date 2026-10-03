@@ -6,7 +6,7 @@ import type { Task } from "./model.js";
 import { ProgressRing } from "./progress-ring.js";
 import { useTodoList } from "./use-todos.js";
 import { useTodoSidePlacement } from "./use-side-placement.js";
-import { TODO_PANEL_ACTION_ID } from "./editor-button.js";
+import { TODO_PANEL_ACTION_ID } from "./panel-action.js";
 import type { rpcContract } from "./server.js";
 
 const STATUS_TEXT: Record<Task["status"], string> = { in_progress: "In progress", pending: "Pending", completed: "Completed", deleted: "Deleted" };
@@ -35,9 +35,6 @@ function TodoRowContent({ row, ordered, working, subjects, ordinals }: { row: Ca
       <span className="todo-sr">{STATUS_TEXT[task.status]}{blockers.length ? `, waiting for ${waitsFor}` : ""}: </span>
       {text}
     </span>
-    {blockers.length > 0 && <span className="todo-row-meta" aria-hidden="true" title={`Depends on ${waitsFor}`}>
-      depends on {blockers.map(id => ordinals.get(id) ?? id).join(", ")}
-    </span>}
   </>;
 }
 
@@ -83,9 +80,14 @@ function TodoTreeItem({ node, ordered, working, subjects, ordinals }: { node: Ca
  * The Todo banner above a thread or queued-message composer. It is collapsed
  * by default (showing intelligent compact tasks or progress), can be toggled
  * or clicked to show the full list, renders wide lists in 2 columns after they
- * reach their max height with subtasks grouped under their parent, adds scroll
- * fade gradients when overflowing, and moves into the thread's right gutter when
- * there is room beside the latest message.
+ * reach their max height with subtasks grouped under their parent, and adds
+ * scroll fade gradients when overflowing.
+ *
+ * When the thread has room, the card instead becomes a lane in the thread's
+ * left gutter, vertically centered: always the full list, with no frame, count, collapse, or edit
+ * controls, and a persistent "Todos" link that opens the Todos panel. The lane
+ * is the same component and state as the banner, so returning to the narrow
+ * layout restores the banner exactly as the user left it.
  */
 export function TodoCard() {
   const composer = useComposer();
@@ -136,6 +138,12 @@ export function TodoCard() {
     return () => window.clearTimeout(timer);
   }, [threadId, loaded, tasksFingerprint, card.allComplete, error, hideDelaySeconds, rpc]);
 
+  const visible = !!threadId && !(hiddenAfterCompletion && card.allComplete && !error) && (card.total > 0 || !!error);
+  const { cardRef, placement } = useTodoSidePlacement(threadId, visible, expanded, composer.scope.kind !== "queued-message");
+  const gutter = placement !== null;
+  // The gutter lane has no collapse control, so it always shows the full list; `expanded` is the banner's own state.
+  const showAll = gutter || expanded;
+
   const updateListLayout = useCallback(() => {
     const el = listRef.current;
     if (!el) {
@@ -145,7 +153,7 @@ export function TodoCard() {
     const canScroll = el.scrollHeight > el.clientHeight + 1;
     const maxHeight = Number.parseFloat(getComputedStyle(el).maxHeight);
     const reachedMaxHeight = Number.isFinite(maxHeight) ? el.clientHeight >= maxHeight - 1 : canScroll;
-    if (expanded && !useTwoColumns && reachedMaxHeight) setUseTwoColumns(true);
+    if (showAll && !gutter && !useTwoColumns && reachedMaxHeight) setUseTwoColumns(true);
     if (!canScroll) {
       setScrollFade(prev => (prev.top || prev.bottom ? { top: false, bottom: false } : prev));
       return;
@@ -156,17 +164,15 @@ export function TodoCard() {
       const next = { top: !isTop, bottom: !isBottom };
       return prev.top === next.top && prev.bottom === next.bottom ? prev : next;
     });
-  }, [expanded, useTwoColumns]);
-
-  const visible = !!threadId && !(hiddenAfterCompletion && card.allComplete && !error) && (card.total > 0 || !!error);
-  const { cardRef, placement } = useTodoSidePlacement(threadId, visible, expanded, composer.scope.kind !== "queued-message");
+  }, [showAll, gutter, useTwoColumns]);
 
   const working = composer.isRunning && !card.allComplete;
   const canEdit = composer.scope.kind === "thread";
   const hasInProgress = card.collapsedRows.length > 0;
   const showCountInActions = expanded || hasInProgress;
-  const displayRows = expanded ? card.rows : card.collapsedRows;
-  const listClassName = `todo-list${expanded && useTwoColumns ? " todo-list-two-columns" : ""}`;
+  const displayRows = showAll ? card.rows : card.collapsedRows;
+  const twoColumns = showAll && !gutter && useTwoColumns;
+  const listClassName = `todo-list${twoColumns ? " todo-list-two-columns" : ""}`;
   const toggleExpanded = () => {
     const content = contentRef.current;
     if (!content) { setExpanded(value => !value); return; }
@@ -205,7 +211,7 @@ export function TodoCard() {
       }).catch(() => {});
     });
   };
-  const listStyle = expanded && useTwoColumns
+  const listStyle = twoColumns
     ? {
       gridAutoFlow: "column",
       gridTemplateRows: `repeat(${Math.ceil(card.roots.length / 2)}, auto)`,
@@ -214,11 +220,11 @@ export function TodoCard() {
 
   useLayoutEffect(() => {
     setUseTwoColumns(false);
-  }, [displayRows.length, expanded]);
+  }, [displayRows.length, showAll]);
 
   useLayoutEffect(() => {
     updateListLayout();
-  }, [displayRows.length, expanded, updateListLayout]);
+  }, [displayRows.length, showAll, updateListLayout]);
 
   useEffect(() => {
     const el = listRef.current;
@@ -231,6 +237,7 @@ export function TodoCard() {
   if (!visible) return null;
 
   const handleCardClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (gutter) return;
     const target = event.target as HTMLElement | null;
     if (target?.closest('button, a, input, textarea, select, [role="button"]')) return;
     if (typeof window !== "undefined" && window.getSelection()?.toString().trim()) return;
@@ -240,10 +247,19 @@ export function TodoCard() {
   const frame = (className: string, children: ReactNode) => {
     const content = <div ref={cardRef} className={`todo-card ${className}${placement ? " todo-card-floating" : ""}`}
       data-floating={placement ? "" : undefined}
-      data-state={expanded ? "expanded" : "collapsed"}
-      data-collapsed={!expanded ? "" : undefined}
+      data-state={showAll ? "expanded" : "collapsed"}
+      data-collapsed={!showAll ? "" : undefined}
+      role={placement ? "region" : undefined}
+      aria-label={placement ? "Todos" : undefined}
       onClick={handleCardClick}
-      style={placement ? { left: placement.left, top: placement.top, width: placement.width, maxHeight: placement.maxHeight } : undefined}>
+      style={placement ? {
+        left: placement.left,
+        top: placement.top,
+        bottom: placement.bottomInset,
+        width: placement.width,
+        maxHeight: placement.maxHeight,
+        "--todo-gutter-max-height": `${placement.maxHeight}px`,
+      } as CSSProperties : undefined}>
       {children}
     </div>;
     return placement && typeof document !== "undefined" ? createPortal(content, document.body) : content;
@@ -261,8 +277,16 @@ export function TodoCard() {
   return frame(card.allComplete ? "todo-card-done" : "", (
     <div className="todo-card-inner">
       {error && <p role="alert" className="todo-error">Couldn't refresh todos: {error}</p>}
+      {gutter && canEdit && (
+        <div className="todo-gutter-header">
+          <button type="button" className="todo-destination" aria-label="Open Todos panel" onClick={() => navigate.openThreadPanel({ actionId: TODO_PANEL_ACTION_ID })}>
+            <Icon name="ListTodo" className="todo-destination-icon" aria-hidden="true" />
+            Todos
+          </button>
+        </div>
+      )}
       <div ref={contentRef} className="todo-card-content" data-transitioning={contentTransitioning ? "" : undefined}>
-        {expanded ? (
+        {showAll ? (
           <div className="todo-list-wrapper">
             {scrollFade.top && <div className="todo-scroll-fade todo-scroll-fade-top" data-fade="top" aria-hidden="true" />}
             <ul ref={listRef} id={listId} className={listClassName} style={listStyle} onScroll={updateListLayout} aria-label="All todos">
@@ -307,7 +331,7 @@ export function TodoCard() {
             <span className="todo-summary-text">{collapsedSummary(card)}</span>
           </div>
         )}
-        <div className="todo-actions">
+        {!gutter && <div className="todo-actions">
           <button
             type="button"
             id={toggleId}
@@ -339,7 +363,7 @@ export function TodoCard() {
               <Icon name="Edit" aria-hidden="true" />
             </button>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   ));

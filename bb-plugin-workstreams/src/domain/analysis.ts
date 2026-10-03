@@ -18,6 +18,8 @@ export const WORK_STATES = [
 export type WorkState = (typeof WORK_STATES)[number];
 
 export const RECAP_MAX = 140;
+/** Durable goals should stay short enough to scan in the thread header. */
+export const GOAL_MAX = 80;
 /** BB's own generated titles are at most 48 characters wide. */
 export const TITLE_MAX = 48;
 
@@ -82,7 +84,7 @@ export const analysisOutputSchema = z.object({
     .nullable()
     .catch(null),
   /** Durable purpose of the thread, distinct from the short navigational title. */
-  goal: clipped(120).nullable().catch(null),
+  goal: clipped(GOAL_MAX).nullable().catch(null),
   drift: z
     .object({
       workstream: z.string().trim().min(1).max(100).nullable().default(null),
@@ -194,8 +196,8 @@ Return {"recap": string, "state": string, "needsYou": string|null, "subject": st
 - state: "needs_decision" when the last message asks the user something specific (a question, a choice, permission, "want me to…?") or needs a step only the user can take; closing boilerplate like "let me know" doesn't count. "review" when a finished deliverable waits on the user to review, test, merge, or ship. "blocked" when waiting on something other than the user. "done" only when the thread has reached a natural end: the latest request is fully answered or completed, and there are no outstanding tasks, unfinished implementation, failing tests, pending follow-ups, or work left for the agent or user. An answered question can be done. A completed intermediate step is not done when the broader requested work remains. Otherwise "in_progress".
 - needsYou: when state is "needs_decision", the ask in at most 80 characters; otherwise null.
 - subject: the product or project whose work this is, named at product level. A built-in part of a product (its SDK, CLI, docs, config, a built-in provider) is the product itself ("Lumen", not "Lumen CLI"); a separately developed plugin or package with its own name is its own subject. Use the readable name alone: drop words like plugin, repo, app, and package, and turn slugs into names, dropping prefixes, suffixes, and per-person or per-fork parts ("bb-plugin-foo-provider" → "Foo", "Acme Search plugin" → "Acme Search"). Reuse a known subject exactly when it fits. The current substantive request decides it, not an outdated title. null for status summaries spanning several products, or when no product can be identified.${drift}
-- title: independent of drift and goal, which a new title never replaces. Suggest a new title only when the thread needs one: it has none yet, the current one is cut off or too vague to tell this thread apart, or the latest substantive requests moved the thread onto different work than the title names. Otherwise null. A related follow-up, a procedural ask (commit, explain, test), or a better wording of the same work is no reason to change it. At most ${TITLE_MAX} characters, in sentence case with no closing period, naming the work as it stands now rather than the conversation ("Markdown viewer themes", "Fix stale build cache").
-- goal: the durable larger outcome this thread exists to help the user achieve, not its latest step, status, or short title. At most 120 characters. Preserve the previous goal through implementation details, procedural asks, and side questions. Refine wording when intent becomes clearer; replace it only when the underlying objective or scope genuinely changes. If intent is still unclear, give the best tentative broad goal rather than null. Keep it concise and scannable.`;
+- title: independent of drift and goal, which a new title never replaces. Suggest a new title only when the thread needs one: it has none yet, the current one is cut off or too vague to tell this thread apart, or the latest substantive requests moved the thread onto different work than the title names. Otherwise null. A related follow-up, a procedural ask (commit, explain, test), or a better wording of the same work is no reason to change it. Use a concise phrase of 3–8 words, at most ${TITLE_MAX} characters, in sentence case with no closing period. Name the work as it stands now, not the conversation or its individual requested changes ("Markdown viewer themes", "Fix stale build cache").
+- goal: the durable larger outcome this thread exists to help the user achieve, not its latest step, status, or short title. Use a compact phrase, ideally 3–8 words and at most ${GOAL_MAX} characters; omit setup, rationale, progress, and subordinate details. Preserve the previous goal through implementation details, procedural asks, and side questions, but shorten it when it exceeds this limit without changing its objective. Refine wording when intent becomes clearer; replace it only when the underlying objective or scope genuinely changes. If intent is still unclear, give the best tentative broad goal rather than null.`;
 }
 
 /**

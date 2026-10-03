@@ -18,11 +18,11 @@ function findComposerScrollArea(composerFooter: HTMLElement): HTMLElement | null
 }
 
 /**
- * Measures whether the composer card fits in the thread's right gutter beside
- * the latest visible message column, and returns fixed coordinates when it
- * does. Null keeps the card inline in the composer. The measurement follows
- * resizes, scrolls, and timeline mutations because any of them can move the
- * anchor column.
+ * Measures whether the Todo card fits in the thread's left gutter beside the
+ * message column, and returns fixed coordinates when it does. Null keeps the
+ * card inline in the composer. The lane's vertical bounds are constant (the
+ * scroll area's height) and CSS centers it within them. The measurement follows resizes, scrolls, and timeline
+ * mutations because any of them can move the anchor column.
  */
 export function useTodoSidePlacement(
   threadId: string | null,
@@ -48,20 +48,26 @@ export function useTodoSidePlacement(
     if (!scope) { setPlacement(null); return; }
     const scrollRect = scrollArea.getBoundingClientRect();
     const columns = Array.from(scope.querySelectorAll<HTMLElement>("[data-message-column]")).reverse();
-    const anchor = columns.find(column => {
+    // Every message column shares the same horizontal edges, so any mounted column locates the gutter. Prefer
+    // visible ones, but keep the lane in the gutter while a tall tool output or windowed-out range leaves none
+    // on screen; falling back to the composer there would make the card jump between the two places.
+    const measurable = columns.filter(column => {
       const rect = column.getBoundingClientRect();
-      return column.isConnected && rect.width > 0 && rect.height > 0 && rect.bottom > scrollRect.top && rect.top < scrollRect.bottom;
+      return column.isConnected && rect.width > 0 && rect.height > 0;
     });
+    const visibleColumns = measurable.filter(column => {
+      const rect = column.getBoundingClientRect();
+      return rect.bottom > scrollRect.top && rect.top < scrollRect.bottom;
+    });
+    const candidates = visibleColumns.length ? visibleColumns : measurable;
+    // User-message columns have no inset while prose columns do, so their content edges differ by the inset.
+    // Preferring inset columns keeps the lane from shifting as the nearest column changes kind.
+    const anchor = candidates.find(column => Number.parseFloat(getComputedStyle(column).paddingRight || "0") > 0) ?? candidates[0];
     if (!anchor) { setPlacement(null); return; }
     anchorRef.current = anchor;
+    // The gutter beside the composer is as empty as the rest of it (the composer only spans the message column),
+    // so the lane may use the scroll area's full height.
     const scrollAreaRect = rectOf(scrollArea);
-    const footerRect = rectOf(footer);
-    const usableBottom = Math.min(scrollAreaRect.bottom, footerRect.top);
-    const usableScrollRect = {
-      ...scrollAreaRect,
-      bottom: usableBottom,
-      height: Math.max(0, usableBottom - scrollAreaRect.top),
-    };
     const style = getComputedStyle(anchor);
     const paddingLeft = Number.parseFloat(style.paddingLeft || "0");
     const paddingRight = Number.parseFloat(style.paddingRight || "0");
@@ -74,10 +80,10 @@ export function useTodoSidePlacement(
         right: anchorRect.right - paddingRight,
         width: contentWidth,
       },
-      usableScrollRect,
+      scrollAreaRect,
       { width: window.innerWidth, height: window.innerHeight },
     );
-    setPlacement(current => current?.left === next?.left && current?.top === next?.top && current?.width === next?.width && current?.maxHeight === next?.maxHeight ? current : next);
+    setPlacement(current => current?.left === next?.left && current?.top === next?.top && current?.bottomInset === next?.bottomInset && current?.width === next?.width && current?.maxHeight === next?.maxHeight ? current : next);
   }, []);
   const setCardRef = useCallback((element: HTMLDivElement | null) => {
     cardRef.current = element;

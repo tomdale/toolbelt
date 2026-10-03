@@ -12,11 +12,6 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-} from "@/components/ui/popover";
 import { Icon } from "@/components/ui/icon";
 import {
   Markdown,
@@ -54,6 +49,7 @@ import {
 import { useContinuing } from "./useContinuing.ts";
 import { ActivityThreadLink } from "../page/ActivityThreadLink.tsx";
 import type { HeldSpace } from "./recapMotion.ts";
+import { Hint } from "../Hint.tsx";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 
 const CARD_CLASS =
@@ -991,6 +987,10 @@ function nextActionTitle(action: NextAction): string {
   return typeof action === "string" ? action : action.title;
 }
 
+/** Footer buttons (suggested actions and Archive) share one size and style. */
+const FOOTER_BUTTON =
+  "h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground";
+
 const NEXT_ACTION_ACCENT: Record<Recap["state"], string> = {
   waiting: "text-violet-700 dark:text-violet-300",
   review: "text-sky-700 dark:text-sky-300",
@@ -1010,62 +1010,18 @@ function NextActionItem({
 }) {
   const message = nextActionMessage(action);
   const title = nextActionTitle(action);
+  // A terse label is explained by its description, or failing that by the
+  // message it sends, unless the label already is the message.
   const description =
-    typeof action === "string"
-      ? title !== message
-        ? message
-        : null
-      : action.description;
-  const [open, setOpen] = useState(false);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const cancelClose = () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    closeTimer.current = null;
-  };
-  const showPopover = () => {
-    cancelClose();
-    setOpen(true);
-  };
-  const scheduleClose = () => {
-    cancelClose();
-    closeTimer.current = setTimeout(() => {
-      closeTimer.current = null;
-      setOpen(false);
-    }, 120);
-  };
-  const closeIfFocusLeaves = (event: React.FocusEvent) => {
-    const next = event.relatedTarget;
-    if (
-      next instanceof Node &&
-      (triggerRef.current?.contains(next) || contentRef.current?.contains(next))
-    )
-      return;
-    setOpen(false);
-  };
-  useEffect(
-    () => () => {
-      if (closeTimer.current) clearTimeout(closeTimer.current);
-    },
-    [],
-  );
+    (typeof action === "string" ? null : action.description) ??
+    (title !== message ? message : null);
   const button = (
     <Button
-      ref={triggerRef}
       type="button"
       variant="outline"
       size="sm"
-      className="h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground"
+      className={FOOTER_BUTTON}
       disabled={disabled || (!onSend && !onCompose)}
-      onPointerEnter={(event) => {
-        if (description && event.pointerType === "mouse") showPopover();
-      }}
-      onPointerLeave={(event) => {
-        if (description && event.pointerType === "mouse") scheduleClose();
-      }}
-      onFocus={showPopover}
-      onBlur={closeIfFocusLeaves}
       onClick={(event) => {
         if (event.shiftKey) onCompose?.(message);
         else if (onSend) void onSend(message);
@@ -1074,49 +1030,56 @@ function NextActionItem({
       <span>{title}</span>
     </Button>
   );
-  if (!description) return button;
+  if (!description && !onCompose) return button;
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverAnchor asChild>{button}</PopoverAnchor>
-      <PopoverContent
-        ref={contentRef}
-        align="center"
-        side="top"
-        sideOffset={8}
-        collisionPadding={12}
-        className="w-72 overflow-hidden rounded-xl border-border bg-popover p-0 text-popover-foreground shadow-xl"
-        onPointerEnter={cancelClose}
-        onPointerLeave={(event) => {
-          if (event.pointerType === "mouse") scheduleClose();
-        }}
-        onFocusCapture={cancelClose}
-        onBlurCapture={closeIfFocusLeaves}
-        onOpenAutoFocus={(event) => event.preventDefault()}
-        onCloseAutoFocus={(event) => event.preventDefault()}
-      >
-        <div className="border-b border-border bg-muted/50 px-4 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-            Suggested action
-          </p>
-          <p className="mt-0.5 text-sm font-semibold leading-5 text-popover-foreground">
-            {title}
-          </p>
-        </div>
-        <div className="px-4 py-3">
-          <p className="text-[13px] leading-[1.5] text-popover-foreground">
-            {description}
-          </p>
-          {onCompose ? (
-            <div className="mt-3 flex items-center gap-1.5 border-t border-border pt-2.5 text-xs text-muted-foreground">
-              <kbd className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-foreground shadow-sm">
-                ⇧
-              </kbd>
-              <span>Click to add to composer</span>
-            </div>
-          ) : null}
-        </div>
-      </PopoverContent>
-    </Popover>
+    <Hint
+      arrow
+      label={
+        <ActionHint description={description} canCompose={Boolean(onCompose)} />
+      }
+    >
+      {button}
+    </Hint>
+  );
+}
+
+/**
+ * What an action's button does, for its terse label: the intent behind it,
+ * then what a plain click and a Shift-click each do with its message.
+ */
+function ActionHint({
+  description,
+  canCompose,
+}: {
+  description: string | null | undefined;
+  canCompose: boolean;
+}) {
+  return (
+    <>
+      {description ? (
+        <span className="block text-xs leading-[1.35]">{description}</span>
+      ) : null}
+      {canCompose ? (
+        <span
+          className={cn(
+            "flex items-center gap-1.5 text-muted-foreground",
+            description && "mt-1",
+          )}
+        >
+          <span>Click to send</span>
+          <span aria-hidden>·</span>
+          <span className="flex items-center gap-1">
+            <kbd
+              aria-label="Shift"
+              className="inline-flex h-4 min-w-4 items-center justify-center rounded-[3px] border border-border px-0.5 font-sans text-[10px] leading-none"
+            >
+              ⇧
+            </kbd>
+            <span>click to edit</span>
+          </span>
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -1349,7 +1312,7 @@ function CardBody({
             <Button
               variant="outline"
               size="sm"
-              className="ml-auto bg-background/60"
+              className={cn(FOOTER_BUTTON, "ml-auto gap-1.5")}
               disabled={archiveBusy}
               onClick={onArchive}
             >

@@ -5,10 +5,12 @@ import {
   type ComponentPropsWithoutRef,
   type ElementRef,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { isLastInputKeyboard } from "@/components/ui/overlay-trigger";
 import { usePortalScopeProps } from "@/lib/portal-scope";
+import { cn } from "@/lib/utils";
 
 /**
  * A small tooltip naming one icon control: popover-colored, one line, no
@@ -25,12 +27,23 @@ export const Hint = forwardRef<
     ComponentPropsWithoutRef<typeof TooltipPrimitive.Trigger>,
     "children"
   > & {
-    label: string;
+    label: ReactNode;
     side?: "top" | "right" | "bottom" | "left";
+    /** Point the hint at its control, for hints that explain a labeled button. */
+    arrow?: boolean;
     children: ReactElement;
   }
 >(function Hint(
-  { label, side = "top", children, onFocus, onBlur, onPointerLeave, ...rest },
+  {
+    label,
+    side = "top",
+    arrow = false,
+    children,
+    onFocus,
+    onBlur,
+    onPointerLeave,
+    ...rest
+  },
   ref,
 ) {
   const portalScope = usePortalScopeProps();
@@ -77,9 +90,28 @@ export const Hint = forwardRef<
             side={side}
             sideOffset={4}
             collisionPadding={8}
-            className="z-50 max-w-64 rounded-md border border-border bg-popover px-2 py-1 text-[11px] leading-4 text-popover-foreground shadow-md"
+            className={cn(
+              "z-50 max-w-64 rounded-md border border-border bg-popover px-2 py-1 text-[11px] leading-4 text-popover-foreground",
+              // A hint that explains a button lands over the recap's own text,
+              // so a broad, soft shadow darkens that text enough to read against.
+              arrow
+                ? "shadow-[0_8px_36px_12px_rgb(0_0_0/0.4)] dark:shadow-[0_8px_36px_14px_rgb(0_0_0/0.95)]"
+                : "shadow-md",
+            )}
           >
             {label}
+            {arrow ? (
+              <TooltipPrimitive.Arrow width={10} height={5} asChild>
+                <svg viewBox="0 0 10 5" className="overflow-visible">
+                  <path d="M-.5 -1H10.5L5 5Z" className="fill-popover" />
+                  <path
+                    d="M0 0L5 5L10 0"
+                    className="fill-none stroke-border"
+                    strokeWidth={1}
+                  />
+                </svg>
+              </TooltipPrimitive.Arrow>
+            ) : null}
           </TooltipPrimitive.Content>
         </TooltipPrimitive.Portal>
       </TooltipPrimitive.Root>
