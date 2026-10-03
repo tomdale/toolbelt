@@ -105,7 +105,6 @@ export function QuestionAnchor() {
           <QuestionForm
             key={pending.id}
             persistenceKey={pending.id}
-            composerKey={pending.id}
             questions={pending.payload.questions}
             disabled={busy}
             cancelDisabled={busy}
@@ -166,12 +165,6 @@ export function QuestionInteraction({
           "string"
             ? (interaction.payload as { durableId: string }).durableId
             : undefined
-        }
-        composerKey={
-          typeof (interaction.payload as { durableId?: unknown }).durableId ===
-          "string"
-            ? (interaction.payload as { durableId: string }).durableId
-            : interaction.id
         }
         questions={parsed.data.questions}
         disabled={busy}

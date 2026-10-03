@@ -2,17 +2,14 @@ import type {
   Question,
   QuestionOption,
   QuestionAnswer,
+  QuestionAttachment,
 } from "./question-form-state.ts";
 import {
   useQuestionFormHost,
   type QuestionShortcut,
 } from "./question-form-host.tsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  experimental_NewThreadComposer,
-  Markdown,
-  useComposers,
-} from "@get-bb/plugin-sdk/app";
+import { Markdown, useBbContext, useSdk } from "@get-bb/plugin-sdk/app";
 import { plainText } from "../../domain/recap.ts";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -27,9 +24,7 @@ import {
   type QuestionFormState,
 } from "./question-form-state.ts";
 
-const BBNewThreadComposer = experimental_NewThreadComposer;
 const OTHER_OPTION_LABEL = "Other…";
-const QUESTION_COMPOSER_KEY = "workstreams-ask-user-question";
 const PREVIEW_MAX_HEIGHT = 220;
 
 // A step below the recap card's type scale: a question card carries more
@@ -189,13 +184,9 @@ interface QuestionInputBlockProps {
   state: QuestionAnswerState;
   onToggleOption: (optionValue: string) => void;
   onSelectOther: () => void;
+  onFreeTextChange: (value: string) => void;
+  onAttachmentsChange: (attachments: QuestionAttachment[]) => void;
   onShortcutSubmit: () => void;
-  onComposerSubmit: (
-    request: Parameters<
-      React.ComponentProps<typeof experimental_NewThreadComposer>["onSubmit"]
-    >[0],
-  ) => void;
-  composerKey: string;
   shortcuts: ReadonlyMap<string, QuestionShortcut>;
 }
 
@@ -205,12 +196,41 @@ function QuestionInputBlock({
   state,
   onToggleOption,
   onSelectOther,
+  onFreeTextChange,
+  onAttachmentsChange,
   onShortcutSubmit,
-  onComposerSubmit,
-  composerKey,
   shortcuts,
 }: QuestionInputBlockProps) {
   const options = question.options;
+  const { projectId } = useBbContext();
+  const sdk = useSdk();
+  const [uploading, setUploading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const freeformLabel = `${question.shortLabel} answer`;
+  const attachFiles = async (files: File[]) => {
+    if (!projectId || files.length === 0) return;
+    setUploading(true);
+    setAttachmentError(null);
+    try {
+      const uploaded = await Promise.all(
+        files.map((file) =>
+          sdk.projects.attachments.upload({ projectId, clientFile: file }),
+        ),
+      );
+      onAttachmentsChange([
+        ...state.otherAttachments,
+        ...uploaded.map((attachment) => ({ ...attachment, projectId })),
+      ]);
+    } catch (error) {
+      setAttachmentError(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   return (
     <fieldset disabled={disabled} className="min-w-0">
@@ -257,15 +277,107 @@ function QuestionInputBlock({
         ) : null}
       </div>
       {state.otherSelected ? (
-        <div className="mt-2 overflow-hidden rounded-md border border-border bg-background/60">
-          <BBNewThreadComposer
-            key={`${QUESTION_COMPOSER_KEY}:${composerKey}:${question.id}`}
-            draftKey={`${QUESTION_COMPOSER_KEY}:${composerKey}:${question.id}`}
-            placeholder="Type your own answer…"
-            layout="document"
-            onSubmit={onComposerSubmit}
-            className="[&_[data-promptbox-shell]]:!border-0 [&_[data-promptbox-shell]]:!bg-transparent [&_[data-promptbox-shell]]:!shadow-none [&_[data-promptbox-shell]]:!p-0 [&_[data-promptbox-shell]]:!min-h-0 [&_[data-promptbox-shell]]:!rounded-none [&_[data-promptbox]]:!min-h-[84px] [&_[data-promptbox]]:!max-h-[158px] [&_[data-promptbox]]:text-[12.5px] [&_textarea]:!min-h-[84px] [&_textarea]:!max-h-[158px]"
+        <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/50 focus-within:border-ring/50 focus-within:ring-1 focus-within:ring-ring/30">
+          <input
+            ref={fileInputRef}
+            aria-label="Attach files or images"
+            className="hidden"
+            type="file"
+            multiple
+            onChange={(event) =>
+              void attachFiles(Array.from(event.currentTarget.files ?? []))
+            }
           />
+          <textarea
+            aria-label={freeformLabel}
+            rows={2}
+            value={state.otherText}
+            placeholder="Type an answer or paste an image…"
+            onChange={(event) => onFreeTextChange(event.target.value)}
+            onPaste={(event) => {
+              const files = Array.from(event.clipboardData.files);
+              if (files.length > 0) {
+                event.preventDefault();
+                void attachFiles(files);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.nativeEvent.isComposing ||
+                event.key !== "Enter" ||
+                event.shiftKey
+              )
+                return;
+              event.preventDefault();
+              onShortcutSubmit();
+            }}
+            className="block max-h-28 min-h-14 w-full resize-y bg-transparent px-3 py-2.5 text-[12.5px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
+          />
+          {state.otherAttachments.length > 0 ? (
+            <ul
+              aria-label="Attached files"
+              className="flex flex-wrap gap-1.5 px-2.5 pb-2"
+            >
+              {state.otherAttachments.map((attachment) => (
+                <li
+                  key={`${attachment.projectId}:${attachment.path}`}
+                  className="flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs"
+                >
+                  <Icon
+                    name={
+                      attachment.type === "localImage" ? "Image" : "Paperclip"
+                    }
+                    className="size-3.5"
+                    aria-hidden
+                  />
+                  <span className="max-w-40 truncate">
+                    {attachment.name ?? attachment.path.split("/").at(-1)}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${attachment.name ?? "attachment"}`}
+                    onClick={() =>
+                      onAttachmentsChange(
+                        state.otherAttachments.filter(
+                          (item) =>
+                            item.path !== attachment.path ||
+                            item.projectId !== attachment.projectId,
+                        ),
+                      )
+                    }
+                    className="rounded-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <Icon name="Close" className="size-3" aria-hidden />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {attachmentError ? (
+            <p role="alert" className="px-3 pb-2 text-xs text-destructive">
+              {attachmentError}
+            </p>
+          ) : null}
+          <div className="flex items-center justify-between border-t border-border/70 px-2 py-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Attach files or images"
+              disabled={disabled || uploading || !projectId}
+              onClick={() => fileInputRef.current?.click()}
+              className="size-7"
+            >
+              {uploading ? (
+                <Icon name="Spinner" className="size-4 animate-spin" />
+              ) : (
+                <Icon name="Plus" className="size-4" />
+              )}
+            </Button>
+            <span className="text-[11px] text-muted-foreground">
+              Enter to add · Shift+Enter for a new line
+            </span>
+          </div>
         </div>
       ) : null}
     </fieldset>
@@ -279,7 +391,6 @@ export interface QuestionFormProps {
   cancelDisabled: boolean;
   onSubmit: (answers: Record<string, QuestionAnswer>) => void;
   onCancel: () => void;
-  composerKey: string;
 }
 
 export function QuestionForm({
@@ -289,7 +400,6 @@ export function QuestionForm({
   cancelDisabled,
   onSubmit,
   onCancel,
-  composerKey,
 }: QuestionFormProps) {
   const storageKey = persistenceKey
     ? `ws-question-draft:${persistenceKey}`
@@ -336,62 +446,13 @@ export function QuestionForm({
   const { shortcuts, registerChoiceHandler } = useQuestionFormHost();
   const totalQuestions = questions.length;
   const currentQuestion = questions[currentIndex] ?? null;
-  const answerComposerKey = `${QUESTION_COMPOSER_KEY}:${composerKey}:`;
-  const answerComposers = useComposers().filter(
-    (composer) =>
-      composer.key.includes(encodeURIComponent(answerComposerKey)) &&
-      composer.scope.kind === "new-thread",
-  );
-  const answerComposer = answerComposers.find((composer) =>
-    composer.key.endsWith(`:${currentQuestion?.id ?? questions[0]?.id}`),
-  );
   const isFirst = currentIndex === 0;
   const isLast = currentIndex === totalQuestions - 1;
   const currentState = answerStateFor(
     formState,
     currentQuestion ?? questions[0]!,
   );
-  const liveAnswerState: QuestionAnswerState =
-    answerComposer && !answerComposer.isEmpty
-      ? {
-          ...currentState,
-          otherSelected: true,
-          otherText: answerComposer.text,
-          otherAttachments: answerComposer.draft.attachments.map(
-            (attachment) => ({
-              ...attachment,
-              projectId:
-                answerComposer.scope.kind === "new-thread"
-                  ? (answerComposer.scope.projectId ?? "")
-                  : "",
-            }),
-          ),
-        }
-      : currentState;
-  const stateForAnswers = Object.fromEntries(
-    questions.map((question) => {
-      const composer = answerComposers.find((candidate) =>
-        candidate.key.endsWith(`:${question.id}`),
-      );
-      const state = answerStateFor(formState, question);
-      if (!composer || composer.isEmpty) return [question.id, state];
-      return [
-        question.id,
-        {
-          ...state,
-          otherSelected: true,
-          otherText: composer.text,
-          otherAttachments: composer.draft.attachments.map((attachment) => ({
-            ...attachment,
-            projectId:
-              composer.scope.kind === "new-thread"
-                ? (composer.scope.projectId ?? "")
-                : "",
-          })),
-        },
-      ];
-    }),
-  ) as QuestionFormState;
+  const stateForAnswers = formState;
   const allAnswered = useMemo(
     () =>
       totalQuestions > 0 &&
@@ -449,9 +510,6 @@ export function QuestionForm({
     if (isLast) {
       submitAnswer();
       return;
-    }
-    if (currentQuestion && answerComposer && !answerComposer.isEmpty) {
-      setFormState(stateForAnswers);
     }
     setCurrentIndex((index) => Math.min(index + 1, totalQuestions - 1));
   };
@@ -526,42 +584,19 @@ export function QuestionForm({
             handleToggleOption(currentQuestion, optionValue)
           }
           onSelectOther={() => handleSelectOther(currentQuestion)}
+          onFreeTextChange={(value) =>
+            updateQuestionState(currentQuestion, (state) => ({
+              ...state,
+              otherText: value,
+            }))
+          }
+          onAttachmentsChange={(attachments) =>
+            updateQuestionState(currentQuestion, (state) => ({
+              ...state,
+              otherAttachments: attachments,
+            }))
+          }
           onShortcutSubmit={handleAdvance}
-          composerKey={composerKey}
-          onComposerSubmit={(request) => {
-            const nextState: QuestionAnswerState = {
-              ...currentState,
-              otherText: request.input
-                .filter((input) => input.type === "text")
-                .map((input) => input.text)
-                .join("\n\n"),
-              otherAttachments: request.input.flatMap((input) =>
-                input.type === "localImage" || input.type === "localFile"
-                  ? [
-                      {
-                        type: input.type,
-                        projectId: request.projectId,
-                        path: input.path,
-                        ...(input.type === "localFile" && input.name
-                          ? { name: input.name }
-                          : {}),
-                        ...(input.type === "localFile" && input.mimeType
-                          ? { mimeType: input.mimeType }
-                          : {}),
-                        ...(input.type === "localFile" && input.sizeBytes
-                          ? { sizeBytes: input.sizeBytes }
-                          : {}),
-                      },
-                    ]
-                  : [],
-              ),
-            };
-            const nextFormState = {
-              ...formState,
-              [currentQuestion.id]: nextState,
-            };
-            setFormState(nextFormState);
-          }}
           shortcuts={shortcuts}
         />
       </div>
