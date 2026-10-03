@@ -11,7 +11,7 @@ import {
 } from "./cleanup.ts";
 import { getMeta, setMeta, type Database } from "./db.ts";
 import type { WorkstreamMap } from "./map.ts";
-import type { CorpusStore } from "./corpus.ts";
+import { classificationEvidence, type CorpusStore } from "./corpus.ts";
 import { activeHome } from "../domain/regroup.ts";
 import { corpusLabel } from "../domain/corpus-label.ts";
 import type { CanonicalAssignment } from "../domain/corpus.ts";
@@ -225,7 +225,9 @@ export class Bootstrap {
             title: t.title,
             sectionId: t.sectionId,
             completed: Boolean(
-              live && isCurrent(assessment, live) && assessment?.state === "done",
+              live &&
+              isCurrent(assessment, live) &&
+              assessment?.state === "done",
             ),
           };
         }),
@@ -387,16 +389,12 @@ export class Bootstrap {
     const evidence = new Map(
       input.threads.map((thread) => [
         thread.id,
-        createHash("sha256")
-          .update(
-            JSON.stringify({
-              version: catalogVersion,
-              requests: requestsById.get(thread.id),
-              title: thread.title,
-              project: thread.project,
-            }),
-          )
-          .digest("hex"),
+        classificationEvidence({
+          version: catalogVersion,
+          requests: requestsById.get(thread.id),
+          title: thread.title,
+          project: thread.project,
+        }),
       ]),
     );
     const pending = input.threads.filter(
@@ -457,10 +455,13 @@ export class Bootstrap {
               ? corpus.rememberProposal(value.proposed)
               : null;
           if (entity) {
-            corpus.assign(thread.id, entity.id, evidence.get(thread.id)!);
+            corpus.assign(thread.id, entity.id, {
+              evidence: evidence.get(thread.id)!,
+              provenance: "automatic",
+            });
             subjects.set(thread.id, entity.id);
           } else {
-            corpus.unassign(thread.id);
+            corpus.clear(thread.id);
             subjects.delete(thread.id);
             unresolved++;
           }

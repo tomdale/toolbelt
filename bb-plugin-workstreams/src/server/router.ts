@@ -506,20 +506,16 @@ export class Router {
             name: proposed
               ? [
                   proposed.parentId
-                    ? corpusLabel(
-                        proposed.parentId,
-                        corpus.list(),
-                      )
+                    ? corpusLabel(proposed.parentId, corpus.list())
                     : null,
-                  ...(proposed.ancestors ?? []).map(
-                    (a) => a.name,
-                  ),
+                  ...(proposed.ancestors ?? []).map((a) => a.name),
                   proposed.name,
                 ]
                   .filter(Boolean)
                   .join(": ")
               : corpusLabel(existingEntity!.id, corpus.list()),
-            description: proposed?.description ?? existingEntity?.description ?? "",
+            description:
+              proposed?.description ?? existingEntity?.description ?? "",
             title: "",
             placement: null,
           };
@@ -1124,7 +1120,9 @@ export class Router {
       if (newlyCreatedSectionId) {
         try {
           this.deps.corpus?.unbindGroup(newlyCreatedSectionId);
-          await this.deps.sdk().threadSections.delete({ id: newlyCreatedSectionId });
+          await this.deps
+            .sdk()
+            .threadSections.delete({ id: newlyCreatedSectionId });
         } catch {
           // ignore rollback errors
         }
@@ -1137,11 +1135,15 @@ export class Router {
       const entity = this.deps.corpus?.rememberProposal(decision.proposal);
       if (entity) {
         assignedEntityId = entity.id;
-        this.deps.corpus?.assign(thread.id, entity.id, { provenance: "automatic" });
+        this.deps.corpus?.assign(thread.id, entity.id, {
+          provenance: "automatic",
+        });
       }
     } else if (decision.subjectId) {
       assignedEntityId = decision.subjectId;
-      this.deps.corpus?.assign(thread.id, decision.subjectId, { provenance: "automatic" });
+      this.deps.corpus?.assign(thread.id, decision.subjectId, {
+        provenance: "automatic",
+      });
     }
 
     if (newlyCreatedSectionId && assignedEntityId) {
@@ -1189,9 +1191,15 @@ export class Router {
             proposal?: DraftSubjectProposal | null;
             provenance?: "manual" | "automatic";
           } | null;
-          execution: SpawnArgs & { projectId: string; environment: Environment };
+          execution: SpawnArgs & {
+            projectId: string;
+            environment: Environment;
+          };
         },
-    legacyExecution?: SpawnArgs & { projectId: string; environment: Environment },
+    legacyExecution?: SpawnArgs & {
+      projectId: string;
+      environment: Environment;
+    },
     legacySubjectId?: string,
   ): Promise<{ threadId: string; sectionId: string | null }> {
     let sectionId: string | null;
@@ -1235,7 +1243,9 @@ export class Router {
       }
     }
 
-    const record = effectiveSectionId ? this.deps.map.get(effectiveSectionId) : null;
+    const record = effectiveSectionId
+      ? this.deps.map.get(effectiveSectionId)
+      : null;
     if (effectiveSectionId && !record)
       throw new UserError("That workstream no longer exists.");
 

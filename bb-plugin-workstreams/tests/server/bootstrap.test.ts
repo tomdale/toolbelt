@@ -385,6 +385,32 @@ describe("explicit organizer", () => {
     ).rejects.toThrow(/catalog or classifications changed/);
   });
 
+  it("repeated catalog and corpus reads do not bump revision or mark preview stale", async () => {
+    const { w } = await setup();
+    const preview = await call(w, { action: "start" });
+    expect(preview.status).toBe("preview");
+    expect(preview.preview?.isStale).toBe(false);
+
+    // Repeated read queries to catalog and corpus
+    for (let i = 0; i < 5; i++) {
+      await w.harness.behavior.callRpc("catalog", null);
+      await w.harness.behavior.callRpc("corpus", null);
+    }
+
+    const check = (await w.harness.behavior.callRpc("bootstrap", {
+      action: "get",
+    })) as { state: BootstrapState };
+    expect(check.state.preview?.isStale).toBe(false);
+
+    // Apply succeeds without stale error
+    const applied = await call(w, {
+      action: "apply",
+      runId: preview.startedAt,
+      overrides: [],
+    });
+    expect(applied.status).toBe("applied");
+  });
+
   it("compact mode groups specific feature broadly, accurately labels unresolved and completed retained tasks, and filters grouping counts", async () => {
     let capturedCounts: Record<string, number> | null = null;
     let rootEntityId = "";
@@ -425,8 +451,14 @@ describe("explicit organizer", () => {
 
     // Add threads
     world.addThread("t_sub", { title: "SubTask for Auth" });
-    world.addThread("t_child", { parentThreadId: "t_sub", title: "Child Thread" });
-    world.addThread("t_unresolved", { sectionId: secLegacy.id, title: "Mystery Thread" });
+    world.addThread("t_child", {
+      parentThreadId: "t_sub",
+      title: "Child Thread",
+    });
+    world.addThread("t_unresolved", {
+      sectionId: secLegacy.id,
+      title: "Mystery Thread",
+    });
     world.addThread("t_done", {
       sectionId: secCore.id,
       title: "Done Task",
