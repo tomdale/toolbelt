@@ -1,9 +1,10 @@
 // Workstreams frontend entry: the sidebar thread list, the Workstreams page,
-// thread header actions (parent link, snooze), the recap and question
-// cards, and the settings sections.
+// thread header actions (parent link, task identity, snooze, archive), the
+// recap and question cards, and the settings sections.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ServerStateRealtime } from "./serverState.ts";
 import { StickyGoalHeader } from "./StickyGoalHeader.tsx";
+import { ArchiveHeaderAction } from "./header/ArchiveHeaderAction.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { TaskIdentityHeader } from "./header/TaskIdentityHeader.tsx";
 import { RecapCard } from "./composer/RecapCard.tsx";
@@ -94,6 +95,11 @@ export default definePluginApp((app) => {
     id: "snooze",
     title: "Snooze",
     component: SnoozeHeaderAction,
+  });
+  app.slots.experimental_threadHeaderAction({
+    id: "archive",
+    title: "Archive",
+    component: ArchiveHeaderAction,
   });
   app.commands.register({
     id: "snooze-thread",

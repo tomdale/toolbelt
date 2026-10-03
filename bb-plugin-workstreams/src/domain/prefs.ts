@@ -94,6 +94,8 @@ const GROUPS = {
     analysisModel: [modelChoiceSchema, DEFAULT_MODELS.analysis],
     /** A link to the parent thread in child threads' headers. */
     showParentLink: [z.boolean(), false],
+    /** An icon-only Archive button in thread headers. */
+    showArchiveButton: [z.boolean(), true],
   },
   newWork: {
     /** Where work with no code target starts; "" is a personal workspace. */

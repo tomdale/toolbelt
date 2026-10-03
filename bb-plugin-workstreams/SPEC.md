@@ -574,8 +574,12 @@ it.
    - Each workstream lists "pick back up" rows: title · where it stopped · age.
    - Search with `/`.
    - Tabs for Overview, Catalog, Organize, and Activity.
-3. **Thread header:** a parent link (preference), the task's Product/Feature identity badge, and the snooze split button
-   (§11.1).
+3. **Thread header:** a parent link (preference), the task's Product/Feature identity badge, the snooze split button
+   (§11.1), and an icon-only Archive button (preference, on by default). The button archives through BB's own
+   flow (`experimental_useSidebarThreadActions().archive`), exactly as the sidebar row's Archive does: BB confirms
+   first when child threads will be archived too, shows its Undo toast, and moves off the thread. Unlike the recap
+   card's Archive (item 7), it requires no recap and no completion evidence. It shows for any thread in BB's active
+   list.
 4. **CLI:**
    `bb workstreams list | show | edit | prioritize | new | handoff | file | log | analyze | rebuild | trace | catalog (list | show | create | edit | reparent | merge) | task (show | assign | clear | reclassify)`,
    built with `defineCli`.

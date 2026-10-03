@@ -200,6 +200,10 @@ is the full design and the contract the code is checked against.
   inference workers receive neither. Repository and environment guidance belongs
   to repository instructions and the execution plugins.
 - **Parent link** in child threads' headers (the Threads settings section).
+- **Archive button** in thread headers: just the archive icon, on by default
+  (the Threads settings section turns it off). It archives through BB's own
+  flow, as a sidebar row's Archive does, so BB confirms first when child
+  threads will be archived too and offers Undo afterwards.
 - **Reconciler**: BB emits no events for section changes, so Workstreams
   compares BB's state with its own every minute. Changes made elsewhere are
   recorded as made "outside Workstreams" and never overridden.
@@ -298,7 +302,7 @@ node eval/route.ts    # routing eval
   remain append-only), `cli.ts`, `contract.ts`, `model.ts` (every model call's
   prompt and parser, and Debug mode's recording), `trace.ts` (the trace store),
   `inference/` (the host entry that runs Pi).
-- `src/app/`: the sidebar list, the page, the header parent link, the recap
+- `src/app/`: the sidebar list, the page, the thread header actions, the recap
   card, New work, and `debug/` (inspect buttons, the inspector pane), fed by
   `useWorkstreams.ts`.
 
