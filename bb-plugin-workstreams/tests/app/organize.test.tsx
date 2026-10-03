@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { Organize } from "../../src/app/page/Organize.tsx";
+import type { BootstrapState } from "../../src/server/bootstrap.ts";
 
 afterEach(cleanup);
 
@@ -29,7 +30,7 @@ const snapshot = (error: string | null, startedAt: number) => ({
   traceIds: [],
 });
 
-type RpcResult = { state: ReturnType<typeof snapshot> | null };
+type RpcResult = { state: BootstrapState | ReturnType<typeof snapshot> | null };
 
 async function mount(bootstrap: (input: unknown) => Promise<RpcResult>) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
@@ -287,5 +288,135 @@ describe("Organize request freshness", () => {
     await slot.behavior.emitRealtime("changed", {});
     retry.resolve({ state: null });
     await waitFor(() => expect(slot.queryByRole("alert")).toBeNull());
+  });
+
+  it("disables Apply and displays stale warning when catalog was modified since preview", async () => {
+    const staleState = {
+      status: "preview" as const,
+      startedAt: 100,
+      updatedAt: 100,
+      error: null,
+      roots: [{ id: "t1", title: "Task 1", sectionId: "sec_a" }],
+      mapSnapshot: [
+        {
+          sectionId: "sec_a",
+          name: "Alpha",
+          description: "Alpha work",
+          aliases: [],
+          descriptionSource: "user" as const,
+        },
+      ],
+      preview: {
+        catalogRevision: 1,
+        isStale: true,
+        workstreams: [
+          {
+            key: "sec_a",
+            sectionId: "sec_a",
+            name: "Alpha",
+            description: "Alpha work",
+            aliases: [],
+          },
+        ],
+        creates: [],
+        renames: [],
+        moves: [],
+        assignments: [
+          {
+            threadId: "t1",
+            workstream: "sec_a",
+            reason: "Classified as Alpha.",
+          },
+        ],
+        removals: [],
+      },
+      entryId: null,
+      traceIds: [],
+    };
+    const slot = await mount(async () => ({ state: staleState }));
+    await waitFor(() =>
+      expect(slot.getByText("Stale proposal")).toBeTruthy(),
+    );
+    expect(slot.getByRole("alert").textContent).toContain(
+      "The catalog or task classifications changed since this proposal was generated",
+    );
+    const applyButton = slot.getByRole("button", {
+      name: "Apply organization",
+    }) as HTMLButtonElement;
+    expect(applyButton.disabled).toBe(true);
+    const regenerateButtons = slot.getAllByRole("button", {
+      name: "Regenerate",
+    });
+    expect(regenerateButtons.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("displays specific feature identity on task line and meaningful no-change review", async () => {
+    const semanticState = {
+      status: "preview" as const,
+      startedAt: 100,
+      updatedAt: 100,
+      error: null,
+      roots: [{ id: "t1", title: "Task 1", sectionId: "sec_a" }],
+      mapSnapshot: [
+        {
+          sectionId: "sec_a",
+          name: "Alpha",
+          description: "Alpha work",
+          aliases: [],
+          descriptionSource: "user" as const,
+        },
+      ],
+      preview: {
+        catalogRevision: 2,
+        isStale: false,
+        workstreams: [
+          {
+            key: "sec_a",
+            sectionId: "sec_a",
+            name: "Alpha",
+            description: "Alpha work",
+            aliases: [],
+          },
+        ],
+        creates: [],
+        renames: [],
+        moves: [],
+        assignments: [
+          {
+            threadId: "t1",
+            workstream: "sec_a",
+            reason: "Classified as Platform · Alpha · SubFeature; grouped under Alpha.",
+          },
+        ],
+        removals: [],
+        identities: {
+          t1: {
+            threadId: "t1",
+            entityId: "ent_sub",
+            status: "assigned" as const,
+            provenance: "automatic" as const,
+            label: "Platform · Alpha · SubFeature",
+            ancestorIds: ["ent_platform", "ent_alpha"],
+            evidence: "evidence-hash",
+            inheritedFrom: null,
+          },
+        },
+      },
+      entryId: null,
+      traceIds: [],
+    };
+    const slot = await mount(async () => ({ state: semanticState }));
+    await waitFor(() =>
+      expect(
+        slot.getByText(
+          "All tasks are already in their recommended workstreams. Nothing changes until you apply.",
+        ),
+      ).toBeTruthy(),
+    );
+    // Expand Alpha group details
+    fireEvent.click(slot.getByRole("button", { name: /^Alpha/ }));
+    expect(
+      await slot.findByText("Platform · Alpha · SubFeature"),
+    ).toBeTruthy();
   });
 });

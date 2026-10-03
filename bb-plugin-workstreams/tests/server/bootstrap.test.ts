@@ -339,4 +339,227 @@ describe("explicit organizer", () => {
       }),
     ).rejects.toThrow(/catalog or classifications changed/);
   });
+
+  it("catalog reparenting or renaming marks preview stale and prevents apply", async () => {
+    const { w } = await setup();
+
+    // Create two entities in the catalog
+    const { entity: parent } = (await w.harness.behavior.callRpc(
+      "catalogCreate",
+      {
+        name: "ParentScope",
+        description: "Parent",
+      },
+    )) as { entity: { id: string } };
+
+    const { entity: child } = (await w.harness.behavior.callRpc(
+      "catalogCreate",
+      {
+        name: "ChildScope",
+        description: "Child",
+      },
+    )) as { entity: { id: string } };
+
+    const preview = await call(w, { action: "start" });
+    expect(preview.status).toBe("preview");
+    expect(preview.preview?.isStale).toBe(false);
+
+    // Reparent child under parent
+    await w.harness.behavior.callRpc("catalogReparent", {
+      entityId: child.id,
+      parentId: parent.id,
+    });
+
+    const updated = (await w.harness.behavior.callRpc("bootstrap", {
+      action: "get",
+    })) as { state: BootstrapState };
+    expect(updated.state.preview?.isStale).toBe(true);
+
+    // Apply is safely rejected
+    await expect(
+      w.harness.behavior.callRpc("bootstrap", {
+        action: "apply",
+        runId: preview.startedAt,
+        overrides: [],
+      }),
+    ).rejects.toThrow(/catalog or classifications changed/);
+  });
+
+  it("compact mode groups specific feature broadly, accurately labels unresolved and completed retained tasks, and filters grouping counts", async () => {
+    let capturedCounts: Record<string, number> | null = null;
+    let rootEntityId = "";
+    let subEntityId = "";
+
+    const world = await fakeWorld({
+      settings: { debug: true },
+      complete: async ({ prompt }) => {
+        if (prompt.includes("Classify the most specific")) {
+          if (prompt.includes("SubTask")) {
+            return JSON.stringify({ subjectId: subEntityId, proposed: null });
+          }
+          return JSON.stringify({ subjectId: null, proposed: null });
+        }
+        if (prompt.includes("Choose active navigation")) {
+          const snapshotText = prompt.split("Snapshot:\n")[1]!;
+          const data = JSON.parse(snapshotText);
+          capturedCounts = data.counts;
+          return JSON.stringify({ activeEntityIds: [rootEntityId] });
+        }
+        if (prompt.includes("t_done")) {
+          return JSON.stringify({
+            recap: "Done work",
+            state: "done",
+            subject: "Platform",
+          });
+        }
+        return JSON.stringify({
+          recap: "Ongoing work",
+          state: "in_progress",
+          subject: null,
+        });
+      },
+    });
+
+    const secCore = world.addSection("Core");
+    const secLegacy = world.addSection("Legacy");
+
+    // Add threads
+    world.addThread("t_sub", { title: "SubTask for Auth" });
+    world.addThread("t_child", { parentThreadId: "t_sub", title: "Child Thread" });
+    world.addThread("t_unresolved", { sectionId: secLegacy.id, title: "Mystery Thread" });
+    world.addThread("t_done", {
+      sectionId: secCore.id,
+      title: "Done Task",
+      latestAttentionAt: 5,
+      status: "idle",
+    });
+    world.addThread("t_manual", { title: "Explicit Platform Thread" });
+
+    // Seed analysis for t_done as completed (state: done)
+    const db = world.bb.storage.database();
+    db.prepare(
+      "INSERT INTO ws_analysis (thread_id, revision, at, result) VALUES (?, ?, ?, ?)",
+    ).run(
+      "t_done",
+      10,
+      1,
+      JSON.stringify({
+        recap: "Done work",
+        state: "done",
+        needsYou: null,
+        subject: null,
+        title: null,
+        goal: "Done task",
+        drift: null,
+        driftSectionId: null,
+        revision: 10,
+        at: 1,
+      }),
+    );
+
+    await world.harness.behavior.callRpc("refresh", null);
+
+    // Seed catalog
+    const { entity: rootEnt } = (await world.harness.behavior.callRpc(
+      "catalogCreate",
+      {
+        name: "Platform",
+        description: "Platform core",
+      },
+    )) as { entity: { id: string } };
+    rootEntityId = rootEnt.id;
+
+    const { entity: subEnt } = (await world.harness.behavior.callRpc(
+      "catalogCreate",
+      {
+        name: "Authentication",
+        description: "Auth system",
+        parentId: rootEntityId,
+      },
+    )) as { entity: { id: string } };
+    subEntityId = subEnt.id;
+
+    // Explicit manual assignment for t_manual
+    await world.harness.behavior.callRpc("taskAssign", {
+      threadId: "t_manual",
+      entityId: rootEntityId,
+    });
+
+    // Enable adaptive preview for compact mode
+    await world.harness.behavior.callRpc("setPrefs", {
+      patch: { organize: { adaptivePreview: true } },
+    });
+
+    const preview = await call(world, { action: "start" });
+    expect(preview.status).toBe("preview");
+    expect(preview.preview).toBeTruthy();
+
+    // Verify grouping counts in compact mode:
+    // Completed roots (t_done) and unresolved roots (t_unresolved) do NOT inflate counts!
+    expect(capturedCounts).toBeTruthy();
+    expect(capturedCounts![subEntityId]).toBe(1); // t_sub
+    expect(capturedCounts![rootEntityId]).toBe(1); // t_manual
+    expect(capturedCounts!["t_done"]).toBeUndefined();
+    expect(capturedCounts!["t_unresolved"]).toBeUndefined();
+
+    // Verify assignments and truthful reasons:
+    const assignMap = new Map(
+      preview.preview!.assignments.map((a) => [a.threadId, a]),
+    );
+
+    // 1. Specific feature grouped broadly:
+    const subAssign = assignMap.get("t_sub")!;
+    expect(subAssign.reason).toBe(
+      "Classified as Platform: Authentication; grouped under Platform.",
+    );
+
+    // 2. Unresolved retained in home:
+    const unresolvedAssign = assignMap.get("t_unresolved")!;
+    expect(unresolvedAssign.reason).toBe(
+      "Unresolved identity; retained in Legacy.",
+    );
+
+    // 3. Completed retained in home:
+    const doneAssign = assignMap.get("t_done")!;
+    expect(doneAssign.reason).toBe("Completed task; retained in Core.");
+
+    // 4. Explicit manual assignment preserved:
+    const manualAssign = assignMap.get("t_manual")!;
+    expect(manualAssign.reason).toBe(
+      "Manually assigned to Platform; grouped in Platform.",
+    );
+
+    // Verify snapshot identities
+    expect(preview.preview!.identities).toBeTruthy();
+    expect(preview.preview!.identities!["t_sub"]!.label).toBe(
+      "Platform: Authentication",
+    );
+    expect(preview.preview!.identities!["t_unresolved"]!.status).toBe(
+      "unresolved",
+    );
+
+    // Apply the proposal
+    const applied = await call(world, {
+      action: "apply",
+      runId: preview.startedAt,
+      overrides: [],
+    });
+    expect(applied.status).toBe("applied");
+
+    // Verify placement changes only happened on Apply:
+    const platformSec = world.sections.find((s) => s.name === "Platform")!;
+    expect(platformSec).toBeTruthy();
+
+    // t_sub moved to Platform
+    expect(world.threads.get("t_sub")!.sectionId).toBe(platformSec.id);
+
+    // Child thread follows root
+    expect(world.threads.get("t_child")!.parentThreadId).toBe("t_sub");
+
+    // t_unresolved stayed in Legacy
+    expect(world.threads.get("t_unresolved")!.sectionId).toBe(secLegacy.id);
+
+    // t_done stayed in Core
+    expect(world.threads.get("t_done")!.sectionId).toBe(secCore.id);
+  });
 });

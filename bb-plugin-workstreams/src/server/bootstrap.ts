@@ -14,6 +14,7 @@ import type { WorkstreamMap } from "./map.ts";
 import type { CorpusStore } from "./corpus.ts";
 import { activeHome } from "../domain/regroup.ts";
 import { corpusLabel } from "../domain/corpus-label.ts";
+import type { CanonicalAssignment } from "../domain/corpus.ts";
 import { traceIdOf, type Inference } from "./model.ts";
 import {
   UserError,
@@ -30,6 +31,9 @@ export type BootstrapMove = {
   toName: string;
   reason: string;
   accepted: boolean;
+  identityLabel?: string | null;
+  identityStatus?: "assigned" | "unresolved";
+  provenance?: "manual" | "automatic" | null;
 };
 export type BootstrapState = {
   status: "proposing" | "preview" | "applying" | "applied" | "failed";
@@ -43,7 +47,12 @@ export type BootstrapState = {
     cached: number;
     unresolved: number;
   };
-  roots: { id: string; title: string; sectionId: string | null }[];
+  roots: {
+    id: string;
+    title: string;
+    sectionId: string | null;
+    completed?: boolean;
+  }[];
   mapSnapshot: {
     sectionId: string;
     name: string;
@@ -60,6 +69,8 @@ export type BootstrapState = {
     moves: BootstrapMove[];
     assignments: OrganizeProposal["assignments"];
     removals: CleanupCandidate[];
+    identities?: Record<string, CanonicalAssignment>;
+    completedRoots?: string[];
   } | null;
   entryId: string | null;
   traceIds: string[];
@@ -114,7 +125,7 @@ export class Bootstrap {
     if (state?.preview && this.deps.corpus) {
       const currentRevision = this.deps.corpus.revision();
       const isStale =
-        state.preview.catalogRevision !== undefined &&
+        state.preview.catalogRevision === undefined ||
         state.preview.catalogRevision !== currentRevision;
       return {
         ...state,
@@ -196,6 +207,7 @@ export class Bootstrap {
       };
       if (controller.signal.aborted || this.disposed)
         throw new Error("Organizing cancelled.");
+      const liveThreads = this.deps.service.threads();
       state = this.save({
         ...state,
         mapSnapshot: records.map((r) => ({
@@ -205,11 +217,18 @@ export class Bootstrap {
           aliases: r.aliases,
           descriptionSource: r.descriptionSource,
         })),
-        roots: input.threads.map((t) => ({
-          id: t.id,
-          title: t.title,
-          sectionId: t.sectionId,
-        })),
+        roots: input.threads.map((t) => {
+          const live = liveThreads.find((th) => th.id === t.id);
+          const assessment = analysis[t.id];
+          return {
+            id: t.id,
+            title: t.title,
+            sectionId: t.sectionId,
+            completed: Boolean(
+              live && isCurrent(assessment, live) && assessment?.state === "done",
+            ),
+          };
+        }),
       });
       if (controller.signal.aborted || this.disposed)
         throw new Error("Organizing cancelled.");
@@ -238,10 +257,11 @@ export class Bootstrap {
       const byKey = new Map(proposal.workstreams.map((w) => [w.key, w]));
       const byId = new Map(input.threads.map((t) => [t.id, t]));
       const names = new Map(records.map((r) => [r.sectionId, r.name]));
-      const moves = proposal.assignments.flatMap((a) => {
+      const moves: BootstrapMove[] = proposal.assignments.flatMap((a) => {
         const root = byId.get(a.threadId)!;
         const target = a.workstream === null ? null : byKey.get(a.workstream)!;
         const to = target ? (target.sectionId ?? newKey(target.key)) : null;
+        const identity = this.deps.corpus?.assignment(root.id);
         return to === root.sectionId
           ? []
           : [
@@ -254,6 +274,9 @@ export class Bootstrap {
                 toName: target?.name ?? "Unfiled",
                 reason: a.reason,
                 accepted: true,
+                identityLabel: identity?.label ?? null,
+                identityStatus: identity?.status ?? "unresolved",
+                provenance: identity?.provenance ?? null,
               },
             ];
       });
@@ -278,6 +301,16 @@ export class Bootstrap {
       if (controller.signal.aborted || this.disposed)
         throw new Error("Organizing cancelled.");
       const catalogRevision = this.deps.corpus?.revision();
+      const identities = this.deps.corpus?.assignments();
+      const completedRoots = input.threads
+        .filter((t) => {
+          const live = liveThreads.find((th) => th.id === t.id);
+          const assessment = analysis[t.id];
+          return Boolean(
+            live && isCurrent(assessment, live) && assessment?.state === "done",
+          );
+        })
+        .map((t) => t.id);
       return this.save({
         ...state,
         status: "preview",
@@ -304,6 +337,8 @@ export class Bootstrap {
           moves,
           assignments: proposal.assignments,
           removals,
+          identities,
+          completedRoots,
         },
       });
     } catch (error) {
@@ -520,12 +555,21 @@ export class Bootstrap {
     }
     const assignments = input.threads.map((t) => {
       const id = subjects.get(t.id);
+      const entity = id ? entities.find((e) => e.id === id) : null;
       const target = id ? activeHome(id, selected, entities) : null;
+      const live = this.deps.service.threads().find((th) => th.id === t.id);
+      const assessment = analysis[t.id];
+      const isCompleted = Boolean(
+        live && isCurrent(assessment, live) && assessment?.state === "done",
+      );
+
       // Completed or unresolved roots retain a home rather than disappearing from navigation.
       let key = target;
+      let isRetained = false;
       if (!key && t.sectionId) {
         const existing = input.workstreams.find((w) => w.id === t.sectionId);
         if (existing) {
+          isRetained = true;
           key =
             workstreams.find((w) => w.sectionId === existing.id)?.key ??
             `retained:${existing.id}`;
@@ -539,10 +583,32 @@ export class Bootstrap {
             });
         }
       }
+
+      const assignmentMeta = corpus.assignment(t.id);
+      const isManual = assignmentMeta.provenance === "manual";
+      const identityLabel = entity ? corpusLabel(entity.id, entities) : null;
+      const targetHome = key ? workstreams.find((w) => w.key === key) : null;
+      const toName = targetHome?.name ?? "Unfiled";
+
+      let reason: string;
+      if (isCompleted) {
+        reason = `Completed task; retained in ${toName}.`;
+      } else if (!entity) {
+        reason = isRetained
+          ? `Unresolved identity; retained in ${toName}.`
+          : "Unresolved identity; remains unfiled.";
+      } else if (isManual) {
+        reason = `Manually assigned to ${identityLabel}; ${isRetained ? "retained" : "grouped"} in ${toName}.`;
+      } else if (identityLabel && identityLabel !== toName) {
+        reason = `Classified as ${identityLabel}; grouped under ${toName}.`;
+      } else {
+        reason = `Classified as ${toName}.`;
+      }
+
       return {
         threadId: t.id,
         workstream: key,
-        reason: "Resolved specific subject to current navigation.",
+        reason,
       };
     });
     return {
@@ -564,15 +630,16 @@ export class Bootstrap {
         "This preview was replaced. Review the current map before applying.",
       );
     const preview = current.preview;
-    const currentRevision = this.deps.corpus?.revision();
-    if (
-      preview.catalogRevision !== undefined &&
-      currentRevision !== undefined &&
-      preview.catalogRevision !== currentRevision
-    )
-      throw new UserError(
-        "The catalog or classifications changed since this preview was generated. Review the current map before applying.",
-      );
+    if (this.deps.corpus) {
+      const currentRevision = this.deps.corpus.revision();
+      if (
+        preview.catalogRevision === undefined ||
+        preview.catalogRevision !== currentRevision
+      )
+        throw new UserError(
+          "The catalog or classifications changed since this preview was generated. Review the current map before applying.",
+        );
+    }
     const allowed = new Set(preview.moves.map((m) => m.threadId));
     if (overrides.some((o) => !allowed.has(o.threadId)))
       throw new UserError("Unknown thread override.");
