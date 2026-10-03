@@ -184,6 +184,24 @@ export const cases: {
     "tool",
   ],
   [
+    "holdout-question",
+    "Summary pipeline bug",
+    "The Loom question-and-answer card is the deliverable. Fix answers rendering as plain text; recap summaries are unaffected.",
+    "questions",
+  ],
+  [
+    "holdout-sdk",
+    "Beacon rendering",
+    "Implement Harbor's SDK Message blocks contract; Beacon consumes it but the reusable SDK interface is the primary change.",
+    "blocks",
+  ],
+  [
+    "holdout-waiting",
+    "Timer schema",
+    "Loom Recaps has a Waiting feature. Update its async countdown schema, not another product's timers.",
+    "waiting",
+  ],
+  [
     "ambiguous",
     "Review 482",
     "Review change 482 using Prism. No product or change scope is available.",

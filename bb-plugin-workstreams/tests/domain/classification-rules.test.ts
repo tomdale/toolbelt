@@ -5,16 +5,16 @@ import {
   parseClassification,
 } from "../../src/domain/classify.ts";
 it("renders synthetic ownership fixtures and parses their expected existing IDs", () => {
-  expect(cases).toHaveLength(13);
+  expect(cases).toHaveLength(16);
   for (const c of cases) {
     const prompt = classifyPrompt(c.input);
     expect(prompt).toContain(c.input.requests![0]);
     expect(prompt).toContain("User requests and explicit diagnoses");
     expect(prompt).toContain(
-      "Shared platform capabilities belong to the platform",
+      "Shared platform capabilities and contracts belong to the platform",
     );
     expect(prompt).toContain(
-      "Triggering or consuming a capability does not establish parentage",
+      "Triggering or consuming another capability, or targeting an object, does not establish parentage",
     );
     expect(prompt).not.toContain('"entities":');
     expect(
