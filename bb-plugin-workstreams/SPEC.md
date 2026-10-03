@@ -146,8 +146,9 @@ environments.
   fresh input clears it (§10.2).
 - **I9. Journal.** Every mutation is written to the journal (§11.5), with undo
   wherever BB allows it.
-- **I10. One projection.** The sidebar and the page render from one pure
-  projection function over the same inputs.
+- **I10. One projection.** The sidebar, the page, and the phone Home screen
+  render from one pure projection function over the same inputs, and the
+  sidebar and Home share their Up Next and group-arrangement rules.
 - **I11. Discoveries extend the Catalog.** A classified new identity is anchored
   at its deepest existing ancestor: each segment of its proposed path that names
   an identity already on that path, or an existing child, reuses it rather than
@@ -664,6 +665,57 @@ it.
    the thread withdraws Archive for that recap. Workstreams never archives on
    its own.
 
+8. **Phone Home screen** (`homepageSection`): on a phone BB's new-thread view
+   is its composer pinned to the bottom under a flat Recent list. The section
+   takes that list's place with the sidebar's rules over the one projection
+   (I10), and no state of its own beyond what the user opened:
+   - **Up Next** first, in the sidebar's amber block: the sidebar's membership
+     (threads waiting on the user, then threads whose agent left a recap, newest
+     first), prioritized focus, and five-row limit with Show more. A row is at
+     least 56px: BB's status mark or the work-state mark (the needs-decision
+     mark is implied and left out), the thread's BB display title, never the
+     analysis goal, its workstream in the workstream's hue, what it asks, and
+     its age. A tap opens the thread in place.
+   - **Workstreams** below, from the same arrangement as the sidebar:
+     prioritized workstreams first, the others in the Sidebar sort setting, then
+     Unfiled (marked by a hollow ring in place of the workstream's dot), a
+     Dormant fold, and a Snoozed fold listing wake times. While any workstream
+     is prioritized the rest wait behind Show lower priority workstreams, which
+     counts the waiting threads Up Next left out. Workstreams with no threads
+     and the Archived fold are left off. A group's 48px header opens and closes
+     it and carries the waiting and thread counts as the Sidebar settings choose
+     (Always, When collapsed, Never); rows are 48px; a thread with children has
+     a trailing count that folds them; headers stay stuck to the top of the
+     scroll area while their rows pass. Groups start closed except prioritized
+     workstreams and the only workstream there is. Expand all and Collapse all
+     switch every shown group. Open state is local to the device and kept in its
+     own store (`workstreams:v1:home`), apart from the sidebar's, because a
+     phone mounts both lists at once.
+   - Settings: Up Next, Snoozed, Timestamp, Thread count, Waiting count and the
+     sort order apply. **Home screen** (`sidebar.phoneHome`, default on) turns
+     the section off and restores BB's list. Type uses BB's `--text-*` tokens
+     and every control is at least 44px tall.
+   - **Placement.** BB offers no slot to replace its Recent list or resize its
+     scroll viewport, so the section reads where it mounted (`home/layout.ts`):
+     - `takeover`, inside BB's compact home scroll viewport
+       (`[data-testid="root-compose-compact-scroll-viewport"]`): a stylesheet
+       (`home/home.css`), scoped by `:has()` to the section being mounted
+       there, hides BB's Recent list and the spacer above it, lifts the
+       viewport to just under the top controls (over BB's inline `top`, which
+       BB rewrites on resize), starts the content at the top, and hides BB's
+       heading for the section. BB's own bottom spacer keeps the last row clear
+       of the composer.
+     - `inline`, in a narrow window where that viewport isn't found (BB's
+       markup changed, or its empty welcome shows), or when threads fail to
+       load: the section renders below BB's list, changes none of BB's markup,
+       and hides only BB's heading.
+     - `hidden`, in wide windows, with the preference off, or with nothing to
+       list: the section renders nothing and hides BB's heading for it.
+     - While threads load, the takeover shows a placeholder so BB's list never
+       flashes. A render failure is contained in a boundary that falls back to
+       `hidden`, leaving BB's list.
+     The stylesheet restyles BB's presentation only; it never changes state.
+
 ### 11.1 Snooze
 
 Snoozing puts a thread away until later. A snoozed thread leaves Up Next,
@@ -721,7 +773,7 @@ statement IDs.
 bb-plugin-workstreams/
   src/domain/    tree · project (thread trees → groups and bands) · organize · analysis · router · schemas
   src/server/    index · prefs · map · journal · service · analyzer · router · bootstrap · inference/{host,gateway,worker} · cli · agents
-  src/app/       index · useWorkstreams (live hook + one state RPC + realtime) · sidebar/* · page/* · header/* (parent link) · composer/* (New work intake and thread cards)
+  src/app/       index · useWorkstreams (live hook + one state RPC + realtime) · sidebar/* · home/* (phone Home screen) · page/* · header/* (parent link) · composer/* (New work intake and thread cards)
   tests/         domain (real exported snapshots) · server (mock SDK) · app (renderSlot)
 ```
 

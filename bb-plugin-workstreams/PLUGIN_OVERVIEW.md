@@ -28,7 +28,9 @@ marks the thread in the sidebar.
 
 The sidebar puts Up Next, the workstreams you prioritized, and Recent above the
 other workstream groups; while a prioritized workstream has a thread waiting, Up
-Next shows only those. Recaps, work state, titles and snooze stay current
+Next shows only those. On a phone, the Home screen shows the same Up Next block
+over your threads grouped by workstream, in place of BB's flat Recent list.
+Recaps, work state, titles and snooze stay current
 independently of organization. Activity records changes with rationale and Undo,
 including the organizing batch's placements and routing metadata. Manual changes
 made elsewhere are respected. Workstreams' preferences are grouped by feature

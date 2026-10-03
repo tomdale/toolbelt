@@ -214,14 +214,13 @@ function GroupSection({
         (row) => !env.isOpen(treeKey(row.thread.id), true),
       )
     : [];
-  const marks = group.rows.some((row) =>
-    hasStatusMark(row.thread, env.work(row.thread)),
-  );
   const descendants = new Map(
-    group.rows.map((row, index) => [
-      row.thread.id,
-      descendantCount(group.rows, index),
-    ]),
+    open
+      ? group.rows.map((row, index) => [
+          row.thread.id,
+          descendantCount(group.rows, index),
+        ])
+      : [],
   );
   return (
     <section
@@ -234,7 +233,9 @@ function GroupSection({
       <h3 className="ws-home-group-head">
         <button type="button" aria-expanded={open} onClick={onToggle}>
           <Icon name="ChevronRight" className="ws-home-chevron" aria-hidden />
-          {isUnfiled ? null : (
+          {isUnfiled ? (
+            <span className="ws-home-dot ws-home-dot-none" aria-hidden="true" />
+          ) : (
             <span
               className="ws-home-dot"
               aria-hidden="true"
@@ -282,7 +283,7 @@ function GroupSection({
                 now={env.now}
                 variant="group"
                 depth={row.depth}
-                showMarkSlot={marks}
+                showMarkSlot
                 showAge={env.showAge}
                 disclosure={
                   row.hasChildren
@@ -335,6 +336,7 @@ function Fold({
           onClick={() => env.toggle(id, false)}
         >
           <Icon name="ChevronRight" className="ws-home-chevron" aria-hidden />
+          <span className="ws-home-dot ws-home-dot-none" aria-hidden="true" />
           <span className="ws-home-group-name">{title}</span>
           <span className="ws-home-counts">
             <span className="ws-home-total">{count}</span>

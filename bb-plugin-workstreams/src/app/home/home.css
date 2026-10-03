@@ -44,7 +44,11 @@
 [data-testid="plugin-homepage-sections"]:has([data-ws-home="takeover"]) {
   margin-top: 0;
 }
-section:has(> [data-bb-plugin-root] > [data-ws-home="takeover"]) > h2 {
+section:has(
+    > [data-bb-plugin-root]
+      > :is([data-ws-home="takeover"], [data-ws-home="inline"])
+  )
+  > h2 {
   display: none;
 }
 /* Wide windows, the preference off, or nothing to list: no heading either. */
@@ -59,7 +63,8 @@ section:has(> [data-bb-plugin-root] > [data-ws-home="hidden"]) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 8px 0 16px;
+  /* The last row stays clear of the fade above BB's composer. */
+  padding: 8px 0 40px;
   color: var(--foreground);
 }
 .ws-home :is(a, button) {
@@ -360,6 +365,13 @@ section:has(> [data-bb-plugin-root] > [data-ws-home="hidden"]) {
   flex: none;
   border-radius: 50%;
   background: oklch(64% 0.15 var(--ws-hue, 250));
+}
+/* Collections that are not workstreams (Unfiled, Dormant, Snoozed) keep the
+   dot's place with a hollow ring, so every name starts at the same edge. */
+.ws-home-dot-none {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px
+    color-mix(in oklab, var(--muted-foreground) 55%, transparent);
 }
 .ws-home-group-name {
   min-width: 0;
