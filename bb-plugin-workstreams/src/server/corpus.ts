@@ -638,6 +638,51 @@ export class CorpusStore {
     return { ...entity, parentId: newParentId };
   }
 
+  updateMetadata(
+    entityId: string,
+    updates: { description?: string; aliases?: readonly string[] },
+  ): CorpusEntity {
+    const entity = this.getById(entityId);
+    if (!entity) throw new Error(`Unknown corpus entity: ${entityId}`);
+
+    let nextDescription = entity.description;
+    if (updates.description !== undefined) {
+      nextDescription = updates.description.trim();
+    }
+
+    let nextAliases = entity.aliases;
+    if (updates.aliases !== undefined) {
+      const cleanAliasList = cleanAliases(updates.aliases);
+      if (
+        cleanAliasList.some(
+          (alias) => normalize(alias) === normalize(entity.name),
+        )
+      ) {
+        throw new Error("Corpus entity alias must differ from its name");
+      }
+      if (
+        cleanAliasList.some((alias) => {
+          const other = this.resolve(alias, entity.parentId);
+          return other && other.id !== entity.id;
+        })
+      ) {
+        throw new Error(
+          "Corpus alias already resolves to an entity in this parent scope",
+        );
+      }
+      nextAliases = cleanAliasList;
+    }
+
+    this.db
+      .prepare(
+        "UPDATE ws_corpus_entity SET description = ?, aliases = ? WHERE id = ?",
+      )
+      .run(nextDescription, JSON.stringify(nextAliases), entity.id);
+
+    this.bumpRevision();
+    return { ...entity, description: nextDescription, aliases: nextAliases };
+  }
+
   merge(
     sourceEntityId: string,
     targetEntityId: string,

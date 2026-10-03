@@ -978,3 +978,52 @@ section[data-testid="plugin-interaction-shell"]:has(.ws-question-portaled) {
     opacity: 0.4;
   }
 }
+
+/* Task identity chip in thread header */
+.ws-task-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 280px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.ws-task-identity:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.ws-task-identity:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.ws-task-identity-unresolved {
+  border-style: dashed;
+  opacity: 0.85;
+}
+.ws-task-identity-unresolved:hover {
+  opacity: 1;
+}
+.ws-task-identity-compact {
+  padding-inline: 6px;
+}
+.ws-task-identity-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-task-identity-inherited {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+}

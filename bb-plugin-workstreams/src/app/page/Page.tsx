@@ -58,6 +58,7 @@ export function WorkstreamsPage({
   subPath = "",
 }: Partial<PluginNavPanelProps>) {
   const ws = useWorkstreams();
+  const navigate = useBbNavigate();
   const linked = tabOf(subPath);
   const [tab, setTab] = useState<Tab>(linked.tab);
   const tabs: Tab[] = ["overview", "catalog", "map", "activity"];
@@ -209,7 +210,13 @@ export function WorkstreamsPage({
             ) : null}
           </div>
         ) : tab === "catalog" ? (
-          <Catalog rpc={ws.rpc} />
+          <Catalog
+            rpc={ws.rpc}
+            serverCatalog={ws.server.catalog}
+            sections={ws.sections}
+            threads={ws.threads}
+            navigate={navigate}
+          />
         ) : tab === "map" ? (
           <MapTab
             rpc={ws.rpc}

@@ -728,6 +728,22 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
+  it("offers Product or feature submenu in row menu", async () => {
+    const slot = await mount(undefined, { settings: { showRecent: false } });
+    const link = within(slot.getByRole("region", { name: "Alpha" })).getByRole(
+      "link",
+      {
+        name: "Root task",
+      },
+    );
+    fireEvent.contextMenu(link.closest("li")!);
+    const item = await slot.findByRole("menuitem", {
+      name: "Product or feature",
+    });
+    expect(item).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
   it("folds the status slot away only when no row in the group has a mark", async () => {
     const slots = (slot: Awaited<ReturnType<typeof mount>>, name: string) =>
       [
