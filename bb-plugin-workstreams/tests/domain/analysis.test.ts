@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  GOAL_MAX,
   RECAP_MAX,
   analysisPrompt,
   conversationBlock,
@@ -89,7 +90,7 @@ describe("parseAnalysis", () => {
     ).toBeNull();
   });
 
-  it("accepts a durable goal and defaults it for older analysis results", () => {
+  it("accepts a durable goal, clips long output, and defaults older results", () => {
     const result = parseAnalysis(
       JSON.stringify({
         recap: "r",
@@ -98,6 +99,11 @@ describe("parseAnalysis", () => {
       }),
     );
     expect(result.goal).toBe("Make onboarding easier to complete");
+    expect(
+      parseAnalysis(
+        JSON.stringify({ recap: "r", state: "done", goal: "word ".repeat(30) }),
+      ).goal?.length,
+    ).toBeLessThanOrEqual(GOAL_MAX);
     expect(
       parseAnalysis(JSON.stringify({ recap: "r", state: "done" })).goal,
     ).toBeNull();
@@ -141,6 +147,11 @@ describe("analysisPrompt", () => {
     expect(prompt).toContain(
       "replace it only when the underlying objective or scope genuinely changes",
     );
+    expect(prompt).toContain("Use a concise phrase of 3–8 words");
+    expect(prompt).toContain(
+      "not the conversation or its individual requested changes",
+    );
+    expect(prompt).toContain("shorten it when it exceeds this limit");
   });
 
   it("redacts secrets and bounds long messages", () => {
