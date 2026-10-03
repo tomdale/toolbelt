@@ -92,8 +92,11 @@ export const Hint = forwardRef<
             collisionPadding={8}
             className={cn(
               "z-50 max-w-64 rounded-md border border-border bg-popover px-2 py-1 text-[11px] leading-4 text-popover-foreground",
-              // A hint over text needs a lift a plain label does not.
-              arrow ? "shadow-xl" : "shadow-md",
+              // A hint that explains a button lands over the recap's own text,
+              // so a broad, soft shadow darkens that text enough to read against.
+              arrow
+                ? "shadow-[0_6px_32px_8px_rgb(0_0_0/0.3)] dark:shadow-[0_6px_32px_10px_rgb(0_0_0/0.85)]"
+                : "shadow-md",
             )}
           >
             {label}
