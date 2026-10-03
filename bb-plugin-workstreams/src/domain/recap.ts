@@ -507,6 +507,7 @@ export function reportedAnalysis(
   return {
     subject: null,
     title: null,
+    goal: base?.goal ?? null,
     drift: null,
     driftSectionId: null,
     model: "agent",

@@ -89,6 +89,20 @@ describe("parseAnalysis", () => {
     ).toBeNull();
   });
 
+  it("accepts a durable goal and defaults it for older analysis results", () => {
+    const result = parseAnalysis(
+      JSON.stringify({
+        recap: "r",
+        state: "done",
+        goal: "Make onboarding easier to complete",
+      }),
+    );
+    expect(result.goal).toBe("Make onboarding easier to complete");
+    expect(
+      parseAnalysis(JSON.stringify({ recap: "r", state: "done" })).goal,
+    ).toBeNull();
+  });
+
   it("keeps an ask only for a needs-decision result", () => {
     const raw = JSON.stringify({
       recap: "r",
@@ -115,6 +129,18 @@ describe("analysisPrompt", () => {
     const prompt = analysisPrompt(input());
     expect(prompt).toContain('Known subjects in this workstream: ["Lumen"]');
     expect(prompt).not.toMatch(/project:/i);
+  });
+
+  it("passes the previous durable goal as stable context", () => {
+    const prompt = analysisPrompt(
+      input({ previousGoal: "Make onboarding easier to complete" }),
+    );
+    expect(prompt).toContain(
+      'Previously inferred durable goal: "Make onboarding easier to complete"',
+    );
+    expect(prompt).toContain(
+      "replace it only when the underlying objective or scope genuinely changes",
+    );
   });
 
   it("redacts secrets and bounds long messages", () => {
@@ -152,6 +178,7 @@ describe("freshness", () => {
     needsYou: "Commit?",
     subject: null,
     title: null,
+    goal: null,
     drift: null,
     revision: 100,
     at: 1,

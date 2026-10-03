@@ -444,6 +444,52 @@
   color: var(--warning-text, #e0a84f);
 }
 
+/* Sticky thread goal lives inside the native message scroller. */
+.ws-sticky-goal-root {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  justify-content: center;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  overflow: hidden;
+  padding: 0 1.25rem;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  background: color-mix(in oklab, var(--background) 92%, transparent);
+  backdrop-filter: blur(14px);
+  transition: height 70ms linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-sticky-goal-root {
+    transition: none;
+  }
+}
+.ws-sticky-goal {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  min-height: 0;
+}
+.ws-sticky-goal__title {
+  overflow: hidden;
+  color: var(--foreground);
+  font-weight: 500;
+  letter-spacing: -0.012em;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-sticky-goal__subtitle {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Parent chip in a child thread's header. */
 .ws-parent-link {
   display: inline-flex;

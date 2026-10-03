@@ -39,6 +39,8 @@ const analysisSchema = z.object({
   subject: z.string().nullable(),
   // Results stored before titles were suggested have none.
   title: z.string().nullable().default(null),
+  // Older analysis rows predate durable goals.
+  goal: z.string().nullable().default(null),
   drift: z
     .object({
       workstream: z.string().nullable(),
