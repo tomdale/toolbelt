@@ -20,7 +20,7 @@ function messageColumn(scroller: HTMLElement): HTMLElement | null {
 // its top-left corner, so every line keeps its place and only shrinks.
 const TITLE_SIZE = 1.5;
 const SUBTITLE_SIZE = 0.92;
-const TITLE_LINE = 1.25;
+const TITLE_LINE = 4 / 3;
 const SUBTITLE_LINE = 1.4;
 const PAD_TOP = 0.3;
 const TITLE_COMPACT_SCALE = 0.6; // 0.9x body text
@@ -193,7 +193,7 @@ function useScrollState(scroller: HTMLElement | null): {
  */
 export function StickyGoalHeader(): React.ReactPortal | null {
   const { threadId } = useBbContext();
-  const { threads, projects, sections } = experimental_useSidebarThreads();
+  const { threads } = experimental_useSidebarThreads();
   const { server } = useSharedServerState();
   const mount = useMessageScroller(threadId);
   const { compact, fade } = useScrollState(mount?.scroller ?? null);
@@ -207,22 +207,15 @@ export function StickyGoalHeader(): React.ReactPortal | null {
     const goal =
       analysis?.goal ??
       (thread.title ? thread.displayTitle : "Building a clear thread goal");
-    const project = projects.find((item) => item.id === thread.projectId)?.name;
+    // The current recap supplies the active subtask when it adds information.
     const subtask = recap?.goal && recap.goal !== goal ? recap.goal : null;
-    const workstream = thread.sectionId
-      ? sections.find((item) => item.id === thread.sectionId)?.name
-      : null;
-    // A workstream/project identifies the broader effort; the current recap
-    // supplies the active subtask when it adds information.
-    return { goal, eyebrow: workstream ?? project ?? null, subtask };
-  }, [threadId, threads, projects, sections, server.analysis, server.recaps]);
+    return { goal, subtask };
+  }, [threadId, threads, server.analysis, server.recaps]);
 
   const base = mount?.baseFontSize ?? 14;
   const expandedHeight = headingHeight(base, false);
   const compactHeight = headingHeight(base, true);
-  const subtitle = [context?.eyebrow, context?.subtask]
-    .filter(Boolean)
-    .join(" · ");
+  const subtitle = context?.subtask ?? "";
   const height = compact ? compactHeight : expandedHeight;
   const titleScale = compact ? TITLE_COMPACT_SCALE : 1;
   const subtitleScale = compact ? SUBTITLE_COMPACT_SCALE : 1;
