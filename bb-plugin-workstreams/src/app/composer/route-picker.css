@@ -20,20 +20,20 @@
  * One cluster per slot: the two chips (wide) or the route chip (phone). BB's
  * project chip never shrinks and its environment and branch chips squeeze
  * until their icons spill, so ours gives way first. A shrink factor above
- * theirs makes the cluster absorb an overflow before they lose width; the
- * phone's single chip, which has the sheet to say what it can't, yields more
- * readily than the two chips that have only their labels. The floors below
- * stop the cluster where its chips have only their icons left.
+ * theirs makes the cluster absorb an overflow before they lose width. The
+ * phone's single chip yields most readily, because the sheet carries what it
+ * can't; the two chips on a wide screen have only their labels to show.
  */
 [data-ws-composer-controls] {
-  flex: 0 3 auto;
+  flex: 0 2 auto;
   min-width: 0;
   max-width: 100%;
 }
 /*
  * Floors: a chip's padding, icon, gaps and chevron, with the label ellipsized
- * away. ✦ takes the 14px a manual pick's mark does, so every chip has the
- * same floor and none is left a sliver of label to clip mid-letter.
+ * away, so no sliver of label is left to clip mid-letter. ✦ is set in a
+ * fallback symbol font whose width varies by platform, so it takes the 14px a
+ * manual pick's mark does, and every chip has the same exact floor.
  */
 [data-ws-composer-controls][data-ws-variant="route"] {
   flex-shrink: 8;
@@ -93,7 +93,9 @@
 
 /*
  * The sheet portals to the page, outside every plugin root that defines the
- * magic tint, so it defines the same one.
+ * magic tint, so it defines the same one. Its height doesn't depend on the
+ * list, so switching tabs doesn't move the tabs out from under the finger; it
+ * gives way to the drawer's own maximum when the keyboard takes room.
  */
 .ws-route-sheet {
   --ws-magic: color-mix(
@@ -101,7 +103,8 @@
     var(--color-violet-500, oklch(60.6% 0.25 292.717)) 70%,
     var(--foreground, #ededed)
   );
-  min-height: min(24rem, 50dvh);
+  height: min(36rem, 80dvh);
+  flex: 0 1 auto;
   padding: 0 max(1rem, env(safe-area-inset-right))
     max(0.5rem, env(safe-area-inset-bottom))
     max(1rem, env(safe-area-inset-left));
@@ -190,7 +193,8 @@
   background: transparent;
 }
 
-/* Why the destination is Automatic: touch has no tooltip to say so. */
+/* Why the destination is Automatic, and that a proposal is created when the
+   thread starts: touch has no tooltip to say so. */
 .ws-route-note {
   display: flex;
   flex-shrink: 0;
@@ -205,6 +209,9 @@
 .ws-route-note .ws-spark {
   margin-top: 0.35em;
   flex-shrink: 0;
+}
+.ws-route-note p {
+  margin: 0;
 }
 
 /* ---- The suggestion row on touch ---------------------------------------- */

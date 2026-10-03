@@ -637,15 +637,19 @@ describe("the route sheet", () => {
       ).toContain("The classifier files this as you type");
     });
 
-    it("says that a proposed workstream is created when you start", async () => {
+    it("adds that a proposed workstream is created when you start", async () => {
       phone();
       const { slot } = mount({ decision: newWorkstreamDecision });
       await classify(slot);
       await routeChip(/^Route: Workstream Billing/);
       await openSheet();
+      const note = document.querySelector("[data-ws-route-note]");
       expect(
-        document.querySelector("[data-ws-route-note]")?.textContent,
-      ).toContain("New workstream “Billing” — created when you start");
+        [...note!.querySelectorAll("p")].map((line) => line.textContent),
+      ).toEqual([
+        "A new effort",
+        "New workstream “Billing” — created when you start",
+      ]);
     });
 
     it("is left out once the destination is a manual pick", async () => {
