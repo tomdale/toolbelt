@@ -36,10 +36,11 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
   UNFILED_NAME,
-  focusNeeds,
   type Group,
   type Row as RowModel,
 } from "../../domain/project.ts";
+import { arrangeGroups } from "../../domain/groups.ts";
+import { UP_NEXT_LIMIT, selectUpNext } from "../../domain/upNext.ts";
 import { useWorkstreams } from "../useWorkstreams.ts";
 import { useCollapsed } from "./useCollapsed.ts";
 import {
@@ -253,18 +254,6 @@ export function WorkstreamsThreadList({
       .find((row) => row.thread.id === activeThreadId);
     if (selectedRow) forYouRows.splice(selection.index, 0, selectedRow);
   }
-  const recapCandidates = [
-    ...projection.groups,
-    projection.unsorted,
-    ...projection.dormant,
-  ]
-    .flatMap((group) => group.rows)
-    .filter((row) => ws.server.recaps[row.thread.id])
-    .sort(
-      (a, b) =>
-        b.thread.latestAttentionAt - a.thread.latestAttentionAt ||
-        a.thread.id.localeCompare(b.thread.id),
-    );
   const nameOf = new Map(sections.map((s) => [s.id, s.name]));
   const prioritizedIds = ws.server.order.prioritized;
   const prioritized = new Set(prioritizedIds.filter((id) => nameOf.has(id)));
@@ -273,20 +262,18 @@ export function WorkstreamsThreadList({
   // row if Up Next was showing it, so a prioritized thread arriving never
   // takes the row out from under the user; it leaves once they move on.
   const shownBefore = useRef<ReadonlySet<string>>(new Set());
-  const focus = focusNeeds(
-    forYouRows,
-    (id) => id !== null && prioritized.has(id),
-    (row) =>
+  const {
+    focus,
+    recapRows,
+    rows: shownNeedsRows,
+  } = selectUpNext(projection, {
+    needsYou: forYouRows,
+    recaps: ws.server.recaps,
+    prioritized,
+    keep: (row) =>
       row.thread.id === activeThreadId &&
       shownBefore.current.has(row.thread.id),
-  );
-  const recapRows = recapCandidates.filter(
-    (row) =>
-      (!focus.active ||
-        (row.workstreamId !== null && prioritized.has(row.workstreamId))) &&
-      !focus.shown.some((shown) => shown.thread.id === row.thread.id),
-  );
-  const shownNeedsRows = [...focus.shown, ...recapRows];
+  });
   const recentRows = projection.recent.filter(
     (row) =>
       !forYouRows.some((kept) => kept.thread.id === row.thread.id) &&
@@ -706,36 +693,21 @@ export function WorkstreamsThreadList({
   );
 
   const groupSort = prefs?.sidebar.groupSort ?? "alphabetical";
-  const sortGroups = (groups: readonly ThreadGroup[]) => {
-    if (groupSort === "manual") return [...groups];
-    return [...groups].sort(
-      (a, b) =>
-        (groupSort === "activity"
-          ? b.lastActiveAt - a.lastActiveAt
-          : a.name.localeCompare(b.name)) || a.name.localeCompare(b.name),
-    );
-  };
-  const pinnedGroups = sortGroups(
-    projection.groups.filter((group) => group.prioritized),
-  );
-  const otherGroups = sortGroups(
-    projection.groups.filter((group) => !group.prioritized),
-  );
   // Unfiled, a group only while it has threads, sits between the populated
-  // workstreams and the empty ones.
-  const populatedGroups = otherGroups.filter((group) => group.total > 0);
-  const emptyGroups = otherGroups.filter((group) => group.total === 0);
-  // With any workstream prioritized, the rest (with Unfiled and Dormant)
-  // sit hidden behind a toggle below the prioritized ones.
-  const tiered = pinnedGroups.length > 0;
+  // workstreams and the empty ones. With any workstream prioritized, the rest
+  // (with Unfiled and Dormant) sit hidden behind a toggle below the
+  // prioritized ones.
+  const {
+    pinned: pinnedGroups,
+    populated: populatedGroups,
+    empty: emptyGroups,
+    tiered,
+    hasLower,
+  } = arrangeGroups(projection, groupSort);
   if (!tiered && (showLower || lowerExpanded.size > 0)) {
     setShowLower(false);
     setLowerExpanded(new Set());
   }
-  const hasLower =
-    otherGroups.length > 0 ||
-    projection.unsorted.total > 0 ||
-    projection.dormant.length > 0;
   const wasTiered = useRef(tiered);
   useLayoutEffect(() => {
     wasTiered.current = tiered;
@@ -1180,7 +1152,7 @@ export function WorkstreamsThreadList({
 export const UP_NEXT = "Up Next";
 
 /** Up Next shows this many rows until the user asks for the rest. */
-const NEEDS_YOU_LIMIT = 5;
+const NEEDS_YOU_LIMIT = UP_NEXT_LIMIT;
 
 /**
  * An overlay band. A plain band collapses from its header. A boxed band is an
