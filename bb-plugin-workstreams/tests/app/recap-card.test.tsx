@@ -648,9 +648,41 @@ it.each(["full"])(
     expect(region.textContent).toContain(
       "Review the pull request, report, and notes; expect matching findings",
     );
-    expect(slot.getByText("Pull request").closest("a")).toBeTruthy();
-    expect(slot.getByText("Report").closest("a")).toBeTruthy();
-    expect(slot.getByText("Notes").closest("a")).toBeTruthy();
+    const reportLink = slot.getByText("Report").closest("a");
+    const notesLink = slot.getByText("Notes").closest("a");
+    const prLink = slot.getByText("Pull request").closest("a");
+    expect(reportLink).toBeTruthy();
+    expect(reportLink?.getAttribute("href")).toBe("./report.md");
+    expect(notesLink).toBeTruthy();
+    expect(notesLink?.getAttribute("href")).toBe("./%2Ftmp%2Fnotes.md");
+    expect(prLink).toBeTruthy();
+    expect(prLink?.getAttribute("href")).toBe("https://github.com/o/r/pull/1");
+
+    fireEvent.click(reportLink!);
+    expect(slot.inspection.navigateCalls).toContainEqual({
+      method: "experimental_openFilePreview",
+      options: {
+        target: {
+          kind: "workspace",
+          environmentId: "env_1",
+          path: "report.md",
+        },
+        location: null,
+      },
+    });
+
+    fireEvent.click(notesLink!);
+    expect(slot.inspection.navigateCalls).toContainEqual({
+      method: "experimental_openFilePreview",
+      options: {
+        target: {
+          kind: "host",
+          hostId: "host_1",
+          path: "/tmp/notes.md",
+        },
+        location: null,
+      },
+    });
     // One review step reads as plain text.
     expect(
       slot

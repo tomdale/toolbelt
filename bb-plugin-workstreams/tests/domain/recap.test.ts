@@ -249,12 +249,22 @@ it("opens paths inside the workspace there, and others through the host", () => 
   expect(fileTarget("/work/src/a.ts", files)).toEqual({
     kind: "workspace",
     environmentId: "env_1",
-    path: "/work/src/a.ts",
+    path: "src/a.ts",
+  });
+  expect(fileTarget("/work//src/nested/b.ts", files)).toEqual({
+    kind: "workspace",
+    environmentId: "env_1",
+    path: "src/nested/b.ts",
   });
   expect(fileTarget("/workspace/a.ts", files)).toEqual({
     kind: "host",
     hostId: "host_1",
     path: "/workspace/a.ts",
+  });
+  expect(fileTarget("/work", files)).toEqual({
+    kind: "host",
+    hostId: "host_1",
+    path: "/work",
   });
   expect(fileTarget("/tmp/a.md", { ...files, hostId: null })).toBeNull();
   expect(fileTarget("/tmp/a.md", null)).toBeNull();
