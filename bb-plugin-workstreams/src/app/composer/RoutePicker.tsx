@@ -39,7 +39,7 @@ import {
   identityValue,
   useCatalogEntities,
   useWorkstreamView,
-  workstreamNote,
+  workstreamNotes,
 } from "./picker-options.tsx";
 
 type RouteTab = "workstream" | "identity";
@@ -112,7 +112,7 @@ export function RoutePicker({ newWork }: { newWork: NewWork }) {
     tabRefs.current[next]?.focus();
   };
 
-  const note = tab === "workstream" ? workstreamNote(display, label) : null;
+  const notes = tab === "workstream" ? workstreamNotes(display, label) : [];
 
   return (
     <Popover open={open} onOpenChange={openChange}>
@@ -204,15 +204,19 @@ export function RoutePicker({ newWork }: { newWork: NewWork }) {
           aria-labelledby={tabId(tab)}
           className="ws-route-panel"
         >
-          {note ? (
-            <p className="ws-route-note" data-ws-route-note="">
+          {notes.length ? (
+            <div className="ws-route-note" data-ws-route-note="">
               {display.auto ? (
                 <span className="ws-spark" aria-hidden>
                   ✦
                 </span>
               ) : null}
-              <span className="min-w-0">{note}</span>
-            </p>
+              <div className="min-w-0">
+                {notes.map((note) => (
+                  <p key={note}>{note}</p>
+                ))}
+              </div>
+            </div>
           ) : null}
           {tab === "workstream" ? (
             <WorkstreamOptions

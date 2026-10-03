@@ -45,7 +45,7 @@ const IDLE = "__idle__";
  * short the label ellipsizes, so nothing in the chip paints over a sibling.
  */
 export const CHIP_CLASS =
-  "h-8 w-fit max-w-full min-w-0 items-center justify-start gap-1 px-1 text-xs leading-tight border-none bg-transparent shadow-none text-muted-foreground hover:text-muted-foreground";
+  "h-8 w-fit max-w-full min-w-0 shrink items-center justify-start gap-1 px-1 text-xs leading-tight border-none bg-transparent shadow-none text-muted-foreground hover:text-muted-foreground";
 
 /**
  * Where a list is shown. A `popover` is the floating panel beside a desktop
@@ -148,21 +148,37 @@ export function identityValue(state: NewWorkState): string {
   return state.identity ? state.identity.label : "Automatic";
 }
 
+const AUTOMATIC_NOTE = "The classifier files this as you type";
+const creatingNote = (label: string) =>
+  `New workstream “${label}” — created when you start`;
+
 /**
- * What an Automatic or pending Workstream field has to say about itself: the
- * classifier's one-line reason, or that submitting creates the workstream.
- * Desktop shows it as the chip's tooltip and the phone sheet as a note, since
- * touch has no hover. Null for a manual pick.
+ * What an Automatic or pending Workstream field has to say about itself,
+ * as the desktop chip's tooltip: that submitting creates a proposed
+ * workstream, or else the classifier's one-line reason. Null for a manual pick.
  */
 export function workstreamNote(
   display: ReturnType<typeof pickerDisplay>,
   label: string,
 ): string | null {
-  if (display.creating)
-    return `New workstream “${label}” — created when you start`;
-  if (display.auto)
-    return display.reason ?? "The classifier files this as you type";
+  if (display.creating) return creatingNote(label);
+  if (display.auto) return display.reason ?? AUTOMATIC_NOTE;
   return null;
+}
+
+/**
+ * The same, as the phone sheet's notes, since touch has no tooltip: the
+ * classifier's reason for an Automatic destination, then that a proposed
+ * workstream is created when the thread starts. Empty for a manual pick.
+ */
+export function workstreamNotes(
+  display: ReturnType<typeof pickerDisplay>,
+  label: string,
+): string[] {
+  const notes: string[] = [];
+  if (display.auto) notes.push(display.reason ?? AUTOMATIC_NOTE);
+  if (display.creating) notes.push(creatingNote(label));
+  return notes;
 }
 
 export interface OptionsProps {
