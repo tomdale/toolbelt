@@ -59,6 +59,11 @@
   touch-action: manipulation;
 }
 
+/* A label with no room for an ellipsis is hidden rather than clipped. */
+[data-ws-label-tiny] {
+  visibility: hidden;
+}
+
 /* "Classifying…" can shrink too; on a phone it is sr-only instead. */
 .ws-picker-status {
   flex: 0 1 auto;

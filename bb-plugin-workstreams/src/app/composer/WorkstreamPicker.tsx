@@ -28,6 +28,7 @@ import { NO_WORKSTREAM_ICON, WORKSTREAM_ICON } from "../workstream-icon.ts";
 import { identityDisplay, type NewWork } from "./new-work.ts";
 import {
   CHIP_CLASS,
+  ChipLabel,
   IdentityOptions,
   WorkstreamOptions,
   identityValue,
@@ -73,9 +74,9 @@ export function IdentityControl({ newWork }: { newWork: NewWork }) {
           ) : (
             <Icon name="Tag" className="size-3.5 shrink-0" aria-hidden />
           )}
-          <span className="min-w-0 truncate">
+          <ChipLabel>
             {state.identity ? state.identity.label : `Concerning: ${label}`}
-          </span>
+          </ChipLabel>
         </span>
         <Icon
           name="ChevronDown"
@@ -146,7 +147,7 @@ export function WorkstreamControl({ newWork }: { newWork: NewWork }) {
               aria-hidden
             />
           )}
-          <span className="min-w-0 truncate">{label}</span>
+          <ChipLabel>{label}</ChipLabel>
         </span>
         <Icon
           name="ChevronDown"
