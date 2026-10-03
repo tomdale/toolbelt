@@ -57,13 +57,16 @@ section:has(
   display: none;
 }
 /* Wide windows, the preference off, or nothing to list: no heading either, and
-   no empty wrapper (with its top margin) when no other section is there. */
+   no empty wrapper (with its top margin) when no other section shares it.
+   Never nest :has() in :has(): the selector is invalid, and a minifier that
+   merges rules with equal declarations would take every rule it joined down
+   with it. */
 section:has(> [data-bb-plugin-root] > [data-ws-home="hidden"]) {
   display: none;
 }
-[data-testid="plugin-homepage-sections"]:not(
-    :has(> section:not(:has(> [data-bb-plugin-root] > [data-ws-home="hidden"])))
-  ):has([data-ws-home="hidden"]) {
+[data-testid="plugin-homepage-sections"]:has(
+    > section > [data-bb-plugin-root] > [data-ws-home="hidden"]
+  ):not(:has(> section + section)) {
   display: none;
 }
 
