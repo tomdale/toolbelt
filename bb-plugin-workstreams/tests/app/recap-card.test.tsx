@@ -749,9 +749,10 @@ it.each(["full"])(
         .closest("li"),
     ).toBeNull();
     const archive = await slot.findByRole("button", { name: "Archive" });
-    // A small outline button, so it never outweighs the recap.
-    expect(archive.className).toContain("h-8");
-    expect(archive.className).toContain("border-input");
+    // Sized and styled like the suggested actions beside it.
+    expect(archive.className).toContain("h-7");
+    expect(archive.className).toContain("text-[11.5px]");
+    expect(archive.className).toContain("border-border");
     fireEvent.click(archive);
     await waitFor(() =>
       expect(slot.inspection.rpcCalls).toContainEqual({
