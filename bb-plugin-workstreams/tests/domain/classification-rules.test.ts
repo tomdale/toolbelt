@@ -25,3 +25,29 @@ it("renders synthetic ownership fixtures and parses their expected existing IDs"
     ).toBe(c.expected);
   }
 });
+
+it("parses a subject match that omits the unused proposal fields", () => {
+  const input = {
+    prompt: "Fix the alert investigation flow",
+    entities: [
+      {
+        id: "alerts",
+        name: "Alert Investigations",
+        description: null,
+        parentId: null,
+        aliases: [],
+      },
+    ],
+  };
+  // The model returns only the field it chose; an absent `proposed` is a
+  // subject match, and an absent `subjectId` is a proposal.
+  expect(
+    parseClassification('{"subjectId":"alerts"}', input).subjectId,
+  ).toBe("alerts");
+  const proposal = parseClassification(
+    '{"proposed":{"name":"Recap Cards","description":""}}',
+    input,
+  );
+  expect(proposal.subjectId).toBeUndefined();
+  expect(proposal.proposed?.name).toBe("Recap Cards");
+});
