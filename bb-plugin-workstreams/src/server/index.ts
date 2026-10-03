@@ -277,7 +277,6 @@ export default async function plugin(bb: BbPluginApi) {
       ctx.origin !== null &&
       ctx.attempt === "start-turn" &&
       !ctx.thread.sectionId &&
-      !ctx.parentThreadId &&
       Date.now() - ctx.thread.createdAt < 10 * 60_000;
     if (fresh) {
       const metadata = await bb.sdk.threads.getPluginMetadata({
@@ -324,7 +323,12 @@ export default async function plugin(bb: BbPluginApi) {
               : decision;
         setTimeout(() => {
           router
-            .fileComposed(ctx.thread.id, accepted, identity)
+            .fileComposed(
+              ctx.thread.id,
+              accepted,
+              identity,
+              ctx.parentThreadId ?? null,
+            )
             .catch((error: unknown) =>
               bb.log.warn(`Filing a composed thread failed: ${String(error)}`),
             );
@@ -332,7 +336,12 @@ export default async function plugin(bb: BbPluginApi) {
       } else if (decision) {
         setTimeout(() => {
           router
-            .fileComposed(ctx.thread.id, decision, identity)
+            .fileComposed(
+              ctx.thread.id,
+              decision,
+              identity,
+              ctx.parentThreadId ?? null,
+            )
             .catch((error: unknown) =>
               bb.log.warn(`Filing a composed thread failed: ${String(error)}`),
             );
@@ -358,25 +367,22 @@ export default async function plugin(bb: BbPluginApi) {
               sectionId,
               ctx.parentThreadId ?? null,
             );
-            if (identity?.proposal) {
-              const entity = corpus.rememberProposal(identity.proposal);
-              assignedEntityId = entity.id;
-              corpus.assign(ctx.thread.id, entity.id, {
-                provenance: identity.provenance ?? "automatic",
-              });
-            } else if (identity?.entityId) {
-              assignedEntityId = identity.entityId;
-              corpus.assign(ctx.thread.id, identity.entityId, {
-                provenance: identity.provenance ?? "manual",
-              });
-            }
-            if (sectionId && (assignedEntityId || newlyCreated)) {
-              if (assignedEntityId) {
-                corpus.bindGroup(
-                  sectionId,
-                  corpus.groups().get(sectionId) ?? assignedEntityId,
-                );
+            if (!ctx.parentThreadId) {
+              if (identity?.proposal) {
+                const entity = corpus.rememberProposal(identity.proposal);
+                assignedEntityId = entity.id;
+                corpus.assign(ctx.thread.id, entity.id, {
+                  provenance: identity.provenance ?? "automatic",
+                });
+              } else if (identity?.entityId) {
+                assignedEntityId = identity.entityId;
+                corpus.assign(ctx.thread.id, identity.entityId, {
+                  provenance: identity.provenance ?? "manual",
+                });
               }
+            }
+            if (newlyCreated && sectionId && assignedEntityId) {
+              corpus.bindGroup(sectionId, assignedEntityId);
             }
             if (sectionId) {
               await service.fileIfUnsorted(ctx.thread.id, sectionId, "user");
@@ -803,14 +809,15 @@ export default async function plugin(bb: BbPluginApi) {
     taskReclassify: ({ threadId, entityId, evidence }) =>
       userFacing(async () => {
         await service.reconcile();
+        const rootId = corpus.findRootThread(threadId);
         if (entityId !== undefined) {
           const assignment = corpus.reclassify(threadId, entityId, evidence);
           notify();
           return { assignment };
         }
-        const thread = await bb.sdk.threads.get({ threadId });
-        const analysis = analyzer.get(threadId);
-        const requests = await analyzer.ownershipRequests(threadId);
+        const thread = await bb.sdk.threads.get({ threadId: rootId });
+        const analysis = analyzer.get(rootId);
+        const requests = await analyzer.ownershipRequests(rootId);
         const { value } = await inference.run(
           "classify",
           {
@@ -821,8 +828,8 @@ export default async function plugin(bb: BbPluginApi) {
           },
           {
             model: await currentPrefs().organize.model,
-            threadId,
-            label: thread.title ?? threadId,
+            threadId: rootId,
+            label: thread.title ?? rootId,
           },
         );
         const target = value.subjectId

@@ -437,9 +437,6 @@ export class Router {
       this.deps.semanticSuggestions?.()
     ) {
       const corpus = this.deps.corpus;
-      corpus.syncGroups(
-        records.map((r) => ({ ...r, description: r.description ?? "" })),
-      );
       const { value: classification, traceId } = await this.deps.inference.run(
         "classify",
         {
@@ -1389,6 +1386,7 @@ export class Router {
       proposal?: DraftSubjectProposal | null;
       provenance?: "manual" | "automatic";
     } | null,
+    parentThreadId?: string | null,
   ): Promise<void> {
     const entry = this.decisions.get(decision.id);
     if (!entry || entry.used) return;
@@ -1415,35 +1413,34 @@ export class Router {
       sectionId = target?.sectionId ?? null;
     }
 
-    this.deps.service.seeThread(threadId, sectionId, null);
+    this.deps.service.seeThread(threadId, sectionId, parentThreadId ?? null);
 
     let assignedEntityId: string | null = null;
-    const identity = identityOverride ?? {
-      entityId: decision.subjectId ?? null,
-      proposal: decision.proposal ?? null,
-      provenance: "automatic" as const,
-    };
+    if (!parentThreadId) {
+      const identity = identityOverride ?? {
+        entityId: decision.subjectId ?? null,
+        proposal: decision.proposal ?? null,
+        provenance: "automatic" as const,
+      };
 
-    if (identity.proposal) {
-      const entity = this.deps.corpus?.rememberProposal(identity.proposal);
-      if (entity) {
-        assignedEntityId = entity.id;
-        this.deps.corpus?.assign(threadId, entity.id, {
-          provenance: identity.provenance ?? "automatic",
+      if (identity.proposal) {
+        const entity = this.deps.corpus?.rememberProposal(identity.proposal);
+        if (entity) {
+          assignedEntityId = entity.id;
+          this.deps.corpus?.assign(threadId, entity.id, {
+            provenance: identity.provenance ?? "automatic",
+          });
+        }
+      } else if (identity.entityId) {
+        assignedEntityId = identity.entityId;
+        this.deps.corpus?.assign(threadId, identity.entityId, {
+          provenance: identity.provenance ?? "manual",
         });
       }
-    } else if (identity.entityId) {
-      assignedEntityId = identity.entityId;
-      this.deps.corpus?.assign(threadId, identity.entityId, {
-        provenance: identity.provenance ?? "manual",
-      });
     }
 
-    if (sectionId && assignedEntityId) {
-      this.deps.corpus?.bindGroup(
-        sectionId,
-        this.deps.corpus.groups().get(sectionId) ?? assignedEntityId,
-      );
+    if (newlyCreatedSectionId && assignedEntityId) {
+      this.deps.corpus?.bindGroup(newlyCreatedSectionId, assignedEntityId);
     }
 
     this.deps.inference.link(decision.traceId, {

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { fakeWorld } from "./fake-bb.ts";
 import { CorpusStore } from "../../src/server/corpus.ts";
 import { openDatabase } from "../../src/server/db.ts";
+import { savePrefs } from "../../src/server/prefs.ts";
 import { makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import type { CanonicalAssignment } from "../../src/domain/corpus.ts";
 import { matchesEntity } from "../../src/app/composer/WorkstreamPicker.tsx";
@@ -381,5 +382,297 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
 
     // Non-matching query returns false
     expect(matchesEntity(child, entities, "NonexistentQuery")).toBe(false);
+  });
+
+  it("pure draft classification in route preview does not mutate groups or bump revision", async () => {
+    world = await fakeWorld({
+      settings: { suggestions: true },
+      complete: ({ prompt }) => {
+        if (prompt.includes("## Catalog")) {
+          return JSON.stringify({
+            subjectId: null,
+            proposed: {
+              name: "Search System",
+              description: "Search engine",
+            },
+          });
+        }
+        if (prompt.includes("Someone is starting new work")) {
+          return JSON.stringify({
+            outcome: "new-thread",
+            workstream: "Unbound Navigation",
+            title: "Search task",
+            confidence: "high",
+            reason: "Search task",
+          });
+        }
+        return JSON.stringify({ recap: "r", state: "done", subject: null });
+      },
+    });
+    const w = world;
+    const db = openDatabase(w.bb);
+    savePrefs(db, { newWork: { corpusClassification: true, suggestions: true } });
+    const corpus = new CorpusStore(db);
+
+    const unbound = w.addSection("Unbound Navigation");
+    const revBefore = corpus.revision();
+    const groupsBefore = new Map(corpus.groups());
+
+    const routeRes = (await w.harness.behavior.callRpc("route", {
+      prompt: "Implement search indexing and retrieval",
+      suggest: true,
+      nativeComposer: true,
+      draftKey: "draft-purity-check",
+    })) as { id: string };
+
+    expect(routeRes.id).toBeDefined();
+    // Groups must not be synced or mutated during preview classification
+    expect(corpus.revision()).toBe(revBefore);
+    expect(corpus.groups()).toEqual(groupsBefore);
+    expect(corpus.groups().get(unbound.id)).toBeUndefined();
+  });
+
+  it("filing in existing unbound section does not bind section to task identity", async () => {
+    world = await fakeWorld({
+      settings: { suggestions: true },
+      complete: ({ prompt }) => {
+        if (prompt.includes("Someone is starting new work")) {
+          return JSON.stringify({
+            outcome: "new-thread",
+            workstream: "Unbound Legacy",
+            title: "Auth task",
+            confidence: "high",
+            reason: "Auth task",
+          });
+        }
+        return JSON.stringify({
+          recap: "r",
+          state: "done",
+          subject: "Auth Feature",
+        });
+      },
+    });
+    const w = world;
+    const db = openDatabase(w.bb);
+    savePrefs(db, { newWork: { suggestions: true } });
+    const corpus = new CorpusStore(db);
+
+    const legacySection = w.addSection("Unbound Legacy");
+    await w.harness.behavior.callRpc("refresh", null);
+    const feature = corpus.remember("Auth Feature", "Auth description");
+
+    expect(corpus.groups().get(legacySection.id)).toBeUndefined();
+    const revBefore = corpus.revision();
+
+    // 1. Native submission via message.dispatch with an explicit sectionId and identity
+    const composed = w.addThread("t-composed-unbound", {
+      createdAt: Date.now(),
+    });
+    const hook = w.harness.registrations.hooks["message.dispatch"]!;
+
+    await hook(
+      makeMessageDispatchHookContext({
+        thread: composed,
+        input: { text: "Work on auth feature in legacy section" },
+        parentThreadId: null,
+        origin: "app",
+        experimental_submission: {
+          pluginId: "workstreams",
+          data: {
+            sectionId: legacySection.id,
+            identity: {
+              entityId: feature.id,
+              provenance: "manual",
+            },
+          },
+        },
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(w.threads.get("t-composed-unbound")?.sectionId).toBe(legacySection.id);
+    expect(corpus.assignment("t-composed-unbound").entityId).toBe(feature.id);
+
+    // CRITICAL: The existing section must remain UNBOUND
+    expect(corpus.groups().get(legacySection.id)).toBeUndefined();
+
+    // 2. Active route decision recommending existing section via fileComposed
+    const prompt = "Second auth task";
+    const decision = (await w.harness.behavior.callRpc("route", {
+      prompt,
+      suggest: true,
+      nativeComposer: true,
+      draftKey: "draft-auth-existing",
+    })) as { id: string };
+
+    const composed2 = w.addThread("t-composed-route", {
+      createdAt: Date.now(),
+    });
+    await hook(
+      makeMessageDispatchHookContext({
+        thread: composed2,
+        input: { text: prompt },
+        parentThreadId: null,
+        origin: "app",
+        experimental_submission: {
+          pluginId: "workstreams",
+          data: {
+            routeId: decision.id,
+            sectionId: legacySection.id,
+            identity: {
+              entityId: feature.id,
+              provenance: "manual",
+            },
+          },
+        },
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(w.threads.get("t-composed-route")?.sectionId).toBe(legacySection.id);
+    expect(corpus.assignment("t-composed-route").entityId).toBe(feature.id);
+
+    // CRITICAL: The existing section still must remain UNBOUND
+    expect(corpus.groups().get(legacySection.id)).toBeUndefined();
+  });
+
+  it("message.dispatch forwards actual parentThreadId and preserves root inheritance", async () => {
+    world = await fakeWorld({
+      settings: { suggestions: true },
+      complete: ({ prompt }) => {
+        if (prompt.includes("Someone is starting new work")) {
+          return JSON.stringify({
+            outcome: "new-thread",
+            workstream: "Root Section",
+            title: "Child task",
+            confidence: "high",
+            reason: "Child task",
+          });
+        }
+        return JSON.stringify({
+          recap: "r",
+          state: "done",
+          subject: "Child Entity",
+        });
+      },
+    });
+    const w = world;
+    const db = openDatabase(w.bb);
+    savePrefs(db, { newWork: { suggestions: true } });
+    const corpus = new CorpusStore(db);
+
+    const rootEntity = corpus.remember("Root Entity", "Root task identity");
+    const childEntity = corpus.remember("Child Entity", "Child task identity");
+
+    const rootSection = w.addSection("Root Section");
+    const rootThread = w.addThread("t-root-thread", {
+      sectionId: rootSection.id,
+      createdAt: Date.now() - 5000,
+    });
+    // Assign root thread to rootEntity
+    corpus.assign(rootThread.id, rootEntity.id, { provenance: "manual" });
+    expect(corpus.assignment(rootThread.id).entityId).toBe(rootEntity.id);
+
+    // Call route for child prompt
+    const childPrompt = "Subtask prompt to do inside root";
+    const decision = (await w.harness.behavior.callRpc("route", {
+      prompt: childPrompt,
+      suggest: true,
+      nativeComposer: true,
+      draftKey: "child-draft",
+    })) as { id: string };
+
+    const childThread = w.addThread("t-child-thread", {
+      parentThreadId: rootThread.id,
+      createdAt: Date.now(),
+    });
+
+    const hook = w.harness.registrations.hooks["message.dispatch"]!;
+    await hook(
+      makeMessageDispatchHookContext({
+        thread: childThread,
+        input: { text: childPrompt },
+        parentThreadId: rootThread.id,
+        origin: "app",
+        experimental_submission: {
+          pluginId: "workstreams",
+          data: {
+            routeId: decision.id,
+            sectionId: rootSection.id,
+            identity: {
+              entityId: childEntity.id,
+              provenance: "automatic",
+            },
+          },
+        },
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    // 1. Parent thread id is preserved in seen thread, so findRootThread resolves root
+    expect(corpus.findRootThread(childThread.id)).toBe(rootThread.id);
+
+    // 2. Child thread inherits the root thread's identity
+    const childAssign = corpus.assignment(childThread.id);
+    expect(childAssign.status).toBe("assigned");
+    expect(childAssign.inheritedFrom).toBe(rootThread.id);
+    expect(childAssign.entityId).toBe(rootEntity.id);
+
+    // 3. Crucial invariant: child submission never rewrote the root thread's identity
+    const rootAssign = corpus.assignment(rootThread.id);
+    expect(rootAssign.entityId).toBe(rootEntity.id);
+    expect(rootAssign.provenance).toBe("manual");
+  });
+
+  it("stale route dispatch on child thread preserves parentThreadId and root identity", async () => {
+    world = await fakeWorld();
+    const w = world;
+    const db = openDatabase(w.bb);
+    const corpus = new CorpusStore(db);
+
+    const rootEntity = corpus.remember("Root Project", "Root desc");
+    const childEntity = corpus.remember("Child Feature", "Child desc");
+
+    const rootSection = w.addSection("Root Section");
+    const rootThread = w.addThread("t-root-2", {
+      sectionId: rootSection.id,
+      createdAt: Date.now() - 5000,
+    });
+    corpus.assign(rootThread.id, rootEntity.id, { provenance: "manual" });
+
+    const childThread = w.addThread("t-child-2", {
+      parentThreadId: rootThread.id,
+      createdAt: Date.now(),
+    });
+
+    const hook = w.harness.registrations.hooks["message.dispatch"]!;
+    await hook(
+      makeMessageDispatchHookContext({
+        thread: childThread,
+        input: { text: "Child work prompt" },
+        parentThreadId: rootThread.id,
+        origin: "app",
+        experimental_submission: {
+          pluginId: "workstreams",
+          data: {
+            sectionId: rootSection.id,
+            identity: {
+              entityId: childEntity.id,
+              provenance: "manual",
+            },
+          },
+        },
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(corpus.findRootThread(childThread.id)).toBe(rootThread.id);
+    expect(corpus.assignment(childThread.id).inheritedFrom).toBe(rootThread.id);
+    expect(corpus.assignment(childThread.id).entityId).toBe(rootEntity.id);
+    expect(corpus.assignment(rootThread.id).entityId).toBe(rootEntity.id);
   });
 });
