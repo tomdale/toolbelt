@@ -1,14 +1,16 @@
 /*
- * New work's picker row and suggestion row on every screen size.
+ * New work's picker row, route sheet and suggestion row across screen sizes.
  *
- * The chips are inserted into BB's picker row (host-picker-row.ts), whose own
- * chips are `shrink-0`, so whatever ours cannot give up is painted over a
- * neighbor. Everything here keeps our chips shrinkable: the label ellipsizes
- * first and the chip never goes below its icons.
+ * Our chips are inserted into BB's picker row (host-picker-row.ts) beside
+ * BB's own: the project chip never shrinks, and the environment and branch
+ * chips squeeze until their icons spill over each other. Whatever our chips
+ * cannot give up is therefore painted over a neighbor, so everything here
+ * keeps them shrinkable: a label ellipsizes first and a chip never goes below
+ * its icons.
  *
  * This file loads before styles.css and both are unlayered, so a rule here
- * that must outrank a styles.css rule carries one more class. Typography uses
- * BB's size tokens (they grow on narrow touch screens); the fallbacks are
+ * that must outrank a styles.css rule carries two more classes. Typography
+ * uses BB's size tokens (they grow on narrow touch screens); the fallbacks are
  * Tailwind's defaults for where a token is undefined.
  */
 
@@ -16,26 +18,36 @@
 
 /*
  * One cluster per slot: the two chips (wide) or the route chip (phone). BB's
- * own chips are `shrink-0` or squeeze only down to their icons, so ours gives
- * way first: a shrink factor well above theirs makes the cluster absorb an
- * overflow before they lose any width, and the floors below stop it where
- * its chips have only their icons left.
+ * project chip never shrinks and its environment and branch chips squeeze
+ * until their icons spill, so ours gives way first. A shrink factor above
+ * theirs makes the cluster absorb an overflow before they lose width; the
+ * phone's single chip, which has the sheet to say what it can't, yields more
+ * readily than the two chips that have only their labels. The floors below
+ * stop the cluster where its chips have only their icons left.
  */
 [data-ws-composer-controls] {
-  flex: 0 8 auto;
+  flex: 0 3 auto;
   min-width: 0;
   max-width: 100%;
 }
 /*
- * Floors: a chip's padding, icon (the 14px mark of a manual pick is wider than
- * ✦), gap and chevron, with the label ellipsized away.
+ * Floors: a chip's padding, icon, gaps and chevron, with the label ellipsized
+ * away. ✦ takes the 14px a manual pick's mark does, so every chip has the
+ * same floor and none is left a sliver of label to clip mid-letter.
  */
 [data-ws-composer-controls][data-ws-variant="route"] {
+  flex-shrink: 8;
   min-width: 2.75rem;
 }
 /* Two chip floors and the dot between them. */
 [data-ws-composer-controls][data-ws-variant="split"] {
   min-width: 6.25rem;
+}
+[data-ws-composer-controls] .ws-spark {
+  display: inline-flex;
+  width: 0.875rem;
+  flex-shrink: 0;
+  justify-content: center;
 }
 
 /* Each chip's label ellipsizes before the chip goes below its floor. */
@@ -123,7 +135,7 @@
   align-items: flex-start;
   justify-content: center;
   gap: 2px;
-  padding: 6px 10px;
+  padding: 6px 8px;
   border: 1px solid transparent;
   border-radius: 9px;
   color: var(--muted-foreground);
@@ -197,12 +209,17 @@
 
 /* ---- The suggestion row on touch ---------------------------------------- */
 
+/* On a keyboard screen the actions group is laid out as if it weren't there. */
+.ws-suggestion-actions {
+  display: contents;
+}
+
 /*
  * Tab and ⌘⏎ do nothing on a touch screen, so their hints and the separate
  * Apply button go; tapping the sentence applies, as its button always did.
  * What remains is the sentence (up to two lines), a clear Start/Send action
- * and the dismiss ×, each a 44px target. Where the three don't fit on a line
- * the actions wrap beneath the sentence, aligned to the end.
+ * and the dismiss ×, each a 44px target. Where the actions don't fit beside
+ * the sentence they wrap beneath it, together, aligned to the end.
  */
 @media (hover: none), (pointer: coarse) {
   .ws-suggestion-area .ws-suggestion {
@@ -213,7 +230,6 @@
     min-height: 44px;
     flex: 1 1 13rem;
     font-size: var(--text-xs, 0.75rem);
-    line-height: var(--text-xs--line-height, 1.25rem);
   }
   .ws-suggestion-area .ws-suggestion .ws-suggestion-text {
     display: -webkit-box;
@@ -224,6 +240,13 @@
     white-space: normal;
     overflow-wrap: anywhere;
   }
+  .ws-suggestion-area .ws-suggestion .ws-suggestion-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: stretch;
+    gap: 2px;
+    margin-left: auto;
+  }
   .ws-suggestion-area .ws-suggestion .ws-suggestion-apply,
   .ws-suggestion-area .ws-suggestion .ws-suggestion-kbd {
     display: none;
@@ -233,7 +256,6 @@
     height: auto;
     min-height: 44px;
     justify-content: center;
-    margin-left: auto;
     padding: 0 12px;
     color: var(--foreground);
     font-size: var(--text-xs, 0.75rem);

@@ -11,6 +11,7 @@ import {
 import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { useComposer } from "@get-bb/plugin-sdk/app";
 import { NewThreadRouting } from "../../src/app/composer/NewThreadRouting.tsx";
+import { NewWorkDialog } from "../../src/app/composer/NewWork.tsx";
 import type { RouteDecision } from "../../src/server/router.ts";
 import { emptyState } from "./fixtures.ts";
 
@@ -757,5 +758,59 @@ describe("the suggestion row on touch", () => {
     expect(send.classList.contains("ws-suggestion-go")).toBe(true);
     expect(send.textContent).toContain("Send");
     expect(row.querySelector(".ws-suggestion-apply")).toBeNull();
+  });
+});
+
+describe("the picker in the New work dialog on a phone", () => {
+  function mountDialog() {
+    const startThread = vi.fn(async (_input: unknown) => ({
+      threadId: "thread-created",
+      sectionId: "section-beta",
+    }));
+    const slot = renderSlot(
+      { component: NewWorkDialog },
+      { open: true, onClose: vi.fn() },
+      {
+        settings: {},
+        composer: { scope: { kind: "new-thread", projectId: "project-alpha" } },
+        sdk: { projects: { list: async () => [] } } as never,
+        rpc: {
+          prefs: async () => ({ prefs: {} }),
+          state: async () => ({
+            ...emptyState(),
+            workstreams: WORKSTREAMS,
+            order: { workstreams: [], threads: {}, prioritized: [] },
+          }),
+          catalog: async () => ({ entities: CATALOG }),
+          route: async () => unsureDecision,
+          routeCancel: async () => ({ canceled: true }),
+          startThread,
+        } as never,
+      },
+    );
+    return { slot, startThread };
+  }
+
+  it("renders the same single chip, and filing from its sheet reaches startThread", async () => {
+    phone();
+    const { slot, startThread } = mountDialog();
+    const chip = await routeChip();
+    expect(screen.getAllByRole("button", { name: /^Route: / })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /^Workstream: / })).toBeNull();
+    expect(
+      chip
+        .closest("[data-ws-composer-controls]")
+        ?.getAttribute("data-ws-variant"),
+    ).toBe("route");
+
+    fireEvent.click(chip);
+    fireEvent.click(await screen.findByRole("option", { name: /^Beta/ }));
+    await routeChip("Route: Workstream Beta, Product or feature Automatic");
+    await act(() => slot.behavior.setComposerText(PROMPT));
+    fireEvent.click(screen.getByTestId("bb-new-thread-composer-submit"));
+    await waitFor(() => expect(startThread).toHaveBeenCalledTimes(1));
+    expect(startThread.mock.calls[0]![0]).toMatchObject({
+      sectionId: "section-beta",
+    });
   });
 });

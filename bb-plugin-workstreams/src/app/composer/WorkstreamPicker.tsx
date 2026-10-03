@@ -11,8 +11,8 @@
  * The lists live in `picker-options.tsx`, shared with the phone's route sheet.
  * On a phone-sized viewport the two chips give way to one route chip
  * (`RoutePicker.tsx`); only one variant is ever in the DOM. Either way the
- * chips share BB's picker row with BB's own, which never shrink, so ours do:
- * a label ellipsizes before anything paints over a neighbor (`route-picker.css`).
+ * chips share BB's picker row with BB's own chips, so they shrink: a label
+ * ellipsizes before anything paints over a neighbor (`route-picker.css`).
  */
 import { useState, useSyncExternalStore } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
