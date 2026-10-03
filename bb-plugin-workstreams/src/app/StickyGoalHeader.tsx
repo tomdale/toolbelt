@@ -15,16 +15,31 @@ function messageColumn(scroller: HTMLElement): HTMLElement | null {
   return column instanceof HTMLElement ? column : null;
 }
 
-const TITLE_SCALE = [1.14, 0.9] as const;
-const SUBTITLE_SCALE = [0.88, 0.72] as const;
-const lerp = (range: readonly [number, number], t: number) =>
-  range[0] + (range[1] - range[0]) * t;
+// Type sizes as multiples of the timeline's body font size. Expanded, the
+// heading is the most prominent text on the page: an eyebrow naming the
+// broader effort, a large title, and the current subtask. Compacted, it drops
+// to a title and one muted line so it stays out of the way while reading.
+const EXPANDED = { eyebrow: 0.78, title: 1.5, subtitle: 0.92 } as const;
+const COMPACT = { title: 0.9, subtitle: 0.72 } as const;
 
-/** Heading height in px for a body font size at a given scroll progress. */
-function headingHeight(base: number, t: number): number {
+type Lines = { eyebrow: boolean; subtitle: boolean };
+
+/** Heading height in px for a body font size. */
+function headingHeight(base: number, compact: boolean, lines: Lines): number {
+  if (compact) {
+    return Math.round(
+      base *
+        (COMPACT.title * 1.3 +
+          (lines.subtitle ? COMPACT.subtitle * 1.4 : 0) +
+          0.5),
+    );
+  }
   return Math.round(
-    base * (lerp(TITLE_SCALE, t) * 1.3 + lerp(SUBTITLE_SCALE, t) * 1.4) +
-      base * 0.5,
+    base *
+      (EXPANDED.title * 1.25 +
+        (lines.eyebrow ? EXPANDED.eyebrow * 1.5 : 0) +
+        (lines.subtitle ? EXPANDED.subtitle * 1.4 : 0) +
+        1),
   );
 }
 
@@ -90,7 +105,10 @@ function useMessageScroller(threadId: string | null): Mount | null {
       root.dataset.workstreamsStickyGoal = "";
       const baseFontSize =
         Number.parseFloat(getComputedStyle(column).fontSize) || 14;
-      const initialHeight = headingHeight(baseFontSize, 0);
+      const initialHeight = headingHeight(baseFontSize, false, {
+        eyebrow: true,
+        subtitle: true,
+      });
       root.style.height = `${initialHeight}px`;
       const previousScrollPaddingTop =
         scroller.style.getPropertyValue("scroll-padding-top");
@@ -201,53 +219,71 @@ export function StickyGoalHeader(): React.ReactPortal | null {
     const workstream = thread.sectionId
       ? sections.find((item) => item.id === thread.sectionId)?.name
       : null;
-    return {
-      goal,
-      // A workstream/project identifies the broader effort; the current recap
-      // supplies the active subtask when it adds information.
-      subtitle: [workstream ?? project, subtask]
-        .filter(
-          (value, index, values) => value && values.indexOf(value) === index,
-        )
-        .join(" · "),
-    };
+    // A workstream/project identifies the broader effort; the current recap
+    // supplies the active subtask when it adds information.
+    return { goal, eyebrow: workstream ?? project ?? null, subtask };
   }, [threadId, threads, projects, sections, server.analysis, server.recaps]);
 
-  const step = compact ? 1 : 0;
   const base = mount?.baseFontSize ?? 14;
-  const height = headingHeight(base, step);
-  const titleSize = base * lerp(TITLE_SCALE, step);
-  const subtitleSize = base * lerp(SUBTITLE_SCALE, step);
+  // Compacted, the eyebrow folds into the subtitle line.
+  const subtitle = compact
+    ? [context?.eyebrow, context?.subtask].filter(Boolean).join(" · ")
+    : (context?.subtask ?? "");
+  const lines: Lines = {
+    eyebrow: !!context?.eyebrow,
+    subtitle: subtitle !== "",
+  };
+  const height = headingHeight(base, compact, lines);
+  const eyebrowSize = base * EXPANDED.eyebrow;
+  const titleSize = base * (compact ? COMPACT.title : EXPANDED.title);
+  const subtitleSize = base * (compact ? COMPACT.subtitle : EXPANDED.subtitle);
   useLayoutEffect(() => {
     if (!mount) return;
     mount.root.className = "ws-sticky-goal-root";
     mount.root.dataset.compact = String(compact);
     mount.root.style.setProperty("--ws-sticky-fade", fade ? "1" : "0");
     mount.root.style.height = `${height}px`;
+    // Vertical padding totals the extra 0.5 / 1 body-font heights in headingHeight.
+    mount.root.style.paddingTop = `${base * (compact ? 0.2 : 0.35)}px`;
+    mount.root.style.paddingBottom = `${base * (compact ? 0.3 : 0.65)}px`;
     mount.scroller.style.scrollPaddingTop = `${height}px`;
     return () => {
       mount.root.className = "";
       mount.root.style.removeProperty("height");
+      mount.root.style.removeProperty("padding-top");
+      mount.root.style.removeProperty("padding-bottom");
       mount.root.style.removeProperty("--ws-sticky-fade");
       delete mount.root.dataset.compact;
     };
-  }, [mount, compact, fade, height]);
+  }, [mount, compact, fade, height, base]);
 
   if (!mount || !context) return null;
   return createPortal(
     <div className="ws-sticky-goal">
+      {context.eyebrow && (
+        <div
+          className="ws-sticky-goal__eyebrow"
+          style={{
+            fontSize: eyebrowSize,
+            height: compact ? 0 : eyebrowSize * 1.5,
+            opacity: compact ? 0 : 1,
+          }}
+        >
+          {context.eyebrow}
+        </div>
+      )}
       <h2
         className="ws-sticky-goal__title"
         style={{ fontSize: titleSize, opacity: compact ? 0.88 : 1 }}
       >
         {context.goal}
       </h2>
-      {context.subtitle && (
+      {subtitle && (
         <div
           className="ws-sticky-goal__subtitle"
           style={{ fontSize: subtitleSize }}
         >
-          {context.subtitle}
+          {subtitle}
         </div>
       )}
     </div>,
