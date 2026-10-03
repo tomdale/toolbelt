@@ -305,7 +305,11 @@ it("previews organization as one decision without line-item vetoes", async () =>
       .getAllByRole("row")
       .slice(1)
       .map((row) => within(row).getAllByRole("cell")[0]!.textContent),
-  ).toEqual(["Title t1+2 child threads", "Title t2", "Title t3"]);
+  ).toEqual([
+    "Title t1+2 child threadsUnresolved",
+    "Title t2Unresolved",
+    "Title t3Unresolved",
+  ]);
   expect(slot.queryByRole("checkbox")).toBeNull();
 
   const bootstrapCalls = () =>
