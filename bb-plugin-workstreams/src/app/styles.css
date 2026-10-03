@@ -522,14 +522,15 @@
   white-space: nowrap;
 }
 /* Type follows the headings on vercel.com: Geist Sans at a light-medium
-   weight with tight tracking (their 24px heading: -0.96px, 32px line). */
+   weight, tracked a little looser than their 24px heading (-0.04em) because
+   this title renders smaller. */
 .ws-sticky-goal__title {
   margin: 0;
   color: var(--foreground);
   font-family:
     "Geist Variable", var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   font-weight: 450;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.02em;
   line-height: 1.3333;
 }
 .ws-sticky-goal__subtitle {
