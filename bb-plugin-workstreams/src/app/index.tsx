@@ -37,6 +37,7 @@ import {
   openNextUpThread,
 } from "./upNext/NextUpCommand.tsx";
 import { WORKSTREAM_ICON } from "./workstream-icon.ts";
+import "./fonts/geist-latin.css";
 import "./styles.css";
 
 export default definePluginApp((app) => {
