@@ -516,11 +516,11 @@
   display: flex;
   max-width: 100%;
   align-items: center;
-  gap: 0.4em;
+  gap: 0.2em;
   color: oklch(46% 0.16 var(--ws-hue, 250));
   font-weight: 550;
   letter-spacing: 0.01em;
-  line-height: 1.5;
+  line-height: 1.2;
   white-space: nowrap;
 }
 .dark .ws-sticky-goal__workstream {
