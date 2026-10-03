@@ -82,6 +82,32 @@ is the full design and the contract the code is checked against.
     settings choose the working thread's spinner and colors (BB's own by
     default). Hover a row for its Snooze and Archive buttons; right-click to
     move, rename, pin, mark read, snooze, archive, or delete.
+- **Phone Home screen**: on a phone, BB's new-thread view is the composer
+  pinned to the bottom with a flat Recent list above it. Workstreams replaces
+  that list with **Up Next**, in the sidebar's amber block, over your threads
+  organized by workstream:
+  - **Up Next** uses the sidebar's membership, order, prioritized focus, and
+    five-row limit with Show more. Each row has the thread's status mark, its BB
+    title, its workstream in the workstream's color, what it asks, and its age,
+    and is at least 56px tall.
+  - **Workstreams** follow: prioritized ones first and open, the others in the
+    sidebar's sort order, then Unfiled, a collapsed **Dormant** fold, and a
+    collapsed **Snoozed** fold. A group opens and closes from its 48px header,
+    which carries the waiting count and thread count the **Sidebar** settings
+    choose. Groups start closed, except prioritized workstreams and the only
+    workstream there is; **Expand all** and **Collapse all** switch every group
+    at once. A thread with child threads has a trailing count that folds them.
+    While any workstream is prioritized the others wait behind **Show lower
+    priority workstreams**, which counts the waiting threads Up Next left out.
+    Workstreams with no threads, and the Archived fold, are left off; the New
+    work picker still offers every workstream. What you opened or closed is kept
+    on that device.
+  - The **Sidebar** settings for Up Next, Snoozed, Timestamp, counts, and
+    workstream order apply here too. **Home screen → Up Next and workstreams on
+    phones** turns the whole section off and brings back BB's own Recent list.
+  - Wide windows show nothing here: the sidebar is there. On a phone the section
+    steps aside, leaving BB's list, while threads fail to load or there is
+    nothing to list.
 - **Question cards**: agents without a native question tool get
   `AskUserQuestion`, which asks one to four questions with suggested answers and
   freeform input. The card appears above the composer in the recap card's place
@@ -302,9 +328,9 @@ node eval/route.ts    # routing eval
   remain append-only), `cli.ts`, `contract.ts`, `model.ts` (every model call's
   prompt and parser, and Debug mode's recording), `trace.ts` (the trace store),
   `inference/` (the host entry that runs Pi).
-- `src/app/`: the sidebar list, the page, the thread header actions, the recap
-  card, New work, and `debug/` (inspect buttons, the inspector pane), fed by
-  `useWorkstreams.ts`.
+- `src/app/`: the sidebar list, the phone Home screen (`home/`), the page, the
+  thread header actions, the recap card, New work, and `debug/` (inspect
+  buttons, the inspector pane), fed by `useWorkstreams.ts`.
 
 To check the exact-once guarantee against real data, export a snapshot to
 private storage (it contains thread titles) and point the test at it:

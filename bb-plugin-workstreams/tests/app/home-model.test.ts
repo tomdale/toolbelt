@@ -283,7 +283,7 @@ describe("home.css", () => {
     expect(rules.length).toBeGreaterThanOrEqual(5);
     for (const selector of rules)
       expect(selector, selector).toMatch(
-        /:has\(\s*(>\s*\[data-bb-plugin-root\]\s*>\s*)?\[data-ws-home=/,
+        /:has\(\s*(>\s*\[data-bb-plugin-root\]\s*>\s*)?(:is\(\s*)?\[data-ws-home=/,
       );
   });
 
