@@ -1084,7 +1084,7 @@ function NextActionItem({
         side="top"
         sideOffset={8}
         collisionPadding={12}
-        className="w-64 rounded-lg border-border bg-popover p-3 text-popover-foreground shadow-lg"
+        className="w-72 overflow-hidden rounded-xl border-border bg-popover p-0 text-popover-foreground shadow-xl"
         onPointerEnter={cancelClose}
         onPointerLeave={(event) => {
           if (event.pointerType === "mouse") scheduleClose();
@@ -1094,15 +1094,27 @@ function NextActionItem({
         onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <p className="text-sm leading-relaxed">{description}</p>
-        {onCompose ? (
-          <div className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-xs text-muted-foreground">
-            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">
-              ⇧
-            </kbd>
-            <span>Click to add to composer</span>
-          </div>
-        ) : null}
+        <div className="border-b border-border bg-muted/50 px-4 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            Suggested action
+          </p>
+          <p className="mt-0.5 text-sm font-semibold leading-5 text-popover-foreground">
+            {title}
+          </p>
+        </div>
+        <div className="px-4 py-3">
+          <p className="text-[13px] leading-[1.5] text-popover-foreground">
+            {description}
+          </p>
+          {onCompose ? (
+            <div className="mt-3 flex items-center gap-1.5 border-t border-border pt-2.5 text-xs text-muted-foreground">
+              <kbd className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-foreground shadow-sm">
+                ⇧
+              </kbd>
+              <span>Click to add to composer</span>
+            </div>
+          ) : null}
+        </div>
       </PopoverContent>
     </Popover>
   );

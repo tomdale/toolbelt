@@ -1002,12 +1002,14 @@ it("shows a short sentence-case action label with neutral styling", async () => 
   expect(
     await slot.findByText("Check for regressions before shipping"),
   ).toBeTruthy();
-  const popover = slot.getByText(
-    "Check for regressions before shipping",
-  ).parentElement!;
-  expect(popover.className).toContain("bg-popover");
-  expect(popover.className).toContain("rounded-lg");
-  expect(popover.className).toContain("shadow-lg");
+  const popover = slot
+    .getByText("Check for regressions before shipping")
+    .closest('[role="dialog"]');
+  expect(popover).toBeTruthy();
+  expect(popover!.className).toContain("bg-popover");
+  expect(popover!.className).toContain("rounded-xl");
+  expect(popover!.className).toContain("shadow-xl");
+  expect(slot.getByText("Suggested action")).toBeTruthy();
   expect(slot.getByText("⇧").parentElement?.textContent).toContain(
     "Click to add to composer",
   );
