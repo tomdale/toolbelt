@@ -601,10 +601,12 @@ it.
 7. **Recap card** (a composer banner), in its state's accent (blue for review,
    green for complete, violet for waiting) on its border, background, state
    line, and row labels: a state line (Ready for Review, Complete, or Waiting),
-   with the Waiting label; the Goal heading, then rows by layout. Full: Tasks
-   while waiting, with `goal` as the title and the countdown and Cancel check
-   beside it. Cancel check stops the scheduled nudge but leaves the recap
-   visible; results alone when complete; Done (check-marked) and Review (the
+   with the Waiting label; the Goal heading, then rows by layout. Full: while
+   waiting, `goal` as the title, one row per awaited agent (provider icon with
+   a live status dot, thread title, and task, linking to the agent thread),
+   and a footer reading "Next check in m:ss" over a draining rule. Dismissing
+   a waiting card cancels its scheduled nudge durably, so a restored card
+   reads "Check cancelled"; results alone when complete; Done (check-marked) and Review (the
    requested checks, with optional review-target Links as chips under their
    steps) for review; labels stack above their rows on narrow cards. Compact
    uses smaller type and spacing and one unlabeled row: the task title while

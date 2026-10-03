@@ -121,9 +121,9 @@ design and the contract the code is checked against.
   links inside the thread's workspace open there, others through its machine.
   The card shows a state line (Ready for Review, Complete, or Waiting), the
   goal, and Done and Review rows for review recaps, with links under Review.
-  Waiting recaps show the goal as the title, with the countdown and **Cancel
-  check** beside it. Cancel check stops the scheduled nudge without dismissing
-  the recap. Complete recaps show just results. The **Compact** layout keeps the
+  Waiting recaps show the goal as the title, one row per awaited agent with
+  its live status, and a footer counting down to the next check. Dismissing a
+  waiting card also cancels its check. Complete recaps show just results. The **Compact** layout keeps the
   goal and one essential row in smaller type: the goal, results, or review
   steps, with an icon-only Archive beside ✕. The card sits above the composer,
   with a dismiss ✕ in its corner and, when the thread can be archived,

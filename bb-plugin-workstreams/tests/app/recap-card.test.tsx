@@ -148,6 +148,7 @@ async function mount(
         }),
         recap_dismiss: () => {
           dismissed = true;
+          if (recap?.state === "waiting") waitingCancelled = true;
           return { ok: true };
         },
         recap_restore: () => {
@@ -161,10 +162,6 @@ async function mount(
           }),
         recap_agents: (input: unknown) =>
           options.agents?.(input as { threadIds: string[] }) ?? { agents: [] },
-        recap_cancel_waiting: () => {
-          waitingCancelled = true;
-          return { ok: true };
-        },
       },
     },
   );
@@ -365,9 +362,9 @@ it("shows the Waiting goal as the title and the countdown in the footer", async 
   );
   const progress = slot.getByTestId("status-check-progress");
   expect(progress.style.width).toMatch(/%$/);
-  const cancel = slot.getByRole("button", { name: "Cancel status check" });
-  expect(cancel.previousElementSibling?.contains(countdown)).toBe(true);
-  expect(cancel.className).not.toContain("ml-auto");
+  expect(
+    slot.queryByRole("button", { name: "Cancel status check" }),
+  ).toBeNull();
   expect(slot.queryByRole("list", { name: "Awaited agents" })).toBeNull();
   expect(slot.queryByRole("heading", { name: "Next" })).toBeNull();
   expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
@@ -381,9 +378,6 @@ it("says the check is due once the countdown runs out", async () => {
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(region.textContent).toContain("Checking now");
   expect(slot.queryByLabelText("Status check countdown")).toBeNull();
-  expect(
-    slot.queryByRole("button", { name: "Cancel status check" }),
-  ).toBeNull();
   expect(slot.queryByTestId("status-check-progress")).toBeNull();
 });
 
@@ -406,23 +400,23 @@ it.each(["full", "minimal"])(
 );
 
 it.each(["full", "minimal"])(
-  "cancels the status check without dismissing (%s)",
+  "cancels the status check when the waiting card is dismissed (%s)",
   async (layout) => {
     const slot = await mount({ layout, recap: WORKING });
+    fireEvent.click(await slot.findByRole("button", { name: "Dismiss recap" }));
+    await waitFor(() =>
+      expect(slot.queryByRole("region", { name: "Latest recap" })).toBeNull(),
+    );
+    expect(slot.inspection.rpcCalls).toContainEqual({
+      method: "recap_dismiss",
+      input: { threadId: "t1", recapId: "r1" },
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Show recap" }));
     const region = await slot.findByRole("region", { name: "Latest recap" });
-    fireEvent.click(slot.getByRole("button", { name: "Cancel status check" }));
     await waitFor(() =>
       expect(region.textContent).toContain("Check cancelled"),
     );
     expect(region.textContent).toContain("Workers and tests are running");
-    expect(slot.queryByRole("button", { name: "Dismiss recap" })).toBeTruthy();
-    expect(slot.inspection.rpcCalls).toContainEqual({
-      method: "recap_cancel_waiting",
-      input: { threadId: "t1", recapId: "r1" },
-    });
-    expect(
-      slot.queryByRole("button", { name: "Cancel status check" }),
-    ).toBeNull();
     expect(slot.queryByLabelText("Status check countdown")).toBeNull();
     expect(slot.queryByTestId("status-check-progress")).toBeNull();
   },

@@ -91,13 +91,17 @@ describe("waiting status checks", () => {
           ?.waitingRecapId,
     );
 
-  it("cancels durably without dismissing the card or rescheduling on idle", async () => {
+  it("cancels the check durably when the card is dismissed, even after restore", async () => {
     const s = await world();
     vi.useFakeTimers();
     s.w.turn("t1");
     await s.report(waiting);
     const { recap } = await s.card();
-    await s.w.harness.behavior.callRpc("recap_cancel_waiting", {
+    await s.w.harness.behavior.callRpc("recap_dismiss", {
+      threadId: "t1",
+      recapId: recap!.id,
+    });
+    await s.w.harness.behavior.callRpc("recap_restore", {
       threadId: "t1",
       recapId: recap!.id,
     });
@@ -121,22 +125,18 @@ describe("waiting status checks", () => {
     });
   });
 
-  it("keeps dismissal independent of cancellation and rejects stale cancel IDs", async () => {
+  it("rejects dismissing a stale waiting card without cancelling the current check", async () => {
     const s = await world();
     vi.useFakeTimers();
     s.w.turn("t1");
     await s.report(waiting);
     const old = (await s.card()).recap!;
-    await s.w.harness.behavior.callRpc("recap_dismiss", {
-      threadId: "t1",
-      recapId: old.id,
-    });
     await vi.advanceTimersByTimeAsync(10000);
     expect(nudges(s)).toHaveLength(1);
     await s.report(waiting);
     const current = (await s.card()).recap!;
     await expect(
-      s.w.harness.behavior.callRpc("recap_cancel_waiting", {
+      s.w.harness.behavior.callRpc("recap_dismiss", {
         threadId: "t1",
         recapId: old.id,
       }),
@@ -148,13 +148,6 @@ describe("waiting status checks", () => {
     });
     await vi.advanceTimersByTimeAsync(10000);
     expect(nudges(s)).toHaveLength(2);
-    await s.report(RECAP);
-    await expect(
-      s.w.harness.behavior.callRpc("recap_cancel_waiting", {
-        threadId: "t1",
-        recapId: (await s.card()).recap!.id,
-      }),
-    ).rejects.toThrow("no longer current");
   });
 
   it("cancels while an expired check awaits the thread lookup", async () => {
@@ -178,7 +171,7 @@ describe("waiting status checks", () => {
     });
     vi.advanceTimersByTime(10000);
     await lookup;
-    await s.w.harness.behavior.callRpc("recap_cancel_waiting", {
+    await s.w.harness.behavior.callRpc("recap_dismiss", {
       threadId: "t1",
       recapId: recap!.id,
     });
@@ -187,7 +180,7 @@ describe("waiting status checks", () => {
     expect(nudges(s)).toHaveLength(0);
     expect(await s.card()).toMatchObject({
       recap: { id: recap!.id },
-      dismissed: false,
+      dismissed: true,
       waitingCancelled: true,
     });
   });
@@ -234,7 +227,7 @@ describe("waiting status checks", () => {
         }),
       );
       await lookup;
-      await s.w.harness.behavior.callRpc("recap_cancel_waiting", {
+      await s.w.harness.behavior.callRpc("recap_dismiss", {
         threadId: "t1",
         recapId: recap!.id,
       });
@@ -242,7 +235,7 @@ describe("waiting status checks", () => {
       expect((await dispatch).action).toBe("reject");
       expect(await s.card()).toMatchObject({
         recap: { id: recap!.id },
-        dismissed: false,
+        dismissed: true,
         waitingCancelled: true,
       });
     },

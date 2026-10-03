@@ -660,11 +660,6 @@ export default async function plugin(bb: BbPluginApi) {
         ),
       };
     },
-    recap_cancel_waiting: ({ threadId, recapId }) =>
-      userFacing(async () => {
-        recaps.cancelWaiting(threadId, recapId);
-        return { ok: true as const };
-      }),
     corpus: async () => {
       corpus.syncGroups(
         map.list().map((r) => ({ ...r, description: r.description ?? "" })),
