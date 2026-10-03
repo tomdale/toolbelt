@@ -22,24 +22,19 @@ function messageColumn(scroller: HTMLElement): HTMLElement | null {
 const EXPANDED = { eyebrow: 0.78, title: 1.5, subtitle: 0.92 } as const;
 const COMPACT = { title: 0.9, subtitle: 0.72 } as const;
 
-type Lines = { eyebrow: boolean; subtitle: boolean };
-
-/** Heading height in px for a body font size. */
-function headingHeight(base: number, compact: boolean, lines: Lines): number {
-  if (compact) {
-    return Math.round(
-      base *
-        (COMPACT.title * 1.3 +
-          (lines.subtitle ? COMPACT.subtitle * 1.4 : 0) +
-          0.5),
-    );
-  }
+/**
+ * Heading height in px for a body font size. Both states always budget for
+ * every line so each height is constant, whatever the thread has to show.
+ */
+function headingHeight(base: number, compact: boolean): number {
   return Math.round(
     base *
-      (EXPANDED.title * 1.25 +
-        (lines.eyebrow ? EXPANDED.eyebrow * 1.5 : 0) +
-        (lines.subtitle ? EXPANDED.subtitle * 1.4 : 0) +
-        1),
+      (compact
+        ? COMPACT.title * 1.3 + COMPACT.subtitle * 1.4 + 0.5
+        : EXPANDED.title * 1.25 +
+          EXPANDED.eyebrow * 1.5 +
+          EXPANDED.subtitle * 1.4 +
+          1),
   );
 }
 
@@ -105,10 +100,7 @@ function useMessageScroller(threadId: string | null): Mount | null {
       root.dataset.workstreamsStickyGoal = "";
       const baseFontSize =
         Number.parseFloat(getComputedStyle(column).fontSize) || 14;
-      const initialHeight = headingHeight(baseFontSize, false, {
-        eyebrow: true,
-        subtitle: true,
-      });
+      const initialHeight = headingHeight(baseFontSize, false);
       // The root takes no height of its own: the heading is drawn over the
       // timeline from a fixed reserved gap, so expanding and compacting never
       // reflow the messages (which would shift scroll position mid-animation).
@@ -228,18 +220,13 @@ export function StickyGoalHeader(): React.ReactPortal | null {
   }, [threadId, threads, projects, sections, server.analysis, server.recaps]);
 
   const base = mount?.baseFontSize ?? 14;
+  const expandedHeight = headingHeight(base, false);
+  const compactHeight = headingHeight(base, true);
   // Compacted, the eyebrow folds into the subtitle line.
-  const subtitle = compact
-    ? [context?.eyebrow, context?.subtask].filter(Boolean).join(" · ")
-    : (context?.subtask ?? "");
-  const lines: Lines = {
-    eyebrow: !!context?.eyebrow,
-    subtitle: subtitle !== "",
-  };
-  const height = headingHeight(base, compact, lines);
-  const eyebrowSize = base * EXPANDED.eyebrow;
-  const titleSize = base * (compact ? COMPACT.title : EXPANDED.title);
-  const subtitleSize = base * (compact ? COMPACT.subtitle : EXPANDED.subtitle);
+  const compactSubtitle = [context?.eyebrow, context?.subtask]
+    .filter(Boolean)
+    .join(" · ");
+  const height = compact ? compactHeight : expandedHeight;
   useLayoutEffect(() => {
     if (!mount) return;
     mount.root.className = "ws-sticky-goal-root";
@@ -254,42 +241,73 @@ export function StickyGoalHeader(): React.ReactPortal | null {
   }, [mount, compact, fade, height]);
 
   if (!mount || !context) return null;
+  // Expanded and compact are separate layers that crossfade. Nothing resizes
+  // or reflows during the transition: the plate slides (transform) and the
+  // layers fade (opacity), both composited off the main thread.
   return createPortal(
-    <div
-      className="ws-sticky-goal"
-      style={{
-        height,
-        // Vertical padding totals the extra 0.5 / 1 body-font heights in headingHeight.
-        paddingTop: base * (compact ? 0.2 : 0.35),
-        paddingBottom: base * (compact ? 0.3 : 0.65),
-      }}
-    >
-      {context.eyebrow && (
-        <div
-          className="ws-sticky-goal__eyebrow"
-          style={{
-            fontSize: eyebrowSize,
-            height: compact ? 0 : eyebrowSize * 1.5,
-            opacity: compact ? 0 : 1,
-          }}
-        >
-          {context.eyebrow}
-        </div>
-      )}
-      <h2
-        className="ws-sticky-goal__title"
-        style={{ fontSize: titleSize, opacity: compact ? 0.88 : 1 }}
+    <div className="ws-sticky-goal" style={{ height: expandedHeight }}>
+      <div
+        className="ws-sticky-goal__plate"
+        style={{
+          transform: `translateY(${compact ? compactHeight - expandedHeight : 0}px)`,
+        }}
+      />
+      <div
+        className="ws-sticky-goal__layer"
+        aria-hidden={compact}
+        style={{
+          height: expandedHeight,
+          paddingBottom: base * 0.65,
+          opacity: compact ? 0 : 1,
+        }}
       >
-        {context.goal}
-      </h2>
-      {subtitle && (
-        <div
-          className="ws-sticky-goal__subtitle"
-          style={{ fontSize: subtitleSize }}
+        {context.eyebrow && (
+          <div
+            className="ws-sticky-goal__eyebrow"
+            style={{ fontSize: base * EXPANDED.eyebrow }}
+          >
+            {context.eyebrow}
+          </div>
+        )}
+        <h2
+          className="ws-sticky-goal__title"
+          style={{ fontSize: base * EXPANDED.title }}
         >
-          {subtitle}
-        </div>
-      )}
+          {context.goal}
+        </h2>
+        {context.subtask && (
+          <div
+            className="ws-sticky-goal__subtitle"
+            style={{ fontSize: base * EXPANDED.subtitle }}
+          >
+            {context.subtask}
+          </div>
+        )}
+      </div>
+      <div
+        className="ws-sticky-goal__layer"
+        aria-hidden={!compact}
+        style={{
+          height: compactHeight,
+          paddingBottom: base * 0.3,
+          opacity: compact ? 1 : 0,
+        }}
+      >
+        <h2
+          className="ws-sticky-goal__title"
+          style={{ fontSize: base * COMPACT.title, opacity: 0.88 }}
+        >
+          {context.goal}
+        </h2>
+        {compactSubtitle && (
+          <div
+            className="ws-sticky-goal__subtitle"
+            style={{ fontSize: base * COMPACT.subtitle }}
+          >
+            {compactSubtitle}
+          </div>
+        )}
+      </div>
     </div>,
     mount.root,
   );
