@@ -4,7 +4,9 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { workstreamHue } from "../domain/workstreamHue.ts";
 import { useSharedServerState } from "./serverState.ts";
+import { WorkstreamIcon } from "./WorkstreamIcon.tsx";
 
 const SCROLLER = "[data-thread-window] .thread-scrollbar";
 
@@ -16,23 +18,36 @@ function messageColumn(scroller: HTMLElement): HTMLElement | null {
 }
 
 // Type sizes as multiples of the timeline's body font size. The heading is
-// always laid out at its expanded size; compacting scales the text down from
-// its top-left corner, so every line keeps its place and only shrinks.
+// always laid out at its expanded size; compacting scales the title and
+// subtitle down from their top-left corners, so every line keeps its place
+// and only shrinks. The workstream line above them neither moves nor resizes.
 const TITLE_SIZE = 1.5;
 const SUBTITLE_SIZE = 0.92;
 const TITLE_LINE = 4 / 3;
 const SUBTITLE_LINE = 1.4;
 const PAD_TOP = 0.3;
+const EYEBROW_SIZE = 0.8;
+/** Eyebrow line plus the gap before the title, when there is a workstream. */
+const EYEBROW_BLOCK = 1.45;
 const TITLE_COMPACT_SCALE = 0.6; // 0.9x body text
 const SUBTITLE_COMPACT_SCALE = 0.78; // 0.72x body text
 
 /** Heading height in px for a body font size. */
-function headingHeight(base: number, compact: boolean): number {
+function headingHeight(
+  base: number,
+  compact: boolean,
+  hasEyebrow: boolean,
+): number {
   const title = TITLE_SIZE * TITLE_LINE * (compact ? TITLE_COMPACT_SCALE : 1);
   const subtitle =
     SUBTITLE_SIZE * SUBTITLE_LINE * (compact ? SUBTITLE_COMPACT_SCALE : 1);
   return Math.round(
-    base * (PAD_TOP + title + subtitle + (compact ? 0.3 : 0.65)),
+    base *
+      (PAD_TOP +
+        (hasEyebrow ? EYEBROW_BLOCK : 0) +
+        title +
+        subtitle +
+        (compact ? 0.3 : 0.65)),
   );
 }
 
@@ -98,7 +113,7 @@ function useMessageScroller(threadId: string | null): Mount | null {
       root.dataset.workstreamsStickyGoal = "";
       const baseFontSize =
         Number.parseFloat(getComputedStyle(column).fontSize) || 14;
-      const initialHeight = headingHeight(baseFontSize, false);
+      const initialHeight = headingHeight(baseFontSize, false, true);
       // The root takes no height of its own: the heading is drawn over the
       // timeline from a fixed reserved gap, so expanding and compacting never
       // reflow the messages (which would shift scroll position mid-animation).
@@ -193,7 +208,7 @@ function useScrollState(scroller: HTMLElement | null): {
  */
 export function StickyGoalHeader(): React.ReactPortal | null {
   const { threadId } = useBbContext();
-  const { threads } = experimental_useSidebarThreads();
+  const { threads, sections } = experimental_useSidebarThreads();
   const { server } = useSharedServerState();
   const mount = useMessageScroller(threadId);
   const { compact, fade } = useScrollState(mount?.scroller ?? null);
@@ -209,12 +224,20 @@ export function StickyGoalHeader(): React.ReactPortal | null {
       (thread.title ? thread.displayTitle : "Building a clear thread goal");
     // The current recap supplies the active subtask when it adds information.
     const subtask = recap?.goal && recap.goal !== goal ? recap.goal : null;
-    return { goal, subtask };
-  }, [threadId, threads, server.analysis, server.recaps]);
+    const section = thread.sectionId
+      ? sections.find((item) => item.id === thread.sectionId)
+      : null;
+    const workstream = section
+      ? { name: section.name, hue: workstreamHue(section.id) }
+      : null;
+    return { goal, subtask, workstream };
+  }, [threadId, threads, sections, server.analysis, server.recaps]);
 
   const base = mount?.baseFontSize ?? 14;
-  const expandedHeight = headingHeight(base, false);
-  const compactHeight = headingHeight(base, true);
+  const hasEyebrow = !!context?.workstream;
+  const expandedHeight = headingHeight(base, false, hasEyebrow);
+  const compactHeight = headingHeight(base, true, hasEyebrow);
+  const eyebrowBlock = hasEyebrow ? base * EYEBROW_BLOCK : 0;
   const subtitle = context?.subtask ?? "";
   const height = compact ? compactHeight : expandedHeight;
   const titleScale = compact ? TITLE_COMPACT_SCALE : 1;
@@ -225,13 +248,16 @@ export function StickyGoalHeader(): React.ReactPortal | null {
     mount.root.className = "ws-sticky-goal-root";
     mount.root.dataset.compact = String(compact);
     mount.root.style.setProperty("--ws-sticky-fade", fade ? "1" : "0");
+    // The reserved gap follows the expanded height, which changes only when the
+    // thread gains or loses a workstream line.
+    mount.root.style.marginBottom = `${expandedHeight}px`;
     mount.scroller.style.scrollPaddingTop = `${height}px`;
     return () => {
       mount.root.className = "";
       mount.root.style.removeProperty("--ws-sticky-fade");
       delete mount.root.dataset.compact;
     };
-  }, [mount, compact, fade, height]);
+  }, [mount, compact, fade, height, expandedHeight]);
 
   if (!mount || !context) return null;
   // The plate slides and the text scales (transforms only), so no layout runs
@@ -248,9 +274,24 @@ export function StickyGoalHeader(): React.ReactPortal | null {
         }}
       />
       <div className="ws-sticky-goal__text" style={{ top: base * PAD_TOP }}>
+        {context.workstream && (
+          <div
+            className="ws-sticky-goal__workstream"
+            style={
+              {
+                fontSize: base * EYEBROW_SIZE,
+                "--ws-hue": context.workstream.hue,
+              } as React.CSSProperties
+            }
+          >
+            <WorkstreamIcon className="size-[1.1em] text-current" />
+            <span>{context.workstream.name}</span>
+          </div>
+        )}
         <h2
           className="ws-sticky-goal__title"
           style={{
+            top: eyebrowBlock,
             fontSize: base * TITLE_SIZE,
             width: `${100 / titleScale}%`,
             transform: `scale(${titleScale})`,
@@ -265,7 +306,7 @@ export function StickyGoalHeader(): React.ReactPortal | null {
             style={{
               fontSize: base * SUBTITLE_SIZE,
               width: `${100 / subtitleScale}%`,
-              transform: `translateY(${titleBlock * titleScale}px) scale(${subtitleScale})`,
+              transform: `translateY(${eyebrowBlock + titleBlock * titleScale}px) scale(${subtitleScale})`,
             }}
           >
             {subtitle}
