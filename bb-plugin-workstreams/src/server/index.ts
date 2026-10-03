@@ -231,7 +231,6 @@ export default async function plugin(bb: BbPluginApi) {
     analyzer,
     map,
     corpus,
-    adaptive: () => currentPrefs().organize.adaptivePreview,
     inference,
     model: async () => currentPrefs().organize.model,
     classificationModel: async () => currentPrefs().organize.model,
@@ -248,7 +247,6 @@ export default async function plugin(bb: BbPluginApi) {
   const router = new Router({
     sdk: () => bb.sdk,
     corpus,
-    semanticSuggestions: () => currentPrefs().newWork.corpusClassification,
     service,
     journal,
     map,
@@ -294,14 +292,9 @@ export default async function plugin(bb: BbPluginApi) {
                 proposal?: DraftSubjectProposal | null;
                 provenance?: "manual" | "automatic";
               } | null;
-              subjectId?: string;
             } | null)
           : null;
-      const identity =
-        data?.identity ??
-        (data?.subjectId
-          ? { entityId: data.subjectId, provenance: "manual" as const }
-          : null);
+      const identity = data?.identity ?? null;
       const decision = data?.routeId
         ? router.recall({ id: data.routeId, prompt: ctx.input.text })
         : null;
@@ -620,20 +613,12 @@ export default async function plugin(bb: BbPluginApi) {
           claim,
         });
       }),
-    startThread: ({
-      sectionId,
-      newWorkstream,
-      identity,
-      execution,
-      subjectId,
-    }) =>
+    startThread: ({ sectionId, newWorkstream, identity, execution }) =>
       userFacing(() =>
         router.start({
           sectionId,
           newWorkstream,
-          identity:
-            identity ??
-            (subjectId ? { entityId: subjectId, provenance: "manual" } : null),
+          identity,
           execution: execution as unknown as SpawnArgs & {
             projectId: string;
             environment: Environment;
@@ -731,11 +716,8 @@ export default async function plugin(bb: BbPluginApi) {
         ),
       };
     },
-    corpus: async () => ({
-      entities: corpus.list().map((e) => ({ ...e, aliases: [...e.aliases] })),
-    }),
     catalog: async () => corpus.state(),
-    corpusReset: async () => {
+    catalogReset: async () => {
       bootstrap.resetCatalog();
       return { ok: true as const };
     },
@@ -1193,5 +1175,8 @@ export default async function plugin(bb: BbPluginApi) {
     map,
     router,
     traces,
+    corpus,
+    inference,
+    currentPrefs,
   });
 }

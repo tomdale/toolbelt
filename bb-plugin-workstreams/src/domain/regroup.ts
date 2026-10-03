@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Entity } from "./classify.ts";
+import { entityAncestors } from "./corpus.ts";
 
 export type RegroupInput = {
   entities: Entity[];
@@ -8,20 +9,10 @@ export type RegroupInput = {
   capacity: number;
   collapseAt: number;
 };
-export function ancestors(id: string, entities: Entity[]): string[] {
-  const result: string[] = [];
-  while (id) {
-    if (result.includes(id)) throw new Error("Corpus contains a cycle.");
-    result.push(id);
-    const entity = entities.find((e) => e.id === id);
-    if (!entity) throw new Error("Unknown corpus identity.");
-    id = entity.parentId ?? "";
-  }
-  return result;
-}
+export const ancestors = entityAncestors;
 export function activeHome(id: string, active: string[], entities: Entity[]) {
   return (
-    ancestors(id, entities).find((parent) => active.includes(parent)) ?? null
+    entityAncestors(id, entities).find((parent) => active.includes(parent)) ?? null
   );
 }
 export function regroupPrompt(input: RegroupInput): string {

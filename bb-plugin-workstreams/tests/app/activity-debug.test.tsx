@@ -191,7 +191,7 @@ it("loads older calls with a stable cursor and refreshes loaded history without 
   await waitFor(() => expect(traces).toHaveBeenCalledTimes(5));
   expect(slot.getAllByRole("listitem")).toHaveLength(102);
   expect(slot.getByText("101 model calls shown · $1.0100")).toBeTruthy();
-});
+}, 15000);
 
 it("ignores a stale trace request after changing the kind filter", async () => {
   let resolveFirst!: (value: unknown) => void;

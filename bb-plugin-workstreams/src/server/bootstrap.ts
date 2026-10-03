@@ -89,8 +89,7 @@ export class Bootstrap {
       service: WorkstreamService;
       analyzer: Analyzer;
       map: WorkstreamMap;
-      corpus?: CorpusStore;
-      adaptive?: () => boolean;
+      corpus: CorpusStore;
       policy?: () => { capacity: number; collapseAt: number };
       inference: Inference;
       model: () => Promise<ModelChoice>;
@@ -234,20 +233,12 @@ export class Bootstrap {
       });
       if (controller.signal.aborted || this.disposed)
         throw new Error("Organizing cancelled.");
-      const result =
-        this.deps.corpus && this.deps.adaptive?.()
-          ? await this.compact(input, controller.signal, startedAt)
-          : input.threads.length
-            ? await this.deps.inference.run("organize", input, {
-                model: await this.deps.model(),
-                signal: controller.signal,
-                label: `${roots.length} root threads`,
-                links: [this.runLink(startedAt)],
-              })
-            : {
-                value: { workstreams: [], assignments: [] } as OrganizeProposal,
-                traceId: null,
-              };
+      const result = input.threads.length
+        ? await this.compact(input, controller.signal, startedAt)
+        : {
+            value: { workstreams: [], assignments: [] } as OrganizeProposal,
+            traceId: null,
+          };
       if (controller.signal.aborted || this.disposed)
         throw new Error("Organizing cancelled.");
       const proposal = result.value;
@@ -456,8 +447,8 @@ export class Bootstrap {
               : null;
           if (entity) {
             corpus.assign(thread.id, entity.id, {
-              evidence: evidence.get(thread.id)!,
               provenance: "automatic",
+              evidence: evidence.get(thread.id)!,
             });
             subjects.set(thread.id, entity.id);
           } else {

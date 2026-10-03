@@ -61,26 +61,6 @@ export function Catalog({
         setLocalCatalog(result);
       })
       .catch((err) => {
-        const isMissingRpc =
-          err instanceof Error &&
-          err.message.toLowerCase().includes("no rpc handler");
-        if (isMissingRpc) {
-          return rpc
-            .call("corpus", null)
-            .then((result) => {
-              setLocalCatalog({
-                entities: result.entities,
-                groups: {},
-                assignments: {},
-                revision: 1,
-              });
-            })
-            .catch(() => {
-              setLoadError(
-                err instanceof Error ? err.message : "Could not load Catalog",
-              );
-            });
-        }
         setLoadError(
           err instanceof Error ? err.message : "Could not load Catalog",
         );

@@ -36,9 +36,6 @@ it("recognizes an inactive feature and retains subject through broad placement",
     "Shelves",
   ]);
   featureId = feature.id;
-  await world.harness.behavior.callRpc("setPrefs", {
-    patch: { newWork: { corpusClassification: true } },
-  });
   const result = await world.harness.behavior.callRpc("route", {
     prompt: "Lantern shelves",
     suggest: true,
@@ -50,7 +47,9 @@ it("recognizes an inactive feature and retains subject through broad placement",
     sectionId: section.id,
     placement: null,
   });
-  const known = await world.harness.behavior.callRpc("corpus", null);
+  const known = (await world.harness.behavior.callRpc("catalog", null)) as {
+    entities: unknown[];
+  };
   expect(known).toMatchObject({
     entities: expect.arrayContaining([
       expect.objectContaining({ id: feature.id, aliases: ["Shelves"] }),
@@ -101,9 +100,6 @@ it("adaptive organization sends counts rather than tasks to regrouping and leave
     "Feature",
     corpus.list()[0]!.id,
   ).id;
-  await world.harness.behavior.callRpc("setPrefs", {
-    patch: { organize: { adaptivePreview: true } },
-  });
   const preview = await world.harness.behavior.callRpc("bootstrap", {
     action: "start",
   });

@@ -114,10 +114,9 @@ export function NewThreadRouting() {
         cancelRoute: () => {
           void rpc.call("routeCancel", { draftKey }).catch(() => {});
         },
-        createWorkstream: async (name, description, subjectId) => {
+        createWorkstream: async (name: string, description: string) => {
           const created = await rpc.call("createWorkstream", {
             name,
-            ...(subjectId ? { subjectId } : {}),
             ...(description ? { description } : {}),
           });
           return {
@@ -146,7 +145,7 @@ export function NewThreadRouting() {
             : null;
           const experimental_data: Record<string, unknown> = {};
           if (routeId) experimental_data.routeId = routeId;
-          if (sectionId) experimental_data.sectionId = sectionId;
+          if (sectionId !== undefined) experimental_data.sectionId = sectionId;
           if (identity) experimental_data.identity = identity;
           return composerRef.current.submit({
             experimental_data: Object.keys(experimental_data).length
@@ -213,7 +212,14 @@ export function NewThreadRouting() {
     // metadata the server's dispatch hook files.
     const current = model ? model.snapshot() : null;
     if (!model || !current) return;
-    if (!current.workstream && !current.pendingNew && !current.identity)
+    if (
+      !current.workstream &&
+      !current.pendingNew &&
+      !current.identity &&
+      !current.pinned &&
+      !current.acceptedRoute &&
+      !current.decision
+    )
       return;
     const primary = root?.closest<HTMLElement>(
       '[data-app-composer-role="primary"]',
@@ -240,7 +246,11 @@ export function NewThreadRouting() {
             : null;
           const routeId = snapshot.acceptedRoute?.routeId ?? null;
           const experimental_data: Record<string, unknown> = {};
-          if (sectionId) experimental_data.sectionId = sectionId;
+          if (sectionId) {
+            experimental_data.sectionId = sectionId;
+          } else if (snapshot.pinned || sectionId === null) {
+            experimental_data.sectionId = null;
+          }
           if (identity) experimental_data.identity = identity;
           if (routeId) experimental_data.routeId = routeId;
           await composerRef.current.submit({

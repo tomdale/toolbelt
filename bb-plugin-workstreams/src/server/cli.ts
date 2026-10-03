@@ -36,6 +36,12 @@ import {
 } from "../domain/trace.ts";
 import type { TraceStore } from "./trace.ts";
 import type { StoredOrder } from "./order.ts";
+import type { CorpusStore } from "./corpus.ts";
+import type { CorpusEntity, CanonicalAssignment } from "../domain/corpus.ts";
+import { corpusLabel } from "../domain/corpus-label.ts";
+import { activeHome } from "../domain/regroup.ts";
+import { DEFAULT_MODELS, type Prefs } from "../domain/prefs.ts";
+import type { Inference } from "./model.ts";
 
 const TITLE_MAX = 80;
 const clip = (text: string) =>
@@ -55,6 +61,37 @@ function resolveWorkstream(sections: Section[], arg: string): Section | null {
     sections.find((s) => s.name.toLowerCase() === lowered) ??
     null
   );
+}
+
+function resolveEntity(corpus: CorpusStore, arg: string): CorpusEntity {
+  const direct = corpus.getById(arg);
+  if (direct) return direct;
+  const list = corpus.list();
+  const lowered = arg.trim().toLowerCase();
+  const byName = list.find((e) => e.name.toLowerCase() === lowered);
+  if (byName) return byName;
+  const byAlias = list.find((e) =>
+    e.aliases.some((a) => a.toLowerCase() === lowered),
+  );
+  if (byAlias) return byAlias;
+  throw new PluginCliError(`Unknown product or feature: "${arg}"`, {
+    code: "catalog_entity_not_found",
+  });
+}
+
+function resolveThread(
+  service: WorkstreamService,
+  arg: string,
+): { id: string; title: string; sectionId: string | null } {
+  const cleanId = arg.replace(/^@thread:/, "");
+  const threads = service.threads();
+  const thread = threads.find((t) => t.id === cleanId || t.id === arg);
+  if (!thread) {
+    throw new PluginCliError(`Unknown thread: "${arg}"`, {
+      code: "thread_not_found",
+    });
+  }
+  return thread;
 }
 
 function groupJson(group: Group<InventoryThread>, now: number) {
@@ -144,6 +181,9 @@ export function registerCli(
     router,
     traces,
     arrangement,
+    corpus,
+    inference,
+    currentPrefs,
   }: {
     /** The sidebar's stored order and prioritized workstreams. */
     arrangement: {
@@ -158,6 +198,9 @@ export function registerCli(
     map: WorkstreamMap;
     router: Router;
     traces: TraceStore;
+    corpus: CorpusStore;
+    inference?: Inference;
+    currentPrefs?: () => Prefs;
   },
 ): void {
   const load = async () => {
@@ -203,7 +246,7 @@ export function registerCli(
     defineCli({
       name: "workstreams",
       summary:
-        "List workstreams, file threads into them, and read the activity log",
+        "Manage workstreams, file threads into them, inspect the Catalog, and read the activity log",
       commands: {
         list: cliCommand({
           summary: "List workstreams (native BB sections) with thread counts",
@@ -665,7 +708,7 @@ export function registerCli(
         }),
         rebuild: cliCommand({
           summary:
-            "Organize every thread once: propose the workstream map, file threads, and preview the result",
+            "Organize every thread once: propose workstreams, file threads, and preview the result",
           options: {
             apply: {
               type: "boolean",
@@ -810,6 +853,467 @@ export function registerCli(
             return {
               exitCode: 0,
               stdout: `${entry.rationale}${entry.detail ? ` (${entry.detail})` : ""}`,
+            };
+          },
+        }),
+        "catalog list": cliCommand({
+          summary: "List all known products and features in the Catalog",
+          options: {
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ options }) {
+            const entities = corpus.list();
+            if (options.json) {
+              const items = entities.map((e) => ({
+                id: e.id,
+                name: e.name,
+                description: e.description,
+                parentId: e.parentId,
+                aliases: e.aliases,
+                path: corpusLabel(e.id, entities),
+              }));
+              return {
+                exitCode: 0,
+                stdout: JSON.stringify({ entities: items }, null, 2),
+              };
+            }
+            if (entities.length === 0) {
+              return { exitCode: 0, stdout: "Catalog is empty." };
+            }
+            const sorted = [...entities].sort((a, b) =>
+              corpusLabel(a.id, entities).localeCompare(
+                corpusLabel(b.id, entities),
+              ),
+            );
+            const lines = sorted.map((e) => {
+              const label = corpusLabel(e.id, entities);
+              const aliases =
+                e.aliases.length > 0
+                  ? ` [aliases: ${e.aliases.join(", ")}]`
+                  : "";
+              return `${label.padEnd(40)} ${e.id}${aliases}`;
+            });
+            return { exitCode: 0, stdout: lines.join("\n") };
+          },
+        }),
+        "catalog show": cliCommand({
+          summary: "Show details of a product or feature in the Catalog",
+          positionals: [
+            {
+              name: "identity",
+              description: "Product/feature name or ID",
+              required: true,
+            },
+          ],
+          options: {
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ positionals, options }) {
+            const entity = resolveEntity(corpus, positionals.identity);
+            const entities = corpus.list();
+            const label = corpusLabel(entity.id, entities);
+            const groups = corpus.groups();
+            const home = activeHome(entity.id, [...groups.values()], entities);
+            const assignments = corpus.assignments();
+            const assignedThreads = (
+              Object.values(assignments) as CanonicalAssignment[]
+            ).filter((a) => a.entityId === entity.id);
+            if (options.json) {
+              return {
+                exitCode: 0,
+                stdout: JSON.stringify(
+                  {
+                    entity,
+                    path: label,
+                    homeEntityId: home,
+                    assignedThreads: assignedThreads.map((a) => a.threadId),
+                  },
+                  null,
+                  2,
+                ),
+              };
+            }
+            const lines = [
+              `Product/Feature: ${label}`,
+              `ID:              ${entity.id}`,
+              `Description:     ${entity.description || "(none)"}`,
+              `Parent:          ${entity.parentId ?? "(root)"}`,
+              `Aliases:         ${entity.aliases.length ? entity.aliases.join(", ") : "(none)"}`,
+              `Assigned tasks:  ${assignedThreads.length}`,
+            ];
+            return { exitCode: 0, stdout: lines.join("\n") };
+          },
+        }),
+        "catalog create": cliCommand({
+          summary: "Create a new product or feature in the Catalog",
+          positionals: [
+            {
+              name: "name",
+              description: "Product or feature name",
+              required: true,
+            },
+          ],
+          options: {
+            description: {
+              type: "string",
+              description: "Description of scope",
+            },
+            parent: {
+              type: "string",
+              description: "Parent product/feature name or ID",
+            },
+            aliases: {
+              type: "string",
+              description: "Comma-separated aliases",
+            },
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ positionals, options }) {
+            let parentId: string | null = null;
+            if (options.parent) {
+              const parent = resolveEntity(corpus, options.parent);
+              parentId = parent.id;
+            }
+            const aliases = options.aliases
+              ? options.aliases
+                  .split(",")
+                  .map((a) => a.trim())
+                  .filter(Boolean)
+              : [];
+            const entity = corpus.remember(
+              positionals.name,
+              options.description ?? "",
+              parentId,
+              aliases,
+            );
+            if (options.json) {
+              return {
+                exitCode: 0,
+                stdout: JSON.stringify({ entity }, null, 2),
+              };
+            }
+            return {
+              exitCode: 0,
+              stdout: `Created product/feature "${entity.name}" (${entity.id}).`,
+            };
+          },
+        }),
+        "catalog edit": cliCommand({
+          summary: "Edit a product or feature's name, description, or aliases",
+          positionals: [
+            {
+              name: "identity",
+              description: "Product/feature name or ID to edit",
+              required: true,
+            },
+          ],
+          options: {
+            name: { type: "string", description: "New name" },
+            description: { type: "string", description: "New description" },
+            aliases: {
+              type: "string",
+              description: "New comma-separated aliases",
+            },
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ positionals, options }) {
+            const entity = resolveEntity(corpus, positionals.identity);
+            let updated = entity;
+            if (options.name && options.name !== entity.name) {
+              updated = corpus.rename(entity.id, options.name);
+            }
+            if (
+              options.description !== undefined ||
+              options.aliases !== undefined
+            ) {
+              const newDescription =
+                options.description ?? updated.description;
+              const newAliases =
+                options.aliases !== undefined
+                  ? options.aliases
+                      .split(",")
+                      .map((a) => a.trim())
+                      .filter(Boolean)
+                  : updated.aliases;
+              updated = corpus.updateMetadata(updated.id, {
+                description: newDescription,
+                aliases: newAliases,
+              });
+            }
+            if (options.json) {
+              return {
+                exitCode: 0,
+                stdout: JSON.stringify({ entity: updated }, null, 2),
+              };
+            }
+            return {
+              exitCode: 0,
+              stdout: `Updated product/feature "${updated.name}" (${updated.id}).`,
+            };
+          },
+        }),
+        "catalog reparent": cliCommand({
+          summary: "Move a product or feature under a new parent in the Catalog",
+          positionals: [
+            {
+              name: "identity",
+              description: "Product/feature name or ID to reparent",
+              required: true,
+            },
+          ],
+          options: {
+            to: {
+              type: "string",
+              description:
+                'New parent product/feature name or ID, or "root" for top-level',
+            },
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ positionals, options }) {
+            const entity = resolveEntity(corpus, positionals.identity);
+            let newParentId: string | null = null;
+            if (options.to && options.to.toLowerCase() !== "root") {
+              const parent = resolveEntity(corpus, options.to);
+              newParentId = parent.id;
+            }
+            const updated = corpus.reparent(entity.id, newParentId);
+            if (options.json) {
+              return {
+                exitCode: 0,
+                stdout: JSON.stringify({ entity: updated }, null, 2),
+              };
+            }
+            const targetName = newParentId
+              ? (corpus.getById(newParentId)?.name ?? newParentId)
+              : "root";
+            return {
+              exitCode: 0,
+              stdout: `Reparented "${updated.name}" to ${targetName} (${updated.id}).`,
+            };
+          },
+        }),
+        "catalog merge": cliCommand({
+          summary:
+            "Merge a source product/feature into a target, moving tasks and children",
+          positionals: [
+            {
+              name: "source",
+              description: "Source product/feature name or ID",
+              required: true,
+            },
+            {
+              name: "target",
+              description: "Target product/feature name or ID",
+              required: true,
+            },
+          ],
+          options: {
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ positionals, options }) {
+            const source = resolveEntity(corpus, positionals.source);
+            const target = resolveEntity(corpus, positionals.target);
+            const result = corpus.merge(source.id, target.id);
+            if (options.json) {
+              return {
+                exitCode: 0,
+                stdout: JSON.stringify({ entity: result }, null, 2),
+              };
+            }
+            return {
+              exitCode: 0,
+              stdout: `Merged "${source.name}" into "${target.name}" (${result.target.id}).`,
+            };
+          },
+        }),
+        "task show": cliCommand({
+          summary: "Show canonical identity and classification for a thread",
+          positionals: [
+            {
+              name: "thread",
+              description: "Thread ID",
+              required: true,
+            },
+          ],
+          options: {
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ positionals, options }) {
+            const thread = resolveThread(service, positionals.thread);
+            const assignment = corpus.assignment(thread.id);
+            const sectionName = thread.sectionId
+              ? (map.get(thread.sectionId)?.name ?? thread.sectionId)
+              : "Unfiled";
+            if (options.json) {
+              return {
+                exitCode: 0,
+                stdout: JSON.stringify(
+                  {
+                    threadId: thread.id,
+                    title: thread.title,
+                    sectionId: thread.sectionId,
+                    workstream: sectionName,
+                    assignment,
+                  },
+                  null,
+                  2,
+                ),
+              };
+            }
+            const lines = [
+              `Thread:          ${clip(thread.title)} (@thread:${thread.id})`,
+              `Workstream:      ${sectionName}`,
+              `Product/Feature: ${assignment.label ?? "Unresolved"} (${assignment.status})`,
+              `Provenance:      ${assignment.provenance ?? "(none)"}`,
+              ...(assignment.inheritedFrom
+                ? [`Inherited from:  @thread:${assignment.inheritedFrom}`]
+                : []),
+              ...(assignment.evidence
+                ? [`Evidence:        ${assignment.evidence}`]
+                : []),
+            ];
+            return { exitCode: 0, stdout: lines.join("\n") };
+          },
+        }),
+        "task assign": cliCommand({
+          summary: "Manually assign a thread to a product or feature identity",
+          positionals: [
+            {
+              name: "thread",
+              description: "Thread ID",
+              required: true,
+            },
+            {
+              name: "identity",
+              description: "Product/feature name or ID",
+              required: true,
+            },
+          ],
+          options: {
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ positionals, options }) {
+            const thread = resolveThread(service, positionals.thread);
+            const entity = resolveEntity(corpus, positionals.identity);
+            const assignment = corpus.assign(thread.id, entity.id, {
+              provenance: "manual",
+            });
+            if (options.json) {
+              return {
+                exitCode: 0,
+                stdout: JSON.stringify({ assignment }, null, 2),
+              };
+            }
+            return {
+              exitCode: 0,
+              stdout: `Assigned @thread:${thread.id} to "${entity.name}" (${assignment.label}).`,
+            };
+          },
+        }),
+        "task clear": cliCommand({
+          summary:
+            "Clear a thread's product or feature identity (mark unresolved)",
+          positionals: [
+            {
+              name: "thread",
+              description: "Thread ID",
+              required: true,
+            },
+          ],
+          options: {
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ positionals, options }) {
+            const thread = resolveThread(service, positionals.thread);
+            const assignment = corpus.clear(thread.id);
+            if (options.json) {
+              return {
+                exitCode: 0,
+                stdout: JSON.stringify({ assignment }, null, 2),
+              };
+            }
+            return {
+              exitCode: 0,
+              stdout: `Cleared product/feature identity for @thread:${thread.id} (unresolved).`,
+            };
+          },
+        }),
+        "task reclassify": cliCommand({
+          summary:
+            "Reclassify a thread against the Catalog using the model or an override",
+          positionals: [
+            {
+              name: "thread",
+              description: "Thread ID",
+              required: true,
+            },
+          ],
+          options: {
+            identity: {
+              type: "string",
+              description:
+                "Optional explicit product/feature name or ID override",
+            },
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ positionals, options }) {
+            const thread = resolveThread(service, positionals.thread);
+            let assignment: CanonicalAssignment;
+            if (options.identity) {
+              const entity = resolveEntity(corpus, options.identity);
+              assignment = corpus.reclassify(
+                thread.id,
+                entity.id,
+                "cli-reclassify",
+              );
+            } else if (inference) {
+              const sdkThread = await bb.sdk.threads.get({
+                threadId: thread.id,
+              });
+              const analysis = analyzer.get(thread.id);
+              const requests = await analyzer.ownershipRequests(thread.id);
+              const modelChoice = currentPrefs
+                ? await currentPrefs().organize.model
+                : DEFAULT_MODELS.organize;
+              const { value } = await inference.run(
+                "classify",
+                {
+                  prompt: `${sdkThread.title ?? sdkThread.titleFallback ?? ""}\n${analysis?.recap ?? ""}`,
+                  entities: corpus.list(),
+                  project: sdkThread.projectId,
+                  requests,
+                },
+                {
+                  model: modelChoice,
+                  threadId: thread.id,
+                  label: sdkThread.title ?? thread.id,
+                },
+              );
+              const target = value.subjectId
+                ? corpus.getById(value.subjectId)
+                : value.proposed
+                  ? corpus.rememberProposal(value.proposed)
+                  : null;
+              assignment = corpus.reclassify(
+                thread.id,
+                target ? target.id : null,
+                "cli-reclassify",
+              );
+            } else {
+              throw new PluginCliError(
+                "Inference is unavailable for reclassification.",
+                { code: "inference_unavailable" },
+              );
+            }
+            if (options.json) {
+              return {
+                exitCode: 0,
+                stdout: JSON.stringify({ assignment }, null, 2),
+              };
+            }
+            return {
+              exitCode: 0,
+              stdout: `Reclassified @thread:${thread.id} as ${assignment.label ?? "Unresolved"} (${assignment.status}).`,
             };
           },
         }),

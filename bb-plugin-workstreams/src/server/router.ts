@@ -154,7 +154,6 @@ export class Router {
     private readonly deps: {
       sdk: () => Sdk;
       corpus?: CorpusStore;
-      semanticSuggestions?: () => boolean;
       service: WorkstreamService;
       journal: Journal;
       map: WorkstreamMap;
@@ -368,7 +367,6 @@ export class Router {
       : mentionedTarget(text);
     if (
       destination?.kind !== "none" &&
-      !(options.suggest && this.deps.semanticSuggestions?.()) &&
       mention &&
       "threadId" in mention &&
       intent?.action !== "new-thread" &&
@@ -431,11 +429,7 @@ export class Router {
     }
 
     const picked = selectedProject;
-    if (
-      options.suggest &&
-      this.deps.corpus &&
-      this.deps.semanticSuggestions?.()
-    ) {
+    if (options.suggest && this.deps.corpus) {
       const corpus = this.deps.corpus;
       const { value: classification, traceId } = await this.deps.inference.run(
         "classify",
@@ -1176,55 +1170,20 @@ export class Router {
    * Starts New work's thread exactly as the composer resolved it, filed in
    * `sectionId` or deliberately left without a workstream.
    */
-  async start(
-    optionsOrSectionId:
-      | string
-      | null
-      | {
-          sectionId?: string | null;
-          newWorkstream?: { name: string; description?: string } | null;
-          identity?: {
-            entityId?: string | null;
-            proposal?: DraftSubjectProposal | null;
-            provenance?: "manual" | "automatic";
-          } | null;
-          execution: SpawnArgs & {
-            projectId: string;
-            environment: Environment;
-          };
-        },
-    legacyExecution?: SpawnArgs & {
-      projectId: string;
-      environment: Environment;
-    },
-    legacySubjectId?: string,
-  ): Promise<{ threadId: string; sectionId: string | null }> {
-    let sectionId: string | null;
-    let newWorkstream: { name: string; description?: string } | null;
-    let identity: {
+  async start(options: {
+    sectionId?: string | null;
+    newWorkstream?: { name: string; description?: string } | null;
+    identity?: {
       entityId?: string | null;
       proposal?: DraftSubjectProposal | null;
       provenance?: "manual" | "automatic";
     } | null;
-    let execution: SpawnArgs & { projectId: string; environment: Environment };
-
-    if (
-      typeof optionsOrSectionId === "object" &&
-      optionsOrSectionId !== null &&
-      "execution" in optionsOrSectionId
-    ) {
-      sectionId = optionsOrSectionId.sectionId ?? null;
-      newWorkstream = optionsOrSectionId.newWorkstream ?? null;
-      identity = optionsOrSectionId.identity ?? null;
-      execution = optionsOrSectionId.execution;
-    } else {
-      sectionId = optionsOrSectionId;
-      newWorkstream = null;
-      identity = legacySubjectId
-        ? { entityId: legacySubjectId, provenance: "manual" }
-        : null;
-      execution = legacyExecution!;
-    }
+    execution: SpawnArgs & { projectId: string; environment: Environment };
+  }): Promise<{ threadId: string; sectionId: string | null }> {
+    const sectionId = options.sectionId ?? null;
+    const newWorkstream = options.newWorkstream ?? null;
+    const identity = options.identity ?? null;
+    const execution = options.execution;
 
     let effectiveSectionId = sectionId;
     let createdSectionId: string | null = null;

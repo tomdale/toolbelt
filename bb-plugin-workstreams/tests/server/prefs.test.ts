@@ -80,11 +80,9 @@ describe("Workstreams prefs", () => {
         homeProjectId: "project-a",
         suggestions: true,
         suggestionsModel: { kind: "gateway", model: "google/old-model" },
-        corpusClassification: false,
       },
       organize: {
         model: { kind: "gateway", model: "openai/old-organize" },
-        adaptivePreview: false,
         capacity: 6,
         collapseAt: 3,
       },
