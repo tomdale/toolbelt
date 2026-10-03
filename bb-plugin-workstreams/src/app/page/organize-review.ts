@@ -27,6 +27,18 @@ export type ReviewTask = {
   reason: string;
   /** The organizer suggested a move that Apply will not perform. */
   declined: boolean;
+  /** Canonical identity (specific feature path), e.g. "Toolbelt · Workstreams · Organize". */
+  identityLabel: string | null;
+  /** Whether the task is assigned or unresolved. */
+  identityStatus: "assigned" | "unresolved";
+  /** How the identity was determined: manual user selection or automatic classification. */
+  provenance: "manual" | "automatic" | null;
+  /** Safe bounded evidence hash used for classification. */
+  evidence: string | null;
+  /** Whether the task is a completed (done) task. */
+  completed: boolean;
+  /** Whether this task was retained in its current home due to being unresolved or completed. */
+  retained: boolean;
 };
 
 export type ReviewGroup = {
@@ -60,6 +72,12 @@ export type ReviewSummary = {
   declined: number;
   /** Workstreams holding tasks after Apply, Unfiled excluded. */
   workstreamsAfter: number;
+  /** Open counted tasks driving grouping (active tasks). */
+  currentTasks: number;
+  /** Completed retained tasks. */
+  completedTasks: number;
+  /** Unresolved tasks. */
+  unresolvedTasks: number;
 };
 
 export type Review = {
@@ -70,6 +88,8 @@ export type Review = {
   removed: ReviewGroup[];
   /** Every task Apply moves, by destination then title. */
   moves: ReviewTask[];
+  /** Whether the preview is stale due to catalog / identity changes. */
+  isStale: boolean;
 };
 
 const newPlacement = (key: string) => `new:${key}`;
@@ -98,10 +118,27 @@ export function buildReview(
     preview.assignments.map((a) => [a.threadId, a.reason]),
   );
 
+  const completedRootsSet = new Set(preview.completedRoots ?? []);
   const tasks: ReviewTask[] = state.roots.map((root) => {
     const move = moveOf.get(root.id);
     const from = root.sectionId;
     const to = move?.accepted ? move.to : from;
+    const reason = move?.reason ?? reasonOf.get(root.id) ?? "";
+    const assignment = preview.identities?.[root.id];
+    const completed = Boolean(
+      ("completed" in root && root.completed) || completedRootsSet.has(root.id),
+    );
+    const identityStatus =
+      assignment?.status ??
+      move?.identityStatus ??
+      (assignment?.entityId ? "assigned" : "unresolved");
+    const identityLabel = assignment?.label ?? move?.identityLabel ?? null;
+    const provenance = assignment?.provenance ?? move?.provenance ?? null;
+    const evidence = assignment?.evidence ?? null;
+    const retained =
+      reason.includes("retained") ||
+      (to === from && (identityStatus === "unresolved" || completed));
+
     return {
       id: root.id,
       title: root.title || move?.title || "Untitled",
@@ -110,8 +147,14 @@ export function buildReview(
       fromName: move?.fromName ?? currentNameOf(from),
       to,
       toName: move?.accepted ? move.toName : nameOf(to),
-      reason: move?.reason ?? reasonOf.get(root.id) ?? "",
+      reason,
       declined: Boolean(move && !move.accepted),
+      identityLabel,
+      identityStatus,
+      provenance,
+      evidence,
+      completed,
+      retained,
     };
   });
   const byTitle = (a: ReviewTask, b: ReviewTask) =>
@@ -191,6 +234,9 @@ export function buildReview(
   return {
     summary: {
       tasks: tasks.length,
+      currentTasks: tasks.filter((t) => !t.completed).length,
+      completedTasks: tasks.filter((t) => t.completed).length,
+      unresolvedTasks: tasks.filter((t) => t.identityStatus === "unresolved").length,
       childThreads: tasks.reduce((n, t) => n + t.children, 0),
       moving: moves.length,
       movingChildren: moves.reduce((n, t) => n + t.children, 0),
@@ -205,5 +251,6 @@ export function buildReview(
     groups,
     removed,
     moves,
+    isStale: Boolean(preview.isStale),
   };
 }

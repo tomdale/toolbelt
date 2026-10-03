@@ -20,6 +20,7 @@ import { InspectButton } from "../debug/InspectButton.tsx";
 import { ghostButton, primaryButton, secondaryButton } from "./controls.ts";
 import { buildReview } from "./organize-review.ts";
 import { ProposalReview, plural } from "./OrganizeReview.tsx";
+import type { ReviewTask } from "./organize-review.ts";
 import { useThreadTotals, type ThreadTotals } from "./thread-totals.ts";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
@@ -28,12 +29,15 @@ type Command = Parameters<Rpc["call"]>[1];
 export function Organize({
   rpc,
   onShowActivity,
+  renderTaskAction,
   children,
 }: {
   rpc: Rpc;
   bootstrapped?: boolean;
   /** Opens the Activity log, where an applied pass can be undone. */
   onShowActivity?: () => void;
+  /** Optional slot for cross-surface identity correction control from Phase 3. */
+  renderTaskAction?: (task: ReviewTask) => ReactNode;
   /** Shown only while no pass is running or awaiting review. */
   children?: ReactNode;
 }) {
@@ -138,6 +142,7 @@ export function Organize({
           busy={busy}
           inspect={inspect}
           alert={commandError}
+          renderTaskAction={renderTaskAction}
           onApply={() =>
             void send({
               action: "apply",
@@ -213,8 +218,8 @@ function StatusPanel({
           : status === "failed"
             ? null
             : totals.ready && totals.tasks
-              ? `Proposes one grouping for your ${plural(totals.tasks, "open task")}${totals.childThreads ? `; their ${plural(totals.childThreads, "child thread")} stay with them` : ""}. Nothing moves until you review and apply the whole proposal.`
-              : "Proposes one grouping for your open tasks. Nothing moves until you review and apply the whole proposal.";
+              ? `Proposes one grouping for your ${plural(totals.tasks, "open task")}${totals.childThreads ? `; their ${plural(totals.childThreads, "child thread")} stay with them` : ""}. Catalog knowledge updates during preview; native placement changes only when you apply.`
+              : "Proposes one grouping for your open tasks. Catalog knowledge updates during preview; native placement changes only when you apply.";
   const working = status === "proposing" || status === "applying";
   const determinate =
     status === "proposing" &&

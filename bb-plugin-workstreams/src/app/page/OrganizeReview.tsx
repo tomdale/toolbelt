@@ -22,6 +22,7 @@ export function ProposalReview({
   busy,
   inspect,
   alert,
+  renderTaskAction,
   onApply,
   onDiscard,
   onRegenerate,
@@ -30,6 +31,8 @@ export function ProposalReview({
   busy: boolean;
   inspect: ReactNode;
   alert: ReactNode;
+  /** Optional slot for cross-surface identity correction control from Phase 3. */
+  renderTaskAction?: (task: ReviewTask) => ReactNode;
   onApply: () => void;
   onDiscard: () => void;
   onRegenerate: () => void;
@@ -53,20 +56,28 @@ export function ProposalReview({
         <div className="min-w-0 flex-1 basis-64">
           <h2 className="flex items-center gap-1.5 text-[13px] font-medium">
             Review proposed organization
+            {review.isStale ? (
+              <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                <Icon name="AlertTriangle" aria-hidden className="size-3" />
+                Stale proposal
+              </span>
+            ) : null}
             {inspect}
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {empty
               ? "There are no open tasks to organize."
-              : summary.moving
-                ? `${summary.moving} of ${plural(summary.tasks, "task")} move. Nothing changes until you apply.`
-                : "No tasks move. Nothing changes until you apply."}
+              : review.isStale
+                ? "The catalog or task classifications changed since this proposal was prepared. Regenerate to update."
+                : summary.moving === 0
+                  ? "All tasks are already in their recommended workstreams. Nothing changes until you apply."
+                  : `${summary.moving} of ${plural(summary.tasks, "task")} move. Nothing changes until you apply.`}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
-            className={ghostButton}
+            className={review.isStale ? primaryButton : ghostButton}
             disabled={busy}
             onClick={onRegenerate}
             title="Discard this proposal and prepare a new one"
@@ -83,14 +94,47 @@ export function ProposalReview({
           </button>
           <button
             type="button"
-            className={primaryButton}
-            disabled={busy || empty}
+            className={review.isStale ? ghostButton : primaryButton}
+            disabled={busy || empty || review.isStale}
             onClick={onApply}
+            title={
+              review.isStale
+                ? "Proposal is stale. Regenerate before applying."
+                : undefined
+            }
           >
             Apply organization
           </button>
         </div>
       </header>
+      {review.isStale ? (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-xs text-amber-700 dark:text-amber-300"
+        >
+          <Icon
+            name="AlertTriangle"
+            aria-hidden
+            className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
+          />
+          <div className="flex-1">
+            <p className="font-medium">Proposal is stale</p>
+            <p className="mt-0.5 text-muted-foreground">
+              The catalog or task classifications changed since this proposal
+              was generated. Apply is disabled; regenerate to prepare an
+              up-to-date proposal.
+            </p>
+          </div>
+          <button
+            type="button"
+            className={cn(primaryButton, "h-7 shrink-0 text-xs")}
+            onClick={onRegenerate}
+            disabled={busy}
+          >
+            Regenerate
+          </button>
+        </div>
+      ) : null}
       {alert}
       {empty ? null : (
         <>
@@ -145,9 +189,17 @@ export function ProposalReview({
               ) : null}
             </div>
             {view === "workstreams" ? (
-              <GroupList review={review} open={open} onToggle={toggle} />
+              <GroupList
+                review={review}
+                open={open}
+                onToggle={toggle}
+                renderTaskAction={renderTaskAction}
+              />
             ) : (
-              <MoveList moves={review.moves} />
+              <MoveList
+                moves={review.moves}
+                renderTaskAction={renderTaskAction}
+              />
             )}
           </div>
         </>
@@ -227,6 +279,18 @@ function Summary({ review }: { review: Review }) {
             : null}
         </p>
       ) : null}
+      {summary.completedTasks || summary.unresolvedTasks ? (
+        <p className="text-xs text-muted-foreground">
+          Counts reflect task roots ({summary.currentTasks} active
+          {summary.completedTasks
+            ? ` · ${summary.completedTasks} completed retained`
+            : ""}
+          {summary.unresolvedTasks
+            ? ` · ${summary.unresolvedTasks} unresolved retained`
+            : ""}
+          ).
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -235,10 +299,12 @@ function GroupList({
   review,
   open,
   onToggle,
+  renderTaskAction,
 }: {
   review: Review;
   open: ReadonlySet<string>;
   onToggle: (key: string) => void;
+  renderTaskAction?: (task: ReviewTask) => ReactNode;
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border">
@@ -261,6 +327,7 @@ function GroupList({
             group={group}
             open={open.has(group.key)}
             onToggle={() => onToggle(group.key)}
+            renderTaskAction={renderTaskAction}
           />
         ))}
       </ul>
@@ -285,6 +352,7 @@ function GroupList({
                 group={group}
                 open={open.has(group.key)}
                 onToggle={() => onToggle(group.key)}
+                renderTaskAction={renderTaskAction}
               />
             ))}
           </ul>
@@ -313,10 +381,12 @@ function GroupRow({
   group,
   open,
   onToggle,
+  renderTaskAction,
 }: {
   group: ReviewGroup;
   open: boolean;
   onToggle: () => void;
+  renderTaskAction?: (task: ReviewTask) => ReactNode;
 }) {
   const panel = useId();
   const change = changeOf(group);
@@ -391,13 +461,19 @@ function GroupRow({
         hidden={!open}
         className="px-3 pb-3 pl-10"
       >
-        <GroupDetail group={group} />
+        <GroupDetail group={group} renderTaskAction={renderTaskAction} />
       </div>
     </li>
   );
 }
 
-function GroupDetail({ group }: { group: ReviewGroup }) {
+function GroupDetail({
+  group,
+  renderTaskAction,
+}: {
+  group: ReviewGroup;
+  renderTaskAction?: (task: ReviewTask) => ReactNode;
+}) {
   const [allStaying, setAllStaying] = useState(false);
   const limit = 6;
   const staying =
@@ -428,8 +504,18 @@ function GroupDetail({ group }: { group: ReviewGroup }) {
           ) : null}
         </div>
       ) : null}
-      <TaskSection label="Moving in" tasks={group.incoming} side="from" />
-      <TaskSection label="Moving out" tasks={group.outgoing} side="to" />
+      <TaskSection
+        label="Moving in"
+        tasks={group.incoming}
+        side="from"
+        renderTaskAction={renderTaskAction}
+      />
+      <TaskSection
+        label="Moving out"
+        tasks={group.outgoing}
+        side="to"
+        renderTaskAction={renderTaskAction}
+      />
       {group.staying.length ? (
         <div>
           <h4 className="text-[11px] font-medium text-muted-foreground">
@@ -437,7 +523,12 @@ function GroupDetail({ group }: { group: ReviewGroup }) {
           </h4>
           <ul className="mt-1">
             {staying.map((task) => (
-              <TaskLine key={task.id} task={task} muted />
+              <TaskLine
+                key={task.id}
+                task={task}
+                muted
+                renderTaskAction={renderTaskAction}
+              />
             ))}
           </ul>
           {staying.length < group.staying.length ? (
@@ -464,10 +555,12 @@ function TaskSection({
   label,
   tasks,
   side,
+  renderTaskAction,
 }: {
   label: string;
   tasks: ReviewTask[];
   side: "from" | "to";
+  renderTaskAction?: (task: ReviewTask) => ReactNode;
 }) {
   if (!tasks.length) return null;
   return (
@@ -481,6 +574,7 @@ function TaskSection({
             key={task.id}
             task={task}
             note={`${side} ${side === "from" ? task.fromName : task.toName}`}
+            renderTaskAction={renderTaskAction}
           />
         ))}
       </ul>
@@ -492,14 +586,16 @@ function TaskLine({
   task,
   note,
   muted = false,
+  renderTaskAction,
 }: {
   task: ReviewTask;
   note?: string;
   muted?: boolean;
+  renderTaskAction?: (task: ReviewTask) => ReactNode;
 }) {
   const debug = useDebugMode();
   return (
-    <li className="py-0.5 text-[13px]">
+    <li className="py-1 text-[13px]">
       <div className="flex min-w-0 flex-col sm:flex-row sm:items-baseline sm:gap-3">
         <span
           className={cn(
@@ -520,9 +616,49 @@ function TaskLine({
             {note}
           </span>
         ) : null}
+        {renderTaskAction ? renderTaskAction(task) : null}
       </div>
-      {debug && task.reason && !muted ? (
-        <p className="truncate text-[11px] text-muted-foreground/70">
+      {task.identityLabel ||
+      (task.identityStatus === "unresolved" && task.retained) ? (
+        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+          {task.identityLabel ? (
+            <span className="inline-flex items-center gap-1 font-medium text-foreground/80">
+              <Icon
+                name="Tag"
+                aria-hidden
+                className="size-3 text-muted-foreground/70"
+              />
+              <span>{task.identityLabel}</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 italic text-muted-foreground/80">
+              <Icon
+                name="HelpCircle"
+                aria-hidden
+                className="size-3 text-muted-foreground/60"
+              />
+              <span>Unresolved identity</span>
+            </span>
+          )}
+          {task.provenance === "manual" ? (
+            <span className="rounded bg-state-hover px-1 py-0.2 text-[10px] text-muted-foreground">
+              manual
+            </span>
+          ) : null}
+          {task.completed ? (
+            <span className="rounded bg-emerald-500/10 px-1 py-0.2 text-[10px] text-emerald-600 dark:text-emerald-400">
+              completed
+            </span>
+          ) : null}
+          {task.retained && task.fromName && !task.identityLabel ? (
+            <span className="text-[10px] text-muted-foreground/70">
+              · retained in {task.fromName}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {debug && task.reason ? (
+        <p className="mt-0.5 truncate text-[11px] text-muted-foreground/70">
           {task.reason}
         </p>
       ) : null}
@@ -539,7 +675,13 @@ function ChildCount({ count }: { count: number }) {
   );
 }
 
-function MoveList({ moves }: { moves: ReviewTask[] }) {
+function MoveList({
+  moves,
+  renderTaskAction,
+}: {
+  moves: ReviewTask[];
+  renderTaskAction?: (task: ReviewTask) => ReactNode;
+}) {
   const debug = useDebugMode();
   if (!moves.length)
     return (
@@ -577,12 +719,37 @@ function MoveList({ moves }: { moves: ReviewTask[] }) {
               className="align-baseline hover:bg-state-hover/40"
             >
               <td className="px-3 py-1.5">
-                <div className="truncate text-foreground/90">
-                  {task.title}
-                  <ChildCount count={task.children} />
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className="truncate text-foreground/90">
+                    {task.title}
+                    <ChildCount count={task.children} />
+                  </div>
+                  {renderTaskAction ? renderTaskAction(task) : null}
                 </div>
+                {task.identityLabel ? (
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1 font-medium text-foreground/80">
+                      <Icon
+                        name="Tag"
+                        aria-hidden
+                        className="size-3 text-muted-foreground/70"
+                      />
+                      <span>{task.identityLabel}</span>
+                    </span>
+                    {task.provenance === "manual" ? (
+                      <span className="rounded bg-state-hover px-1 py-0.2 text-[10px] text-muted-foreground">
+                        manual
+                      </span>
+                    ) : null}
+                    {task.completed ? (
+                      <span className="rounded bg-emerald-500/10 px-1 py-0.2 text-[10px] text-emerald-600 dark:text-emerald-400">
+                        completed
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
                 {debug && task.reason ? (
-                  <div className="truncate text-[11px] text-muted-foreground/70">
+                  <div className="mt-0.5 truncate text-[11px] text-muted-foreground/70">
                     {task.reason}
                   </div>
                 ) : null}

@@ -74,6 +74,20 @@ const recordSchema = z.object({
   updatedAt: z.number(),
 });
 
+const assignmentProvenanceSchema = z.enum(["manual", "automatic"]);
+const assignmentStatusSchema = z.enum(["assigned", "unresolved"]);
+
+const canonicalAssignmentSchema = z.object({
+  threadId: z.string(),
+  entityId: z.string().nullable(),
+  status: assignmentStatusSchema,
+  provenance: assignmentProvenanceSchema.nullable(),
+  label: z.string().nullable(),
+  ancestorIds: z.array(z.string()),
+  evidence: z.string().nullable(),
+  inheritedFrom: z.string().nullable(),
+});
+
 const moveSchema = z.object({
   threadId: z.string(),
   title: z.string(),
@@ -85,6 +99,9 @@ const moveSchema = z.object({
   accepted: z.boolean(),
   confidence: z.enum(["high", "medium", "low"]).optional(),
   traceId: z.string().nullable().optional(),
+  identityLabel: z.string().nullable().optional(),
+  identityStatus: assignmentStatusSchema.optional(),
+  provenance: assignmentProvenanceSchema.nullable().optional(),
 });
 
 const bootstrapSchema = z
@@ -107,6 +124,7 @@ const bootstrapSchema = z
         id: z.string(),
         title: z.string(),
         sectionId: z.string().nullable(),
+        completed: z.boolean().optional(),
       }),
     ),
     mapSnapshot: z.array(
@@ -147,26 +165,14 @@ const bootstrapSchema = z
           z.object({ sectionId: z.string(), from: z.string(), to: z.string() }),
         ),
         moves: z.array(moveSchema),
+        identities: z.record(z.string(), canonicalAssignmentSchema).optional(),
+        completedRoots: z.array(z.string()).optional(),
       })
       .nullable(),
     entryId: z.string().nullable(),
     traceIds: z.array(z.string()).default([]),
   })
   .nullable();
-
-const assignmentProvenanceSchema = z.enum(["manual", "automatic"]);
-const assignmentStatusSchema = z.enum(["assigned", "unresolved"]);
-
-const canonicalAssignmentSchema = z.object({
-  threadId: z.string(),
-  entityId: z.string().nullable(),
-  status: assignmentStatusSchema,
-  provenance: assignmentProvenanceSchema.nullable(),
-  label: z.string().nullable(),
-  ancestorIds: z.array(z.string()),
-  evidence: z.string().nullable(),
-  inheritedFrom: z.string().nullable(),
-});
 
 const entitySchema = z.object({
   id: z.string(),
