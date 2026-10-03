@@ -109,14 +109,17 @@ function useMessageScroller(threadId: string | null): Mount | null {
         eyebrow: true,
         subtitle: true,
       });
-      root.style.height = `${initialHeight}px`;
+      // The root takes no height of its own: the heading is drawn over the
+      // timeline from a fixed reserved gap, so expanding and compacting never
+      // reflow the messages (which would shift scroll position mid-animation).
+      root.style.marginBottom = `${initialHeight}px`;
       const previousScrollPaddingTop =
         scroller.style.getPropertyValue("scroll-padding-top");
       const previousScrollPaddingPriority =
         scroller.style.getPropertyPriority("scroll-padding-top");
       column.prepend(root);
       if (wasAtBottom) scroller.scrollTop = scroller.scrollHeight;
-      else scroller.scrollTop = oldScrollTop + root.offsetHeight;
+      else scroller.scrollTop = oldScrollTop + initialHeight;
       current = {
         scroller,
         column,
@@ -242,24 +245,25 @@ export function StickyGoalHeader(): React.ReactPortal | null {
     mount.root.className = "ws-sticky-goal-root";
     mount.root.dataset.compact = String(compact);
     mount.root.style.setProperty("--ws-sticky-fade", fade ? "1" : "0");
-    mount.root.style.height = `${height}px`;
-    // Vertical padding totals the extra 0.5 / 1 body-font heights in headingHeight.
-    mount.root.style.paddingTop = `${base * (compact ? 0.2 : 0.35)}px`;
-    mount.root.style.paddingBottom = `${base * (compact ? 0.3 : 0.65)}px`;
     mount.scroller.style.scrollPaddingTop = `${height}px`;
     return () => {
       mount.root.className = "";
-      mount.root.style.removeProperty("height");
-      mount.root.style.removeProperty("padding-top");
-      mount.root.style.removeProperty("padding-bottom");
       mount.root.style.removeProperty("--ws-sticky-fade");
       delete mount.root.dataset.compact;
     };
-  }, [mount, compact, fade, height, base]);
+  }, [mount, compact, fade, height]);
 
   if (!mount || !context) return null;
   return createPortal(
-    <div className="ws-sticky-goal">
+    <div
+      className="ws-sticky-goal"
+      style={{
+        height,
+        // Vertical padding totals the extra 0.5 / 1 body-font heights in headingHeight.
+        paddingTop: base * (compact ? 0.2 : 0.35),
+        paddingBottom: base * (compact ? 0.3 : 0.65),
+      }}
+    >
       {context.eyebrow && (
         <div
           className="ws-sticky-goal__eyebrow"

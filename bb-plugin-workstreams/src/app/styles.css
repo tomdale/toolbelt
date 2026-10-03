@@ -444,20 +444,27 @@
   color: var(--warning-text, #e0a84f);
 }
 
-/* Sticky thread goal sits at the top of the message column, set in the same
-   type as the timeline text. It has no chrome of its own: once the timeline
-   scrolls away from the top, a feathered fade lets messages dissolve beneath
-   it instead of ending at a hard edge. */
+/* Sticky thread goal, set in the same type as the timeline text. The root is
+   a zero-height sticky anchor at the top of the message column; the heading
+   itself (.ws-sticky-goal) is drawn over the timeline, so changing its size
+   never reflows messages. The rule sets the expanded heading apart from the
+   conversation; once the timeline scrolls away from the top, a feathered fade
+   lets messages dissolve beneath it. */
 .ws-sticky-goal-root {
   position: sticky;
   top: 0;
   z-index: 20;
-  display: flex;
   flex: none;
-  flex-direction: column;
-  justify-content: flex-end;
+  height: 0;
   /* Extend over the column's gutters so scrolling text cannot peek out. */
   margin-inline: -1rem;
+}
+.ws-sticky-goal {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   /* Message text is inset a further 1rem from the column's edge. */
   padding-inline: 2rem;
   border-bottom: 1px solid var(--border);
@@ -467,12 +474,11 @@
     padding 200ms ease,
     border-color 200ms ease;
 }
-/* The rule sets the expanded heading apart from the conversation; compacted,
-   only the fade remains. */
-.ws-sticky-goal-root[data-compact="true"] {
+/* Compacted, only the fade remains. */
+.ws-sticky-goal-root[data-compact="true"] .ws-sticky-goal {
   border-bottom-color: transparent;
 }
-.ws-sticky-goal-root::after {
+.ws-sticky-goal::after {
   position: absolute;
   inset: 100% 0 auto;
   /* Matches BB's native overflow fade: 1.5rem, background to transparent. */
@@ -488,20 +494,13 @@
   pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .ws-sticky-goal-root,
-  .ws-sticky-goal-root::after,
+  .ws-sticky-goal,
+  .ws-sticky-goal::after,
   .ws-sticky-goal__eyebrow,
   .ws-sticky-goal__title,
   .ws-sticky-goal__subtitle {
     transition: none;
   }
-}
-.ws-sticky-goal {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
 }
 .ws-sticky-goal__eyebrow {
   flex: none;
