@@ -182,6 +182,10 @@ function mount(
       sectionId: null,
     })),
     sendToThread: vi.fn((_input: unknown) => ({ threadId: "thr_p" })),
+    flagRoute: vi.fn((_input: unknown) => ({
+      threadId: "thr_report",
+      sectionId: "sec_workstreams",
+    })),
     trace: vi.fn((_input: unknown) => ({
       trace: {
         id: "trace_1",
@@ -471,6 +475,23 @@ it("shows the result, the model's reason and its inputs in Debug mode", async ()
   expect(debug.textContent).toContain("test-model · 0.9s");
   expect(within(debug).getByLabelText("Prompt").textContent).toContain(
     "Someone is starting new work.",
+  );
+  const flag = within(debug).getByRole("button", {
+    name: "Flag inaccurate result",
+  });
+  fireEvent.click(flag);
+  await waitFor(() =>
+    expect(rpc.flagRoute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: null,
+        diagnostics: expect.stringContaining('"trace"'),
+      }),
+    ),
+  );
+  await waitFor(() =>
+    expect(slot.inspection.navigateCalls).toContainEqual(
+      expect.objectContaining({ threadId: "thr_report" }),
+    ),
   );
   fireEvent.click(screen.getByRole("button", { name: "Dismiss suggestion" }));
   await waitFor(() =>

@@ -51,6 +51,9 @@ export async function fakeWorld(
   const completions: { prompt: string; model: string }[] = [];
   const spawned: Record<string, unknown>[] = [];
   const sent: Record<string, unknown>[] = [];
+  const projects = ["proj_1", "proj_home", "proj_other", "proj_personal"].map(
+    (id) => ({ id, name: "Zebracorn", sources: [] }),
+  );
   const workerCalls: Record<string, unknown>[] = [];
   const markedUnread: string[] = [];
   /** Each thread's latest agent turn: its number and how it ended. */
@@ -125,12 +128,7 @@ export async function fakeWorld(
       },
       projects: {
         // A distinctive name that must never reach a model prompt.
-        list: async () =>
-          ["proj_1", "proj_home", "proj_other", "proj_personal"].map((id) => ({
-            id,
-            name: "Zebracorn",
-            sources: [],
-          })),
+        list: async () => [...projects],
         get: async () => ({ id: "proj_1", name: "Zebracorn" }),
         sidebarBootstrap: async () => ({
           personalProject: { id: "proj_personal", name: "Personal" },

@@ -929,6 +929,55 @@ export default async function plugin(bb: BbPluginApi) {
     },
     traces: async (input) => ({ traces: traces.list(input) }),
     trace: async ({ id }) => ({ trace: traces.get(id) }),
+    flagRoute: ({ diagnostics, projectId }) =>
+      userFacing(async () => {
+        const prefs = currentPrefs();
+        if (!prefs.advanced.debug)
+          throw new UserError(
+            "Enable Debug mode to report a classifier result.",
+          );
+        const projects = await bb.sdk.projects.list();
+        const resolvedProjectId =
+          (projectId && projects.some((project) => project.id === projectId)
+            ? projectId
+            : undefined) ??
+          (prefs.newWork.homeProjectId &&
+          projects.some((project) => project.id === prefs.newWork.homeProjectId)
+            ? prefs.newWork.homeProjectId
+            : undefined) ??
+          projects[0]?.id;
+        if (!resolvedProjectId)
+          throw new UserError(
+            "No project is available for a classifier report.",
+          );
+        const sections = await bb.sdk.threadSections.list();
+        const existing = sections.find(
+          (section) => section.name.toLowerCase() === "workstreams",
+        );
+        const sectionId =
+          existing?.id ??
+          (await service.createWorkstream("Workstreams", "user")).sectionId;
+        const thread = await bb.sdk.threads.spawn({
+          projectId: resolvedProjectId,
+          environment: { type: "project-default" },
+          sectionId,
+          title: "Inaccurate classifier result",
+          permissionMode: "accept-edits",
+          visibility: "visible",
+          prompt: [
+            "Triage this potentially inaccurate Workstreams classifier result.",
+            "Determine whether the classification or its routing was wrong, identify why, and recommend a concrete correction. Do not change application code or data; report findings only.",
+            "",
+            "Diagnostics (JSON):",
+            diagnostics,
+          ].join("\n"),
+        });
+        service.recordCreated(thread.id, sectionId, "user", {
+          title: "Inaccurate classifier result",
+          rationale: "Flagged a potentially inaccurate classifier result",
+        });
+        return { threadId: thread.id, sectionId };
+      }),
     traceReplay: ({ id }) =>
       userFacing(async () => ({ trace: await inference.replay(id) })),
     traceClear: async () => ({ removed: traces.clear() }),

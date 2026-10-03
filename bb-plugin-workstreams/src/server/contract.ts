@@ -730,6 +730,14 @@ export const rpcContract = defineRpcContract({
     input: z.object({ id: z.string().min(1) }),
     output: z.object({ trace: traceSchema.nullable() }),
   },
+  /** Files a Debug-mode classifier report in the Workstreams workstream. */
+  flagRoute: {
+    input: z.object({
+      diagnostics: z.string().min(1).max(1_000_000),
+      projectId: z.string().min(1).nullable().optional(),
+    }),
+    output: z.object({ threadId: z.string(), sectionId: z.string() }),
+  },
   /** Sends a trace's prompt to its model again; changes nothing else. */
   traceReplay: {
     input: z.object({ id: z.string().min(1) }),

@@ -92,6 +92,71 @@ describe("debug mode off", () => {
 });
 
 describe("debug mode on", () => {
+  it("creates a visible triage thread in the Workstreams workstream with diagnostics", async () => {
+    const w = await setup(true);
+    const result = await rpc<{ threadId: string; sectionId: string }>(
+      w,
+      "flagRoute",
+      {
+        diagnostics: '{"decision":{"outcome":"new-thread"}}',
+        projectId: "proj_1",
+      },
+    );
+    expect(result).toEqual({ threadId: "spawn1", sectionId: "sec_2" });
+    expect(w.sections).toContainEqual(
+      expect.objectContaining({ id: "sec_2", name: "Workstreams" }),
+    );
+    expect(
+      (await rpc<{ entries: { rationale: string }[] }>(w, "journal", {}))
+        .entries,
+    ).toContainEqual(
+      expect.objectContaining({
+        rationale: "Flagged a potentially inaccurate classifier result",
+      }),
+    );
+    expect(w.spawned[0]).toMatchObject({
+      projectId: "proj_1",
+      sectionId: "sec_2",
+      title: "Inaccurate classifier result",
+      visibility: "visible",
+      permissionMode: "accept-edits",
+      prompt: expect.stringContaining('{"decision":{"outcome":"new-thread"}}'),
+    });
+  });
+
+  it("reuses the Workstreams workstream and falls back to the first available project", async () => {
+    const w = await setup(true);
+    const workstreams = w.addSection("Workstreams");
+    const result = await rpc<{ threadId: string; sectionId: string }>(
+      w,
+      "flagRoute",
+      { diagnostics: "{}", projectId: "project-gone" },
+    );
+    expect(result.sectionId).toBe(workstreams.id);
+    expect(w.sections).toHaveLength(2);
+    expect(w.spawned[0]).toMatchObject({
+      projectId: "proj_1",
+      sectionId: workstreams.id,
+    });
+    expect(
+      (await rpc<{ entries: { rationale: string }[] }>(w, "journal", {}))
+        .entries,
+    ).toContainEqual(
+      expect.objectContaining({
+        rationale: "Flagged a potentially inaccurate classifier result",
+      }),
+    );
+  });
+
+  it("refuses to create a report if Debug mode is off", async () => {
+    const w = await setup(false);
+    await expect(rpc(w, "flagRoute", { diagnostics: "{}" })).rejects.toThrow(
+      /Enable Debug mode/,
+    );
+    expect(w.spawned).toHaveLength(0);
+    expect(w.sections).toHaveLength(1);
+  });
+
   it("records an analysis call with its prompt, reasoning, response, and result", async () => {
     const w = await setup(true);
     await analyze(w, "t1");
