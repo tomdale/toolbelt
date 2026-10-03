@@ -11,7 +11,7 @@ it("recognizes an inactive feature and retains subject through broad placement",
   let featureId = "";
   world = await fakeWorld({
     complete: ({ prompt }) =>
-      prompt.includes("Identify the most specific")
+      prompt.includes("Classify the most specific")
         ? JSON.stringify({ subjectId: featureId, proposed: null })
         : JSON.stringify({
             recap: "ongoing",
@@ -62,7 +62,7 @@ it("adaptive organization sends counts rather than tasks to regrouping and leave
   let featureId = "";
   world = await fakeWorld({
     complete: ({ prompt }) => {
-      if (prompt.includes("Identify the most specific"))
+      if (prompt.includes("Classify the most specific"))
         return JSON.stringify({ subjectId: featureId, proposed: null });
       if (prompt.includes("Choose active navigation")) {
         const snapshot = JSON.parse(prompt.split("Snapshot:\n")[1]!);

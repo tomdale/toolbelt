@@ -14,7 +14,7 @@ async function setup() {
     peak = 0;
   world = await fakeWorld({
     complete: async ({ prompt }) => {
-      if (prompt.includes("Identify the most specific")) {
+      if (prompt.includes("Classify the most specific")) {
         active++;
         peak = Math.max(peak, active);
         await new Promise<void>((resolve) => releases.push(resolve));
