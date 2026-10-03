@@ -68,6 +68,76 @@ export function entityAncestors(
   return result;
 }
 
+/** A proposal resolved against the Catalog: an existing identity, or a discovery. */
+export type ResolvedProposal =
+  | { subjectId: string; proposed: null }
+  | { subjectId: null; proposed: DraftSubjectProposal };
+
+const sameName = (
+  entity: { name: string; aliases: readonly string[] },
+  name: string,
+) => {
+  const target = name.trim().toLowerCase();
+  return [entity.name, ...entity.aliases].some(
+    (candidate) => candidate.trim().toLowerCase() === target,
+  );
+};
+
+/**
+ * Anchors a proposal at its deepest existing ancestor, so `parentId` names that
+ * identity and `ancestors` lists only missing parents. Classifiers sometimes
+ * restate existing ancestry in `ancestors` (parent "Subagents" with ancestors
+ * ["Subagents"]); taken verbatim, that creates a same-named copy of the parent.
+ *
+ * Each segment, outermost first and the leaf last, that names an identity on
+ * the anchor's own path or an existing child of the anchor (an existing root
+ * without one) becomes the anchor; the first other segment starts the missing
+ * remainder. Names match by name or alias, ignoring case, as the Catalog's
+ * sibling lookup does. When the leaf resolves too, the proposal is that
+ * existing identity.
+ */
+export function resolveProposal(
+  proposal: DraftSubjectProposal,
+  entities: readonly {
+    id: string;
+    name: string;
+    parentId: string | null;
+    aliases: readonly string[];
+  }[],
+): ResolvedProposal {
+  const byId = new Map(entities.map((entity) => [entity.id, entity]));
+  const segments = [...(proposal.ancestors ?? []), proposal];
+  let anchor = proposal.parentId ?? null;
+  let resolved = 0;
+  for (const segment of segments) {
+    const restated = anchor
+      ? entityAncestors(anchor, entities).find((id) =>
+          sameName(byId.get(id)!, segment.name),
+        )
+      : undefined;
+    const next =
+      restated ??
+      entities.find(
+        (entity) =>
+          entity.parentId === anchor && sameName(entity, segment.name),
+      )?.id;
+    if (!next) break;
+    anchor = next;
+    resolved++;
+  }
+  if (resolved === segments.length && anchor)
+    return { subjectId: anchor, proposed: null };
+  if (resolved === 0) return { subjectId: null, proposed: proposal };
+  return {
+    subjectId: null,
+    proposed: {
+      ...proposal,
+      parentId: anchor,
+      ancestors: (proposal.ancestors ?? []).slice(resolved),
+    },
+  };
+}
+
 /** Returns the nearest ancestor of a subject entity that has an active group. */
 export function nearestActive(
   subjectId: string,

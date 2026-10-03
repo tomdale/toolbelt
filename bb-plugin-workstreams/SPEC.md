@@ -148,6 +148,11 @@ environments.
   wherever BB allows it.
 - **I10. One projection.** The sidebar and the page render from one pure
   projection function over the same inputs.
+- **I11. Discoveries extend the Catalog.** A classified new identity is anchored
+  at its deepest existing ancestor: each segment of its proposed path that names
+  an identity already on that path, or an existing child, reuses it rather than
+  creating a same-named copy. A proposal whose whole path exists is that
+  identity.
 
 ## 5. Agent tools and explicit transfers
 

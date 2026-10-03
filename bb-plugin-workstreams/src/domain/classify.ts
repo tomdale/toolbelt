@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { redact } from "./analysis.ts";
+import { resolveProposal } from "./corpus.ts";
 
 export const entitySchema = z.object({
   id: z.string(),
@@ -128,5 +129,9 @@ export function parseClassification(text: string, input: ClassifyInput) {
     result.proposed?.ancestors?.some((a) => a.name.includes(":"))
   )
     throw new Error("Classifier returned an unsupported identity.");
-  return result;
+  if (!result.proposed) return result;
+  const resolved = resolveProposal(result.proposed, input.entities);
+  return resolved.subjectId !== null
+    ? { ...result, subjectId: resolved.subjectId, proposed: null }
+    : { ...result, proposed: resolved.proposed };
 }

@@ -66,6 +66,46 @@ describe("CorpusStore", () => {
     ]);
     expect(corpus.list()).toEqual([]);
   });
+  it("records a proposal that restates existing ancestry under that ancestry", () => {
+    const { corpus } = store();
+    const subagents = corpus.remember("Subagents", "Background workers");
+    const revision = corpus.revision();
+    const workforest = corpus.rememberProposal({
+      name: "Workforest",
+      description: "Checkout integration",
+      parentId: subagents.id,
+      ancestors: [{ name: "Subagents", description: "Plugin platform" }],
+    });
+    expect(workforest.parentId).toBe(subagents.id);
+    expect(
+      corpus
+        .list()
+        .map((e) => e.name)
+        .sort(),
+    ).toEqual(["Subagents", "Workforest"]);
+    expect(corpus.getById(subagents.id)?.description).toBe(
+      "Background workers",
+    );
+    expect(corpus.revision()).toBeGreaterThan(revision);
+
+    const settled = corpus.revision();
+    expect(
+      corpus.rememberProposal({
+        name: "workforest",
+        description: "Other wording",
+        parentId: null,
+        ancestors: [{ name: "Subagents", description: "" }],
+      }),
+    ).toEqual(workforest);
+    expect(corpus.revision()).toBe(settled);
+    expect(() =>
+      corpus.rememberProposal({
+        name: "Orphan",
+        description: "",
+        parentId: "missing",
+      }),
+    ).toThrow(/Unknown corpus parent/);
+  });
   it("rejects conflicting aliases on existing identities without changing storage", () => {
     const { corpus } = store();
     corpus.remember("Alpha", "first");
