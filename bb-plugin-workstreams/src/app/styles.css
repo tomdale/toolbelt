@@ -446,10 +446,12 @@
 
 /* Sticky thread goal, set in the same type as the timeline text. The root is
    a zero-height sticky anchor at the top of the message column; the heading
-   itself (.ws-sticky-goal) is drawn over the timeline, so changing its size
-   never reflows messages. The rule sets the expanded heading apart from the
-   conversation; once the timeline scrolls away from the top, a feathered fade
-   lets messages dissolve beneath it. */
+   (.ws-sticky-goal) is drawn over the timeline at a fixed size. Expanding and
+   compacting only slide the plate (transform) and crossfade two text layers
+   (opacity), so no layout runs mid-transition and messages never reflow.
+   The rule sets the expanded heading apart from the conversation; once the
+   timeline scrolls away from the top, a feathered fade lets messages dissolve
+   beneath it. */
 .ws-sticky-goal-root {
   position: sticky;
   top: 0;
@@ -462,23 +464,23 @@
 .ws-sticky-goal {
   position: absolute;
   inset: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  /* Message text is inset a further 1rem from the column's edge. */
-  padding-inline: 2rem;
+  pointer-events: none;
+}
+.ws-sticky-goal__plate {
+  position: absolute;
+  inset: 0;
   border-bottom: 1px solid var(--border);
   background: var(--background);
   transition:
-    height 200ms ease,
-    padding 200ms ease,
+    transform 200ms ease,
     border-color 200ms ease;
+  will-change: transform;
 }
 /* Compacted, only the fade remains. */
-.ws-sticky-goal-root[data-compact="true"] .ws-sticky-goal {
+.ws-sticky-goal-root[data-compact="true"] .ws-sticky-goal__plate {
   border-bottom-color: transparent;
 }
-.ws-sticky-goal::after {
+.ws-sticky-goal__plate::after {
   position: absolute;
   inset: 100% 0 auto;
   /* Matches BB's native overflow fade: 1.5rem, background to transparent. */
@@ -491,14 +493,21 @@
   content: "";
   opacity: var(--ws-sticky-fade, 0);
   transition: opacity 150ms ease;
-  pointer-events: none;
+}
+.ws-sticky-goal__layer {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  /* Message text is inset a further 1rem from the column's edge. */
+  padding-inline: 2rem;
+  transition: opacity 200ms ease;
 }
 @media (prefers-reduced-motion: reduce) {
-  .ws-sticky-goal,
-  .ws-sticky-goal::after,
-  .ws-sticky-goal__eyebrow,
-  .ws-sticky-goal__title,
-  .ws-sticky-goal__subtitle {
+  .ws-sticky-goal__plate,
+  .ws-sticky-goal__plate::after,
+  .ws-sticky-goal__layer {
     transition: none;
   }
 }
@@ -511,10 +520,6 @@
   line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition:
-    font-size 200ms ease,
-    height 200ms ease,
-    opacity 200ms ease;
 }
 .ws-sticky-goal__title {
   margin: 0;
@@ -526,9 +531,6 @@
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition:
-    font-size 200ms ease,
-    opacity 200ms ease;
 }
 .ws-sticky-goal__subtitle {
   overflow: hidden;
@@ -536,7 +538,6 @@
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: font-size 200ms ease;
 }
 
 /* Parent chip in a child thread's header. */
