@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type {
@@ -219,21 +220,31 @@ describe("question interaction adapter", () => {
     const input = slot.container.querySelector(
       'input[type="file"]',
     ) as HTMLInputElement;
+    const inputClick = vi.spyOn(input, "click");
     const image = new File(["image"], "screenshot.png", { type: "image/png" });
-    fireEvent.change(input, { target: { files: [image] } });
+    fireEvent.click(
+      slot.getByRole("button", { name: "Attach files or images" }),
+    );
+    expect(inputClick).toHaveBeenCalledOnce();
+    const user = userEvent.setup();
+    await user.upload(input, image);
     await vi.waitFor(() => expect(mockUpload).toHaveBeenCalledOnce());
     await vi.waitFor(() =>
       expect(slot.getByText("screenshot.png")).toBeTruthy(),
     );
     const answer = slot.getByRole("textbox", { name: "Database answer" });
-    fireEvent.paste(answer, {
-      clipboardData: {
-        files: [image],
-        getData: () => "",
-      },
-    });
+    answer.focus();
+    const clipboard = {
+      files: [image],
+      types: ["Files"],
+      getData: () => "",
+      items: [{ kind: "file", type: image.type, getAsFile: () => image }],
+    };
+    await user.paste(clipboard as never);
     await vi.waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(2));
-    expect(answer).toBeTruthy();
+    await vi.waitFor(() =>
+      expect(slot.getAllByText("screenshot.png")).toHaveLength(2),
+    );
     expect(
       slot.getByRole("button", { name: "Attach files or images" }),
     ).toBeTruthy();
