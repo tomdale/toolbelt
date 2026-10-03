@@ -105,7 +105,7 @@ export function WorkstreamsPage({
   return (
     <div className="h-full min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto box-border w-full max-w-3xl px-5 pb-16 pt-6 md:px-8">
-        <header className="flex items-center gap-3">
+        <header className="flex flex-wrap items-center gap-3 gap-y-2">
           <h1 className="flex items-center gap-1.5 text-[15px] font-semibold tracking-tight">
             <WorkstreamIcon className="size-4 text-foreground" />
             Workstreams
