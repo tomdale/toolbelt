@@ -685,4 +685,99 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
     expect(corpus.assignment(childThread.id).entityId).toBe(rootEntity.id);
     expect(corpus.assignment(rootThread.id).entityId).toBe(rootEntity.id);
   });
+
+  it("fileComposed with manual unresolved override does not fall back to route decision subject", async () => {
+    world = await fakeWorld({
+      settings: { suggestions: true },
+      complete: ({ prompt }) => {
+        if (prompt.includes("## Catalog")) {
+          return JSON.stringify({
+            subjectId: feature.id,
+            proposed: null,
+          });
+        }
+        return JSON.stringify({
+          outcome: "new-thread",
+          workstream: "Alpha Section",
+          title: "Feature task",
+          confidence: "high",
+          reason: "Fits Alpha",
+          subjectId: feature.id,
+        });
+      },
+    });
+    const w = world;
+    const db = openDatabase(w.bb);
+    savePrefs(db, { newWork: { suggestions: true } });
+    const corpus = new CorpusStore(db);
+
+    const feature = corpus.remember(
+      "Feature To Avoid",
+      "Should not be assigned",
+    );
+    const alphaSection = w.addSection("Alpha Section");
+
+    const prompt = "Do task without identity";
+    const decision = (await w.harness.behavior.callRpc("route", {
+      prompt,
+      suggest: true,
+      nativeComposer: true,
+      draftKey: "draft-unresolved",
+    })) as { id: string };
+
+    const composed = w.addThread("t-unresolved", { createdAt: Date.now() });
+    const hook = w.harness.registrations.hooks["message.dispatch"]!;
+
+    await hook(
+      makeMessageDispatchHookContext({
+        thread: composed,
+        input: { text: prompt },
+        parentThreadId: null,
+        origin: "app",
+        experimental_submission: {
+          pluginId: "workstreams",
+          data: {
+            routeId: decision.id,
+            sectionId: alphaSection.id,
+            identity: {
+              entityId: null,
+              proposal: null,
+              provenance: "manual",
+            },
+          },
+        },
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(w.threads.get("t-unresolved")?.sectionId).toBe(alphaSection.id);
+    const assignment = corpus.assignment("t-unresolved");
+    expect(assignment.status).toBe("unresolved");
+    expect(assignment.entityId).toBeNull();
+  });
+
+  it("startThread with manual unresolved leaves thread unresolved", async () => {
+    world = await fakeWorld();
+    const w = world;
+    const db = openDatabase(w.bb);
+    const corpus = new CorpusStore(db);
+
+    const alpha = w.addSection("Alpha");
+    await w.harness.behavior.callRpc("refresh", null);
+
+    const { threadId } = (await w.harness.behavior.callRpc("startThread", {
+      sectionId: alpha.id,
+      identity: {
+        entityId: null,
+        proposal: null,
+        provenance: "manual",
+      },
+      execution: defaultExecution,
+    })) as { threadId: string };
+
+    const assignment = corpus.assignment(threadId);
+    expect(assignment.status).toBe("unresolved");
+    expect(assignment.entityId).toBeNull();
+  });
 });

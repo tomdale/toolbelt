@@ -248,7 +248,7 @@ export function NewThreadRouting() {
           const experimental_data: Record<string, unknown> = {};
           if (sectionId) {
             experimental_data.sectionId = sectionId;
-          } else if (snapshot.pinned || sectionId === null) {
+          } else if (snapshot.pinned) {
             experimental_data.sectionId = null;
           }
           if (identity) experimental_data.identity = identity;
@@ -274,6 +274,9 @@ export function NewThreadRouting() {
     state.workstream,
     state.pendingNew,
     state.identity,
+    state.pinned,
+    state.acceptedRoute,
+    state.decision,
   ]);
   // The picker row sits below the prompt box, outside this banner, so the
   // field is portaled into it.
