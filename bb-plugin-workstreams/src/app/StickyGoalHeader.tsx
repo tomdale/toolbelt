@@ -126,17 +126,24 @@ function useMessageScroller(threadId: string | null): Mount | null {
   return mount;
 }
 
-// BB's own overflow fades appear only once content has scrolled out of view,
-// so the fade beneath the heading is on exactly when the timeline is detached
-// from its top.
-function useScrollProgress(scroller: HTMLElement | null): {
-  progress: number;
-  fade: number;
+// The heading collapses once, rather than tracking the scroll position. It
+// compacts after scrolling this far from the newest message and expands again
+// only when back within the lower threshold, so hovering near the boundary
+// cannot make it flicker.
+const COMPACT_ENTER_PX = 240;
+const COMPACT_EXIT_PX = 120;
+
+function useScrollState(scroller: HTMLElement | null): {
+  compact: boolean;
+  // BB's own overflow fades appear only once content has scrolled out of view,
+  // so the fade beneath the heading is on exactly when the timeline is
+  // detached from its top.
+  fade: boolean;
 } {
-  const [state, setState] = useState({ progress: 0, fade: 0 });
+  const [state, setState] = useState({ compact: false, fade: false });
   useEffect(() => {
     if (!scroller) {
-      setState({ progress: 0, fade: 0 });
+      setState({ compact: false, fade: false });
       return;
     }
     let frame = 0;
@@ -145,14 +152,15 @@ function useScrollProgress(scroller: HTMLElement | null): {
       frame = requestAnimationFrame(() => {
         const range = scroller.scrollHeight - scroller.clientHeight;
         const fromBottom = Math.max(0, range - scroller.scrollTop);
-        // Stay fully expanded near the newest message, then recede over 420px of history.
-        const progress = Math.max(0, Math.min(1, (fromBottom - 16) / 420));
-        const fade = scroller.scrollTop > 1 ? 1 : 0;
-        setState((prev) =>
-          prev.progress === progress && prev.fade === fade
+        const fade = scroller.scrollTop > 1;
+        setState((prev) => {
+          const compact = prev.compact
+            ? fromBottom > COMPACT_EXIT_PX
+            : fromBottom > COMPACT_ENTER_PX;
+          return prev.compact === compact && prev.fade === fade
             ? prev
-            : { progress, fade },
-        );
+            : { compact, fade };
+        });
       });
     };
     update();
@@ -177,7 +185,7 @@ export function StickyGoalHeader(): React.ReactPortal | null {
   const { threads, projects, sections } = experimental_useSidebarThreads();
   const { server } = useSharedServerState();
   const mount = useMessageScroller(threadId);
-  const { progress, fade } = useScrollProgress(mount?.scroller ?? null);
+  const { compact, fade } = useScrollState(mount?.scroller ?? null);
 
   const context = useMemo(() => {
     if (!threadId) return null;
@@ -205,32 +213,32 @@ export function StickyGoalHeader(): React.ReactPortal | null {
     };
   }, [threadId, threads, projects, sections, server.analysis, server.recaps]);
 
-  const eased = progress * progress * (3 - 2 * progress);
+  const step = compact ? 1 : 0;
   const base = mount?.baseFontSize ?? 14;
-  const height = headingHeight(base, eased);
-  const titleSize = base * lerp(TITLE_SCALE, eased);
-  const subtitleSize = base * lerp(SUBTITLE_SCALE, eased);
+  const height = headingHeight(base, step);
+  const titleSize = base * lerp(TITLE_SCALE, step);
+  const subtitleSize = base * lerp(SUBTITLE_SCALE, step);
   useLayoutEffect(() => {
     if (!mount) return;
     mount.root.className = "ws-sticky-goal-root";
-    mount.root.dataset.scrollProgress = progress.toFixed(3);
-    mount.root.style.setProperty("--ws-sticky-fade", String(fade));
+    mount.root.dataset.compact = String(compact);
+    mount.root.style.setProperty("--ws-sticky-fade", fade ? "1" : "0");
     mount.root.style.height = `${height}px`;
     mount.scroller.style.scrollPaddingTop = `${height}px`;
     return () => {
       mount.root.className = "";
       mount.root.style.removeProperty("height");
       mount.root.style.removeProperty("--ws-sticky-fade");
-      delete mount.root.dataset.scrollProgress;
+      delete mount.root.dataset.compact;
     };
-  }, [mount, progress, fade, height]);
+  }, [mount, compact, fade, height]);
 
   if (!mount || !context) return null;
   return createPortal(
     <div className="ws-sticky-goal">
       <h2
         className="ws-sticky-goal__title"
-        style={{ fontSize: titleSize, opacity: 1 - 0.12 * eased }}
+        style={{ fontSize: titleSize, opacity: compact ? 0.88 : 1 }}
       >
         {context.goal}
       </h2>
