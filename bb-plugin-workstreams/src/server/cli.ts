@@ -184,6 +184,8 @@ export function registerCli(
     corpus,
     inference,
     currentPrefs,
+    notify,
+    reclassifyTask,
   }: {
     /** The sidebar's stored order and prioritized workstreams. */
     arrangement: {
@@ -201,6 +203,12 @@ export function registerCli(
     corpus: CorpusStore;
     inference?: Inference;
     currentPrefs?: () => Prefs;
+    notify?: () => void;
+    reclassifyTask?: (input: {
+      threadId: string;
+      entityId?: string | null;
+      evidence?: string;
+    }) => Promise<{ assignment: CanonicalAssignment }>;
   },
 ): void {
   const load = async () => {
@@ -980,22 +988,30 @@ export function registerCli(
                   .map((a) => a.trim())
                   .filter(Boolean)
               : [];
-            const entity = corpus.remember(
-              positionals.name,
-              options.description ?? "",
-              parentId,
-              aliases,
-            );
-            if (options.json) {
+            try {
+              const entity = corpus.create(
+                positionals.name,
+                options.description ?? "",
+                parentId,
+                aliases,
+              );
+              notify?.();
+              if (options.json) {
+                return {
+                  exitCode: 0,
+                  stdout: JSON.stringify({ entity }, null, 2),
+                };
+              }
               return {
                 exitCode: 0,
-                stdout: JSON.stringify({ entity }, null, 2),
+                stdout: `Created product/feature "${entity.name}" (${entity.id}).`,
               };
+            } catch (err) {
+              throw new PluginCliError(
+                err instanceof Error ? err.message : String(err),
+                { code: "catalog_create_failed" },
+              );
             }
-            return {
-              exitCode: 0,
-              stdout: `Created product/feature "${entity.name}" (${entity.id}).`,
-            };
           },
         }),
         "catalog edit": cliCommand({
@@ -1018,38 +1034,35 @@ export function registerCli(
           },
           async run({ positionals, options }) {
             const entity = resolveEntity(corpus, positionals.identity);
-            let updated = entity;
-            if (options.name && options.name !== entity.name) {
-              updated = corpus.rename(entity.id, options.name);
-            }
-            if (
-              options.description !== undefined ||
-              options.aliases !== undefined
-            ) {
-              const newDescription =
-                options.description ?? updated.description;
-              const newAliases =
-                options.aliases !== undefined
-                  ? options.aliases
-                      .split(",")
-                      .map((a) => a.trim())
-                      .filter(Boolean)
-                  : updated.aliases;
-              updated = corpus.updateMetadata(updated.id, {
-                description: newDescription,
-                aliases: newAliases,
+            try {
+              const updated = corpus.edit(entity.id, {
+                name: options.name,
+                description: options.description,
+                aliases:
+                  options.aliases !== undefined
+                    ? options.aliases
+                        .split(",")
+                        .map((a) => a.trim())
+                        .filter(Boolean)
+                    : undefined,
               });
-            }
-            if (options.json) {
+              notify?.();
+              if (options.json) {
+                return {
+                  exitCode: 0,
+                  stdout: JSON.stringify({ entity: updated }, null, 2),
+                };
+              }
               return {
                 exitCode: 0,
-                stdout: JSON.stringify({ entity: updated }, null, 2),
+                stdout: `Updated product/feature "${updated.name}" (${updated.id}).`,
               };
+            } catch (err) {
+              throw new PluginCliError(
+                err instanceof Error ? err.message : String(err),
+                { code: "catalog_edit_failed" },
+              );
             }
-            return {
-              exitCode: 0,
-              stdout: `Updated product/feature "${updated.name}" (${updated.id}).`,
-            };
           },
         }),
         "catalog reparent": cliCommand({
@@ -1076,20 +1089,28 @@ export function registerCli(
               const parent = resolveEntity(corpus, options.to);
               newParentId = parent.id;
             }
-            const updated = corpus.reparent(entity.id, newParentId);
-            if (options.json) {
+            try {
+              const updated = corpus.reparent(entity.id, newParentId);
+              notify?.();
+              if (options.json) {
+                return {
+                  exitCode: 0,
+                  stdout: JSON.stringify({ entity: updated }, null, 2),
+                };
+              }
+              const targetName = newParentId
+                ? (corpus.getById(newParentId)?.name ?? newParentId)
+                : "root";
               return {
                 exitCode: 0,
-                stdout: JSON.stringify({ entity: updated }, null, 2),
+                stdout: `Reparented "${updated.name}" to ${targetName} (${updated.id}).`,
               };
+            } catch (err) {
+              throw new PluginCliError(
+                err instanceof Error ? err.message : String(err),
+                { code: "catalog_reparent_failed" },
+              );
             }
-            const targetName = newParentId
-              ? (corpus.getById(newParentId)?.name ?? newParentId)
-              : "root";
-            return {
-              exitCode: 0,
-              stdout: `Reparented "${updated.name}" to ${targetName} (${updated.id}).`,
-            };
           },
         }),
         "catalog merge": cliCommand({
@@ -1113,17 +1134,25 @@ export function registerCli(
           async run({ positionals, options }) {
             const source = resolveEntity(corpus, positionals.source);
             const target = resolveEntity(corpus, positionals.target);
-            const result = corpus.merge(source.id, target.id);
-            if (options.json) {
+            try {
+              const result = corpus.merge(source.id, target.id);
+              notify?.();
+              if (options.json) {
+                return {
+                  exitCode: 0,
+                  stdout: JSON.stringify({ entity: result }, null, 2),
+                };
+              }
               return {
                 exitCode: 0,
-                stdout: JSON.stringify({ entity: result }, null, 2),
+                stdout: `Merged "${source.name}" into "${target.name}" (${result.target.id}).`,
               };
+            } catch (err) {
+              throw new PluginCliError(
+                err instanceof Error ? err.message : String(err),
+                { code: "catalog_merge_failed" },
+              );
             }
-            return {
-              exitCode: 0,
-              stdout: `Merged "${source.name}" into "${target.name}" (${result.target.id}).`,
-            };
           },
         }),
         "task show": cliCommand({
@@ -1139,10 +1168,18 @@ export function registerCli(
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ positionals, options }) {
+            await service.reconcile();
             const thread = resolveThread(service, positionals.thread);
             const assignment = corpus.assignment(thread.id);
-            const sectionName = thread.sectionId
-              ? (map.get(thread.sectionId)?.name ?? thread.sectionId)
+            const rootId = corpus.findRootThread(thread.id);
+            const rootThread =
+              rootId !== thread.id
+                ? service.threads().find((t) => t.id === rootId)
+                : thread;
+            const effectiveSectionId =
+              rootThread?.sectionId ?? thread.sectionId;
+            const sectionName = effectiveSectionId
+              ? (map.get(effectiveSectionId)?.name ?? effectiveSectionId)
               : "Unfiled";
             if (options.json) {
               return {
@@ -1193,11 +1230,13 @@ export function registerCli(
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ positionals, options }) {
+            await service.reconcile();
             const thread = resolveThread(service, positionals.thread);
             const entity = resolveEntity(corpus, positionals.identity);
             const assignment = corpus.assign(thread.id, entity.id, {
               provenance: "manual",
             });
+            notify?.();
             if (options.json) {
               return {
                 exitCode: 0,
@@ -1224,8 +1263,10 @@ export function registerCli(
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ positionals, options }) {
+            await service.reconcile();
             const thread = resolveThread(service, positionals.thread);
             const assignment = corpus.clear(thread.id);
+            notify?.();
             if (options.json) {
               return {
                 exitCode: 0,
@@ -1257,54 +1298,28 @@ export function registerCli(
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ positionals, options }) {
+            await service.reconcile();
             const thread = resolveThread(service, positionals.thread);
-            let assignment: CanonicalAssignment;
+            let entityId: string | undefined = undefined;
             if (options.identity) {
               const entity = resolveEntity(corpus, options.identity);
-              assignment = corpus.reclassify(
-                thread.id,
-                entity.id,
-                "cli-reclassify",
-              );
-            } else if (inference) {
-              const sdkThread = await bb.sdk.threads.get({
-                threadId: thread.id,
-              });
-              const analysis = analyzer.get(thread.id);
-              const requests = await analyzer.ownershipRequests(thread.id);
-              const modelChoice = currentPrefs
-                ? await currentPrefs().organize.model
-                : DEFAULT_MODELS.organize;
-              const { value } = await inference.run(
-                "classify",
-                {
-                  prompt: `${sdkThread.title ?? sdkThread.titleFallback ?? ""}\n${analysis?.recap ?? ""}`,
-                  entities: corpus.list(),
-                  project: sdkThread.projectId,
-                  requests,
-                },
-                {
-                  model: modelChoice,
-                  threadId: thread.id,
-                  label: sdkThread.title ?? thread.id,
-                },
-              );
-              const target = value.subjectId
-                ? corpus.getById(value.subjectId)
-                : value.proposed
-                  ? corpus.rememberProposal(value.proposed)
-                  : null;
-              assignment = corpus.reclassify(
-                thread.id,
-                target ? target.id : null,
-                "cli-reclassify",
-              );
-            } else {
+              entityId = entity.id;
+            }
+            if (!reclassifyTask) {
               throw new PluginCliError(
                 "Inference is unavailable for reclassification.",
                 { code: "inference_unavailable" },
               );
             }
+            const { assignment } = await reclassifyTask({
+              threadId: thread.id,
+              entityId,
+            }).catch((error: unknown) => {
+              throw new PluginCliError(
+                error instanceof Error ? error.message : String(error),
+                { code: "reclassify_failed" },
+              );
+            });
             if (options.json) {
               return {
                 exitCode: 0,

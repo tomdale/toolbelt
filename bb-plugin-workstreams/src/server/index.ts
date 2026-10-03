@@ -17,7 +17,7 @@ import { Router, type RouteDecision, type Environment } from "./router.ts";
 import { CorpusStore, classificationEvidence } from "./corpus.ts";
 import { corpusLabel } from "../domain/corpus-label.ts";
 import { ancestors, activeHome } from "../domain/regroup.ts";
-import type { DraftSubjectProposal } from "../domain/corpus.ts";
+import type { CanonicalAssignment, DraftSubjectProposal } from "../domain/corpus.ts";
 import { rpcContract } from "./contract.ts";
 import { hostContract } from "./inference/contract.ts";
 import { openDatabase } from "./db.ts";
@@ -37,7 +37,7 @@ import {
 } from "./recapPrefs.ts";
 import { ThreadSnoozes, loadSnoozePrefs, saveSnoozePrefs } from "./snooze.ts";
 import { hasPrefs, loadPrefs, savePrefs, seedPrefs } from "./prefs.ts";
-import { gatewayModel, type ModelChoice } from "../domain/prefs.ts";
+import { DEFAULT_MODELS, gatewayModel, type ModelChoice } from "../domain/prefs.ts";
 import { runWorker as completeWithWorker } from "./inference/worker.ts";
 
 export { rpcContract } from "./contract.ts";
@@ -532,6 +532,66 @@ export default async function plugin(bb: BbPluginApi) {
     return running !== undefined;
   };
 
+  const reclassifyTask = async (input: {
+    threadId: string;
+    entityId?: string | null;
+    evidence?: string;
+  }): Promise<{ assignment: CanonicalAssignment }> => {
+    await service.reconcile();
+    const rootId = corpus.findRootThread(input.threadId);
+    if (input.entityId !== undefined) {
+      const assignment = corpus.reclassify(
+        input.threadId,
+        input.entityId,
+        input.evidence,
+      );
+      notify();
+      return { assignment };
+    }
+    const thread = await bb.sdk.threads.get({ threadId: rootId });
+    const analysis = analyzer.get(rootId);
+    const requests = await analyzer.ownershipRequests(rootId);
+    const projects = await bb.sdk.projects.list();
+    const projectName =
+      (thread.projectId
+        ? projects.find((p) => p.id === thread.projectId)?.name
+        : null) ?? null;
+    const modelChoice = currentPrefs
+      ? await currentPrefs().organize.model
+      : DEFAULT_MODELS.organize;
+    const { value } = await inference.run(
+      "classify",
+      {
+        prompt: `${thread.title ?? thread.titleFallback ?? ""}\n${analysis?.recap ?? ""}`,
+        entities: corpus.list(),
+        project: projectName,
+        requests,
+      },
+      {
+        model: modelChoice,
+        threadId: rootId,
+        label: thread.title ?? rootId,
+      },
+    );
+    const target = value.subjectId
+      ? corpus.getById(value.subjectId)
+      : value.proposed
+        ? corpus.rememberProposal(value.proposed)
+        : null;
+    const computedEvidence = classificationEvidence({
+      requests,
+      title: thread.title ?? thread.titleFallback ?? "",
+      project: projectName,
+    });
+    const assignment = corpus.reclassify(
+      input.threadId,
+      target ? target.id : null,
+      computedEvidence,
+    );
+    notify();
+    return { assignment };
+  };
+
   bb.rpc.register(rpcContract, {
     route: ({
       prompt,
@@ -789,49 +849,7 @@ export default async function plugin(bb: BbPluginApi) {
         return { assignment };
       }),
     taskReclassify: ({ threadId, entityId, evidence }) =>
-      userFacing(async () => {
-        await service.reconcile();
-        const rootId = corpus.findRootThread(threadId);
-        if (entityId !== undefined) {
-          const assignment = corpus.reclassify(threadId, entityId, evidence);
-          notify();
-          return { assignment };
-        }
-        const thread = await bb.sdk.threads.get({ threadId: rootId });
-        const analysis = analyzer.get(rootId);
-        const requests = await analyzer.ownershipRequests(rootId);
-        const { value } = await inference.run(
-          "classify",
-          {
-            prompt: `${thread.title ?? thread.titleFallback ?? ""}\n${analysis?.recap ?? ""}`,
-            entities: corpus.list(),
-            project: thread.projectId,
-            requests,
-          },
-          {
-            model: await currentPrefs().organize.model,
-            threadId: rootId,
-            label: thread.title ?? rootId,
-          },
-        );
-        const target = value.subjectId
-          ? corpus.getById(value.subjectId)
-          : value.proposed
-            ? corpus.rememberProposal(value.proposed)
-            : null;
-        const computedEvidence = classificationEvidence({
-          requests,
-          title: thread.title ?? thread.titleFallback ?? "",
-          project: thread.projectId,
-        });
-        const assignment = corpus.reclassify(
-          threadId,
-          target ? target.id : null,
-          computedEvidence,
-        );
-        notify();
-        return { assignment };
-      }),
+      userFacing(() => reclassifyTask({ threadId, entityId, evidence })),
     taskAssignment: ({ threadId }) =>
       userFacing(async () => {
         await service.reconcile();
@@ -1178,5 +1196,7 @@ export default async function plugin(bb: BbPluginApi) {
     corpus,
     inference,
     currentPrefs,
+    notify,
+    reclassifyTask,
   });
 }

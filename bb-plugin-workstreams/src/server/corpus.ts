@@ -651,7 +651,7 @@ export class CorpusStore {
       return this.clear(threadId);
     }
     return this.assign(threadId, entityId, {
-      provenance: "automatic",
+      provenance: evidence ? "automatic" : "manual",
       evidence,
     });
   }
@@ -680,43 +680,92 @@ export class CorpusStore {
     );
   }
 
-  rename(entityId: string, newName: string): CorpusEntity {
+  edit(
+    entityId: string,
+    updates: {
+      name?: string;
+      description?: string;
+      aliases?: readonly string[];
+    },
+  ): CorpusEntity {
     return this.db.transaction(() => {
-      const cleanName = newName.trim();
-      if (!cleanName) throw new Error("Entity name must not be empty");
       const entity = this.getById(entityId);
       if (!entity) throw new Error(`Unknown corpus entity: ${entityId}`);
-      if (entity.name === cleanName) {
-        return entity;
-      }
-      if (normalize(entity.name) === normalize(cleanName)) {
-        this.db
-          .prepare("UPDATE ws_corpus_entity SET name = ? WHERE id = ?")
-          .run(cleanName, entity.id);
-        this.bumpRevision();
-        return { ...entity, name: cleanName };
+
+      let cleanName = entity.name;
+      if (updates.name !== undefined) {
+        cleanName = updates.name.trim();
+        if (!cleanName) throw new Error("Entity name must not be empty");
+        if (normalize(entity.name) !== normalize(cleanName)) {
+          const conflict = this.resolve(cleanName, entity.parentId);
+          if (conflict && conflict.id !== entityId) {
+            throw new Error(
+              `Corpus entity name conflicts with an existing identity in this parent scope: ${cleanName}`,
+            );
+          }
+        }
       }
 
-      const conflict = this.resolve(cleanName, entity.parentId);
-      if (conflict && conflict.id !== entityId) {
-        throw new Error(
-          `Corpus entity name conflicts with an existing identity in this parent scope: ${cleanName}`,
+      let nextDescription = entity.description;
+      if (updates.description !== undefined) {
+        nextDescription = updates.description.trim();
+      }
+
+      let nextAliases = entity.aliases;
+      if (updates.aliases !== undefined) {
+        const cleanAliasList = cleanAliases(updates.aliases);
+        if (
+          cleanAliasList.some(
+            (alias) => normalize(alias) === normalize(cleanName),
+          )
+        ) {
+          throw new Error("Corpus entity alias must differ from its name");
+        }
+        if (
+          cleanAliasList.some((alias) => {
+            const other = this.resolve(alias, entity.parentId);
+            return other && other.id !== entity.id;
+          })
+        ) {
+          throw new Error(
+            "Corpus alias already resolves to an entity in this parent scope",
+          );
+        }
+        nextAliases = cleanAliasList;
+      } else if (updates.name !== undefined) {
+        nextAliases = cleanAliases(
+          entity.aliases.filter((a) => normalize(a) !== normalize(cleanName)),
         );
       }
 
-      const updatedAliases = cleanAliases(
-        entity.aliases.filter((a) => normalize(a) !== normalize(cleanName)),
-      );
+      const nameChanged = cleanName !== entity.name;
+      const descriptionChanged = nextDescription !== entity.description;
+      const aliasesChanged =
+        nextAliases.length !== entity.aliases.length ||
+        nextAliases.some((a, i) => a !== entity.aliases[i]);
+
+      if (!nameChanged && !descriptionChanged && !aliasesChanged) {
+        return entity;
+      }
 
       this.db
         .prepare(
-          "UPDATE ws_corpus_entity SET name = ?, aliases = ? WHERE id = ?",
+          "UPDATE ws_corpus_entity SET name = ?, description = ?, aliases = ? WHERE id = ?",
         )
-        .run(cleanName, JSON.stringify(updatedAliases), entity.id);
+        .run(cleanName, nextDescription, JSON.stringify(nextAliases), entity.id);
 
       this.bumpRevision();
-      return { ...entity, name: cleanName, aliases: updatedAliases };
+      return {
+        ...entity,
+        name: cleanName,
+        description: nextDescription,
+        aliases: nextAliases,
+      };
     })();
+  }
+
+  rename(entityId: string, newName: string): CorpusEntity {
+    return this.edit(entityId, { name: newName });
   }
 
   reparent(entityId: string, newParentId: string | null): CorpusEntity {
@@ -767,56 +816,7 @@ export class CorpusStore {
     entityId: string,
     updates: { description?: string; aliases?: readonly string[] },
   ): CorpusEntity {
-    return this.db.transaction(() => {
-      const entity = this.getById(entityId);
-      if (!entity) throw new Error(`Unknown corpus entity: ${entityId}`);
-
-      let nextDescription = entity.description;
-      if (updates.description !== undefined) {
-        nextDescription = updates.description.trim();
-      }
-
-      let nextAliases = entity.aliases;
-      if (updates.aliases !== undefined) {
-        const cleanAliasList = cleanAliases(updates.aliases);
-        if (
-          cleanAliasList.some(
-            (alias) => normalize(alias) === normalize(entity.name),
-          )
-        ) {
-          throw new Error("Corpus entity alias must differ from its name");
-        }
-        if (
-          cleanAliasList.some((alias) => {
-            const other = this.resolve(alias, entity.parentId);
-            return other && other.id !== entity.id;
-          })
-        ) {
-          throw new Error(
-            "Corpus alias already resolves to an entity in this parent scope",
-          );
-        }
-        nextAliases = cleanAliasList;
-      }
-
-      const descriptionChanged = nextDescription !== entity.description;
-      const aliasesChanged =
-        nextAliases.length !== entity.aliases.length ||
-        nextAliases.some((a, i) => a !== entity.aliases[i]);
-
-      if (!descriptionChanged && !aliasesChanged) {
-        return entity;
-      }
-
-      this.db
-        .prepare(
-          "UPDATE ws_corpus_entity SET description = ?, aliases = ? WHERE id = ?",
-        )
-        .run(nextDescription, JSON.stringify(nextAliases), entity.id);
-
-      this.bumpRevision();
-      return { ...entity, description: nextDescription, aliases: nextAliases };
-    })();
+    return this.edit(entityId, updates);
   }
 
   merge(
