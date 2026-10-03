@@ -535,8 +535,9 @@ export type RecapFiles = {
 
 /**
  * BB's file target for a recap link's absolute path: the thread's workspace
- * when the path is inside it, else the environment's host. Null when neither
- * is known, so the link shows as plain text.
+ * when the path is inside it (with the workspace-relative path BB requires),
+ * else the environment's host. Null when neither is known, so the link shows
+ * as plain text.
  */
 export function fileTarget(
   path: string,
@@ -547,8 +548,16 @@ export function fileTarget(
   | null {
   if (!files) return null;
   const root = files.root?.replace(/\/+$/, "");
-  if (root && (path === root || path.startsWith(`${root}/`)))
-    return { kind: "workspace", environmentId: files.environmentId, path };
+  if (root && (path === root || path.startsWith(`${root}/`))) {
+    const rel = path.slice(root.length).replace(/^\/+/, "");
+    if (rel) {
+      return {
+        kind: "workspace",
+        environmentId: files.environmentId,
+        path: rel,
+      };
+    }
+  }
   return files.hostId ? { kind: "host", hostId: files.hostId, path } : null;
 }
 
