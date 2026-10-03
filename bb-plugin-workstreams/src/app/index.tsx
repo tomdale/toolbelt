@@ -5,6 +5,7 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ServerStateRealtime } from "./serverState.ts";
 import { StickyGoalHeader } from "./StickyGoalHeader.tsx";
 import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
+import { GoalTitleChip } from "./header/GoalTitleChip.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { RecapCard } from "./composer/RecapCard.tsx";
 import {
@@ -79,6 +80,11 @@ export default definePluginApp((app) => {
       { id: "routing", chrome: "bare", component: NewThreadRouting },
       { id: "bridge", chrome: "bare", component: NewWorkBridge },
     ],
+  });
+  app.slots.experimental_threadHeaderAction({
+    id: "goal-context",
+    title: "Thread goal",
+    component: GoalTitleChip,
   });
   app.slots.experimental_threadHeaderAction({
     id: "parent-thread",
