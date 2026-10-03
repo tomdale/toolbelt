@@ -25,7 +25,7 @@ const TITLE_SIZE = 1.5;
 const SUBTITLE_SIZE = 0.92;
 const TITLE_LINE = 4 / 3;
 const SUBTITLE_LINE = 1.4;
-const PAD_TOP = 0.3;
+const PAD_TOP = 0.85;
 const EYEBROW_SIZE = 0.8;
 /** Eyebrow line plus the gap before the title, when there is a workstream. */
 const EYEBROW_BLOCK = 1.25;

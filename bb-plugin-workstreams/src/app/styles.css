@@ -460,6 +460,8 @@
   height: 0;
   /* Extend over the column's gutters so scrolling text cannot peek out. */
   margin-inline: -1rem;
+  /* The heading is decoration over the timeline, never a hit target. */
+  pointer-events: none;
 }
 .ws-sticky-goal {
   position: absolute;
@@ -474,7 +476,6 @@
   transition:
     transform 200ms ease,
     border-color 200ms ease;
-  will-change: transform;
 }
 /* Compacted, only the fade remains. */
 .ws-sticky-goal-root[data-compact="true"] .ws-sticky-goal__plate {
