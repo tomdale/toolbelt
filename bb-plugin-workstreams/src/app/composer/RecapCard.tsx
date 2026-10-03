@@ -991,6 +991,40 @@ function nextActionTitle(action: NextAction): string {
 const FOOTER_BUTTON =
   "h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground";
 
+/**
+ * The recap state's color on an action's hint, matching its card: the hint's
+ * border and arrow, and the ⇧ key that teaches Shift-click.
+ */
+const HINT_ACCENT: Record<
+  Recap["state"],
+  { border: string; arrow: string; text: string; key: string; keyOn: string }
+> = {
+  waiting: {
+    border: "border-violet-400 dark:border-violet-500/70",
+    arrow: "stroke-violet-400 dark:stroke-violet-500/70",
+    text: "text-violet-700 dark:text-violet-300",
+    key: "border-violet-300 dark:border-violet-500/50",
+    keyOn:
+      "border-violet-600 bg-violet-600 text-white dark:border-violet-300 dark:bg-violet-300 dark:text-violet-950",
+  },
+  review: {
+    border: "border-sky-400 dark:border-sky-500/80",
+    arrow: "stroke-sky-400 dark:stroke-sky-500/80",
+    text: "text-sky-700 dark:text-sky-300",
+    key: "border-sky-300 dark:border-sky-500/50",
+    keyOn:
+      "border-sky-600 bg-sky-600 text-white dark:border-sky-300 dark:bg-sky-300 dark:text-sky-950",
+  },
+  complete: {
+    border: "border-emerald-400 dark:border-emerald-500/70",
+    arrow: "stroke-emerald-400 dark:stroke-emerald-500/70",
+    text: "text-emerald-700 dark:text-emerald-300",
+    key: "border-emerald-300 dark:border-emerald-500/50",
+    keyOn:
+      "border-emerald-600 bg-emerald-600 text-white dark:border-emerald-300 dark:bg-emerald-300 dark:text-emerald-950",
+  },
+};
+
 const NEXT_ACTION_ACCENT: Record<Recap["state"], string> = {
   waiting: "text-violet-700 dark:text-violet-300",
   review: "text-sky-700 dark:text-sky-300",
@@ -999,11 +1033,13 @@ const NEXT_ACTION_ACCENT: Record<Recap["state"], string> = {
 
 function NextActionItem({
   action,
+  state,
   onSend,
   onCompose,
   disabled,
 }: {
   action: NextAction;
+  state: Recap["state"];
   onSend?: (message: string) => Promise<void>;
   onCompose?: (message: string) => void;
   disabled: boolean;
@@ -1034,8 +1070,14 @@ function NextActionItem({
   return (
     <Hint
       arrow
+      className={HINT_ACCENT[state].border}
+      arrowClassName={HINT_ACCENT[state].arrow}
       label={
-        <ActionHint description={description} canCompose={Boolean(onCompose)} />
+        <ActionHint
+          description={description}
+          canCompose={Boolean(onCompose)}
+          state={state}
+        />
       }
     >
       {button}
@@ -1073,29 +1115,32 @@ function useShiftHeld(): boolean {
 function ActionHint({
   description,
   canCompose,
+  state,
 }: {
   description: string | null | undefined;
   canCompose: boolean;
+  state: Recap["state"];
 }) {
+  const accent = HINT_ACCENT[state];
   const shift = useShiftHeld();
   return (
     <>
-      {description ? <span className="block">{description}</span> : null}
+      {description ? (
+        <span className="block text-xs leading-[1.35]">{description}</span>
+      ) : null}
       {canCompose ? (
         <span
           className={cn(
             "flex items-center gap-1 transition-colors",
             description && "mt-1",
-            shift ? "text-popover-foreground" : "text-muted-foreground",
+            shift ? accent.text : "text-muted-foreground",
           )}
         >
           <kbd
             aria-label="Shift"
             className={cn(
               "inline-flex h-4 min-w-4 items-center justify-center rounded-[3px] border px-0.5 font-sans text-[10px] leading-none transition-colors",
-              shift
-                ? "border-foreground bg-foreground text-background"
-                : "border-border",
+              shift ? accent.keyOn : cn(accent.key, accent.text),
             )}
           >
             ⇧
@@ -1173,7 +1218,7 @@ function NextActions({
       >
         {actions.map((action, index) => (
           <li key={index} className="shrink-0">
-            <NextActionItem action={action} disabled />
+            <NextActionItem action={action} state={state} disabled />
           </li>
         ))}
       </ul>
@@ -1239,6 +1284,7 @@ function NextActions({
             <li key={index} className="shrink-0">
               <NextActionItem
                 action={action}
+                state={state}
                 onSend={send}
                 onCompose={compose}
                 disabled={pending}

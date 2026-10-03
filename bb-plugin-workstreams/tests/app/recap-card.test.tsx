@@ -1047,11 +1047,11 @@ it("teaches Shift-click on an action without a description and confirms the key"
   const hint = await slot.findByRole("tooltip", {}, { timeout: 1500 });
   expect(hint.textContent).toBe("\u21e7click to edit first");
   const key = () => hint.querySelector('kbd[aria-label="Shift"]')!;
-  expect(key().className).not.toContain("bg-foreground");
+  expect(key().className).not.toContain("text-white");
   fireEvent.keyDown(window, { key: "Shift", shiftKey: true });
-  await waitFor(() => expect(key().className).toContain("bg-foreground"));
+  await waitFor(() => expect(key().className).toContain("text-white"));
   fireEvent.keyUp(window, { key: "Shift", shiftKey: false });
-  await waitFor(() => expect(key().className).not.toContain("bg-foreground"));
+  await waitFor(() => expect(key().className).not.toContain("text-white"));
 });
 
 it("explains a titled action without a description by the message it sends", async () => {
