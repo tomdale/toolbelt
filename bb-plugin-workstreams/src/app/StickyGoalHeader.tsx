@@ -284,7 +284,7 @@ export function StickyGoalHeader(): React.ReactPortal | null {
               } as React.CSSProperties
             }
           >
-            <WorkstreamIcon className="size-[1.1em] text-current" />
+            <WorkstreamIcon className="size-3.5 text-current" />
             <span>{context.workstream.name}</span>
           </div>
         )}
