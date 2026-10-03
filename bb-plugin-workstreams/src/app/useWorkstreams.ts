@@ -190,6 +190,7 @@ export function useWorkstreams() {
   return {
     status,
     projection,
+    threads,
     sections,
     projects,
     server,

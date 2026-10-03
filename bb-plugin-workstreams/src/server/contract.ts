@@ -623,6 +623,14 @@ export const rpcContract = defineRpcContract({
     }),
     output: z.object({ entity: entitySchema }),
   },
+  catalogUpdateMetadata: {
+    input: z.object({
+      entityId: z.string().min(1),
+      description: z.string().max(1000).optional(),
+      aliases: z.array(z.string().max(80)).optional(),
+    }),
+    output: z.object({ entity: entitySchema }),
+  },
   catalogMerge: {
     input: z.object({
       sourceEntityId: z.string().min(1),
