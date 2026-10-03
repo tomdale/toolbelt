@@ -24,7 +24,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { NO_WORKSTREAM_ICON, WORKSTREAM_ICON } from "../workstream-icon.ts";
+import {
+  NO_WORKSTREAM_ICON,
+  TAG_ICON,
+  WORKSTREAM_ICON,
+} from "../workstream-icon.ts";
 import { identityDisplay, type NewWork } from "./new-work.ts";
 import {
   CHIP_CLASS,
@@ -72,7 +76,7 @@ export function IdentityControl({ newWork }: { newWork: NewWork }) {
               ✦
             </span>
           ) : (
-            <Icon name="Tag" className="size-3.5 shrink-0" aria-hidden />
+            <Icon name={TAG_ICON} className="size-3.5 shrink-0" aria-hidden />
           )}
           <ChipLabel>
             {state.identity ? state.identity.label : `Concerning: ${label}`}

@@ -279,27 +279,39 @@ describe("the picker on a phone", () => {
     ).toBe("route");
   });
 
-  it("puts the chip at the start of BB's picker row, in a plugin-root anchor", async () => {
+  it("gives the chip a line of its own above the prompt box and leaves BB's picker row alone", async () => {
     phone();
     mount();
     const chip = await routeChip();
-    const anchor = chip.closest("[data-ws-workstream-slot]");
-    expect(anchor).toBeTruthy();
-    // The row is BB's, outside any plugin root, where the plugin's scoped
-    // utility classes would otherwise not apply.
-    expect(anchor!.hasAttribute("data-bb-plugin-root")).toBe(true);
+    const strip = chip.closest(".ws-route-strip");
+    expect(strip).toBeTruthy();
+    // BB's row is full with its own chips on a phone: nothing of ours goes in.
+    expect(document.querySelector("[data-ws-workstream-slot]")).toBeNull();
     expect(
-      anchor!.compareDocumentPosition(
-        document.querySelector("[data-promptbox-project-control]")!,
+      document.querySelector("[data-promptbox-project-control]")?.parentElement
+        ?.children,
+    ).toHaveLength(1);
+    // The line precedes the prompt box, as the banner area does.
+    expect(
+      strip!.compareDocumentPosition(
+        document.querySelector("[data-promptbox]")!,
       ) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
-  it("renders the same chip in the fallback row when BB's picker row isn't found", async () => {
+  it("labels the chip so it reads without the row beside it", async () => {
+    phone();
+    mount();
+    const chip = await routeChip();
+    expect(chip.textContent).toContain("Workstream:");
+    expect(chip.textContent).toContain("Automatic");
+  });
+
+  it("puts the same chip on its line when BB's markup has no picker row", async () => {
     phone();
     mount({ component: BareComposer });
     const chip = await routeChip();
-    expect(chip.closest("[data-ws-workstream-slot]")).toBeNull();
+    expect(chip.closest(".ws-route-strip")).toBeTruthy();
     expect(screen.getAllByRole("button", { name: /^Route: / })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: /^Workstream: / })).toBeNull();
   });
@@ -367,13 +379,11 @@ describe("the picker on a phone", () => {
     ).toBeTruthy();
   });
 
-  it("marks the status text sr-only so it takes no width in the row", async () => {
+  it("marks the status text sr-only so it takes no room on the line", async () => {
     phone();
     mount();
     await routeChip();
-    const status = document.querySelector(
-      '[data-ws-workstream-slot] [role="status"]',
-    );
+    const status = document.querySelector('.ws-route-strip [role="status"]');
     expect(status).toBeTruthy();
     expect(status!.classList.contains("sr-only")).toBe(true);
     expect(status!.classList.contains("ws-picker-status")).toBe(false);
@@ -492,6 +502,22 @@ describe("the route sheet", () => {
     expect(slot.inspection.composer.submits[0]).toEqual({
       experimental_data: { sectionId: "section-beta" },
     });
+  });
+
+  it("draws the products and features with the declared tag, never BB's fallback", async () => {
+    phone();
+    mount();
+    await openSheet();
+    fireEvent.click(
+      await screen.findByRole("tab", { name: /Product or feature/ }),
+    );
+    await screen.findByRole("option", { name: /Sidebar/ });
+    const tagged = document.querySelectorAll('[role="option"] [data-icon]');
+    expect([...tagged].map((icon) => icon.getAttribute("data-icon"))).toContain(
+      "workstreams/tag",
+    );
+    // BB's set has no tag: an unknown name draws a lightning bolt.
+    expect(document.querySelector('[data-icon="Tag"]')).toBeNull();
   });
 
   it("sets the Product or feature from its tab without moving the workstream", async () => {
@@ -797,10 +823,18 @@ describe("the picker in the New work dialog on a phone", () => {
     return { slot, startThread };
   }
 
-  it("renders the same single chip, and filing from its sheet reaches startThread", async () => {
+  it("renders the same single chip above the composer, and filing from its sheet reaches startThread", async () => {
     phone();
     const { slot, startThread } = mountDialog();
     const chip = await routeChip();
+    const strip = chip.closest(".ws-route-strip");
+    expect(strip).toBeTruthy();
+    // The line sits above BB's composer, not in its picker row.
+    expect(
+      strip!.compareDocumentPosition(
+        screen.getByTestId("bb-new-thread-composer-submit"),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.getAllByRole("button", { name: /^Route: / })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: /^Workstream: / })).toBeNull();
     expect(

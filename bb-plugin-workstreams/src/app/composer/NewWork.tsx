@@ -1,7 +1,7 @@
 /**
  * The New work dialog: BB's own new-thread composer with a workstream field
- * beside its project picker, and a suggested home under it once the draft
- * has been classified.
+ * beside its project picker (on a phone, on a line above the composer), and a
+ * suggested home under it once the draft has been classified.
  */
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -18,6 +18,7 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { Icon } from "@/components/ui/icon";
 import type { RpcContract } from "../../server/contract.ts";
 import type { RouteDecision } from "../../server/router.ts";
@@ -132,7 +133,10 @@ function NewWork({
   });
   useEffect(() => () => newWork.dispose(), [newWork]);
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
-  const pickerRow = useHostPickerRow(root);
+  // As on the New thread view, a phone's picker row has no room for the field,
+  // so there it takes a line of its own above the composer.
+  const compact = useIsCompactViewport();
+  const pickerRow = useHostPickerRow(compact ? null : root);
   const debug = useDebugMode();
 
   const submit = useCallback(
@@ -160,12 +164,13 @@ function NewWork({
   return (
     <NewWorkContext.Provider value={newWork}>
       <div ref={setRoot} className="ws-new-work">
+        {compact ? <div className="ws-route-strip">{picker}</div> : null}
         <Composer
           layout="document"
           draftKey={`workstreams-new:${workstreamId ?? "auto"}`}
           onSubmit={submit}
         />
-        {pickerRow ? (
+        {compact ? null : pickerRow ? (
           createPortal(picker, pickerRow)
         ) : (
           <div className="flex px-3.5">{picker}</div>

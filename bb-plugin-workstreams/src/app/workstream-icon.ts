@@ -13,3 +13,10 @@ export const WORKSTREAM_ICON = "workstreams/workstream";
  * fallback.
  */
 export const NO_WORKSTREAM_ICON = "workstreams/workstream-none";
+
+/**
+ * A price tag, for a Catalog product or feature. BB's icon set has no tag, and
+ * an unknown icon name draws BB's lightning-bolt fallback, so it is declared in
+ * the manifest like the marks above.
+ */
+export const TAG_ICON = "workstreams/tag";

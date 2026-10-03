@@ -11,6 +11,7 @@ import { useSharedServerState } from "../serverState.ts";
 import type { CanonicalAssignment, CorpusEntity } from "../../domain/corpus.ts";
 import { corpusLabel } from "../../domain/corpus-label.ts";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
+import { TAG_ICON } from "../workstream-icon.ts";
 
 export type TaskIdentityBadgeProps = {
   label: string | null;
@@ -53,7 +54,7 @@ export function TaskIdentityBadge({
       } ${isCompact ? "ws-task-identity-compact" : ""} ${className}`}
     >
       <Icon
-        name={isUnresolved ? "HelpCircle" : "Tag"}
+        name={isUnresolved ? "HelpCircle" : TAG_ICON}
         className="size-3.5 shrink-0 opacity-70"
         aria-hidden="true"
       />
