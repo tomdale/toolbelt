@@ -42,17 +42,21 @@ export function UpNextBlock({
         <span>Up Next</span>
         {focused ? (
           <span
-            title="Showing prioritized workstreams"
+            role="img"
+            aria-label="Showing prioritized workstreams"
             className="ws-home-flag"
           >
             <PriorityIcon className="ws-home-flag-icon" />
           </span>
         ) : null}
         {rows.length > 1 ? (
-          <span className="ws-needs-count">{rows.length}</span>
+          <span className="ws-needs-count">
+            <span aria-hidden="true">{rows.length}</span>
+            <span className="sr-only">, {rows.length} threads</span>
+          </span>
         ) : null}
       </h2>
-      <ul className="ws-home-rows">
+      <ul className="ws-home-rows" role="list">
         {shown.map((row) => {
           const analysis = work(row.thread);
           return (

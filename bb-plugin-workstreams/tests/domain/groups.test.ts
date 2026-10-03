@@ -17,8 +17,8 @@ const names = (groups: readonly { name: string }[]) =>
 function project(prioritized: string[] = []) {
   return projectWorkstreams(
     [
-      thread("c1", { sectionId: "sec_c", latestAttentionAt: now - 3 }),
-      thread("a1", { sectionId: "sec_a", latestAttentionAt: now - 1 }),
+      thread("c1", { sectionId: "sec_c", latestAttentionAt: now - 1 }),
+      thread("a1", { sectionId: "sec_a", latestAttentionAt: now - 3 }),
       thread("b1", { sectionId: "sec_b", latestAttentionAt: now - 2 }),
       thread("old1", {
         sectionId: "sec_old",
@@ -40,9 +40,9 @@ describe("arrangeGroups", () => {
       "Charlie",
     ]);
     expect(names(arrangeGroups(projection, "activity").populated)).toEqual([
-      "Alpha",
-      "Beta",
       "Charlie",
+      "Beta",
+      "Alpha",
     ]);
     expect(names(arrangeGroups(projection, "manual").populated)).toEqual([
       "Charlie",

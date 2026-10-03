@@ -1,6 +1,14 @@
-import { ThreadTitle, type PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import {
+  ThreadTitle,
+  useSidebarThreadDraft,
+  type PluginSidebarThread,
+} from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
-import { relativeAge, workStateMark } from "../../domain/presentation.ts";
+import {
+  relativeAge,
+  relativeAgeLabel,
+  workStateMark,
+} from "../../domain/presentation.ts";
 import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 import type { WorkView } from "../useWorkstreams.ts";
 import { hasNativeStatus, shownWorkState } from "../sidebar/Row.tsx";
@@ -8,9 +16,12 @@ import { StatusMark } from "../sidebar/StatusMark.tsx";
 
 /**
  * One thread as a Home row: BB's status mark or the work state's, the BB
- * display title, and its age, in a row at least 48px tall. Up Next rows add a
- * second line naming the workstream (in its hue) and what the thread asks.
- * The row is an anchor, so BB opens the thread in place on a plain tap.
+ * display title, an unsent-draft mark when there is one, and its age, in a row
+ * at least 48px tall. Up Next rows add a second line naming the workstream (in
+ * its hue) and what the thread asks. The row is an anchor, so BB opens the
+ * thread in place on a plain tap. Its accessible name is its content (mark,
+ * title, workstream, ask, age), so what a screen reader announces is what the
+ * row shows.
  */
 export function HomeRow({
   thread,
@@ -44,15 +55,11 @@ export function HomeRow({
   /** Present on a thread with child threads: shows and hides them. */
   disclosure?: { open: boolean; count: number; toggle: () => void };
 }) {
+  const { hasUnsubmittedDraft } = useSidebarThreadDraft(thread.id);
   const attention = variant === "attention";
   const shown = shownWorkState(work, attention);
   const reported = work?.kind === "current" && work.reported;
   const state = shown ? workStateMark(shown, reported) : null;
-  const age =
-    trailing ?? (showAge ? relativeAge(thread.latestAttentionAt, now) : null);
-  const label = state?.glyph
-    ? `${thread.displayTitle}, ${state.label}`
-    : thread.displayTitle;
   return (
     <li
       className="ws-home-row"
@@ -64,7 +71,6 @@ export function HomeRow({
         className="ws-home-link"
         href={thread.href}
         data-ws-home-thread={thread.id}
-        aria-label={label}
       >
         {showMarkSlot ? (
           <span className="ws-home-mark">
@@ -105,17 +111,35 @@ export function HomeRow({
             </span>
           ) : null}
         </span>
-        {age ? <span className="ws-home-age">{age}</span> : null}
+        {hasUnsubmittedDraft ? (
+          <span className="ws-home-draft" role="img" aria-label="Unsent draft">
+            ✎
+          </span>
+        ) : null}
+        {trailing ? (
+          <span className="ws-home-age">{trailing}</span>
+        ) : showAge ? (
+          <span className="ws-home-age">
+            <span aria-hidden="true">
+              {relativeAge(thread.latestAttentionAt, now)}
+            </span>
+            <span className="sr-only">
+              {relativeAgeLabel(thread.latestAttentionAt, now)}
+            </span>
+          </span>
+        ) : null}
       </a>
       {disclosure ? (
         <button
           type="button"
           className="ws-home-fold"
           aria-expanded={disclosure.open}
-          aria-label={`${disclosure.open ? "Hide" : "Show"} ${disclosure.count} child ${disclosure.count === 1 ? "thread" : "threads"} of ${thread.displayTitle}`}
+          aria-label={`${disclosure.open ? "Hide" : "Show"} ${disclosure.count} ${disclosure.count === 1 ? "thread" : "threads"} under ${thread.displayTitle}`}
           onClick={disclosure.toggle}
         >
-          <span className="ws-home-fold-count">{disclosure.count}</span>
+          <span className="ws-home-fold-count" aria-hidden="true">
+            {disclosure.count}
+          </span>
           <Icon name="ChevronRight" className="ws-home-chevron" aria-hidden />
         </button>
       ) : null}

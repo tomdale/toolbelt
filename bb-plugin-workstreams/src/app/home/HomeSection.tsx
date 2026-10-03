@@ -24,6 +24,7 @@ import { UpNextBlock } from "./UpNextBlock.tsx";
 import { detectPlacement, homeMode, type Placement } from "./layout.ts";
 import { planHome, prioritizedSet } from "./model.ts";
 import { useHomeState } from "./useHomeState.ts";
+import { useSettled } from "./useSettled.ts";
 import "./home.css";
 
 export function HomeSection(_props: PluginHomepageSectionProps) {
@@ -104,10 +105,16 @@ function HomeScreen({ placement }: { placement: Exclude<Placement, "wide"> }) {
       ws.showSnoozed,
     ],
   );
+  // Preferences and plugin state arrive after the first frame, and drawing
+  // that frame from their defaults would show the wrong lists, and take BB's
+  // list's place when the user turned this off. Until both are in, hold the
+  // takeover's placeholder; a read that never answers stops being waited for.
+  const settled = useSettled(prefs !== null && server.ready === true);
+  const status = ws.status === "ready" && !settled ? "loading" : ws.status;
   const mode = homeMode({
     placement,
     enabled: prefs?.sidebar.phoneHome ?? true,
-    status: ws.status,
+    status,
     hasContent: !plan.isEmpty,
   });
   if (mode === "hidden") return <span hidden data-ws-home="hidden" />;
@@ -124,14 +131,14 @@ function HomeScreen({ placement }: { placement: Exclude<Placement, "wide"> }) {
   };
   return (
     <div className="ws-home" data-ws-home={mode}>
-      {ws.status === "loading" ? (
+      {status === "loading" ? (
         <div role="status" className="ws-home-skeleton">
           <span className="sr-only">Loading threads…</span>
           <span aria-hidden="true" />
           <span aria-hidden="true" />
           <span aria-hidden="true" />
         </div>
-      ) : ws.status === "error" ? (
+      ) : status === "error" ? (
         <p role="alert" className="ws-home-error">
           Couldn't load threads.
         </p>
@@ -140,7 +147,7 @@ function HomeScreen({ placement }: { placement: Exclude<Placement, "wide"> }) {
           {plan.upNext ? (
             <UpNextBlock
               rows={plan.upNext.rows}
-              focused={plan.upNext.focused}
+              focused={plan.focus.active}
               work={ws.work}
               workstreamOf={(row) => {
                 const name = row.workstreamId

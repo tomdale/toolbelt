@@ -19,13 +19,18 @@ import { selectUpNext } from "../../domain/upNext.ts";
 
 export type HomePlan<T extends WorkstreamThread> = {
   /** Up Next after prioritized focus, before the row limit; null when none. */
-  readonly upNext: {
-    readonly rows: readonly Row<T>[];
-    /** Focus left other workstreams' waiting threads out of the rows. */
-    readonly focused: boolean;
+  readonly upNext: { readonly rows: readonly Row<T>[] } | null;
+  /**
+   * Prioritized focus, which holds whether or not Up Next shows: while a
+   * prioritized workstream has a thread waiting, other workstreams' waiting
+   * threads stay out of Up Next, and their count rides on the lower-priority
+   * toggle.
+   */
+  readonly focus: {
+    readonly active: boolean;
     /** How many waiting threads focus left out. */
     readonly elsewhere: number;
-  } | null;
+  };
   /** Prioritized workstreams with threads, in the chosen order. */
   readonly pinned: readonly Group<T>[];
   /** The other workstreams with threads, in the chosen order. */
@@ -34,7 +39,11 @@ export type HomePlan<T extends WorkstreamThread> = {
   readonly unfiled: Group<T> | null;
   /** Workstreams quiet for 30 days. */
   readonly dormant: readonly Group<T>[];
-  /** Some workstream is prioritized, so the rest are lower priority. */
+  /**
+   * Some prioritized workstream has threads to show above the rest, which are
+   * then lower priority. A prioritized workstream with no active threads (all
+   * snoozed, say) pins nothing, so it tiers nothing.
+   */
   readonly tiered: boolean;
   /** Anything remains below the prioritized workstreams. */
   readonly hasLower: boolean;
@@ -70,11 +79,7 @@ export function planHome<T extends WorkstreamThread>(
   });
   const upNext =
     options.showUpNext && selection.rows.length > 0
-      ? {
-          rows: selection.rows,
-          focused: selection.focus.active,
-          elsewhere: selection.focus.elsewhere.length,
-        }
+      ? { rows: selection.rows }
       : null;
   const arranged = arrangeGroups(projection, options.groupSort);
   const populated = (groups: readonly Group<T>[]) =>
@@ -87,11 +92,15 @@ export function planHome<T extends WorkstreamThread>(
   const populatedCount = pinned.length + others.length + (unfiled ? 1 : 0);
   return {
     upNext,
+    focus: {
+      active: selection.focus.active,
+      elsewhere: selection.focus.elsewhere.length,
+    },
     pinned,
     populated: others,
     unfiled,
     dormant,
-    tiered: arranged.tiered,
+    tiered: pinned.length > 0,
     hasLower: others.length > 0 || unfiled !== null || dormant.length > 0,
     snoozed,
     populatedCount,

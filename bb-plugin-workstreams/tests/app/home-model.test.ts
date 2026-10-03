@@ -125,7 +125,50 @@ describe("planHome", () => {
       prioritized: new Set(["sec_a"]),
     });
     expect(ids(plan.upNext!.rows)).toEqual(["pinned"]);
-    expect(plan.upNext).toMatchObject({ focused: true, elsewhere: 1 });
+    expect(plan.focus).toEqual({ active: true, elsewhere: 1 });
+  });
+
+  it("keeps the focus bookkeeping when Up Next is switched off", () => {
+    const projection = projectWorkstreams(
+      [
+        thread("pinned", { sectionId: "sec_a", hasPendingInteraction: true }),
+        thread("elsewhere", {
+          sectionId: "sec_b",
+          hasPendingInteraction: true,
+        }),
+      ],
+      sections,
+      { now },
+    );
+    const plan = planHome(projection, {
+      ...baseOptions,
+      prioritized: new Set(["sec_a"]),
+      showUpNext: false,
+    });
+    expect(plan.upNext).toBeNull();
+    expect(plan.focus).toEqual({ active: true, elsewhere: 1 });
+  });
+
+  it("tiers nothing while the prioritized workstream has no active threads", () => {
+    const projection = projectWorkstreams(
+      [
+        thread("snoozed", { sectionId: "sec_a", latestAttentionAt: now }),
+        thread("b1", { sectionId: "sec_b", latestAttentionAt: now }),
+      ],
+      sections,
+      {
+        now,
+        snoozedUntil: (t) => (t.id === "snoozed" ? now + DAY_MS : undefined),
+        order: { workstreams: [], threads: {}, prioritized: ["sec_a"] },
+      },
+    );
+    const plan = planHome(projection, {
+      ...baseOptions,
+      prioritized: new Set(["sec_a"]),
+    });
+    expect(plan.pinned).toEqual([]);
+    expect(plan.tiered).toBe(false);
+    expect(plan.populated.map((group) => group.name)).toEqual(["Beta"]);
   });
 
   it("leaves Up Next out when it is switched off", () => {
@@ -296,10 +339,17 @@ describe("home.css", () => {
       expect(selector).toContain('[data-ws-home="takeover"]');
   });
 
-  it("lifts the viewport past BB's inline top", () => {
-    expect(css).toMatch(
-      /top:\s*calc\(56px \+ env\(safe-area-inset-top[^;]*!important/,
+  it("lifts the viewport past BB's inline top, without adding the inset BB's shell already pads", () => {
+    expect(css).toMatch(/top:\s*56px\s*!important/);
+    expect(css).not.toMatch(/safe-area-inset-top/);
+  });
+
+  it("hides BB's section wrapper only when every section in it is ours and hidden", () => {
+    const wrapper = selectors.filter((selector) =>
+      selector.startsWith('[data-testid="plugin-homepage-sections"]:not('),
     );
+    expect(wrapper).toHaveLength(1);
+    expect(wrapper[0]).toMatch(/:has\(\s*>\s*section:not\(/);
   });
 
   it("sizes type with BB's tokens, never raw pixel sizes", () => {

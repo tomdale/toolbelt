@@ -42,6 +42,10 @@ export type HomeOptions = {
   >;
   /** Where the slot is mounted; BB's compact home viewport by default. */
   placement?: "compact" | "bare";
+  /** Threads with an unsent draft. */
+  drafts?: string[];
+  /** Holds an answer back until the promise settles, as a slow server does. */
+  gates?: { prefs?: Promise<unknown>; state?: Promise<unknown> };
 };
 
 /** Everything but the `sidebar` group falls back to the plugin's defaults. */
@@ -98,20 +102,27 @@ export async function mountHome(options: HomeOptions = {}) {
         sections: options.sections ?? homeSections,
         projects: [],
       },
+      sidebarDraftThreadIds: options.drafts ?? [],
       rpc: {
-        prefs: () => prefsResponse(options.prefs),
-        state: () => ({
-          ...emptyState(),
-          analysis: options.analysis ?? {},
-          recaps: options.recaps ?? {},
-          order: {
-            workstreams: options.order?.workstreams ?? [],
-            threads: {},
-            prioritized: options.order?.prioritized ?? [],
-          },
-          snoozes: options.snoozes ?? {},
-          snoozePrefs: {},
-        }),
+        prefs: async () => {
+          await options.gates?.prefs;
+          return prefsResponse(options.prefs);
+        },
+        state: async () => {
+          await options.gates?.state;
+          return {
+            ...emptyState(),
+            analysis: options.analysis ?? {},
+            recaps: options.recaps ?? {},
+            order: {
+              workstreams: options.order?.workstreams ?? [],
+              threads: {},
+              prioritized: options.order?.prioritized ?? [],
+            },
+            snoozes: options.snoozes ?? {},
+            snoozePrefs: {},
+          };
+        },
       },
     },
   );

@@ -21,8 +21,12 @@
 [data-testid="root-compose-compact-scroll-viewport"]:has(
   [data-ws-home="takeover"]
 ) {
-  /* Beats BB's inline top, which BB's resize observer rewrites. */
-  top: calc(56px + env(safe-area-inset-top, 0px)) !important;
+  /*
+   * Beats BB's inline top, which BB's resize observer rewrites. 56px is BB's
+   * own minimum: the 3rem control row plus 8px. BB's app shell already pads the
+   * page by the safe-area inset, so the inset is not added again.
+   */
+  top: 56px !important;
 }
 [data-testid="root-compose-compact-scroll-viewport"]:has(
     [data-ws-home="takeover"]
@@ -33,7 +37,8 @@
   ) {
   display: none;
 }
-/* BB bottom-justifies its list; Up Next belongs at the top. */
+/* Newer BB builds bottom-justify the list in a wrapper (0.44.0 has none);
+   Up Next belongs at the top. */
 [data-testid="root-compose-compact-scroll-viewport"]:has(
     [data-ws-home="takeover"]
   )
@@ -51,8 +56,14 @@ section:has(
   > h2 {
   display: none;
 }
-/* Wide windows, the preference off, or nothing to list: no heading either. */
+/* Wide windows, the preference off, or nothing to list: no heading either, and
+   no empty wrapper (with its top margin) when no other section is there. */
 section:has(> [data-bb-plugin-root] > [data-ws-home="hidden"]) {
+  display: none;
+}
+[data-testid="plugin-homepage-sections"]:not(
+    :has(> section:not(:has(> [data-bb-plugin-root] > [data-ws-home="hidden"])))
+  ):has([data-ws-home="hidden"]) {
   display: none;
 }
 

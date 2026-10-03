@@ -19,10 +19,11 @@ const minutes = (count: number) => Date.now() - count * 60_000 - 5_000;
 /** A recent, fixed time: analysis is current only for the revision it saw. */
 const RECENT = Date.now() - 60_000;
 const region = (slot: Slot, name: string) => slot.getByRole("region", { name });
+/** The title each row in `element` shows, in order. */
 const links = (element: HTMLElement) =>
   within(element)
     .queryAllByRole("link")
-    .map((link) => link.getAttribute("aria-label"));
+    .map((link) => link.querySelector(".ws-home-title")?.textContent ?? null);
 const regionNames = (slot: Slot) =>
   [...slot.container.querySelectorAll("section[aria-label]")].map((element) =>
     element.getAttribute("aria-label"),
@@ -122,7 +123,13 @@ describe("Home screen", () => {
         recaps: { done: recapOf("complete") },
       });
       const band = await slot.findByRole("region", { name: "Up Next" });
-      expect(links(band)).toEqual(["Asking task", "Finished work, Complete"]);
+      expect(links(band)).toEqual(["Asking task", "Finished work"]);
+      // A row's name is what it shows: mark, title, workstream, age.
+      expect(
+        within(band).getByRole("link", {
+          name: /Finished, unread.*Finished work.*Beta.*10 minutes ago/,
+        }),
+      ).toBeTruthy();
       expect(within(band).getByText("2")).toBeTruthy();
     });
 
@@ -201,7 +208,7 @@ describe("Home screen", () => {
       const header = within(alpha).getByRole("button", { name: /^Alpha/ });
       expect(header.getAttribute("aria-expanded")).toBe("false");
       // Closed headers carry the waiting count and the total.
-      expect(within(alpha).getByTitle("1 waiting on you")).toBeTruthy();
+      expect(within(alpha).getByText(/1 waiting on you/)).toBeTruthy();
       expect(header.textContent).toContain("2");
       expect(links(alpha)).toEqual([]);
       fireEvent.click(header);
@@ -274,13 +281,13 @@ describe("Home screen", () => {
       expect(links(alpha)).toEqual(["Manager", "Delegate"]);
       expect(links(region(slot, "Beta"))).toEqual(["Other"]);
       const fold = within(alpha).getByRole("button", {
-        name: "Hide 1 child thread of Manager",
+        name: "Hide 1 thread under Manager",
       });
       fireEvent.click(fold);
       expect(links(alpha)).toEqual(["Manager"]);
       fireEvent.click(
         within(alpha).getByRole("button", {
-          name: "Show 1 child thread of Manager",
+          name: "Show 1 thread under Manager",
         }),
       );
       expect(links(alpha)).toEqual(["Manager", "Delegate"]);
@@ -314,7 +321,9 @@ describe("Home screen", () => {
       // Focus: only the prioritized workstream's waiting thread shows.
       expect(links(band)).toEqual(["Zeta asks"]);
       expect(
-        within(band).getByTitle("Showing prioritized workstreams"),
+        within(band).getByRole("img", {
+          name: "Showing prioritized workstreams",
+        }),
       ).toBeTruthy();
       expect(regionNames(slot)).toEqual(["Up Next", "Workstreams", "Zeta"]);
       expect(links(region(slot, "Zeta"))).toEqual(["Zeta asks", "Zeta quiet"]);
@@ -453,25 +462,53 @@ describe("Home screen", () => {
       },
     );
 
+    const closedHeaderCounts = async (prefs: {
+      threadCount: "always" | "collapsed" | "never";
+      waitingCount: "always" | "collapsed" | "never";
+    }) => {
+      const slot = await mountHome({ threads: sample(), prefs });
+      await slot.findByRole("region", { name: "Workstreams" });
+      const alpha = region(slot, "Alpha");
+      return {
+        slot,
+        waiting: () => within(alpha).queryByText(/waiting on you/) !== null,
+        total: () => alpha.querySelector(".ws-home-total") !== null,
+      };
+    };
+
     it.each([
       ["always", [true, true]],
       ["collapsed", [false, true]],
       ["never", [false, false]],
-    ] as const)("shows header counts %s", async (when, [opened, closed]) => {
-      const slot = await mountHome({
-        threads: sample(),
-        prefs: { threadCount: when, waitingCount: when },
-      });
-      await slot.findByRole("region", { name: "Workstreams" });
-      const alpha = region(slot, "Alpha");
-      const counts = () => [
-        within(alpha).queryByTitle("1 waiting on you") !== null,
-        alpha.querySelector(".ws-home-total") !== null,
-      ];
-      expect(counts()).toEqual([closed, closed]);
-      open(slot, /^Alpha/);
-      expect(counts()).toEqual([opened, opened]);
-    });
+    ] as const)(
+      "shows the thread count %s, apart from the waiting count",
+      async (when, [opened, closed]) => {
+        const { slot, waiting, total } = await closedHeaderCounts({
+          threadCount: when,
+          waitingCount: "never",
+        });
+        expect([total(), waiting()]).toEqual([closed, false]);
+        open(slot, /^Alpha/);
+        expect([total(), waiting()]).toEqual([opened, false]);
+      },
+    );
+
+    it.each([
+      ["always", [true, true]],
+      ["collapsed", [false, true]],
+      ["never", [false, false]],
+    ] as const)(
+      "shows the waiting count %s, apart from the thread count",
+      async (when, [opened, closed]) => {
+        const { slot, waiting, total } = await closedHeaderCounts({
+          threadCount: "never",
+          waitingCount: when,
+        });
+        expect([waiting(), total()]).toEqual([closed, false]);
+        open(slot, /^Alpha/);
+        expect([waiting(), total()]).toEqual([opened, false]);
+      },
+    );
   });
 
   describe("states", () => {
@@ -544,6 +581,197 @@ describe("Home screen", () => {
     const alpha = region(slot, "Alpha");
     expect(alpha.querySelector("h3")).toBeTruthy();
     expect(alpha.firstElementChild?.tagName).toBe("H3");
+  });
+});
+
+describe("Home screen first frame", () => {
+  const gate = () => {
+    let release!: () => void;
+    const promise = new Promise<void>((resolve) => (release = resolve));
+    return { promise, release };
+  };
+
+  it("holds the placeholder, not a frame drawn from defaults, until preferences and plugin state arrive", async () => {
+    const hold = gate();
+    const later = Date.now() + 3_600_000;
+    const slot = await mountHome({
+      threads: [
+        sidebarThread("a1", { sectionId: "sec_a", title: "Alpha one" }),
+        sidebarThread("later", {
+          sectionId: "sec_a",
+          title: "Snoozed one",
+        }),
+      ],
+      snoozes: { later: { until: later, attentionAt: 0, at: 0 } },
+      gates: { prefs: hold.promise, state: hold.promise },
+    });
+    // The threads are in, but what files them and what is snoozed is not.
+    expect((await slot.findByRole("status")).textContent).toContain("Loading");
+    expect(slot.queryByRole("region", { name: "Alpha" })).toBeNull();
+    expect(
+      slot.container
+        .querySelector("[data-ws-home]")
+        ?.getAttribute("data-ws-home"),
+    ).toBe("takeover");
+    hold.release();
+    await slot.findAllByRole("region", { name: "Workstreams" });
+    // Alpha is the only workstream with threads, so it starts open.
+    expect(links(region(slot, "Alpha"))).toEqual(["Alpha one"]);
+    expect(links(region(slot, "Snoozed"))).toEqual([]);
+    expect(slot.queryByRole("status")).toBeNull();
+  });
+
+  it("then steps aside for a user who turned the section off", async () => {
+    const hold = gate();
+    const slot = await mountHome({
+      threads: sample(),
+      prefs: { phoneHome: false },
+      gates: { prefs: hold.promise },
+    });
+    expect(await slot.findByRole("status")).toBeTruthy();
+    hold.release();
+    await waitFor(() =>
+      expect(
+        slot.container
+          .querySelector("[data-ws-home]")
+          ?.getAttribute("data-ws-home"),
+      ).toBe("hidden"),
+    );
+  });
+});
+
+describe("Home screen with a prioritized workstream", () => {
+  const zeta = (id: string, title: string, overrides = {}) =>
+    sidebarThread(id, {
+      sectionId: "sec_z",
+      title,
+      latestAttentionAt: minutes(5),
+      ...overrides,
+    });
+
+  it("pins nothing, and hides nothing, while the prioritized workstream has no active threads", async () => {
+    const until = Date.now() + 3_600_000;
+    const slot = await mountHome({
+      threads: [
+        zeta("z1", "Zeta snoozed"),
+        sidebarThread("a1", { sectionId: "sec_a", title: "Alpha one" }),
+        sidebarThread("b1", { sectionId: "sec_b", title: "Beta one" }),
+      ],
+      snoozes: { z1: { until, attentionAt: 0, at: 0 } },
+      order: { prioritized: ["sec_z"] },
+    });
+    await slot.findAllByRole("region", { name: "Workstreams" });
+    expect(regionNames(slot)).toEqual([
+      "Workstreams",
+      "Alpha",
+      "Beta",
+      "Snoozed",
+    ]);
+    expect(
+      slot.queryByRole("button", { name: /lower priority workstreams/ }),
+    ).toBeNull();
+  });
+
+  it("keeps the focus count and neutral pills when Up Next is switched off", async () => {
+    const slot = await mountHome({
+      threads: [
+        zeta("zask", "Zeta asks", { hasPendingInteraction: true }),
+        sidebarThread("bask", {
+          sectionId: "sec_b",
+          title: "Beta asks",
+          hasPendingInteraction: true,
+          latestAttentionAt: minutes(4),
+        }),
+      ],
+      prefs: { showForYou: false },
+      order: { prioritized: ["sec_z"] },
+    });
+    await slot.findAllByRole("region", { name: "Workstreams" });
+    expect(slot.queryByRole("region", { name: "Up Next" })).toBeNull();
+    // What focus left out is still counted on the toggle...
+    const toggle = slot.getByRole("button", {
+      name: /Show lower priority workstreams/,
+    });
+    expect(toggle.textContent).toContain("1");
+    fireEvent.click(toggle);
+    // ...and the other workstream's waiting count recedes.
+    const pill = within(region(slot, "Beta")).getByText(
+      /waiting on you/,
+    ).parentElement!;
+    expect(pill.classList.contains("ws-home-pill-quiet")).toBe(true);
+  });
+});
+
+describe("Home screen accessibility", () => {
+  it("names a row by everything it shows, so a screen reader hears what a sighted user reads", async () => {
+    const slot = await mountHome({
+      threads: [
+        sidebarThread("t", {
+          sectionId: "sec_a",
+          title: "Needs a call",
+          latestAttentionAt: RECENT,
+        }),
+      ],
+      analysis: { t: decisionFor(RECENT, "Ship it?") },
+    });
+    const band = await slot.findByRole("region", { name: "Up Next" });
+    const row = within(band).getByRole("link");
+    expect(row.getAttribute("aria-label")).toBeNull();
+    expect(
+      within(band).getByRole("link", {
+        name: /Needs a call.*Alpha.*Ship it\?.*minute/,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("states a closed header's counts in words and says when a workstream is prioritized", async () => {
+    const slot = await mountHome({
+      threads: [
+        sidebarThread("a1", {
+          sectionId: "sec_a",
+          title: "Alpha ask",
+          hasPendingInteraction: true,
+          latestAttentionAt: minutes(3),
+        }),
+        sidebarThread("a2", {
+          sectionId: "sec_a",
+          title: "Alpha two",
+          latestAttentionAt: minutes(9),
+        }),
+        sidebarThread("z1", { sectionId: "sec_z", title: "Zeta one" }),
+      ],
+      order: { prioritized: ["sec_z"] },
+    });
+    await slot.findAllByRole("region", { name: "Workstreams" });
+    expect(
+      slot.getByRole("button", { name: /^Zeta, prioritized/ }),
+    ).toBeTruthy();
+    fireEvent.click(
+      slot.getByRole("button", { name: /Show lower priority workstreams/ }),
+    );
+    expect(
+      slot.getByRole("button", {
+        name: /^Alpha.*1 waiting on you.*2 threads/,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("marks an unsent draft", async () => {
+    const slot = await mountHome({
+      threads: [
+        sidebarThread("a1", { sectionId: "sec_a", title: "Alpha one" }),
+        sidebarThread("a2", { sectionId: "sec_a", title: "Alpha two" }),
+      ],
+      drafts: ["a2"],
+    });
+    await slot.findAllByRole("region", { name: "Alpha" });
+    const rows = within(region(slot, "Alpha")).getAllByRole("link");
+    const draft = (title: string) =>
+      rows
+        .find((row) => row.textContent?.includes(title))
+        ?.querySelector('[role="img"][aria-label="Unsent draft"]');
+    expect(draft("Alpha two")).toBeTruthy();
+    expect(draft("Alpha one")).toBeNull();
   });
 });
 
