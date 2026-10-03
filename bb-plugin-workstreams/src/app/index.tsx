@@ -4,7 +4,6 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ServerStateRealtime } from "./serverState.ts";
 import { StickyGoalHeader } from "./StickyGoalHeader.tsx";
-import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { RecapCard } from "./composer/RecapCard.tsx";
 import {
@@ -113,12 +112,6 @@ export default definePluginApp((app) => {
     run: ({ threadId }) => {
       if (threadId !== null) headerSnoozers.get(threadId)?.wake();
     },
-  });
-  // Renders only in Debug mode (SPEC §11.6).
-  app.slots.experimental_threadHeaderAction({
-    id: "debug",
-    title: "Workstreams model calls",
-    component: ThreadDebugButton,
   });
   // Slot and panel ids match v1 so the sidebar selection and page URL
   // (/plugins/workstreams/home) carry over.
