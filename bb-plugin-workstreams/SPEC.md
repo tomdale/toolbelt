@@ -124,8 +124,9 @@ environments.
   - (c) Apply on a reviewed organizing preview.
 
   Analysis alone never moves a thread; it only adds evidence. The one change it
-  can lead to is a thread's title, under the retitle policy (§10.1). Every
-  change records its provenance:
+  (or the opening-request call that names a new thread) can lead to is a
+  thread's title, under the retitle policy (§10.1). Every change records its
+  provenance:
   `user | router | handoff | auto | proposal:<id> | bootstrap`.
 
 - **I5. Preview revision safety.** Organization previews snapshot `catalogRevision`.
@@ -141,7 +142,7 @@ environments.
   Threads are preserved. Undo restores names, metadata and eligible membership
   with fresh native section IDs.
 - **I8. Freshness.** Derived data (analysis's summary, state, subject, drift,
-  title) is keyed to the thread's revision. Stale data renders as _pending_,
+  goal) is keyed to the thread's revision. Stale data renders as _pending_,
   never as current. An agent recap belongs to the turn that reported it, and
   fresh input clears it (§10.2).
 - **I9. Journal.** Every mutation is written to the journal (§11.5), with undo
@@ -386,6 +387,7 @@ without another model call. See
 | Child created by any source                                                 | `thread.created`                                                                  | No structural change. Analyze it on its first idle.                                                                                          |
 | Top-level thread created elsewhere (BB's native composer, CLI, automations) | `thread.created`, then the first `thread.idle`                                    | Respect its existing section; otherwise leave it Unfiled.                                                                                    |
 | Visible fork                                                                | `thread.created` with `sourceThreadId`                                            | Preserve the creator's placement; otherwise leave it Unfiled                                                                                 |
+| A thread's first message, while it has no title                             | `message.dispatch` (first message); `thread.active` or the reconciler if missed   | Name it from the request alone while its first turn runs (§10.1). Nothing waits on it.                                                       |
 | User sends a message                                                        | `message.dispatch` (proceeds except for stale recap reminders) or `thread.active` | Mark analysis pending. Clear any inferred "needs decision" and the agent recap.                                                              |
 | Turn completes                                                              | `thread.idle` (`lastAssistantText` included)                                      | Per-thread analysis (§10), debounced about 5 s, at most 4 concurrent. A reminder if the turn ended without a recap or question card (§10.2). |
 | Pending approval or question                                                | `interaction.pending`                                                             | Show in Up Next immediately. A question card ends the turn properly (§10.2).                                                                 |
@@ -417,20 +419,21 @@ IDs; unused homes qualify for reviewed cleanup under I5 and the
 
 ## 10. Per-thread analysis
 
-- **Input:** title, workstream, the last 1–3 user requests (bounded),
-  `lastAssistantText`, and revision. Branch and PR data come from live hooks,
-  not the model.
+- **Input:** title, previous goal, workstream, the last 1–3 user requests
+  (bounded), `lastAssistantText`, and revision. Branch and PR data come from
+  live hooks, not the model.
 - **Output:**
 
   ```
   { recap (≤ 140 characters), state: needs_decision | review | blocked | in_progress | done,
     needsYou?: reason, subject, drift?: { workstreamId | newName, confidence },
-    title?: string (≤ 48 characters) }
+    goal?: string (≤ 60 characters) }
   ```
 
-  `drift` is produced for task threads only. `title` is produced for any thread,
-  and only when it needs a new one (§10.1). The input marks an untitled thread,
-  whose displayed title is BB's placeholder.
+  `drift` is produced for task threads only. `goal` is produced for any thread:
+  what the thread is for, which is also its title (§10.1). A goal over the cap
+  is dropped rather than cut, and the thread keeps its previous goal. The input
+  marks an untitled thread, whose displayed title is BB's placeholder.
 
 - **Needs you** is either a pending interaction, or `needs_decision` at the
   current revision. A child's question folds into its parent when the parent has
@@ -441,27 +444,66 @@ IDs; unused homes qualify for reviewed cleanup under I5 and the
   waiting → `in_progress`) and first line (the first async task while waiting,
   else the first Latest line) replace analysis's state, ask and summary in the
   sidebar, the page, and the CLI.
-- **Model:** the `threads.analysisModel` preference. Gateway-backed choices use
-  a direct completion from the selected analysis machine. Other provider choices
-  run in a hidden BB worker thread. Model changes require passing the private
-  reference set and `eval/delegation.json`. The input never includes the BB
-  project name.
-- **Cost:** about 1 call per completed turn plus 1 per intake.
+- **Model:** the `threads.analysisModel` preference, for analysis and for the
+  opening title call (§10.1). Gateway-backed choices use a direct completion
+  from the selected analysis machine. Other provider choices run in a hidden BB
+  worker thread. Model changes require passing the private reference set and
+  `eval/delegation.json`. The input never includes the BB project name.
+- **Cost:** about 1 call per completed turn plus 1 per intake, and 1 small call
+  per new thread (§10.1).
 
 ### 10.1 Titles
 
-Titles go stale: BB generates one only for a first message of five or more
-words, never regenerates it, and a thread's focus drifts over its turns. The
-per-turn analysis suggests a title when the thread has none, its title is cut
-off or too vague to tell it apart, or its latest substantive requests moved onto
-different work. Related follow-ups and procedural asks keep the title.
+A thread's title is its goal: one phrase of 3–8 words, in sentence case with no
+closing period, at most 60 characters, saying what the thread is for. It names
+the durable larger outcome, so it outlasts implementation details, procedural
+asks, related follow-ups, and side questions. Workstreams infers the goal and
+writes it to BB as the thread's title, so the sidebar rows, the thread heading,
+Overview, Up Next, Activity, recap cards, and the CLI name a thread with one
+string. While a thread has no title, they all show BB's placeholder, the opening
+words of its first request.
 
-A suggestion is applied when all of these hold:
+Every analysis is given the thread's title and its previous goal. It reuses a
+title that already states the goal, keeps the previous goal through the thread's
+ordinary course, and replaces it only when the objective or scope genuinely
+changes or the goal is too vague or cut off to tell the thread apart. A better
+wording of the same objective is no reason to change it.
+
+A goal becomes the title when all of these hold:
 
 - the `threads.autoTitle` preference is on (default);
-- the thread is still idle at the analyzed revision;
+- the goal differs from the title the thread shows;
 - the title is not **locked**;
-- the thread is untitled, or Workstreams has not retitled it in the last hour.
+- the thread is still idle at the analyzed revision;
+- the thread is untitled or provisionally titled, or Workstreams has not
+  retitled it in the last hour.
+
+**Opening title.** A turn can run for an hour before analysis names the thread,
+so the thread's first request names it. When BB admits a thread's first message
+(`message.dispatch`), one small call sees the opening request alone, with no
+assistant text, and returns a goal, or none when the request doesn't say what
+the work is (a greeting, a bare "continue"). The goal is applied at once, while
+the first turn runs, as a **provisional** title, journaled like any retitle.
+
+- It runs for a visible, unarchived thread that has no title of its own and
+  whose turns have not been analyzed, while `autoTitle` is on and the title is
+  not locked. Hidden threads (workers, side chats) are never named. A title that
+  appears first, from BB's generator, the user, or an agent, is never replaced,
+  including one that appears while the call runs.
+- It never delays the turn. The hook only schedules the call, which uses the
+  `threads.analysisModel`, gives up after 15 s, and is one of at most four at a
+  time; a thread that finds them busy is named when it becomes active, or by its
+  analysis. A call that fails or times out is logged and dropped, and the thread
+  keeps BB's placeholder until its first analysis. A thread is tried once per
+  run.
+- A thread whose dispatch this run never saw (the plugin loaded mid-turn, or the
+  hook missed it) is named the same way from its recorded first request, on
+  `thread.active` or when the reconciler finds it running with no title.
+- The goal is discarded if the thread's revision has advanced when the call
+  returns, because its first turn has ended and that turn's analysis names it.
+- The analysis of the first finished turn replaces a provisional title with its
+  goal whatever the hour's cooldown says, and settles it when the goal is the
+  same. From then on it is an ordinary Workstreams title.
 
 **Ownership.** BB exposes no title provenance and no title event (§3), so
 Workstreams records each thread's observed raw title (`ws_title`), from the
@@ -469,10 +511,14 @@ reconciler and again just before any retitle. BB's generator only fills an empty
 title, so a change from one title to another that Workstreams did not write was
 made by the user or an agent. That change locks the title, and so does undoing a
 retitle. Clearing a title unlocks it. A title first observed already set is
-treated as BB's own.
+treated as BB's own. A provisional title is Workstreams' own, flagged
+`provisional` on its `ws_title` row until the first analysis settles it or
+anyone else changes or clears it.
 
 Each retitle is journaled (`retitle`, provenance `auto`) with Undo, which
-restores the previous title while it is still the one Workstreams wrote.
+restores the previous title while it is still the one Workstreams wrote. The
+rationale says which retitle it was: from the opening request, after the first
+turn, from another title, or of an untitled thread.
 
 ### 10.2 Agent recaps
 
@@ -610,7 +656,10 @@ it.
    flow (`experimental_useSidebarThreadActions().archive`), exactly as the sidebar row's Archive does: BB confirms
    first when child threads will be archived too, shows its Undo toast, and moves off the thread. Unlike the recap
    card's Archive (item 7), it requires no recap and no completion evidence. It shows for any thread in BB's active
-   list.
+   list. Above the timeline, the **thread heading** shows the thread's workstream and its title, the string every
+   other surface shows (§10.1), with the current recap's goal beneath when that adds to the title. Scrolled away from
+   the newest message, it collapses into the title bar in place of BB's own title when there is room, and otherwise
+   stays pinned at the top of the timeline.
 4. **CLI:**
    `bb workstreams list | show | edit | prioritize | new | handoff | file | log | analyze | rebuild | trace | catalog (list | show | create | edit | reparent | merge) | task (show | assign | clear | reclassify)`,
    built with `defineCli`.
@@ -808,7 +857,7 @@ statement IDs.
 ```
 bb-plugin-workstreams/
   src/domain/    tree · project (thread trees → groups and bands) · organize · analysis · router · schemas
-  src/server/    index · prefs · map · journal · service · analyzer · router · bootstrap · inference/{host,gateway,worker} · cli · agents
+  src/server/    index · prefs · map · journal · service · analyzer · opening · router · bootstrap · inference/{host,gateway,worker} · cli · agents
   src/app/       index · useWorkstreams (live hook + one state RPC + realtime) · sidebar/* · home/* (phone Home screen) · page/* · header/* (parent link) · composer/* (New work intake and thread cards)
   tests/         domain (real exported snapshots) · server (mock SDK) · app (renderSlot)
 ```
