@@ -277,11 +277,12 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
                     value={`entity:${entity.id}`}
                     onSelect={() => {
                       void rpc
-                        .call("corpusSelect", { entityId: entity.id })
+                        .call("catalogResolve", { entityId: entity.id })
                         .then((result) =>
                           pick({
-                            id: result.sectionId,
-                            name: result.name,
+                            id: result.sectionId ?? "",
+                            name:
+                              result.name ?? corpusLabel(entity.id, entities),
                             subjectId: entity.id,
                           }),
                         )

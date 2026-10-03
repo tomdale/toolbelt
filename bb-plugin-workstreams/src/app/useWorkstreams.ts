@@ -15,6 +15,7 @@ import { isCurrent } from "../domain/analysis.ts";
 import { reportedAnalysis, type Recap } from "../domain/recap.ts";
 import type { ManualOrder } from "../domain/order.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
+import type { CatalogState } from "../domain/corpus.ts";
 import {
   isSnoozed,
   type SnoozePrefs,
@@ -35,6 +36,7 @@ export type ServerState = {
   order: ManualOrder;
   snoozes: Record<string, ThreadSnooze>;
   snoozePrefs: SnoozePrefs;
+  catalog?: CatalogState;
 };
 
 export type ReorderChange =

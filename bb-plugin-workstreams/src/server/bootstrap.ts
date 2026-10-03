@@ -52,6 +52,8 @@ export type BootstrapState = {
     descriptionSource: "user" | "generated";
   }[];
   preview: {
+    catalogRevision?: number;
+    isStale?: boolean;
     workstreams: OrganizeProposal["workstreams"];
     creates: { name: string; description: string }[];
     renames: { sectionId: string; from: string; to: string }[];
@@ -109,6 +111,19 @@ export class Bootstrap {
     const state = raw ? (JSON.parse(raw) as BootstrapState) : null;
     // An older saved preview has no reviewed cleanup plan; regenerate it.
     if (state?.preview && !Array.isArray(state.preview.removals)) return null;
+    if (state?.preview && this.deps.corpus) {
+      const currentRevision = this.deps.corpus.revision();
+      const isStale =
+        state.preview.catalogRevision !== undefined &&
+        state.preview.catalogRevision !== currentRevision;
+      return {
+        ...state,
+        preview: {
+          ...state.preview,
+          isStale,
+        },
+      };
+    }
     return state;
   }
   private save(state: BootstrapState) {
@@ -262,12 +277,15 @@ export class Bootstrap {
       }
       if (controller.signal.aborted || this.disposed)
         throw new Error("Organizing cancelled.");
+      const catalogRevision = this.deps.corpus?.revision();
       return this.save({
         ...state,
         status: "preview",
         progress: this.state()?.progress,
         traceIds: result.traceId ? [result.traceId] : [],
         preview: {
+          catalogRevision,
+          isStale: false,
           workstreams: proposal.workstreams,
           creates: proposal.workstreams
             .filter((w) => w.sectionId === null)
@@ -546,6 +564,15 @@ export class Bootstrap {
         "This preview was replaced. Review the current map before applying.",
       );
     const preview = current.preview;
+    const currentRevision = this.deps.corpus?.revision();
+    if (
+      preview.catalogRevision !== undefined &&
+      currentRevision !== undefined &&
+      preview.catalogRevision !== currentRevision
+    )
+      throw new UserError(
+        "The catalog or classifications changed since this preview was generated. Review the current map before applying.",
+      );
     const allowed = new Set(preview.moves.map((m) => m.threadId));
     if (overrides.some((o) => !allowed.has(o.threadId)))
       throw new UserError("Unknown thread override.");

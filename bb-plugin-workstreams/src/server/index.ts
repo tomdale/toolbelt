@@ -667,27 +667,113 @@ export default async function plugin(bb: BbPluginApi) {
         entities: corpus.list().map((e) => ({ ...e, aliases: [...e.aliases] })),
       };
     },
+    catalog: async () => {
+      corpus.syncGroups(
+        map.list().map((r) => ({ ...r, description: r.description ?? "" })),
+      );
+      return corpus.state();
+    },
     corpusReset: async () => {
       bootstrap.resetCatalog();
       return { ok: true as const };
     },
-    corpusSelect: async ({ entityId }) => {
-      const entity = corpus.list().find((e) => e.id === entityId);
+    catalogResolve: async ({ entityId }) => {
+      const entity = corpus.getById(entityId);
       if (!entity) throw new Error("That corpus identity no longer exists.");
       const groups = corpus.groups();
       const entities = corpus.list();
       const home = activeHome(entityId, [...groups.values()], entities);
-      const existing = map.list().find((r) => groups.get(r.sectionId) === home);
+      const existing = home
+        ? map.list().find((r) => groups.get(r.sectionId) === home)
+        : null;
       if (existing)
         return { sectionId: existing.sectionId, name: existing.name };
-      const rootId = ancestors(entityId, entities).at(-1)!;
-      const label = corpusLabel(rootId, entities);
-      if (map.list().some((r) => r.name.toLowerCase() === label.toLowerCase()))
-        throw new Error("That group label belongs to another identity.");
-      const created = await service.createWorkstream(label, "user");
-      corpus.bindGroup(created.sectionId, rootId);
-      return { sectionId: created.sectionId, name: label };
+      return { sectionId: null, name: null };
     },
+    catalogCreate: ({ name, description, parentId, aliases }) =>
+      userFacing(async () => {
+        const entity = corpus.remember(
+          name,
+          description,
+          parentId ?? null,
+          aliases,
+        );
+        notify();
+        return { entity };
+      }),
+    catalogRename: ({ entityId, name }) =>
+      userFacing(async () => {
+        const entity = corpus.rename(entityId, name);
+        notify();
+        return { entity };
+      }),
+    catalogReparent: ({ entityId, parentId }) =>
+      userFacing(async () => {
+        const entity = corpus.reparent(entityId, parentId);
+        notify();
+        return { entity };
+      }),
+    catalogMerge: ({ sourceEntityId, targetEntityId }) =>
+      userFacing(async () => {
+        const result = corpus.merge(sourceEntityId, targetEntityId);
+        notify();
+        return result;
+      }),
+    taskAssign: ({ threadId, entityId }) =>
+      userFacing(async () => {
+        const assignment = corpus.assign(threadId, entityId, {
+          provenance: "manual",
+        });
+        notify();
+        return { assignment };
+      }),
+    taskClear: ({ threadId }) =>
+      userFacing(async () => {
+        const assignment = corpus.clear(threadId);
+        notify();
+        return { assignment };
+      }),
+    taskReclassify: ({ threadId, entityId, evidence }) =>
+      userFacing(async () => {
+        if (entityId !== undefined) {
+          const assignment = corpus.reclassify(threadId, entityId, evidence);
+          notify();
+          return { assignment };
+        }
+        const thread = await bb.sdk.threads.get({ threadId });
+        const analysis = analyzer.get(threadId);
+        const requests = await analyzer.ownershipRequests(threadId);
+        const { value } = await inference.run(
+          "classify",
+          {
+            prompt: `${thread.title ?? thread.titleFallback ?? ""}\n${analysis?.recap ?? ""}`,
+            entities: corpus.list(),
+            project: thread.projectId,
+            requests,
+          },
+          {
+            model: await currentPrefs().organize.model,
+            threadId,
+            label: thread.title ?? threadId,
+          },
+        );
+        const target = value.subjectId
+          ? corpus.getById(value.subjectId)
+          : value.proposed
+            ? corpus.rememberProposal(value.proposed)
+            : null;
+        const assignment = corpus.reclassify(
+          threadId,
+          target ? target.id : null,
+          "task-reclassify",
+        );
+        notify();
+        return { assignment };
+      }),
+    taskAssignment: ({ threadId }) =>
+      userFacing(async () => ({
+        assignment: corpus.assignment(threadId),
+      })),
     state: async () => ({
       ...service.state(),
       workstreams: Object.fromEntries(map.list().map((r) => [r.sectionId, r])),
@@ -704,6 +790,7 @@ export default async function plugin(bb: BbPluginApi) {
       order: loadOrder(db),
       snoozes: snoozes.all(),
       snoozePrefs: loadSnoozePrefs(db),
+      catalog: corpus.state(),
     }),
     setSnoozePrefs: async ({ patch }) => {
       const prefs = saveSnoozePrefs(db, patch);

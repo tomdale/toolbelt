@@ -306,4 +306,37 @@ describe("explicit organizer", () => {
     expect(state.status).toBe("failed");
     expect(world.sections).toHaveLength(0);
   });
+
+  it("semantic edits stale saved previews and safely reject apply", async () => {
+    const { w } = await setup();
+    const preview = await call(w, { action: "start" });
+    expect(preview.status).toBe("preview");
+    expect(preview.preview?.isStale).toBe(false);
+
+    // Create an entity in the catalog
+    const { entity } = (await w.harness.behavior.callRpc("catalogCreate", {
+      name: "Feature Alpha",
+      description: "Alpha feature",
+    })) as { entity: { id: string } };
+
+    // Perform a semantic assignment
+    await w.harness.behavior.callRpc("taskAssign", {
+      threadId: "mine",
+      entityId: entity.id,
+    });
+
+    const updated = (await w.harness.behavior.callRpc("bootstrap", {
+      action: "get",
+    })) as { state: BootstrapState };
+    expect(updated.state.preview?.isStale).toBe(true);
+
+    // Apply is safely rejected
+    await expect(
+      w.harness.behavior.callRpc("bootstrap", {
+        action: "apply",
+        runId: preview.startedAt,
+        overrides: [],
+      }),
+    ).rejects.toThrow(/catalog or classifications changed/);
+  });
 });
