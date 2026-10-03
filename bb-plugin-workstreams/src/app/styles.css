@@ -460,7 +460,7 @@
   margin-inline: -1rem;
   padding-inline: 1rem;
   background: var(--background);
-  transition: height 70ms linear;
+  transition: height 200ms ease;
 }
 .ws-sticky-goal-root::after {
   position: absolute;
@@ -479,7 +479,9 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .ws-sticky-goal-root,
-  .ws-sticky-goal-root::after {
+  .ws-sticky-goal-root::after,
+  .ws-sticky-goal__title,
+  .ws-sticky-goal__subtitle {
     transition: none;
   }
 }
@@ -499,6 +501,9 @@
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition:
+    font-size 200ms ease,
+    opacity 200ms ease;
 }
 .ws-sticky-goal__subtitle {
   overflow: hidden;
@@ -506,6 +511,7 @@
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: font-size 200ms ease;
 }
 
 /* Parent chip in a child thread's header. */
