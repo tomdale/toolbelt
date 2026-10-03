@@ -713,6 +713,15 @@ export default async function plugin(bb: BbPluginApi) {
         notify();
         return { entity };
       }),
+    catalogUpdateMetadata: ({ entityId, description, aliases }) =>
+      userFacing(async () => {
+        const entity = corpus.updateMetadata(entityId, {
+          description,
+          aliases,
+        });
+        notify();
+        return { entity };
+      }),
     catalogMerge: ({ sourceEntityId, targetEntityId }) =>
       userFacing(async () => {
         const result = corpus.merge(sourceEntityId, targetEntityId);

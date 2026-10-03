@@ -385,4 +385,32 @@ describe("CorpusStore", () => {
     // Reparenting to root where "Alpha" already exists fails
     expect(() => corpus.reparent(c.id, root.id)).toThrow(/conflicts/);
   });
+
+  it("updates metadata with validation and bumps revision", () => {
+    const { corpus } = store();
+    const root = corpus.remember("Platform", "Base platform");
+    const feature = corpus.remember("Auth", "Initial auth", root.id, ["Login"]);
+    const revBefore = corpus.revision();
+
+    // Update description and aliases
+    const updated = corpus.updateMetadata(feature.id, {
+      description: "Updated authentication system",
+      aliases: ["Sign-in", "SSO"],
+    });
+
+    expect(updated.description).toBe("Updated authentication system");
+    expect(updated.aliases).toEqual(["Sign-in", "SSO"]);
+    expect(corpus.revision()).toBeGreaterThan(revBefore);
+
+    // Reject alias matching name
+    expect(() =>
+      corpus.updateMetadata(feature.id, { aliases: ["Auth"] }),
+    ).toThrow(/alias must differ from its name/);
+
+    // Sibling conflict check
+    corpus.remember("Billing", "Billing feature", root.id, ["Payments"]);
+    expect(() =>
+      corpus.updateMetadata(feature.id, { aliases: ["Payments"] }),
+    ).toThrow(/already resolves to an entity/);
+  });
 });

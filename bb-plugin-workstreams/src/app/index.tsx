@@ -6,6 +6,7 @@ import { ServerStateRealtime } from "./serverState.ts";
 import { StickyGoalHeader } from "./StickyGoalHeader.tsx";
 import { ThreadDebugButton } from "./debug/ThreadDebugButton.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
+import { TaskIdentityHeader } from "./header/TaskIdentityHeader.tsx";
 import { RecapCard } from "./composer/RecapCard.tsx";
 import {
   QuestionAnchor,
@@ -84,6 +85,11 @@ export default definePluginApp((app) => {
     id: "parent-thread",
     title: "Parent thread",
     component: ParentThreadLink,
+  });
+  app.slots.experimental_threadHeaderAction({
+    id: "task-identity",
+    title: "Product or feature",
+    component: TaskIdentityHeader,
   });
   app.slots.experimental_threadHeaderAction({
     id: "snooze",

@@ -193,5 +193,17 @@ describe("Catalog and Task Identity RPC Contract", () => {
       { threadId: thread.id },
     )) as { assignment: CanonicalAssignment };
     expect(assignAfterMerge.assignment.entityId).toBe(beta.id);
+
+    // Update metadata (description and aliases)
+    const updateRes = (await w.harness.behavior.callRpc(
+      "catalogUpdateMetadata",
+      {
+        entityId: beta.id,
+        description: "New beta description",
+        aliases: ["BetaAlias1", "BetaAlias2"],
+      },
+    )) as { entity: { description: string; aliases: string[] } };
+    expect(updateRes.entity.description).toBe("New beta description");
+    expect(updateRes.entity.aliases).toContain("BetaAlias1");
   });
 });
