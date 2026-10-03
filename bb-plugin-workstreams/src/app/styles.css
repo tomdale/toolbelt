@@ -447,8 +447,8 @@
 /* Sticky thread goal, set in the same type as the timeline text. The root is
    a zero-height sticky anchor at the top of the message column; the heading
    (.ws-sticky-goal) is drawn over the timeline at a fixed size. Expanding and
-   compacting only slide the plate (transform) and crossfade two text layers
-   (opacity), so no layout runs mid-transition and messages never reflow.
+   compacting only slide the plate and scale the text (transforms), so
+   messages never reflow and every line keeps its place.
    The rule sets the expanded heading apart from the conversation; once the
    timeline scrolls away from the top, a feathered fade lets messages dissolve
    beneath it. */
@@ -494,50 +494,44 @@
   opacity: var(--ws-sticky-fade, 0);
   transition: opacity 150ms ease;
 }
-.ws-sticky-goal__layer {
+.ws-sticky-goal__text {
   position: absolute;
-  inset: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
   /* Message text is inset a further 1rem from the column's edge. */
-  padding-inline: 2rem;
-  transition: opacity 200ms ease;
+  inset-inline: 2rem;
 }
 @media (prefers-reduced-motion: reduce) {
   .ws-sticky-goal__plate,
   .ws-sticky-goal__plate::after,
-  .ws-sticky-goal__layer {
+  .ws-sticky-goal__title,
+  .ws-sticky-goal__subtitle {
     transition: none;
   }
 }
-.ws-sticky-goal__eyebrow {
-  flex: none;
+.ws-sticky-goal__title,
+.ws-sticky-goal__subtitle {
+  position: absolute;
+  top: 0;
+  left: 0;
   overflow: hidden;
-  color: var(--muted-foreground);
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  line-height: 1.5;
   text-overflow: ellipsis;
+  transform-origin: 0 0;
+  transition:
+    transform 200ms ease,
+    width 200ms ease,
+    opacity 200ms ease;
   white-space: nowrap;
 }
 .ws-sticky-goal__title {
   margin: 0;
-  overflow: hidden;
   color: var(--foreground);
   font-family: inherit;
   font-weight: 650;
   letter-spacing: -0.015em;
   line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .ws-sticky-goal__subtitle {
-  overflow: hidden;
   color: var(--muted-foreground);
   line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Parent chip in a child thread's header. */

@@ -15,26 +15,24 @@ function messageColumn(scroller: HTMLElement): HTMLElement | null {
   return column instanceof HTMLElement ? column : null;
 }
 
-// Type sizes as multiples of the timeline's body font size. Expanded, the
-// heading is the most prominent text on the page: an eyebrow naming the
-// broader effort, a large title, and the current subtask. Compacted, it drops
-// to a title and one muted line so it stays out of the way while reading.
-const EXPANDED = { eyebrow: 0.78, title: 1.5, subtitle: 0.92 } as const;
-const COMPACT = { title: 0.9, subtitle: 0.72 } as const;
+// Type sizes as multiples of the timeline's body font size. The heading is
+// always laid out at its expanded size; compacting scales the text down from
+// its top-left corner, so every line keeps its place and only shrinks.
+const TITLE_SIZE = 1.5;
+const SUBTITLE_SIZE = 0.92;
+const TITLE_LINE = 1.25;
+const SUBTITLE_LINE = 1.4;
+const PAD_TOP = 0.3;
+const TITLE_COMPACT_SCALE = 0.6; // 0.9x body text
+const SUBTITLE_COMPACT_SCALE = 0.78; // 0.72x body text
 
-/**
- * Heading height in px for a body font size. Both states always budget for
- * every line so each height is constant, whatever the thread has to show.
- */
+/** Heading height in px for a body font size. */
 function headingHeight(base: number, compact: boolean): number {
+  const title = TITLE_SIZE * TITLE_LINE * (compact ? TITLE_COMPACT_SCALE : 1);
+  const subtitle =
+    SUBTITLE_SIZE * SUBTITLE_LINE * (compact ? SUBTITLE_COMPACT_SCALE : 1);
   return Math.round(
-    base *
-      (compact
-        ? COMPACT.title * 1.3 + COMPACT.subtitle * 1.4 + 0.5
-        : EXPANDED.title * 1.25 +
-          EXPANDED.eyebrow * 1.5 +
-          EXPANDED.subtitle * 1.4 +
-          1),
+    base * (PAD_TOP + title + subtitle + (compact ? 0.3 : 0.65)),
   );
 }
 
@@ -222,11 +220,13 @@ export function StickyGoalHeader(): React.ReactPortal | null {
   const base = mount?.baseFontSize ?? 14;
   const expandedHeight = headingHeight(base, false);
   const compactHeight = headingHeight(base, true);
-  // Compacted, the eyebrow folds into the subtitle line.
-  const compactSubtitle = [context?.eyebrow, context?.subtask]
+  const subtitle = [context?.eyebrow, context?.subtask]
     .filter(Boolean)
     .join(" · ");
   const height = compact ? compactHeight : expandedHeight;
+  const titleScale = compact ? TITLE_COMPACT_SCALE : 1;
+  const subtitleScale = compact ? SUBTITLE_COMPACT_SCALE : 1;
+  const titleBlock = base * TITLE_SIZE * TITLE_LINE;
   useLayoutEffect(() => {
     if (!mount) return;
     mount.root.className = "ws-sticky-goal-root";
@@ -241,9 +241,11 @@ export function StickyGoalHeader(): React.ReactPortal | null {
   }, [mount, compact, fade, height]);
 
   if (!mount || !context) return null;
-  // Expanded and compact are separate layers that crossfade. Nothing resizes
-  // or reflows during the transition: the plate slides (transform) and the
-  // layers fade (opacity), both composited off the main thread.
+  // The plate slides and the text scales (transforms only), so no layout runs
+  // mid-transition and messages never reflow. Text is anchored at its top-left
+  // and shrinks in place; only the subtitle rises, as the title above it gets
+  // shorter. Widths are widened by the inverse scale so ellipsis points match
+  // the visible size.
   return createPortal(
     <div className="ws-sticky-goal" style={{ height: expandedHeight }}>
       <div
@@ -252,59 +254,28 @@ export function StickyGoalHeader(): React.ReactPortal | null {
           transform: `translateY(${compact ? compactHeight - expandedHeight : 0}px)`,
         }}
       />
-      <div
-        className="ws-sticky-goal__layer"
-        aria-hidden={compact}
-        style={{
-          height: expandedHeight,
-          paddingBottom: base * 0.65,
-          opacity: compact ? 0 : 1,
-        }}
-      >
-        {context.eyebrow && (
-          <div
-            className="ws-sticky-goal__eyebrow"
-            style={{ fontSize: base * EXPANDED.eyebrow }}
-          >
-            {context.eyebrow}
-          </div>
-        )}
+      <div className="ws-sticky-goal__text" style={{ top: base * PAD_TOP }}>
         <h2
           className="ws-sticky-goal__title"
-          style={{ fontSize: base * EXPANDED.title }}
+          style={{
+            fontSize: base * TITLE_SIZE,
+            width: `${100 / titleScale}%`,
+            transform: `scale(${titleScale})`,
+            opacity: compact ? 0.88 : 1,
+          }}
         >
           {context.goal}
         </h2>
-        {context.subtask && (
+        {subtitle && (
           <div
             className="ws-sticky-goal__subtitle"
-            style={{ fontSize: base * EXPANDED.subtitle }}
+            style={{
+              fontSize: base * SUBTITLE_SIZE,
+              width: `${100 / subtitleScale}%`,
+              transform: `translateY(${titleBlock * titleScale}px) scale(${subtitleScale})`,
+            }}
           >
-            {context.subtask}
-          </div>
-        )}
-      </div>
-      <div
-        className="ws-sticky-goal__layer"
-        aria-hidden={!compact}
-        style={{
-          height: compactHeight,
-          paddingBottom: base * 0.3,
-          opacity: compact ? 1 : 0,
-        }}
-      >
-        <h2
-          className="ws-sticky-goal__title"
-          style={{ fontSize: base * COMPACT.title, opacity: 0.88 }}
-        >
-          {context.goal}
-        </h2>
-        {compactSubtitle && (
-          <div
-            className="ws-sticky-goal__subtitle"
-            style={{ fontSize: base * COMPACT.subtitle }}
-          >
-            {compactSubtitle}
+            {subtitle}
           </div>
         )}
       </div>
