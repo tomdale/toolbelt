@@ -28,7 +28,7 @@ const SUBTITLE_LINE = 1.4;
 const PAD_TOP = 0.3;
 const EYEBROW_SIZE = 0.8;
 /** Eyebrow line plus the gap before the title, when there is a workstream. */
-const EYEBROW_BLOCK = 1.45;
+const EYEBROW_BLOCK = 1.25;
 const TITLE_COMPACT_SCALE = 0.6; // 0.9x body text
 const SUBTITLE_COMPACT_SCALE = 0.78; // 0.72x body text
 
@@ -284,7 +284,7 @@ export function StickyGoalHeader(): React.ReactPortal | null {
               } as React.CSSProperties
             }
           >
-            <WorkstreamIcon className="size-3.5 text-current" />
+            <WorkstreamIcon className="size-4 text-current" />
             <span>{context.workstream.name}</span>
           </div>
         )}
