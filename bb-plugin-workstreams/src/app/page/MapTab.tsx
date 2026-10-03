@@ -10,6 +10,7 @@ import type { MapRecord } from "../../server/map.ts";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { ghostButton, primaryButton } from "./controls.ts";
 import { Organize } from "./Organize.tsx";
+import { TaskIdentity } from "../task/TaskIdentity.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
 import { useThreadTotals, type ThreadTotals } from "./thread-totals.ts";
@@ -35,6 +36,7 @@ export function MapTab({
         rpc={rpc}
         bootstrapped={bootstrapped}
         onShowActivity={onShowActivity}
+        renderTaskAction={(task) => <TaskIdentity threadId={task.id} />}
       >
         <section aria-label="Current workstreams">
           <div className="flex items-baseline gap-2 px-2 pb-1.5">
