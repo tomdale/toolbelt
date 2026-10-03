@@ -444,14 +444,14 @@
   color: var(--warning-text, #e0a84f);
 }
 
-/* Sticky thread goal, set in the same type as the timeline text. The root is
-   a zero-height sticky anchor at the top of the message column; the heading
-   (.ws-sticky-goal) is drawn over the timeline at a fixed size. Collapsing
-   slides the body out of the scroller and fades the text (transform and
-   opacity), so messages never reflow; the title bar then carries the
-   workstream and goal. The rule sets the expanded heading apart from the conversation; once the
-   timeline scrolls away from the top, a feathered fade lets messages dissolve
-   beneath it. */
+/* Sticky thread goal, set in the same type as the timeline text. Two parts:
+   a zero-height sticky anchor at the top of the message column
+   (.ws-sticky-goal-root) carries the plate, and a fixed layer above the app
+   (.ws-goal-overlay) draws the text. Scrolled away from the newest message
+   the plate fades and the text glides up over the title bar; only transforms
+   and opacity change, so nothing reflows. Once the timeline has scrolled
+   away from its top, a feathered fade lets messages dissolve beneath the
+   plate (expanded) or the title bar (collapsed). */
 .ws-sticky-goal-root {
   position: sticky;
   top: 0;
@@ -463,30 +463,9 @@
   /* The heading is decoration over the timeline, never a hit target. */
   pointer-events: none;
 }
-.ws-sticky-goal {
+.ws-sticky-goal-root::after {
   position: absolute;
   inset: 0 0 auto;
-  pointer-events: none;
-}
-.ws-sticky-goal__body {
-  position: absolute;
-  inset: 0;
-  transition: transform 200ms ease;
-}
-.ws-sticky-goal__plate {
-  position: absolute;
-  inset: 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--background);
-  transition: border-color 200ms ease;
-}
-/* Collapsed, only the fade remains. */
-.ws-sticky-goal-root[data-collapsed="true"] .ws-sticky-goal__plate {
-  border-bottom-color: transparent;
-}
-.ws-sticky-goal__plate::after {
-  position: absolute;
-  inset: 100% 0 auto;
   /* Matches BB's native overflow fade: 1.5rem, background to transparent. */
   height: 1.5rem;
   background: linear-gradient(
@@ -496,27 +475,47 @@
   );
   content: "";
   opacity: var(--ws-sticky-fade, 0);
-  transition: opacity 150ms ease;
+  transform: translateY(var(--ws-fade-y, 0px));
+  transition:
+    opacity 150ms ease,
+    transform 200ms ease;
 }
-.ws-sticky-goal__text {
+.ws-sticky-goal {
   position: absolute;
-  /* Message text is inset a further 1rem from the column's edge. */
-  inset-inline: 2rem;
-}
-.ws-sticky-goal__text {
+  inset: 0 0 auto;
   transition: opacity 200ms ease;
 }
+.ws-sticky-goal__plate {
+  position: absolute;
+  inset: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+}
+.ws-goal-overlay {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 30;
+  pointer-events: none;
+}
+.ws-goal-overlay__group {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition:
+    transform 200ms ease,
+    width 200ms ease,
+    opacity 200ms ease;
+}
 @media (prefers-reduced-motion: reduce) {
-  .ws-sticky-goal__body,
-  .ws-sticky-goal__plate,
-  .ws-sticky-goal__plate::after,
-  .ws-sticky-goal__text,
-  .ws-goal-chip {
+  .ws-sticky-goal-root::after,
+  .ws-sticky-goal,
+  .ws-goal-overlay__group,
+  .ws-sticky-goal__title,
+  .ws-sticky-goal__subtitle {
     transition: none;
   }
 }
-/* Each workstream's identity color comes from its hue (workstreamHue); the
-   line sits above the title and never moves or resizes with the heading. */
+/* Each workstream's identity color comes from its hue (workstreamHue). */
 .ws-sticky-goal__workstream {
   position: absolute;
   top: 0;
@@ -546,6 +545,11 @@
   width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+  transform-origin: 0 0;
+  transition:
+    transform 200ms ease,
+    width 200ms ease,
+    opacity 200ms ease;
   white-space: nowrap;
 }
 /* The title takes the theme font (Geist) like the timeline text, at a
@@ -562,46 +566,6 @@
 .ws-sticky-goal__subtitle {
   color: var(--muted-foreground);
   line-height: 1.4;
-}
-
-/* The workstream and goal in the title bar once the in-pane heading has
-   scrolled away. It sits collapsed (zero width, invisible) until then. */
-.ws-goal-chip {
-  display: flex;
-  min-width: 0;
-  max-width: 0;
-  align-items: center;
-  gap: 0.5rem;
-  overflow: hidden;
-  font-size: 0.8125rem;
-  line-height: 1.2;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    max-width 200ms ease,
-    opacity 200ms ease;
-  white-space: nowrap;
-}
-.ws-goal-chip[data-visible="true"] {
-  max-width: 22rem;
-  opacity: 1;
-}
-.ws-goal-chip__workstream {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 0.2em;
-  color: oklch(46% 0.16 var(--ws-hue, 250));
-  font-weight: 550;
-}
-.dark .ws-goal-chip__workstream {
-  color: oklch(79% 0.13 var(--ws-hue, 250));
-}
-.ws-goal-chip__goal {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--foreground);
-  text-overflow: ellipsis;
 }
 
 /* Parent chip in a child thread's header. */
