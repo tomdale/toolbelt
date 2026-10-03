@@ -603,17 +603,23 @@ function WaitingFooter({
     <div
       className={cn(
         compact ? "-mx-3 -mb-2" : "-mx-4 -mb-3",
-        "relative mt-2 flex min-h-8 items-center gap-1 rounded-b-[7px] border-t py-1 pl-4 pr-2 text-[11px] text-muted-foreground",
+        "relative mt-2 flex min-h-8 items-center gap-1 overflow-hidden rounded-b-[7px] py-1 pl-4 pr-2 text-[11px] text-muted-foreground",
         compact && "pl-3",
         ACCENT.waiting.footer,
       )}
     >
+      {/* The footer's top rule, drawn inside the footer so the draining bar
+          on it stays clipped within the card's side borders. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-violet-900/10 dark:bg-violet-200/15"
+      />
       <span>
         {cancelled ? (
           "Check cancelled"
         ) : counting ? (
           <>
-            Next check{" "}
+            Next check in{" "}
             <span
               aria-label="Status check countdown"
               className="font-medium tabular-nums text-foreground"
@@ -644,12 +650,10 @@ function WaitingFooter({
         </button>
       ) : null}
       {counting && total > 0 ? (
-        // Exactly covers the footer's 1px top border, so it meets the
-        // card's side border without overlapping it.
         <span
           aria-hidden
           data-testid="status-check-progress"
-          className="pointer-events-none absolute -top-px left-0 h-px bg-violet-500 transition-[width] duration-1000 ease-linear motion-reduce:transition-none dark:bg-violet-400"
+          className="pointer-events-none absolute left-0 top-0 h-px bg-violet-500 transition-[width] duration-1000 ease-linear motion-reduce:transition-none dark:bg-violet-400"
           style={{ width: `${Math.min(100, (remaining / total) * 100)}%` }}
         />
       ) : null}
