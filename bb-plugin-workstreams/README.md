@@ -190,15 +190,20 @@ is the full design and the contract the code is checked against.
   draft doesn't bring it back. Dismiss hides the card on every client and keeps
   the sidebar mark. Workstreams never archives automatically.
 - **Analysis**: a few seconds after each turn, one small model call records the
-  thread's one-line summary, work state, subject, and (for top-level threads)
-  whether its latest request drifted to another workstream. Results are tied to
-  the turn they describe and show as updating once a new turn starts. A recap
-  outranks analysis for the work state. Analysis itself never moves anything.
-- **Titles**: the same call suggests a title when a thread has none, its title
-  is cut off or too vague, or its latest requests moved onto different work.
-  Workstreams applies it (at most once an hour for a titled thread) and logs it
-  in Activity with Undo. A title you or an agent set is never changed; clear it
-  to hand it back. Turn this off in the Threads settings section.
+  thread's one-line summary, work state, subject, goal, and (for top-level
+  threads) whether its latest request drifted to another workstream. Results are
+  tied to the turn they describe and show as updating once a new turn starts. A
+  recap outranks analysis for the work state. Analysis itself never moves
+  anything.
+- **Titles**: a thread's title is its goal, a short phrase for what the thread
+  is for, so the sidebar, the heading above the thread, Overview, Up Next,
+  Activity, and the CLI all name it the same way. A new thread is titled from
+  its first request within seconds, while its first turn is still running. The
+  analysis after that turn keeps the title or replaces it with a sharper goal;
+  after that a title changes at most once an hour, and only when the thread's
+  objective does. Each title is logged in Activity with Undo. A title you or an
+  agent set is never changed; clear it to hand it back. Turn this off in the
+  Threads settings section.
 - **Organize** (Organize tab, or `bb workstreams rebuild`): classifies open
   thread roots against the Catalog, then regroups them adaptively into
   workstreams based on concurrent task counts and capacity policy. Review the

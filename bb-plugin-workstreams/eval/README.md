@@ -43,11 +43,16 @@ The runner refuses a private fixture unless `EVAL_OUTPUT` is inside
   original product) and offered every other fixture product as a drift target.
   Scores drift detection on side quests and high-confidence false alarms on
   healthy threads. Only high-confidence drift is surfaced to users. Also scores
-  how often a new title is suggested for side quests and for healthy threads
-  (many fixture titles are deliberately outdated, so a healthy retitle is not
-  necessarily wrong; read `healthyRetitledIds`).
+  how often the goal, which becomes the thread's title, differs from the
+  fixture's title for side quests and for healthy threads (many fixture titles
+  are deliberately outdated, so a healthy rename is not necessarily wrong; read
+  `healthyRenamedIds`).
 - **Untitled:** `cases` and `state` threads with no title, shown to the model as
-  BB's placeholder (the opening words). Every one should get a title.
+  BB's placeholder (the opening words). Every one should get a goal.
+- **Opening:** the same `cases` and `state` requests, shown to the opening-title
+  prompt (`openingGoalPrompt`) alone, without workstream or assistant text.
+  Every stated request should get a goal; `cases:empty`, a request with no
+  content, correctly gets none.
 
 ## Pass bar
 
@@ -61,7 +66,8 @@ A prompt or model change ships only if it meets every line:
 | `state.json` states; needs-decision recall   | ≥ 10/11; 3/3 |
 | Drift detected on side quests                | ≥ 3/4        |
 | High-confidence drift false alarms           | ≤ 5%         |
-| Untitled threads titled                      | ≥ 25/27      |
+| Untitled threads given a goal                | ≥ 25/27      |
+| Opening goals given                          | ≥ 25/27      |
 | Median call latency                          | ≤ 4 s        |
 
 ## Current result (2026-09-29, prompt at the Phase 2 commit)
@@ -74,12 +80,13 @@ A prompt or model change ships only if it meets every line:
 Gemini 3.1 Flash-Lite passes and is the default. GPT-4.1 mini is faster and
 cheaper but misses the private subject bar and drift detection.
 
-With the `title` field (Gemini 3.1 Flash-Lite, public sets, two runs): subjects
-26/28 and 24/28, state 11/11, drift 3/4 and 2/4 (the unchanged prompt scored
-3/4, 3/4, and 2/4 over three runs), false alarms 1/19, untitled threads titled
-27/27 and 26/27, side quests retitled 3/4, median 3.8 s and 3.7 s. Placing
-`title` after `drift` in the output matters: listed before it, the model
-retitled side quests instead of flagging them (drift 1/4).
+Goal as the thread's title (Gemini 3.1 Flash-Lite, public sets, six runs on
+2026-10-03): subjects 24-26/28, state 11/11, needs-decision recall 3/3, drift
+2-3/4, false alarms 0-2/19, untitled threads given a goal 26-27/27, opening
+goals given 26/27 (the empty request gets none), goals 21-46 characters, median
+1.0-1.2 s per analysis call and 0.9-1.0 s per opening call, about $0.0003 per
+call. Keep `goal` after `drift` in the output: a naming field listed before it
+made the model rename side quests instead of flagging them (drift 1/4).
 
 ## Routing (`route.ts`)
 
