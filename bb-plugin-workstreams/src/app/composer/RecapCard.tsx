@@ -1006,12 +1006,11 @@ function NextActionItem({
 }) {
   const message = nextActionMessage(action);
   const title = nextActionTitle(action);
+  // A terse label is explained by its description, or failing that by the
+  // message it sends, unless the label already is the message.
   const description =
-    typeof action === "string"
-      ? title !== message
-        ? message
-        : null
-      : action.description;
+    (typeof action === "string" ? null : action.description) ??
+    (title !== message ? message : null);
   const button = (
     <Button
       type="button"
