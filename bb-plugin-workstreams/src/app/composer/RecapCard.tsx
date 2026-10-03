@@ -603,7 +603,7 @@ function WaitingFooter({
     <div
       className={cn(
         compact ? "-mx-3 -mb-2" : "-mx-4 -mb-3",
-        "relative mt-2 flex min-h-8 items-center gap-3 rounded-b-[7px] border-t py-1 pl-4 pr-2 text-[11px] text-muted-foreground",
+        "relative mt-2 flex min-h-8 items-center gap-1 rounded-b-[7px] border-t py-1 pl-4 pr-2 text-[11px] text-muted-foreground",
         compact && "pl-3",
         ACCENT.waiting.footer,
       )}
@@ -626,13 +626,13 @@ function WaitingFooter({
         )}
       </span>
       {counting && onCancel ? (
-        // An icon, like BB's other inline controls; the corner X already
-        // means dismiss, so the check gets a timer-off glyph.
+        // Sits beside the countdown it cancels. The corner X already means
+        // dismiss, so the check gets a timer-off glyph.
         <button
           type="button"
           aria-label="Cancel status check"
           title="Cancel status check"
-          className="ml-auto flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           onClick={onCancel}
         >
           <Icon
