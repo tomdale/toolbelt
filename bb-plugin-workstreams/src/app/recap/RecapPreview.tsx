@@ -6,13 +6,13 @@ import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Recap } from "../../domain/recap.ts";
 import type { RecapLayout } from "../../domain/recapPrefs.ts";
-import { RecapCardPreview, type PreviewAgent } from "../composer/RecapCard.tsx";
+import { RecapCardPreview, type AgentView } from "../composer/RecapCard.tsx";
 
 type Example = {
   label: string;
   recap: Recap;
   showArchive: boolean;
-  agents?: Record<string, PreviewAgent>;
+  agents?: Record<string, AgentView>;
 };
 
 const EXAMPLES: readonly Example[] = [
@@ -88,11 +88,13 @@ const EXAMPLES: readonly Example[] = [
     agents: {
       "preview-ui-agent": {
         title: "Theme toggle UI",
+        href: null,
         tone: "done",
         label: "Finished",
       },
       "preview-server-agent": {
         title: "Theme preference API",
+        href: null,
         tone: "running",
         label: "Running",
       },

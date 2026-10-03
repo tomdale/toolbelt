@@ -629,6 +629,36 @@ export default async function plugin(bb: BbPluginApi) {
         await recaps.sendNext(threadId, recapId, action);
         return { ok: true as const };
       }),
+    recap_agents: async ({ threadIds }) => {
+      const threads = await Promise.all(
+        threadIds.map((threadId) =>
+          bb.sdk.threads.get({ threadId }).catch(() => null),
+        ),
+      );
+      return {
+        agents: threads.flatMap((thread) =>
+          thread
+            ? [
+                {
+                  threadId: thread.id,
+                  projectId: thread.projectId,
+                  title:
+                    thread.title ??
+                    thread.titleFallback ??
+                    `Thread ${thread.id.slice(-6)}`,
+                  status: thread.status,
+                  runtimeStatus: thread.runtime?.displayStatus ?? thread.status,
+                  hasPendingInteraction: Boolean(
+                    (thread as { hasPendingInteraction?: boolean })
+                      .hasPendingInteraction,
+                  ),
+                  isArchived: thread.archivedAt !== null,
+                },
+              ]
+            : [],
+        ),
+      };
+    },
     recap_cancel_waiting: ({ threadId, recapId }) =>
       userFacing(async () => {
         recaps.cancelWaiting(threadId, recapId);

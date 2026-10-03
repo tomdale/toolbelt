@@ -290,13 +290,28 @@ function useWaitingCountdown(recap: Recap, cancelled: boolean) {
 
 type AgentTone = "running" | "input" | "error" | "done" | "unknown";
 
-/** A stand-in for an awaited agent's thread, for cards shown outside BB's thread list. */
-export type PreviewAgent = { title: string; tone: AgentTone; label: string };
+/** How the card shows one awaited agent. */
+export type AgentView = {
+  /** The agent thread's title; null until its thread has been read. */
+  title: string | null;
+  /** Where the agent's thread opens; null when it cannot be opened. */
+  href: string | null;
+  tone: AgentTone;
+  label: string;
+};
 
-/** Stand-in agent threads by thread id; null when cards read live threads. */
-const PreviewAgents = createContext<Readonly<
-  Record<string, PreviewAgent>
-> | null>(null);
+/** Stand-in agents by thread id; null when cards read live threads. */
+const PreviewAgents = createContext<Readonly<Record<string, AgentView>> | null>(
+  null,
+);
+
+type AgentThread = Pick<
+  PluginSidebarThread,
+  "hasPendingInteraction" | "isArchived"
+> & {
+  status: string;
+  runtimeStatus: string;
+};
 
 const STARTING_STATUSES = new Set([
   "pending",
@@ -306,11 +321,10 @@ const STARTING_STATUSES = new Set([
 ]);
 
 /**
- * What an awaited agent's thread is doing, read from the sidebar's live
- * thread data. An idle agent has finished its turn; the waiting thread
- * learns the outcome at its next status check.
+ * What an awaited agent's thread is doing. An idle agent has finished its
+ * turn; the waiting thread learns the outcome at its next status check.
  */
-function agentStatus(thread: PluginSidebarThread | undefined): {
+function agentStatus(thread: AgentThread | undefined): {
   label: string;
   tone: AgentTone;
 } {
@@ -334,6 +348,97 @@ function agentStatus(thread: PluginSidebarThread | undefined): {
   return { label: thread.isArchived ? "Archived" : "Finished", tone: "done" };
 }
 
+function threadHref(projectId: string, threadId: string) {
+  return projectId && projectId !== "proj_personal"
+    ? `/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(threadId)}`
+    : `/threads/${encodeURIComponent(threadId)}`;
+}
+
+/** An agent thread as the server reads it. */
+type FetchedAgent = AgentThread & {
+  threadId: string;
+  projectId: string;
+  title: string;
+};
+
+/** How often the card rereads agent threads the sidebar does not carry. */
+const AGENT_POLL_MS = 4_000;
+
+/**
+ * Live views of the awaited agents. Visible agent threads come from the
+ * sidebar's thread list. Agent threads are usually hidden, which keeps them
+ * out of that list, so the card reads those from the server while it shows.
+ */
+function useAgentViews(
+  agents: readonly WaitingAgent[],
+): ReadonlyMap<string, AgentView> {
+  const previews = useContext(PreviewAgents);
+  const { threads } = experimental_useSidebarThreads();
+  const rpc = useRpc<RpcContract>();
+  const listed = new Map(threads.map((thread) => [thread.id, thread]));
+  const unlisted = previews
+    ? []
+    : agents.map((a) => a.threadId).filter((id) => !listed.has(id));
+  const unlistedKey = unlisted.join(" ");
+  const [fetched, setFetched] = useState<ReadonlyMap<
+    string,
+    FetchedAgent
+  > | null>(null);
+  useEffect(() => {
+    if (!unlistedKey) return;
+    const threadIds = unlistedKey.split(" ");
+    let live = true;
+    const read = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      rpc
+        .call("recap_agents", { threadIds })
+        .then(({ agents: read }) => {
+          if (live) {
+            setFetched(new Map(read.map((agent) => [agent.threadId, agent])));
+          }
+        })
+        .catch(() => {});
+    };
+    read();
+    const timer = setInterval(read, AGENT_POLL_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [rpc, unlistedKey]);
+  const views = new Map<string, AgentView>();
+  for (const { threadId } of agents) {
+    const preview = previews?.[threadId];
+    if (preview) {
+      views.set(threadId, preview);
+      continue;
+    }
+    const sidebar = listed.get(threadId);
+    if (sidebar) {
+      views.set(threadId, {
+        title: sidebar.displayTitle,
+        href: sidebar.href,
+        ...agentStatus(sidebar),
+      });
+      continue;
+    }
+    const thread = fetched?.get(threadId);
+    views.set(
+      threadId,
+      thread
+        ? {
+            title: thread.title,
+            href: threadHref(thread.projectId, threadId),
+            ...agentStatus(thread),
+          }
+        : fetched
+          ? { title: null, href: null, label: "Unavailable", tone: "unknown" }
+          : { title: null, href: null, label: "", tone: "unknown" },
+    );
+  }
+  return views;
+}
+
 const AGENT_DOT: Record<AgentTone, string> = {
   running: "bg-violet-500 dark:bg-violet-400",
   input: "bg-amber-500 dark:bg-amber-400",
@@ -343,7 +448,7 @@ const AGENT_DOT: Record<AgentTone, string> = {
 };
 
 const AGENT_LABEL: Record<AgentTone, string> = {
-  running: "text-muted-foreground",
+  running: "text-violet-700 dark:text-violet-300",
   input: "text-amber-700 dark:text-amber-300",
   error: "text-red-700 dark:text-red-300",
   done: "text-emerald-700 dark:text-emerald-300",
@@ -353,7 +458,7 @@ const AGENT_LABEL: Record<AgentTone, string> = {
 /** A status dot; a running agent's dot pulses. */
 function AgentDot({ tone }: { tone: AgentTone }) {
   return (
-    <span aria-hidden className="relative mt-[0.45em] flex size-2 shrink-0">
+    <span aria-hidden className="relative mt-[0.5em] flex size-2 shrink-0">
       {tone === "running" ? (
         <span className="absolute inset-0 rounded-full bg-violet-400/70 motion-safe:animate-ping" />
       ) : null}
@@ -363,50 +468,69 @@ function AgentDot({ tone }: { tone: AgentTone }) {
 }
 
 /**
- * The agents a waiting thread is waiting on: each one's task, a link to its
- * thread, and what it is doing now.
+ * The agents a waiting thread is waiting on, one row each: what the agent is
+ * doing now, its task, and a link to its thread.
  */
 function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
   const compact = useContext(CompactContext);
-  const { threads } = experimental_useSidebarThreads();
-  const previews = useContext(PreviewAgents);
+  const views = useAgentViews(agents);
   return (
     <ul
       aria-label="Awaited agents"
       className={cn(
-        "m-0 list-none divide-y divide-violet-900/10 rounded-md border border-violet-900/10 bg-background/50 p-0 px-3 dark:divide-violet-200/15 dark:border-violet-200/15",
-        compact ? "mt-1.5" : "mt-2.5",
+        "m-0 list-none divide-y divide-violet-900/10 p-0 dark:divide-violet-200/15",
+        compact ? "mt-1" : "mt-2",
       )}
     >
       {agents.map((agent) => {
-        const preview = previews?.[agent.threadId];
-        const status =
-          preview ??
-          agentStatus(threads.find((thread) => thread.id === agent.threadId));
+        const view = views.get(agent.threadId)!;
         return (
           <li
             key={agent.threadId}
-            data-agent-status={status.tone}
-            className={cn("flex min-w-0 gap-2.5", compact ? "py-1" : "py-2")}
+            data-agent-status={view.tone}
+            className={cn("flex min-w-0 gap-2.5", compact ? "py-1" : "py-1.5")}
           >
-            <AgentDot tone={status.tone} />
+            <AgentDot tone={view.tone} />
             <div className="min-w-0 flex-1">
-              <RecapText
-                text={agent.task}
-                typeClass={compact ? COMPACT_BODY_CLASS : BODY_CLASS}
-              />
-              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                <ActivityThreadLink
-                  threadId={agent.threadId}
-                  fallback={preview?.title ?? "Agent thread"}
-                />
-                <span
-                  aria-label="Agent status"
-                  className={cn("text-[11px]", AGENT_LABEL[status.tone])}
-                >
-                  {status.label}
-                </span>
+              <div className="flex min-w-0 items-baseline gap-3">
+                <div className="min-w-0 flex-1">
+                  <RecapText
+                    text={agent.task}
+                    typeClass={compact ? COMPACT_BODY_CLASS : BODY_CLASS}
+                  />
+                </div>
+                {view.label ? (
+                  <span
+                    aria-label="Agent status"
+                    className={cn(
+                      "shrink-0 text-[11px] font-medium",
+                      AGENT_LABEL[view.tone],
+                    )}
+                  >
+                    {view.label}
+                  </span>
+                ) : null}
               </div>
+              {view.title ? (
+                view.href ? (
+                  <UrlLink
+                    href={view.href}
+                    title={view.title}
+                    className="mt-0.5 inline-flex max-w-full items-center gap-0.5 text-[11px] text-muted-foreground no-underline hover:text-foreground hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  >
+                    <span className="min-w-0 truncate">{view.title}</span>
+                    <Icon
+                      name="ChevronRight"
+                      aria-hidden
+                      className="size-3 shrink-0"
+                    />
+                  </UrlLink>
+                ) : (
+                  <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                    {view.title}
+                  </span>
+                )
+              ) : null}
             </div>
           </li>
         );
@@ -1223,7 +1347,7 @@ export function RecapCardPreview({
   className?: string;
   hashColors?: HashColorPrefs;
   /** Stand-ins for the recap's awaited agent threads. */
-  agents?: Readonly<Record<string, PreviewAgent>> | null;
+  agents?: Readonly<Record<string, AgentView>> | null;
 }) {
   return (
     <PreviewAgents.Provider value={agents}>

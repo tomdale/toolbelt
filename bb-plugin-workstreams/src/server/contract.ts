@@ -477,6 +477,29 @@ export const rpcContract = defineRpcContract({
     input: z.object({ threadId: z.string().min(1), recapId: z.string() }),
     output: z.object({ ok: z.literal(true) }),
   },
+  /**
+   * Live state of the agent threads a waiting recap names. Agent threads are
+   * usually hidden, so the sidebar's thread list does not carry them.
+   * Unreadable threads are left out.
+   */
+  recap_agents: {
+    input: z.object({
+      threadIds: z.array(z.string().min(1)).max(20),
+    }),
+    output: z.object({
+      agents: z.array(
+        z.object({
+          threadId: z.string(),
+          projectId: z.string(),
+          title: z.string(),
+          status: z.string(),
+          runtimeStatus: z.string(),
+          hasPendingInteraction: z.boolean(),
+          isArchived: z.boolean(),
+        }),
+      ),
+    }),
+  },
   /** Cancels the current waiting recap's scheduled status check. */
   recap_cancel_waiting: {
     input: z.object({ threadId: z.string().min(1), recapId: z.string() }),
