@@ -513,6 +513,7 @@
     width 200ms ease,
     opacity 200ms ease;
 }
+.ws-goal-overlay--animated .ws-sticky-goal__workstream,
 .ws-goal-overlay--animated .ws-sticky-goal__title,
 .ws-goal-overlay--animated .ws-sticky-goal__subtitle {
   transition:
@@ -524,6 +525,7 @@
   .ws-sticky-goal-root--animated::after,
   .ws-sticky-goal-root--animated .ws-sticky-goal,
   .ws-goal-overlay--animated .ws-goal-overlay__group,
+  .ws-goal-overlay--animated .ws-sticky-goal__workstream,
   .ws-goal-overlay--animated .ws-sticky-goal__title,
   .ws-goal-overlay--animated .ws-sticky-goal__subtitle {
     transition: none;
@@ -538,6 +540,7 @@
   position: absolute;
   top: 0;
   left: 0;
+  transform-origin: 0 0;
   display: flex;
   max-width: 100%;
   align-items: center;
