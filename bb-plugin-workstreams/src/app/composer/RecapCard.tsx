@@ -987,6 +987,10 @@ function nextActionTitle(action: NextAction): string {
   return typeof action === "string" ? action : action.title;
 }
 
+/** Footer buttons (suggested actions and Archive) share one size and style. */
+const FOOTER_BUTTON =
+  "h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground";
+
 const NEXT_ACTION_ACCENT: Record<Recap["state"], string> = {
   waiting: "text-violet-700 dark:text-violet-300",
   review: "text-sky-700 dark:text-sky-300",
@@ -1016,7 +1020,7 @@ function NextActionItem({
       type="button"
       variant="outline"
       size="sm"
-      className="h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground"
+      className={FOOTER_BUTTON}
       disabled={disabled || (!onSend && !onCompose)}
       onClick={(event) => {
         if (event.shiftKey) onCompose?.(message);
@@ -1332,7 +1336,7 @@ function CardBody({
             <Button
               variant="outline"
               size="sm"
-              className="ml-auto bg-background/60"
+              className={cn(FOOTER_BUTTON, "ml-auto gap-1.5")}
               disabled={archiveBusy}
               onClick={onArchive}
             >
