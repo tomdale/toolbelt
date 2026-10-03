@@ -41,8 +41,8 @@ const IDLE = "__idle__";
 
 /**
  * BB's option-trigger classes, so a chip lines up with the pickers beside it
- * in BB's row. Unlike BB's own chips, ours may shrink (the label ellipsizes),
- * so nothing it holds can paint over a sibling.
+ * in BB's row. It is not `shrink-0` as BB's project chip is: when the row is
+ * short the label ellipsizes, so nothing in the chip paints over a sibling.
  */
 export const CHIP_CLASS =
   "h-8 w-fit max-w-full min-w-0 items-center justify-start gap-1 px-1 text-xs leading-tight border-none bg-transparent shadow-none text-muted-foreground hover:text-muted-foreground";

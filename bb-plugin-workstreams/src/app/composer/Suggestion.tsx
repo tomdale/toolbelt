@@ -17,9 +17,11 @@
  *
  * On a touch screen the keys do nothing, so `route-picker.css` hides the key
  * hints and the separate Apply button: tapping the sentence applies, and the
- * Start (or Send) button applies and starts. The classes that style hooks
- * (`ws-suggestion-apply`, `ws-suggestion-go`, `ws-suggestion-kbd`) are part of
- * that contract.
+ * Start (or Send) button applies and starts. The buttons sit in one actions
+ * group (laid out as if it weren't there on a keyboard screen) so that, where
+ * a phone is too narrow to hold them beside the sentence, they wrap beneath it
+ * together. The classes the stylesheet hooks (`ws-suggestion-actions`,
+ * `-apply`, `-go`, `-kbd`) are part of that contract.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useSdk } from "@get-bb/plugin-sdk/app";
@@ -238,45 +240,47 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
               ))}
             </span>
           </button>
-          {applies ? (
+          <div className="ws-suggestion-actions">
+            {applies ? (
+              <button
+                type="button"
+                className="ws-suggestion-key ws-suggestion-apply"
+                aria-label="Apply to the composer"
+                aria-keyshortcuts="Tab"
+                title="Fill the pickers without starting (Tab)"
+                disabled={state.accepting}
+                onClick={() => void newWork.accept({ submit: false })}
+              >
+                <kbd className="ws-suggestion-kbd">Tab</kbd>
+                Apply
+              </button>
+            ) : null}
             <button
               type="button"
-              className="ws-suggestion-key ws-suggestion-apply"
-              aria-label="Apply to the composer"
-              aria-keyshortcuts="Tab"
-              title="Fill the pickers without starting (Tab)"
+              className="ws-suggestion-key ws-suggestion-go"
+              aria-label={
+                applies
+                  ? "Apply and start the thread"
+                  : `Send to ${described.target}`
+              }
+              aria-keyshortcuts={mac ? "Meta+Enter" : "Control+Enter"}
+              title={`${applies ? "Apply and start" : "Send there"} (${submitKey})`}
               disabled={state.accepting}
-              onClick={() => void newWork.accept({ submit: false })}
+              onClick={() => void newWork.accept({ submit: true })}
             >
-              <kbd className="ws-suggestion-kbd">Tab</kbd>
-              Apply
+              <kbd className="ws-suggestion-kbd">{submitKey}</kbd>
+              {submitLabel}
             </button>
-          ) : null}
-          <button
-            type="button"
-            className="ws-suggestion-key ws-suggestion-go"
-            aria-label={
-              applies
-                ? "Apply and start the thread"
-                : `Send to ${described.target}`
-            }
-            aria-keyshortcuts={mac ? "Meta+Enter" : "Control+Enter"}
-            title={`${applies ? "Apply and start" : "Send there"} (${submitKey})`}
-            disabled={state.accepting}
-            onClick={() => void newWork.accept({ submit: true })}
-          >
-            <kbd className="ws-suggestion-kbd">{submitKey}</kbd>
-            {submitLabel}
-          </button>
-          <button
-            type="button"
-            className="ws-suggestion-dismiss"
-            aria-label="Dismiss suggestion"
-            title="Dismiss suggestion"
-            onClick={() => newWork.dismiss()}
-          >
-            <Icon name="X" className="size-3.5" aria-hidden />
-          </button>
+            <button
+              type="button"
+              className="ws-suggestion-dismiss"
+              aria-label="Dismiss suggestion"
+              title="Dismiss suggestion"
+              onClick={() => newWork.dismiss()}
+            >
+              <Icon name="X" className="size-3.5" aria-hidden />
+            </button>
+          </div>
         </div>
       ) : null}
       {state.error ? (
