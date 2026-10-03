@@ -463,9 +463,11 @@
   /* The heading is decoration over the timeline, never a hit target. */
   pointer-events: none;
 }
+.ws-sticky-goal-root::before,
 .ws-sticky-goal-root::after {
   position: absolute;
-  inset: 0 0 auto;
+  right: 0;
+  left: 0;
   /* Matches BB's native overflow fade: 1.5rem, background to transparent. */
   height: 1.5rem;
   background: linear-gradient(
@@ -474,13 +476,20 @@
     transparent
   );
   content: "";
-  opacity: var(--ws-sticky-fade, 0);
-  transform: translateY(var(--ws-fade-y, 0px));
 }
+/* Under the title bar, once the heading has gone. */
+.ws-sticky-goal-root::before {
+  top: 0;
+  opacity: var(--ws-fade-below-bar, 0);
+}
+/* Under the expanded plate. */
+.ws-sticky-goal-root::after {
+  top: var(--ws-plate-height, 0px);
+  opacity: var(--ws-fade-below-plate, 0);
+}
+.ws-sticky-goal-root--animated::before,
 .ws-sticky-goal-root--animated::after {
-  transition:
-    opacity 150ms ease,
-    transform 200ms ease;
+  transition: opacity 150ms ease;
 }
 .ws-sticky-goal {
   position: absolute;
@@ -522,6 +531,7 @@
     opacity 200ms ease;
 }
 @media (prefers-reduced-motion: reduce) {
+  .ws-sticky-goal-root--animated::before,
   .ws-sticky-goal-root--animated::after,
   .ws-sticky-goal-root--animated .ws-sticky-goal,
   .ws-goal-overlay--animated .ws-goal-overlay__group,
@@ -539,7 +549,9 @@
 .ws-sticky-goal__workstream {
   position: absolute;
   top: 0;
-  left: 0;
+  /* The wave icon is inset in its box; nudge so its stroke lines up with the
+     title's left edge. */
+  left: -2px;
   transform-origin: 0 0;
   display: flex;
   max-width: 100%;

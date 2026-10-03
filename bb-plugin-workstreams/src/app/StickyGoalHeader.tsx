@@ -31,7 +31,7 @@ const TITLE_BAR_TITLE_SIZE = 0.95;
 /** The workstream line is scaled down in the title bar. */
 const TITLE_BAR_EYEBROW_SCALE = 0.82;
 /** Its height there, in px, including the small gap before the title. */
-const TITLE_BAR_EYEBROW_BLOCK = 13;
+const TITLE_BAR_EYEBROW_BLOCK = 10;
 /** Smallest title-bar gap worth drawing the heading into. */
 const MIN_TITLE_BAR_WIDTH = 140;
 const TITLE_BAR_GAP = 16;
@@ -363,11 +363,17 @@ export function StickyGoalHeader(): React.ReactElement | null {
       ? "ws-sticky-goal-root ws-sticky-goal-root--animated"
       : "ws-sticky-goal-root";
     mount.root.dataset.collapsed = String(collapsed);
-    mount.root.style.setProperty("--ws-sticky-fade", fade ? "1" : "0");
-    // Expanded, the fade hangs below the plate; collapsed, it sits at the top.
+    // Two feathered fades, each in place and each fading on its own: one
+    // hangs below the expanded plate, the other sits under the title bar once
+    // the heading has left. Neither moves with the heading.
+    mount.root.style.setProperty("--ws-plate-height", `${height}px`);
     mount.root.style.setProperty(
-      "--ws-fade-y",
-      collapsed ? "0px" : `${height}px`,
+      "--ws-fade-below-plate",
+      fade && !collapsed ? "1" : "0",
+    );
+    mount.root.style.setProperty(
+      "--ws-fade-below-bar",
+      fade && collapsed ? "1" : "0",
     );
     // The reserved gap follows the heading height, which changes only when the
     // thread gains or loses a workstream line.
@@ -375,8 +381,9 @@ export function StickyGoalHeader(): React.ReactElement | null {
     mount.scroller.style.scrollPaddingTop = collapsed ? "0px" : `${height}px`;
     return () => {
       mount.root.className = "";
-      mount.root.style.removeProperty("--ws-sticky-fade");
-      mount.root.style.removeProperty("--ws-fade-y");
+      mount.root.style.removeProperty("--ws-plate-height");
+      mount.root.style.removeProperty("--ws-fade-below-plate");
+      mount.root.style.removeProperty("--ws-fade-below-bar");
       delete mount.root.dataset.collapsed;
     };
   }, [mount, collapsed, fade, height, settled]);
