@@ -1,6 +1,6 @@
 import { useBbContext } from "@get-bb/plugin-sdk/app";
 import { createPortal } from "react-dom";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useGoalContext } from "./goalContext.ts";
 import { WorkstreamIcon } from "./WorkstreamIcon.tsx";
 
@@ -36,16 +36,38 @@ const TITLE_BAR_EYEBROW_BLOCK = 10;
 const MIN_TITLE_BAR_WIDTH = 140;
 const TITLE_BAR_GAP = 16;
 
+/** Padding above and below the heading when it stays pinned in the timeline. */
+const PINNED_PAD = 0.3;
+/** Below this scroller width the title may wrap to a second line. */
+const NARROW_PX = 560;
+
 /** Heading height in px for a body font size. */
-function headingHeight(base: number, hasEyebrow: boolean): number {
+function headingHeight(
+  base: number,
+  hasEyebrow: boolean,
+  titleLines: number,
+): number {
   return Math.round(
     base *
       (PAD_TOP +
         (hasEyebrow ? EYEBROW_BLOCK : 0) +
-        TITLE_SIZE * TITLE_LINE +
+        TITLE_SIZE * TITLE_LINE * titleLines +
         SUBTITLE_SIZE * SUBTITLE_LINE +
         PAD_BOTTOM),
   );
+}
+
+/** The collapsed text block (workstream over goal) in px. */
+function compactBlock(base: number, hasEyebrow: boolean): number {
+  return (
+    (hasEyebrow ? TITLE_BAR_EYEBROW_BLOCK : 0) +
+    base * TITLE_BAR_TITLE_SIZE * TITLE_LINE
+  );
+}
+
+/** Plate height when the collapsed heading stays pinned in the timeline. */
+function pinnedHeight(base: number, hasEyebrow: boolean): number {
+  return Math.round(compactBlock(base, hasEyebrow) + base * PINNED_PAD * 2);
 }
 
 type Mount = {
@@ -120,7 +142,7 @@ function useMessageScroller(threadId: string | null): Mount | null {
       // expanding never reflow the messages (which would shift scroll
       // position mid-animation).
       const columnPadTop = Number.parseFloat(columnStyle.paddingTop) || 0;
-      const initialHeight = headingHeight(baseFontSize, true);
+      const initialHeight = headingHeight(baseFontSize, true, 1);
       root.style.marginTop = `${-columnPadTop}px`;
       root.style.marginBottom = `${initialHeight}px`;
       const overlay = document.createElement("div");
@@ -215,6 +237,8 @@ function useScrollState(scroller: HTMLElement | null): {
 type Placement = {
   /** In the timeline, at the scroller's top edge. */
   pane: { x: number; y: number; width: number };
+  /** The timeline is phone-width: the title may wrap and the bar is cramped. */
+  narrow: boolean;
   /** In the title bar, after the thread title; null when there is no room. */
   bar: { x: number; centerY: number; width: number } | null;
 };
@@ -222,11 +246,28 @@ type Placement = {
 function measurePlacement(mount: Mount, base: number): Placement {
   const scrollerRect = mount.scroller.getBoundingClientRect();
   const columnRect = mount.column.getBoundingClientRect();
-  // Message text sits a further 1rem inside the column's padding.
+  // Line the heading up with the message text. BB insets that text from the
+  // column by a width that varies with the viewport, so read it from a rendered
+  // prose message (they alone carry the inset); fall back to the desktop inset.
+  let textLeft = columnRect.left + 32;
+  let textRight = columnRect.right - 32;
+  for (const message of mount.scroller.querySelectorAll<HTMLElement>(
+    "[data-message-column]",
+  )) {
+    const rect = message.getBoundingClientRect();
+    const style = getComputedStyle(message);
+    const padLeft = Number.parseFloat(style.paddingLeft) || 0;
+    const padRight = Number.parseFloat(style.paddingRight) || 0;
+    if (rect.width > 0 && padLeft > 0) {
+      textLeft = rect.left + padLeft;
+      textRight = rect.right - padRight;
+      break;
+    }
+  }
   const pane = {
-    x: columnRect.left + 32,
+    x: textLeft,
     y: scrollerRect.top + base * PAD_TOP,
-    width: Math.max(0, columnRect.width - 64),
+    width: Math.max(0, textRight - textLeft),
   };
 
   // The title bar is the header above the thread window in the same pane. Its
@@ -259,7 +300,7 @@ function measurePlacement(mount: Mount, base: number): Placement {
       }
     }
   }
-  return { pane, bar };
+  return { pane, bar, narrow: scrollerRect.width < NARROW_PX };
 }
 
 const samePlacement = (a: Placement | null, b: Placement): boolean =>
@@ -267,6 +308,7 @@ const samePlacement = (a: Placement | null, b: Placement): boolean =>
   Math.abs(a.pane.x - b.pane.x) < 0.5 &&
   Math.abs(a.pane.y - b.pane.y) < 0.5 &&
   Math.abs(a.pane.width - b.pane.width) < 0.5 &&
+  a.narrow === b.narrow &&
   (a.bar === null) === (b.bar === null) &&
   (a.bar === null ||
     b.bar === null ||
@@ -356,7 +398,30 @@ export function StickyGoalHeader(): React.ReactElement | null {
   const placement = usePlacement(mount, base);
 
   const hasEyebrow = !!context?.workstream;
-  const height = headingHeight(base, hasEyebrow);
+  // On a phone the title may take two lines; it is measured, once placed.
+  const measureRef = useRef<HTMLHeadingElement>(null);
+  const [wrappedLines, setWrappedLines] = useState(1);
+  const goal = context?.goal;
+  const paneWidth = placement?.pane.width ?? 0;
+  const narrow = placement?.narrow ?? false;
+  useLayoutEffect(() => {
+    const probe = measureRef.current;
+    if (!narrow || !probe) {
+      setWrappedLines(1);
+      return;
+    }
+    const line = base * TITLE_SIZE * TITLE_LINE;
+    setWrappedLines(
+      Math.min(2, Math.max(1, Math.round(probe.scrollHeight / line))),
+    );
+  }, [narrow, goal, paneWidth, base, hasEyebrow]);
+  const titleLines = narrow ? wrappedLines : 1;
+  const height = headingHeight(base, hasEyebrow, titleLines);
+  // Collapsed, the heading goes to the title bar when it has room there, and
+  // otherwise stays pinned at the top of the timeline in its compact form.
+  const pinned = collapsed && !!placement && placement.bar === null;
+  const platePinnedHeight = pinnedHeight(base, hasEyebrow);
+  const fadeAnchor = pinned ? platePinnedHeight : height;
   useLayoutEffect(() => {
     if (!mount) return;
     mount.root.className = settled
@@ -366,19 +431,23 @@ export function StickyGoalHeader(): React.ReactElement | null {
     // Two feathered fades, each in place and each fading on its own: one
     // hangs below the expanded plate, the other sits under the title bar once
     // the heading has left. Neither moves with the heading.
-    mount.root.style.setProperty("--ws-plate-height", `${height}px`);
+    mount.root.style.setProperty("--ws-plate-height", `${fadeAnchor}px`);
     mount.root.style.setProperty(
       "--ws-fade-below-plate",
-      fade && !collapsed ? "1" : "0",
+      fade && (!collapsed || pinned) ? "1" : "0",
     );
     mount.root.style.setProperty(
       "--ws-fade-below-bar",
-      fade && collapsed ? "1" : "0",
+      fade && collapsed && !pinned ? "1" : "0",
     );
     // The reserved gap follows the heading height, which changes only when the
     // thread gains or loses a workstream line.
     mount.root.style.marginBottom = `${height}px`;
-    mount.scroller.style.scrollPaddingTop = collapsed ? "0px" : `${height}px`;
+    mount.scroller.style.scrollPaddingTop = pinned
+      ? `${platePinnedHeight}px`
+      : collapsed
+        ? "0px"
+        : `${height}px`;
     return () => {
       mount.root.className = "";
       mount.root.style.removeProperty("--ws-plate-height");
@@ -386,7 +455,16 @@ export function StickyGoalHeader(): React.ReactElement | null {
       mount.root.style.removeProperty("--ws-fade-below-bar");
       delete mount.root.dataset.collapsed;
     };
-  }, [mount, collapsed, fade, height, settled]);
+  }, [
+    mount,
+    collapsed,
+    pinned,
+    fade,
+    height,
+    fadeAnchor,
+    platePinnedHeight,
+    settled,
+  ]);
 
   // The heading replaces BB's own thread title in the title bar, but only
   // while it is actually drawn: a thread without a goal keeps its title.
@@ -412,13 +490,14 @@ export function StickyGoalHeader(): React.ReactElement | null {
 
   if (!mount || !context || !placement) return null;
 
-  // With no room in the title bar the text simply fades where it is.
   const inBar = collapsed && placement.bar !== null;
+  // Both collapsed homes set the text in the same compact form.
+  const compact = inBar || pinned;
   const titleScale = (base * TITLE_BAR_TITLE_SIZE) / (base * TITLE_SIZE);
   const eyebrowBlock = hasEyebrow ? base * EYEBROW_BLOCK : 0;
   const barEyebrowBlock = hasEyebrow ? TITLE_BAR_EYEBROW_BLOCK : 0;
-  const barTitleHeight = base * TITLE_BAR_TITLE_SIZE * TITLE_LINE;
-  const barBlock = barEyebrowBlock + barTitleHeight;
+  const barBlock = compactBlock(base, hasEyebrow);
+  const paneTop = placement.pane.y - base * PAD_TOP;
   const spot =
     inBar && placement.bar
       ? {
@@ -426,9 +505,17 @@ export function StickyGoalHeader(): React.ReactElement | null {
           y: placement.bar.centerY - barBlock / 2,
           width: placement.bar.width,
         }
-      : placement.pane;
-  const titleOffset = inBar ? barEyebrowBlock : eyebrowBlock;
-  const titleWidth = inBar ? spot.width / titleScale : spot.width;
+      : pinned
+        ? {
+            x: placement.pane.x,
+            y: paneTop + base * PINNED_PAD,
+            width: placement.pane.width,
+          }
+        : placement.pane;
+  const titleOffset = compact ? barEyebrowBlock : eyebrowBlock;
+  const titleWidth = compact ? spot.width / titleScale : spot.width;
+  const wraps = narrow && !compact && titleLines > 1;
+  const titleBlock = base * TITLE_SIZE * TITLE_LINE * titleLines;
 
   // Only transforms and opacity move: the plate stays at the top of the
   // scroller and fades, while the text glides to the title bar.
@@ -438,7 +525,7 @@ export function StickyGoalHeader(): React.ReactElement | null {
       style={{
         transform: `translate(${spot.x}px, ${spot.y}px)`,
         width: spot.width,
-        opacity: collapsed && !inBar ? 0 : 1,
+        opacity: collapsed && !compact ? 0 : 1,
       }}
     >
       {context.workstream && (
@@ -447,10 +534,10 @@ export function StickyGoalHeader(): React.ReactElement | null {
           style={
             {
               fontSize: base * EYEBROW_SIZE,
-              maxWidth: inBar
+              maxWidth: compact
                 ? spot.width / TITLE_BAR_EYEBROW_SCALE
                 : undefined,
-              transform: `scale(${inBar ? TITLE_BAR_EYEBROW_SCALE : 1})`,
+              transform: `scale(${compact ? TITLE_BAR_EYEBROW_SCALE : 1})`,
               "--ws-hue": context.workstream.hue,
             } as React.CSSProperties
           }
@@ -464,17 +551,36 @@ export function StickyGoalHeader(): React.ReactElement | null {
         style={{
           fontSize: base * TITLE_SIZE,
           width: titleWidth,
-          transform: `translateY(${titleOffset}px) scale(${inBar ? titleScale : 1})`,
+          transform: `translateY(${titleOffset}px) scale(${compact ? titleScale : 1})`,
+          ...(wraps
+            ? {
+                display: "-webkit-box",
+                whiteSpace: "normal",
+                WebkitBoxOrient: "vertical",
+                WebkitLineClamp: 2,
+              }
+            : null),
         }}
       >
         {context.goal}
       </h2>
+      {/* Measures how many lines the goal needs at the timeline's width. */}
+      {narrow && (
+        <h2
+          ref={measureRef}
+          aria-hidden
+          className="ws-sticky-goal__title ws-sticky-goal__probe"
+          style={{ fontSize: base * TITLE_SIZE, width: placement.pane.width }}
+        >
+          {context.goal}
+        </h2>
+      )}
       {context.subtask && (
         <div
           className="ws-sticky-goal__subtitle"
           style={{
             fontSize: base * SUBTITLE_SIZE,
-            transform: `translateY(${eyebrowBlock + base * TITLE_SIZE * TITLE_LINE}px)`,
+            transform: `translateY(${eyebrowBlock + titleBlock}px)`,
             opacity: collapsed ? 0 : 1,
           }}
         >
@@ -489,9 +595,14 @@ export function StickyGoalHeader(): React.ReactElement | null {
       {createPortal(
         <div
           className="ws-sticky-goal"
-          style={{ height, opacity: collapsed ? 0 : 1 }}
+          style={{ height, opacity: inBar ? 0 : 1 }}
         >
-          <div className="ws-sticky-goal__plate" />
+          <div
+            className="ws-sticky-goal__plate"
+            style={{
+              transform: `translateY(${pinned ? platePinnedHeight - height : 0}px)`,
+            }}
+          />
         </div>,
         mount.root,
       )}
