@@ -446,12 +446,14 @@
 
 /* Sticky thread goal, set in the same type as the timeline text. Two parts:
    a zero-height sticky anchor at the top of the message column
-   (.ws-sticky-goal-root) carries the plate, and a fixed layer above the app
-   (.ws-goal-overlay) draws the text. Scrolled away from the newest message
-   the plate fades and the text glides up over the title bar; only transforms
-   and opacity change, so nothing reflows. Once the timeline has scrolled
-   away from its top, a feathered fade lets messages dissolve beneath the
-   plate (expanded) or the title bar (collapsed). */
+   (.ws-sticky-goal-root) carries the plate, and a zero-size layer in BB's
+   sliding app surface (.ws-goal-overlay) draws the text over the pane, so
+   the text travels with the pane when a phone's sidebar or right panel
+   slides it aside. Scrolled away from the newest message the plate fades and
+   the text glides up over the title bar; only transforms and opacity change,
+   so nothing reflows. Once the timeline has scrolled away from its top, a
+   feathered fade lets messages dissolve beneath the plate (expanded) or the
+   title bar (collapsed). */
 .ws-sticky-goal-root {
   position: sticky;
   top: 0;
@@ -509,9 +511,12 @@
   background: var(--background);
 }
 .ws-goal-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0 auto auto 0;
-  z-index: 30;
+  /* Only an origin: the heading's coordinates are measured from it. */
+  width: 0;
+  height: 0;
+  z-index: 40;
   pointer-events: none;
 }
 .ws-goal-overlay__group {

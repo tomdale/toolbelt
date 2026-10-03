@@ -1,10 +1,30 @@
 import { useBbContext } from "@get-bb/plugin-sdk/app";
 import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useMediaQuery } from "@/components/ui/hooks/use-media-query";
 import { useGoalContext } from "./goalContext.ts";
+import {
+  PAD_TOP,
+  PHONE_QUERY,
+  PINNED_PAD,
+  SUBTITLE_SIZE,
+  TITLE_BAR_TITLE_SIZE,
+  TITLE_LINE,
+  TITLE_SIZE,
+  compactBlock,
+  eyebrowMetrics,
+  headingHeight,
+  pinnedHeight,
+} from "./goalHeading.ts";
 import { WorkstreamIcon } from "./WorkstreamIcon.tsx";
 
 const SCROLLER = "[data-thread-window] .thread-scrollbar";
+/**
+ * BB's sliding app surface. On a phone it translates aside to reveal the
+ * sidebar and the right panel, so whatever is drawn over the thread has to
+ * live inside it to travel with the pane.
+ */
+const INSET = '[data-sidebar="inset"]';
 
 // The heading is laid out in the same column as the messages so it shares
 // their left edge and type. BB's scroller wraps that column in one extra div.
@@ -13,31 +33,10 @@ function messageColumn(scroller: HTMLElement): HTMLElement | null {
   return column instanceof HTMLElement ? column : null;
 }
 
-// Type sizes as multiples of the timeline's body font size. Expanded, the
-// heading is the most prominent text on the page: the workstream, a large
-// title, and the current subtask. Scrolled away from the newest message it
-// scoots up over the title bar as a two-line workstream and goal.
-const TITLE_SIZE = 1.5;
-const SUBTITLE_SIZE = 0.92;
-const TITLE_LINE = 4 / 3;
-const SUBTITLE_LINE = 1.4;
-const PAD_TOP = 0.85;
-const PAD_BOTTOM = 0.65;
-const EYEBROW_SIZE = 0.8;
-/** Workstream line plus the gap before the title, when there is a workstream. */
-const EYEBROW_BLOCK = 1.25;
-/** In the title bar the title is set at this multiple of body size. */
-const TITLE_BAR_TITLE_SIZE = 0.95;
-/** The workstream line is scaled down in the title bar. */
-const TITLE_BAR_EYEBROW_SCALE = 0.82;
-/** Its height there, in px, including the small gap before the title. */
-const TITLE_BAR_EYEBROW_BLOCK = 10;
 /** Smallest title-bar gap worth drawing the heading into. */
 const MIN_TITLE_BAR_WIDTH = 140;
 const TITLE_BAR_GAP = 16;
 
-/** Padding above and below the heading when it stays pinned in the timeline. */
-const PINNED_PAD = 0.3;
 /** Below this scroller width the title may wrap to a second line. */
 const NARROW_PX = 560;
 /**
@@ -45,35 +44,6 @@ const NARROW_PX = 560;
  * expanded heading would take too much of the timeline, so it stays compact.
  */
 const SHORT_PX = 400;
-
-/** Heading height in px for a body font size. */
-function headingHeight(
-  base: number,
-  hasEyebrow: boolean,
-  titleLines: number,
-): number {
-  return Math.round(
-    base *
-      (PAD_TOP +
-        (hasEyebrow ? EYEBROW_BLOCK : 0) +
-        TITLE_SIZE * TITLE_LINE * titleLines +
-        SUBTITLE_SIZE * SUBTITLE_LINE +
-        PAD_BOTTOM),
-  );
-}
-
-/** The collapsed text block (workstream over goal) in px. */
-function compactBlock(base: number, hasEyebrow: boolean): number {
-  return (
-    (hasEyebrow ? TITLE_BAR_EYEBROW_BLOCK : 0) +
-    base * TITLE_BAR_TITLE_SIZE * TITLE_LINE
-  );
-}
-
-/** Plate height when the collapsed heading stays pinned in the timeline. */
-function pinnedHeight(base: number, hasEyebrow: boolean): number {
-  return Math.round(compactBlock(base, hasEyebrow) + base * PINNED_PAD * 2);
-}
 
 type Mount = {
   scroller: HTMLElement;
@@ -83,7 +53,7 @@ type Mount = {
   baseFontSize: number;
   /** Zero-height sticky anchor at the top of the column. */
   root: HTMLElement;
-  /** Fixed layer over the whole app that draws the heading text. */
+  /** Zero-size layer over the thread pane that draws the heading text. */
   overlay: HTMLElement;
   threadId: string;
   previousScrollPaddingTop: string;
@@ -152,7 +122,11 @@ function useMessageScroller(threadId: string | null): Mount | null {
       root.style.marginBottom = `${initialHeight}px`;
       const overlay = document.createElement("div");
       overlay.dataset.workstreamsGoalOverlay = "";
-      document.body.append(overlay);
+      // Inside the sliding surface rather than the body, so the heading moves
+      // with the pane. BB translates that surface to open the mobile sidebar
+      // and right panel, frame by frame while a swipe is in progress, with no
+      // resize or scroll event a fixed layer could follow.
+      (scroller.closest<HTMLElement>(INSET) ?? document.body).append(overlay);
       const previousScrollPaddingTop =
         scroller.style.getPropertyValue("scroll-padding-top");
       const previousScrollPaddingPriority =
@@ -238,7 +212,10 @@ function useScrollState(scroller: HTMLElement | null): {
   return state;
 }
 
-/** Where the heading text sits in each of its two places, in viewport px. */
+/**
+ * Where the heading text sits in each of its two places, in px from the
+ * overlay's origin.
+ */
 type Placement = {
   /** In the timeline, at the scroller's top edge. */
   pane: { x: number; y: number; width: number };
@@ -251,6 +228,10 @@ type Placement = {
 };
 
 function measurePlacement(mount: Mount, base: number): Placement {
+  // Everything is relative to the overlay's own origin. The overlay sits in
+  // the same sliding surface as the pane, so these coordinates do not change
+  // while the surface moves.
+  const origin = mount.overlay.getBoundingClientRect();
   const scrollerRect = mount.scroller.getBoundingClientRect();
   const columnRect = mount.column.getBoundingClientRect();
   // Line the heading up with the message text. BB insets that text from the
@@ -272,8 +253,8 @@ function measurePlacement(mount: Mount, base: number): Placement {
     }
   }
   const pane = {
-    x: textLeft,
-    y: scrollerRect.top + base * PAD_TOP,
+    x: textLeft - origin.left,
+    y: scrollerRect.top + base * PAD_TOP - origin.top,
     width: Math.max(0, textRight - textLeft),
   };
 
@@ -300,8 +281,8 @@ function measurePlacement(mount: Mount, base: number): Placement {
       const width = actions.getBoundingClientRect().left - TITLE_BAR_GAP - x;
       if (width >= MIN_TITLE_BAR_WIDTH) {
         bar = {
-          x,
-          centerY: (headerRect.top + headerRect.bottom) / 2,
+          x: x - origin.left,
+          centerY: (headerRect.top + headerRect.bottom) / 2 - origin.top,
           width,
         };
       }
@@ -412,6 +393,8 @@ export function StickyGoalHeader(): React.ReactElement | null {
   const collapsed = (settled && scrolledAway) || (placement?.short ?? false);
 
   const hasEyebrow = !!context?.workstream;
+  const phone = useMediaQuery(PHONE_QUERY);
+  const eyebrow = hasEyebrow ? eyebrowMetrics(base, phone) : null;
   // On a phone the title may take two lines; it is measured, once placed.
   const measureRef = useRef<HTMLHeadingElement>(null);
   const [wrappedLines, setWrappedLines] = useState(1);
@@ -434,7 +417,7 @@ export function StickyGoalHeader(): React.ReactElement | null {
   // Collapsed, the heading goes to the title bar when it has room there, and
   // otherwise stays pinned at the top of the timeline in its compact form.
   const pinned = collapsed && !!placement && placement.bar === null;
-  const platePinnedHeight = pinnedHeight(base, hasEyebrow);
+  const platePinnedHeight = pinnedHeight(base, eyebrow);
   const fadeAnchor = pinned ? platePinnedHeight : height;
   useLayoutEffect(() => {
     if (!mount) return;
@@ -508,9 +491,9 @@ export function StickyGoalHeader(): React.ReactElement | null {
   // Both collapsed homes set the text in the same compact form.
   const compact = inBar || pinned;
   const titleScale = (base * TITLE_BAR_TITLE_SIZE) / (base * TITLE_SIZE);
-  const eyebrowBlock = hasEyebrow ? base * EYEBROW_BLOCK : 0;
-  const barEyebrowBlock = hasEyebrow ? TITLE_BAR_EYEBROW_BLOCK : 0;
-  const barBlock = compactBlock(base, hasEyebrow);
+  const eyebrowBlock = eyebrow ? eyebrow.expandedBlock : 0;
+  const barEyebrowBlock = eyebrow ? eyebrow.compactBlock : 0;
+  const barBlock = compactBlock(base, eyebrow);
   const paneTop = placement.pane.y - base * PAD_TOP;
   const spot =
     inBar && placement.bar
@@ -542,16 +525,14 @@ export function StickyGoalHeader(): React.ReactElement | null {
         opacity: collapsed && !compact ? 0 : 1,
       }}
     >
-      {context.workstream && (
+      {context.workstream && eyebrow && (
         <div
           className="ws-sticky-goal__workstream"
           style={
             {
-              fontSize: base * EYEBROW_SIZE,
-              maxWidth: compact
-                ? spot.width / TITLE_BAR_EYEBROW_SCALE
-                : undefined,
-              transform: `scale(${compact ? TITLE_BAR_EYEBROW_SCALE : 1})`,
+              fontSize: eyebrow.size,
+              maxWidth: compact ? spot.width / eyebrow.compactScale : undefined,
+              transform: `scale(${compact ? eyebrow.compactScale : 1})`,
               "--ws-hue": context.workstream.hue,
             } as React.CSSProperties
           }
