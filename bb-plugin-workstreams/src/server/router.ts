@@ -155,12 +155,13 @@ export class Router {
   assignSubject(threadId: string, id: string): void {
     const tentative = this.tentativeSubjects.has(id);
     const committed = this.commitSubject(id);
+    const isAutomatic = tentative || this.automaticSubjects.has(id);
     this.deps.corpus?.assign(
       threadId,
       committed,
-      tentative || this.automaticSubjects.has(id)
-        ? "composer-classification"
-        : undefined,
+      isAutomatic
+        ? { provenance: "automatic", evidence: "composer-classification" }
+        : { provenance: "manual" },
     );
   }
   private readonly decisions = new Map<
@@ -1292,11 +1293,10 @@ export class Router {
     if (!entry || entry.used) return;
     if (decision.subjectId) {
       decision.subjectId = this.commitSubject(decision.subjectId);
-      this.deps.corpus?.assign(
-        threadId,
-        decision.subjectId,
-        "composer-classification",
-      );
+      this.deps.corpus?.assign(threadId, decision.subjectId, {
+        provenance: "automatic",
+        evidence: "composer-classification",
+      });
     }
     entry.used = true;
     if (

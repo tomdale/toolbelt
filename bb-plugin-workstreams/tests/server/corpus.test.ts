@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/server/db.ts";
 import { CorpusStore } from "../../src/server/corpus.ts";
+import { entityAncestors } from "../../src/domain/corpus.ts";
 
 const hosts: ReturnType<typeof createFakePluginHost>[] = [];
 const store = () => {
@@ -38,7 +39,10 @@ describe("CorpusStore", () => {
     const product = corpus.resolve("Lantern")!;
     const sidebar = corpus.resolve("Sidebar", product.id)!;
     expect(child.parentId).toBe(sidebar.id);
-    corpus.assign("t", child.id, "evidence");
+    corpus.assign("t", child.id, {
+      evidence: "evidence",
+      provenance: "automatic",
+    });
     corpus.syncGroups([
       {
         sectionId: "g",
@@ -384,5 +388,211 @@ describe("CorpusStore", () => {
 
     // Reparenting to root where "Alpha" already exists fails
     expect(() => corpus.reparent(c.id, root.id)).toThrow(/conflicts/);
+  });
+
+  it("syncGroups does not bump revision on no-op", () => {
+    const { corpus } = store();
+    const entity = corpus.create("Engineering", "Engineering work");
+    const records = [
+      {
+        sectionId: "sec-1",
+        name: "Engineering",
+        description: "Engineering work",
+        aliases: [],
+      },
+    ];
+
+    // First sync binds group and bumps revision
+    const rev1 = corpus.revision();
+    expect(corpus.syncGroups(records)).toBe(true);
+    const rev2 = corpus.revision();
+    expect(rev2).toBeGreaterThan(rev1);
+
+    // Repeated sync with identical bindings is a no-op
+    expect(corpus.syncGroups(records)).toBe(false);
+    expect(corpus.revision()).toBe(rev2);
+
+    // bindGroup with existing binding is a no-op
+    corpus.bindGroup("sec-1", entity.id);
+    expect(corpus.revision()).toBe(rev2);
+
+    // unbindGroup with nonexistent section is a no-op
+    corpus.unbindGroup("nonexistent-sec");
+    expect(corpus.revision()).toBe(rev2);
+  });
+
+  it("enforces strict creation vs discovery remember upsert", () => {
+    const { corpus } = store();
+    corpus.create("Alpha", "Initial alpha");
+
+    // Strict create rejects duplicate name in same scope
+    expect(() => corpus.create("Alpha", "Duplicate alpha")).toThrow(
+      /already exists/,
+    );
+
+    // Strict create rejects alias colliding with existing name
+    expect(() => corpus.create("Beta", "Beta", null, ["Alpha"])).toThrow(
+      /already resolves/,
+    );
+
+    // Discovery remember upserts description and aliases
+    const updated = corpus.remember("Alpha", "Updated alpha", null, ["A1"]);
+    expect(updated.description).toBe("Updated alpha");
+    expect(updated.aliases).toContain("A1");
+  });
+
+  it("atomic updateMetadata validates collisions, supports no-op, and updates revision", () => {
+    const { corpus } = store();
+    const e1 = corpus.create("Billing", "Billing engine", null, ["Invoice"]);
+    const e2 = corpus.create("Payments", "Payments engine");
+
+    const revBefore = corpus.revision();
+
+    // No-op update does not bump revision
+    const same = corpus.updateMetadata(e1.id, {
+      description: "Billing engine",
+      aliases: ["Invoice"],
+    });
+    expect(same.description).toBe("Billing engine");
+    expect(corpus.revision()).toBe(revBefore);
+
+    // Collision with another entity in scope throws
+    expect(() =>
+      corpus.updateMetadata(e2.id, { aliases: ["Invoice"] }),
+    ).toThrow(/already resolves/);
+    expect(corpus.revision()).toBe(revBefore);
+
+    // Valid update updates metadata and bumps revision
+    const updated = corpus.updateMetadata(e1.id, {
+      description: "Next billing",
+      aliases: ["Invoicing", "Bills"],
+    });
+    expect(updated.description).toBe("Next billing");
+    expect(updated.aliases).toEqual(["Invoicing", "Bills"]);
+    expect(corpus.revision()).toBeGreaterThan(revBefore);
+  });
+
+  it("nested merge recursively merges matching children, reparents grandchildren, and preserves all references", () => {
+    const { corpus } = store();
+    // Structure:
+    // Target:
+    //   TargetRoot
+    //     Backend (targetBackend)
+    //       Database (targetDb)
+    //
+    // Source:
+    //   SourceRoot
+    //     Backend (sourceBackend)
+    //       Database (sourceDb)
+    //         Migrations (sourceMigrations) [grandchild with subject assignment]
+    //       Queue (sourceQueue) [child under Backend with no target counterpart]
+    const targetRoot = corpus.create("TargetRoot");
+    const targetBackend = corpus.create("Backend", "", targetRoot.id);
+    const targetDb = corpus.create("Database", "", targetBackend.id);
+
+    const sourceRoot = corpus.create("SourceRoot");
+    const sourceBackend = corpus.create("Backend", "", sourceRoot.id);
+    const sourceDb = corpus.create("Database", "", sourceBackend.id);
+    const sourceMigrations = corpus.create("Migrations", "", sourceDb.id);
+    const sourceQueue = corpus.create("Queue", "", sourceBackend.id);
+
+    corpus.assign("t-source-root", sourceRoot.id);
+    corpus.assign("t-source-backend", sourceBackend.id);
+    corpus.assign("t-source-db", sourceDb.id);
+    corpus.assign("t-migrations", sourceMigrations.id);
+    corpus.assign("t-queue", sourceQueue.id);
+
+    corpus.bindGroup("sec-backend", sourceBackend.id);
+    corpus.bindGroup("sec-migrations", sourceMigrations.id);
+
+    const result = corpus.merge(sourceRoot.id, targetRoot.id);
+
+    // SourceRoot is deleted
+    expect(corpus.getById(sourceRoot.id)).toBeNull();
+    // SourceBackend was merged into targetBackend and deleted
+    expect(corpus.getById(sourceBackend.id)).toBeNull();
+    // SourceDb was merged into targetDb and deleted
+    expect(corpus.getById(sourceDb.id)).toBeNull();
+
+    // SourceMigrations reparented under targetDb!
+    const reparentedMigrations = corpus.getById(sourceMigrations.id);
+    expect(reparentedMigrations?.parentId).toBe(targetDb.id);
+
+    // SourceQueue reparented under targetBackend!
+    const reparentedQueue = corpus.getById(sourceQueue.id);
+    expect(reparentedQueue?.parentId).toBe(targetBackend.id);
+
+    // Descendant entityAncestors works cleanly without crashes or missing identities
+    const entities = corpus.list();
+    const migrationAncestors = entityAncestors(sourceMigrations.id, entities);
+    expect(migrationAncestors).toEqual([
+      sourceMigrations.id,
+      targetDb.id,
+      targetBackend.id,
+      targetRoot.id,
+    ]);
+
+    // Assignments successfully migrated
+    expect(corpus.assignment("t-source-root").entityId).toBe(targetRoot.id);
+    expect(corpus.assignment("t-source-backend").entityId).toBe(
+      targetBackend.id,
+    );
+    expect(corpus.assignment("t-source-db").entityId).toBe(targetDb.id);
+    expect(corpus.assignment("t-migrations").entityId).toBe(
+      sourceMigrations.id,
+    );
+    expect(corpus.assignment("t-queue").entityId).toBe(sourceQueue.id);
+
+    // Group bindings migrated
+    expect(corpus.groups().get("sec-backend")).toBe(targetBackend.id);
+    expect(corpus.groups().get("sec-migrations")).toBe(sourceMigrations.id);
+  });
+
+  it("merge rolls back completely on alias collision with no partial updates", () => {
+    const { corpus } = store();
+    const parentA = corpus.create("ParentA");
+    const parentB = corpus.create("ParentB");
+
+    // Sibling of target has alias "ConflictAlias" in parentA scope
+    corpus.create("Sibling", "Sibling under A", parentA.id, ["ConflictAlias"]);
+    const target = corpus.create("Target", "Target entity", parentA.id);
+
+    // Source under parentB has alias "ConflictAlias" (valid in parentB scope)
+    const source = corpus.create("Source", "Source entity", parentB.id, [
+      "ConflictAlias",
+    ]);
+    const sourceChild = corpus.create("Child", "Source child", source.id);
+    corpus.assign("t-child", sourceChild.id);
+
+    const revBefore = corpus.revision();
+
+    // Merge must throw due to alias collision with Sibling in target's parent scope
+    expect(() => corpus.merge(source.id, target.id)).toThrow(/conflicts/);
+
+    // All entities still exist and are untouched (transaction rolled back)
+    expect(corpus.getById(source.id)).not.toBeNull();
+    expect(corpus.getById(sourceChild.id)?.parentId).toBe(source.id);
+    expect(corpus.assignment("t-child").entityId).toBe(sourceChild.id);
+    expect(corpus.revision()).toBe(revBefore);
+  });
+
+  it("mutation no-ops do not bump revision for identical assign and clear", () => {
+    const { corpus } = store();
+    const entity = corpus.create("Feature", "Feature desc");
+    const a1 = corpus.assign("t1", entity.id, { provenance: "manual" });
+    const rev1 = corpus.revision();
+
+    // Assigning identical entity, provenance, and evidence is a no-op
+    const a2 = corpus.assign("t1", entity.id, { provenance: "manual" });
+    expect(corpus.revision()).toBe(rev1);
+    expect(a2.entityId).toBe(entity.id);
+
+    // Clearing an unassigned thread is a no-op
+    corpus.clear("unassigned-thread");
+    expect(corpus.revision()).toBe(rev1);
+
+    // Clearing assigned thread bumps revision
+    corpus.clear("t1");
+    expect(corpus.revision()).toBeGreaterThan(rev1);
   });
 });

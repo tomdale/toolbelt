@@ -194,4 +194,127 @@ describe("Catalog and Task Identity RPC Contract", () => {
     )) as { assignment: CanonicalAssignment };
     expect(assignAfterMerge.assignment.entityId).toBe(beta.id);
   });
+
+  it("catalog and corpus reads are pure and do not increment catalog revision", async () => {
+    world = await fakeWorld({
+      complete: () => JSON.stringify({ recap: "r", state: "done" }),
+    });
+    const w = world;
+
+    await w.harness.behavior.callRpc("catalogCreate", {
+      name: "Infra",
+      description: "Infrastructure",
+    });
+
+    const initial = (await w.harness.behavior.callRpc(
+      "catalog",
+      null,
+    )) as CatalogState;
+    const initialRev = initial.revision;
+
+    for (let i = 0; i < 5; i++) {
+      const readCatalog = (await w.harness.behavior.callRpc(
+        "catalog",
+        null,
+      )) as CatalogState;
+      expect(readCatalog.revision).toBe(initialRev);
+
+      await w.harness.behavior.callRpc("corpus", null);
+    }
+  });
+
+  it("catalogUpdateMetadata updates metadata atomically and handles no-ops and collisions", async () => {
+    world = await fakeWorld({
+      complete: () => JSON.stringify({ recap: "r", state: "done" }),
+    });
+    const w = world;
+
+    const { entity: alpha } = (await w.harness.behavior.callRpc(
+      "catalogCreate",
+      {
+        name: "AlphaService",
+        description: "Initial description",
+        aliases: ["Alpha1"],
+      },
+    )) as { entity: { id: string } };
+
+    const { entity: beta } = (await w.harness.behavior.callRpc(
+      "catalogCreate",
+      {
+        name: "BetaService",
+        description: "Beta description",
+      },
+    )) as { entity: { id: string } };
+
+    // Update metadata on AlphaService
+    const updated = (await w.harness.behavior.callRpc("catalogUpdateMetadata", {
+      entityId: alpha.id,
+      description: "Updated description",
+      aliases: ["AlphaAlias"],
+    })) as { entity: { description: string; aliases: string[] } };
+
+    expect(updated.entity.description).toBe("Updated description");
+    expect(updated.entity.aliases).toEqual(["AlphaAlias"]);
+
+    // Colliding alias with existing entity name in parent scope fails
+    await expect(
+      w.harness.behavior.callRpc("catalogUpdateMetadata", {
+        entityId: beta.id,
+        aliases: ["AlphaService"],
+      }),
+    ).rejects.toThrow();
+
+    // No-op does not bump revision
+    const catBefore = (await w.harness.behavior.callRpc(
+      "catalog",
+      null,
+    )) as CatalogState;
+    await w.harness.behavior.callRpc("catalogUpdateMetadata", {
+      entityId: alpha.id,
+      description: "Updated description",
+      aliases: ["AlphaAlias"],
+    });
+    const catAfter = (await w.harness.behavior.callRpc(
+      "catalog",
+      null,
+    )) as CatalogState;
+    expect(catAfter.revision).toBe(catBefore.revision);
+  });
+
+  it("taskAssign and taskAssignment reconcile roots so child threads correctly inherit root assignment", async () => {
+    world = await fakeWorld({
+      complete: () => JSON.stringify({ recap: "r", state: "done" }),
+    });
+    const w = world;
+
+    const rootThread = w.addThread("t-root", { title: "Root Thread" });
+    const childThread = w.addThread("t-child", {
+      parentThreadId: rootThread.id,
+      title: "Child Thread",
+    });
+
+    const { entity: feature } = (await w.harness.behavior.callRpc(
+      "catalogCreate",
+      {
+        name: "FeatureX",
+        description: "Desc",
+      },
+    )) as { entity: { id: string } };
+
+    // Assigning on child thread reconciles and assigns to root
+    const assignRes = (await w.harness.behavior.callRpc("taskAssign", {
+      threadId: childThread.id,
+      entityId: feature.id,
+    })) as { assignment: CanonicalAssignment };
+
+    expect(assignRes.assignment.entityId).toBe(feature.id);
+    expect(assignRes.assignment.inheritedFrom).toBe(rootThread.id);
+
+    // Root thread itself is assigned
+    const rootAssign = (await w.harness.behavior.callRpc("taskAssignment", {
+      threadId: rootThread.id,
+    })) as { assignment: CanonicalAssignment };
+    expect(rootAssign.assignment.entityId).toBe(feature.id);
+    expect(rootAssign.assignment.inheritedFrom).toBeNull();
+  });
 });

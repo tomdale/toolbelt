@@ -14,7 +14,7 @@ import { Bootstrap } from "./bootstrap.ts";
 import { sectionMembers } from "./cleanup.ts";
 import { WorkstreamMap } from "./map.ts";
 import { Router, type RouteDecision } from "./router.ts";
-import { CorpusStore } from "./corpus.ts";
+import { CorpusStore, classificationEvidence } from "./corpus.ts";
 import { corpusLabel } from "../domain/corpus-label.ts";
 import { ancestors, activeHome } from "../domain/regroup.ts";
 import { rpcContract } from "./contract.ts";
@@ -659,20 +659,10 @@ export default async function plugin(bb: BbPluginApi) {
         ),
       };
     },
-    corpus: async () => {
-      corpus.syncGroups(
-        map.list().map((r) => ({ ...r, description: r.description ?? "" })),
-      );
-      return {
-        entities: corpus.list().map((e) => ({ ...e, aliases: [...e.aliases] })),
-      };
-    },
-    catalog: async () => {
-      corpus.syncGroups(
-        map.list().map((r) => ({ ...r, description: r.description ?? "" })),
-      );
-      return corpus.state();
-    },
+    corpus: async () => ({
+      entities: corpus.list().map((e) => ({ ...e, aliases: [...e.aliases] })),
+    }),
+    catalog: async () => corpus.state(),
     corpusReset: async () => {
       bootstrap.resetCatalog();
       return { ok: true as const };
@@ -692,11 +682,11 @@ export default async function plugin(bb: BbPluginApi) {
     },
     catalogCreate: ({ name, description, parentId, aliases }) =>
       userFacing(async () => {
-        const entity = corpus.remember(
+        const entity = corpus.create(
           name,
-          description,
+          description ?? "",
           parentId ?? null,
-          aliases,
+          aliases ?? [],
         );
         notify();
         return { entity };
@@ -713,6 +703,15 @@ export default async function plugin(bb: BbPluginApi) {
         notify();
         return { entity };
       }),
+    catalogUpdateMetadata: ({ entityId, description, aliases }) =>
+      userFacing(async () => {
+        const entity = corpus.updateMetadata(entityId, {
+          description,
+          aliases,
+        });
+        notify();
+        return { entity };
+      }),
     catalogMerge: ({ sourceEntityId, targetEntityId }) =>
       userFacing(async () => {
         const result = corpus.merge(sourceEntityId, targetEntityId);
@@ -721,6 +720,7 @@ export default async function plugin(bb: BbPluginApi) {
       }),
     taskAssign: ({ threadId, entityId }) =>
       userFacing(async () => {
+        await service.reconcile();
         const assignment = corpus.assign(threadId, entityId, {
           provenance: "manual",
         });
@@ -729,12 +729,14 @@ export default async function plugin(bb: BbPluginApi) {
       }),
     taskClear: ({ threadId }) =>
       userFacing(async () => {
+        await service.reconcile();
         const assignment = corpus.clear(threadId);
         notify();
         return { assignment };
       }),
     taskReclassify: ({ threadId, entityId, evidence }) =>
       userFacing(async () => {
+        await service.reconcile();
         if (entityId !== undefined) {
           const assignment = corpus.reclassify(threadId, entityId, evidence);
           notify();
@@ -762,18 +764,26 @@ export default async function plugin(bb: BbPluginApi) {
           : value.proposed
             ? corpus.rememberProposal(value.proposed)
             : null;
+        const computedEvidence = classificationEvidence({
+          requests,
+          title: thread.title ?? thread.titleFallback ?? "",
+          project: thread.projectId,
+        });
         const assignment = corpus.reclassify(
           threadId,
           target ? target.id : null,
-          "task-reclassify",
+          computedEvidence,
         );
         notify();
         return { assignment };
       }),
     taskAssignment: ({ threadId }) =>
-      userFacing(async () => ({
-        assignment: corpus.assignment(threadId),
-      })),
+      userFacing(async () => {
+        await service.reconcile();
+        return {
+          assignment: corpus.assignment(threadId),
+        };
+      }),
     state: async () => ({
       ...service.state(),
       workstreams: Object.fromEntries(map.list().map((r) => [r.sectionId, r])),
