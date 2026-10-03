@@ -9,7 +9,9 @@
  *   list indent).
  * - ⌘⏎ (Ctrl+⏎ elsewhere), BB's alternate send, submits with the
  *   suggestion: it applies a workstream suggestion and starts the thread, or
- *   sends the draft to a suggested thread.
+ *   sends the draft to a suggested thread. When an automatic destination
+ *   already fills the pickers — the row's own workstream suggestions are
+ *   hidden then — the same key submits what the pickers show, as Enter does.
  *
  * ⏎ still starts the thread the pickers show.
  */
@@ -18,7 +20,12 @@ import { useSdk } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 import type { Placement } from "../../server/router.ts";
-import { shownSuggestion, type NewWork, type Suggestion } from "./new-work.ts";
+import {
+  hasDestination,
+  shownSuggestion,
+  type NewWork,
+  type Suggestion,
+} from "./new-work.ts";
 
 /** Tab with no modifiers. */
 export function isApplyShortcut(event: KeyboardEvent): boolean {
@@ -140,11 +147,15 @@ export function describeSuggestion(
 export function SuggestionRow({ newWork }: { newWork: NewWork }) {
   const state = useSyncExternalStore(newWork.subscribe, newWork.snapshot);
   const suggestion = shownSuggestion(state);
+  // An automatic destination has no row of its own — it already fills the
+  // pickers — so ⌘⏎ submits what they show, as Enter does.
+  const autoDestination =
+    !suggestion && !state.pinned && hasDestination(state);
   const projects = useProjects();
   const row = useRef<HTMLDivElement>(null);
   const applies = !!suggestion && suggestion.kind !== "thread";
   useEffect(() => {
-    if (!suggestion) return;
+    if (!suggestion && !autoDestination) return;
     const inDialog = (target: EventTarget | null) => {
       const scope = row.current?.closest('[role="dialog"]');
       return !!scope && target instanceof Node && scope.contains(target);
@@ -155,7 +166,8 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
       if (!isSubmitShortcut(event) || !inDialog(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
-      void newWork.accept({ submit: true });
+      if (suggestion) void newWork.accept({ submit: true });
+      else void newWork.submitComposer();
     };
     // Bubbling runs after the editor, which claims Tab for its own menus.
     const onApplyKey = (event: KeyboardEvent) => {
@@ -170,7 +182,7 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
       document.removeEventListener("keydown", onSubmitKey, true);
       document.removeEventListener("keydown", onApplyKey);
     };
-  }, [newWork, suggestion, applies]);
+  }, [newWork, suggestion, applies, autoDestination]);
   const mac = macKeyboard();
   const submitKey = mac ? "⌘⏎" : "Ctrl ⏎";
   const submitLabel = suggestion?.kind === "thread" ? "Send" : "Start";

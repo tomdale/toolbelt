@@ -702,16 +702,47 @@
 }
 
 /*
- * New work's suggestion: the home classification found for the draft, under
- * the composer. It is tinted as a proposal rather than a control, and ✦ marks
- * it as the model's.
+ * The magic tint: the classifier's color, for its suggestions and its
+ * automatic destinations. Defined on the plugin's roots and on the
+ * suggestion itself, because the Workstream field can render inside BB's own
+ * picker row, outside any plugin wrapper.
  */
-.ws-suggestion {
+.ws-new-work,
+.ws-native-new-thread-routing,
+.ws-suggestion,
+[data-ws-workstream-slot] {
   --ws-magic: color-mix(
     in oklab,
     var(--color-violet-500, oklch(60.6% 0.25 292.717)) 70%,
     var(--foreground, #ededed)
   );
+}
+
+/*
+ * The Workstream field in Automatic mode: ✦ marks the classifier's hand, a
+ * destination it has produced shows in its color, and a manual pick keeps
+ * the ordinary muted treatment. While a newer draft is classified the spark
+ * pulses, as the suggestion's does.
+ */
+[data-ws-workstream-control] .ws-spark {
+  color: var(--ws-magic);
+  font-size: 11px;
+  line-height: 1;
+}
+[data-ws-workstream-control][data-ws-auto][data-ws-destination] {
+  color: var(--ws-magic);
+  font-weight: 500;
+}
+[data-ws-workstream-control][data-ws-stale] .ws-spark {
+  animation: ws-spark-pulse 1.2s ease-in-out infinite;
+}
+
+/*
+ * New work's suggestion: the home classification found for the draft, under
+ * the composer. It is tinted as a proposal rather than a control, and ✦ marks
+ * it as the model's.
+ */
+.ws-suggestion {
   display: flex;
   align-items: center;
   gap: 2px;
@@ -839,7 +870,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .ws-suggestion,
-  .ws-suggestion[data-stale] .ws-suggestion-spark {
+  .ws-suggestion[data-stale] .ws-suggestion-spark,
+  [data-ws-workstream-control][data-ws-stale] .ws-spark {
     animation: none;
   }
 }

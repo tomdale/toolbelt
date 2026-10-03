@@ -6,6 +6,7 @@ import type {
 } from "@get-bb/plugin-sdk/app";
 import {
   NewWork,
+  pickerDisplay,
   shownSuggestion,
   suggestionFrom,
   type NewWorkDeps,
@@ -103,19 +104,24 @@ async function pause(ms = SHORT_PAUSE_MS) {
 }
 
 describe("classification", () => {
-  it("runs once typing pauses and shows its suggestion", async () => {
-    const { deps, newWork } = setup(async () => inAlpha);
+  it("runs once typing pauses and moves the pickers to its suggestion", async () => {
+    const { deps, newWork, composer } = setup(async () => inAlpha);
     newWork.observe("Fix");
     newWork.observe("Fix the");
     await vi.advanceTimersByTimeAsync(SHORT_PAUSE_MS - 1);
     expect(deps.route).not.toHaveBeenCalled();
     await pause(1);
     expect(deps.route).toHaveBeenCalledExactlyOnceWith("Fix the", null);
-    expect(shownSuggestion(newWork.snapshot())).toMatchObject({
-      kind: "workstream",
-      sectionId: "sec_a",
-      name: "Alpha",
+    expect(newWork.snapshot()).toMatchObject({
+      pinned: false,
+      workstream: { id: "sec_a", name: "Alpha" },
     });
+    expect(composer.setSelection).toHaveBeenCalledExactlyOnceWith({
+      projectId: "proj_a",
+      environment: placement.environment,
+    });
+    // The row's own offer is hidden: the pickers already show it.
+    expect(shownSuggestion(newWork.snapshot())).toBeNull();
   });
 
   it("tells the router which workstream the field shows", async () => {
@@ -138,7 +144,7 @@ describe("classification", () => {
     );
   });
 
-  it("keeps the last suggestion up while newer text is classified", async () => {
+  it("keeps the last destination up while newer text is classified", async () => {
     let answer: (d: RouteDecision) => void = () => {};
     const { deps, newWork } = setup(async () => inAlpha);
     newWork.observe("Fix the parser in Alpha");
@@ -149,9 +155,17 @@ describe("classification", () => {
     newWork.observe("Fix the parser in Alpha, then also the lexer");
     await pause(DEBOUNCE_MS);
     expect(newWork.snapshot().classifying).toBe(true);
-    expect(shownSuggestion(newWork.snapshot())?.key).toBe("d_alpha");
+    // The stale destination keeps standing in the pickers, as a stale
+    // suggestion keeps its row.
+    expect(newWork.snapshot().workstream).toEqual({
+      id: "sec_a",
+      name: "Alpha",
+    });
     answer(continueParser);
     await pause(0);
+    // A thread suggestion names no workstream home, so the automatic
+    // destination withdraws and the row offers the thread instead.
+    expect(newWork.snapshot().workstream).toBeNull();
     expect(shownSuggestion(newWork.snapshot())?.key).toBe("d_thread");
   });
 
@@ -169,12 +183,13 @@ describe("classification", () => {
     expect(newWork.snapshot().suggestion).toBeNull();
   });
 
-  it("clears the suggestion when the draft is emptied", async () => {
+  it("clears the suggestion and the automatic destination when the draft is emptied", async () => {
     const { newWork } = setup(async () => inAlpha);
     newWork.observe("Fix the parser in Alpha");
     await pause(DEBOUNCE_MS);
     newWork.observe("   ");
     expect(newWork.snapshot().suggestion).toBeNull();
+    expect(newWork.snapshot().workstream).toBeNull();
   });
 
   it("shows nothing when the router names no home", async () => {
@@ -187,6 +202,32 @@ describe("classification", () => {
     newWork.observe("hmm");
     await pause();
     expect(shownSuggestion(newWork.snapshot())).toBeNull();
+    expect(newWork.snapshot().workstream).toBeNull();
+  });
+
+  it("withdraws the automatic destination when the draft names no home", async () => {
+    let answer: RouteDecision = inAlpha;
+    const { newWork } = setup(async () => answer);
+    newWork.observe("Fix the parser in Alpha");
+    await pause(DEBOUNCE_MS);
+    expect(newWork.snapshot().workstream).toEqual({
+      id: "sec_a",
+      name: "Alpha",
+    });
+    answer = { ...base, id: "d_unsure", outcome: "unsure", candidates: [] };
+    newWork.observe("Something unrelated entirely");
+    await pause(DEBOUNCE_MS);
+    expect(newWork.snapshot().workstream).toBeNull();
+    expect(newWork.snapshot().pendingNew).toBeNull();
+  });
+
+  it("keeps the pickers when the same home is classified again", async () => {
+    const { newWork, composer } = setup(async () => inAlpha);
+    newWork.observe("Fix the parser in Alpha");
+    await pause(DEBOUNCE_MS);
+    newWork.observe("Fix the parser in Alpha, please");
+    await pause(DEBOUNCE_MS);
+    expect(composer.setSelection).toHaveBeenCalledTimes(1);
   });
 
   it("stays quiet when classification fails", async () => {
@@ -205,12 +246,19 @@ describe("classification", () => {
   });
 });
 
+// In Automatic mode a workstream suggestion fills the pickers on its own, so
+// acceptance is exercised with the pickers pinned first — the state an
+// override leaves behind, where the row keeps offering homes.
+const pin = (newWork: NewWork) => newWork.selectWorkstream(null);
+
 describe("accepting", () => {
+
   it("retains accepted semantic identity for later Enter and invalidates it on draft changes", async () => {
     const { newWork, deps } = setup(async () => ({
       ...inAlpha,
       subjectId: "feature",
     }));
+    pin(newWork);
     newWork.observe("Fix the shelves");
     await pause(SHORT_PAUSE_MS);
     await newWork.accept({ submit: false });
@@ -230,6 +278,7 @@ describe("accepting", () => {
   });
   it("fills the workstream, project and environment for an existing workstream", async () => {
     const { newWork, composer } = setup(async () => inAlpha);
+    pin(newWork);
     newWork.observe("Fix the parser in Alpha");
     await pause(DEBOUNCE_MS);
     await newWork.accept({ submit: false });
@@ -265,6 +314,7 @@ describe("accepting", () => {
     "preserves execution settings for $decision.outcome, submit=$submit",
     async ({ decision, submit }) => {
       const { newWork, composer } = setup(async () => decision);
+      pin(newWork);
       const execution: ComposerSelection = {
         providerId: "pi",
         model: "openai/gpt-6-luna",
@@ -302,6 +352,7 @@ describe("accepting", () => {
 
   it("creates a new workstream first, then fills the fields", async () => {
     const { deps, newWork, composer } = setup(async () => newBilling);
+    pin(newWork);
     newWork.observe("Add CSV export for invoices");
     await pause(DEBOUNCE_MS);
     expect(shownSuggestion(newWork.snapshot())).toMatchObject({
@@ -319,6 +370,7 @@ describe("accepting", () => {
 
   it("applies a workstream suggestion and starts the thread with it", async () => {
     const { deps, newWork, composer } = setup(async () => inAlpha);
+    pin(newWork);
     newWork.observe("Fix the parser in Alpha");
     await pause(DEBOUNCE_MS);
     const accepting = newWork.accept({ submit: true });
@@ -335,6 +387,7 @@ describe("accepting", () => {
 
   it("doesn't start the thread when the pickers can't be filled", async () => {
     const { deps, newWork, composer } = setup(async () => inAlpha);
+    pin(newWork);
     composer.setSelection.mockRejectedValueOnce(
       new Error("Choose a project the composer can use."),
     );
@@ -399,6 +452,7 @@ describe("accepting", () => {
 
   it("keeps a dismissed suggestion hidden", async () => {
     const { newWork } = setup(async () => inAlpha);
+    pin(newWork);
     newWork.observe("Fix the parser in Alpha");
     await pause(DEBOUNCE_MS);
     newWork.dismiss();
@@ -420,12 +474,91 @@ describe("submitting", () => {
     );
   });
 
-  it("starts without a workstream by default, ignoring the suggestion", async () => {
-    const { deps, newWork } = setup(async () => inAlpha);
+  it("starts the thread in the automatic destination when nothing is touched", async () => {
+    const { deps, newWork, composer } = setup(async () => inAlpha);
     newWork.observe("Fix the parser in Alpha");
     await pause(DEBOUNCE_MS);
+    expect(composer.setSelection).toHaveBeenCalledTimes(1);
     await newWork.submit(request("Fix the parser in Alpha"));
+    expect(deps.startThread).toHaveBeenCalledWith("sec_a", expect.anything());
+  });
+
+  it("starts without a workstream when the router names no home", async () => {
+    const { deps, newWork } = setup(async () => ({
+      ...base,
+      id: "d_unsure",
+      outcome: "unsure",
+      candidates: [],
+    }));
+    newWork.observe("hmm");
+    await pause();
+    await newWork.submit(request("hmm"));
     expect(deps.startThread).toHaveBeenCalledWith(null, expect.anything());
+  });
+
+  it("creates a proposed workstream on submit and files the thread there", async () => {
+    const { deps, newWork } = setup(async () => newBilling);
+    newWork.observe("Add CSV export for invoices");
+    await pause(DEBOUNCE_MS);
+    expect(newWork.snapshot().pendingNew).toMatchObject({
+      name: "Billing",
+      description: "Invoices",
+    });
+    expect(deps.createWorkstream).not.toHaveBeenCalled();
+    await newWork.submit(request("Add CSV export for invoices"));
+    expect(deps.createWorkstream).toHaveBeenCalledWith("Billing", "Invoices");
+    expect(deps.startThread).toHaveBeenCalledWith(
+      "sec_new",
+      expect.anything(),
+    );
+  });
+
+  it("pins the pickers when the user changes the project", async () => {
+    const { newWork, composer } = setup(async () => inAlpha);
+    newWork.observe("Fix the parser in Alpha");
+    await pause(DEBOUNCE_MS);
+    // The composer echoing the model's own apply doesn't pin.
+    expect(newWork.snapshot().pinned).toBe(false);
+    newWork.observeSelection({ projectId: "proj_user" });
+    expect(newWork.snapshot().pinned).toBe(true);
+    // A later classification leaves the pickers alone.
+    newWork.observe("Now something else");
+    await pause(DEBOUNCE_MS);
+    expect(composer.setSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't pin when only execution settings change", async () => {
+    const { newWork } = setup(async () => inAlpha);
+    newWork.observe("Fix the parser in Alpha");
+    await pause(DEBOUNCE_MS);
+    newWork.observeSelection({
+      projectId: "proj_a",
+      environment: placement.environment,
+      model: "other-model",
+    });
+    expect(newWork.snapshot().pinned).toBe(false);
+  });
+
+  it("unpins through selectAutomatic and re-applies the current home", async () => {
+    const { newWork, composer } = setup(async () => inAlpha);
+    newWork.selectWorkstream({ id: "sec_b", name: "Beta" });
+    newWork.observe("Fix the parser in Alpha");
+    await pause(DEBOUNCE_MS);
+    expect(newWork.snapshot().workstream).toEqual({
+      id: "sec_b",
+      name: "Beta",
+    });
+    newWork.selectAutomatic();
+    expect(newWork.snapshot()).toMatchObject({
+      pinned: false,
+      workstream: null,
+    });
+    await pause(0);
+    expect(newWork.snapshot().workstream).toEqual({
+      id: "sec_a",
+      name: "Alpha",
+    });
+    expect(composer.setSelection).toHaveBeenCalledTimes(1);
   });
 
   it("creates a workstream named in the picker and selects it", async () => {
@@ -435,6 +568,57 @@ describe("submitting", () => {
     expect(newWork.snapshot().workstream).toEqual({
       id: "sec_new",
       name: "Billing",
+    });
+  });
+});
+
+describe("pickerDisplay", () => {
+  it("names each field state", async () => {
+    const { newWork } = setup(async () => inAlpha);
+    expect(pickerDisplay(newWork.snapshot())).toMatchObject({
+      label: "Automatic",
+      auto: true,
+      destination: false,
+      creating: false,
+    });
+    newWork.observe("Fix the parser in Alpha");
+    await pause(DEBOUNCE_MS);
+    expect(pickerDisplay(newWork.snapshot())).toMatchObject({
+      label: "Alpha",
+      auto: true,
+      destination: true,
+      creating: false,
+      reason: "Fits",
+    });
+    newWork.selectWorkstream({ id: "sec_b", name: "Beta" });
+    expect(pickerDisplay(newWork.snapshot())).toMatchObject({
+      label: "Beta",
+      auto: false,
+      destination: true,
+      reason: null,
+    });
+    newWork.selectWorkstream(null);
+    expect(pickerDisplay(newWork.snapshot())).toMatchObject({
+      label: "No workstream",
+      auto: false,
+      destination: false,
+    });
+    newWork.selectAutomatic();
+    expect(pickerDisplay(newWork.snapshot())).toMatchObject({
+      label: "Automatic",
+      auto: true,
+    });
+  });
+
+  it("marks a proposed workstream", async () => {
+    const { newWork } = setup(async () => newBilling);
+    newWork.observe("Add CSV export for invoices");
+    await pause(DEBOUNCE_MS);
+    expect(pickerDisplay(newWork.snapshot())).toMatchObject({
+      label: "Billing",
+      auto: true,
+      destination: true,
+      creating: true,
     });
   });
 });
@@ -492,12 +676,14 @@ describe("Debug mode's record", () => {
 
   it("logs acceptance and submits with their inputs, results and errors", async () => {
     const { deps, newWork } = setup(async () => inAlpha);
+    pin(newWork);
     newWork.observe("Fix the parser in Alpha");
     await pause(DEBOUNCE_MS);
     await newWork.accept({ submit: false });
     deps.startThread.mockRejectedValueOnce(new Error("Gone"));
     await expect(newWork.submit(request("Fix it"))).rejects.toThrow("Gone");
-    const [classify, accept] = newWork.snapshot().events;
+    // [pin, classify, accept, submit]
+    const [, classify, accept] = newWork.snapshot().events;
     expect(classify).toMatchObject({ kind: "classify", status: "ok" });
     expect(accept).toMatchObject({
       kind: "accept",
@@ -566,21 +752,21 @@ describe("nativeFlow mode", () => {
     );
   });
 
-  it("tracks workstreamWasExplicit correctly", () => {
+  it("tracks pinned correctly: presets and picks pin, classifications don't", () => {
     const { newWork } = setupNative(async () => inAlpha);
-    expect(newWork.snapshot().workstreamWasExplicit).toBe(false);
+    expect(newWork.snapshot().pinned).toBe(false);
 
     const { newWork: explicit } = setupNative(async () => inAlpha, {
       id: "sec_a",
       name: "Alpha",
     });
-    expect(explicit.snapshot().workstreamWasExplicit).toBe(true);
+    expect(explicit.snapshot().pinned).toBe(true);
 
     newWork.selectWorkstream({ id: "sec_b", name: "Beta" });
-    expect(newWork.snapshot().workstreamWasExplicit).toBe(true);
+    expect(newWork.snapshot().pinned).toBe(true);
 
     newWork.selectWorkstream(null);
-    expect(newWork.snapshot().workstreamWasExplicit).toBe(true);
+    expect(newWork.snapshot().pinned).toBe(true);
   });
 
   it("accepts a continuation by sending draft to thread without host composer submit", async () => {
@@ -601,6 +787,7 @@ describe("nativeFlow mode", () => {
 
   it("accepts an existing workstream by calling submitWithRoute", async () => {
     const { deps, newWork, composer } = setupNative(async () => inAlpha);
+    newWork.selectWorkstream(null);
     newWork.observe("Fix tabs in Alpha parser");
     await pause(DEBOUNCE_MS);
     const accepting = newWork.accept({ submit: true });
@@ -613,6 +800,7 @@ describe("nativeFlow mode", () => {
 
   it("accepts a new-workstream suggestion by creating it and calling submitWithRoute", async () => {
     const { deps, newWork, composer } = setupNative(async () => newBilling);
+    newWork.selectWorkstream(null);
     newWork.observe("Add invoice export features");
     await pause(DEBOUNCE_MS);
     const accepting = newWork.accept({ submit: true });

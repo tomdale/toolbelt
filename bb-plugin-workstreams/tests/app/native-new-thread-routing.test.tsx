@@ -203,14 +203,15 @@ async function typePrompt(
   await act(() => slot.behavior.setComposerText(text));
 }
 
-it("shares the root composer model and accepts a workstream through host submit metadata", async () => {
+it("fills the field with the classified home and files it through host submit metadata", async () => {
   const { slot, route, startThread } = mount(workstreamDecision);
   await typePrompt(slot, "Fix the parser in Alpha");
-  const accept = await screen.findByRole("button", {
-    name: "Apply and start the thread",
+  const field = await screen.findByRole("button", {
+    name: "Workstream: Alpha",
   });
+  expect(field.dataset.wsAuto).toBe("true");
   expect(route).toHaveBeenCalledTimes(1);
-  fireEvent.click(accept);
+  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   expect(slot.inspection.composer.submits[0]).toEqual({
     experimental_data: { routeId: "route-alpha", sectionId: "section-alpha" },
@@ -224,7 +225,7 @@ it("shares the root composer model and accepts a workstream through host submit 
 it("places the Workstream picker before the project picker in the host picker row", async () => {
   mount(workstreamDecision, { component: RootComposerWithPickerRow });
   const picker = await screen.findByRole("button", {
-    name: "Workstream: No workstream",
+    name: "Workstream: Automatic",
   });
   const anchor = picker.closest("[data-ws-workstream-slot]");
   expect(anchor).toBeTruthy();
@@ -242,9 +243,14 @@ it("places the Workstream picker before the project picker in the host picker ro
 
 it("draws the picker with the plugin's declared icons, never BB's fallback", async () => {
   mount(workstreamDecision);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Workstream: Automatic" }),
+  );
+  fireEvent.click(await screen.findByRole("option", { name: "No workstream" }));
   const picker = await screen.findByRole("button", {
     name: "Workstream: No workstream",
   });
+  expect(picker.dataset.wsAuto).toBeUndefined();
   // BB draws an undeclared icon name as a lightning bolt.
   expect(
     picker.querySelector('[data-icon="workstreams/workstream-none"]'),
@@ -264,7 +270,7 @@ it("shows each workstream's description under its name and searches it", async (
     },
   });
   fireEvent.click(
-    await screen.findByRole("button", { name: "Workstream: No workstream" }),
+    await screen.findByRole("button", { name: "Workstream: Automatic" }),
   );
   expect(await screen.findByText("Adaptive grouping for threads")).toBeTruthy();
   fireEvent.change(screen.getByPlaceholderText(/Find or create/), {
@@ -274,12 +280,20 @@ it("shows each workstream's description under its name and searches it", async (
   expect(screen.queryByText("Beta")).toBeNull();
 });
 
-it("leaves an ignored suggestion out of the ordinary host submit metadata", async () => {
-  const { slot, route, startThread } = mount(workstreamDecision);
-  await typePrompt(slot, "Fix the parser in Alpha");
-  await screen.findByRole("button", { name: "Apply and start the thread" });
+it("leaves a classification that names no home out of the host submit metadata", async () => {
+  const unsure = {
+    ...workstreamDecision,
+    id: "route-unsure",
+    outcome: "unsure" as const,
+    candidates: [],
+    sectionId: null,
+    workstream: null,
+  };
+  const { slot, route, startThread } = mount(unsure);
+  await typePrompt(slot, "Something vague");
+  await waitFor(() => expect(route).toHaveBeenCalledTimes(1));
   expect(
-    screen.getByRole("button", { name: "Workstream: No workstream" }),
+    screen.getByRole("button", { name: "Workstream: Automatic" }),
   ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
@@ -287,10 +301,9 @@ it("leaves an ignored suggestion out of the ordinary host submit metadata", asyn
     experimental_data: null,
   });
   expect(startThread).not.toHaveBeenCalled();
-  expect(route).toHaveBeenCalledTimes(1);
 });
 
-it("accepts a suggested new workstream and submits its accepted section once", async () => {
+it("creates a proposed workstream when submitting, and files it through host metadata", async () => {
   const newWorkstream: RouteDecision = {
     id: "route-billing",
     traceId: "trace-billing",
@@ -303,17 +316,16 @@ it("accepts a suggested new workstream and submits its accepted section once", a
     title: "Invoice export",
     placement: null,
   };
-  const { slot, startThread } = mount(newWorkstream);
+  const { slot, startThread, createWorkstream } = mount(newWorkstream);
   await typePrompt(slot, "Add invoice export");
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Apply and start the thread" }),
-  );
+  const field = await screen.findByRole("button", {
+    name: "Workstream: Billing",
+  });
+  expect(field.dataset.wsAuto).toBe("true");
+  expect(createWorkstream).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
-  expect(
-    slot.inspection.rpcCalls.filter(
-      (call) => call.method === "createWorkstream",
-    ),
-  ).toHaveLength(1);
+  expect(createWorkstream).toHaveBeenCalledTimes(1);
   expect(slot.inspection.composer.submits[0]).toEqual({
     experimental_data: {
       routeId: "route-billing",
@@ -328,9 +340,9 @@ it("files an explicitly selected workstream through ordinary host form submit", 
     workstreams: { beta: { sectionId: "section-beta", name: "Beta" } },
   });
   await typePrompt(slot, "Write docs");
-  await screen.findByRole("button", { name: "Workstream: No workstream" });
+  await screen.findByRole("button", { name: "Workstream: Automatic" });
   fireEvent.click(
-    screen.getByRole("button", { name: "Workstream: No workstream" }),
+    screen.getByRole("button", { name: "Workstream: Automatic" }),
   );
   fireEvent.click(await screen.findByRole("option", { name: "Beta" }));
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
@@ -398,9 +410,9 @@ it("submits null metadata when manually clearing workstream back to No workstrea
     workstreams: { beta: { sectionId: "section-beta", name: "Beta" } },
   });
   await typePrompt(slot, "Write docs");
-  await screen.findByRole("button", { name: "Workstream: No workstream" });
+  await screen.findByRole("button", { name: "Workstream: Automatic" });
   fireEvent.click(
-    screen.getByRole("button", { name: "Workstream: No workstream" }),
+    screen.getByRole("button", { name: "Workstream: Automatic" }),
   );
   fireEvent.click(await screen.findByRole("option", { name: "Beta" }));
   expect(
@@ -415,7 +427,7 @@ it("submits null metadata when manually clearing workstream back to No workstrea
   });
 });
 
-it("retains the draft and reports an alert when new-workstream creation fails", async () => {
+it("retains the draft and reports an alert when creating a proposal on submit fails", async () => {
   const newWorkstream: RouteDecision = {
     id: "route-billing",
     traceId: "trace-billing",
@@ -430,9 +442,8 @@ it("retains the draft and reports an alert when new-workstream creation fails", 
   };
   const { slot } = mount(newWorkstream, { createWorkstreamFails: true });
   await typePrompt(slot, "Add invoice export");
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Apply and start the thread" }),
-  );
+  await screen.findByRole("button", { name: "Workstream: Billing" });
+  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() =>
     expect(
       screen.getAllByText("create workstream failed").length,
@@ -466,12 +477,15 @@ it("copies draft attachments across projects when sending an accepted continuati
   ]);
 });
 
-it("dismisses a suggestion and submits with null metadata", async () => {
+it("dismisses a suggestion behind a pinned field and submits with null metadata", async () => {
   const { slot } = mount(workstreamDecision);
   await typePrompt(slot, "Fix the parser in Alpha");
-  await screen.findByRole("button", {
-    name: "Apply and start the thread",
-  });
+  // Pin the field on No workstream: the suggestion keeps its row there.
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Workstream: Automatic" }),
+  );
+  fireEvent.click(await screen.findByRole("option", { name: "No workstream" }));
+  await screen.findByRole("button", { name: "Apply and start the thread" });
   fireEvent.click(screen.getByRole("button", { name: "Dismiss suggestion" }));
   await waitFor(() =>
     expect(

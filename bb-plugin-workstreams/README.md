@@ -10,14 +10,16 @@ design and the contract the code is checked against.
 
 - **Sidebar thread list** (select it under Settings → Appearance → Sidebar):
   - **＋ New work** opens BB's own new-thread composer with one more field,
-    Workstream, at the start of the picker row. Enter starts the thread the
-    pickers show. When you pause typing, a ✦ suggestion appears under the
-    composer: send the draft to an existing thread, start in an existing
-    workstream, or start a new one, each with its project and environment. Press
-    Tab to apply a workstream suggestion to the pickers, or ⌘⏎ (Ctrl+⏎) to apply
-    it and start the thread; on a thread suggestion ⌘⏎ sends the draft there and
-    closes the dialog. A new workstream is created first. A workstream's **＋**
-    preselects it.
+    Workstream, at the start of the picker row. The field starts **Automatic**:
+    when you pause typing, the classifier fills it — and the project and
+    environment pickers — with the home it names, marked ✦ in the magic tint; a
+    proposed new workstream is created when the thread starts. Enter starts the
+    thread exactly as the pickers show. Touching any picker (a workstream, No
+    workstream, the project, or the environment) pins everything in the ordinary
+    muted treatment and stops the automatic updates; choosing Automatic again
+    unpins. A suggested thread is never applied automatically: it appears under
+    the composer as Send to, and ⌘⏎ (Ctrl+⏎) or its button queues the draft
+    there and closes the dialog. A workstream's **＋** preselects it.
   - **Up Next**: a pending approval or question, or a thread whose latest turn
     asks you to decide something. These rows sit at the top in an amber block
     with a slow shimmer, under an always-open header, each naming its
@@ -175,9 +177,11 @@ design and the contract the code is checked against.
   provider default. Gateway may translate effort for the serving model, and a
   requested service tier is not a guarantee of the tier served.
 - **Routing**: New work classifies the draft against the map when you pause
-  typing and suggests one home: a thread to continue, an existing workstream, or
-  a new workstream, with a project and environment. Nothing changes until you
-  accept it; Enter starts what the pickers show.
+  typing and moves the Automatic pickers to one home: an existing workstream
+  with its project and environment, or a new workstream (created when the
+  thread starts). Enter starts what the pickers show, so an untouched
+  Automatic field files the thread where the router said; a suggested thread
+  waits for an explicit acceptance.
 - **Agent tools**: threads receive question support and recap guidance through
   `bb.agents.configure`, independently of workstream placement or parent links.
   Side chats receive question support without recap enrollment; internal

@@ -201,37 +201,40 @@ host-owned; Workstreams adds its Workstream field at the start of the native
 composer's picker row (before the project picker) and a suggestion row, and
 otherwise contributes its intake UI inside its own dialog.
 
-1. **Workstreams ＋ New**, on the page and the sidebar. It embeds
-   `experimental_NewThreadComposer` unchanged, so it looks and acts like BB's
-   New thread view, plus a Workstream field at the start of BB's picker row. The
-   field defaults to No workstream, or to the workstream whose ＋ opened the
-   dialog, and its search can create a workstream by name. ⏎ starts the thread
-   exactly as the pickers show it, filed in the chosen workstream. When typing
-   pauses, the router classifies the draft and the dialog shows one suggestion
-   under the composer: continue an existing thread, start in an existing
-   workstream with its project and environment, or start a new workstream with a
-   project and environment. A workstream suggestion can be applied or submitted.
-   Tab in the prompt editor (when the editor doesn't use the key itself), its
-   Apply button, or a click fills the Workstream, Project and Environment
-   pickers without starting anything. ⌘⏎ (Ctrl+⏎ elsewhere) or its Start button
-   fills them and starts the thread. Either way, a suggested new workstream is
-   created first. A thread suggestion has no pickers to fill: ⌘⏎, Send or a
-   click queues the draft there through the composer's own submit, so
-   attachments and mentions travel with it, and closes the dialog. A suggestion
-   the pickers already match is hidden, and a dismissed one stays hidden. BB
-   gives plugins no slot in its picker row, so the field keeps one anchor
-   element at the row's start and falls back to its own row when the row isn't
-   found.
+1. **New work**, on BB's native New thread view and in Workstreams' ＋ New
+   dialog (page and sidebar). Both embed BB's composer — the dialog through
+   `experimental_NewThreadComposer` — with a Workstream field at the start of
+   BB's picker row. The field starts **Automatic** (✦, the magic tint), or at
+   the workstream whose ＋ opened the dialog, and its search can create a
+   workstream by name. When typing pauses, the router classifies the draft.
+   While the field is Automatic, each classification moves the pickers to the
+   home it names: an existing workstream fills the field together with its
+   project and environment, a proposed new workstream shows its name (created
+   when the thread starts), and a classification that names no workstream
+   withdraws the previous automatic destination. ⏎ starts the thread exactly as
+   the pickers show it, so an untouched Automatic field files the thread where
+   the router said; on the native view the destination travels with the host
+   submit and the server's dispatch hook files it. Any manual change — picking
+   a workstream, choosing No workstream, or changing the project or
+   environment — pins every picker (ordinary muted treatment) and stops the
+   automatic updates; choosing Automatic again unpins. A continue suggestion
+   still changes nothing until accepted, because sending to a thread cannot be
+   undone: it shows under the composer as Send to, and ⌘⏎ (Ctrl+⏎ elsewhere),
+   its Send button, or a click queues the draft there through the composer's
+   own submit, so attachments and mentions travel with it. A suggestion the
+   pickers already match is hidden, and a dismissed one stays hidden. BB gives
+   plugins no slot in its picker row, so the field keeps one anchor element at
+   the row's start and falls back to its own row when the row isn't found.
 2. **`bb workstreams handoff`**, called by agents (§5).
 3. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
 
 **Inputs.**
 
 - The prompt.
-- Explicit choices: a project the user picked is a strong hint, the workstream
-  in New work's Workstream field (preset by the ＋ that opened it) is a hint the
-  model prefers when the request fits, and `@thread` or `@section` mentions
-  short-circuit the router.
+- Explicit choices: a project the user picked is a strong hint, the value in
+  New work's Workstream field (preset by the ＋ that opened it, picked, or the
+  automatic destination standing in it) is a hint the model prefers when the
+  request fits, and `@thread` or `@section` mentions short-circuit the router.
 - The workstream map (§7).
 - Active task threads (title, workstream, one-line recap, state, age).
 
@@ -253,9 +256,12 @@ Each decision carries `confidence`, a `reason` of at most 120 characters, and a
 
 **Policy.**
 
-- **The user confirms.** In New work a suggestion changes nothing until it is
-  accepted, and ⏎ starts what the pickers show. A `continue` cannot be undone,
-  and a thread's project cannot be changed after creation.
+- **The user confirms.** ⏎ starts what the pickers show: in Automatic mode the
+  pickers follow the classification, so the user confirms the destination by
+  leaving it alone or overrides it by touching any picker. A `continue` is
+  never applied automatically — sending to a thread cannot be undone, and a
+  thread's project cannot be changed after creation — so it waits for an
+  explicit acceptance.
 - New work's suggestion names the single likeliest home. An unsure answer
   becomes its first candidate, empty workstreams are offered too, and code work
   with no project evidence (a workstream without a primary project, or a new
