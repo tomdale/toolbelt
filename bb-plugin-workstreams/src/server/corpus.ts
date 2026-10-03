@@ -7,8 +7,28 @@ import {
   type CorpusEntity,
   type DraftSubjectProposal,
 } from "../domain/corpus.ts";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { getMeta, setMeta, type Database } from "./db.ts";
+
+export const CLASSIFICATION_VERSION = "catalog-semantics-v1";
+
+export function classificationEvidence(input: {
+  version?: string;
+  requests?: readonly unknown[];
+  title?: string | null;
+  project?: string | null;
+}): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        version: input.version ?? CLASSIFICATION_VERSION,
+        requests: input.requests ?? [],
+        title: input.title ?? "",
+        project: input.project ?? null,
+      }),
+    )
+    .digest("hex");
+}
 
 export type CorpusSeed = {
   readonly sectionId: string;
@@ -126,22 +146,44 @@ export class CorpusStore {
   }
 
   /** Navigation labels can bind existing identities, never establish semantic knowledge. */
-  syncGroups(records: readonly CorpusSeed[]): void {
+  syncGroups(records: readonly CorpusSeed[]): boolean {
     const entities = this.list();
+    const existing = this.groups();
+    const desired = new Map<string, string>();
+    for (const record of records) {
+      const entity =
+        entities.find((e) => e.id === existing.get(record.sectionId)) ??
+        entities.find(
+          (e) =>
+            normalize(corpusLabel(e.id, entities)) === normalize(record.name),
+        );
+      if (entity) desired.set(record.sectionId, entity.id);
+    }
+
+    let changed = existing.size !== desired.size;
+    if (!changed) {
+      for (const [secId, entId] of desired) {
+        if (existing.get(secId) !== entId) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (!changed) {
+      return false;
+    }
+
     this.db.transaction(() => {
-      const existing = this.groups();
       this.db.prepare("DELETE FROM ws_corpus_group").run();
-      for (const record of records) {
-        const entity =
-          entities.find((e) => e.id === existing.get(record.sectionId)) ??
-          entities.find(
-            (e) =>
-              normalize(corpusLabel(e.id, entities)) === normalize(record.name),
-          );
-        if (entity) this.bindGroupWithoutRevision(record.sectionId, entity.id);
+      const insert = this.db.prepare(
+        "INSERT INTO ws_corpus_group(section_id, entity_id) VALUES (?, ?)",
+      );
+      for (const [sectionId, entityId] of desired) {
+        insert.run(sectionId, entityId);
       }
       this.bumpRevision();
     })();
+    return true;
   }
 
   resolve(name: string, parentId: string | null = null): CorpusEntity | null {
@@ -232,15 +274,83 @@ export class CorpusStore {
     return entity;
   }
 
+  create(
+    name: string,
+    description: string = "",
+    parentId: string | null = null,
+    aliases: readonly string[] = [],
+  ): CorpusEntity {
+    return this.db.transaction(() => {
+      const cleanName = name.trim();
+      if (!cleanName) throw new Error("Corpus entity name must not be empty");
+      if (parentId !== null && !this.getById(parentId))
+        throw new Error(`Unknown corpus parent: ${parentId}`);
+      this.assertParentChainAcyclic(parentId);
+
+      const existing = this.resolve(cleanName, parentId);
+      if (existing) {
+        throw new Error(
+          `Corpus entity '${cleanName}' already exists in this parent scope`,
+        );
+      }
+
+      const cleanDescription = description.trim();
+      const cleanAliasList = cleanAliases(aliases);
+      if (
+        cleanAliasList.some(
+          (alias) => normalize(alias) === normalize(cleanName),
+        )
+      )
+        throw new Error("Corpus entity alias must differ from its name");
+
+      for (const alias of cleanAliasList) {
+        if (this.resolve(alias, parentId))
+          throw new Error(
+            `Corpus alias '${alias}' already resolves to an entity in this parent scope`,
+          );
+      }
+
+      const entity: CorpusEntity = {
+        id: randomUUID(),
+        name: cleanName,
+        description: cleanDescription,
+        parentId,
+        aliases: cleanAliasList,
+      };
+
+      this.db
+        .prepare(
+          "INSERT INTO ws_corpus_entity(id, name, description, parent_id, aliases) VALUES (?, ?, ?, ?, ?)",
+        )
+        .run(
+          entity.id,
+          entity.name,
+          entity.description,
+          entity.parentId,
+          JSON.stringify(entity.aliases),
+        );
+
+      this.bumpRevision();
+      return entity;
+    })();
+  }
+
   remember(
     name: string,
     description: string,
     parentId: string | null = null,
     aliases: readonly string[] = [],
   ): CorpusEntity {
-    const entity = this.rememberInternal(name, description, parentId, aliases);
-    this.bumpRevision();
-    return entity;
+    return this.db.transaction(() => {
+      const entity = this.rememberInternal(
+        name,
+        description,
+        parentId,
+        aliases,
+      );
+      this.bumpRevision();
+      return entity;
+    })();
   }
 
   rememberProposal(proposal: DraftSubjectProposal): CorpusEntity {
@@ -273,6 +383,10 @@ export class CorpusStore {
   }
 
   bindGroup(sectionId: string, entityId: string): void {
+    if (!this.getById(entityId))
+      throw new Error(`Unknown corpus entity: ${entityId}`);
+    const existing = this.groups().get(sectionId);
+    if (existing === entityId) return;
     this.bindGroupWithoutRevision(sectionId, entityId);
     this.bumpRevision();
   }
@@ -353,9 +467,7 @@ export class CorpusStore {
     }
 
     const provenance: AssignmentProvenance =
-      row.source === "manual" || row.source === "selected"
-        ? "manual"
-        : "automatic";
+      row.source === "manual" ? "manual" : "automatic";
 
     return {
       threadId,
@@ -453,9 +565,7 @@ export class CorpusStore {
         continue;
       }
       const provenance: AssignmentProvenance =
-        subject.source === "manual" || subject.source === "selected"
-          ? "manual"
-          : "automatic";
+        subject.source === "manual" ? "manual" : "automatic";
       result[threadId] = {
         threadId,
         entityId: entity.id,
@@ -473,49 +583,63 @@ export class CorpusStore {
   assign(
     threadId: string,
     entityId: string,
-    optionsOrEvidence?:
-      string | { provenance?: AssignmentProvenance; evidence?: string },
+    options?: { provenance?: AssignmentProvenance; evidence?: string },
   ): CanonicalAssignment {
-    if (!this.getById(entityId))
-      throw new Error(`Unknown corpus entity: ${entityId}`);
-    if (!threadId.trim()) throw new Error("Thread ID must not be empty");
+    return this.db.transaction(() => {
+      if (!this.getById(entityId))
+        throw new Error(`Unknown corpus entity: ${entityId}`);
+      if (!threadId.trim()) throw new Error("Thread ID must not be empty");
 
-    const rootId = this.findRootThread(threadId);
+      const rootId = this.findRootThread(threadId);
 
-    let provenance: AssignmentProvenance = "manual";
-    let evidence: string | null = null;
-    if (typeof optionsOrEvidence === "string") {
-      evidence = optionsOrEvidence;
-      provenance = "automatic";
-    } else if (optionsOrEvidence) {
-      provenance =
-        optionsOrEvidence.provenance ??
-        (optionsOrEvidence.evidence ? "automatic" : "manual");
-      evidence = optionsOrEvidence.evidence ?? null;
-    }
+      const provenance: AssignmentProvenance =
+        options?.provenance ?? (options?.evidence ? "automatic" : "manual");
+      const evidence: string | null = options?.evidence ?? null;
 
-    this.db
-      .prepare(
-        `INSERT INTO ws_corpus_subject(thread_id, entity_id, evidence, source)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(thread_id) DO UPDATE SET
-           entity_id = excluded.entity_id,
-           evidence = excluded.evidence,
-           source = excluded.source`,
-      )
-      .run(rootId, entityId, evidence, provenance);
+      const existing = this.db
+        .prepare(
+          "SELECT entity_id, evidence, source FROM ws_corpus_subject WHERE thread_id = ?",
+        )
+        .get(rootId) as
+        | { entity_id: string; evidence: string | null; source: string }
+        | undefined;
 
-    this.bumpRevision();
-    return this.assignment(threadId);
+      if (
+        existing &&
+        existing.entity_id === entityId &&
+        existing.source === provenance &&
+        (existing.evidence ?? null) === evidence
+      ) {
+        return this.assignment(threadId);
+      }
+
+      this.db
+        .prepare(
+          `INSERT INTO ws_corpus_subject(thread_id, entity_id, evidence, source)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(thread_id) DO UPDATE SET
+             entity_id = excluded.entity_id,
+             evidence = excluded.evidence,
+             source = excluded.source`,
+        )
+        .run(rootId, entityId, evidence, provenance);
+
+      this.bumpRevision();
+      return this.assignment(threadId);
+    })();
   }
 
   clear(threadId: string): CanonicalAssignment {
-    const rootId = this.findRootThread(threadId);
-    this.db
-      .prepare("DELETE FROM ws_corpus_subject WHERE thread_id = ?")
-      .run(rootId);
-    this.bumpRevision();
-    return this.assignment(threadId);
+    return this.db.transaction(() => {
+      const rootId = this.findRootThread(threadId);
+      const res = this.db
+        .prepare("DELETE FROM ws_corpus_subject WHERE thread_id = ?")
+        .run(rootId);
+      if (res.changes > 0) {
+        this.bumpRevision();
+      }
+      return this.assignment(threadId);
+    })();
   }
 
   reclassify(
@@ -532,10 +656,6 @@ export class CorpusStore {
     });
   }
 
-  unassign(threadId: string): void {
-    this.clear(threadId);
-  }
-
   isFresh(threadId: string, evidence: string): boolean {
     const rootId = this.findRootThread(threadId);
     const row = this.db
@@ -545,9 +665,7 @@ export class CorpusStore {
       .get(rootId) as { evidence: string | null; source: string } | undefined;
     return (
       row?.source === "manual" ||
-      row?.source === "selected" ||
-      ((row?.source === "automatic" || row?.source === "classified") &&
-        row.evidence === evidence)
+      (row?.source === "automatic" && row.evidence === evidence)
     );
   }
 
@@ -563,124 +681,142 @@ export class CorpusStore {
   }
 
   rename(entityId: string, newName: string): CorpusEntity {
-    const cleanName = newName.trim();
-    if (!cleanName) throw new Error("Entity name must not be empty");
-    const entity = this.getById(entityId);
-    if (!entity) throw new Error(`Unknown corpus entity: ${entityId}`);
-    if (normalize(entity.name) === normalize(cleanName)) {
-      if (entity.name !== cleanName) {
+    return this.db.transaction(() => {
+      const cleanName = newName.trim();
+      if (!cleanName) throw new Error("Entity name must not be empty");
+      const entity = this.getById(entityId);
+      if (!entity) throw new Error(`Unknown corpus entity: ${entityId}`);
+      if (entity.name === cleanName) {
+        return entity;
+      }
+      if (normalize(entity.name) === normalize(cleanName)) {
         this.db
           .prepare("UPDATE ws_corpus_entity SET name = ? WHERE id = ?")
           .run(cleanName, entity.id);
         this.bumpRevision();
+        return { ...entity, name: cleanName };
       }
-      return { ...entity, name: cleanName };
-    }
 
-    const conflict = this.resolve(cleanName, entity.parentId);
-    if (conflict && conflict.id !== entityId) {
-      throw new Error(
-        `Corpus entity name conflicts with an existing identity in this parent scope: ${cleanName}`,
+      const conflict = this.resolve(cleanName, entity.parentId);
+      if (conflict && conflict.id !== entityId) {
+        throw new Error(
+          `Corpus entity name conflicts with an existing identity in this parent scope: ${cleanName}`,
+        );
+      }
+
+      const updatedAliases = cleanAliases(
+        entity.aliases.filter((a) => normalize(a) !== normalize(cleanName)),
       );
-    }
 
-    const updatedAliases = cleanAliases(
-      entity.aliases.filter((a) => normalize(a) !== normalize(cleanName)),
-    );
+      this.db
+        .prepare(
+          "UPDATE ws_corpus_entity SET name = ?, aliases = ? WHERE id = ?",
+        )
+        .run(cleanName, JSON.stringify(updatedAliases), entity.id);
 
-    this.db
-      .prepare("UPDATE ws_corpus_entity SET name = ?, aliases = ? WHERE id = ?")
-      .run(cleanName, JSON.stringify(updatedAliases), entity.id);
-
-    this.bumpRevision();
-    return { ...entity, name: cleanName, aliases: updatedAliases };
+      this.bumpRevision();
+      return { ...entity, name: cleanName, aliases: updatedAliases };
+    })();
   }
 
   reparent(entityId: string, newParentId: string | null): CorpusEntity {
-    const entity = this.getById(entityId);
-    if (!entity) throw new Error(`Unknown corpus entity: ${entityId}`);
-    if (entity.parentId === newParentId) return entity;
-    if (newParentId === entityId)
-      throw new Error("Cannot reparent an entity under itself");
+    return this.db.transaction(() => {
+      const entity = this.getById(entityId);
+      if (!entity) throw new Error(`Unknown corpus entity: ${entityId}`);
+      if (entity.parentId === newParentId) return entity;
+      if (newParentId === entityId)
+        throw new Error("Cannot reparent an entity under itself");
 
-    if (newParentId !== null) {
-      const parent = this.getById(newParentId);
-      if (!parent) throw new Error(`Unknown corpus parent: ${newParentId}`);
-      const parentAncestors = entityAncestors(newParentId, this.list());
-      if (parentAncestors.includes(entityId)) {
+      if (newParentId !== null) {
+        const parent = this.getById(newParentId);
+        if (!parent) throw new Error(`Unknown corpus parent: ${newParentId}`);
+        const parentAncestors = entityAncestors(newParentId, this.list());
+        if (parentAncestors.includes(entityId)) {
+          throw new Error(
+            `Cannot reparent: entity ${entityId} is an ancestor of ${newParentId} (cycle detected)`,
+          );
+        }
+      }
+
+      const conflict = this.resolve(entity.name, newParentId);
+      if (conflict && conflict.id !== entityId) {
         throw new Error(
-          `Cannot reparent: entity ${entityId} is an ancestor of ${newParentId} (cycle detected)`,
+          `Corpus entity name conflicts with an existing identity in target parent scope: ${entity.name}`,
         );
       }
-    }
 
-    const conflict = this.resolve(entity.name, newParentId);
-    if (conflict && conflict.id !== entityId) {
-      throw new Error(
-        `Corpus entity name conflicts with an existing identity in target parent scope: ${entity.name}`,
-      );
-    }
-
-    for (const alias of entity.aliases) {
-      const other = this.resolve(alias, newParentId);
-      if (other && other.id !== entityId) {
-        throw new Error(
-          `Corpus alias '${alias}' conflicts with an existing identity in target parent scope`,
-        );
+      for (const alias of entity.aliases) {
+        const other = this.resolve(alias, newParentId);
+        if (other && other.id !== entityId) {
+          throw new Error(
+            `Corpus alias '${alias}' conflicts with an existing identity in target parent scope`,
+          );
+        }
       }
-    }
 
-    this.db
-      .prepare("UPDATE ws_corpus_entity SET parent_id = ? WHERE id = ?")
-      .run(newParentId, entity.id);
+      this.db
+        .prepare("UPDATE ws_corpus_entity SET parent_id = ? WHERE id = ?")
+        .run(newParentId, entity.id);
 
-    this.bumpRevision();
-    return { ...entity, parentId: newParentId };
+      this.bumpRevision();
+      return { ...entity, parentId: newParentId };
+    })();
   }
 
   updateMetadata(
     entityId: string,
     updates: { description?: string; aliases?: readonly string[] },
   ): CorpusEntity {
-    const entity = this.getById(entityId);
-    if (!entity) throw new Error(`Unknown corpus entity: ${entityId}`);
+    return this.db.transaction(() => {
+      const entity = this.getById(entityId);
+      if (!entity) throw new Error(`Unknown corpus entity: ${entityId}`);
 
-    let nextDescription = entity.description;
-    if (updates.description !== undefined) {
-      nextDescription = updates.description.trim();
-    }
+      let nextDescription = entity.description;
+      if (updates.description !== undefined) {
+        nextDescription = updates.description.trim();
+      }
 
-    let nextAliases = entity.aliases;
-    if (updates.aliases !== undefined) {
-      const cleanAliasList = cleanAliases(updates.aliases);
-      if (
-        cleanAliasList.some(
-          (alias) => normalize(alias) === normalize(entity.name),
+      let nextAliases = entity.aliases;
+      if (updates.aliases !== undefined) {
+        const cleanAliasList = cleanAliases(updates.aliases);
+        if (
+          cleanAliasList.some(
+            (alias) => normalize(alias) === normalize(entity.name),
+          )
+        ) {
+          throw new Error("Corpus entity alias must differ from its name");
+        }
+        if (
+          cleanAliasList.some((alias) => {
+            const other = this.resolve(alias, entity.parentId);
+            return other && other.id !== entity.id;
+          })
+        ) {
+          throw new Error(
+            "Corpus alias already resolves to an entity in this parent scope",
+          );
+        }
+        nextAliases = cleanAliasList;
+      }
+
+      const descriptionChanged = nextDescription !== entity.description;
+      const aliasesChanged =
+        nextAliases.length !== entity.aliases.length ||
+        nextAliases.some((a, i) => a !== entity.aliases[i]);
+
+      if (!descriptionChanged && !aliasesChanged) {
+        return entity;
+      }
+
+      this.db
+        .prepare(
+          "UPDATE ws_corpus_entity SET description = ?, aliases = ? WHERE id = ?",
         )
-      ) {
-        throw new Error("Corpus entity alias must differ from its name");
-      }
-      if (
-        cleanAliasList.some((alias) => {
-          const other = this.resolve(alias, entity.parentId);
-          return other && other.id !== entity.id;
-        })
-      ) {
-        throw new Error(
-          "Corpus alias already resolves to an entity in this parent scope",
-        );
-      }
-      nextAliases = cleanAliasList;
-    }
+        .run(nextDescription, JSON.stringify(nextAliases), entity.id);
 
-    this.db
-      .prepare(
-        "UPDATE ws_corpus_entity SET description = ?, aliases = ? WHERE id = ?",
-      )
-      .run(nextDescription, JSON.stringify(nextAliases), entity.id);
-
-    this.bumpRevision();
-    return { ...entity, description: nextDescription, aliases: nextAliases };
+      this.bumpRevision();
+      return { ...entity, description: nextDescription, aliases: nextAliases };
+    })();
   }
 
   merge(
@@ -694,73 +830,26 @@ export class CorpusStore {
     if (sourceEntityId === targetEntityId) {
       throw new Error("Cannot merge an entity into itself");
     }
-    const source = this.getById(sourceEntityId);
-    if (!source) throw new Error(`Unknown source entity: ${sourceEntityId}`);
-    const target = this.getById(targetEntityId);
-    if (!target) throw new Error(`Unknown target entity: ${targetEntityId}`);
 
     return this.db.transaction(() => {
+      const source = this.getById(sourceEntityId);
+      if (!source) throw new Error(`Unknown source entity: ${sourceEntityId}`);
+      const target = this.getById(targetEntityId);
+      if (!target) throw new Error(`Unknown target entity: ${targetEntityId}`);
+
       const entities = this.list();
       const targetAncestors = entityAncestors(target.id, entities);
       const targetIsDescendantOfSource = targetAncestors.includes(source.id);
 
-      const children = entities.filter((e) => e.parentId === source.id);
-      let reparentedCount = 0;
-      for (const child of children) {
-        if (child.id === target.id) continue;
-        const existingChild = entities.find(
-          (e) =>
-            e.parentId === target.id &&
-            normalize(e.name) === normalize(child.name) &&
-            e.id !== child.id,
-        );
-        if (existingChild) {
-          this.db
-            .prepare(
-              "UPDATE ws_corpus_subject SET entity_id = ? WHERE entity_id = ?",
-            )
-            .run(existingChild.id, child.id);
-          this.db
-            .prepare("DELETE FROM ws_corpus_group WHERE entity_id = ?")
-            .run(child.id);
-          this.db
-            .prepare("DELETE FROM ws_corpus_entity WHERE id = ?")
-            .run(child.id);
-        } else {
-          this.db
-            .prepare("UPDATE ws_corpus_entity SET parent_id = ? WHERE id = ?")
-            .run(target.id, child.id);
-          reparentedCount++;
-        }
-      }
+      const newTargetParentId = targetIsDescendantOfSource
+        ? source.parentId
+        : target.parentId;
 
-      if (targetIsDescendantOfSource) {
-        this.db
-          .prepare("UPDATE ws_corpus_entity SET parent_id = ? WHERE id = ?")
-          .run(source.parentId, target.id);
-      }
-
-      const subjectUpdate = this.db
-        .prepare(
-          "UPDATE ws_corpus_subject SET entity_id = ? WHERE entity_id = ?",
-        )
-        .run(target.id, source.id);
-      const affectedThreads = subjectUpdate.changes;
-
-      const existingTargetGroup = this.db
-        .prepare("SELECT section_id FROM ws_corpus_group WHERE entity_id = ?")
-        .get(target.id) as { section_id: string } | undefined;
-
-      if (existingTargetGroup) {
-        this.db
-          .prepare("DELETE FROM ws_corpus_group WHERE entity_id = ?")
-          .run(source.id);
-      } else {
-        this.db
-          .prepare(
-            "UPDATE ws_corpus_group SET entity_id = ? WHERE entity_id = ?",
-          )
-          .run(target.id, source.id);
+      // Validate newTargetParentId
+      if (newTargetParentId !== null) {
+        const newParent = this.getById(newTargetParentId);
+        if (!newParent)
+          throw new Error(`Unknown corpus parent: ${newTargetParentId}`);
       }
 
       const combinedAliases = cleanAliases([
@@ -769,28 +858,173 @@ export class CorpusStore {
         ...source.aliases,
       ]).filter((a) => normalize(a) !== normalize(target.name));
 
-      this.db
-        .prepare("UPDATE ws_corpus_entity SET aliases = ? WHERE id = ?")
-        .run(JSON.stringify(combinedAliases), target.id);
+      // Sibling validation in target's final parent scope:
+      // None of target's final aliases or target.name may conflict with other siblings in that scope.
+      const targetSiblings = this.list().filter(
+        (e) =>
+          e.parentId === newTargetParentId &&
+          e.id !== target.id &&
+          e.id !== source.id,
+      );
 
-      this.db
-        .prepare("DELETE FROM ws_corpus_entity WHERE id = ?")
-        .run(source.id);
+      for (const sibling of targetSiblings) {
+        if (normalize(sibling.name) === normalize(target.name)) {
+          throw new Error(
+            `Corpus entity name conflicts with an existing identity in target parent scope: ${target.name}`,
+          );
+        }
+        if (
+          sibling.aliases.some((a) => normalize(a) === normalize(target.name))
+        ) {
+          throw new Error(
+            `Corpus entity name conflicts with an existing alias in target parent scope: ${target.name}`,
+          );
+        }
+        for (const alias of combinedAliases) {
+          if (
+            normalize(sibling.name) === normalize(alias) ||
+            sibling.aliases.some((a) => normalize(a) === normalize(alias))
+          ) {
+            throw new Error(
+              `Corpus alias '${alias}' conflicts with an existing identity in target parent scope`,
+            );
+          }
+        }
+      }
+
+      let totalAffectedThreads = 0;
+      let totalReparentedChildren = 0;
+
+      // If target is descendant of source, reparent target to source.parentId before processing source's subtree
+      if (targetIsDescendantOfSource) {
+        this.db
+          .prepare("UPDATE ws_corpus_entity SET parent_id = ? WHERE id = ?")
+          .run(source.parentId, target.id);
+      }
+
+      const mergeSubtree = (src: CorpusEntity, dst: CorpusEntity) => {
+        // 1. Move subjects assigned to src -> dst
+        const subjectUpdate = this.db
+          .prepare(
+            "UPDATE ws_corpus_subject SET entity_id = ? WHERE entity_id = ?",
+          )
+          .run(dst.id, src.id);
+        totalAffectedThreads += subjectUpdate.changes;
+
+        // 2. Handle group bindings
+        const dstGroup = this.db
+          .prepare("SELECT section_id FROM ws_corpus_group WHERE entity_id = ?")
+          .get(dst.id) as { section_id: string } | undefined;
+        if (dstGroup) {
+          this.db
+            .prepare("DELETE FROM ws_corpus_group WHERE entity_id = ?")
+            .run(src.id);
+        } else {
+          this.db
+            .prepare(
+              "UPDATE ws_corpus_group SET entity_id = ? WHERE entity_id = ?",
+            )
+            .run(dst.id, src.id);
+        }
+
+        // 3. Merge aliases
+        const mergedDstAliases = cleanAliases([
+          ...dst.aliases,
+          src.name,
+          ...src.aliases,
+        ]).filter((a) => normalize(a) !== normalize(dst.name));
+
+        // Validate mergedDstAliases against siblings in dst.parentId scope
+        const siblings = this.list().filter(
+          (e) =>
+            e.parentId === dst.parentId && e.id !== dst.id && e.id !== src.id,
+        );
+        for (const sibling of siblings) {
+          for (const alias of mergedDstAliases) {
+            if (
+              normalize(sibling.name) === normalize(alias) ||
+              sibling.aliases.some((a) => normalize(a) === normalize(alias))
+            ) {
+              throw new Error(
+                `Corpus alias '${alias}' conflicts with an existing identity in target parent scope`,
+              );
+            }
+          }
+        }
+
+        this.db
+          .prepare("UPDATE ws_corpus_entity SET aliases = ? WHERE id = ?")
+          .run(JSON.stringify(mergedDstAliases), dst.id);
+
+        // 4. Process children of src
+        const srcChildren = this.list().filter((e) => e.parentId === src.id);
+        for (const child of srcChildren) {
+          if (child.id === dst.id) continue;
+
+          const dstChildren = this.list().filter((e) => e.parentId === dst.id);
+          const matchingDstChild = dstChildren.find(
+            (e) =>
+              normalize(e.name) === normalize(child.name) && e.id !== child.id,
+          );
+
+          if (matchingDstChild) {
+            // Recursively merge child into matchingDstChild!
+            mergeSubtree(child, matchingDstChild);
+          } else {
+            // Validate child name and aliases against existing dst children
+            for (const existingDstChild of dstChildren) {
+              if (
+                normalize(existingDstChild.name) === normalize(child.name) ||
+                existingDstChild.aliases.some(
+                  (a) => normalize(a) === normalize(child.name),
+                )
+              ) {
+                throw new Error(
+                  `Corpus entity name conflicts with an existing identity in target parent scope: ${child.name}`,
+                );
+              }
+              for (const alias of child.aliases) {
+                if (
+                  normalize(existingDstChild.name) === normalize(alias) ||
+                  existingDstChild.aliases.some(
+                    (a) => normalize(a) === normalize(alias),
+                  )
+                ) {
+                  throw new Error(
+                    `Corpus alias '${alias}' conflicts with an existing identity in target parent scope`,
+                  );
+                }
+              }
+            }
+
+            // Reparent child under dst
+            this.db
+              .prepare("UPDATE ws_corpus_entity SET parent_id = ? WHERE id = ?")
+              .run(dst.id, child.id);
+            totalReparentedChildren++;
+          }
+        }
+
+        // 5. Delete src
+        this.db
+          .prepare("DELETE FROM ws_corpus_entity WHERE id = ?")
+          .run(src.id);
+      };
+
+      mergeSubtree(source, target);
+
+      // Verify acyclic invariant across all entities
+      for (const e of this.list()) {
+        this.assertParentChainAcyclic(e.id);
+      }
 
       this.bumpRevision();
 
-      const updatedTarget: CorpusEntity = {
-        ...target,
-        parentId: targetIsDescendantOfSource
-          ? source.parentId
-          : target.parentId,
-        aliases: combinedAliases,
-      };
-
+      const updatedTarget = this.getById(target.id)!;
       return {
         target: updatedTarget,
-        affectedThreads,
-        reparentedChildren: reparentedCount,
+        affectedThreads: totalAffectedThreads,
+        reparentedChildren: totalReparentedChildren,
       };
     })();
   }
