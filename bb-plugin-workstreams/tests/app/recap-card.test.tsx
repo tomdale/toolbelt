@@ -361,7 +361,7 @@ it("shows the Waiting goal as the title and the countdown in the footer", async 
   expect(countdown.textContent).toMatch(/^[01]:\d{2}$/);
   expect(goalHeading.contains(countdown)).toBe(false);
   expect(countdown.parentElement?.textContent).toMatch(
-    /^Next check [01]:\d{2}$/,
+    /^Next check in [01]:\d{2}$/,
   );
   const progress = slot.getByTestId("status-check-progress");
   expect(progress.style.width).toMatch(/%$/);
@@ -472,7 +472,7 @@ it.each([1, 2])(
     }
     expect(
       slot.getByLabelText("Status check countdown").parentElement?.textContent,
-    ).toMatch(/^Next check /);
+    ).toMatch(/^Next check in /);
   },
 );
 
