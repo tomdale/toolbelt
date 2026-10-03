@@ -46,7 +46,7 @@ it("recognizes an inactive feature and retains subject through broad placement",
   });
   expect(result).toMatchObject({
     outcome: "new-thread",
-    subjectId: expect.stringMatching(/^automatic:/),
+    subjectId: feature.id,
     sectionId: section.id,
     placement: null,
   });

@@ -20,7 +20,15 @@ import type {
   PluginComposerApi,
 } from "@get-bb/plugin-sdk/app";
 import type { Placement, RouteDecision } from "../../server/router.ts";
+import type { DraftSubjectProposal } from "../../domain/corpus.ts";
 import { routeDelay } from "./timing.ts";
+
+export type IdentityChoice = {
+  entityId: string | null;
+  proposal: DraftSubjectProposal | null;
+  label: string;
+  provenance: "manual" | "automatic";
+} | null;
 
 export type WorkstreamChoice = {
   id: string;
@@ -42,6 +50,11 @@ type SuggestionBase = {
   key: string;
   reason: string;
   traceId: string | null;
+  identity?: {
+    entityId?: string | null;
+    proposal?: DraftSubjectProposal | null;
+    label: string;
+  } | null;
 };
 
 /** The single most likely home for the draft, as New work shows it. */
@@ -67,10 +80,23 @@ export type Suggestion =
 
 /** The suggestion a route decision makes, or null when it names no home. */
 export function suggestionFrom(decision: RouteDecision): Suggestion | null {
+  const identity =
+    decision.subjectId || decision.proposal || decision.subject
+      ? {
+          entityId: decision.subjectId ?? null,
+          proposal: decision.proposal ?? null,
+          label:
+            decision.subject ??
+            decision.proposal?.name ??
+            decision.subjectId ??
+            "",
+        }
+      : null;
   const base = {
     key: decision.id,
     reason: decision.reason,
     traceId: decision.traceId,
+    identity,
   };
   switch (decision.outcome) {
     case "continue":
@@ -118,6 +144,7 @@ export type NewWorkEvent = {
     | "apply"
     | "dismiss"
     | "select-workstream"
+    | "select-identity"
     | "create-workstream"
     | "submit";
   /** `superseded`: newer text replaced the draft before the answer came. */
@@ -135,6 +162,7 @@ export type NewWorkState = {
   /** The draft's trimmed plain text, as last observed from the composer. */
   text: string;
   workstream: WorkstreamChoice;
+  identity: IdentityChoice;
   /**
    * True while the pickers are the user's: a preset workstream, a picked
    * value (including No workstream), or a manual project or environment
@@ -193,7 +221,17 @@ export type NewWorkDeps = {
   startThread(
     sectionId: string | null,
     request: NewThreadRequest,
-    subjectId?: string,
+    optionsOrSubjectId?:
+      | {
+          identity?: {
+            entityId?: string | null;
+            proposal?: DraftSubjectProposal | null;
+            provenance?: "manual" | "automatic";
+          } | null;
+          newWorkstream?: { name: string; description?: string } | null;
+          subjectId?: string;
+        }
+      | string,
   ): Promise<{ threadId: string }>;
   sendToThread(
     threadId: string,
@@ -201,7 +239,18 @@ export type NewWorkDeps = {
     traceId: string | null,
   ): Promise<void>;
   sendDraftToThread?(threadId: string, traceId: string | null): Promise<void>;
-  submitWithRoute?(routeId: string | null, sectionId?: string): Promise<void>;
+  submitWithRoute?(
+    routeId: string | null,
+    sectionId?: string | null,
+    options?: {
+      newWorkstream?: { name: string; description?: string } | null;
+      identity?: {
+        entityId?: string | null;
+        proposal?: DraftSubjectProposal | null;
+        provenance?: "manual" | "automatic";
+      } | null;
+    },
+  ): Promise<void>;
 };
 
 export type SubmitResult =
@@ -291,6 +340,47 @@ export function pickerDisplay(state: NewWorkState): {
   };
 }
 
+export function identityDisplay(state: NewWorkState): {
+  id: string | null;
+  label: string;
+  auto: boolean;
+  selected: boolean;
+  reason: string | null;
+} {
+  if (state.identity)
+    return {
+      id: state.identity.entityId,
+      label: state.identity.label,
+      auto: state.identity.provenance === "automatic",
+      selected: true,
+      reason:
+        state.identity.provenance === "automatic"
+          ? (state.decision?.reason ?? null)
+          : null,
+    };
+  return {
+    id: null,
+    label: "Unresolved",
+    auto: false,
+    selected: false,
+    reason: null,
+  };
+}
+
+export function composerSummary(state: NewWorkState): {
+  identityLabel: string;
+  placementLabel: string;
+  text: string;
+} {
+  const ident = state.identity ? state.identity.label : "Unresolved";
+  const place = pickerDisplay(state).label;
+  return {
+    identityLabel: ident,
+    placementLabel: place,
+    text: `Concerning ${ident} · In ${place}`,
+  };
+}
+
 /** Whether ⏎ would file into a destination the pickers show. */
 export function hasDestination(state: NewWorkState): boolean {
   return !!(state.workstream || state.pendingNew);
@@ -351,6 +441,7 @@ export class NewWork {
     this.state = {
       text: "",
       workstream,
+      identity: null,
       pinned: workstream !== null,
       pendingNew: null,
       selection: null,
@@ -434,7 +525,11 @@ export class NewWork {
         : {
             suggestion: null,
             decision: null,
-            // An emptied draft has no destination; an automatic one goes too.
+            // An emptied draft has no automatic destination; manual selections stay.
+            identity:
+              this.state.identity?.provenance === "manual"
+                ? this.state.identity
+                : null,
             ...this.withdrawn(),
           }),
     });
@@ -469,6 +564,60 @@ export class NewWork {
       pendingNew: null,
       acceptedRoute: null,
       pinned: true,
+      error: null,
+    });
+  }
+
+  selectIdentity(
+    choice: {
+      entityId?: string | null;
+      proposal?: DraftSubjectProposal | null;
+      label: string;
+    } | null,
+    provenance: "manual" | "automatic" = "manual",
+  ) {
+    this.begin("select-identity", {
+      from: this.state.identity,
+      to: choice,
+      provenance,
+    })("ok");
+    this.set({
+      identity: choice
+        ? {
+            entityId: choice.entityId ?? null,
+            proposal: choice.proposal ?? null,
+            label: choice.label,
+            provenance,
+          }
+        : null,
+      error: null,
+    });
+  }
+
+  selectAutomaticIdentity() {
+    this.begin("select-identity", {
+      from: this.state.identity,
+      to: "automatic",
+    })("ok");
+    let identity: IdentityChoice = null;
+    if (this.state.decision?.subjectId) {
+      identity = {
+        entityId: this.state.decision.subjectId,
+        proposal: null,
+        label: this.state.decision.subject ?? this.state.decision.subjectId,
+        provenance: "automatic",
+      };
+    } else if (this.state.decision?.proposal) {
+      identity = {
+        entityId: null,
+        proposal: this.state.decision.proposal,
+        label:
+          this.state.decision.subject ?? this.state.decision.proposal.name,
+        provenance: "automatic",
+      };
+    }
+    this.set({
+      identity,
       error: null,
     });
   }
@@ -558,18 +707,11 @@ export class NewWork {
       }
       let acceptedSectionId: string | undefined;
       let workstream = this.state.workstream;
+      let pendingNew = this.state.pendingNew;
       if (suggestion.kind === "workstream") {
         workstream = { id: suggestion.sectionId, name: suggestion.name };
-      } else if (this.nativeFlow) {
-        const created = await this.deps.createWorkstream(
-          suggestion.name,
-          suggestion.description,
-          ...(this.state.decision?.subjectId
-            ? [this.state.decision.subjectId]
-            : []),
-        );
-        workstream = { id: created.sectionId, name: created.name };
-        acceptedSectionId = created.sectionId;
+        pendingNew = null;
+        acceptedSectionId = suggestion.sectionId;
       } else {
         const created = await this.deps.createWorkstream(
           suggestion.name,
@@ -579,18 +721,38 @@ export class NewWork {
             : []),
         );
         workstream = { id: created.sectionId, name: created.name };
+        pendingNew = null;
+        acceptedSectionId = created.sectionId;
       }
+
+      let identity = this.state.identity;
+      if (this.state.decision?.subjectId) {
+        identity = {
+          entityId: this.state.decision.subjectId,
+          proposal: null,
+          label: this.state.decision.subject ?? this.state.decision.subjectId,
+          provenance: "automatic",
+        };
+      } else if (this.state.decision?.proposal) {
+        identity = {
+          entityId: null,
+          proposal: this.state.decision.proposal,
+          label:
+            this.state.decision.subject ?? this.state.decision.proposal.name,
+          provenance: "automatic",
+        };
+      }
+
       this.set({
-        ...(workstream ? { workstream } : {}),
-        pendingNew: null,
+        workstream,
+        pendingNew,
+        identity,
         pinned: true,
-        acceptedRoute: workstream
-          ? {
-              routeId: suggestion.key,
-              sectionId: workstream.id,
-              subjectId: this.state.decision?.subjectId,
-            }
-          : null,
+        acceptedRoute: {
+          routeId: suggestion.key,
+          sectionId: workstream?.id,
+          subjectId: this.state.decision?.subjectId ?? undefined,
+        },
       });
       let requested: ComposerSelection | null = null;
       let applied: ComposerSelection | null = null;
@@ -614,7 +776,7 @@ export class NewWork {
         await afterHostCommit();
         if (this.nativeFlow && this.deps.submitWithRoute) {
           await this.deps.submitWithRoute(
-            this.nativeFlow ? suggestion.key : null,
+            suggestion.key,
             acceptedSectionId ?? workstream?.id,
           );
           this.set({ settled: suggestion.key });
@@ -641,20 +803,31 @@ export class NewWork {
   async submit(request: NewThreadRequest): Promise<SubmitResult> {
     if (this.state.error) this.set({ error: null });
     const target = this.sendTarget;
-    const subjectId =
-      this.state.acceptedRoute?.subjectId ??
-      this.state.workstream?.subjectId ??
-      this.state.pendingNew?.subjectId;
     this.sendTarget = null;
     this.invalidate();
+
     let sectionId = this.state.workstream?.id ?? null;
-    if (!target && !sectionId && this.state.pendingNew)
+    if (!target && !sectionId && this.state.pendingNew) {
       sectionId = await this.createPending();
+    }
+
+    const identityPayload = this.state.identity
+      ? {
+          entityId: this.state.identity.entityId,
+          proposal: this.state.identity.proposal,
+          provenance: this.state.identity.provenance,
+        }
+      : null;
+
     const finish = this.begin(
       "submit",
       target
         ? { sendTo: target.threadId, request }
-        : { startIn: sectionId, request },
+        : {
+            startIn: sectionId,
+            identity: identityPayload,
+            request,
+          },
     );
     try {
       if (target) {
@@ -670,11 +843,20 @@ export class NewWork {
           title: target.title,
         };
       }
-      const { threadId } = await this.deps.startThread(
-        sectionId,
-        request,
-        ...(subjectId ? [subjectId] : []),
-      );
+      const hasSubjectId =
+        this.state.identity?.entityId && !this.state.identity.proposal;
+      const { threadId } = hasSubjectId
+        ? await this.deps.startThread(
+            sectionId,
+            request,
+            this.state.identity!.entityId!,
+          )
+        : identityPayload
+          ? await this.deps.startThread(sectionId, request, {
+              identity: identityPayload,
+            })
+          : await this.deps.startThread(sectionId, request);
+
       finish("ok", { output: { started: threadId, sectionId } });
       return { kind: "started", threadId };
     } catch (error) {
@@ -795,7 +977,7 @@ export class NewWork {
           acceptedRoute: {
             routeId: suggestion.key,
             sectionId: suggestion.sectionId,
-            subjectId: this.state.decision?.subjectId,
+            subjectId: this.state.decision?.subjectId ?? undefined,
           },
         });
         this.begin("apply", suggestion)("ok", {
@@ -807,7 +989,7 @@ export class NewWork {
           acceptedRoute: {
             routeId: suggestion.key,
             sectionId: suggestion.sectionId,
-            subjectId: this.state.decision?.subjectId,
+            subjectId: this.state.decision?.subjectId ?? undefined,
           },
         });
       }
@@ -837,7 +1019,7 @@ export class NewWork {
         },
         acceptedRoute: {
           routeId: suggestion.key,
-          subjectId: this.state.decision?.subjectId,
+          subjectId: this.state.decision?.subjectId ?? undefined,
         },
       });
       this.begin("apply", suggestion)("ok", {
@@ -892,7 +1074,30 @@ export class NewWork {
       }
       const suggestion = suggestionFrom(decision);
       finish("ok", { output: { decision, suggestion } });
-      this.set({ decision, suggestion });
+
+      let nextIdentity = this.state.identity;
+      if (this.state.identity?.provenance !== "manual") {
+        if (decision.subjectId) {
+          nextIdentity = {
+            entityId: decision.subjectId,
+            proposal: null,
+            label: decision.subject ?? decision.subjectId,
+            provenance: "automatic",
+          };
+        } else if (decision.proposal) {
+          nextIdentity = {
+            entityId: null,
+            proposal: decision.proposal,
+            label:
+              decision.subject ?? decision.proposal.name,
+            provenance: "automatic",
+          };
+        } else {
+          nextIdentity = null;
+        }
+      }
+
+      this.set({ decision, suggestion, identity: nextIdentity });
       // A dismissed suggestion names no destination; an already-applied one
       // keeps the pickers it filled (autoApply is idempotent for it).
       await this.autoApply(

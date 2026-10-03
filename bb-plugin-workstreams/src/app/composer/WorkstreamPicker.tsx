@@ -1,10 +1,13 @@
 /**
- * New work's workstream field, built to sit beside BB's project and
- * environment pickers and match them: a ghost trigger and a searchable
- * popover list. The field starts Automatic: the classifier's destination
- * shows in the magic tint, and any manual pick — including No workstream —
- * pins it back to the ordinary muted treatment. Searching for a name no
- * workstream has offers to create it.
+ * Independent Product/Feature identity and Workstream placement controls for New work,
+ * built to sit beside BB's project and environment pickers: ghost triggers with searchable
+ * popover commands.
+ *
+ * Identity and Workstream destinations are independent:
+ * - Product/Feature identity represents what the task concerns in the Catalog.
+ * - Workstream placement represents where the thread is filed in the sidebar.
+ * Changing placement does not erase identity; choosing an identity does not force a move.
+ * Searching matches full ancestry paths and aliases.
  */
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
@@ -33,7 +36,11 @@ import { WorkstreamName } from "../WorkstreamName.tsx";
 import { NO_WORKSTREAM_ICON, WORKSTREAM_ICON } from "../workstream-icon.ts";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
 import { useServerState } from "../useWorkstreams.ts";
-import { pickerDisplay, type NewWork } from "./new-work.ts";
+import {
+  identityDisplay,
+  pickerDisplay,
+  type NewWork,
+} from "./new-work.ts";
 
 /** BB's option-trigger classes, so the field lines up with the pickers beside it. */
 const TRIGGER_CLASS =
@@ -50,19 +57,44 @@ function Description({ text }: { text: string | null | undefined }) {
     </span>
   );
 }
+
 const NONE = "__none__";
 const CREATE = "__create__";
 const AUTOMATIC = "__automatic__";
 
-export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
+/** Matches search queries against entity name, full ancestry, aliases, and description. */
+export function matchesEntity(
+  entity: CorpusEntity,
+  entities: readonly CorpusEntity[],
+  query: string,
+): boolean {
+  if (!query) return true;
+  const needle = query.toLowerCase();
+  if (entity.name.toLowerCase().includes(needle)) return true;
+  if (entity.description?.toLowerCase().includes(needle)) return true;
+  if (entity.aliases.some((a) => a.toLowerCase().includes(needle))) return true;
+
+  let current: string | null = entity.parentId;
+  const seen = new Set<string>();
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    const parent = entities.find((e) => e.id === current);
+    if (!parent) break;
+    if (parent.name.toLowerCase().includes(needle)) return true;
+    if (parent.aliases.some((a) => a.toLowerCase().includes(needle))) return true;
+    current = parent.parentId;
+  }
+  return false;
+}
+
+export function IdentityControl({ newWork }: { newWork: NewWork }) {
   const state = useSyncExternalStore(newWork.subscribe, newWork.snapshot);
-  const selected = state.workstream;
-  const display = pickerDisplay(state);
-  const { server } = useServerState();
+  const display = identityDisplay(state);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rpc = useRpc<RpcContract>();
   const [entities, setEntities] = useState<CorpusEntity[]>([]);
+
   useEffect(() => {
     if (!open) return;
     let live = true;
@@ -76,6 +108,241 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
       live = false;
     };
   }, [open, rpc]);
+
+  const needle = query.trim().toLowerCase();
+  const visibleEntities = useMemo(() => {
+    return entities
+      .filter((e) => matchesEntity(e, entities, needle))
+      .sort((a, b) =>
+        compareGroupNames(
+          corpusLabel(a.id, entities),
+          corpusLabel(b.id, entities),
+        ),
+      );
+  }, [entities, needle]);
+
+  const exact = entities.some((e) => e.name.toLowerCase() === needle);
+
+  const openChange = (next: boolean) => {
+    setOpen(next);
+    if (!next) setQuery("");
+  };
+
+  const isManual = state.identity?.provenance === "manual";
+  const label = state.identity ? state.identity.label : display.auto ? "Automatic" : "Unresolved";
+
+  const trigger = (
+    <PopoverTrigger asChild>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label={`Product or feature: ${label}`}
+        data-ws-identity-control=""
+        data-ws-auto={display.auto || undefined}
+        className={TRIGGER_CLASS}
+      >
+        <span className="contents">
+          {display.auto ? (
+            <span className="ws-spark" aria-hidden>
+              ✦
+            </span>
+          ) : (
+            <Icon name="Tag" className="size-3.5 shrink-0" aria-hidden />
+          )}
+          <span className="min-w-0 truncate">
+            {state.identity ? state.identity.label : `Concerning: ${label}`}
+          </span>
+        </span>
+        <Icon
+          name="ChevronDown"
+          className="size-3.5 shrink-0 text-muted-foreground"
+          aria-hidden
+        />
+      </Button>
+    </PopoverTrigger>
+  );
+
+  return (
+    <Popover open={open} onOpenChange={openChange} modal>
+      {trigger}
+      <PopoverContent
+        align="start"
+        aria-label="Product or feature"
+        mobileTitle="Product or feature"
+        className="flex max-h-[min(var(--radix-popover-content-available-height),calc(100dvh-0.5rem))] w-64 flex-col overflow-hidden p-0 max-md:min-h-0 max-md:flex-1"
+      >
+        <Command
+          label="Search products and features"
+          shouldFilter={false}
+          defaultValue={state.identity?.entityId ?? (isManual ? NONE : AUTOMATIC)}
+          className="min-h-0"
+        >
+          <CommandInput
+            aria-label="Search products and features"
+            placeholder="Find a product or feature"
+            value={query}
+            onValueChange={setQuery}
+            className="h-8 text-xs"
+          />
+          <CommandList className="max-h-72">
+            <CommandGroup>
+              <CommandItem
+                value={AUTOMATIC}
+                aria-current={!isManual ? "true" : undefined}
+                onSelect={() => {
+                  newWork.selectAutomaticIdentity();
+                  openChange(false);
+                }}
+                className={ITEM_CLASS}
+              >
+                <span className="ws-spark" aria-hidden>
+                  ✦
+                </span>
+                <span className="min-w-0 flex-1 truncate">
+                  Automatic
+                  <span className="block font-normal text-muted-foreground">
+                    The classifier identifies products and features
+                  </span>
+                </span>
+                <Icon
+                  name="Check"
+                  className={cn(
+                    "ml-auto size-4",
+                    !isManual ? "opacity-100" : "opacity-0",
+                  )}
+                  aria-hidden
+                />
+              </CommandItem>
+            </CommandGroup>
+            {visibleEntities.length ? (
+              <CommandGroup heading="Products and features">
+                {visibleEntities.map((entity) => {
+                  const fullLabel = corpusLabel(entity.id, entities);
+                  const isSelected = state.identity?.entityId === entity.id;
+                  return (
+                    <CommandItem
+                      key={`identity:${entity.id}`}
+                      value={`identity:${entity.id}`}
+                      aria-current={isSelected ? "true" : undefined}
+                      onSelect={() => {
+                        newWork.selectIdentity({
+                          entityId: entity.id,
+                          label: fullLabel,
+                        });
+                        openChange(false);
+                      }}
+                      className={ITEM_CLASS}
+                    >
+                      <Icon
+                        name="Tag"
+                        className="size-4 text-muted-foreground shrink-0 mt-0.5"
+                        aria-hidden
+                      />
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="truncate font-medium">{fullLabel}</span>
+                        <Description text={entity.description} />
+                        {entity.aliases.length > 0 && (
+                          <span className="line-clamp-1 text-[10px] text-muted-foreground/80">
+                            Aliases: {entity.aliases.join(", ")}
+                          </span>
+                        )}
+                      </span>
+                      <Icon
+                        name="Check"
+                        className={cn(
+                          "ml-auto size-4 shrink-0",
+                          isSelected ? "opacity-100" : "opacity-0",
+                        )}
+                        aria-hidden
+                      />
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            ) : null}
+            {visibleEntities.length ? <CommandSeparator /> : null}
+            <CommandGroup>
+              {needle && !exact ? (
+                <CommandItem
+                  value={CREATE}
+                  onSelect={() => {
+                    newWork.selectIdentity({
+                      proposal: { name: query.trim(), description: "" },
+                      label: query.trim(),
+                    });
+                    openChange(false);
+                  }}
+                  className={ITEM_CLASS}
+                >
+                  <Icon
+                    name="Plus"
+                    className="size-4 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    New feature proposal “{query.trim()}”
+                  </span>
+                </CommandItem>
+              ) : null}
+              <CommandItem
+                value={NONE}
+                aria-current={state.identity === null && isManual ? "true" : undefined}
+                onSelect={() => {
+                  newWork.selectIdentity(null);
+                  openChange(false);
+                }}
+                className={ITEM_CLASS}
+              >
+                <Icon
+                  name="X"
+                  className="size-4 text-muted-foreground"
+                  aria-hidden
+                />
+                Unresolved
+                <Icon
+                  name="Check"
+                  className={cn(
+                    "ml-auto size-4",
+                    state.identity === null && isManual
+                      ? "opacity-100"
+                      : "opacity-0",
+                  )}
+                  aria-hidden
+                />
+              </CommandItem>
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function WorkstreamControl({ newWork }: { newWork: NewWork }) {
+  const state = useSyncExternalStore(newWork.subscribe, newWork.snapshot);
+  const selected = state.workstream;
+  const display = pickerDisplay(state);
+  const { server } = useServerState();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const rpc = useRpc<RpcContract>();
+  const [entities, setEntities] = useState<CorpusEntity[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    rpc
+      .call("corpus", null)
+      .then((result) => {
+        if (live) setEntities(result.entities);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [open, rpc]);
+
   const workstreams = useMemo(
     () =>
       Object.values(server.workstreams).sort((a, b) =>
@@ -83,6 +350,7 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
       ),
     [server.workstreams],
   );
+
   const needle = query.trim().toLowerCase();
   const visible = needle
     ? workstreams.filter((w) =>
@@ -91,44 +359,48 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
         ),
       )
     : workstreams;
-  const inactive = entities
-    .filter(
-      (e) =>
-        !workstreams.some((w) => w.name === e.name) &&
-        (!needle ||
-          [e.name, e.description, ...e.aliases].some((n) =>
-            n.toLowerCase().includes(needle),
-          )),
-    )
-    .sort((a, b) =>
-      compareGroupNames(
-        corpusLabel(a.id, entities),
-        corpusLabel(b.id, entities),
-      ),
-    );
+
+  const inactive = useMemo(() => {
+    return entities
+      .filter(
+        (e) =>
+          !workstreams.some((w) => w.name === e.name) &&
+          matchesEntity(e, entities, needle),
+      )
+      .sort((a, b) =>
+        compareGroupNames(
+          corpusLabel(a.id, entities),
+          corpusLabel(b.id, entities),
+        ),
+      );
+  }, [entities, workstreams, needle]);
+
   const exact =
     workstreams.some((w) => w.name.toLowerCase() === needle) ||
     entities.some((e) => e.name.toLowerCase() === needle);
-  // A rename elsewhere shows here; a just-created workstream may not be
-  // listed yet.
+
   const label = selected
     ? (server.workstreams[selected.id]?.name ?? selected.name)
     : display.label;
+
   const openChange = (next: boolean) => {
     setOpen(next);
     if (!next) setQuery("");
   };
+
   const pick = (
-    choice: { id: string; name: string; subjectId?: string } | null,
+    choice: { id: string; name: string } | null,
   ) => {
     newWork.selectWorkstream(choice);
     openChange(false);
   };
+
   const automaticTitle = display.creating
     ? `New workstream “${label}” — created when you start`
     : display.auto
-      ? (display.reason ?? "The classifier fills this as you type")
+      ? (display.reason ?? "The classifier files this as you type")
       : null;
+
   const trigger = (
     <PopoverTrigger asChild>
       <Button
@@ -164,6 +436,7 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
       </Button>
     </PopoverTrigger>
   );
+
   return (
     <Popover open={open} onOpenChange={openChange} modal>
       {automaticTitle ? (
@@ -276,17 +549,22 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
                     key={`entity:${entity.id}`}
                     value={`entity:${entity.id}`}
                     onSelect={() => {
+                      newWork.selectIdentity({
+                        entityId: entity.id,
+                        label: corpusLabel(entity.id, entities),
+                      });
                       void rpc
                         .call("catalogResolve", { entityId: entity.id })
-                        .then((result) =>
-                          pick({
-                            id: result.sectionId ?? "",
-                            name:
-                              result.name ?? corpusLabel(entity.id, entities),
-                            subjectId: entity.id,
-                          }),
-                        )
+                        .then((result) => {
+                          if (result.sectionId && result.name) {
+                            pick({
+                              id: result.sectionId,
+                              name: result.name,
+                            });
+                          }
+                        })
                         .catch((error) => newWork.reportError(error));
+                      openChange(false);
                     }}
                     className={ITEM_CLASS}
                   >
@@ -323,7 +601,7 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
               ) : null}
               <CommandItem
                 value={NONE}
-                aria-current={selected === null ? "true" : undefined}
+                aria-current={selected === null && state.pinned ? "true" : undefined}
                 onSelect={() => pick(null)}
                 className={ITEM_CLASS}
               >
@@ -337,7 +615,7 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
                   name="Check"
                   className={cn(
                     "ml-auto size-4",
-                    selected === null ? "opacity-100" : "opacity-0",
+                    selected === null && state.pinned ? "opacity-100" : "opacity-0",
                   )}
                   aria-hidden
                 />
@@ -347,5 +625,23 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
         </Command>
       </PopoverContent>
     </Popover>
+  );
+}
+
+export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
+  return (
+    <div
+      className="flex items-center gap-0.5 max-w-full min-w-0"
+      data-ws-composer-controls=""
+    >
+      <IdentityControl newWork={newWork} />
+      <span
+        className="text-muted-foreground/30 text-xs select-none mx-0.5"
+        aria-hidden
+      >
+        ·
+      </span>
+      <WorkstreamControl newWork={newWork} />
+    </div>
   );
 }

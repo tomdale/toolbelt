@@ -28,15 +28,28 @@ it("keeps draft discoveries tentative and commits ancestry only on submission", 
     prompt: "Change upcoming tasks",
     suggest: true,
     draftKey: "draft",
-  })) as { subjectId: string; name: string };
+  })) as { subjectId: string | null; proposal?: unknown; name: string };
   expect(decision.name).toBe("Lantern: Sidebar: Up Next");
+  expect(decision.subjectId).toBeNull();
+  expect(decision.proposal).toMatchObject({
+    name: "Up Next",
+  });
   expect(await world.harness.behavior.callRpc("corpus", null)).toEqual({
     entities: [],
   });
-  await world.harness.behavior.callRpc("createWorkstream", {
-    name: decision.name,
-    description: "",
-    subjectId: decision.subjectId,
+  await world.harness.behavior.callRpc("startThread", {
+    sectionId: null,
+    identity: {
+      proposal: decision.proposal,
+    },
+    execution: {
+      projectId: "proj_1",
+      environment: {
+        type: "host",
+        hostId: "host_1",
+        workspace: { type: "unmanaged", path: null },
+      },
+    },
   });
   const result = (await world.harness.behavior.callRpc("corpus", null)) as {
     entities: { name: string }[];

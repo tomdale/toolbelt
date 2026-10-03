@@ -174,6 +174,25 @@ const bootstrapSchema = z
   })
   .nullable();
 
+const draftAncestorSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().default(""),
+});
+
+export const draftSubjectProposalSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().default(""),
+  parentId: z.string().nullable().optional(),
+  ancestors: z.array(draftAncestorSchema).nullable().optional(),
+});
+
+export const taskIdentitySubmissionSchema = z.object({
+  entityId: z.string().min(1).nullable().optional(),
+  proposal: draftSubjectProposalSchema.nullable().optional(),
+  provenance: assignmentProvenanceSchema.optional(),
+});
+
+
 const entitySchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -217,7 +236,8 @@ const routeBase = {
   confidence: z.enum(["high", "medium", "low"]),
   reason: z.string(),
   subject: z.string().nullable(),
-  subjectId: z.string().optional(),
+  subjectId: z.string().nullable().optional(),
+  proposal: draftSubjectProposalSchema.nullable().optional(),
   traceId: z.string().nullable(),
   explanation: z
     .object({ notes: z.array(z.string()), durationMs: z.number() })
@@ -463,8 +483,16 @@ export const rpcContract = defineRpcContract({
    */
   startThread: {
     input: z.object({
+      identity: taskIdentitySubmissionSchema.nullable().optional(),
       subjectId: z.string().optional(),
-      sectionId: z.string().min(1).nullable(),
+      sectionId: z.string().min(1).nullable().optional(),
+      newWorkstream: z
+        .object({
+          name: z.string().min(1),
+          description: z.string().default(""),
+        })
+        .nullable()
+        .optional(),
       execution: z
         .object({
           projectId: z.string().min(1),
