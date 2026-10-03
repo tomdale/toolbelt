@@ -7,21 +7,15 @@ import {
   useQuestionFormHost,
   type QuestionShortcut,
 } from "./question-form-host.tsx";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type RefObject,
-} from "react";
-import { Markdown } from "@get-bb/plugin-sdk/app";
+  experimental_NewThreadComposer,
+  Markdown,
+  useComposers,
+} from "@get-bb/plugin-sdk/app";
 import { plainText } from "../../domain/recap.ts";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { usePointerCoarse } from "@/components/ui/hooks/use-pointer-coarse";
 import { cn } from "@/lib/utils";
 import {
   answerStateFor,
@@ -33,9 +27,9 @@ import {
   type QuestionFormState,
 } from "./question-form-state.ts";
 
+const BBNewThreadComposer = experimental_NewThreadComposer;
 const OTHER_OPTION_LABEL = "Other…";
-const FREE_TEXT_MIN_HEIGHT = 84;
-const FREE_TEXT_MAX_HEIGHT = 158;
+const QUESTION_COMPOSER_KEY = "workstreams-ask-user-question";
 const PREVIEW_MAX_HEIGHT = 220;
 
 // A step below the recap card's type scale: a question card carries more
@@ -53,24 +47,6 @@ interface QuestionOptionRowProps {
   multiSelect: boolean;
   onSelect: () => void;
   shortcut?: QuestionShortcut;
-}
-
-function useAutoGrow(
-  ref: RefObject<HTMLTextAreaElement | null>,
-  { minHeight, maxHeight }: { minHeight: number; maxHeight: number },
-) {
-  return useCallback(
-    (textarea?: HTMLTextAreaElement | null) => {
-      const element = textarea ?? ref.current;
-      if (!element) return;
-      element.style.height = "auto";
-      element.style.height = `${Math.min(
-        Math.max(element.scrollHeight, minHeight),
-        maxHeight,
-      )}px`;
-    },
-    [maxHeight, minHeight, ref],
-  );
 }
 
 function QuestionOptionRow({
@@ -213,8 +189,13 @@ interface QuestionInputBlockProps {
   state: QuestionAnswerState;
   onToggleOption: (optionValue: string) => void;
   onSelectOther: () => void;
-  onFreeTextChange: (value: string) => void;
   onShortcutSubmit: () => void;
+  onComposerSubmit: (
+    request: Parameters<
+      React.ComponentProps<typeof experimental_NewThreadComposer>["onSubmit"]
+    >[0],
+  ) => void;
+  composerKey: string;
   shortcuts: ReadonlyMap<string, QuestionShortcut>;
 }
 
@@ -224,38 +205,12 @@ function QuestionInputBlock({
   state,
   onToggleOption,
   onSelectOther,
-  onFreeTextChange,
   onShortcutSubmit,
+  onComposerSubmit,
+  composerKey,
   shortcuts,
 }: QuestionInputBlockProps) {
-  const freeTextRef = useRef<HTMLTextAreaElement>(null);
-  const isPointerCoarse = usePointerCoarse();
-  const resizeFreeTextArea = useAutoGrow(freeTextRef, {
-    minHeight: FREE_TEXT_MIN_HEIGHT,
-    maxHeight: FREE_TEXT_MAX_HEIGHT,
-  });
   const options = question.options;
-  const freeTextLabel = `${question.shortLabel} answer`;
-
-  useLayoutEffect(() => {
-    if (!state.otherSelected) return;
-    resizeFreeTextArea();
-  }, [question.id, resizeFreeTextArea, state.otherSelected, state.otherText]);
-
-  const handleFreeTextKeyDown = (
-    event: KeyboardEvent<HTMLTextAreaElement>,
-  ): void => {
-    if (
-      event.nativeEvent.isComposing ||
-      event.key !== "Enter" ||
-      event.shiftKey ||
-      event.altKey
-    ) {
-      return;
-    }
-    event.preventDefault();
-    onShortcutSubmit();
-  };
 
   return (
     <fieldset disabled={disabled} className="min-w-0">
@@ -302,25 +257,16 @@ function QuestionInputBlock({
         ) : null}
       </div>
       {state.otherSelected ? (
-        <textarea
-          ref={freeTextRef}
-          aria-label={freeTextLabel}
-          value={state.otherText}
-          rows={1}
-          autoFocus={!isPointerCoarse}
-          autoComplete="off"
-          onChange={(event) => {
-            onFreeTextChange(event.target.value);
-            resizeFreeTextArea(event.target);
-          }}
-          onKeyDown={handleFreeTextKeyDown}
-          placeholder="Type your own answer…"
-          className="mt-2 w-full resize-none overflow-y-auto rounded-md border border-border bg-background/60 px-2.5 py-1.5 text-[12.5px] leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:border-ring/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
-          style={{
-            minHeight: `${FREE_TEXT_MIN_HEIGHT}px`,
-            maxHeight: `${FREE_TEXT_MAX_HEIGHT}px`,
-          }}
-        />
+        <div className="mt-2 overflow-hidden rounded-md border border-border bg-background/60">
+          <BBNewThreadComposer
+            key={`${QUESTION_COMPOSER_KEY}:${composerKey}:${question.id}`}
+            draftKey={`${QUESTION_COMPOSER_KEY}:${composerKey}:${question.id}`}
+            placeholder="Type your own answer…"
+            layout="document"
+            onSubmit={onComposerSubmit}
+            className="[&_[data-promptbox-shell]]:!border-0 [&_[data-promptbox-shell]]:!bg-transparent [&_[data-promptbox-shell]]:!shadow-none [&_[data-promptbox-shell]]:!p-0 [&_[data-promptbox-shell]]:!min-h-0 [&_[data-promptbox-shell]]:!rounded-none [&_[data-promptbox]]:!min-h-[84px] [&_[data-promptbox]]:!max-h-[158px] [&_[data-promptbox]]:text-[12.5px] [&_textarea]:!min-h-[84px] [&_textarea]:!max-h-[158px]"
+          />
+        </div>
       ) : null}
     </fieldset>
   );
@@ -333,6 +279,7 @@ export interface QuestionFormProps {
   cancelDisabled: boolean;
   onSubmit: (answers: Record<string, QuestionAnswer>) => void;
   onCancel: () => void;
+  composerKey: string;
 }
 
 export function QuestionForm({
@@ -342,6 +289,7 @@ export function QuestionForm({
   cancelDisabled,
   onSubmit,
   onCancel,
+  composerKey,
 }: QuestionFormProps) {
   const storageKey = persistenceKey
     ? `ws-question-draft:${persistenceKey}`
@@ -363,7 +311,9 @@ export function QuestionForm({
                 (item: unknown) => typeof item === "string",
               ) &&
               typeof value.otherSelected === "boolean" &&
-              typeof value.otherText === "string",
+              typeof value.otherText === "string" &&
+              (value.otherAttachments === undefined ||
+                Array.isArray(value.otherAttachments)),
           )
         )
           return parsed as QuestionFormState;
@@ -384,18 +334,71 @@ export function QuestionForm({
   }, [storageKey, formState]);
   const formRef = useRef<HTMLDivElement>(null);
   const { shortcuts, registerChoiceHandler } = useQuestionFormHost();
-
   const totalQuestions = questions.length;
   const currentQuestion = questions[currentIndex] ?? null;
+  const answerComposerKey = `${QUESTION_COMPOSER_KEY}:${composerKey}:`;
+  const answerComposers = useComposers().filter(
+    (composer) =>
+      composer.key.includes(encodeURIComponent(answerComposerKey)) &&
+      composer.scope.kind === "new-thread",
+  );
+  const answerComposer = answerComposers.find((composer) =>
+    composer.key.endsWith(`:${currentQuestion?.id ?? questions[0]?.id}`),
+  );
   const isFirst = currentIndex === 0;
   const isLast = currentIndex === totalQuestions - 1;
+  const currentState = answerStateFor(
+    formState,
+    currentQuestion ?? questions[0]!,
+  );
+  const liveAnswerState: QuestionAnswerState =
+    answerComposer && !answerComposer.isEmpty
+      ? {
+          ...currentState,
+          otherSelected: true,
+          otherText: answerComposer.text,
+          otherAttachments: answerComposer.draft.attachments.map(
+            (attachment) => ({
+              ...attachment,
+              projectId:
+                answerComposer.scope.kind === "new-thread"
+                  ? (answerComposer.scope.projectId ?? "")
+                  : "",
+            }),
+          ),
+        }
+      : currentState;
+  const stateForAnswers = Object.fromEntries(
+    questions.map((question) => {
+      const composer = answerComposers.find((candidate) =>
+        candidate.key.endsWith(`:${question.id}`),
+      );
+      const state = answerStateFor(formState, question);
+      if (!composer || composer.isEmpty) return [question.id, state];
+      return [
+        question.id,
+        {
+          ...state,
+          otherSelected: true,
+          otherText: composer.text,
+          otherAttachments: composer.draft.attachments.map((attachment) => ({
+            ...attachment,
+            projectId:
+              composer.scope.kind === "new-thread"
+                ? (composer.scope.projectId ?? "")
+                : "",
+          })),
+        },
+      ];
+    }),
+  ) as QuestionFormState;
   const allAnswered = useMemo(
     () =>
       totalQuestions > 0 &&
       questions.every((question) =>
-        isQuestionAnswered(question, answerStateFor(formState, question)),
+        isQuestionAnswered(question, answerStateFor(stateForAnswers, question)),
       ),
-    [formState, questions, totalQuestions],
+    [questions, stateForAnswers, totalQuestions],
   );
 
   const updateQuestionState = useCallback(
@@ -437,19 +440,18 @@ export function QuestionForm({
     [updateQuestionState],
   );
 
-  const handleFreeTextChange = (question: Question, value: string): void => {
-    updateQuestionState(question, (state) => ({ ...state, otherText: value }));
-  };
-
   const submitAnswer = (): void => {
     if (disabled || !allAnswered) return;
-    onSubmit(buildQuestionAnswers(questions, formState));
+    onSubmit(buildQuestionAnswers(questions, stateForAnswers));
   };
 
   const handleAdvance = (): void => {
     if (isLast) {
       submitAnswer();
       return;
+    }
+    if (currentQuestion && answerComposer && !answerComposer.isEmpty) {
+      setFormState(stateForAnswers);
     }
     setCurrentIndex((index) => Math.min(index + 1, totalQuestions - 1));
   };
@@ -474,8 +476,6 @@ export function QuestionForm({
   ]);
 
   if (!currentQuestion) return null;
-
-  const currentState = answerStateFor(formState, currentQuestion);
 
   return (
     <div
@@ -507,7 +507,17 @@ export function QuestionForm({
           questions={questions}
         />
       ) : null}
-      <div className="min-h-0 touch-pan-y overflow-y-auto overscroll-contain">
+      <div
+        className="min-h-0 touch-pan-y overflow-y-auto overscroll-contain"
+        onKeyDown={(event) => {
+          if (
+            event.target !== event.currentTarget &&
+            (event.key === "Enter" || event.key === "Escape")
+          ) {
+            event.stopPropagation();
+          }
+        }}
+      >
         <QuestionInputBlock
           disabled={disabled}
           question={currentQuestion}
@@ -516,10 +526,42 @@ export function QuestionForm({
             handleToggleOption(currentQuestion, optionValue)
           }
           onSelectOther={() => handleSelectOther(currentQuestion)}
-          onFreeTextChange={(value) =>
-            handleFreeTextChange(currentQuestion, value)
-          }
           onShortcutSubmit={handleAdvance}
+          composerKey={composerKey}
+          onComposerSubmit={(request) => {
+            const nextState: QuestionAnswerState = {
+              ...currentState,
+              otherText: request.input
+                .filter((input) => input.type === "text")
+                .map((input) => input.text)
+                .join("\n\n"),
+              otherAttachments: request.input.flatMap((input) =>
+                input.type === "localImage" || input.type === "localFile"
+                  ? [
+                      {
+                        type: input.type,
+                        projectId: request.projectId,
+                        path: input.path,
+                        ...(input.type === "localFile" && input.name
+                          ? { name: input.name }
+                          : {}),
+                        ...(input.type === "localFile" && input.mimeType
+                          ? { mimeType: input.mimeType }
+                          : {}),
+                        ...(input.type === "localFile" && input.sizeBytes
+                          ? { sizeBytes: input.sizeBytes }
+                          : {}),
+                      },
+                    ]
+                  : [],
+              ),
+            };
+            const nextFormState = {
+              ...formState,
+              [currentQuestion.id]: nextState,
+            };
+            setFormState(nextFormState);
+          }}
           shortcuts={shortcuts}
         />
       </div>

@@ -32,6 +32,17 @@ export const interactionPayloadSchema = z.object({
 });
 export type InteractionPayload = z.infer<typeof interactionPayloadSchema>;
 
+const interactionAttachmentSchema = z.object({
+  type: z.enum(["localImage", "localFile"]),
+  projectId: z.string().min(1),
+  path: z.string().min(1),
+  name: z.string().min(1).optional(),
+  mimeType: z.string().min(1).optional(),
+  sizeBytes: z.number().int().nonnegative().optional(),
+  sourceProjectId: z.string().min(1).optional(),
+  sourcePath: z.string().min(1).optional(),
+});
+
 const interactionAnswerSchema = z.object({
   selected: z.array(z.string().min(1)).max(MAX_SELECTED),
   freeText: z
@@ -40,6 +51,7 @@ const interactionAnswerSchema = z.object({
     .max(MAX_FREE_TEXT_LENGTH)
     .refine(nonBlank, "Free text cannot be blank")
     .optional(),
+  attachments: z.array(interactionAttachmentSchema).max(100).optional(),
 });
 export type InteractionAnswer = z.infer<typeof interactionAnswerSchema>;
 
@@ -120,6 +132,16 @@ interface ToolResultQuestion {
 export interface ToolResultAnnotation {
   preview?: string;
   notes?: string;
+  attachments?: Array<{
+    type: "localImage" | "localFile";
+    projectId: string;
+    path: string;
+    name: string;
+    mimeType?: string;
+    sizeBytes?: number;
+    sourceProjectId?: string;
+    sourcePath?: string;
+  }>;
 }
 
 export interface ToolResult {

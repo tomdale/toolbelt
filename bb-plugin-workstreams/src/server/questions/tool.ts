@@ -19,7 +19,7 @@ import {
   describeAnswers,
   validateToolInput,
 } from "./translate.ts";
-
+import { agentToolResult, copyAnswerAttachments } from "./attachments.ts";
 import type { QuestionStore } from "./store.ts";
 
 export const TOOL_NAME = "AskUserQuestion";
@@ -112,19 +112,51 @@ export function registerQuestionTool(
           "The answer could not be read. The required input remains unresolved. Use AskUserQuestion to request it again; continue only independent work.",
         );
       }
-      const toolResult = buildToolResult(payload, parsed.data);
-      if (durableId)
-        store?.finish(
-          durableId,
-          toolResult,
-          Object.keys(toolResult.answers).length ? "answered" : "unknown",
+      if (
+        !Object.values(parsed.data.answers).some(
+          (answer) =>
+            answer.selected.length > 0 ||
+            answer.freeText?.trim() ||
+            answer.attachments?.length,
+        )
+      ) {
+        return errorResult(
+          "The user submitted no answers. The required input remains unresolved. Continue only independent work and report what remains blocked.",
         );
+      }
+      let answer: typeof parsed.data;
+      let targetProjectId: string;
+      try {
+        const thread = await bb.sdk.threads.get({ threadId: ctx.threadId });
+        targetProjectId = thread.projectId;
+        answer = await copyAnswerAttachments(bb, targetProjectId, parsed.data);
+      } catch (error) {
+        if (durableId) store?.finish(durableId);
+        return errorResult(
+          `The answer's attachments could not be copied into this project (${error instanceof Error ? error.message : String(error)}). Ask the user to attach them again.`,
+        );
+      }
+      const toolResult = buildToolResult(payload, answer);
       if (Object.keys(toolResult.answers).length === 0) {
         return errorResult(
           "The user submitted no answers. The required input remains unresolved. Continue only independent work and report what remains blocked.",
         );
       }
-      return JSON.stringify(toolResult);
+      try {
+        const agentResult = await agentToolResult(bb, toolResult);
+        if (durableId)
+          store?.finish(
+            durableId,
+            toolResult,
+            Object.keys(toolResult.answers).length ? "answered" : "unknown",
+          );
+        return agentResult;
+      } catch (error) {
+        if (durableId) store?.finish(durableId);
+        return errorResult(
+          `The answer's attachments could not be read for the agent (${error instanceof Error ? error.message : String(error)}). Ask the user to attach them again.`,
+        );
+      }
     },
   });
 }

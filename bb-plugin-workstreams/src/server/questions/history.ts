@@ -24,6 +24,20 @@ export const questionResultSchema = z.object({
       z.object({
         preview: z.string().optional(),
         notes: z.string().optional(),
+        attachments: z
+          .array(
+            z.object({
+              type: z.enum(["localImage", "localFile"]),
+              projectId: z.string(),
+              path: z.string(),
+              name: z.string(),
+              mimeType: z.string().optional(),
+              sizeBytes: z.number().optional(),
+              sourceProjectId: z.string().optional(),
+              sourcePath: z.string().optional(),
+            }),
+          )
+          .optional(),
       }),
     )
     .optional(),
