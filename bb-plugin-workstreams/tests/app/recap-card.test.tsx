@@ -1020,7 +1020,8 @@ it("shows a short sentence-case action label with neutral styling", async () => 
   });
   const hint = await slot.findByRole("tooltip", {}, { timeout: 1500 });
   expect(hint.textContent).toContain("Check for regressions before shipping");
-  expect(hint.textContent).toContain("click to edit first");
+  expect(hint.textContent).toContain("Click to send");
+  expect(hint.textContent).toContain("click to edit");
   expect(hint.querySelector('kbd[aria-label="Shift"]')).toBeTruthy();
   fireEvent.click(button);
   await waitFor(() =>
@@ -1035,7 +1036,7 @@ it("shows a short sentence-case action label with neutral styling", async () => 
   );
 });
 
-it("teaches Shift-click on an action without a description and confirms the key", async () => {
+it("teaches click and Shift-click on an action without a description", async () => {
   stubResizeObserver();
   const slot = await mount({ recap: { next: ["Summarize changes"] } });
   const button = await slot.findByRole("button", { name: "Summarize changes" });
@@ -1045,13 +1046,7 @@ it("teaches Shift-click on an action without a description and confirms the key"
     pointerY: 1,
   });
   const hint = await slot.findByRole("tooltip", {}, { timeout: 1500 });
-  expect(hint.textContent).toBe("\u21e7click to edit first");
-  const key = () => hint.querySelector('kbd[aria-label="Shift"]')!;
-  expect(key().className).not.toContain("bg-foreground");
-  fireEvent.keyDown(window, { key: "Shift", shiftKey: true });
-  await waitFor(() => expect(key().className).toContain("bg-foreground"));
-  fireEvent.keyUp(window, { key: "Shift", shiftKey: false });
-  await waitFor(() => expect(key().className).not.toContain("bg-foreground"));
+  expect(hint.textContent).toBe("Click to send\u00b7\u21e7click to edit");
 });
 
 it("explains a titled action without a description by the message it sends", async () => {
