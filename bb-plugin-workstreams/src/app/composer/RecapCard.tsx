@@ -631,10 +631,12 @@ function WaitingFooter({
         )}
       </span>
       {counting && total > 0 ? (
+        // The card border's own color, so where the bar meets the side
+        // border it reads as one continuous frame.
         <span
           aria-hidden
           data-testid="status-check-progress"
-          className="pointer-events-none absolute left-0 top-0 h-px bg-violet-500 transition-[width] duration-1000 ease-linear motion-reduce:transition-none dark:bg-violet-400"
+          className="pointer-events-none absolute left-0 top-0 h-px bg-violet-400 transition-[width] duration-1000 ease-linear motion-reduce:transition-none dark:bg-violet-500/70"
           style={{ width: `${Math.min(100, (remaining / total) * 100)}%` }}
         />
       ) : null}
