@@ -1,6 +1,7 @@
 import { corpusLabel } from "../domain/corpus-label.ts";
 import {
   entityAncestors,
+  resolveProposal,
   type AssignmentProvenance,
   type CanonicalAssignment,
   type CatalogState,
@@ -353,8 +354,19 @@ export class CorpusStore {
     })();
   }
 
-  rememberProposal(proposal: DraftSubjectProposal): CorpusEntity {
+  /**
+   * Records a discovered identity under its deepest existing ancestor, resolved
+   * against the Catalog as it is now: it may have changed since the proposal
+   * was classified. A proposal that names an existing identity returns it
+   * unchanged.
+   */
+  rememberProposal(draft: DraftSubjectProposal): CorpusEntity {
     return this.db.transaction(() => {
+      if (draft.parentId && !this.getById(draft.parentId))
+        throw new Error(`Unknown corpus parent: ${draft.parentId}`);
+      const resolved = resolveProposal(draft, this.list());
+      if (resolved.subjectId !== null) return this.getById(resolved.subjectId)!;
+      const proposal = resolved.proposed;
       let parent = proposal.parentId ?? null;
       for (const ancestor of proposal.ancestors ?? [])
         parent = this.rememberInternal(

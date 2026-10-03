@@ -58,3 +58,79 @@ it("keeps draft discoveries tentative and commits ancestry only on submission", 
     "Up Next",
   ]);
 });
+it("files a discovery under its existing parent when the classifier restates that parent", async () => {
+  let subagentsId = "";
+  world = await fakeWorld({
+    // The classifier names Subagents as the parent and repeats it as a
+    // missing ancestor.
+    complete: () =>
+      JSON.stringify({
+        subjectId: null,
+        proposed: {
+          name: "Workforest",
+          description:
+            "Plugin for new thread UI providing workspace isolation functionality",
+          parentId: subagentsId,
+          ancestors: [
+            {
+              name: "Subagents",
+              description: "Subagent orchestration and plugin platform",
+            },
+          ],
+        },
+      }),
+  });
+  const { entity } = (await world.harness.behavior.callRpc("catalogCreate", {
+    name: "Subagents",
+    description: "Background subagent workers",
+  })) as { entity: { id: string } };
+  subagentsId = entity.id;
+  const decision = (await world.harness.behavior.callRpc("route", {
+    prompt: "Remove the isolated workspace UI the workforest plugin injects",
+    suggest: true,
+    draftKey: "draft",
+  })) as {
+    outcome: string;
+    name: string;
+    description: string;
+    proposal?: unknown;
+  };
+  expect(decision.outcome).toBe("new-workstream");
+  expect(decision.name).toBe("Subagents: Workforest");
+  const { threadId } = (await world.harness.behavior.callRpc("startThread", {
+    sectionId: null,
+    newWorkstream: { name: decision.name, description: decision.description },
+    identity: { proposal: decision.proposal, provenance: "automatic" },
+    execution: {
+      projectId: "proj_1",
+      environment: {
+        type: "host",
+        hostId: "host_1",
+        workspace: { type: "unmanaged", path: null },
+      },
+    },
+  })) as { threadId: string };
+  const catalog = (await world.harness.behavior.callRpc("catalog", null)) as {
+    entities: {
+      id: string;
+      name: string;
+      description: string;
+      parentId: string | null;
+    }[];
+    assignments: Record<string, { label: string | null }>;
+  };
+  expect(
+    catalog.entities.map(({ name, parentId }) => ({ name, parentId })),
+  ).toEqual(
+    expect.arrayContaining([
+      { name: "Subagents", parentId: null },
+      { name: "Workforest", parentId: subagentsId },
+    ]),
+  );
+  expect(catalog.entities).toHaveLength(2);
+  expect(catalog.entities.find((e) => e.id === subagentsId)?.description).toBe(
+    "Background subagent workers",
+  );
+  expect(catalog.assignments[threadId]?.label).toBe("Subagents: Workforest");
+  expect(world.sections.map((s) => s.name)).toEqual(["Subagents: Workforest"]);
+});
