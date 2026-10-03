@@ -879,3 +879,24 @@ section[data-testid="plugin-interaction-shell"]:has(.ws-question-portaled) {
   color: hsl(var(--muted-foreground));
   font-size: 0.8rem;
 }
+
+/* Organize: an indeterminate pass (reading threads, grouping, applying). */
+.ws-progress-indeterminate {
+  animation: ws-progress-sweep 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes ws-progress-sweep {
+  from {
+    left: -33%;
+  }
+  to {
+    left: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-progress-indeterminate {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: 0.4;
+  }
+}

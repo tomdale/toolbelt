@@ -80,13 +80,11 @@ describe("Organize request freshness", () => {
     );
     fireEvent.click(slot.getByRole("button", { name: "Organize…" }));
     await slot.behavior.emitRealtime("changed", {});
-    await waitFor(() =>
-      expect(
-        slot.getByText(
-          "Classifying tasks 4 of 12 · 3 already classified · 1 unresolved",
-        ),
-      ).toBeTruthy(),
-    );
+    const bar = await slot.findByRole("progressbar", {
+      name: "Classifying tasks 4 of 12",
+    });
+    expect(bar.getAttribute("aria-valuenow")).toBe("33");
+    expect(slot.getByText("3 already classified · 1 unresolved")).toBeTruthy();
     const cancel = slot.getByRole("button", {
       name: "Cancel",
     }) as HTMLButtonElement;
