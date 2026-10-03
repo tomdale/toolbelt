@@ -126,10 +126,9 @@ function useMessageScroller(threadId: string | null): Mount | null {
   return mount;
 }
 
-// Scrolled distance from the top over which the fade beneath the heading
-// ramps in. At the top there is nothing beneath the heading to dissolve.
-const FADE_RANGE = 64;
-
+// BB's own overflow fades appear only once content has scrolled out of view,
+// so the fade beneath the heading is on exactly when the timeline is detached
+// from its top.
 function useScrollProgress(scroller: HTMLElement | null): {
   progress: number;
   fade: number;
@@ -148,7 +147,7 @@ function useScrollProgress(scroller: HTMLElement | null): {
         const fromBottom = Math.max(0, range - scroller.scrollTop);
         // Stay fully expanded near the newest message, then recede over 420px of history.
         const progress = Math.max(0, Math.min(1, (fromBottom - 16) / 420));
-        const fade = Math.max(0, Math.min(1, scroller.scrollTop / FADE_RANGE));
+        const fade = scroller.scrollTop > 1 ? 1 : 0;
         setState((prev) =>
           prev.progress === progress && prev.fade === fade
             ? prev
@@ -215,7 +214,7 @@ export function StickyGoalHeader(): React.ReactPortal | null {
     if (!mount) return;
     mount.root.className = "ws-sticky-goal-root";
     mount.root.dataset.scrollProgress = progress.toFixed(3);
-    mount.root.style.setProperty("--ws-sticky-fade", fade.toFixed(3));
+    mount.root.style.setProperty("--ws-sticky-fade", String(fade));
     mount.root.style.height = `${height}px`;
     mount.scroller.style.scrollPaddingTop = `${height}px`;
     return () => {
