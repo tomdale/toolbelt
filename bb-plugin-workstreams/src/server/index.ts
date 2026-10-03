@@ -294,7 +294,7 @@ export default async function plugin(bb: BbPluginApi) {
               } | null;
             } | null)
           : null;
-      const identity = data?.identity ?? null;
+      const identity = data?.identity !== undefined ? data.identity : undefined;
       const decision = data?.routeId
         ? router.recall({ id: data.routeId, prompt: ctx.input.text })
         : null;

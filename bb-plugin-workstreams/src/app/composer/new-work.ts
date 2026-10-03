@@ -356,8 +356,8 @@ export function identityDisplay(state: NewWorkState): {
     };
   return {
     id: null,
-    label: "Unresolved",
-    auto: false,
+    label: "Automatic",
+    auto: true,
     selected: false,
     reason: null,
   };
@@ -568,24 +568,31 @@ export class NewWork {
     choice: {
       entityId?: string | null;
       proposal?: DraftSubjectProposal | null;
-      label: string;
+      label?: string;
     } | null,
     provenance: "manual" | "automatic" = "manual",
   ) {
+    const nextChoice: NonNullable<IdentityChoice> = choice
+      ? {
+          entityId: choice.entityId ?? null,
+          proposal: choice.proposal ?? null,
+          label:
+            choice.label ?? (choice.entityId ? choice.entityId : "Unresolved"),
+          provenance,
+        }
+      : {
+          entityId: null,
+          proposal: null,
+          label: "Unresolved",
+          provenance,
+        };
     this.begin("select-identity", {
       from: this.state.identity,
-      to: choice,
+      to: nextChoice,
       provenance,
     })("ok");
     this.set({
-      identity: choice
-        ? {
-            entityId: choice.entityId ?? null,
-            proposal: choice.proposal ?? null,
-            label: choice.label,
-            provenance,
-          }
-        : null,
+      identity: nextChoice,
       error: null,
     });
   }
@@ -607,8 +614,7 @@ export class NewWork {
       identity = {
         entityId: null,
         proposal: this.state.decision.proposal,
-        label:
-          this.state.decision.subject ?? this.state.decision.proposal.name,
+        label: this.state.decision.subject ?? this.state.decision.proposal.name,
         provenance: "automatic",
       };
     }
@@ -719,21 +725,23 @@ export class NewWork {
       }
 
       let identity = this.state.identity;
-      if (this.state.decision?.subjectId) {
-        identity = {
-          entityId: this.state.decision.subjectId,
-          proposal: null,
-          label: this.state.decision.subject ?? this.state.decision.subjectId,
-          provenance: "automatic",
-        };
-      } else if (this.state.decision?.proposal) {
-        identity = {
-          entityId: null,
-          proposal: this.state.decision.proposal,
-          label:
-            this.state.decision.subject ?? this.state.decision.proposal.name,
-          provenance: "automatic",
-        };
+      if (this.state.identity?.provenance !== "manual") {
+        if (this.state.decision?.subjectId) {
+          identity = {
+            entityId: this.state.decision.subjectId,
+            proposal: null,
+            label: this.state.decision.subject ?? this.state.decision.subjectId,
+            provenance: "automatic",
+          };
+        } else if (this.state.decision?.proposal) {
+          identity = {
+            entityId: null,
+            proposal: this.state.decision.proposal,
+            label:
+              this.state.decision.subject ?? this.state.decision.proposal.name,
+            provenance: "automatic",
+          };
+        }
       }
 
       this.set({
@@ -1082,8 +1090,7 @@ export class NewWork {
           nextIdentity = {
             entityId: null,
             proposal: decision.proposal,
-            label:
-              decision.subject ?? decision.proposal.name,
+            label: decision.subject ?? decision.proposal.name,
             provenance: "automatic",
           };
         } else {
