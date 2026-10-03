@@ -10,8 +10,14 @@
  * re-renders the row. BB's React only inserts and removes its own nodes, so
  * the extra child is left alone. If the markup changes and the row can't be
  * found, this returns null and the caller renders the field itself.
+ *
+ * The anchor is also marked as a plugin root. The plugin's utility classes are
+ * scoped to plugin roots, and the row belongs to BB, so without the marker
+ * only the classes BB's own stylesheet happens to define would style what is
+ * portaled into the row.
  */
 import { useLayoutEffect, useState } from "react";
+import { usePortalScopeProps } from "@/lib/portal-scope";
 
 const ROW_GROUP =
   "[data-promptbox-shell] > [data-promptbox] + div > :first-child";
@@ -25,10 +31,13 @@ function pickerGroup(root: HTMLElement): Element | null {
 
 export function useHostPickerRow(root: HTMLElement | null): HTMLElement | null {
   const [target, setTarget] = useState<HTMLElement | null>(null);
+  const pluginId = usePortalScopeProps()["data-bb-plugin"];
   useLayoutEffect(() => {
     if (!root) return;
     const anchor = document.createElement("span");
     anchor.setAttribute("data-ws-workstream-slot", "");
+    anchor.setAttribute("data-bb-plugin-root", "");
+    if (pluginId !== undefined) anchor.setAttribute("data-bb-plugin", pluginId);
     anchor.style.display = "contents";
     const place = () => {
       const group = pickerGroup(root);
@@ -49,6 +58,6 @@ export function useHostPickerRow(root: HTMLElement | null): HTMLElement | null {
       anchor.remove();
       setTarget(null);
     };
-  }, [root]);
+  }, [root, pluginId]);
   return target;
 }

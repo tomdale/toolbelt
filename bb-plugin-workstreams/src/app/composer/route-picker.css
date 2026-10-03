@@ -1,0 +1,248 @@
+/*
+ * New work's picker row and suggestion row on every screen size.
+ *
+ * The chips are inserted into BB's picker row (host-picker-row.ts), whose own
+ * chips are `shrink-0`, so whatever ours cannot give up is painted over a
+ * neighbor. Everything here keeps our chips shrinkable: the label ellipsizes
+ * first and the chip never goes below its icons.
+ *
+ * This file loads before styles.css and both are unlayered, so a rule here
+ * that must outrank a styles.css rule carries one more class. Typography uses
+ * BB's size tokens (they grow on narrow touch screens); the fallbacks are
+ * Tailwind's defaults for where a token is undefined.
+ */
+
+/* ---- The picker row ---------------------------------------------------- */
+
+/*
+ * One cluster per slot: the two chips (wide) or the route chip (phone). BB's
+ * own chips are `shrink-0` or squeeze only down to their icons, so ours gives
+ * way first: a shrink factor well above theirs makes the cluster absorb an
+ * overflow before they lose any width, and the floors below stop it where
+ * its chips have only their icons left.
+ */
+[data-ws-composer-controls] {
+  flex: 0 8 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+/*
+ * Floors: a chip's padding, icon (the 14px mark of a manual pick is wider than
+ * ✦), gap and chevron, with the label ellipsized away.
+ */
+[data-ws-composer-controls][data-ws-variant="route"] {
+  min-width: 2.75rem;
+}
+/* Two chip floors and the dot between them. */
+[data-ws-composer-controls][data-ws-variant="split"] {
+  min-width: 6.25rem;
+}
+
+/* Each chip's label ellipsizes before the chip goes below its floor. */
+[data-ws-composer-controls] > [data-ws-identity-control],
+[data-ws-composer-controls] > [data-ws-workstream-control],
+[data-ws-composer-controls] > [data-ws-route-control] {
+  flex: 0 1 auto;
+  min-width: 2.75rem;
+  touch-action: manipulation;
+}
+
+/* "Classifying…" can shrink too; on a phone it is sr-only instead. */
+.ws-picker-status {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * A 44px touch target inside BB's 32px row: the chip keeps its look, and a
+ * transparent pseudo-element extends where it takes taps. Upward it stops at
+ * the 4px gap under the prompt box; sideways at half the 4px gap between
+ * chips, so it never covers a neighbor's own target.
+ */
+@media (pointer: coarse) {
+  [data-ws-composer-controls] > [data-ws-identity-control],
+  [data-ws-composer-controls] > [data-ws-workstream-control],
+  [data-ws-composer-controls] > [data-ws-route-control] {
+    position: relative;
+  }
+  [data-ws-composer-controls] > [data-ws-identity-control]::after,
+  [data-ws-composer-controls] > [data-ws-workstream-control]::after,
+  [data-ws-composer-controls] > [data-ws-route-control]::after {
+    content: "";
+    position: absolute;
+    inset: -4px -2px -8px -4px;
+  }
+}
+
+/* ---- The route sheet (phones) ------------------------------------------ */
+
+/*
+ * The sheet portals to the page, outside every plugin root that defines the
+ * magic tint, so it defines the same one.
+ */
+.ws-route-sheet {
+  --ws-magic: color-mix(
+    in oklab,
+    var(--color-violet-500, oklch(60.6% 0.25 292.717)) 70%,
+    var(--foreground, #ededed)
+  );
+  min-height: min(24rem, 50dvh);
+  padding: 0 max(1rem, env(safe-area-inset-right))
+    max(0.5rem, env(safe-area-inset-bottom))
+    max(1rem, env(safe-area-inset-left));
+}
+
+.ws-route-sheet .ws-spark {
+  color: var(--ws-magic);
+  font-size: var(--text-2xs, 0.625rem);
+  line-height: 1;
+}
+
+/* Two tabs sharing the width: label over current value, 52px tall. */
+.ws-route-tabs {
+  display: grid;
+  flex-shrink: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(
+    --muted,
+    color-mix(in oklab, var(--foreground) 8%, transparent)
+  );
+}
+.ws-route-tab {
+  display: flex;
+  min-width: 0;
+  min-height: 3.25rem;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  text-align: left;
+  touch-action: manipulation;
+}
+.ws-route-tab[aria-selected="true"] {
+  border-color: var(--border);
+  background: var(--background);
+  color: var(--foreground);
+}
+.ws-route-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+.ws-route-tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--text-xs, 0.75rem);
+  line-height: var(--text-xs--line-height, 1.25rem);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-route-tab-value {
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--foreground);
+  font-size: var(--text-sm, 0.8125rem);
+  font-weight: 500;
+  line-height: var(--text-sm--line-height, 1.25rem);
+}
+.ws-route-tab-value > :last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The list fills what is left of the sheet and scrolls inside it. */
+.ws-route-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+.ws-route-panel [cmdk-root] {
+  height: auto;
+  flex: 1 1 auto;
+  background: transparent;
+}
+
+/* Why the destination is Automatic: touch has no tooltip to say so. */
+.ws-route-note {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0 4px;
+  color: var(--muted-foreground);
+  font-size: var(--text-xs, 0.75rem);
+  line-height: var(--text-xs--line-height, 1.25rem);
+}
+.ws-route-note .ws-spark {
+  margin-top: 0.35em;
+  flex-shrink: 0;
+}
+
+/* ---- The suggestion row on touch ---------------------------------------- */
+
+/*
+ * Tab and ⌘⏎ do nothing on a touch screen, so their hints and the separate
+ * Apply button go; tapping the sentence applies, as its button always did.
+ * What remains is the sentence (up to two lines), a clear Start/Send action
+ * and the dismiss ×, each a 44px target. Where the three don't fit on a line
+ * the actions wrap beneath the sentence, aligned to the end.
+ */
+@media (hover: none), (pointer: coarse) {
+  .ws-suggestion-area .ws-suggestion {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+  .ws-suggestion-area .ws-suggestion .ws-suggestion-accept {
+    min-height: 44px;
+    flex: 1 1 13rem;
+    font-size: var(--text-xs, 0.75rem);
+    line-height: var(--text-xs--line-height, 1.25rem);
+  }
+  .ws-suggestion-area .ws-suggestion .ws-suggestion-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .ws-suggestion-area .ws-suggestion .ws-suggestion-apply,
+  .ws-suggestion-area .ws-suggestion .ws-suggestion-kbd {
+    display: none;
+  }
+  .ws-suggestion-area .ws-suggestion .ws-suggestion-go {
+    min-width: 44px;
+    height: auto;
+    min-height: 44px;
+    justify-content: center;
+    margin-left: auto;
+    padding: 0 12px;
+    color: var(--foreground);
+    font-size: var(--text-xs, 0.75rem);
+    font-weight: 600;
+  }
+  .ws-suggestion-area .ws-suggestion .ws-suggestion-dismiss {
+    width: 44px;
+    height: auto;
+    min-height: 44px;
+    margin-right: 0;
+  }
+}

@@ -14,6 +14,12 @@
  *   hidden then — the same key submits what the pickers show, as Enter does.
  *
  * ⏎ still starts the thread the pickers show.
+ *
+ * On a touch screen the keys do nothing, so `route-picker.css` hides the key
+ * hints and the separate Apply button: tapping the sentence applies, and the
+ * Start (or Send) button applies and starts. The classes that style hooks
+ * (`ws-suggestion-apply`, `ws-suggestion-go`, `ws-suggestion-kbd`) are part of
+ * that contract.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useSdk } from "@get-bb/plugin-sdk/app";
@@ -235,7 +241,7 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
           {applies ? (
             <button
               type="button"
-              className="ws-suggestion-key"
+              className="ws-suggestion-key ws-suggestion-apply"
               aria-label="Apply to the composer"
               aria-keyshortcuts="Tab"
               title="Fill the pickers without starting (Tab)"
@@ -248,7 +254,7 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
           ) : null}
           <button
             type="button"
-            className="ws-suggestion-key"
+            className="ws-suggestion-key ws-suggestion-go"
             aria-label={
               applies
                 ? "Apply and start the thread"

@@ -14,6 +14,7 @@ import type { RpcContract } from "../../server/contract.ts";
 import type { RouteDecision } from "../../server/router.ts";
 import { NewWork as NewWorkModel, NewWorkContext } from "./new-work.ts";
 import { createPortal } from "react-dom";
+import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { useHostPickerRow } from "./host-picker-row.ts";
 import { NewWorkBridge } from "./NewWorkBridge.tsx";
 import { SuggestionRow } from "./Suggestion.tsx";
@@ -281,13 +282,18 @@ export function NewThreadRouting() {
   // The picker row sits below the prompt box, outside this banner, so the
   // field is portaled into it.
   const pickerRow = useHostPickerRow(model ? composerRoot : null);
+  // On a phone the row has no width to spare for the status text, so it is
+  // announced but not drawn; the route chip's ✦ pulses while it classifies.
+  const compact = useIsCompactViewport();
   const picker = model ? (
     <>
       <WorkstreamPicker newWork={model} />
       <span
         role="status"
         aria-live="polite"
-        className="text-xs text-muted-foreground"
+        className={
+          compact ? "sr-only" : "ws-picker-status text-xs text-muted-foreground"
+        }
       >
         {state.classifying ? "Classifying…" : ""}
       </span>
