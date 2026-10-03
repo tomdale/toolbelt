@@ -445,8 +445,9 @@
 }
 
 /* Sticky thread goal sits at the top of the message column, set in the same
-   type as the timeline text. It has no chrome of its own: a feathered fade
-   lets messages dissolve beneath it instead of ending at a hard edge. */
+   type as the timeline text. It has no chrome of its own: once the timeline
+   scrolls away from the top, a feathered fade lets messages dissolve beneath
+   it instead of ending at a hard edge. */
 .ws-sticky-goal-root {
   position: sticky;
   top: 0;
@@ -464,9 +465,10 @@
 .ws-sticky-goal-root::after {
   position: absolute;
   inset: 100% 0 auto;
-  height: 1.25rem;
+  height: 2rem;
   background: linear-gradient(to bottom, var(--background), transparent);
   content: "";
+  opacity: var(--ws-sticky-fade, 0);
   pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {

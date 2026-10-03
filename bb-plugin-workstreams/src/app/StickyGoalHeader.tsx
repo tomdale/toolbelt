@@ -15,8 +15,8 @@ function messageColumn(scroller: HTMLElement): HTMLElement | null {
   return column instanceof HTMLElement ? column : null;
 }
 
-const TITLE_SCALE = [1.14, 1] as const;
-const SUBTITLE_SCALE = [0.88, 0.8] as const;
+const TITLE_SCALE = [1.14, 0.9] as const;
+const SUBTITLE_SCALE = [0.88, 0.72] as const;
 const lerp = (range: readonly [number, number], t: number) =>
   range[0] + (range[1] - range[0]) * t;
 
@@ -126,11 +126,18 @@ function useMessageScroller(threadId: string | null): Mount | null {
   return mount;
 }
 
-function useScrollProgress(scroller: HTMLElement | null): number {
-  const [progress, setProgress] = useState(0);
+// Scrolled distance from the top over which the fade beneath the heading
+// ramps in. At the top there is nothing beneath the heading to dissolve.
+const FADE_RANGE = 64;
+
+function useScrollProgress(scroller: HTMLElement | null): {
+  progress: number;
+  fade: number;
+} {
+  const [state, setState] = useState({ progress: 0, fade: 0 });
   useEffect(() => {
     if (!scroller) {
-      setProgress(0);
+      setState({ progress: 0, fade: 0 });
       return;
     }
     let frame = 0;
@@ -140,7 +147,13 @@ function useScrollProgress(scroller: HTMLElement | null): number {
         const range = scroller.scrollHeight - scroller.clientHeight;
         const fromBottom = Math.max(0, range - scroller.scrollTop);
         // Stay fully expanded near the newest message, then recede over 420px of history.
-        setProgress(Math.max(0, Math.min(1, (fromBottom - 16) / 420)));
+        const progress = Math.max(0, Math.min(1, (fromBottom - 16) / 420));
+        const fade = Math.max(0, Math.min(1, scroller.scrollTop / FADE_RANGE));
+        setState((prev) =>
+          prev.progress === progress && prev.fade === fade
+            ? prev
+            : { progress, fade },
+        );
       });
     };
     update();
@@ -153,7 +166,7 @@ function useScrollProgress(scroller: HTMLElement | null): number {
       resize.disconnect();
     };
   }, [scroller]);
-  return progress;
+  return state;
 }
 
 /**
@@ -165,7 +178,7 @@ export function StickyGoalHeader(): React.ReactPortal | null {
   const { threads, projects, sections } = experimental_useSidebarThreads();
   const { server } = useSharedServerState();
   const mount = useMessageScroller(threadId);
-  const progress = useScrollProgress(mount?.scroller ?? null);
+  const { progress, fade } = useScrollProgress(mount?.scroller ?? null);
 
   const context = useMemo(() => {
     if (!threadId) return null;
@@ -202,14 +215,16 @@ export function StickyGoalHeader(): React.ReactPortal | null {
     if (!mount) return;
     mount.root.className = "ws-sticky-goal-root";
     mount.root.dataset.scrollProgress = progress.toFixed(3);
+    mount.root.style.setProperty("--ws-sticky-fade", fade.toFixed(3));
     mount.root.style.height = `${height}px`;
     mount.scroller.style.scrollPaddingTop = `${height}px`;
     return () => {
       mount.root.className = "";
       mount.root.style.removeProperty("height");
+      mount.root.style.removeProperty("--ws-sticky-fade");
       delete mount.root.dataset.scrollProgress;
     };
-  }, [mount, progress, height]);
+  }, [mount, progress, fade, height]);
 
   if (!mount || !context) return null;
   return createPortal(
