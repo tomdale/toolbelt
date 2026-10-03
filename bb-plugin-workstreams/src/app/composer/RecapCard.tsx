@@ -1043,32 +1043,9 @@ function NextActionItem({
   );
 }
 
-/** Whether Shift is down, so the hint can confirm the modifier as it is pressed. */
-function useShiftHeld(): boolean {
-  const [held, setHeld] = useState(false);
-  useEffect(() => {
-    const track = (event: KeyboardEvent | PointerEvent) =>
-      setHeld(event.shiftKey);
-    const release = () => setHeld(false);
-    window.addEventListener("keydown", track);
-    window.addEventListener("keyup", track);
-    // Shift held before the hint opened shows up on the next pointer move.
-    window.addEventListener("pointermove", track);
-    window.addEventListener("blur", release);
-    return () => {
-      window.removeEventListener("keydown", track);
-      window.removeEventListener("keyup", track);
-      window.removeEventListener("pointermove", track);
-      window.removeEventListener("blur", release);
-    };
-  }, []);
-  return held;
-}
-
 /**
  * What an action's button does, for its terse label: the intent behind it,
- * then how to edit the message before it is sent. Only mounted while the
- * hint is open, so the Shift listeners live no longer than the hint.
+ * then what a plain click and a Shift-click each do with its message.
  */
 function ActionHint({
   description,
@@ -1077,7 +1054,6 @@ function ActionHint({
   description: string | null | undefined;
   canCompose: boolean;
 }) {
-  const shift = useShiftHeld();
   return (
     <>
       {description ? (
@@ -1086,23 +1062,21 @@ function ActionHint({
       {canCompose ? (
         <span
           className={cn(
-            "flex items-center gap-1 transition-colors",
+            "flex items-center gap-1.5 text-muted-foreground",
             description && "mt-1",
-            shift ? "text-popover-foreground" : "text-muted-foreground",
           )}
         >
-          <kbd
-            aria-label="Shift"
-            className={cn(
-              "inline-flex h-4 min-w-4 items-center justify-center rounded-[3px] border px-0.5 font-sans text-[10px] leading-none transition-colors",
-              shift
-                ? "border-foreground bg-foreground text-background"
-                : "border-border",
-            )}
-          >
-            ⇧
-          </kbd>
-          <span>click to edit first</span>
+          <span>Click to send</span>
+          <span aria-hidden>·</span>
+          <span className="flex items-center gap-1">
+            <kbd
+              aria-label="Shift"
+              className="inline-flex h-4 min-w-4 items-center justify-center rounded-[3px] border border-border px-0.5 font-sans text-[10px] leading-none"
+            >
+              ⇧
+            </kbd>
+            <span>click to edit</span>
+          </span>
         </span>
       ) : null}
     </>
