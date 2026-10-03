@@ -122,7 +122,7 @@ function StateLine({ children }: { children: string }) {
   return (
     <p
       role="status"
-      className="mb-0.5 text-[11px] font-medium leading-[1.6] text-amber-700 dark:text-amber-300"
+      className="mb-0.5 text-[11px] font-medium leading-[1.6] text-amber-700 dark:text-amber-300 max-md:pointer-coarse:text-xs"
     >
       {children}
     </p>
@@ -151,7 +151,10 @@ export function QuestionInteraction({
       .finally(() => setBusy(false));
   };
   const alert = error ? (
-    <p role="alert" className="mt-2 text-[11px] text-red-700 dark:text-red-300">
+    <p
+      role="alert"
+      className="mt-2 text-[11px] text-red-700 dark:text-red-300 max-md:pointer-coarse:text-xs"
+    >
       {error}
     </p>
   ) : null;
@@ -185,7 +188,7 @@ export function QuestionInteraction({
   ) : (
     <>
       <StateLine>Needs your answer</StateLine>
-      <p className="text-[12.5px] text-muted-foreground">
+      <p className="text-[12.5px] text-muted-foreground max-md:pointer-coarse:text-sm">
         This question could not be displayed.
       </p>
       {alert}

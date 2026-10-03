@@ -99,16 +99,21 @@ function cardClass(state: Recap["state"], layout: RecapLayout) {
   );
 }
 
+// The card's type follows BB's own scale. BB sets its text in the `--text-*`
+// tokens and, on a phone (a viewport under 768px with a coarse pointer), moves
+// a size up: `text-sm max-md:pointer-coarse:text-base`. The fluid sizes below
+// suit a narrow desktop pane, but on a phone they would shrink the card's text
+// under the timeline's body text, so there the primary text is `text-base`
+// (the timeline's size) and the secondary text `text-xs`.
+const PHONE_PRIMARY = "max-md:pointer-coarse:text-base";
+const PHONE_SECONDARY = "max-md:pointer-coarse:text-xs";
+
 // What happened is the card's primary text.
-const BODY_CLASS =
-  "text-[clamp(0.625rem,calc(0.4375rem+0.9375cqi),0.8125rem)] leading-[1.5] [text-wrap:pretty]";
-const GOAL_CLASS =
-  "text-[clamp(0.8125rem,calc(0.5rem+1.75cqi),1.0625rem)] leading-[1.4] [text-wrap:wrap]";
+const BODY_CLASS = `text-[clamp(0.625rem,calc(0.4375rem+0.9375cqi),0.8125rem)] leading-[1.5] ${PHONE_PRIMARY} [text-wrap:pretty]`;
+const GOAL_CLASS = `text-[clamp(0.8125rem,calc(0.5rem+1.75cqi),1.0625rem)] leading-[1.4] ${PHONE_PRIMARY} [text-wrap:wrap]`;
 // The compact layout steps every size down so the card stays short.
-const COMPACT_BODY_CLASS =
-  "text-[clamp(0.625rem,calc(0.375rem+0.875cqi),0.75rem)] leading-[1.45] [text-wrap:pretty]";
-const COMPACT_GOAL_CLASS =
-  "text-[clamp(0.6875rem,calc(0.375rem+1.375cqi),0.875rem)] leading-[1.35] [text-wrap:wrap]";
+const COMPACT_BODY_CLASS = `text-[clamp(0.625rem,calc(0.375rem+0.875cqi),0.75rem)] leading-[1.45] ${PHONE_PRIMARY} [text-wrap:pretty]`;
+const COMPACT_GOAL_CLASS = `text-[clamp(0.6875rem,calc(0.375rem+1.375cqi),0.875rem)] leading-[1.35] ${PHONE_PRIMARY} [text-wrap:wrap]`;
 
 /** True inside a compact card; selects the smaller type scale. */
 const CompactContext = createContext(false);
@@ -247,7 +252,7 @@ function RecapText({
 // Labels sit in a gutter beside their row, and above it on narrow cards.
 const ROW_CLASS =
   "grid grid-cols-[3.25rem_minmax(0,1fr)] gap-x-3 gap-y-0.5 py-2 @max-[24rem]/recap:grid-cols-1";
-const LABEL_CLASS = "pt-px text-[11px] font-medium leading-[1.6]";
+const LABEL_CLASS = `pt-px text-[11px] font-medium leading-[1.6] ${PHONE_SECONDARY}`;
 
 function Glyph({
   path,
@@ -513,6 +518,7 @@ function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
                 aria-label="Agent status"
                 className={cn(
                   "shrink-0 text-[11px] font-medium",
+                  PHONE_SECONDARY,
                   view.tone === "running" ? "sr-only" : AGENT_LABEL[view.tone],
                 )}
               >
@@ -549,6 +555,7 @@ function WaitingFooter({
       className={cn(
         compact ? "-mx-3 -mb-2" : "-mx-4 -mb-3",
         "relative mt-2 flex min-h-8 items-center gap-1 overflow-hidden rounded-b-[7px] py-1 pl-4 pr-2 text-[11px] text-muted-foreground",
+        PHONE_SECONDARY,
         compact && "pl-3",
         ACCENT.waiting.footer,
       )}
@@ -603,6 +610,7 @@ function StateLine({ recap, clearance }: { recap: Recap; clearance: string }) {
     <p
       className={cn(
         "flex items-center gap-1.5 text-[11px] font-medium leading-[1.6]",
+        PHONE_SECONDARY,
         clearance,
         ACCENT[state].text,
       )}
@@ -678,12 +686,15 @@ function Results({
         <li
           key={index}
           data-progress={item.path === ACTIVE ? "active" : "done"}
-          className={`grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 ${body} text-foreground`}
+          className={`grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 max-md:pointer-coarse:grid-cols-[1.125rem_minmax(0,1fr)] ${body} text-foreground`}
         >
           <Glyph
             path={item.path}
             filled={item.path === ACTIVE}
-            className={cn("mt-[0.2em] h-3.5 w-3.5", accent)}
+            className={cn(
+              "mt-[0.2em] h-3.5 w-3.5 max-md:pointer-coarse:h-4 max-md:pointer-coarse:w-4",
+              accent,
+            )}
           />
           <span className="sr-only">{item.label}: </span>
           <ItemText item={item.item} />
@@ -720,7 +731,7 @@ function Steps({ items }: { items: RecapItem[] }) {
       {items.map((item, index) => (
         <li
           key={index}
-          className={`grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 ${body} text-foreground`}
+          className={`grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 max-md:pointer-coarse:grid-cols-[1.125rem_minmax(0,1fr)] ${body} text-foreground`}
         >
           <span
             aria-hidden="true"
@@ -735,8 +746,7 @@ function Steps({ items }: { items: RecapItem[] }) {
   );
 }
 
-const CHIP_CLASS =
-  "inline-flex max-w-full items-center gap-1.5 truncate rounded-full no-underline hover:no-underline border border-border bg-background/60 px-2 py-px text-[11.5px] font-medium leading-[1.6] text-foreground/80 hover:border-foreground/25 hover:text-foreground";
+const CHIP_CLASS = `inline-flex max-w-full items-center gap-1.5 truncate rounded-full no-underline hover:no-underline border border-border bg-background/60 px-2 py-px text-[11.5px] font-medium leading-[1.6] text-foreground/80 hover:border-foreground/25 hover:text-foreground ${PHONE_SECONDARY} max-md:pointer-coarse:py-1`;
 
 function Links({
   links,
@@ -964,8 +974,11 @@ function useRecap(threadId: string | null) {
   return { ...state, dismiss, restore, sendNext };
 }
 
+// On a phone the corner buttons take BB's coarse-pointer icon-button size
+// (36px). The glyph stays where it was; only the hit area grows, and the
+// card's top line clears the larger buttons.
 const CORNER_BUTTON =
-  "absolute top-2.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50";
+  "absolute top-2.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50 max-md:pointer-coarse:top-1 max-md:pointer-coarse:h-9 max-md:pointer-coarse:w-9";
 
 type CardProps = {
   recap: Recap;
@@ -989,8 +1002,7 @@ function nextActionTitle(action: NextAction): string {
 }
 
 /** Footer buttons (suggested actions and Archive) share one size and style. */
-const FOOTER_BUTTON =
-  "h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground";
+const FOOTER_BUTTON = `h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground ${PHONE_SECONDARY} max-md:pointer-coarse:h-9`;
 
 const NEXT_ACTION_ACCENT: Record<Recap["state"], string> = {
   waiting: "text-violet-700 dark:text-violet-300",
@@ -1161,7 +1173,7 @@ function NextActions({
               type="button"
               variant="outline"
               size="sm"
-              className="h-7 border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground"
+              className={`h-7 border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground ${PHONE_SECONDARY} max-md:pointer-coarse:h-9`}
               disabled={pending || !onSend}
               aria-label="Next actions"
             >
@@ -1252,13 +1264,17 @@ function CardBody({
       {/* The recap text scrolls when it outgrows a share of the screen, so a
           long recap cannot push the thread out of view. The footer, corner
           buttons and every action stay outside the scroller. */}
-      <div className="thread-scrollbar max-h-[min(40dvh,22rem)] overflow-y-auto overscroll-contain @max-[20rem]/recap:[&_*]:!text-[0.625rem] @max-[20rem]/recap:[&_*]:!font-normal @max-[20rem]/recap:[&_*]:!leading-[1.5] @max-[20rem]/recap:[&_*]:!tracking-normal">
+      <div className="thread-scrollbar max-h-[min(40dvh,22rem)] overflow-y-auto overscroll-contain @max-[20rem]/recap:pointer-fine:[&_*]:!text-[0.625rem] @max-[20rem]/recap:pointer-fine:[&_*]:!font-normal @max-[20rem]/recap:pointer-fine:[&_*]:!leading-[1.5] @max-[20rem]/recap:pointer-fine:[&_*]:!tracking-normal">
         <RecapSummary
           recap={recap}
           layout={layout}
           files={files}
           threadId={threadId}
-          clearance={compactArchive ? "pr-14" : "pr-7"}
+          clearance={
+            compactArchive
+              ? "pr-14 max-md:pointer-coarse:pr-[5.25rem]"
+              : "pr-7 max-md:pointer-coarse:pr-12"
+          }
         />
       </div>
       {compactArchive ? (
@@ -1266,13 +1282,20 @@ function CardBody({
         // no footer height.
         <button
           type="button"
-          className={cn(CORNER_BUTTON, "right-9")}
+          className={cn(
+            CORNER_BUTTON,
+            "right-9 max-md:pointer-coarse:right-10",
+          )}
           aria-label="Archive"
           title="Archive"
           disabled={archiveBusy}
           onClick={onArchive}
         >
-          <Icon name="Archive" aria-hidden className="size-3.5" />
+          <Icon
+            name="Archive"
+            aria-hidden
+            className="size-3.5 max-md:pointer-coarse:size-4"
+          />
         </button>
       ) : null}
       {/* The footer strip runs edge to edge under the rows, so the card
@@ -1304,6 +1327,7 @@ function CardBody({
               role="alert"
               className={cn(
                 "min-w-0 text-[11px] text-red-700 dark:text-red-300",
+                PHONE_SECONDARY,
                 recap.next.length > 0 ? "ml-auto" : "mr-auto",
               )}
             >
@@ -1328,7 +1352,7 @@ function CardBody({
       ) : null}
       <button
         type="button"
-        className={cn(CORNER_BUTTON, "right-2.5")}
+        className={cn(CORNER_BUTTON, "right-2.5 max-md:pointer-coarse:right-1")}
         aria-label="Dismiss recap"
         title="Dismiss recap"
         onClick={onDismiss}
@@ -1336,7 +1360,7 @@ function CardBody({
         <svg
           aria-hidden="true"
           viewBox="0 0 16 16"
-          className="h-3.5 w-3.5"
+          className="h-3.5 w-3.5 max-md:pointer-coarse:h-4 max-md:pointer-coarse:w-4"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -1704,7 +1728,7 @@ export function RecapCard() {
               type="button"
               variant="outline"
               size="sm"
-              className="absolute bottom-3 right-1 h-8 gap-2 rounded-full border-border bg-background px-3.5 text-xs font-medium text-foreground shadow-md hover:bg-accent"
+              className="absolute bottom-3 right-1 h-8 gap-2 rounded-full border-border bg-background px-3.5 text-xs font-medium text-foreground shadow-md hover:bg-accent max-md:pointer-coarse:h-10"
               onClick={() => void restore(recap.id)}
             >
               <span

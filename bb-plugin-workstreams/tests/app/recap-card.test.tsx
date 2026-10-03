@@ -598,6 +598,41 @@ it("shows the goal, results, and an icon-only Archive in the compact complete ca
   );
 });
 
+it("sets the card's text in BB's phone type tokens", async () => {
+  const slot = await mount({
+    layout: "minimal",
+    archivable: true,
+    recap: { state: "review", review: ["Open Settings"] },
+  });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  const primary = (text: string) =>
+    slot.getByText(text).closest('[class~="max-md:pointer-coarse:text-base"]');
+  // On a phone the goal and the rows are `text-base`, the timeline's size,
+  // rather than the card's fluid sizes.
+  expect(primary("Building the card")).not.toBeNull();
+  expect(primary("Open Settings")).not.toBeNull();
+  // Small text follows BB's secondary token, and the corner buttons its
+  // coarse-pointer icon-button size.
+  expect(
+    region.querySelector('[class~="max-md:pointer-coarse:text-xs"]'),
+  ).not.toBeNull();
+  expect(
+    slot.getByRole("button", { name: "Dismiss recap" }).className,
+  ).toContain("max-md:pointer-coarse:h-9");
+});
+
+it("shrinks the card's text on a very narrow pane only for a mouse", async () => {
+  const slot = await mount({ layout: "minimal" });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  const scroller = region.querySelector(".thread-scrollbar")!;
+  // A phone narrower than 20rem keeps BB's sizes: the 10px fallback is
+  // gated on a fine pointer.
+  expect(scroller.className).toContain(
+    "@max-[20rem]/recap:pointer-fine:[&_*]:!text-[0.625rem]",
+  );
+  expect(scroller.className).not.toMatch(/recap:\[&_\*\]:!text/);
+});
+
 it("shows the goal and only the review steps in the compact review card", async () => {
   const slot = await mount({
     layout: "minimal",
