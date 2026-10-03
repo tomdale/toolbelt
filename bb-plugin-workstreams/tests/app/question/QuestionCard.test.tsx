@@ -8,6 +8,18 @@ import type {
 } from "../../../src/server/questions/contracts.ts";
 
 const app = await loadPluginApp(() => import("../../../src/app/index.tsx"));
+const mockUpload = vi.fn(async (args: any) => {
+  const clientFile = args.clientFile as File;
+  return {
+    type: clientFile.type.startsWith("image/")
+      ? ("localImage" as const)
+      : ("localFile" as const),
+    path: `uploaded/${clientFile.name}`,
+    name: clientFile.name,
+    sizeBytes: clientFile.size,
+    mimeType: clientFile.type,
+  };
+});
 
 beforeEach(() => {
   Object.defineProperty(window, "matchMedia", {
@@ -59,18 +71,25 @@ function render(
     cancel?: () => Promise<void>;
   } = {},
 ) {
-  return renderSlot(app.pendingInteractions[0]!, {
-    interaction: {
-      id: "pint_test",
-      threadId: "thr_test",
-      title: "Database",
-      payload: payload as never,
-      createdAt: 0,
-      expiresAt: null,
+  return renderSlot(
+    app.pendingInteractions[0]!,
+    {
+      interaction: {
+        id: "pint_test",
+        threadId: "thr_test",
+        title: "Database",
+        payload: payload as never,
+        createdAt: 0,
+        expiresAt: null,
+      },
+      submit: handlers.submit ?? (async () => undefined),
+      cancel: handlers.cancel ?? (async () => undefined),
     },
-    submit: handlers.submit ?? (async () => undefined),
-    cancel: handlers.cancel ?? (async () => undefined),
-  });
+    {
+      context: { projectId: "project-test", threadId: "thr_test" },
+      sdk: { projects: { attachments: { upload: mockUpload } } },
+    },
+  );
 }
 
 function getButtonByText(
@@ -177,41 +196,50 @@ describe("question interaction adapter", () => {
     expect(slot.getByRole("status").textContent).toBe("Needs your answer");
   });
 
-  it("accepts a freeform-only question through the BB composer", () => {
+  it("accepts freeform text in the compact answer field", () => {
     const submit = vi.fn(async (_value: unknown) => undefined);
     const slot = render(
       { questions: [{ ...singleSelect.questions[0]!, options: [] }] },
       { submit },
     );
-    fireEvent.change(slot.getByTestId("bb-new-thread-composer-input"), {
+    fireEvent.change(slot.getByLabelText("Database answer"), {
       target: { value: "Use our managed service" },
     });
-    fireEvent.click(slot.getByTestId("bb-new-thread-composer-submit"));
     fireEvent.click(getButtonByText(slot, "Submit"));
     expect(submit.mock.calls[0]?.[0]).toEqual({
       answers: { q0: { selected: [], freeText: "Use our managed service" } },
     });
   });
 
-  it("does not treat other questions' drafts as submitted without choosing Other", () => {
-    const submit = vi.fn(async (_value: unknown) => undefined);
-    const slot = render(
-      {
-        questions: [
-          { ...singleSelect.questions[0]!, options: [] },
-          { ...singleSelect.questions[0]!, id: "q1", shortLabel: "Hosting" },
-        ],
-      },
-      { submit },
-    );
-
-    fireEvent.change(slot.getByTestId("bb-new-thread-composer-input"), {
-      target: { value: "Uncommitted first answer" },
+  it("pastes images and attaches files from the plus control", async () => {
+    mockUpload.mockClear();
+    const slot = render({
+      questions: [{ ...singleSelect.questions[0]!, options: [] }],
     });
-    fireEvent.click(getButtonByText(slot, "Next"));
-    fireEvent.click(getButtonByText(slot, "Submit"));
-
-    expect(submit).not.toHaveBeenCalled();
+    const input = slot.container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const image = new File(["image"], "screenshot.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [image] } });
+    await vi.waitFor(() => expect(mockUpload).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(slot.getByText("screenshot.png")).toBeTruthy(),
+    );
+    const answer = slot.getByRole("textbox", { name: "Database answer" });
+    fireEvent.paste(answer, {
+      clipboardData: {
+        files: [image],
+        getData: () => "",
+      },
+    });
+    await vi.waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(2));
+    expect(answer).toBeTruthy();
+    expect(
+      slot.getByRole("button", { name: "Attach files or images" }),
+    ).toBeTruthy();
+    expect(
+      slot.container.querySelector("[data-testid='bb-new-thread-composer']"),
+    ).toBeNull();
   });
 
   it("preserves the answer and displays submission failures", async () => {
