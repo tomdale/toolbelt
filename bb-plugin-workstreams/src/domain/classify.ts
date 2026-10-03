@@ -44,7 +44,9 @@ const classificationSchema = z.object({
         .max(5)
         .nullish(),
     })
-    .nullable(),
+    // The model omits an unused proposal instead of returning null, so an
+    // absent `proposed` must parse as no proposal.
+    .nullish(),
 });
 const evidenceText = (text: string, max: number) =>
   redact(text).replace(/\s+/g, " ").trim().slice(0, max);
