@@ -76,6 +76,8 @@ const GROUPS = {
     showSnoozed: [z.boolean(), true],
     /** The Archived fold: threads kept after completion. */
     showArchived: [z.boolean(), true],
+    /** Up Next and the workstreams replace BB's Recent list on a phone's Home. */
+    phoneHome: [z.boolean(), true],
     /** How workstream groups are ordered in the sidebar. */
     groupSort: [z.enum(["alphabetical", "activity", "manual"]), "alphabetical"],
     /** How many threads the Recent band shows. */

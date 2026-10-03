@@ -94,6 +94,22 @@ export function SidebarSettings() {
           )}
         </SectionRows>
       </SidebarGroup>
+      <SidebarGroup title="Home screen">
+        <SectionRows compact>
+          <SettingRow
+            label="Up Next and workstreams on phones"
+            description="Replaces BB's Recent list on a phone's Home screen with Up Next over your threads by workstream."
+            control={
+              <SettingSwitch
+                size="sm"
+                label="Up Next and workstreams on phones"
+                checked={prefs.sidebar.phoneHome}
+                onChange={(phoneHome) => update({ sidebar: { phoneHome } })}
+              />
+            }
+          />
+        </SectionRows>
+      </SidebarGroup>
       <SidebarGroup title="Details">
         <SectionRows compact>
           {choice(

@@ -17,6 +17,7 @@ import { QuestionHistoryInline } from "./question/QuestionHistory.tsx";
 import { DeliveredQuestionCards } from "./question/DeliveredQuestion.tsx";
 import { NewThreadRouting } from "./composer/NewThreadRouting.tsx";
 import { NewWorkBridge } from "./composer/NewWorkBridge.tsx";
+import { HomeSection } from "./home/HomeSection.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
 import {
   AdvancedSettings,
@@ -80,6 +81,13 @@ export default definePluginApp((app) => {
       { id: "routing", chrome: "bare", component: NewThreadRouting },
       { id: "bridge", chrome: "bare", component: NewWorkBridge },
     ],
+  });
+  // On phones BB's new-thread view lists recent threads under its composer;
+  // this section takes that list's place (src/app/home).
+  app.slots.homepageSection({
+    id: "home",
+    title: "Workstreams",
+    component: HomeSection,
   });
   app.slots.experimental_threadHeaderAction({
     id: "parent-thread",
