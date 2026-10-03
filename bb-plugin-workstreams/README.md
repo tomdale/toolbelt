@@ -133,7 +133,8 @@ design and the contract the code is checked against.
   suggested action to send it; Shift-click to add its text to the draft instead,
   or choose **Edit in composer** from the overflow menu. Resting the pointer on
   an action (or focusing it by keyboard) opens a small arrowed hint with its
-  description and a ⇧ reminder of the Shift-click. Its state marks the
+  description (or, without one, the message it sends) and a ⇧ reminder of
+  the Shift-click. Its state marks the
   sidebar row. Each recap also stays in the thread as a tinted **Recap** tool
   row; expand it to read the recap. Fresh input clears the card. A turn that
   ends without either gets an agent-only reminder, three by default (Settings →

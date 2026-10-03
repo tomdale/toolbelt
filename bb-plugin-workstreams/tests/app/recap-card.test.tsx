@@ -1053,6 +1053,23 @@ it("teaches Shift-click on an action without a description and confirms the key"
   await waitFor(() => expect(key().className).not.toContain("bg-foreground"));
 });
 
+it("explains a titled action without a description by the message it sends", async () => {
+  stubResizeObserver();
+  const slot = await mount({
+    recap: {
+      next: [{ title: "Run tests", message: "Run the full test suite" }],
+    },
+  });
+  const button = await slot.findByRole("button", { name: "Run tests" });
+  fireEvent.pointerMove(button, {
+    pointerType: "mouse",
+    pointerX: 1,
+    pointerY: 1,
+  });
+  const hint = await slot.findByRole("tooltip", {}, { timeout: 1500 });
+  expect(hint.textContent).toContain("Run the full test suite");
+});
+
 it("edits an overflow action into the composer without sending", async () => {
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
     function (this: HTMLElement) {
