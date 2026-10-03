@@ -254,7 +254,7 @@ function mount(
 it("finds retained inactive identities by alias without losing explicit subject selection", async () => {
   const { rpc } = mount(inAlpha);
   fireEvent.click(
-    await screen.findByRole("button", { name: "Workstream: No workstream" }),
+    await screen.findByRole("button", { name: "Workstream: Automatic" }),
   );
   const search = await screen.findByRole("combobox", {
     name: "Search workstreams",
@@ -281,7 +281,7 @@ const suggestion = () =>
 it("adds a workstream field at the start of BB's picker row", async () => {
   mount(inAlpha);
   const field = await screen.findByRole("button", {
-    name: "Workstream: No workstream",
+    name: "Workstream: Automatic",
   });
   const project = screen.getByRole("button", { name: "Project" });
   expect(field.closest("[data-ws-workstream-slot]")?.nextElementSibling).toBe(
@@ -308,50 +308,85 @@ it("starts the thread the pickers show when the suggestion is ignored", async ()
   ]);
 });
 
-it("suggests an existing workstream and fills the fields when clicked", async () => {
+it("fills the pickers with the classified home while the user types", async () => {
   const { slot, rpc } = mount(inAlpha);
   await type(slot, "Fix the parser in Alpha");
-  const button = await suggestion();
+  const field = await screen.findByRole("button", {
+    name: "Workstream: Alpha",
+  });
   expect(rpc.route.mock.calls[0]![0]).toMatchObject({
     prompt: "Fix the parser in Alpha",
     suggest: true,
   });
-  expect(button.textContent).toContain("Start in Alpha");
-  await waitFor(() =>
-    expect(button.textContent).toContain("bb · Project checkout"),
-  );
-  expect(
-    screen.getByRole("button", { name: "Apply to the composer" }).textContent,
-  ).toContain("Tab");
-  expect(
-    screen.getByRole("button", { name: "Apply and start the thread" })
-      .textContent,
-  ).toMatch(/⏎/);
-  fireEvent.click(button);
-  await screen.findByRole("button", { name: "Workstream: Alpha" });
+  // The classifier's hand: the magic marks, not the picked treatment.
+  expect(field.dataset.wsAuto).toBe("true");
+  expect(field.dataset.wsDestination).toBe("true");
   expect(slot.inspection.composer.selections).toEqual([
     { projectId: "proj_a", environment: placement.environment },
   ]);
+  // The row's own offer is hidden: the pickers already show it.
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: / suggestion: / })).toBeNull(),
   );
 });
 
-it("creates a suggested new workstream before filling the fields", async () => {
+it("keeps a manually picked workstream out of the magic treatment", async () => {
+  const { slot } = mount(inAlpha);
+  await type(slot, "Fix the parser in Alpha");
+  const field = await screen.findByRole("button", {
+    name: "Workstream: Alpha",
+  });
+  expect(field.dataset.wsAuto).toBe("true");
+  fireEvent.click(field);
+  fireEvent.click(await screen.findByRole("option", { name: /Beta/ }));
+  const picked = await screen.findByRole("button", {
+    name: "Workstream: Beta",
+  });
+  expect(picked.dataset.wsAuto).toBeUndefined();
+});
+
+it("⏎ starts the thread in the automatic destination", async () => {
+  const { slot, rpc, onClose } = mount(inAlpha);
+  await type(slot, "Fix the parser in Alpha");
+  await screen.findByRole("button", { name: "Workstream: Alpha" });
+  fireEvent.click(screen.getByTestId("bb-new-thread-composer-submit"));
+  await waitFor(() => expect(rpc.startThread).toHaveBeenCalledTimes(1));
+  expect(rpc.startThread.mock.calls[0]![0]).toMatchObject({
+    sectionId: "sec_a",
+  });
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it("⌘⏎ starts the thread the automatic pickers show", async () => {
+  const { slot, rpc } = mount(inAlpha);
+  await type(slot, "Fix the parser in Alpha");
+  await screen.findByRole("button", { name: "Workstream: Alpha" });
+  fireEvent.keyDown(input(), { key: "Enter", metaKey: true });
+  await waitFor(() => expect(rpc.startThread).toHaveBeenCalledTimes(1));
+  expect(rpc.startThread.mock.calls[0]![0]).toMatchObject({
+    sectionId: "sec_a",
+  });
+});
+
+it("creates a proposed workstream when submitting", async () => {
   const { slot, rpc } = mount(newBilling);
   await type(slot, "Add CSV export for invoices");
-  const button = await suggestion();
-  expect(button.textContent).toContain("New workstream Billing");
-  fireEvent.click(button);
   await screen.findByRole("button", { name: "Workstream: Billing" });
+  expect(rpc.createWorkstream).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByTestId("bb-new-thread-composer-submit"));
+  await waitFor(() => expect(rpc.createWorkstream).toHaveBeenCalledTimes(1));
   expect(rpc.createWorkstream.mock.calls[0]![0]).toEqual({
     name: "Billing",
     description: "Invoices",
   });
+  await waitFor(() => expect(rpc.startThread).toHaveBeenCalledTimes(1));
+  expect(rpc.startThread.mock.calls[0]![0]).toMatchObject({
+    sectionId: "sec_new",
+  });
 });
 
 it("Tab in the editor applies the suggestion without starting", async () => {
-  const { slot, rpc, onClose } = mount(inAlpha);
+  const { slot, rpc, onClose } = mount(inAlpha, "sec_b");
   await type(slot, "Fix the parser in Alpha");
   await suggestion();
   fireEvent.keyDown(input(), { key: "Tab" });
@@ -362,7 +397,7 @@ it("Tab in the editor applies the suggestion without starting", async () => {
 });
 
 it("leaves Tab to the editor when it uses the key itself", async () => {
-  const { slot } = mount(inAlpha);
+  const { slot } = mount(inAlpha, "sec_b");
   await type(slot, "Fix the parser in Alpha");
   await suggestion();
   // A mention menu or list indent claims Tab before it bubbles.
@@ -372,11 +407,11 @@ it("leaves Tab to the editor when it uses the key itself", async () => {
   fireEvent.keyDown(input(), { key: "Tab" });
   await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
   expect(slot.inspection.composer.selections).toHaveLength(0);
-  screen.getByRole("button", { name: "Workstream: No workstream" });
+  screen.getByRole("button", { name: "Workstream: Beta" });
 });
 
 it("⌘⏎ applies a workstream suggestion and starts the thread", async () => {
-  const { slot, rpc, onClose } = mount(inAlpha);
+  const { slot, rpc, onClose } = mount(inAlpha, "sec_b");
   await type(slot, "Fix the parser in Alpha");
   await suggestion();
   fireEvent.keyDown(input(), { key: "Enter", metaKey: true });
@@ -415,7 +450,7 @@ it("⌘⏎ sends the draft to a suggested thread and closes", async () => {
 it("files the thread in a workstream picked from the field", async () => {
   const { slot, rpc } = mount(inAlpha);
   fireEvent.click(
-    await screen.findByRole("button", { name: "Workstream: No workstream" }),
+    await screen.findByRole("button", { name: "Workstream: Automatic" }),
   );
   fireEvent.click(await screen.findByRole("option", { name: /Beta/ }));
   await screen.findByRole("button", { name: "Workstream: Beta" });
@@ -441,8 +476,8 @@ it("keeps the draft and says why when starting the thread fails", async () => {
 });
 
 it("shows no Debug section while Debug mode is off", async () => {
-  const { slot } = mount(inAlpha);
-  await type(slot, "Fix the parser in Alpha");
+  const { slot } = mount(continueParser);
+  await type(slot, "Also handle CRLF in that fix");
   await suggestion();
   expect(screen.queryByText("Debug")).toBeNull();
 });

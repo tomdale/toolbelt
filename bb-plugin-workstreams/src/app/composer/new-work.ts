@@ -5,9 +5,13 @@
  *
  * BB's composer owns the draft, project, environment and execution settings,
  * exactly as in its own New thread view. Workstreams adds one field, the
- * workstream, and one optional shortcut: a suggested home the user can accept.
- * Ignoring the suggestion changes nothing, so Enter always starts the thread
- * the pickers show.
+ * workstream. The field starts Automatic: each classification moves the
+ * workstream, project and environment pickers to the home it names, marked
+ * with the magic tint, and Enter starts the thread the pickers show. Any
+ * manual change — a picked workstream, No workstream, a different project or
+ * environment — pins every picker and stops the automatic updates; choosing
+ * Automatic again unpins. A suggested thread changes nothing until it is
+ * accepted, so Enter never silently sends a draft to a thread.
  */
 import { createContext } from "react";
 import type {
@@ -23,6 +27,15 @@ export type WorkstreamChoice = {
   name: string;
   subjectId?: string;
 } | null;
+
+/** A workstream the classification proposed and no one has created yet.
+ *  While the pickers are Automatic it shows in the field, and submitting
+ *  creates it and files the thread there. */
+export type PendingWorkstream = {
+  name: string;
+  description: string;
+  subjectId?: string;
+};
 
 type SuggestionBase = {
   /** Identifies one classification result, so accepting or dismissing it sticks. */
@@ -102,6 +115,7 @@ export type NewWorkEvent = {
   kind:
     | "classify"
     | "accept"
+    | "apply"
     | "dismiss"
     | "select-workstream"
     | "create-workstream"
@@ -121,7 +135,15 @@ export type NewWorkState = {
   /** The draft's trimmed plain text, as last observed from the composer. */
   text: string;
   workstream: WorkstreamChoice;
-  workstreamWasExplicit: boolean;
+  /**
+   * True while the pickers are the user's: a preset workstream, a picked
+   * value (including No workstream), or a manual project or environment
+   * change. While false, each classification moves the pickers to the home
+   * it names.
+   */
+  pinned: boolean;
+  /** A proposed workstream no one has created; Automatic mode only. */
+  pendingNew: PendingWorkstream | null;
   /** The composer's own picker values. */
   selection: ComposerSelection | null;
   /**
@@ -138,7 +160,7 @@ export type NewWorkState = {
   accepting: boolean;
   acceptedRoute: {
     routeId: string;
-    sectionId: string;
+    sectionId?: string;
     subjectId?: string;
   } | null;
   /** Why the last submit or acceptance failed. */
@@ -190,14 +212,88 @@ export type SubmitResult =
  * Whether the pickers already say what a workstream suggestion would set.
  * The environment isn't compared: BB reports a resolved environment in its
  * own shape, and the workstream and project are what the suggestion is about.
+ * An automatically applied destination counts: the automatic classification
+ * fills the pickers before the row would offer the same home again.
  */
 function alreadyApplied(suggestion: Suggestion, state: NewWorkState): boolean {
+  if (suggestion.kind === "new-workstream")
+    return state.pendingNew?.name === suggestion.name;
   if (suggestion.kind !== "workstream") return false;
   if (state.workstream?.id !== suggestion.sectionId) return false;
   return (
     !suggestion.placement ||
     state.selection?.projectId === suggestion.placement.projectId
   );
+}
+
+/** The placement part of a selection, as a comparable string. Accepts the
+ *  shape a suggestion's placement would apply, so an applied destination can
+ *  be compared with what the composer reports. */
+function placementSignature(
+  selection: { projectId?: string; environment?: unknown } | null | undefined,
+): string {
+  return JSON.stringify({
+    projectId: selection?.projectId ?? null,
+    environment: selection?.environment ?? null,
+  });
+}
+
+/**
+ * What the Workstream field shows: the picked or automatic workstream, the
+ * proposed one submitting would create, or one of the two rest states.
+ * `auto` picks the magic treatment; `reason` is the classification's one-line
+ * why, shown as the field's tooltip.
+ */
+export function pickerDisplay(state: NewWorkState): {
+  id: string | null;
+  label: string;
+  auto: boolean;
+  /** The field names a destination, not a rest state. */
+  destination: boolean;
+  /** Submitting would create this workstream first. */
+  creating: boolean;
+  reason: string | null;
+} {
+  if (state.pendingNew)
+    return {
+      id: null,
+      label: state.pendingNew.name,
+      auto: true,
+      destination: true,
+      creating: true,
+      reason: state.decision?.reason ?? null,
+    };
+  if (state.workstream)
+    return {
+      id: state.workstream.id,
+      label: state.workstream.name,
+      auto: !state.pinned,
+      destination: true,
+      creating: false,
+      reason: state.pinned ? null : (state.decision?.reason ?? null),
+    };
+  if (!state.pinned)
+    return {
+      id: null,
+      label: "Automatic",
+      auto: true,
+      destination: false,
+      creating: false,
+      reason: null,
+    };
+  return {
+    id: null,
+    label: "No workstream",
+    auto: false,
+    destination: false,
+    creating: false,
+    reason: null,
+  };
+}
+
+/** Whether ⏎ would file into a destination the pickers show. */
+export function hasDestination(state: NewWorkState): boolean {
+  return !!(state.workstream || state.pendingNew);
 }
 
 /** Why the suggestion is or isn't showing, in Debug mode's words. */
@@ -240,6 +336,12 @@ export class NewWork {
   /** The thread the next composer submit goes to instead of a new thread. */
   private sendTarget: Extract<Suggestion, { kind: "thread" }> | null = null;
   private eventIds = 0;
+  /** Set while this model applies a selection itself, so the composer's echo
+   *  of that change doesn't count as the user pinning the pickers. */
+  private applying = 0;
+  /** The placement this model last applied; a later observation that matches
+   *  it is the composer reconciling, not a user override. */
+  private lastAppliedSignature: string | null = null;
 
   constructor(
     private deps: NewWorkDeps,
@@ -249,7 +351,8 @@ export class NewWork {
     this.state = {
       text: "",
       workstream,
-      workstreamWasExplicit: workstream !== null,
+      pinned: workstream !== null,
+      pendingNew: null,
       selection: null,
       suggestion: null,
       decision: null,
@@ -326,13 +429,34 @@ export class NewWork {
       text: trimmed,
       acceptedRoute: null,
       error: null,
-      ...(trimmed ? {} : { suggestion: null, decision: null }),
+      ...(trimmed
+        ? {}
+        : {
+            suggestion: null,
+            decision: null,
+            // An emptied draft has no destination; an automatic one goes too.
+            ...this.withdrawn(),
+          }),
     });
     this.schedule();
   }
 
   observeSelection(selection: ComposerSelection | null) {
-    if (selection !== this.state.selection) this.set({ selection });
+    const prev = this.state.selection;
+    if (selection === prev) return;
+    this.set({ selection });
+    // In Automatic mode, a placement change the model didn't apply itself is
+    // the user overriding the pickers: everything pins from then on.
+    if (
+      !this.state.pinned &&
+      !this.applying &&
+      prev &&
+      selection &&
+      placementSignature(selection) !== placementSignature(prev) &&
+      placementSignature(selection) !== this.lastAppliedSignature
+    ) {
+      this.set({ pinned: true, pendingNew: null });
+    }
   }
 
   selectWorkstream(choice: WorkstreamChoice) {
@@ -342,10 +466,36 @@ export class NewWork {
     })("ok");
     this.set({
       workstream: choice,
+      pendingNew: null,
       acceptedRoute: null,
-      workstreamWasExplicit: true,
+      pinned: true,
       error: null,
     });
+  }
+
+  /**
+   * Returns the field to Automatic: the next classification moves the pickers
+   * again, starting with the one the current decision already named.
+   */
+  selectAutomatic() {
+    const display = pickerDisplay(this.state);
+    this.begin("select-workstream", {
+      from: display.label,
+      to: "automatic",
+    })("ok");
+    this.set({
+      workstream: null,
+      pendingNew: null,
+      acceptedRoute: null,
+      pinned: false,
+      error: null,
+    });
+    void this.autoApply(shownSuggestion(this.state));
+  }
+
+  /** The automatic state with no destination, when the pickers aren't pinned. */
+  private withdrawn(): Partial<NewWorkState> {
+    return this.state.pinned ? {} : { workstream: null, pendingNew: null };
   }
 
   reportError(error: unknown) {
@@ -432,7 +582,8 @@ export class NewWork {
       }
       this.set({
         ...(workstream ? { workstream } : {}),
-        workstreamWasExplicit: true,
+        pendingNew: null,
+        pinned: true,
         acceptedRoute: workstream
           ? {
               routeId: suggestion.key,
@@ -444,19 +595,11 @@ export class NewWork {
       let requested: ComposerSelection | null = null;
       let applied: ComposerSelection | null = null;
       if (suggestion.placement) {
-        const { projectId, environment } = suggestion.placement;
-        const {
-          projectId: _projectId,
-          environment: _environment,
-          ...execution
-        } = composer.selection ?? {};
-        requested = {
-          ...execution,
-          projectId,
-          ...(environment.type === "project-default" ? {} : { environment }),
-        };
-        applied = await composer.setSelection(requested);
-        this.observeSelection(applied);
+        const appliedPlacement = await this.applyPlacement(
+          suggestion.placement,
+        );
+        requested = appliedPlacement.requested;
+        applied = appliedPlacement.applied;
       }
       finish("ok", {
         output: {
@@ -499,10 +642,14 @@ export class NewWork {
     if (this.state.error) this.set({ error: null });
     const target = this.sendTarget;
     const subjectId =
-      this.state.acceptedRoute?.subjectId ?? this.state.workstream?.subjectId;
+      this.state.acceptedRoute?.subjectId ??
+      this.state.workstream?.subjectId ??
+      this.state.pendingNew?.subjectId;
     this.sendTarget = null;
     this.invalidate();
-    const sectionId = this.state.workstream?.id ?? null;
+    let sectionId = this.state.workstream?.id ?? null;
+    if (!target && !sectionId && this.state.pendingNew)
+      sectionId = await this.createPending();
     const finish = this.begin(
       "submit",
       target
@@ -533,6 +680,173 @@ export class NewWork {
     } catch (error) {
       finish("failed", { error });
       throw error;
+    }
+  }
+
+  /**
+   * Creates the proposed workstream, as submitting does. The native flow
+   * calls this before handing the section to the host composer's submit;
+   * the field keeps showing the created name.
+   */
+  async createPending(): Promise<string> {
+    const pending = this.state.pendingNew;
+    if (!pending) return this.state.workstream?.id ?? "";
+    const subjectId = pending.subjectId;
+    const created = await this.deps.createWorkstream(
+      pending.name,
+      pending.description,
+      ...(subjectId ? [subjectId] : []),
+    );
+    const accepted = this.state.acceptedRoute;
+    this.set({
+      workstream: { id: created.sectionId, name: created.name },
+      pendingNew: null,
+      acceptedRoute: accepted
+        ? { ...accepted, sectionId: created.sectionId }
+        : { sectionId: created.sectionId, routeId: "" },
+    });
+    return created.sectionId;
+  }
+
+  /** Submits through the embedded composer, as plain Enter does; the dialog's
+   *  ⌘⏎ shortcut uses it when an automatic destination already stands in the
+   *  pickers, so the alternate send keeps working there. */
+  async submitComposer(): Promise<void> {
+    await this.composer?.submit({ experimental_data: null });
+  }
+
+  /**
+   * Applies a placement's project and environment through the composer,
+   * keeping the model's own change from counting as a user override. Returns
+   * the requested and applied selections for Debug mode's record.
+   */
+  private async applyPlacement(placement: Placement): Promise<{
+    requested: ComposerSelection;
+    applied: ComposerSelection | null;
+  }> {
+    const composer = this.composer;
+    const { projectId, environment } = placement;
+    const {
+      projectId: _projectId,
+      environment: _environment,
+      ...execution
+    } = composer?.selection ?? {};
+    const requested: ComposerSelection = {
+      ...execution,
+      projectId,
+      ...(environment.type === "project-default" ? {} : { environment }),
+    };
+    if (!composer) return { requested, applied: null };
+    this.applying++;
+    try {
+      const applied = await composer.setSelection(requested);
+      this.lastAppliedSignature = placementSignature(applied);
+      this.observeSelection(applied);
+      return { requested, applied };
+    } finally {
+      this.applying--;
+    }
+  }
+
+  /**
+   * Moves the Automatic pickers to the home the classification named: an
+   * existing workstream, or a proposal submitting would create. A placement
+   * applies with its workstream, so the pair the pickers show stays together;
+   * when it can't be applied the pickers stay as they were and the suggestion
+   * row keeps offering the home for a manual acceptance. A classification
+   * that names no workstream withdraws the previous automatic destination.
+   */
+  private async autoApply(
+    suggestion: Suggestion | null,
+    mine = this.generation,
+  ) {
+    if (this.state.pinned) return;
+    if (!suggestion || suggestion.kind === "thread") {
+      if (this.state.workstream || this.state.pendingNew)
+        this.set({ ...this.withdrawn(), acceptedRoute: null });
+      return;
+    }
+    if (suggestion.kind === "workstream") {
+      const unchanged =
+        this.state.workstream?.id === suggestion.sectionId &&
+        (!suggestion.placement ||
+          placementSignature(this.state.selection) ===
+            placementSignature({
+              projectId: suggestion.placement.projectId,
+              environment:
+                suggestion.placement.environment.type === "project-default"
+                  ? null
+                  : suggestion.placement.environment,
+            }));
+      if (!unchanged) {
+        if (suggestion.placement) {
+          try {
+            await this.applyPlacement(suggestion.placement);
+          } catch (error) {
+            if (mine === this.generation) this.begin("apply", suggestion)(
+              "failed",
+              { error },
+            );
+            return;
+          }
+          if (mine !== this.generation) return;
+        }
+        this.set({
+          workstream: { id: suggestion.sectionId, name: suggestion.name },
+          pendingNew: null,
+          acceptedRoute: {
+            routeId: suggestion.key,
+            sectionId: suggestion.sectionId,
+            subjectId: this.state.decision?.subjectId,
+          },
+        });
+        this.begin("apply", suggestion)("ok", {
+          output: this.state.workstream,
+        });
+      } else {
+        // Same home again: keep the pickers untouched, refresh the trace link.
+        this.set({
+          acceptedRoute: {
+            routeId: suggestion.key,
+            sectionId: suggestion.sectionId,
+            subjectId: this.state.decision?.subjectId,
+          },
+        });
+      }
+      return;
+    }
+    // A proposed new workstream: show it, create only on submit.
+    const unchanged =
+      this.state.pendingNew?.name === suggestion.name &&
+      this.state.pendingNew?.description === suggestion.description;
+    if (!unchanged) {
+      if (suggestion.placement) {
+        try {
+          await this.applyPlacement(suggestion.placement);
+        } catch (error) {
+          if (mine === this.generation) this.begin("apply", suggestion)(
+            "failed",
+            { error },
+          );
+          return;
+        }
+        if (mine !== this.generation) return;
+      }
+      this.set({
+        workstream: null,
+        pendingNew: {
+          name: suggestion.name,
+          description: suggestion.description,
+          subjectId: this.state.decision?.subjectId ?? undefined,
+        },
+        acceptedRoute: {
+          routeId: suggestion.key,
+          subjectId: this.state.decision?.subjectId,
+        },
+      });
+      this.begin("apply", suggestion)("ok", {
+        output: this.state.pendingNew,
+      });
     }
   }
 
@@ -583,6 +897,14 @@ export class NewWork {
       const suggestion = suggestionFrom(decision);
       finish("ok", { output: { decision, suggestion } });
       this.set({ decision, suggestion });
+      // A dismissed suggestion names no destination; an already-applied one
+      // keeps the pickers it filled (autoApply is idempotent for it).
+      await this.autoApply(
+        suggestion && suggestion.key === this.state.settled
+          ? null
+          : suggestion,
+        mine,
+      );
     } catch (error) {
       finish(mine === this.generation ? "failed" : "superseded", { error });
       // A suggestion is optional; the draft and its pickers work without one.

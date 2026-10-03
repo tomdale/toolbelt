@@ -1,9 +1,13 @@
 /**
  * New work's workstream field, built to sit beside BB's project and
- * environment pickers and match them: a muted ghost trigger and a searchable
- * popover list. Searching for a name no workstream has offers to create it.
+ * environment pickers and match them: a ghost trigger and a searchable
+ * popover list. The field starts Automatic: the classifier's destination
+ * shows in the magic tint, and any manual pick — including No workstream —
+ * pins it back to the ordinary muted treatment. Searching for a name no
+ * workstream has offers to create it.
  */
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import { corpusLabel } from "../../domain/corpus-label.ts";
@@ -29,7 +33,7 @@ import { WorkstreamName } from "../WorkstreamName.tsx";
 import { NO_WORKSTREAM_ICON, WORKSTREAM_ICON } from "../workstream-icon.ts";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
 import { useServerState } from "../useWorkstreams.ts";
-import type { NewWork } from "./new-work.ts";
+import { pickerDisplay, type NewWork } from "./new-work.ts";
 
 /** BB's option-trigger classes, so the field lines up with the pickers beside it. */
 const TRIGGER_CLASS =
@@ -48,12 +52,12 @@ function Description({ text }: { text: string | null | undefined }) {
 }
 const NONE = "__none__";
 const CREATE = "__create__";
+const AUTOMATIC = "__automatic__";
 
 export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
-  const selected = useSyncExternalStore(
-    newWork.subscribe,
-    () => newWork.snapshot().workstream,
-  );
+  const state = useSyncExternalStore(newWork.subscribe, newWork.snapshot);
+  const selected = state.workstream;
+  const display = pickerDisplay(state);
   const { server } = useServerState();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -109,7 +113,7 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
   // listed yet.
   const label = selected
     ? (server.workstreams[selected.id]?.name ?? selected.name)
-    : "No workstream";
+    : display.label;
   const openChange = (next: boolean) => {
     setOpen(next);
     if (!next) setQuery("");
@@ -120,32 +124,68 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
     newWork.selectWorkstream(choice);
     openChange(false);
   };
-  return (
-    <Popover open={open} onOpenChange={openChange} modal>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-label={`Workstream: ${label}`}
-          data-ws-workstream-control=""
-          className={TRIGGER_CLASS}
-        >
-          <span className="contents">
+  const automaticTitle = display.creating
+    ? `New workstream “${label}” — created when you start`
+    : display.auto
+      ? (display.reason ?? "The classifier fills this as you type")
+      : null;
+  const trigger = (
+    <PopoverTrigger asChild>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label={`Workstream: ${label}`}
+        data-ws-workstream-control=""
+        data-ws-auto={display.auto || undefined}
+        data-ws-destination={display.destination || undefined}
+        data-ws-stale={(display.auto && state.classifying) || undefined}
+        className={TRIGGER_CLASS}
+      >
+        <span className="contents">
+          {display.auto ? (
+            <span className="ws-spark" aria-hidden>
+              ✦
+            </span>
+          ) : (
             <Icon
               name={selected ? WORKSTREAM_ICON : NO_WORKSTREAM_ICON}
               className="size-3.5 shrink-0"
               aria-hidden
             />
-            <span className="min-w-0 truncate">{label}</span>
-          </span>
-          <Icon
-            name="ChevronDown"
-            className="size-3.5 shrink-0 text-muted-foreground"
-            aria-hidden
-          />
-        </Button>
-      </PopoverTrigger>
+          )}
+          <span className="min-w-0 truncate">{label}</span>
+        </span>
+        <Icon
+          name="ChevronDown"
+          className="size-3.5 shrink-0 text-muted-foreground"
+          aria-hidden
+        />
+      </Button>
+    </PopoverTrigger>
+  );
+  return (
+    <Popover open={open} onOpenChange={openChange} modal>
+      {automaticTitle ? (
+        <Tooltip.Provider delayDuration={150}>
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>{trigger}</Tooltip.Trigger>
+            <Tooltip.Portal>
+              <Tooltip.Content
+                side="top"
+                sideOffset={5}
+                collisionPadding={12}
+                className="z-50 max-w-72 rounded-md border border-border bg-popover px-3 py-2 text-xs leading-relaxed text-popover-foreground shadow-md"
+              >
+                {automaticTitle}
+                <Tooltip.Arrow className="fill-popover" />
+              </Tooltip.Content>
+            </Tooltip.Portal>
+          </Tooltip.Root>
+        </Tooltip.Provider>
+      ) : (
+        trigger
+      )}
       <PopoverContent
         align="start"
         aria-label="Workstream"
@@ -166,6 +206,35 @@ export function WorkstreamPicker({ newWork }: { newWork: NewWork }) {
             className="h-8 text-xs"
           />
           <CommandList className="max-h-72">
+            <CommandGroup>
+              <CommandItem
+                value={AUTOMATIC}
+                aria-current={!state.pinned ? "true" : undefined}
+                onSelect={() => {
+                  newWork.selectAutomatic();
+                  openChange(false);
+                }}
+                className={ITEM_CLASS}
+              >
+                <span className="ws-spark" aria-hidden>
+                  ✦
+                </span>
+                <span className="min-w-0 flex-1 truncate">
+                  Automatic
+                  <span className="block font-normal text-muted-foreground">
+                    The classifier files new work
+                  </span>
+                </span>
+                <Icon
+                  name="Check"
+                  className={cn(
+                    "ml-auto size-4",
+                    !state.pinned ? "opacity-100" : "opacity-0",
+                  )}
+                  aria-hidden
+                />
+              </CommandItem>
+            </CommandGroup>
             {visible.length ? (
               <CommandGroup heading="Workstream">
                 {visible.map((w) => (

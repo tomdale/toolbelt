@@ -142,23 +142,28 @@ async function mount(
   return { w, alpha, beta, slot, dispatch, journal, send };
 }
 
-it("keeps ordinary host submission unfiled despite a visible matching suggestion", async () => {
-  const { w, slot, dispatch, journal } = await mount({
+it("files an untouched automatic destination through host metadata", async () => {
+  const { w, alpha, slot, dispatch, journal } = await mount({
     outcome: "new-thread",
     workstream: "Alpha",
     title: "Fix tabs",
   });
   const prompt = "Fix the parser in Alpha so it handles tabs";
   await act(() => slot.behavior.setComposerText(prompt));
-  await screen.findByRole("button", { name: "Apply and start the thread" });
+  await screen.findByRole("button", { name: "Workstream: Alpha" });
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: null,
+    experimental_data: {
+      routeId: expect.any(String),
+      sectionId: alpha.id,
+    },
   });
   await dispatch(prompt);
-  expect(w.threads.get("composed")?.sectionId).toBeNull();
-  expect(await journal()).toEqual([]);
+  expect(w.threads.get("composed")?.sectionId).toBe(alpha.id);
+  expect(await journal()).toEqual([
+    expect.objectContaining({ action: "move", source: "router" }),
+  ]);
   expect(w.spawned).toEqual([]);
   expect(w.sent).toEqual([]);
 });
@@ -171,9 +176,9 @@ it("files a manual Workstream selection through host metadata and the server dis
   });
   const prompt = "Write docs for Alpha";
   await act(() => slot.behavior.setComposerText(prompt));
-  await screen.findByRole("button", { name: "Apply and start the thread" });
+  // The field may already show the automatic home; the pick overrides it.
   fireEvent.click(
-    screen.getByRole("button", { name: "Workstream: No workstream" }),
+    await screen.findByRole("button", { name: /Workstream:/ }),
   );
   fireEvent.click(await screen.findByRole("option", { name: "Beta" }));
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
@@ -198,9 +203,8 @@ it("accepts a new workstream in the UI and files exactly once even when dispatch
   });
   const prompt = "Add invoice export to a new Billing service";
   await act(() => slot.behavior.setComposerText(prompt));
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Apply and start the thread" }),
-  );
+  await screen.findByRole("button", { name: "Workstream: Billing" });
+  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   const billing = w.sections.find((section) => section.name === "Billing")!;
   expect(billing).toBeDefined();
