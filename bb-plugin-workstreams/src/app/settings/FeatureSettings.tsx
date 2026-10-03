@@ -248,19 +248,6 @@ export function NewWorkSettings() {
           update({ newWork: { suggestionsModel } })
         }
       />
-      <SettingRow
-        label="Catalog classification (experimental)"
-        description="Recognize specific products and features from the Catalog independently of current workstreams. Does not suggest thread continuation."
-        control={
-          <SettingSwitch
-            label="Catalog classification"
-            checked={prefs.newWork.corpusClassification}
-            onChange={(corpusClassification) =>
-              update({ newWork: { corpusClassification } })
-            }
-          />
-        }
-      />
     </SectionRows>
   );
 }
@@ -272,22 +259,9 @@ export function OrganizeSettings() {
     <SectionRows>
       <ModelField
         label="Organizing model"
-        description="Proposes the workstream map when you click Organize."
+        description="Proposes workstream organization when you click Organize."
         choice={prefs.organize.model}
         onChange={(model) => update({ organize: { model } })}
-      />
-      <SettingRow
-        label="Adaptive preview (experimental)"
-        description="Classify tasks, then propose groups using current task counts by product and feature. Nothing moves until Apply."
-        control={
-          <SettingSwitch
-            label="Adaptive preview"
-            checked={prefs.organize.adaptivePreview}
-            onChange={(adaptivePreview) =>
-              update({ organize: { adaptivePreview } })
-            }
-          />
-        }
       />
       <SettingRow
         label="Group capacity"

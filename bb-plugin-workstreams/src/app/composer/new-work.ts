@@ -216,22 +216,18 @@ export type NewWorkDeps = {
   createWorkstream(
     name: string,
     description: string,
-    subjectId?: string,
   ): Promise<{ sectionId: string; name: string }>;
   startThread(
     sectionId: string | null,
     request: NewThreadRequest,
-    optionsOrSubjectId?:
-      | {
-          identity?: {
-            entityId?: string | null;
-            proposal?: DraftSubjectProposal | null;
-            provenance?: "manual" | "automatic";
-          } | null;
-          newWorkstream?: { name: string; description?: string } | null;
-          subjectId?: string;
-        }
-      | string,
+    options?: {
+      identity?: {
+        entityId?: string | null;
+        proposal?: DraftSubjectProposal | null;
+        provenance?: "manual" | "automatic";
+      } | null;
+      newWorkstream?: { name: string; description?: string } | null;
+    },
   ): Promise<{ threadId: string }>;
   sendToThread(
     threadId: string,
@@ -716,9 +712,6 @@ export class NewWork {
         const created = await this.deps.createWorkstream(
           suggestion.name,
           suggestion.description,
-          ...(this.state.decision?.subjectId
-            ? [this.state.decision.subjectId]
-            : []),
         );
         workstream = { id: created.sectionId, name: created.name };
         pendingNew = null;
@@ -807,9 +800,13 @@ export class NewWork {
     this.invalidate();
 
     let sectionId = this.state.workstream?.id ?? null;
-    if (!target && !sectionId && this.state.pendingNew) {
-      sectionId = await this.createPending();
-    }
+    const newWorkstream =
+      !target && !sectionId && this.state.pendingNew
+        ? {
+            name: this.state.pendingNew.name,
+            description: this.state.pendingNew.description,
+          }
+        : null;
 
     const identityPayload = this.state.identity
       ? {
@@ -843,19 +840,18 @@ export class NewWork {
           title: target.title,
         };
       }
-      const hasSubjectId =
-        this.state.identity?.entityId && !this.state.identity.proposal;
-      const { threadId } = hasSubjectId
-        ? await this.deps.startThread(
-            sectionId,
-            request,
-            this.state.identity!.entityId!,
-          )
-        : identityPayload
-          ? await this.deps.startThread(sectionId, request, {
-              identity: identityPayload,
-            })
+      const options = {
+        ...(identityPayload ? { identity: identityPayload } : {}),
+        ...(newWorkstream ? { newWorkstream } : {}),
+      };
+      const { threadId } =
+        Object.keys(options).length > 0
+          ? await this.deps.startThread(sectionId, request, options)
           : await this.deps.startThread(sectionId, request);
+
+      if (this.state.pendingNew) {
+        this.set({ pendingNew: null });
+      }
 
       finish("ok", { output: { started: threadId, sectionId } });
       return { kind: "started", threadId };
@@ -873,11 +869,9 @@ export class NewWork {
   async createPending(): Promise<string> {
     const pending = this.state.pendingNew;
     if (!pending) return this.state.workstream?.id ?? "";
-    const subjectId = pending.subjectId;
     const created = await this.deps.createWorkstream(
       pending.name,
       pending.description,
-      ...(subjectId ? [subjectId] : []),
     );
     const accepted = this.state.acceptedRoute;
     this.set({

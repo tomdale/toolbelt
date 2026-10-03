@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import { fakeWorld } from "./fake-bb.ts";
+import { openDatabase } from "../../src/server/db.ts";
+import { CorpusStore } from "../../src/server/corpus.ts";
 
 type World = Awaited<ReturnType<typeof fakeWorld>>;
 let world: World | null = null;
@@ -24,15 +26,39 @@ async function setup(
   answer: Record<string, unknown>,
   settings: Record<string, string> = {},
 ) {
+  let seededEntityId: string | null = null;
   world = await fakeWorld({
     settings,
-    complete: ({ prompt }) =>
-      prompt.includes("Someone is starting new work")
+    complete: ({ prompt }) => {
+      if (prompt.includes("Classify the most specific")) {
+        if (answer.name === "Billing" || answer.outcome === "new-workstream") {
+          return JSON.stringify({
+            subjectId: null,
+            proposed: { name: "Billing", description: "Invoices" },
+          });
+        }
+        return JSON.stringify({
+          subjectId: seededEntityId,
+          proposed: null,
+        });
+      }
+      return prompt.includes("Someone is starting new work")
         ? JSON.stringify(answer)
-        : JSON.stringify({ recap: "r", state: "done", subject: null }),
+        : JSON.stringify({ recap: "r", state: "done", subject: null });
+    },
   });
   const w = world;
   const alpha = w.addSection("Alpha");
+  const corpus = new CorpusStore(openDatabase(w.bb));
+  corpus.seed([
+    {
+      sectionId: alpha.id,
+      name: "Alpha",
+      description: "Alpha effort",
+      aliases: [],
+    },
+  ]);
+  seededEntityId = corpus.list()[0]?.id ?? null;
   w.addThread("a1", {
     sectionId: alpha.id,
     projectId: "proj_1",

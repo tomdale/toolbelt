@@ -99,7 +99,7 @@ export function IdentityControl({ newWork }: { newWork: NewWork }) {
     if (!open) return;
     let live = true;
     rpc
-      .call("corpus", null)
+      .call("catalog", null)
       .then((result) => {
         if (live) setEntities(result.entities);
       })
@@ -333,7 +333,7 @@ export function WorkstreamControl({ newWork }: { newWork: NewWork }) {
     if (!open) return;
     let live = true;
     rpc
-      .call("corpus", null)
+      .call("catalog", null)
       .then((result) => {
         if (live) setEntities(result.entities);
       })

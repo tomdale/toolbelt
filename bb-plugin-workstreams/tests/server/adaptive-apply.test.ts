@@ -41,9 +41,6 @@ it("binds activated groups before seeding so Apply creates no phantom root", asy
   featureId = corpus.remember("Shelves", "Feature", rootId).id;
   for (let i = 0; i < 7; i++)
     corpus.assign(`task-${i}`, i < 4 ? featureId : rootId);
-  await world.harness.behavior.callRpc("setPrefs", {
-    patch: { organize: { adaptivePreview: true } },
-  });
   const preview = (await world.harness.behavior.callRpc("bootstrap", {
     action: "start",
   })) as { state: { status: string; startedAt: number } };

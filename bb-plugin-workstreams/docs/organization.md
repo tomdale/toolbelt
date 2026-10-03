@@ -1,94 +1,87 @@
 # Organizing workstreams
 
 A workstream is a recognizable ongoing effort represented by a native BB
-section. Organization is an explicit operation: open **Workstreams → Map →
-Organize**, review the complete proposed map, then choose **Apply map**. Cancel
-leaves membership and descriptions unchanged.
+section. Organization is an explicit operation: open **Workstreams →
+Organize**, review the proposed organization, then choose **Apply
+organization**. Cancel leaves membership and descriptions unchanged.
 
-## One pass
+## Two-stage adaptive organization
 
-The organizer snapshots visible, non-archived threads and considers all roots
-together. Children supply bounded context and stay with their root. Inputs
-contain titles, cached thread summaries and product hints, project names, and
-existing section IDs/names for reuse. Current placement and old generated scope
-descriptions are excluded from model evidence so they cannot perpetuate bad
-groups. No fresh per-thread summarization calls are required. One tool-free
-model response supplies names, descriptions, aliases and an assignment for every
-root; an empty inventory needs no model call.
+Rather than a single whole-tree prompt, the organizer runs in two distinct
+stages:
 
-The model works in three steps. First it names each root's owner: the concrete
-product or project the thread changes or studies, read from its title and
-summary (the cached subject is only a hint). Separately named plugins and apps
-are distinct owners even on a shared host platform. Second, an owner with 4 or
-more roots is split into 2–3 functional areas whenever its roots form two or
-more capability clusters of at least 2 roots each; areas are never technical
-layers or lifecycle stages. Third, single homes are named for their owner and
-areas use `<Owner>: <Area>`, for example `Workstreams: Recaps`. The UI shows the
-owner prefix subdued and hides the colon. Roots with no identifiable owner stay
-Unfiled.
+### 1. Classification
 
-Organizing defaults to `openai/gpt-6-sol-fast` (`organizeModel`). It is an
-explicit, occasional action, and Flash-Lite does not reliably apply the split
-rule. A pass over a few dozen roots takes about 15 seconds and a few cents.
+Roots missing a fresh stored subject are classified against the Catalog using
+the `classify` model. Inputs contain the thread title, recap, project context,
+and relevant user requests.
+Explicit manual selections (`provenance: manual`) remain authoritative and are
+never overwritten by automatic classification. Missing or stale classifications
+run with up to three concurrent workers. Progress reports completed, cached,
+and unresolved tasks before proceeding.
 
-The pass accepts at most 500 roots, 500 existing sections and 300,000 characters
-of serialized evidence. Per-thread text is bounded. An oversized inventory fails
-explicitly rather than silently omitting threads. Model output must cover every
-root exactly once and refer only to valid, distinct destinations. Unused
-proposed homes are discarded deterministically; invalid assignments change
-nothing.
+### 2. Regrouping
+
+Once all active roots have canonical assignments, the organizer groups them
+adaptively using `regroup`. It counts active, non-completed tasks per product
+and feature in the Catalog and selects active navigation homes based on:
+
+- **Group capacity**: maximum current tasks per workstream (default: 6). Tasks
+  concerning one indivisible feature may exceed capacity in their own group.
+- **Contraction threshold**: at or below this product task count (default: 3),
+  previews return to a broad product group rather than fragmenting.
+
+Completed roots (`state: "done"`) and child workers do not inflate these counts.
+
+## Truthful reasons and retention
+
+The preview displays specific canonical product/feature identities independently
+of target workstreams, with truthful reasons explaining each assignment:
+
+- **Specific feature grouped broadly**: `Classified as <Feature>; grouped under <Workstream>.`
+- **Explicit manual assignment**: `Manually assigned to <Feature>; grouped in <Workstream>.`
+- **Completed task retained**: `Completed task; retained in <Workstream>.`
+- **Unresolved task retained**: `Unresolved identity; retained in <Workstream>.`
+- **Unfiled unresolved task**: `Unresolved identity; remains unfiled.`
+
+Unresolved threads in existing workstreams retain their homes rather than
+being dumped into unfiled.
+
+## Revision safety and stale preview invalidation
+
+Organize previews capture `catalogRevision` at generation time. Any Catalog
+mutation — entity creation, renaming, reparenting, merging, task assignment, or
+clearing an identity — increments `catalogRevision`.
+
+When `catalogRevision` advances:
+- The saved preview is marked stale (`isStale: true`).
+- The UI displays an invalidation banner and disables the **Apply** button.
+- Users are prompted to **Regenerate** the preview against the updated knowledge.
+- Calling `bootstrap.apply` on a stale preview safely rejects with a `UserError`,
+  preventing applying outdated grouping proposals.
 
 ## Preview and Apply
 
-The preview lists the proposed homes with routing metadata and all assigned
-roots, including roots that stay put. Moves identify their prior home and
-rationale. Uncheck a move to keep the current placement. Renames and scope
-metadata are reviewed as part of the whole map. User-authored descriptions are
-preserved; the preview shows the scope that will actually apply.
+The preview lists the proposed workstreams with routing metadata and all assigned
+roots, including roots that stay put. Uncheck a move to keep the current placement.
+User-authored descriptions are preserved.
 
 Apply consumes the saved preview, not another model result. It revalidates
-section names and metadata; a changed map requires a fresh preview. Threads
-moved, hidden, archived, deleted or reparented since the preview are skipped.
-Thread state is checked again immediately before each move. BB does not expose
-conditional updates, so it cannot guarantee atomicity against external writes
-between that final read and update. New sections are created only for moves
-surviving preflight.
+section names and metadata; threads moved, hidden, archived, deleted or reparented
+since the preview are skipped. New sections are created only for moves surviving
+preflight.
 
-The preview also lists unused homes for removal. A home qualifies if it will be
-completely empty after the selected moves, or contains only archived threads
-whose newest archive timestamp is strictly more than 24 hours old. Hidden
+The preview also lists unused homes for removal: completely empty sections, or
+archived-only sections whose newest archive is over 24 hours old. Hidden
 non-archived threads block removal. Apply rereads every member and rechecks the
-24-hour rule; unchecked or skipped moves may keep a home occupied.
+24-hour rule.
 
-Deleting a home preserves its threads and leaves its archived members
-unassigned. Undo recreates the name and routing metadata, then restores eligible
-archived members and roots moved by the batch. BB generates a fresh section ID;
-external links to the deleted ID cannot be restored. Members reassigned or
-unarchived since cleanup are left alone. A conflicting existing name is not
-reused.
+Deleting a home preserves its threads and leaves its archived members unassigned.
+Undo recreates the name and routing metadata, then restores eligible archived
+members and roots moved by the batch. Activity records the application as one
+undoable batch.
 
-Activity records the application as one undoable batch, including descriptions
-and aliases. Undo restores only values still matching the application;
-intervening user changes are left alone. If application fails partway, completed
-changes remain journaled and undoable.
+## Steady state
 
-## Between runs
-
-The map stays fixed until another explicit organization or manual edit. Thread
-creation through New work uses the previewed route. Other unassigned roots
-remain Unfiled. Recaps, Needs-you, titles and snooze continue independently;
-completing a turn does not move a thread or create a section.
-
-New work classifies against populated homes using their names, descriptions and
-aliases. It can continue a thread, start a thread in an existing home, or return
-unsure. Only the user's explicit **Create workstream** choice permits a new
-home; a model-generated unfamiliar name alone cannot create one. Dormant homes
-remain selectable explicitly but are omitted from inferred routing.
-
-## CLI
-
-`bb workstreams rebuild` computes and saves a preview. Inspect the output or
-open the Map tab. `bb workstreams rebuild --apply --run-id <startedAt>` applies
-that saved preview without another inference; it fails if the reviewed run was
-replaced or no preview exists. `--json` returns the complete state.
-`bb workstreams undo <entry-id>` reverses a recorded application.
+Between organizing runs, membership stays fixed while recaps, attention
+indicators, titles, and snooze stay current independently.

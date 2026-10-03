@@ -484,7 +484,6 @@ export const rpcContract = defineRpcContract({
   startThread: {
     input: z.object({
       identity: taskIdentitySubmissionSchema.nullable().optional(),
-      subjectId: z.string().optional(),
       sectionId: z.string().min(1).nullable().optional(),
       newWorkstream: z
         .object({
@@ -613,17 +612,11 @@ export const rpcContract = defineRpcContract({
     input: z.object({ patch: recapPrefsSchema.partial() }),
     output: z.object({ prefs: recapPrefsSchema }),
   },
-  corpus: {
-    input: z.null(),
-    output: z.object({
-      entities: z.array(entitySchema),
-    }),
-  },
   catalog: {
     input: z.null(),
     output: catalogStateSchema,
   },
-  corpusReset: {
+  catalogReset: {
     input: z.object({ confirm: z.literal(true) }),
     output: z.object({ ok: z.literal(true) }),
   },

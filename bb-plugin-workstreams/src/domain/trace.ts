@@ -15,7 +15,6 @@ export type Usage = z.infer<typeof usageSchema>;
 export const TRACE_KINDS = [
   "analysis",
   "route",
-  "organize",
   "classify",
   "regroup",
 ] as const;
@@ -96,7 +95,6 @@ export const TRACE_KIND_TITLE: Record<TraceKind, string> = {
   regroup: "Active grouping",
   analysis: "Thread analysis",
   route: "Routing",
-  organize: "Organize workstreams",
 };
 
 /** Compact labels for narrow columns, such as the Activity log's. */
@@ -105,7 +103,6 @@ export const TRACE_KIND_SHORT: Record<TraceKind, string> = {
   regroup: "Grouping",
   analysis: "Analysis",
   route: "Routing",
-  organize: "Organize",
 };
 
 export const TRACE_STATUS_TITLE: Record<TraceStatus, string> = {

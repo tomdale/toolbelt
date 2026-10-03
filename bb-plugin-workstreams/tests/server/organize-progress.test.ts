@@ -44,9 +44,6 @@ async function setup() {
     },
   ]);
   entityId = corpus.list()[0]!.id;
-  await world.harness.behavior.callRpc("setPrefs", {
-    patch: { organize: { adaptivePreview: true } },
-  });
   return { w: world, releases, corpus, peak: () => peak };
 }
 it("classifies with three bounded workers and publishes stage/count progress", async () => {
