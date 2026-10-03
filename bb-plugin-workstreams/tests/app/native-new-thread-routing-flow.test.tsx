@@ -63,7 +63,10 @@ async function mount(
         if (answer.outcome === "new-workstream" || answer.name === "Billing") {
           return JSON.stringify({
             subjectId: null,
-            proposed: { name: String(answer.name ?? "Billing"), description: "" },
+            proposed: {
+              name: String(answer.name ?? "Billing"),
+              description: "",
+            },
           });
         }
         return JSON.stringify({
@@ -209,9 +212,7 @@ it("files a manual Workstream selection through host metadata and the server dis
   const prompt = "Write docs for Alpha";
   await act(() => slot.behavior.setComposerText(prompt));
   // The field may already show the automatic home; the pick overrides it.
-  fireEvent.click(
-    await screen.findByRole("button", { name: /Workstream:/ }),
-  );
+  fireEvent.click(await screen.findByRole("button", { name: /Workstream:/ }));
   fireEvent.click(await screen.findByRole("option", { name: "Beta" }));
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
@@ -335,7 +336,9 @@ it("overrides automatic placement with No workstream and transmits sectionId: nu
   });
   const prompt = "Fix the parser in Alpha so it handles tabs";
   await act(() => slot.behavior.setComposerText(prompt));
-  const wsBtn = await screen.findByRole("button", { name: "Workstream: Alpha" });
+  const wsBtn = await screen.findByRole("button", {
+    name: "Workstream: Alpha",
+  });
   fireEvent.click(wsBtn);
   const noneOption = await screen.findByText("No workstream");
   fireEvent.click(noneOption);
@@ -350,4 +353,71 @@ it("overrides automatic placement with No workstream and transmits sectionId: nu
   });
   await dispatch(prompt);
   expect(w.threads.get("composed")?.sectionId).toBeNull();
+});
+
+it("submits sectionId: null metadata when pinning No workstream from initial unfiled state before suggestions arrive (Bug 2)", async () => {
+  const { w, slot, dispatch } = await mount({
+    outcome: "new-thread",
+    workstream: "Alpha",
+    title: "Write docs",
+  });
+  const prompt = "Task without workstream";
+  await act(() => slot.behavior.setComposerText(prompt));
+
+  // Before suggestions arrive, initial placement is unfiled:
+  const workstreamButton = await screen.findByRole("button", {
+    name: "Workstream: Automatic",
+  });
+  fireEvent.click(workstreamButton);
+  const noneOption = await screen.findByRole("option", {
+    name: "No workstream",
+  });
+  fireEvent.click(noneOption);
+  await screen.findByRole("button", { name: "Workstream: No workstream" });
+
+  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
+  await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
+  expect(slot.inspection.composer.submits[0]).toEqual({
+    experimental_data: {
+      sectionId: null,
+    },
+  });
+  await dispatch(prompt);
+  expect(w.threads.get("composed")?.sectionId).toBeNull();
+});
+
+it("submits honest manual unresolved identity through native submission and leaves thread unassigned on server", async () => {
+  const { w, slot, dispatch } = await mount({
+    outcome: "new-thread",
+    workstream: "Alpha",
+    title: "Write docs",
+  });
+  const prompt = "Task without identity";
+  await act(() => slot.behavior.setComposerText(prompt));
+
+  const identityButton = await screen.findByRole("button", {
+    name: /Product or feature:/,
+  });
+  fireEvent.click(identityButton);
+  const unresolvedOption = await screen.findByRole("option", {
+    name: "Unresolved",
+  });
+  fireEvent.click(unresolvedOption);
+  await screen.findByRole("button", {
+    name: "Product or feature: Unresolved",
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
+  await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
+  expect(slot.inspection.composer.submits[0]!.experimental_data).toMatchObject({
+    identity: {
+      entityId: null,
+      proposal: null,
+      provenance: "manual",
+    },
+  });
+  await dispatch(prompt);
+  const corpus = new CorpusStore(openDatabase(w.bb));
+  const assignment = corpus.assignment("composed");
+  expect(assignment.status).toBe("unresolved");
 });

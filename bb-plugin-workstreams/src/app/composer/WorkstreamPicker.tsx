@@ -36,11 +36,7 @@ import { WorkstreamName } from "../WorkstreamName.tsx";
 import { NO_WORKSTREAM_ICON, WORKSTREAM_ICON } from "../workstream-icon.ts";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
 import { useServerState } from "../useWorkstreams.ts";
-import {
-  identityDisplay,
-  pickerDisplay,
-  type NewWork,
-} from "./new-work.ts";
+import { identityDisplay, pickerDisplay, type NewWork } from "./new-work.ts";
 
 /** BB's option-trigger classes, so the field lines up with the pickers beside it. */
 const TRIGGER_CLASS =
@@ -81,7 +77,8 @@ export function matchesEntity(
     const parent = entities.find((e) => e.id === current);
     if (!parent) break;
     if (parent.name.toLowerCase().includes(needle)) return true;
-    if (parent.aliases.some((a) => a.toLowerCase().includes(needle))) return true;
+    if (parent.aliases.some((a) => a.toLowerCase().includes(needle)))
+      return true;
     current = parent.parentId;
   }
   return false;
@@ -129,7 +126,11 @@ export function IdentityControl({ newWork }: { newWork: NewWork }) {
   };
 
   const isManual = state.identity?.provenance === "manual";
-  const label = state.identity ? state.identity.label : display.auto ? "Automatic" : "Unresolved";
+  const label = state.identity
+    ? state.identity.label
+    : display.auto
+      ? "Automatic"
+      : "Unresolved";
 
   const trigger = (
     <PopoverTrigger asChild>
@@ -175,7 +176,13 @@ export function IdentityControl({ newWork }: { newWork: NewWork }) {
         <Command
           label="Search products and features"
           shouldFilter={false}
-          defaultValue={state.identity?.entityId ?? (isManual ? NONE : AUTOMATIC)}
+          defaultValue={
+            state.identity?.entityId
+              ? `identity:${state.identity.entityId}`
+              : isManual
+                ? NONE
+                : AUTOMATIC
+          }
           className="min-h-0"
         >
           <CommandInput
@@ -219,7 +226,8 @@ export function IdentityControl({ newWork }: { newWork: NewWork }) {
               <CommandGroup heading="Products and features">
                 {visibleEntities.map((entity) => {
                   const fullLabel = corpusLabel(entity.id, entities);
-                  const isSelected = state.identity?.entityId === entity.id;
+                  const isSelected =
+                    isManual && state.identity?.entityId === entity.id;
                   return (
                     <CommandItem
                       key={`identity:${entity.id}`}
@@ -240,7 +248,9 @@ export function IdentityControl({ newWork }: { newWork: NewWork }) {
                         aria-hidden
                       />
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="truncate font-medium">{fullLabel}</span>
+                        <span className="truncate font-medium">
+                          {fullLabel}
+                        </span>
                         <Description text={entity.description} />
                         {entity.aliases.length > 0 && (
                           <span className="line-clamp-1 text-[10px] text-muted-foreground/80">
@@ -287,7 +297,13 @@ export function IdentityControl({ newWork }: { newWork: NewWork }) {
               ) : null}
               <CommandItem
                 value={NONE}
-                aria-current={state.identity === null && isManual ? "true" : undefined}
+                aria-current={
+                  isManual &&
+                  state.identity?.entityId === null &&
+                  state.identity?.proposal === null
+                    ? "true"
+                    : undefined
+                }
                 onSelect={() => {
                   newWork.selectIdentity(null);
                   openChange(false);
@@ -304,7 +320,9 @@ export function IdentityControl({ newWork }: { newWork: NewWork }) {
                   name="Check"
                   className={cn(
                     "ml-auto size-4",
-                    state.identity === null && isManual
+                    isManual &&
+                      state.identity?.entityId === null &&
+                      state.identity?.proposal === null
                       ? "opacity-100"
                       : "opacity-0",
                   )}
@@ -388,9 +406,7 @@ export function WorkstreamControl({ newWork }: { newWork: NewWork }) {
     if (!next) setQuery("");
   };
 
-  const pick = (
-    choice: { id: string; name: string } | null,
-  ) => {
+  const pick = (choice: { id: string; name: string } | null) => {
     newWork.selectWorkstream(choice);
     openChange(false);
   };
@@ -601,7 +617,9 @@ export function WorkstreamControl({ newWork }: { newWork: NewWork }) {
               ) : null}
               <CommandItem
                 value={NONE}
-                aria-current={selected === null && state.pinned ? "true" : undefined}
+                aria-current={
+                  selected === null && state.pinned ? "true" : undefined
+                }
                 onSelect={() => pick(null)}
                 className={ITEM_CLASS}
               >
@@ -615,7 +633,9 @@ export function WorkstreamControl({ newWork }: { newWork: NewWork }) {
                   name="Check"
                   className={cn(
                     "ml-auto size-4",
-                    selected === null && state.pinned ? "opacity-100" : "opacity-0",
+                    selected === null && state.pinned
+                      ? "opacity-100"
+                      : "opacity-0",
                   )}
                   aria-hidden
                 />

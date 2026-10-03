@@ -1376,13 +1376,16 @@ export class Router {
 
     let assignedEntityId: string | null = null;
     if (!parentThreadId) {
-      const identity = identityOverride ?? {
-        entityId: decision.subjectId ?? null,
-        proposal: decision.proposal ?? null,
-        provenance: "automatic" as const,
-      };
+      const identity =
+        identityOverride !== undefined
+          ? identityOverride
+          : {
+              entityId: decision.subjectId ?? null,
+              proposal: decision.proposal ?? null,
+              provenance: "automatic" as const,
+            };
 
-      if (identity.proposal) {
+      if (identity?.proposal) {
         const entity = this.deps.corpus?.rememberProposal(identity.proposal);
         if (entity) {
           assignedEntityId = entity.id;
@@ -1390,7 +1393,7 @@ export class Router {
             provenance: identity.provenance ?? "automatic",
           });
         }
-      } else if (identity.entityId) {
+      } else if (identity?.entityId) {
         assignedEntityId = identity.entityId;
         this.deps.corpus?.assign(threadId, identity.entityId, {
           provenance: identity.provenance ?? "manual",

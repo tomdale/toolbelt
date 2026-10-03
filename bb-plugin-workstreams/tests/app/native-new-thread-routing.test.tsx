@@ -497,6 +497,8 @@ it("dismisses a suggestion behind a pinned field and submits with null metadata"
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: null,
+    experimental_data: {
+      sectionId: null,
+    },
   });
 });
