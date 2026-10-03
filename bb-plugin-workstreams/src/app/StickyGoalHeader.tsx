@@ -8,8 +8,32 @@ import { useSharedServerState } from "./serverState.ts";
 
 const SCROLLER = "[data-thread-window] .thread-scrollbar";
 
+// The heading is laid out in the same column as the messages so it shares
+// their left edge and type. BB's scroller wraps that column in one extra div.
+function messageColumn(scroller: HTMLElement): HTMLElement | null {
+  const column = scroller.firstElementChild?.firstElementChild;
+  return column instanceof HTMLElement ? column : null;
+}
+
+const TITLE_SCALE = [1.14, 1] as const;
+const SUBTITLE_SCALE = [0.88, 0.8] as const;
+const lerp = (range: readonly [number, number], t: number) =>
+  range[0] + (range[1] - range[0]) * t;
+
+/** Heading height in px for a body font size at a given scroll progress. */
+function headingHeight(base: number, t: number): number {
+  return Math.round(
+    base * (lerp(TITLE_SCALE, t) * 1.3 + lerp(SUBTITLE_SCALE, t) * 1.4) +
+      base * 0.5,
+  );
+}
+
 type Mount = {
   scroller: HTMLElement;
+  /** Parent of the heading: the column that holds the timeline messages. */
+  column: HTMLElement;
+  /** Body font size of the timeline, so the heading scales with the text. */
+  baseFontSize: number;
   root: HTMLElement;
   threadId: string;
   previousScrollPaddingTop: string;
@@ -52,7 +76,11 @@ function useMessageScroller(threadId: string | null): Mount | null {
         return;
       }
       const scroller = scrollers[0]!;
-      if (current?.scroller === scroller) return;
+      const column = messageColumn(scroller);
+      if (!column) return;
+      if (current?.column === column && current.root.parentElement === column) {
+        return;
+      }
       const wasAtBottom =
         scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop < 24;
       const oldScrollTop = scroller.scrollTop;
@@ -60,22 +88,27 @@ function useMessageScroller(threadId: string | null): Mount | null {
       setMount(null);
       const root = document.createElement("div");
       root.dataset.workstreamsStickyGoal = "";
-      root.style.height = "64px";
+      const baseFontSize =
+        Number.parseFloat(getComputedStyle(column).fontSize) || 14;
+      const initialHeight = headingHeight(baseFontSize, 0);
+      root.style.height = `${initialHeight}px`;
       const previousScrollPaddingTop =
         scroller.style.getPropertyValue("scroll-padding-top");
       const previousScrollPaddingPriority =
         scroller.style.getPropertyPriority("scroll-padding-top");
-      scroller.prepend(root);
+      column.prepend(root);
       if (wasAtBottom) scroller.scrollTop = scroller.scrollHeight;
       else scroller.scrollTop = oldScrollTop + root.offsetHeight;
       current = {
         scroller,
+        column,
+        baseFontSize,
         root,
         threadId,
         previousScrollPaddingTop,
         previousScrollPaddingPriority,
       };
-      scroller.style.scrollPaddingTop = "64px";
+      scroller.style.scrollPaddingTop = `${initialHeight}px`;
       setMount(current);
     };
 
@@ -124,8 +157,8 @@ function useScrollProgress(scroller: HTMLElement | null): number {
 }
 
 /**
- * Experimental in-pane prototype. The heading is portalled into BB's native
- * message scroller because the plugin SDK has no thread-content heading slot.
+ * Experimental in-pane prototype. The heading is portalled into the column of
+ * BB's native message scroller because the plugin SDK has no thread-content heading slot.
  */
 export function StickyGoalHeader(): React.ReactPortal | null {
   const { threadId } = useBbContext();
@@ -161,11 +194,10 @@ export function StickyGoalHeader(): React.ReactPortal | null {
   }, [threadId, threads, projects, sections, server.analysis, server.recaps]);
 
   const eased = progress * progress * (3 - 2 * progress);
-  const expanded = 64;
-  const compact = 43;
-  const height = expanded + (compact - expanded) * eased;
-  const titleSize = 18 + (14 - 18) * eased;
-  const subtitleSize = 13 + (10.5 - 13) * eased;
+  const base = mount?.baseFontSize ?? 14;
+  const height = headingHeight(base, eased);
+  const titleSize = base * lerp(TITLE_SCALE, eased);
+  const subtitleSize = base * lerp(SUBTITLE_SCALE, eased);
   useLayoutEffect(() => {
     if (!mount) return;
     mount.root.className = "ws-sticky-goal-root";
@@ -184,7 +216,7 @@ export function StickyGoalHeader(): React.ReactPortal | null {
     <div className="ws-sticky-goal">
       <h2
         className="ws-sticky-goal__title"
-        style={{ fontSize: titleSize, opacity: 1 - 0.18 * eased }}
+        style={{ fontSize: titleSize, opacity: 1 - 0.12 * eased }}
       >
         {context.goal}
       </h2>
