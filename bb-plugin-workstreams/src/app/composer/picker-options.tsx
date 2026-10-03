@@ -11,7 +11,15 @@
  * Choosing one never erases or forces the other. Searching matches full
  * ancestry paths and aliases.
  */
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import { corpusLabel } from "../../domain/corpus-label.ts";
@@ -71,6 +79,40 @@ const VARIANT_CLASSES = {
     note: "whitespace-normal",
   },
 } as const;
+
+/**
+ * A chip's label. It ellipsizes as the row gets short, but an ellipsis needs
+ * room: with only a few pixels left the browser draws a sliver of a letter.
+ * Once less than 1.75em of a truncated label remains it is hidden (the box
+ * keeps its size, so hiding it can't change the layout that decided to).
+ */
+export function ChipLabel({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [tiny, setTiny] = useState(false);
+  useLayoutEffect(() => {
+    const label = ref.current;
+    if (!label || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const em = parseFloat(getComputedStyle(label).fontSize) || 12;
+      setTiny(
+        label.scrollWidth > label.clientWidth && label.clientWidth < 1.75 * em,
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(label);
+    return () => observer.disconnect();
+  }, [children]);
+  return (
+    <span
+      ref={ref}
+      data-ws-label-tiny={tiny || undefined}
+      className="min-w-0 truncate"
+    >
+      {children}
+    </span>
+  );
+}
 
 /** A one-or-two-line summary under an item's name, like BB's environment picker. */
 function Description({ text }: { text: string | null | undefined }) {

@@ -4,6 +4,7 @@ import {
   act,
   cleanup,
   fireEvent,
+  render,
   screen,
   waitFor,
   within,
@@ -12,6 +13,7 @@ import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { useComposer } from "@get-bb/plugin-sdk/app";
 import { NewThreadRouting } from "../../src/app/composer/NewThreadRouting.tsx";
 import { NewWorkDialog } from "../../src/app/composer/NewWork.tsx";
+import { ChipLabel } from "../../src/app/composer/picker-options.tsx";
 import type { RouteDecision } from "../../src/server/router.ts";
 import { emptyState } from "./fixtures.ts";
 
@@ -816,5 +818,78 @@ describe("the picker in the New work dialog on a phone", () => {
     expect(startThread.mock.calls[0]![0]).toMatchObject({
       sectionId: "section-beta",
     });
+  });
+});
+
+describe("a chip label with no room left", () => {
+  const sizes = { scroll: 0, client: 0 };
+  const observers: (() => void)[] = [];
+  const originalObserver = globalThis.ResizeObserver;
+  const scrollWidth = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "scrollWidth",
+  );
+  const clientWidth = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "clientWidth",
+  );
+
+  function fakeLayout() {
+    globalThis.ResizeObserver = class {
+      constructor(callback: () => void) {
+        observers.push(callback);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+      configurable: true,
+      get: () => sizes.scroll,
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get: () => sizes.client,
+    });
+  }
+  const resize = (scroll: number, client: number) => {
+    sizes.scroll = scroll;
+    sizes.client = client;
+    act(() => observers.forEach((callback) => callback()));
+  };
+
+  afterEach(() => {
+    globalThis.ResizeObserver = originalObserver;
+    observers.length = 0;
+    if (scrollWidth)
+      Object.defineProperty(HTMLElement.prototype, "scrollWidth", scrollWidth);
+    if (clientWidth)
+      Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
+  });
+
+  it("is hidden once a truncated label has less than an ellipsis of room, and shown again with more", () => {
+    fakeLayout();
+    sizes.scroll = 120;
+    sizes.client = 10;
+    const { container } = render(<ChipLabel>Concerning: Automatic</ChipLabel>);
+    const label = container.firstElementChild!;
+    expect(label.hasAttribute("data-ws-label-tiny")).toBe(true);
+    // The text is still there for the chip's accessible name to match.
+    expect(label.textContent).toBe("Concerning: Automatic");
+
+    resize(120, 60);
+    expect(label.hasAttribute("data-ws-label-tiny")).toBe(false);
+    resize(120, 6);
+    expect(label.hasAttribute("data-ws-label-tiny")).toBe(true);
+  });
+
+  it("never hides a label that fits, however short it is", () => {
+    fakeLayout();
+    sizes.scroll = 14;
+    sizes.client = 14;
+    const { container } = render(<ChipLabel>AI</ChipLabel>);
+    expect(
+      container.firstElementChild!.hasAttribute("data-ws-label-tiny"),
+    ).toBe(false);
   });
 });

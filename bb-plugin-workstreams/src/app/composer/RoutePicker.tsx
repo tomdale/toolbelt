@@ -34,6 +34,7 @@ import { NO_WORKSTREAM_ICON, WORKSTREAM_ICON } from "../workstream-icon.ts";
 import { identityDisplay, type NewWork } from "./new-work.ts";
 import {
   CHIP_CLASS,
+  ChipLabel,
   IdentityOptions,
   WorkstreamOptions,
   identityValue,
@@ -144,7 +145,7 @@ export function RoutePicker({ newWork }: { newWork: NewWork }) {
                 aria-hidden
               />
             )}
-            <span className="min-w-0 truncate">{label}</span>
+            <ChipLabel>{label}</ChipLabel>
           </span>
           <Icon
             name="ChevronDown"
