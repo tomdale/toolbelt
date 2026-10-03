@@ -21,6 +21,7 @@ import {
   useComposer,
   useRealtime,
   useRpc,
+  type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import { usePendingQuestion } from "../question/pending.ts";
@@ -33,6 +34,7 @@ import {
   type RecapItem,
   type RecapLink,
   type NextAction,
+  type WaitingAgent,
 } from "../../domain/recap.ts";
 import type { RecapLayout } from "../../domain/recapPrefs.ts";
 import { useRecapPrefs } from "../recap/prefs.ts";
@@ -67,7 +69,8 @@ const ACCENT: Record<
     text: "text-violet-700 dark:text-violet-300",
     rules:
       "[&>section+section]:border-violet-900/10 dark:[&>section+section]:border-violet-200/15",
-    footer: "border-violet-900/10 dark:border-violet-200/15",
+    footer:
+      "border-violet-900/10 bg-violet-500/[0.05] dark:border-violet-200/15 dark:bg-violet-300/[0.04]",
   },
   review: {
     card: "border-sky-400 bg-sky-50/40 dark:border-sky-500/80 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(29.3%_0.066_243.157))]",
@@ -285,116 +288,193 @@ function useWaitingCountdown(recap: Recap, cancelled: boolean) {
   );
 }
 
-function WaitingTasks({
-  recap,
-  cancelled,
-  onCancel,
-  clearance,
-}: {
-  recap: Recap;
-  cancelled: boolean;
-  onCancel?: () => void;
-  clearance: string;
-}) {
-  const compact = useContext(CompactContext);
-  const agents = recap.waitingAgents ?? [];
-  const goalClass = cn(
-    "font-medium tracking-[-0.006em] text-foreground",
-    compact ? COMPACT_GOAL_CLASS : GOAL_CLASS,
-  );
+type AgentTone = "running" | "input" | "error" | "done" | "unknown";
+
+const STARTING_STATUSES = new Set([
+  "pending",
+  "starting",
+  "provisioning",
+  "waiting-for-host",
+]);
+
+/**
+ * What an awaited agent's thread is doing, read from the sidebar's live
+ * thread data. An idle agent has finished its turn; the waiting thread
+ * learns the outcome at its next status check.
+ */
+function agentStatus(thread: PluginSidebarThread | undefined): {
+  label: string;
+  tone: AgentTone;
+} {
+  if (!thread) return { label: "Unavailable", tone: "unknown" };
+  if (thread.hasPendingInteraction) {
+    return { label: "Needs input", tone: "input" };
+  }
+  if (thread.status === "error" || thread.runtimeStatus === "error") {
+    return { label: "Errored", tone: "error" };
+  }
+  if (
+    STARTING_STATUSES.has(thread.runtimeStatus) ||
+    STARTING_STATUSES.has(thread.status)
+  ) {
+    return { label: "Starting", tone: "running" };
+  }
+  if (thread.status === "active") return { label: "Running", tone: "running" };
+  if (thread.status === "stopping") {
+    return { label: "Stopping", tone: "running" };
+  }
+  return { label: thread.isArchived ? "Archived" : "Finished", tone: "done" };
+}
+
+const AGENT_DOT: Record<AgentTone, string> = {
+  running: "bg-violet-500 dark:bg-violet-400",
+  input: "bg-amber-500 dark:bg-amber-400",
+  error: "bg-red-500 dark:bg-red-400",
+  done: "bg-emerald-500 dark:bg-emerald-400",
+  unknown: "bg-muted-foreground/50",
+};
+
+const AGENT_LABEL: Record<AgentTone, string> = {
+  running: "text-muted-foreground",
+  input: "text-amber-700 dark:text-amber-300",
+  error: "text-red-700 dark:text-red-300",
+  done: "text-emerald-700 dark:text-emerald-300",
+  unknown: "text-muted-foreground",
+};
+
+/** A status dot; a running agent's dot pulses. */
+function AgentDot({ tone }: { tone: AgentTone }) {
   return (
-    <div className={cn("py-2", clearance)}>
-      {agents.length ? (
-        <ul aria-label="Waiting tasks" className="m-0 list-none space-y-2 p-0">
-          {agents.map((agent, index) => (
-            <li key={agent.threadId} className="min-w-0">
-              <div
-                data-progress="active"
-                className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
-              >
-                <div role="heading" aria-level={2} className={goalClass}>
-                  <RecapText
-                    text={agent.task}
-                    typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
-                  />
-                </div>
-                {index === 0 ? (
-                  <WaitingCountdown
-                    recap={recap}
-                    cancelled={cancelled}
-                    onCancel={onCancel}
-                  />
-                ) : null}
-              </div>
-              <div className="mt-0.5 pl-0.5 text-muted-foreground">
+    <span aria-hidden className="relative mt-[0.45em] flex size-2 shrink-0">
+      {tone === "running" ? (
+        <span className="absolute inset-0 rounded-full bg-violet-400/70 motion-safe:animate-ping" />
+      ) : null}
+      <span className={cn("relative size-2 rounded-full", AGENT_DOT[tone])} />
+    </span>
+  );
+}
+
+/**
+ * The agents a waiting thread is waiting on: each one's task, a link to its
+ * thread, and what it is doing now.
+ */
+function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
+  const compact = useContext(CompactContext);
+  const { threads } = experimental_useSidebarThreads();
+  return (
+    <ul
+      aria-label="Awaited agents"
+      className={cn(
+        "m-0 list-none divide-y divide-violet-900/10 rounded-md border border-violet-900/10 bg-background/50 p-0 px-3 dark:divide-violet-200/15 dark:border-violet-200/15",
+        compact ? "mt-1.5" : "mt-2.5",
+      )}
+    >
+      {agents.map((agent) => {
+        const status = agentStatus(
+          threads.find((thread) => thread.id === agent.threadId),
+        );
+        return (
+          <li
+            key={agent.threadId}
+            data-agent-status={status.tone}
+            className={cn("flex min-w-0 gap-2.5", compact ? "py-1" : "py-2")}
+          >
+            <AgentDot tone={status.tone} />
+            <div className="min-w-0 flex-1">
+              <RecapText
+                text={agent.task}
+                typeClass={compact ? COMPACT_BODY_CLASS : BODY_CLASS}
+              />
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
                 <ActivityThreadLink
                   threadId={agent.threadId}
                   fallback="Agent thread"
                 />
+                <span
+                  aria-label="Agent status"
+                  className={cn("text-[11px]", AGENT_LABEL[status.tone])}
+                >
+                  {status.label}
+                </span>
               </div>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div
-          data-progress="active"
-          className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
-        >
-          <div role="heading" aria-level={2} className={goalClass}>
-            <RecapText
-              text={recap.goal}
-              typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
-            />
-          </div>
-          <WaitingCountdown
-            recap={recap}
-            cancelled={cancelled}
-            onCancel={onCancel}
-          />
-        </div>
-      )}
-    </div>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
-function WaitingCountdown({
+/**
+ * The footer of a waiting card: when the thread next checks on its work, a
+ * bar that drains toward that check, and a way to call the check off.
+ */
+function WaitingFooter({
   recap,
+  compact,
   cancelled,
   onCancel,
 }: {
   recap: Recap;
+  compact: boolean;
   cancelled: boolean;
   onCancel?: () => void;
 }) {
   const remaining = useWaitingCountdown(recap, cancelled);
+  const total = recap.timeout ?? 0;
+  const agents = recap.waitingAgents?.length ?? 0;
+  const subject =
+    agents === 0
+      ? "Checking status"
+      : agents === 1
+        ? "Checking on the agent"
+        : "Checking on the agents";
+  const clock = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
+  const counting = !cancelled && remaining > 0;
   return (
-    <div className="inline-flex items-center gap-1 text-muted-foreground">
-      {cancelled ? (
-        <span className={`${BODY_CLASS} text-[11px]`}>
-          Status check cancelled
-        </span>
-      ) : (
-        <>
-          <span
-            aria-label="Status check countdown"
-            className="text-xs tabular-nums"
-          >
-            {`${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`}
-          </span>
-          {onCancel ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Cancel status check"
-              className="size-5 text-muted-foreground"
-              onClick={onCancel}
-            >
-              <Icon name="CircleX" aria-hidden className="size-3.5" />
-            </Button>
-          ) : null}
-        </>
+    <div
+      className={cn(
+        compact ? "-mx-3 -mb-2" : "-mx-4 -mb-3",
+        "relative mt-2 flex min-h-9 items-center gap-3 rounded-b-[7px] border-t px-3 py-1 text-[11px] text-muted-foreground",
+        ACCENT.waiting.footer,
       )}
+    >
+      <span>
+        {cancelled ? (
+          "Status check cancelled"
+        ) : counting ? (
+          <>
+            {subject} in{" "}
+            <span
+              aria-label="Status check countdown"
+              className="font-medium tabular-nums text-foreground"
+            >
+              {clock}
+            </span>
+          </>
+        ) : (
+          `${subject} now`
+        )}
+      </span>
+      {counting && onCancel ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-6 px-2 text-[11px] text-muted-foreground"
+          onClick={onCancel}
+        >
+          Cancel check
+        </Button>
+      ) : null}
+      {counting && total > 0 ? (
+        <span
+          aria-hidden
+          data-testid="status-check-progress"
+          className="pointer-events-none absolute -top-px left-0 h-0.5 bg-violet-500/80 transition-[width] duration-1000 ease-linear motion-reduce:transition-none dark:bg-violet-400/80"
+          style={{ width: `${Math.min(100, (remaining / total) * 100)}%` }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -422,7 +502,7 @@ function StateLine({ recap, clearance }: { recap: Recap; clearance: string }) {
           ? recap.waitingAgents?.length === 1
             ? "Waiting for Agent"
             : recap.waitingAgents && recap.waitingAgents.length > 1
-              ? "Waiting for Agents"
+              ? `Waiting for ${recap.waitingAgents.length} Agents`
               : "Waiting"
           : "Complete"}
     </p>
@@ -602,10 +682,10 @@ function Links({
 }
 
 /**
- * The state line and goal, then the rows for the recap's state. Full shows
- * tasks while waiting, Done and Review for review, results alone when complete.
- * Compact keeps the essential row unlabeled: tasks while waiting, review
- * steps for review, results when complete.
+ * The state line and goal, then the rows for the recap's state: awaited
+ * agents while waiting, Done and Review for review, results alone when
+ * complete. Compact keeps the essential row unlabeled: review steps for
+ * review, results when complete.
  */
 function RecapSummary({
   recap,
@@ -613,8 +693,6 @@ function RecapSummary({
   files,
   threadId,
   clearance,
-  waitingCancelled,
-  onCancelWaiting,
 }: {
   recap: Recap;
   layout: RecapLayout;
@@ -622,8 +700,6 @@ function RecapSummary({
   threadId: string | null;
   /** Room the top line leaves for the corner buttons. */
   clearance: string;
-  waitingCancelled: boolean;
-  onCancelWaiting?: () => void;
 }) {
   const compact = layout === "minimal";
   const body = compact ? COMPACT_BODY_CLASS : BODY_CLASS;
@@ -681,29 +757,23 @@ function RecapSummary({
       <CompactContext.Provider value={compact}>
         {/* The top line clears the corner buttons. */}
         <StateLine recap={recap} clearance={clearance} />
-        {working ? (
-          <WaitingTasks
-            recap={recap}
-            cancelled={waitingCancelled}
-            onCancel={onCancelWaiting}
-            clearance={clearance}
+        <div
+          role="heading"
+          aria-level={2}
+          className={cn(
+            "font-medium tracking-[-0.006em] text-foreground",
+            clearance,
+          )}
+        >
+          <RecapText
+            text={recap.goal}
+            className="w-full max-w-none"
+            typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
           />
-        ) : (
-          <div
-            role="heading"
-            aria-level={2}
-            className={cn(
-              "font-medium tracking-[-0.006em] text-foreground",
-              clearance,
-            )}
-          >
-            <RecapText
-              text={recap.goal}
-              className="w-full max-w-none"
-              typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
-            />
-          </div>
-        )}
+        </div>
+        {working && recap.waitingAgents?.length ? (
+          <WaitingAgents agents={recap.waitingAgents} />
+        ) : null}
         {rows ? (
           <div
             className={cn(
@@ -1034,8 +1104,6 @@ function CardBody({
           files={files}
           threadId={threadId}
           clearance={compactArchive ? "pr-14" : "pr-7"}
-          waitingCancelled={waitingCancelled}
-          onCancelWaiting={onCancelWaiting}
         />
       </div>
       {compactArchive ? (
@@ -1055,7 +1123,14 @@ function CardBody({
       {/* The footer strip runs edge to edge under the rows, so the card
           without next actions, Archive, or an error stays short. Next
           actions sit left; Archive and an error keep the right. */}
-      {recap.next.length > 0 || (showArchive && !compact) || archiveError ? (
+      {recap.state === "waiting" ? (
+        <WaitingFooter
+          recap={recap}
+          compact={compact}
+          cancelled={waitingCancelled}
+          onCancel={onCancelWaiting}
+        />
+      ) : recap.next.length > 0 || (showArchive && !compact) || archiveError ? (
         <div
           className={cn(
             compact ? "-mx-3 -mb-2" : "-mx-4 -mb-3",

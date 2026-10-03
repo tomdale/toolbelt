@@ -284,6 +284,7 @@ it("renders a linked thread mention in the Waiting goal title", async () => {
       state: "waiting",
       goal: "Running tests with @thread:thr_tests",
       timeout: 60,
+      at: Date.now(),
       latest: [],
     },
   });
@@ -346,46 +347,50 @@ const progress = (region: HTMLElement) =>
     (li) => `${li.getAttribute("data-progress")}:${li.textContent}`,
   );
 
-it("shows the Waiting goal with countdown and cancel beside it", async () => {
+it("shows the Waiting goal as the title and the countdown in the footer", async () => {
   const slot = await mount({ recap: WORKING });
   const region = await slot.findByRole("region", { name: "Latest recap" });
   expect(region.textContent).toContain("Waiting");
-  const countdown = slot.getByLabelText("Status check countdown");
-  expect(countdown.textContent).toMatch(/^[01]:\d{2}$/);
   const goalHeading = slot.getByRole("heading", {
     name: /Workers and tests are running/,
   });
-  expect(goalHeading.parentElement?.contains(countdown)).toBe(true);
-  const cancel = slot.getByRole("button", { name: "Cancel status check" });
-  expect(cancel.textContent).toBe("");
-  expect(cancel.querySelector('[data-icon="CircleX"]')).toBeTruthy();
-  expect(cancel.className).toContain("size-5");
-  expect(region.querySelector("[data-icon='LoaderCircle']")).toBeNull();
-  expect(slot.queryByRole("heading", { name: "Tasks" })).toBeNull();
-  expect(goalHeading).toBeTruthy();
+  const countdown = slot.getByLabelText("Status check countdown");
+  expect(countdown.textContent).toMatch(/^[01]:\d{2}$/);
+  expect(goalHeading.contains(countdown)).toBe(false);
+  expect(countdown.parentElement?.textContent).toMatch(
+    /^Checking status in [01]:\d{2}$/,
+  );
+  const progress = slot.getByTestId("status-check-progress");
+  expect(progress.style.width).toMatch(/%$/);
+  expect(slot.getByRole("button", { name: "Cancel check" })).toBeTruthy();
+  expect(slot.queryByRole("list", { name: "Awaited agents" })).toBeNull();
   expect(slot.queryByRole("heading", { name: "Next" })).toBeNull();
-  expect(region.querySelector('[data-progress="done"]')).toBeNull();
   expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
   expect(slot.queryByRole("button", { name: "Archive" })).toBeNull();
 });
 
+it("says the check is due once the countdown runs out", async () => {
+  const slot = await mount({
+    recap: { ...WORKING, at: Date.now() - 120_000 },
+  });
+  const region = await slot.findByRole("region", { name: "Latest recap" });
+  expect(region.textContent).toContain("Checking status now");
+  expect(slot.queryByLabelText("Status check countdown")).toBeNull();
+  expect(slot.queryByRole("button", { name: "Cancel check" })).toBeNull();
+  expect(slot.queryByTestId("status-check-progress")).toBeNull();
+});
+
 it.each(["full", "minimal"])(
-  "uses the Waiting goal as the title beside the countdown (%s)",
+  "uses the Waiting goal as the title (%s)",
   async (layout) => {
     const slot = await mount({
       layout,
-      recap: {
-        ...WORKING,
-        goal: "Build the release",
-      },
+      recap: { ...WORKING, goal: "Build the release" },
     });
     await slot.findByRole("region", { name: "Latest recap" });
-    const taskHeading = slot.getByRole("heading", {
-      name: "Build the release",
-    });
-    expect(taskHeading).toBeTruthy();
+    const heading = slot.getByRole("heading", { name: "Build the release" });
     expect(
-      taskHeading.querySelector("[data-testid='bb-markdown']")?.className,
+      heading.querySelector("[data-testid='bb-markdown']")?.className,
     ).toContain(layout === "minimal" ? "0.6875rem" : "0.8125rem");
     expect(slot.getByLabelText("Status check countdown").textContent).toMatch(
       /^[01]:\d{2}$/,
@@ -394,54 +399,28 @@ it.each(["full", "minimal"])(
 );
 
 it.each(["full", "minimal"])(
-  "renders a task and linked thread on separate lines and cancels without dismissing (%s)",
+  "cancels the status check without dismissing (%s)",
   async (layout) => {
-    const slot = await mount({
-      layout,
-      threads: [
-        sidebarThread("t1"),
-        sidebarThread("thr_abc123def", { title: "Test worker" }),
-      ],
-      recap: {
-        ...WORKING,
-        goal: "Testing while @thread:thr_abc123def runs",
-      },
-    });
+    const slot = await mount({ layout, recap: WORKING });
     const region = await slot.findByRole("region", { name: "Latest recap" });
-    expect(region.textContent).toContain("Testing");
-    const mention = await slot.findByText("Test worker");
-    const countdown = slot.getByLabelText("Status check countdown");
-    const task = region.querySelector('[data-progress="active"]')!;
-    expect(task.contains(mention)).toBe(true);
-    expect(task.contains(countdown)).toBe(true);
-    expect(task.textContent).toContain("Testing");
-    expect(task.textContent).toContain(countdown.textContent);
-    expect(
-      slot.getByRole("button", { name: "Cancel status check" }).textContent,
-    ).toBe("");
-    expect(
-      slot
-        .getByRole("button", { name: "Cancel status check" })
-        .querySelector('[data-icon="CircleX"]'),
-    ).toBeTruthy();
-    fireEvent.click(slot.getByRole("button", { name: "Cancel status check" }));
+    fireEvent.click(slot.getByRole("button", { name: "Cancel check" }));
     await waitFor(() =>
       expect(region.textContent).toContain("Status check cancelled"),
     );
-    expect(region.textContent).toContain("Testing");
+    expect(region.textContent).toContain("Workers and tests are running");
     expect(slot.queryByRole("button", { name: "Dismiss recap" })).toBeTruthy();
     expect(slot.inspection.rpcCalls).toContainEqual({
       method: "recap_cancel_waiting",
       input: { threadId: "t1", recapId: "r1" },
     });
-    expect(
-      slot.queryByRole("button", { name: "Cancel status check" }),
-    ).toBeNull();
+    expect(slot.queryByRole("button", { name: "Cancel check" })).toBeNull();
+    expect(slot.queryByLabelText("Status check countdown")).toBeNull();
+    expect(slot.queryByTestId("status-check-progress")).toBeNull();
   },
 );
 
 it.each([1, 2])(
-  "labels and links %i awaited agent tasks",
+  "lists %i awaited agents under the goal with links and live status",
   async (agentCount) => {
     const agents = [
       { threadId: "thr_ui_agent", task: "Building the theme toggle UI" },
@@ -455,25 +434,67 @@ it.each([1, 2])(
       },
       threads: [
         sidebarThread("t1"),
-        sidebarThread("thr_ui_agent", { title: "UI agent" }),
+        sidebarThread("thr_ui_agent", { title: "UI agent", status: "active" }),
         sidebarThread("thr_server_agent", { title: "Server agent" }),
       ],
     });
     const region = await slot.findByRole("region", { name: "Latest recap" });
     expect(region.textContent).toContain(
-      agentCount === 1 ? "Waiting for Agent" : "Waiting for Agents",
+      agentCount === 1 ? "Waiting for Agent" : "Waiting for 2 Agents",
     );
-    expect(slot.getByRole("heading", { name: agents[0]!.task })).toBeTruthy();
+    expect(
+      slot.getByRole("heading", { name: "Building the theme toggle" }),
+    ).toBeTruthy();
+    const list = slot.getByRole("list", { name: "Awaited agents" });
+    const rows = [...list.querySelectorAll("li")];
+    expect(rows.map((row) => row.getAttribute("data-agent-status"))).toEqual(
+      ["running", "done"].slice(0, agentCount),
+    );
+    expect(rows[0]!.textContent).toContain("Building the theme toggle UI");
+    expect(rows[0]!.textContent).toContain("Running");
     expect(slot.getByRole("link", { name: "UI agent" })).toBeTruthy();
     if (agentCount === 2) {
-      expect(slot.getByRole("heading", { name: agents[1]!.task })).toBeTruthy();
+      expect(rows[1]!.textContent).toContain("Adding theme preference support");
+      expect(rows[1]!.textContent).toContain("Finished");
       expect(slot.getByRole("link", { name: "Server agent" })).toBeTruthy();
     } else {
       expect(slot.queryByRole("link", { name: "Server agent" })).toBeNull();
     }
-    expect(slot.getByLabelText("Status check countdown")).toBeTruthy();
+    expect(
+      slot.getByLabelText("Status check countdown").parentElement?.textContent,
+    ).toMatch(
+      agentCount === 1
+        ? /^Checking on the agent in /
+        : /^Checking on the agents in /,
+    );
   },
 );
+
+it.each([
+  [{ hasPendingInteraction: true }, "input", "Needs input"],
+  [
+    { status: "error" as const, runtimeStatus: "error" as const },
+    "error",
+    "Errored",
+  ],
+  [
+    { status: "idle" as const, runtimeStatus: "provisioning" as const },
+    "running",
+    "Starting",
+  ],
+])("shows an awaited agent's status %#", async (overrides, tone, label) => {
+  const slot = await mount({
+    recap: {
+      ...WORKING,
+      waitingAgents: [{ threadId: "thr_agent", task: "Run the suite" }],
+    },
+    threads: [sidebarThread("t1"), sidebarThread("thr_agent", overrides)],
+  });
+  const list = await slot.findByRole("list", { name: "Awaited agents" });
+  const row = list.querySelector("li")!;
+  expect(row.getAttribute("data-agent-status")).toBe(tone);
+  expect(slot.getByLabelText("Agent status").textContent).toBe(label);
+});
 
 it("shows the Waiting goal as the title in the compact card", async () => {
   const slot = await mount({
