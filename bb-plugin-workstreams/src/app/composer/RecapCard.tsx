@@ -867,6 +867,8 @@ function NextActions({
   const [pending, setPending] = useState(false);
   const [menu, setMenu] = useState(false);
   const [helpVisible, setHelpVisible] = useState(false);
+  const [helpMounted, setHelpMounted] = useState(false);
+  const helpExitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const portalScope = usePortalScopeProps();
   const composer = useComposer();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -908,6 +910,28 @@ function NextActions({
     composer.insert(message, { at: "end" });
     composer.focus();
   };
+  const showHelp = (event: React.PointerEvent) => {
+    if (event.pointerType !== "mouse") return;
+    if (helpExitTimer.current) clearTimeout(helpExitTimer.current);
+    helpExitTimer.current = null;
+    setHelpMounted(true);
+    setHelpVisible(true);
+  };
+  const hideHelp = (event: React.PointerEvent) => {
+    if (event.pointerType !== "mouse") return;
+    setHelpVisible(false);
+    if (helpExitTimer.current) clearTimeout(helpExitTimer.current);
+    helpExitTimer.current = setTimeout(() => {
+      helpExitTimer.current = null;
+      setHelpMounted(false);
+    }, 100);
+  };
+  useEffect(
+    () => () => {
+      if (helpExitTimer.current) clearTimeout(helpExitTimer.current);
+    },
+    [],
+  );
 
   return (
     <div
@@ -985,17 +1009,8 @@ function NextActions({
               data-next-actions-list
               aria-label="Next actions"
               className="m-0 inline-flex w-max list-none items-center gap-1.5 p-0"
-              onPointerEnter={() => setHelpVisible(true)}
-              onPointerLeave={() => setHelpVisible(false)}
-              onFocusCapture={() => setHelpVisible(true)}
-              onBlurCapture={(event) => {
-                if (
-                  !event.currentTarget.contains(
-                    event.relatedTarget as Node | null,
-                  )
-                )
-                  setHelpVisible(false);
-              }}
+              onPointerEnter={showHelp}
+              onPointerLeave={hideHelp}
             >
               {actions.map((action, index) => (
                 <li key={index} className="shrink-0">
@@ -1009,10 +1024,15 @@ function NextActions({
               ))}
             </ul>
           </div>
-          {helpVisible ? (
+          {helpMounted ? (
             <span
               aria-hidden="true"
-              className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground"
+              className={cn(
+                "pointer-events-none shrink-0 whitespace-nowrap text-[10px] text-muted-foreground transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none",
+                helpVisible
+                  ? "translate-x-0 opacity-100"
+                  : "translate-x-1 opacity-0 duration-75",
+              )}
             >
               Click to send · ⇧-click to edit
             </span>
