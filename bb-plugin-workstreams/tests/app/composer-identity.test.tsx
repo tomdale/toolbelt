@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PluginBrowserBbSdk } from "@get-bb/plugin-sdk/app";
 import { NewWorkDialog } from "../../src/app/composer/NewWork.tsx";
@@ -135,7 +141,9 @@ describe("Composer Identity & Placement Separation UI", () => {
     expect(identityControl).toBeDefined();
     expect(workstreamControl).toBeDefined();
     expect(identityControl.getAttribute("data-ws-identity-control")).toBe("");
-    expect(workstreamControl.getAttribute("data-ws-workstream-control")).toBe("");
+    expect(workstreamControl.getAttribute("data-ws-workstream-control")).toBe(
+      "",
+    );
   });
 
   it("changing placement does not erase selected identity", async () => {
@@ -212,6 +220,72 @@ describe("Composer Identity & Placement Separation UI", () => {
     await screen.findByRole("button", { name: "Workstream: Beta" });
     await screen.findByRole("button", {
       name: "Product or feature: Sidebar",
+    });
+  });
+
+  it("manual unresolved selection is truthful, resists async suggestion overwrite, and submits honest null identity", async () => {
+    const { rpc, slot } = mount();
+
+    // Open identity picker and choose "Unresolved"
+    const identityButton = await screen.findByRole("button", {
+      name: /Product or feature:/,
+    });
+    fireEvent.click(identityButton);
+
+    const unresolvedItem = await screen.findByText("Unresolved");
+    fireEvent.click(unresolvedItem);
+
+    // Verify identity button shows "Unresolved"
+    await screen.findByRole("button", {
+      name: "Product or feature: Unresolved",
+    });
+
+    // Reopen popover and verify aria-current and checkmarks
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Product or feature: Unresolved",
+      }),
+    );
+
+    const unresolvedOption = screen.getByRole("option", {
+      name: /Unresolved/,
+    });
+    expect(unresolvedOption.getAttribute("aria-current")).toBe("true");
+    const unresolvedCheckmark = unresolvedOption.querySelector(
+      '[data-icon="Check"]',
+    );
+    expect(unresolvedCheckmark?.classList.contains("opacity-100")).toBe(true);
+
+    const automaticOption = screen.getByRole("option", {
+      name: /Automatic/,
+    });
+    expect(automaticOption.getAttribute("aria-current")).toBeNull();
+    const automaticCheckmark = automaticOption.querySelector(
+      '[data-icon="Check"]',
+    );
+    expect(automaticCheckmark?.classList.contains("opacity-0")).toBe(true);
+
+    // Close popover
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await act(() =>
+      slot.behavior.setComposerText("New text to re-trigger classification"),
+    );
+
+    // Verify that state.identity remains manual Unresolved and does not get overwritten by automatic suggestion
+    await screen.findByRole("button", {
+      name: "Product or feature: Unresolved",
+    });
+
+    // Submit and assert startThread receives honest null entityId with provenance: "manual"
+    fireEvent.click(screen.getByTestId("bb-new-thread-composer-submit"));
+    await waitFor(() => expect(rpc.startThread).toHaveBeenCalledTimes(1));
+
+    expect(rpc.startThread.mock.calls[0]![0]).toMatchObject({
+      identity: {
+        entityId: null,
+        proposal: null,
+        provenance: "manual",
+      },
     });
   });
 });
