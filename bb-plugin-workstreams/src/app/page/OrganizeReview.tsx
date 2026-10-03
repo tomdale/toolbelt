@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/icon";
 import { useDebugMode } from "../debug/debug.ts";
 import { ghostButton, primaryButton, secondaryButton } from "./controls.ts";
 import { WorkstreamName } from "../WorkstreamName.tsx";
+import { TAG_ICON } from "../workstream-icon.ts";
 import type { Review, ReviewGroup, ReviewTask } from "./organize-review.ts";
 
 export const plural = (n: number, one: string, many = `${one}s`) =>
@@ -624,7 +625,7 @@ function TaskLine({
           {task.identityLabel ? (
             <span className="inline-flex items-center gap-1 font-medium text-foreground/80">
               <Icon
-                name="Tag"
+                name={TAG_ICON}
                 aria-hidden
                 className="size-3 text-muted-foreground/70"
               />
@@ -730,7 +731,7 @@ function MoveList({
                   <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
                     <span className="inline-flex items-center gap-1 font-medium text-foreground/80">
                       <Icon
-                        name="Tag"
+                        name={TAG_ICON}
                         aria-hidden
                         className="size-3 text-muted-foreground/70"
                       />

@@ -36,7 +36,7 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
-import { NO_WORKSTREAM_ICON } from "../workstream-icon.ts";
+import { NO_WORKSTREAM_ICON, TAG_ICON } from "../workstream-icon.ts";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
 import { useServerState } from "../useWorkstreams.ts";
 import { pickerDisplay, type NewWork, type NewWorkState } from "./new-work.ts";
@@ -341,7 +341,7 @@ export function IdentityOptions({
                   className={styles.item}
                 >
                   <Icon
-                    name="Tag"
+                    name={TAG_ICON}
                     className="size-4 text-muted-foreground shrink-0 mt-0.5"
                     aria-hidden
                   />

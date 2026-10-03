@@ -279,12 +279,13 @@ export function NewThreadRouting() {
     state.acceptedRoute,
     state.decision,
   ]);
-  // The picker row sits below the prompt box, outside this banner, so the
-  // field is portaled into it.
-  const pickerRow = useHostPickerRow(model ? composerRoot : null);
-  // On a phone the row has no width to spare for the status text, so it is
-  // announced but not drawn; the route chip's ✦ pulses while it classifies.
+  // The picker row sits below the prompt box, outside this banner, so on a
+  // wide screen the field is portaled into it. A phone's row is full with BB's
+  // own project, environment and branch chips, so there the field takes a line
+  // of its own in this banner, above the prompt box. The status text is then
+  // announced but not drawn; the chip's ✦ pulses while it classifies.
   const compact = useIsCompactViewport();
+  const pickerRow = useHostPickerRow(model && !compact ? composerRoot : null);
   const picker = model ? (
     <>
       <WorkstreamPicker newWork={model} />
@@ -308,7 +309,13 @@ export function NewThreadRouting() {
             {pickerRow ? (
               createPortal(picker, pickerRow)
             ) : (
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3.5">
+              <div
+                className={
+                  compact
+                    ? "ws-route-strip"
+                    : "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3.5"
+                }
+              >
                 {picker}
               </div>
             )}

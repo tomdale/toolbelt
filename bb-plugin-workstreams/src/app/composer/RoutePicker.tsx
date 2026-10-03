@@ -1,13 +1,13 @@
 /**
  * New work's two pickers as one control for phones.
  *
- * BB's picker row below the prompt box has room for its own project and
- * environment chips and little else on a phone, so the Product or feature and
- * Workstream chips are replaced by a single route chip at the row's start. It
- * shows where the thread will be filed, exactly as the Workstream chip does on
- * wider screens, and its accessible name states both values. It shrinks (the
- * label ellipsizes first, down to ✦ and the chevron) so BB's chips are never
- * pushed or overlapped.
+ * BB's picker row below the prompt box is full on a phone with its own
+ * project, environment and branch chips, so the Product or feature and
+ * Workstream chips become a single route chip on a line of its own above the
+ * prompt box (`.ws-route-strip`). It shows where the thread will be filed,
+ * labelled so it reads on its own, as the Workstream chip does on wider
+ * screens, and its accessible name states both values. It shrinks (the label
+ * ellipsizes first, down to ✦ and the chevron) if the line is ever short.
  *
  * Tapping the chip opens one sheet — BB's shared bottom drawer, through the
  * plugin's Popover — with a tab for each picker. Each tab shows its current
@@ -145,6 +145,9 @@ export function RoutePicker({ newWork }: { newWork: NewWork }) {
                 aria-hidden
               />
             )}
+            <span className="ws-route-prefix" aria-hidden>
+              Workstream:
+            </span>
             <ChipLabel>{label}</ChipLabel>
           </span>
           <Icon
