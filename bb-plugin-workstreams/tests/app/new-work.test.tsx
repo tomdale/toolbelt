@@ -171,7 +171,7 @@ function mount(
         },
       ],
     })),
-    corpusSelect: vi.fn((_input: unknown) => ({
+    catalogResolve: vi.fn((_input: unknown) => ({
       sectionId: "sec_a",
       name: "Alpha",
     })),
@@ -262,7 +262,7 @@ it("finds retained inactive identities by alias without losing explicit subject 
   fireEvent.change(search, { target: { value: "Storage" } });
   fireEvent.click(await screen.findByText("Shelves"));
   await waitFor(() =>
-    expect(rpc.corpusSelect).toHaveBeenCalledWith({
+    expect(rpc.catalogResolve).toHaveBeenCalledWith({
       entityId: "inactive-feature",
     }),
   );

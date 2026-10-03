@@ -23,6 +23,12 @@ function emptyState(): ServerState {
     order: { workstreams: [], threads: {}, prioritized: [] },
     snoozes: {},
     snoozePrefs: DEFAULT_SNOOZE_PREFS,
+    catalog: {
+      entities: [],
+      groups: {},
+      assignments: {},
+      revision: 1,
+    },
   };
 }
 

@@ -120,6 +120,8 @@ const bootstrapSchema = z
     ),
     preview: z
       .object({
+        catalogRevision: z.number().optional(),
+        isStale: z.boolean().optional(),
         workstreams: z
           .array(
             organizeProposalSchema.shape.workstreams.element.extend({
@@ -151,6 +153,35 @@ const bootstrapSchema = z
     traceIds: z.array(z.string()).default([]),
   })
   .nullable();
+
+const assignmentProvenanceSchema = z.enum(["manual", "automatic"]);
+const assignmentStatusSchema = z.enum(["assigned", "unresolved"]);
+
+const canonicalAssignmentSchema = z.object({
+  threadId: z.string(),
+  entityId: z.string().nullable(),
+  status: assignmentStatusSchema,
+  provenance: assignmentProvenanceSchema.nullable(),
+  label: z.string().nullable(),
+  ancestorIds: z.array(z.string()),
+  evidence: z.string().nullable(),
+  inheritedFrom: z.string().nullable(),
+});
+
+const entitySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  parentId: z.string().nullable(),
+  aliases: z.array(z.string()),
+});
+
+const catalogStateSchema = z.object({
+  entities: z.array(entitySchema),
+  groups: z.record(z.string(), z.string()),
+  assignments: z.record(z.string(), canonicalAssignmentSchema),
+  revision: z.number(),
+});
 
 const idList = z.array(z.string().min(1)).max(5000);
 const spinnerColorSchema = z.union([
@@ -551,24 +582,80 @@ export const rpcContract = defineRpcContract({
   corpus: {
     input: z.null(),
     output: z.object({
-      entities: z.array(
-        z.object({
-          id: z.string(),
-          name: z.string(),
-          description: z.string(),
-          parentId: z.string().nullable(),
-          aliases: z.array(z.string()),
-        }),
-      ),
+      entities: z.array(entitySchema),
     }),
+  },
+  catalog: {
+    input: z.null(),
+    output: catalogStateSchema,
   },
   corpusReset: {
     input: z.object({ confirm: z.literal(true) }),
     output: z.object({ ok: z.literal(true) }),
   },
-  corpusSelect: {
-    input: z.object({ entityId: z.string() }),
-    output: z.object({ sectionId: z.string(), name: z.string() }),
+  catalogResolve: {
+    input: z.object({ entityId: z.string().min(1) }),
+    output: z.object({
+      sectionId: z.string().nullable(),
+      name: z.string().nullable(),
+    }),
+  },
+  catalogCreate: {
+    input: z.object({
+      name: z.string().min(1).max(200),
+      description: z.string().max(1000).default(""),
+      parentId: z.string().min(1).nullable().optional(),
+      aliases: z.array(z.string().max(80)).default([]),
+    }),
+    output: z.object({ entity: entitySchema }),
+  },
+  catalogRename: {
+    input: z.object({
+      entityId: z.string().min(1),
+      name: z.string().min(1).max(200),
+    }),
+    output: z.object({ entity: entitySchema }),
+  },
+  catalogReparent: {
+    input: z.object({
+      entityId: z.string().min(1),
+      parentId: z.string().min(1).nullable(),
+    }),
+    output: z.object({ entity: entitySchema }),
+  },
+  catalogMerge: {
+    input: z.object({
+      sourceEntityId: z.string().min(1),
+      targetEntityId: z.string().min(1),
+    }),
+    output: z.object({
+      target: entitySchema,
+      affectedThreads: z.number(),
+      reparentedChildren: z.number(),
+    }),
+  },
+  taskAssign: {
+    input: z.object({
+      threadId: z.string().min(1),
+      entityId: z.string().min(1),
+    }),
+    output: z.object({ assignment: canonicalAssignmentSchema }),
+  },
+  taskClear: {
+    input: z.object({ threadId: z.string().min(1) }),
+    output: z.object({ assignment: canonicalAssignmentSchema }),
+  },
+  taskReclassify: {
+    input: z.object({
+      threadId: z.string().min(1),
+      entityId: z.string().min(1).optional(),
+      evidence: z.string().optional(),
+    }),
+    output: z.object({ assignment: canonicalAssignmentSchema }),
+  },
+  taskAssignment: {
+    input: z.object({ threadId: z.string().min(1) }),
+    output: z.object({ assignment: canonicalAssignmentSchema }),
   },
   state: {
     input: z.null(),
@@ -588,6 +675,12 @@ export const rpcContract = defineRpcContract({
       snoozes: z.record(z.string(), snoozeSchema).default({}),
       /** What a click snoozes for, the hover menu's choices, and morning. */
       snoozePrefs: snoozePrefsSchema,
+      catalog: catalogStateSchema.default({
+        entities: [],
+        groups: {},
+        assignments: {},
+        revision: 1,
+      }),
     }),
   },
   /**
