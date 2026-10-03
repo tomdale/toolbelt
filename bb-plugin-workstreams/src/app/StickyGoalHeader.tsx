@@ -28,8 +28,10 @@ const EYEBROW_SIZE = 0.8;
 const EYEBROW_BLOCK = 1.25;
 /** In the title bar the title is set at this multiple of body size. */
 const TITLE_BAR_TITLE_SIZE = 0.95;
-/** Workstream line height in the title bar, in px (the 16px icon sets it). */
-const TITLE_BAR_EYEBROW_BLOCK = 17;
+/** The workstream line is scaled down in the title bar. */
+const TITLE_BAR_EYEBROW_SCALE = 0.82;
+/** Its height there, in px, including the small gap before the title. */
+const TITLE_BAR_EYEBROW_BLOCK = 13;
 /** Smallest title-bar gap worth drawing the heading into. */
 const MIN_TITLE_BAR_WIDTH = 140;
 const TITLE_BAR_GAP = 16;
@@ -438,6 +440,10 @@ export function StickyGoalHeader(): React.ReactElement | null {
           style={
             {
               fontSize: base * EYEBROW_SIZE,
+              maxWidth: inBar
+                ? spot.width / TITLE_BAR_EYEBROW_SCALE
+                : undefined,
+              transform: `scale(${inBar ? TITLE_BAR_EYEBROW_SCALE : 1})`,
               "--ws-hue": context.workstream.hue,
             } as React.CSSProperties
           }
