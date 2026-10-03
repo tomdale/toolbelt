@@ -26,6 +26,7 @@ import { UserError, type WorkstreamService } from "./service.ts";
 import type { CorpusStore } from "./corpus.ts";
 import { activeHome } from "../domain/regroup.ts";
 import { corpusLabel } from "../domain/corpus-label.ts";
+import type { DraftSubjectProposal } from "../domain/corpus.ts";
 
 type Sdk = BbPluginApi["sdk"];
 type SpawnArgs = Parameters<Sdk["threads"]["spawn"]>[0];
@@ -53,7 +54,8 @@ type Base = {
   confidence: "high" | "medium" | "low";
   reason: string;
   subject: string | null;
-  subjectId?: string;
+  subjectId?: string | null;
+  proposal?: DraftSubjectProposal | null;
   /**
    * The debug trace of the routing call (SPEC §11.6); null when no model was
    * asked (a mention, a chosen workstream) or debug mode is off.
@@ -135,34 +137,6 @@ const hash = (text: string) =>
   createHash("sha256").update(text.trim()).digest("hex");
 
 export class Router {
-  private readonly tentativeSubjects = new Map<
-    string,
-    Parameters<CorpusStore["rememberProposal"]>[0]
-  >();
-  private readonly automaticSubjects = new Map<string, string>();
-
-  commitSubject(id: string): string {
-    const resolved = this.automaticSubjects.get(id);
-    if (resolved) return resolved;
-    const proposal = this.tentativeSubjects.get(id);
-    if (!proposal) return id;
-    const entity = this.deps.corpus!.rememberProposal(proposal);
-    this.tentativeSubjects.delete(id);
-    this.automaticSubjects.set(id, entity.id);
-    return entity.id;
-  }
-
-  assignSubject(threadId: string, id: string): void {
-    const tentative = this.tentativeSubjects.has(id);
-    const committed = this.commitSubject(id);
-    this.deps.corpus?.assign(
-      threadId,
-      committed,
-      tentative || this.automaticSubjects.has(id)
-        ? "composer-classification"
-        : undefined,
-    );
-  }
   private readonly decisions = new Map<
     string,
     {
@@ -471,6 +445,7 @@ export class Router {
         {
           prompt: text,
           entities: corpus.list(),
+          project: selectedProject ?? undefined,
         },
         {
           model: await this.deps.model(),
@@ -478,26 +453,11 @@ export class Router {
           label: text.replace(/\s+/g, " "),
         },
       );
-      const entity = classification.subjectId
-        ? corpus.list().find((e) => e.id === classification.subjectId)
-        : classification.proposed
-          ? (() => {
-              const id = `tentative:${randomUUID()}`;
-              this.tentativeSubjects.set(id, classification.proposed!);
-              if (this.tentativeSubjects.size > 100)
-                this.tentativeSubjects.delete(
-                  this.tentativeSubjects.keys().next().value!,
-                );
-              return {
-                id,
-                name: classification.proposed!.name,
-                description: classification.proposed!.description,
-                parentId: classification.proposed!.parentId,
-                aliases: [],
-              };
-            })()
-          : null;
-      if (!entity)
+      const existingEntity = classification.subjectId
+        ? corpus.getById(classification.subjectId)
+        : null;
+      const proposed = classification.proposed ?? null;
+      if (!existingEntity && !proposed)
         return remember({
           id: randomUUID(),
           outcome: "unsure",
@@ -512,28 +472,23 @@ export class Router {
       const activeIds = current.flatMap((r) =>
         groups.has(r.sectionId) ? [groups.get(r.sectionId)!] : [],
       );
-      const home = this.tentativeSubjects.has(entity.id)
-        ? null
-        : activeHome(entity.id, activeIds, corpus.list());
-      const subjectToken = classification.proposed
-        ? entity.id
-        : `automatic:${randomUUID()}`;
-      if (!classification.proposed) {
-        this.automaticSubjects.set(subjectToken, entity.id);
-        if (this.automaticSubjects.size > 100)
-          this.automaticSubjects.delete(
-            this.automaticSubjects.keys().next().value!,
-          );
-      }
-      const record =
-        records.find((r) => groups.get(r.sectionId) === home) ??
-        records.find((r) => groups.get(r.sectionId) === entity.id);
+      const home = existingEntity
+        ? activeHome(existingEntity.id, activeIds, corpus.list())
+        : proposed?.parentId
+          ? activeHome(proposed.parentId, activeIds, corpus.list())
+          : null;
+      const record = home
+        ? records.find((r) => groups.get(r.sectionId) === home)
+        : existingEntity
+          ? records.find((r) => groups.get(r.sectionId) === existingEntity.id)
+          : null;
       const base = {
         id: randomUUID(),
         confidence: "high" as const,
         reason: "Classified subject independently of current navigation.",
-        subject: entity.name,
-        subjectId: subjectToken,
+        subject: existingEntity ? existingEntity.name : proposed!.name,
+        subjectId: existingEntity ? existingEntity.id : null,
+        proposal: proposed ?? null,
         traceId,
       };
       const decision: RouteDecision = record
@@ -548,23 +503,23 @@ export class Router {
         : {
             ...base,
             outcome: "new-workstream",
-            name: classification.proposed
+            name: proposed
               ? [
-                  classification.proposed.parentId
+                  proposed.parentId
                     ? corpusLabel(
-                        classification.proposed.parentId,
+                        proposed.parentId,
                         corpus.list(),
                       )
                     : null,
-                  ...(classification.proposed.ancestors ?? []).map(
+                  ...(proposed.ancestors ?? []).map(
                     (a) => a.name,
                   ),
-                  entity.name,
+                  proposed.name,
                 ]
                   .filter(Boolean)
                   .join(": ")
-              : corpusLabel(entity.id, corpus.list()),
-            description: entity.description ?? "",
+              : corpusLabel(existingEntity!.id, corpus.list()),
+            description: proposed?.description ?? existingEntity?.description ?? "",
             title: "",
             placement: null,
           };
@@ -1126,12 +1081,14 @@ export class Router {
     )
       throw new UserError("That workstream no longer exists.");
     let sectionId: string | null;
+    let newlyCreatedSectionId: string | null = null;
     if (decision.outcome === "new-workstream") {
       const created = await this.deps.service.createWorkstream(
         decision.name,
         source,
       );
       sectionId = created.sectionId;
+      newlyCreatedSectionId = created.sectionId;
       if (decision.description)
         this.deps.map.describe(sectionId, decision.description);
     } else sectionId = decision.sectionId;
@@ -1144,17 +1101,53 @@ export class Router {
       options.execution.input
         ? { input: options.execution.input }
         : { prompt: text };
-    const thread = await this.spawnFiled(
-      {
-        ...options.execution,
-        ...body,
-        projectId: placement.projectId,
-        environment,
-      } as SpawnArgs,
-      actualSectionId,
-      source,
-      options.spawnedFrom,
-    );
+    let thread: { id: string; title?: string | null };
+    try {
+      thread = await this.spawnFiled(
+        {
+          ...options.execution,
+          ...body,
+          projectId: placement.projectId,
+          environment,
+        } as SpawnArgs,
+        actualSectionId,
+        source,
+        options.spawnedFrom,
+      );
+      this.deps.service.seeThread(
+        thread.id,
+        actualSectionId,
+        options.spawnedFrom ?? null,
+        thread.title ?? undefined,
+      );
+    } catch (error) {
+      if (newlyCreatedSectionId) {
+        try {
+          this.deps.corpus?.unbindGroup(newlyCreatedSectionId);
+          await this.deps.sdk().threadSections.delete({ id: newlyCreatedSectionId });
+        } catch {
+          // ignore rollback errors
+        }
+      }
+      throw error;
+    }
+
+    let assignedEntityId: string | null = null;
+    if (decision.proposal) {
+      const entity = this.deps.corpus?.rememberProposal(decision.proposal);
+      if (entity) {
+        assignedEntityId = entity.id;
+        this.deps.corpus?.assign(thread.id, entity.id, { provenance: "automatic" });
+      }
+    } else if (decision.subjectId) {
+      assignedEntityId = decision.subjectId;
+      this.deps.corpus?.assign(thread.id, decision.subjectId, { provenance: "automatic" });
+    }
+
+    if (newlyCreatedSectionId && assignedEntityId) {
+      this.deps.corpus?.bindGroup(newlyCreatedSectionId, assignedEntityId);
+    }
+
     const logged = this.deps.service.recordCreated(
       thread.id,
       actualSectionId,
@@ -1185,13 +1178,70 @@ export class Router {
    * `sectionId` or deliberately left without a workstream.
    */
   async start(
-    sectionId: string | null,
-    execution: SpawnArgs & { projectId: string; environment: Environment },
-    subjectId?: string,
+    optionsOrSectionId:
+      | string
+      | null
+      | {
+          sectionId?: string | null;
+          newWorkstream?: { name: string; description?: string } | null;
+          identity?: {
+            entityId?: string | null;
+            proposal?: DraftSubjectProposal | null;
+            provenance?: "manual" | "automatic";
+          } | null;
+          execution: SpawnArgs & { projectId: string; environment: Environment };
+        },
+    legacyExecution?: SpawnArgs & { projectId: string; environment: Environment },
+    legacySubjectId?: string,
   ): Promise<{ threadId: string; sectionId: string | null }> {
-    const record = sectionId ? this.deps.map.get(sectionId) : null;
-    if (sectionId && !record)
+    let sectionId: string | null;
+    let newWorkstream: { name: string; description?: string } | null;
+    let identity: {
+      entityId?: string | null;
+      proposal?: DraftSubjectProposal | null;
+      provenance?: "manual" | "automatic";
+    } | null;
+    let execution: SpawnArgs & { projectId: string; environment: Environment };
+
+    if (
+      typeof optionsOrSectionId === "object" &&
+      optionsOrSectionId !== null &&
+      "execution" in optionsOrSectionId
+    ) {
+      sectionId = optionsOrSectionId.sectionId ?? null;
+      newWorkstream = optionsOrSectionId.newWorkstream ?? null;
+      identity = optionsOrSectionId.identity ?? null;
+      execution = optionsOrSectionId.execution;
+    } else {
+      sectionId = optionsOrSectionId;
+      newWorkstream = null;
+      identity = legacySubjectId
+        ? { entityId: legacySubjectId, provenance: "manual" }
+        : null;
+      execution = legacyExecution!;
+    }
+
+    let effectiveSectionId = sectionId;
+    let createdSectionId: string | null = null;
+    if (newWorkstream) {
+      const created = await this.deps.service.createWorkstream(
+        newWorkstream.name,
+        "user",
+      );
+      createdSectionId = created.sectionId;
+      effectiveSectionId = created.sectionId;
+      if (newWorkstream.description) {
+        this.deps.map.describe(createdSectionId, newWorkstream.description);
+      }
+    }
+
+    const record = effectiveSectionId ? this.deps.map.get(effectiveSectionId) : null;
+    if (effectiveSectionId && !record)
       throw new UserError("That workstream no longer exists.");
+
+    if (identity?.entityId && !this.deps.corpus?.getById(identity.entityId))
+      throw new UserError("Unknown subject identity.");
+
     // Only fields BB's new-thread request defines reach spawn.
     const fields = Object.fromEntries(
       START_FIELDS.filter((key) => execution[key] !== undefined).map((key) => [
@@ -1199,19 +1249,53 @@ export class Router {
         execution[key],
       ]),
     ) as unknown as SpawnArgs;
-    const subjectToken = subjectId;
-    if (subjectId) subjectId = this.commitSubject(subjectId);
-    if (subjectId && !this.deps.corpus?.list().some((e) => e.id === subjectId))
-      throw new UserError("Unknown subject identity.");
-    const thread = await this.spawnFiled(fields, sectionId, "user");
-    if (subjectToken) this.assignSubject(thread.id, subjectToken);
-    this.deps.service.recordCreated(thread.id, sectionId, "user", {
+
+    let thread: { id: string; title?: string | null };
+    try {
+      thread = await this.spawnFiled(fields, effectiveSectionId, "user");
+      this.deps.service.seeThread(
+        thread.id,
+        effectiveSectionId,
+        null,
+        thread.title ?? undefined,
+      );
+    } catch (error) {
+      if (createdSectionId) {
+        try {
+          this.deps.corpus?.unbindGroup(createdSectionId);
+          await this.deps.sdk().threadSections.delete({ id: createdSectionId });
+        } catch {
+          // ignore cleanup errors on rollback
+        }
+      }
+      throw error;
+    }
+
+    let assignedEntityId: string | null = null;
+    if (identity?.proposal) {
+      const entity = this.deps.corpus!.rememberProposal(identity.proposal);
+      assignedEntityId = entity.id;
+      this.deps.corpus!.assign(thread.id, entity.id, {
+        provenance: identity.provenance ?? "automatic",
+      });
+    } else if (identity?.entityId) {
+      assignedEntityId = identity.entityId;
+      this.deps.corpus!.assign(thread.id, identity.entityId, {
+        provenance: identity.provenance ?? "manual",
+      });
+    }
+
+    if (createdSectionId && assignedEntityId) {
+      this.deps.corpus?.bindGroup(createdSectionId, assignedEntityId);
+    }
+
+    this.deps.service.recordCreated(thread.id, effectiveSectionId, "user", {
       title: thread.title || "New thread",
       rationale: record
         ? `Started in ${record.name} from New work`
         : "Started without a workstream from New work",
     });
-    return { threadId: thread.id, sectionId };
+    return { threadId: thread.id, sectionId: effectiveSectionId };
   }
 
   /**
@@ -1287,32 +1371,22 @@ export class Router {
    * Files a thread the native composer just created, per the preview the user
    * saw. Handles a composer thread only once.
    */
-  async fileComposed(threadId: string, decision: RouteDecision): Promise<void> {
+  async fileComposed(
+    threadId: string,
+    decision: RouteDecision,
+    identityOverride?: {
+      entityId?: string | null;
+      proposal?: DraftSubjectProposal | null;
+      provenance?: "manual" | "automatic";
+    } | null,
+  ): Promise<void> {
     const entry = this.decisions.get(decision.id);
     if (!entry || entry.used) return;
-    if (decision.subjectId) {
-      decision.subjectId = this.commitSubject(decision.subjectId);
-      this.deps.corpus?.assign(
-        threadId,
-        decision.subjectId,
-        "composer-classification",
-      );
-    }
     entry.used = true;
-    if (
-      decision.subjectId &&
-      decision.outcome === "new-thread" &&
-      decision.sectionId &&
-      this.deps.corpus
-    ) {
-      this.deps.corpus.bindGroup(
-        decision.sectionId,
-        this.deps.corpus.groups().get(decision.sectionId) ?? decision.subjectId,
-      );
-    }
+
     let sectionId: string | null = null;
+    let newlyCreatedSectionId: string | null = null;
     if (decision.outcome === "new-thread") {
-      if (!decision.sectionId) return;
       sectionId = decision.sectionId;
     } else if (decision.outcome === "new-workstream") {
       const created = await this.deps.service.createWorkstream(
@@ -1320,10 +1394,9 @@ export class Router {
         "router",
       );
       sectionId = created.sectionId;
+      newlyCreatedSectionId = created.sectionId;
       if (decision.description)
         this.deps.map.describe(sectionId, decision.description);
-      if (decision.subjectId)
-        this.deps.corpus?.bindGroup(sectionId, decision.subjectId);
     } else if (decision.outcome === "continue") {
       // The user started a new thread instead: keep it with that thread's work.
       const target = this.deps.service
@@ -1331,6 +1404,38 @@ export class Router {
         .find((t) => t.id === decision.threadId);
       sectionId = target?.sectionId ?? null;
     }
+
+    this.deps.service.seeThread(threadId, sectionId, null);
+
+    let assignedEntityId: string | null = null;
+    const identity = identityOverride ?? {
+      entityId: decision.subjectId ?? null,
+      proposal: decision.proposal ?? null,
+      provenance: "automatic" as const,
+    };
+
+    if (identity.proposal) {
+      const entity = this.deps.corpus?.rememberProposal(identity.proposal);
+      if (entity) {
+        assignedEntityId = entity.id;
+        this.deps.corpus?.assign(threadId, entity.id, {
+          provenance: identity.provenance ?? "automatic",
+        });
+      }
+    } else if (identity.entityId) {
+      assignedEntityId = identity.entityId;
+      this.deps.corpus?.assign(threadId, identity.entityId, {
+        provenance: identity.provenance ?? "manual",
+      });
+    }
+
+    if (sectionId && assignedEntityId) {
+      this.deps.corpus?.bindGroup(
+        sectionId,
+        this.deps.corpus.groups().get(sectionId) ?? assignedEntityId,
+      );
+    }
+
     this.deps.inference.link(decision.traceId, {
       kind: "thread",
       ref: threadId,

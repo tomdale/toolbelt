@@ -106,14 +106,32 @@ function NewWork({
             name: created.entry.workstreams[0]?.name ?? name,
           };
         },
-        startThread: (sectionId, request, subjectId) =>
-          rpc.call("startThread", {
+        startThread: (sectionId, request, optionsOrSubjectId) => {
+          const options =
+            typeof optionsOrSubjectId === "object" &&
+            optionsOrSubjectId !== null
+              ? optionsOrSubjectId
+              : typeof optionsOrSubjectId === "string"
+                ? {
+                    identity: {
+                      entityId: optionsOrSubjectId,
+                      provenance: "manual" as const,
+                    },
+                    subjectId: optionsOrSubjectId,
+                  }
+                : undefined;
+          return rpc.call("startThread", {
             sectionId,
-            ...(subjectId ? { subjectId } : {}),
+            ...(options?.newWorkstream
+              ? { newWorkstream: options.newWorkstream }
+              : {}),
+            ...(options?.identity ? { identity: options.identity } : {}),
+            ...(options?.subjectId ? { subjectId: options.subjectId } : {}),
             // The server forwards only the fields spawn takes.
             execution: JSON.parse(JSON.stringify(request)) as NewThreadRequest &
               Record<string, unknown>,
-          }),
+          });
+        },
         sendToThread: async (threadId, input, traceId) => {
           await rpc.call("sendToThread", {
             threadId,

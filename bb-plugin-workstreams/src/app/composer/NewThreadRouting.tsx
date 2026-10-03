@@ -135,10 +135,25 @@ export function NewThreadRouting() {
             traceId,
           });
         },
-        submitWithRoute: (routeId, sectionId) =>
-          composerRef.current.submit({
-            experimental_data: { routeId, ...(sectionId ? { sectionId } : {}) },
-          }),
+        submitWithRoute: (routeId, sectionId) => {
+          const snapshot = model ? model.snapshot() : null;
+          const identity = snapshot?.identity
+            ? {
+                entityId: snapshot.identity.entityId,
+                proposal: snapshot.identity.proposal,
+                provenance: snapshot.identity.provenance,
+              }
+            : null;
+          const experimental_data: Record<string, unknown> = {};
+          if (routeId) experimental_data.routeId = routeId;
+          if (sectionId) experimental_data.sectionId = sectionId;
+          if (identity) experimental_data.identity = identity;
+          return composerRef.current.submit({
+            experimental_data: Object.keys(experimental_data).length
+              ? (experimental_data as Record<string, unknown> as any)
+              : null,
+          });
+        },
         sendDraftToThread: async (threadId, traceId) => {
           const current = composerRef.current;
           const target = await sdk.threads.get({ threadId });
@@ -195,10 +210,10 @@ export function NewThreadRouting() {
   useEffect(() => {
     // The host composer submits through BB's own thread creation; the
     // destination the pickers show — picked or automatic — travels as submit
-    // metadata the server's dispatch hook files. A proposed workstream is
-    // created first, as submitting does.
+    // metadata the server's dispatch hook files.
     const current = model ? model.snapshot() : null;
-    if (!model || !current || !(current.workstream || current.pendingNew))
+    if (!model || !current) return;
+    if (!current.workstream && !current.pendingNew && !current.identity)
       return;
     const primary = root?.closest<HTMLElement>(
       '[data-app-composer-role="primary"]',
@@ -216,22 +231,25 @@ export function NewThreadRouting() {
           const sectionId =
             snapshot.workstream?.id ??
             (snapshot.pendingNew ? await model.createPending() : null);
-          const subjectId =
-            snapshot.acceptedRoute?.subjectId ??
-            snapshot.workstream?.subjectId ??
-            snapshot.pendingNew?.subjectId;
+          const identity = snapshot.identity
+            ? {
+                entityId: snapshot.identity.entityId,
+                proposal: snapshot.identity.proposal,
+                provenance: snapshot.identity.provenance,
+              }
+            : null;
           const routeId = snapshot.acceptedRoute?.routeId ?? null;
+          const experimental_data: Record<string, unknown> = {};
+          if (sectionId) experimental_data.sectionId = sectionId;
+          if (identity) experimental_data.identity = identity;
+          if (routeId) experimental_data.routeId = routeId;
           await composerRef.current.submit({
-            experimental_data: sectionId
-              ? {
-                  sectionId,
-                  ...(subjectId ? { subjectId } : {}),
-                  ...(routeId ? { routeId } : {}),
-                }
+            experimental_data: Object.keys(experimental_data).length
+              ? (experimental_data as Record<string, unknown> as any)
               : null,
           });
         } catch (error) {
-          // Creating a proposal or submitting can fail; the host already
+          // Submitting can fail; the host already
           // prevented its own submit, so say why nothing started.
           model.reportError(error);
         }
@@ -239,7 +257,14 @@ export function NewThreadRouting() {
     };
     form.addEventListener("submit", submit, true);
     return () => form.removeEventListener("submit", submit, true);
-  }, [composer, model, root, state.workstream, state.pendingNew]);
+  }, [
+    composer,
+    model,
+    root,
+    state.workstream,
+    state.pendingNew,
+    state.identity,
+  ]);
   // The picker row sits below the prompt box, outside this banner, so the
   // field is portaled into it.
   const pickerRow = useHostPickerRow(model ? composerRoot : null);
@@ -289,6 +314,7 @@ const emptySnapshot = () => EMPTY_STATE;
 const EMPTY_STATE = {
   text: "",
   workstream: null,
+  identity: null,
   pinned: false,
   pendingNew: null,
   selection: null,

@@ -40,6 +40,7 @@ export async function fakeWorld(
     complete?: FakeCompletion;
     settings?: Record<string, string | boolean>;
     send?: (args: Record<string, unknown>) => Promise<void>;
+    spawn?: (args: Record<string, unknown>) => Promise<Thread>;
   } = {},
 ) {
   const threads = new Map<string, Thread>();
@@ -177,6 +178,7 @@ export async function fakeWorld(
               input: text(value),
             })),
         spawn: async (args: Record<string, unknown>) => {
+          if (options.spawn) return options.spawn(args);
           if (args.title === "Workstreams worker") {
             workerCalls.push(args);
             const answer = await (options.complete?.({
