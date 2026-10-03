@@ -28,12 +28,19 @@ const OTHER_OPTION_LABEL = "Other…";
 const PREVIEW_MAX_HEIGHT = 220;
 
 // A step below the recap card's type scale: a question card carries more
-// lines than a recap, so options stay compact.
-const PROMPT_CLASS = "text-[13.5px] leading-[1.4] [text-wrap:pretty]";
+// lines than a recap, so options stay compact. On a phone (a viewport under
+// 768px with a coarse pointer) the text follows BB's own rule instead and takes
+// the next token up, as the recap card does: primary text is `text-base`, the
+// timeline's size, and descriptions `text-sm`. The answer field must be at
+// least 16px or iOS zooms the page when it takes focus.
+const PROMPT_CLASS =
+  "text-[13.5px] leading-[1.4] max-md:pointer-coarse:text-base [text-wrap:pretty]";
 const MARKDOWN_CLASS =
   "text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
-const LABEL_CLASS = "text-[12.5px] leading-[1.45]";
-const DESCRIPTION_CLASS = "text-[11.5px] leading-[1.45] [text-wrap:pretty]";
+const LABEL_CLASS =
+  "text-[12.5px] leading-[1.45] max-md:pointer-coarse:text-base";
+const DESCRIPTION_CLASS =
+  "text-[11.5px] leading-[1.45] max-md:pointer-coarse:text-sm [text-wrap:pretty]";
 
 interface QuestionOptionRowProps {
   checked: boolean;
@@ -58,11 +65,11 @@ function QuestionOptionRow({
       aria-pressed={checked}
       aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
       onClick={onSelect}
-      className="flex w-full cursor-pointer items-start gap-2 rounded-md py-1 text-left disabled:cursor-default"
+      className="flex w-full cursor-pointer items-start gap-2 rounded-md py-1 text-left disabled:cursor-default max-md:pointer-coarse:py-2"
     >
       <span
         className={cn(
-          "mt-[3px] flex size-3.5 shrink-0 items-center justify-center border",
+          "mt-[3px] flex size-3.5 shrink-0 items-center justify-center border max-md:pointer-coarse:size-4",
           multiSelect ? "rounded" : "rounded-full",
           checked
             ? "border-amber-600 bg-amber-600 text-white dark:border-amber-400 dark:bg-amber-400 dark:text-amber-950"
@@ -91,7 +98,7 @@ function QuestionOptionRow({
       {shortcut ? (
         <kbd
           aria-hidden="true"
-          className="mt-px shrink-0 text-[11px] font-medium tabular-nums text-foreground/50"
+          className="mt-px shrink-0 text-[11px] font-medium tabular-nums text-foreground/50 max-md:pointer-coarse:hidden"
         >
           {shortcut.label}
         </kbd>
@@ -103,7 +110,7 @@ function QuestionOptionRow({
 function QuestionOptionPreview({ preview }: { preview: string }) {
   return (
     <pre
-      className="mx-2.5 mb-1 mt-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 px-2.5 py-2 font-mono text-[11.5px] leading-relaxed text-foreground"
+      className="mx-2.5 mb-1 mt-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 px-2.5 py-2 font-mono text-[11.5px] leading-relaxed text-foreground max-md:pointer-coarse:text-xs"
       style={{ maxHeight: `${PREVIEW_MAX_HEIGHT}px` }}
     >
       {preview}
@@ -148,7 +155,7 @@ function QuestionTabs({
                 onClick={() => onSelect(index)}
                 aria-pressed={isActive}
                 title={plainText(question.prompt)}
-                className="flex min-w-0 items-center gap-1 rounded-full px-2 py-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="flex min-w-0 items-center gap-1 rounded-full px-2 py-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:pointer-coarse:py-1"
               >
                 {answered ? (
                   <Icon
@@ -159,7 +166,7 @@ function QuestionTabs({
                 ) : null}
                 <span
                   className={cn(
-                    "truncate text-[11.5px] font-medium leading-[1.6]",
+                    "truncate text-[11.5px] font-medium leading-[1.6] max-md:pointer-coarse:text-xs",
                     answered ? "line-through" : undefined,
                   )}
                   style={{ maxWidth: "180px" }}
@@ -171,7 +178,7 @@ function QuestionTabs({
           );
         })}
       </div>
-      <span className="shrink-0 text-[11px] font-medium tabular-nums text-amber-700 dark:text-amber-300">
+      <span className="shrink-0 text-[11px] font-medium tabular-nums text-amber-700 dark:text-amber-300 max-md:pointer-coarse:text-xs">
         {currentIndex + 1} of {questions.length}
       </span>
     </div>
@@ -311,7 +318,7 @@ function QuestionInputBlock({
               event.preventDefault();
               onShortcutSubmit();
             }}
-            className="block max-h-28 min-h-14 w-full resize-y bg-transparent px-3 py-2.5 text-[12.5px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
+            className="block max-h-28 min-h-14 w-full resize-y bg-transparent px-3 py-2.5 text-[12.5px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground max-md:pointer-coarse:text-base"
           />
           {state.otherAttachments.length > 0 ? (
             <ul
@@ -374,7 +381,7 @@ function QuestionInputBlock({
                 <Icon name="Plus" className="size-4" />
               )}
             </Button>
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-[11px] text-muted-foreground max-md:pointer-coarse:text-xs">
               Enter to add · Shift+Enter for a new line
             </span>
           </div>
