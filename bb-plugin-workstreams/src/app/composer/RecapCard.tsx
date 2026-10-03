@@ -47,6 +47,7 @@ import {
 import { useContinuing } from "./useContinuing.ts";
 import { ActivityThreadLink } from "../page/ActivityThreadLink.tsx";
 import type { HeldSpace } from "./recapMotion.ts";
+import { Hint } from "../Hint.tsx";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 
 const CARD_CLASS =
@@ -842,7 +843,6 @@ function NextActionItem({
       size="sm"
       className="h-7 max-w-none shrink-0 whitespace-nowrap border-border bg-transparent px-2.5 text-[11.5px] font-medium text-foreground hover:bg-transparent hover:text-foreground"
       disabled={disabled || (!onSend && !onCompose)}
-      aria-description="Click to send, ⇧-click to edit in composer"
       onClick={(event) => {
         if (event.shiftKey) onCompose?.(message);
         else if (onSend) void onSend(message);
@@ -851,7 +851,13 @@ function NextActionItem({
       <span>{title}</span>
     </Button>
   );
-  return button;
+  const description =
+    typeof action === "string"
+      ? title !== message
+        ? message
+        : null
+      : action.description;
+  return description ? <Hint label={description}>{button}</Hint> : button;
 }
 
 /** Actions stay as individual buttons only when all fit on one line. */
@@ -866,9 +872,6 @@ function NextActions({
 }) {
   const [pending, setPending] = useState(false);
   const [menu, setMenu] = useState(false);
-  const [helpVisible, setHelpVisible] = useState(false);
-  const [helpMounted, setHelpMounted] = useState(false);
-  const helpExitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const portalScope = usePortalScopeProps();
   const composer = useComposer();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -910,29 +913,6 @@ function NextActions({
     composer.insert(message, { at: "end" });
     composer.focus();
   };
-  const showHelp = (event: React.PointerEvent) => {
-    if (event.pointerType !== "mouse") return;
-    if (helpExitTimer.current) clearTimeout(helpExitTimer.current);
-    helpExitTimer.current = null;
-    setHelpMounted(true);
-    setHelpVisible(true);
-  };
-  const hideHelp = (event: React.PointerEvent) => {
-    if (event.pointerType !== "mouse") return;
-    setHelpVisible(false);
-    if (helpExitTimer.current) clearTimeout(helpExitTimer.current);
-    helpExitTimer.current = setTimeout(() => {
-      helpExitTimer.current = null;
-      setHelpMounted(false);
-    }, 100);
-  };
-  useEffect(
-    () => () => {
-      if (helpExitTimer.current) clearTimeout(helpExitTimer.current);
-    },
-    [],
-  );
-
   return (
     <div
       ref={rootRef}
@@ -1003,41 +983,22 @@ function NextActions({
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       ) : (
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <ul
-              data-next-actions-list
-              aria-label="Next actions"
-              className="m-0 inline-flex w-max list-none items-center gap-1.5 p-0"
-              onPointerEnter={showHelp}
-              onPointerLeave={hideHelp}
-            >
-              {actions.map((action, index) => (
-                <li key={index} className="shrink-0">
-                  <NextActionItem
-                    action={action}
-                    onSend={send}
-                    onCompose={compose}
-                    disabled={pending}
-                  />
-                </li>
-              ))}
-            </ul>
-          </div>
-          {helpMounted ? (
-            <span
-              aria-hidden="true"
-              className={cn(
-                "pointer-events-none shrink-0 whitespace-nowrap text-[10px] text-muted-foreground transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none",
-                helpVisible
-                  ? "translate-x-0 opacity-100"
-                  : "translate-x-1 opacity-0 duration-75",
-              )}
-            >
-              Click to send · ⇧-click to edit
-            </span>
-          ) : null}
-        </div>
+        <ul
+          data-next-actions-list
+          aria-label="Next actions"
+          className="m-0 flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden p-0"
+        >
+          {actions.map((action, index) => (
+            <li key={index} className="shrink-0">
+              <NextActionItem
+                action={action}
+                onSend={send}
+                onCompose={compose}
+                disabled={pending}
+              />
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

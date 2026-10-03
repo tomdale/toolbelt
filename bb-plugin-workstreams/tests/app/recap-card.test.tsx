@@ -900,21 +900,19 @@ it("shows a short sentence-case action label with neutral styling", async () => 
   expect(button.className).not.toContain("text-emerald-700");
   expect(button.className).toContain("border-border");
   expect(button.className).toContain("bg-transparent");
-  expect(button.getAttribute("aria-description")).toBe(
-    "Click to send, ⇧-click to edit in composer",
-  );
-  expect(slot.queryByText("Click to send · ⇧-click to edit")).toBeNull();
-  fireEvent.pointerEnter(button, { pointerType: "mouse" });
-  expect(await slot.findByText("Click to send · ⇧-click to edit")).toBeTruthy();
-  fireEvent.pointerLeave(button, { pointerType: "mouse" });
-  expect(slot.getByText("Click to send · ⇧-click to edit").className).toContain(
-    "opacity-0",
-  );
-  await waitFor(
-    () =>
-      expect(slot.queryByText("Click to send · ⇧-click to edit")).toBeNull(),
-    { timeout: 300 },
-  );
+  expect(button.getAttribute("aria-description")).toBeNull();
+  fireEvent.pointerMove(button, {
+    pointerType: "mouse",
+    pointerX: 1,
+    pointerY: 1,
+  });
+  expect(
+    await slot.findByText(
+      "Check for regressions before shipping",
+      {},
+      { timeout: 1500 },
+    ),
+  ).toBeTruthy();
   fireEvent.click(button);
   await waitFor(() =>
     expect(slot.inspection.rpcCalls).toContainEqual({
