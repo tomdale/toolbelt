@@ -10,6 +10,7 @@ import {
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { isLastInputKeyboard } from "@/components/ui/overlay-trigger";
 import { usePortalScopeProps } from "@/lib/portal-scope";
+import { cn } from "@/lib/utils";
 
 /**
  * A small tooltip naming one icon control: popover-colored, one line, no
@@ -30,6 +31,10 @@ export const Hint = forwardRef<
     side?: "top" | "right" | "bottom" | "left";
     /** Point the hint at its control, for hints that explain a labeled button. */
     arrow?: boolean;
+    /** Extra classes for the hint's surface (for example, a tinted border). */
+    className?: string;
+    /** Extra classes for the arrow's outline, to match a tinted border. */
+    arrowClassName?: string;
     children: ReactElement;
   }
 >(function Hint(
@@ -37,6 +42,8 @@ export const Hint = forwardRef<
     label,
     side = "top",
     arrow = false,
+    className,
+    arrowClassName,
     children,
     onFocus,
     onBlur,
@@ -89,7 +96,10 @@ export const Hint = forwardRef<
             side={side}
             sideOffset={4}
             collisionPadding={8}
-            className="z-50 max-w-64 rounded-md border border-border bg-popover px-2 py-1 text-[11px] leading-4 text-popover-foreground shadow-md"
+            className={cn(
+              "z-50 max-w-64 rounded-md border border-border bg-popover px-2 py-1 text-[11px] leading-4 text-popover-foreground shadow-md",
+              className,
+            )}
           >
             {label}
             {arrow ? (
@@ -98,7 +108,7 @@ export const Hint = forwardRef<
                   <path d="M-.5 -1H10.5L5 5Z" className="fill-popover" />
                   <path
                     d="M0 0L5 5L10 0"
-                    className="fill-none stroke-border"
+                    className={cn("fill-none stroke-border", arrowClassName)}
                     strokeWidth={1}
                   />
                 </svg>
