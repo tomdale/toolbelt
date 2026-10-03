@@ -248,6 +248,36 @@ otherwise contributes its intake UI inside its own dialog.
    pickers already match is hidden, and a dismissed one stays hidden. BB gives
    plugins no slot in its picker row, so the field keeps one anchor element at
    the row's start and falls back to its own row when the row isn't found.
+   - **Wide screens** keep the two chips in BB's row. BB's own chips never
+     shrink or squeeze only to their icons, so ours give way first: each label
+     ellipsizes (hidden once less than an ellipsis of room remains) down to an
+     icon-wide floor, and nothing of ours can paint over a neighbor.
+   - **Phones** (BB's compact viewport, `max-width: 767px`): BB's row is full
+     with its own chips, so the two fields become one route chip on a line of
+     its own above the prompt box (the New thread banner; above the composer in
+     the New work dialog), and the row is left as BB draws it. The chip reads
+     `Workstream:` and the workstream, carries the Workstream field's tint and
+     pulse markers (✦ and the magic tint while automatic), and is named `Route:
+     Workstream <w>, Product or feature <p>`. Only one variant is ever in the
+     DOM.
+   - **The route sheet.** Tapping the chip opens one sheet (BB's shared bottom
+     drawer, through the plugin's Popover) with two tabs, Workstream and
+     Product or feature, each showing its current value. It always opens on the
+     Workstream tab with empty searches. The selected tab shows the same
+     searchable list as the wide screens' popovers, built from the same option
+     components (`picker-options.tsx`), so picking an entry makes the same
+     `NewWork` calls and closes the sheet. Touch has no tooltip, so the sheet
+     states the classifier's reason for an Automatic destination, and that a
+     proposed workstream is created when the thread starts. The search is
+     `--text-base` (16px, so iOS doesn't zoom), rows are at least 44px, and the
+     sheet keeps one height across tabs.
+   - **The suggestion row on touch** (`hover: none` or a coarse pointer) drops
+     the Tab and ⌘⏎ hints and the separate Apply button: tapping the sentence
+     applies, and Start (Send, for a thread) applies and starts. The sentence
+     clamps to two lines, targets are 44px, and the actions wrap beneath it
+     where they don't fit beside it.
+   - Product and feature marks use a tag icon declared in the manifest (BB's
+     icon set has none, and an unknown name draws a lightning bolt).
 2. **`bb workstreams handoff`**, called by agents (§5).
 3. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
 
@@ -674,8 +704,10 @@ it.
      first), prioritized focus, and five-row limit with Show more. A row is at
      least 56px: BB's status mark or the work-state mark (the needs-decision
      mark is implied and left out), the thread's BB display title, never the
-     analysis goal, its workstream in the workstream's hue, what it asks, and
-     its age. A tap opens the thread in place.
+     analysis goal, its workstream in the workstream's hue, what it asks, its
+     age, and an unsent-draft mark. A tap opens the thread in place. A row's
+     accessible name is its content (mark, title, workstream, ask, the age
+     spelled out), and a header's counts are stated in words.
    - **Workstreams** below, from the same arrangement as the sidebar:
      prioritized workstreams first, the others in the Sidebar sort setting, then
      Unfiled (marked by a hollow ring in place of the workstream's dot), a
@@ -691,18 +723,20 @@ it.
      switch every shown group. Open state is local to the device and kept in its
      own store (`workstreams:v1:home`), apart from the sidebar's, because a
      phone mounts both lists at once.
-   - Settings: Up Next, Snoozed, Timestamp, Thread count, Waiting count and the
-     sort order apply. **Home screen** (`sidebar.phoneHome`, default on) turns
-     the section off and restores BB's list. Type uses BB's `--text-*` tokens
-     and every control is at least 44px tall.
+   - Settings: Up Next, Snoozed, Timestamp (ages show for Always only: a phone
+     has no hover), Thread count, Waiting count and the sort order apply.
+     **Home screen** (`sidebar.phoneHome`, default on) turns the section off and
+     restores BB's list. Type uses BB's `--text-*` tokens and every control is
+     at least 44px tall.
    - **Placement.** BB offers no slot to replace its Recent list or resize its
      scroll viewport, so the section reads where it mounted (`home/layout.ts`):
      - `takeover`, inside BB's compact home scroll viewport
        (`[data-testid="root-compose-compact-scroll-viewport"]`): a stylesheet
        (`home/home.css`), scoped by `:has()` to the section being mounted
        there, hides BB's Recent list and the spacer above it, lifts the
-       viewport to just under the top controls (over BB's inline `top`, which
-       BB rewrites on resize), starts the content at the top, and hides BB's
+       viewport to just under the top controls (56px, BB's own minimum, over
+       its inline `top`, which BB rewrites on resize; BB's shell already pads
+       the safe-area inset), starts the content at the top, and hides BB's
        heading for the section. BB's own bottom spacer keeps the last row clear
        of the composer.
      - `inline`, in a narrow window where that viewport isn't found (BB's
@@ -711,9 +745,11 @@ it.
        and hides only BB's heading.
      - `hidden`, in wide windows, with the preference off, or with nothing to
        list: the section renders nothing and hides BB's heading for it.
-     - While threads load, the takeover shows a placeholder so BB's list never
-       flashes. A render failure is contained in a boundary that falls back to
-       `hidden`, leaving BB's list.
+     - Until the thread list, the preferences and the plugin's state have all
+       arrived (or three seconds pass), the takeover shows a placeholder: the
+       first frame is never drawn from defaults, and BB's list never flashes. A
+       render failure is contained in a boundary that falls back to `hidden`,
+       leaving BB's list.
      The stylesheet restyles BB's presentation only; it never changes state.
 
 ### 11.1 Snooze

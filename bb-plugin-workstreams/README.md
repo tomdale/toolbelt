@@ -21,6 +21,16 @@ is the full design and the contract the code is checked against.
     unpins. A suggested thread is never applied automatically: it appears under
     the composer as Send to, and ⌘⏎ (Ctrl+⏎) or its button queues the draft
     there and closes the dialog. A workstream's **＋** preselects it.
+    On a phone, BB's picker row is full with its own project, environment,
+    branch and permission chips, so the Workstream and Product or feature fields
+    become one **Workstream** chip on a line of its own above the prompt box,
+    showing where the thread will be filed. Tapping it opens a sheet with a
+    **Workstream** tab and a **Product or feature** tab, each showing its current
+    value over the same searchable list; picking an entry closes the sheet. On
+    wider screens the two chips stay in BB's row and shrink, their labels
+    ellipsizing, before they paint over BB's own. On a touch screen the
+    suggestion under the composer drops its keyboard hints: tap the sentence to
+    apply it, or **Start** (**Send**, for a thread) to apply it and start.
   - **Up Next**: a pending approval or question, or a thread whose latest turn
     asks you to decide something. These rows sit at the top in an amber block
     with a slow shimmer, under an always-open header, each naming its
@@ -102,9 +112,10 @@ is the full design and the contract the code is checked against.
     Workstreams with no threads, and the Archived fold, are left off; the New
     work picker still offers every workstream. What you opened or closed is kept
     on that device.
-  - The **Sidebar** settings for Up Next, Snoozed, Timestamp, counts, and
-    workstream order apply here too. **Home screen → Up Next and workstreams on
-    phones** turns the whole section off and brings back BB's own Recent list.
+  - The **Sidebar** settings for Up Next, Snoozed, Timestamp (ages show for
+    Always only: a phone has no hover), counts, and workstream order apply here
+    too. **Home screen → Up Next and workstreams on phones** turns the whole
+    section off and brings back BB's own Recent list.
   - Wide windows show nothing here: the sidebar is there. On a phone the section
     steps aside, leaving BB's list, while threads fail to load or there is
     nothing to list.
