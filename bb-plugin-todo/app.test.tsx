@@ -36,7 +36,9 @@ async function mount(
   const messageColumn = document.createElement("div");
   messageColumn.setAttribute("data-message-column", "");
   Object.defineProperty(messageColumn, "clientWidth", { value: 700 });
-  messageColumn.getBoundingClientRect = () => ({ x: 0, y: 300, left: 0, right: 700, top: 300, bottom: 500, width: 700, height: 200, toJSON: () => ({}) } as DOMRect);
+  // The wide thread centers its column, leaving a gutter on each side.
+  const columnLeft = sideGutter ? 600 : 0;
+  messageColumn.getBoundingClientRect = () => ({ x: columnLeft, y: 300, left: columnLeft, right: columnLeft + 700, top: 300, bottom: 500, width: 700, height: 200, toJSON: () => ({}) } as DOMRect);
   scrollArea.append(messageColumn);
   scrollArea.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, right: sideGutter ? 1500 : 1000, top: 0, bottom: 700, width: sideGutter ? 1500 : 1000, height: 700, toJSON: () => ({}) } as DOMRect);
   footer.getBoundingClientRect = () => ({ x: 0, y: 650, left: 0, right: sideGutter ? 1500 : 1000, top: 650, bottom: 700, width: sideGutter ? 1500 : 1000, height: 50, toJSON: () => ({}) } as DOMRect);
@@ -70,10 +72,10 @@ async function mountPanel(initial: State) {
   return { slot, server };
 }
 
-it("registers the Todos panel, header action and composer banner", async () => {
+it("registers the Todos panel and composer banner without a thread header action", async () => {
   const app = await loadPluginApp(() => import("./app.js"));
   expect(app.threadPanelActions.find(action => action.id === "todos")?.layout).toBe("flush");
-  expect(app.threadHeaderActions.map(action => action.id)).toContain("todos");
+  expect(app.threadHeaderActions.map(action => action.id)).not.toContain("todos");
   expect(app.composerCustomizations[0]?.banners?.[0]?.chrome).toBe("bare");
 });
 
@@ -102,7 +104,7 @@ it("renders hierarchy and blockers in the panel and edits subjects on commit", a
   expect(slot.container.querySelectorAll(".todo-editor-number-active .todo-editor-spokes i")).toHaveLength(8);
   expect(slot.container.querySelector(".todo-editor-period")?.previousSibling?.textContent).toBe("1");
   expect(slot.container.querySelector(".todo-editor-marker-unordered")).toBeNull();
-  expect(slot.getByTitle("Depends on 3. Prerequisite").textContent).toContain("depends on 3");
+  expect(slot.container.textContent).not.toContain("depends on");
   expect(slot.getByRole("status").textContent).toContain("0 of 3 complete");
   const subject = slot.getByLabelText("Subject for #1");
   fireEvent.change(subject, { target: { value: "Renamed parent" } });
@@ -185,28 +187,6 @@ it("shows a rejected edit as an alert without losing the list", async () => {
   slot.lifecycle.unmount();
 });
 
-it("shows the completion count in the header action and opens the panel", async () => {
-  const app = await loadPluginApp(() => import("./app.js"));
-  const header = app.threadHeaderActions.find(action => action.id === "todos")!;
-  const slot = renderSlot(header, { threadId: "thread-a", projectId: "project", isCompactViewport: false }, { rpc: {
-    snapshot: () => ({ tasks: [{ id: 1, subject, status: "completed" }, { id: 2, subject: "Next", status: "pending" }, { id: 3, subject: "Gone", status: "deleted" }], nextId: 4 }),
-  } });
-  const button = await slot.findByRole("button", { name: "Open Todos, 1 of 2 complete" });
-  expect(button.textContent).toBe("1/2");
-  fireEvent.click(button);
-  expect(slot.inspection.navigateCalls).toEqual([{ method: "openThreadPanel", options: { actionId: "todos" } }]);
-  slot.lifecycle.unmount();
-});
-
-it("keeps the header action icon-only while the list is empty", async () => {
-  const app = await loadPluginApp(() => import("./app.js"));
-  const header = app.threadHeaderActions.find(action => action.id === "todos")!;
-  const slot = renderSlot(header, { threadId: "thread-a", projectId: "project", isCompactViewport: false }, { rpc: { snapshot: () => ({ tasks: [], nextId: 1 }) } });
-  const button = await slot.findByRole("button", { name: "Open Todos" });
-  expect(button.textContent).toBe("");
-  slot.lifecycle.unmount();
-});
-
 it("opens the panel from the composer card's edit button", async () => {
   const slot = await mount();
   fireEvent.click(await slot.findByRole("button", { name: "Edit todos" }));
@@ -241,20 +221,79 @@ it("omits the edit button in queued-message composers, which have no side panel"
   slot.lifecycle.unmount();
 });
 
-it("uses the right-side gutter beside the latest visible message when it fits", async () => {
+it("uses the left-side gutter beside the message column when it fits", async () => {
   const slot = await mount(idleSnapshot, {}, true);
   const liveAnchor = document.querySelector<HTMLElement>("[data-message-column]")!;
   Object.defineProperty(liveAnchor, "clientWidth", { value: 700 });
-  liveAnchor.getBoundingClientRect = () => ({ x: 0, y: 300, left: 0, right: 700, top: 300, bottom: 500, width: 700, height: 200, toJSON: () => ({}) } as DOMRect);
   const liveArea = liveAnchor.parentElement!;
   liveArea.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, right: 1500, top: 0, bottom: 700, width: 1500, height: 700, toJSON: () => ({}) } as DOMRect);
   const scrollArea = liveArea.parentElement!;
   scrollArea.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, right: 1500, top: 0, bottom: 700, width: 1500, height: 700, toJSON: () => ({}) } as DOMRect);
   const footer = scrollArea.querySelector<HTMLElement>("[data-scroll-footer]")!;
   footer.getBoundingClientRect = () => ({ x: 0, y: 650, left: 0, right: 1500, top: 650, bottom: 700, width: 1500, height: 50, toJSON: () => ({}) } as DOMRect);
-  const card = await slot.findByText("0 of 1 todos done");
   await waitFor(() => expect(document.querySelector(".todo-card")?.getAttribute("data-floating")).toBe(""));
-  expect(document.querySelector<HTMLElement>(".todo-card")?.style.left).toBe("712px");
+  const lane = document.querySelector<HTMLElement>(".todo-card")!;
+  expect(lane.style.left).toBe("200px");
+  expect(lane.style.width).toBe("280px");
+  // Its vertical bounds are the scroll area's height, even beside the composer, and CSS centers the lane in them.
+  expect(lane.style.top).toBe("16px");
+  expect(lane.style.bottom).toBe("216px");
+  slot.lifecycle.unmount();
+});
+
+it("stays in the gutter, at the same place, while no message column is on screen", async () => {
+  const slot = await mount(idleSnapshot, {}, true);
+  const column = document.querySelector<HTMLElement>("[data-message-column]")!;
+  const scrollArea = column.parentElement!;
+  await waitFor(() => expect(document.querySelector(".todo-card")?.getAttribute("data-floating")).toBe(""));
+  const before = document.querySelector<HTMLElement>(".todo-card")!.style.left;
+  column.getBoundingClientRect = () => ({ x: 600, y: 2000, left: 600, right: 1300, top: 2000, bottom: 2200, width: 700, height: 200, toJSON: () => ({}) } as DOMRect);
+  fireEvent.scroll(scrollArea);
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  expect(document.querySelector(".todo-card")?.getAttribute("data-floating")).toBe("");
+  expect(document.querySelector<HTMLElement>(".todo-card")!.style.left).toBe(before);
+  slot.lifecycle.unmount();
+});
+
+it("measures the gutter from the inset prose column even when a user-message column is the last one visible", async () => {
+  const slot = await mount(idleSnapshot, {}, true);
+  const userColumn = document.querySelector<HTMLElement>("[data-message-column]")!;
+  const scrollArea = userColumn.parentElement!;
+  const proseColumn = document.createElement("div");
+  proseColumn.setAttribute("data-message-column", "");
+  proseColumn.style.paddingLeft = "8px";
+  proseColumn.style.paddingRight = "8px";
+  Object.defineProperty(proseColumn, "clientWidth", { value: 700 });
+  proseColumn.getBoundingClientRect = () => ({ x: 600, y: 100, left: 600, right: 1300, top: 100, bottom: 250, width: 700, height: 150, toJSON: () => ({}) } as DOMRect);
+  scrollArea.insertBefore(proseColumn, userColumn);
+  fireEvent.scroll(scrollArea);
+  await waitFor(() => expect(document.querySelector<HTMLElement>(".todo-card")?.style.left).toBe("208px"));
+  slot.lifecycle.unmount();
+});
+
+it("shows the gutter lane as the full list with only a Todos link as its control", async () => {
+  const slot = await mount(
+    () => ({ tasks: [{ id: 1, subject: "Plan the release", status: "completed" }, { id: 2, subject, status: "pending" }], nextId: 3 }),
+    {},
+    true,
+  );
+  await waitFor(() => expect(document.querySelector(".todo-card")?.getAttribute("data-floating")).toBe(""));
+  const lane = document.querySelector<HTMLElement>(".todo-card")!;
+  expect(lane.getAttribute("data-state")).toBe("expanded");
+  expect(within(lane).getAllByRole("listitem")).toHaveLength(2);
+  expect(lane.querySelector(".todo-count")).toBeNull();
+  expect(lane.querySelector(".todo-view-toggle")).toBeNull();
+  expect(lane.querySelector(".todo-edit")).toBeNull();
+  expect(within(lane).getAllByRole("button")).toHaveLength(1);
+  // Clicking the lane's rows must not collapse it, and the link opens the Todos panel.
+  fireEvent.click(within(lane).getAllByRole("listitem")[0]!);
+  expect(lane.getAttribute("data-state")).toBe("expanded");
+  const link = within(lane).getByRole("button", { name: "Open Todos panel" });
+  // The list icon and the "Todos" label are inside one button, left to right.
+  expect(link.firstElementChild?.getAttribute("data-icon")).toBe("ListTodo");
+  expect(link.textContent).toBe("Todos");
+  fireEvent.click(link);
+  expect(slot.inspection.navigateCalls).toEqual([{ method: "openThreadPanel", options: { actionId: "todos" } }]);
   slot.lifecycle.unmount();
 });
 
@@ -297,7 +336,10 @@ it("prints 'X of Y todos done' with circle progress indicator when no tasks are 
   expect(slot.getAllByRole("listitem")).toHaveLength(4);
   expect(slot.getByText("Next")).toBeTruthy();
   expect(slot.getByText("Later")).toBeTruthy();
-  expect(slot.getByTitle("Depends on 2. Next").textContent).toContain("depends on 2");
+  // Blockers are announced to screen readers but not drawn on the row.
+  expect(slot.container.querySelector(".todo-row-meta")).toBeNull();
+  expect(slot.container.textContent).not.toContain("depends on");
+  expect(slot.container.textContent).toContain("waiting for 2. Next");
   expect(slot.container.querySelector(".todo-row-number")?.textContent).toBe("1.");
   expect(slot.container.querySelector(".todo-row-period")?.previousSibling?.textContent).toBe("1");
   expect(slot.container.querySelectorAll(".todo-row-marker-ordered")).toHaveLength(4);

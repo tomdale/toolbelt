@@ -444,50 +444,157 @@
   color: var(--warning-text, #e0a84f);
 }
 
-/* Sticky thread goal lives inside the native message scroller. */
+/* Sticky thread goal, set in the same type as the timeline text. Two parts:
+   a zero-height sticky anchor at the top of the message column
+   (.ws-sticky-goal-root) carries the plate, and a fixed layer above the app
+   (.ws-goal-overlay) draws the text. Scrolled away from the newest message
+   the plate fades and the text glides up over the title bar; only transforms
+   and opacity change, so nothing reflows. Once the timeline has scrolled
+   away from its top, a feathered fade lets messages dissolve beneath the
+   plate (expanded) or the title bar (collapsed). */
 .ws-sticky-goal-root {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  justify-content: center;
   position: sticky;
   top: 0;
   z-index: 20;
-  overflow: hidden;
-  padding: 0 1.25rem;
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
-  background: color-mix(in oklab, var(--background) 92%, transparent);
-  backdrop-filter: blur(14px);
-  transition: height 70ms linear;
+  flex: none;
+  height: 0;
+  /* Extend over the column's gutters so scrolling text cannot peek out. */
+  margin-inline: -1rem;
+  /* The heading is decoration over the timeline, never a hit target. */
+  pointer-events: none;
+}
+.ws-sticky-goal-root::before,
+.ws-sticky-goal-root::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  /* Matches BB's native overflow fade: 1.5rem, background to transparent. */
+  height: 1.5rem;
+  background: linear-gradient(
+    to bottom in oklab,
+    var(--background),
+    transparent
+  );
+  content: "";
+}
+/* Under the title bar, once the heading has gone. */
+.ws-sticky-goal-root::before {
+  top: 0;
+  opacity: var(--ws-fade-below-bar, 0);
+}
+/* Under the expanded plate. */
+.ws-sticky-goal-root::after {
+  top: var(--ws-plate-height, 0px);
+  opacity: var(--ws-fade-below-plate, 0);
+}
+.ws-sticky-goal-root--animated::before,
+.ws-sticky-goal-root--animated::after {
+  transition: opacity 150ms ease;
+}
+.ws-sticky-goal {
+  position: absolute;
+  inset: 0 0 auto;
+}
+.ws-sticky-goal-root--animated .ws-sticky-goal {
+  transition: opacity 200ms ease;
+}
+.ws-sticky-goal__plate {
+  position: absolute;
+  inset: 0;
+  background: var(--background);
+}
+.ws-goal-overlay {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 30;
+  pointer-events: none;
+}
+.ws-goal-overlay__group {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+/* Motion applies only once a thread has settled (see StickyGoalHeader), so a
+   freshly opened thread renders the heading in place instead of gliding. */
+.ws-goal-overlay--animated .ws-goal-overlay__group {
+  transition:
+    transform 200ms ease,
+    width 200ms ease,
+    opacity 200ms ease;
+}
+.ws-goal-overlay--animated .ws-sticky-goal__workstream,
+.ws-goal-overlay--animated .ws-sticky-goal__title,
+.ws-goal-overlay--animated .ws-sticky-goal__subtitle {
+  transition:
+    transform 200ms ease,
+    width 200ms ease,
+    opacity 200ms ease;
 }
 @media (prefers-reduced-motion: reduce) {
-  .ws-sticky-goal-root {
+  .ws-sticky-goal-root--animated::before,
+  .ws-sticky-goal-root--animated::after,
+  .ws-sticky-goal-root--animated .ws-sticky-goal,
+  .ws-goal-overlay--animated .ws-goal-overlay__group,
+  .ws-goal-overlay--animated .ws-sticky-goal__workstream,
+  .ws-goal-overlay--animated .ws-sticky-goal__title,
+  .ws-goal-overlay--animated .ws-sticky-goal__subtitle {
     transition: none;
   }
 }
-.ws-sticky-goal {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  justify-content: center;
-  overflow: hidden;
-  min-height: 0;
+/* BB's thread title is replaced by the heading. */
+[data-ws-hide-title] .bb-thread-title {
+  display: none;
 }
-.ws-sticky-goal__title {
-  overflow: hidden;
-  color: var(--foreground);
-  font-weight: 500;
-  letter-spacing: -0.012em;
-  line-height: 1.25;
-  text-overflow: ellipsis;
+/* Each workstream's identity color comes from its hue (workstreamHue). */
+.ws-sticky-goal__workstream {
+  position: absolute;
+  top: 0;
+  /* The wave icon is inset in its box; nudge so its stroke lines up with the
+     title's left edge. */
+  left: -2px;
+  transform-origin: 0 0;
+  display: flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.2em;
+  color: oklch(46% 0.16 var(--ws-hue, 250));
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
   white-space: nowrap;
+}
+.dark .ws-sticky-goal__workstream {
+  color: oklch(79% 0.13 var(--ws-hue, 250));
+}
+.ws-sticky-goal__workstream > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-sticky-goal__title,
+.ws-sticky-goal__subtitle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform-origin: 0 0;
+  white-space: nowrap;
+}
+/* The title takes the theme font (Geist) like the timeline text, at a
+   light-medium weight with tight tracking in the manner of vercel.com's
+   24px heading. */
+.ws-sticky-goal__title {
+  margin: 0;
+  color: var(--foreground);
+  font-family: inherit;
+  font-weight: 450;
+  letter-spacing: -0.02em;
+  line-height: 1.3333;
 }
 .ws-sticky-goal__subtitle {
-  overflow: hidden;
   color: var(--muted-foreground);
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.4;
 }
 
 /* Parent chip in a child thread's header. */
