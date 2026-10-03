@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { fakeWorld } from "./fake-bb.ts";
 import { openDatabase } from "../../src/server/db.ts";
-import { CorpusStore } from "../../src/server/corpus.ts";
+import { CorpusStore, classificationEvidence } from "../../src/server/corpus.ts";
 
 type World = Awaited<ReturnType<typeof fakeWorld>>;
 let world: World | null = null;
@@ -10,16 +10,20 @@ afterEach(async () => {
   world = null;
 });
 
-async function setup() {
+async function setup(options: { onPrompt?: (prompt: string) => void } = {}) {
   let shelvesId = "";
   world = await fakeWorld({
     settings: { debug: true },
     complete: ({ prompt }) => {
+      options.onPrompt?.(prompt);
       if (prompt.includes("Classify the most specific")) {
         return JSON.stringify({
           subjectId: shelvesId,
           proposed: null,
         });
+      }
+      if (prompt.includes("Choose active navigation")) {
+        return JSON.stringify({ activeEntityIds: [storage.id] });
       }
       return JSON.stringify({ recap: "Working on it", state: "in_progress", subject: null });
     },
@@ -174,6 +178,90 @@ describe("CLI Catalog commands", () => {
     expect(corpus.getById(shelves.id)!.aliases).toContain("OldRacks");
     expect(corpus.assignment(rootThread.id).entityId).toBe(shelves.id);
   });
+
+  it("catalog edit failure on alias conflict is atomic and rolls back name changes", async () => {
+    const { w, corpus, shelves } = await setup();
+
+    // Storage already has alias "Warehouse" in root scope.
+    // Shelves is a child of Storage. Let's create an entity with an alias in Shelves' scope.
+    const sibling = corpus.remember("Drawers", "Drawers feature", shelves.parentId, ["Cabinets"]);
+
+    // Attempting to edit Shelves with a name change AND a conflicting alias with Drawers ("Cabinets")
+    const failRes = await w.harness.behavior.runCli([
+      "catalog",
+      "edit",
+      shelves.id,
+      "--name",
+      "Modular Shelving",
+      "--aliases",
+      "Cabinets",
+    ]);
+    expect(failRes.exitCode).not.toBe(0);
+
+    // Assert atomic rollback: Shelves must NOT have been renamed to "Modular Shelving"!
+    const current = corpus.getById(shelves.id)!;
+    expect(current.name).toBe("Shelves");
+    expect(current.aliases).toEqual(["Racks"]);
+  });
+
+  it("catalog mutations notify realtime views", async () => {
+    const { w, shelves, storage } = await setup();
+
+    const count0 = w.harness.inspection.realtimeSignals.length;
+
+    // catalog create
+    const createRes = await w.harness.behavior.runCli([
+      "catalog",
+      "create",
+      "Pallets",
+      "--description",
+      "Wood pallets",
+    ]);
+    expect(createRes.exitCode).toBe(0);
+    expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count0);
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+
+    const count1 = w.harness.inspection.realtimeSignals.length;
+
+    // catalog edit
+    const editRes = await w.harness.behavior.runCli([
+      "catalog",
+      "edit",
+      shelves.id,
+      "--description",
+      "Updated description",
+    ]);
+    expect(editRes.exitCode).toBe(0);
+    expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count1);
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+
+    const count2 = w.harness.inspection.realtimeSignals.length;
+
+    // catalog reparent
+    const reparentRes = await w.harness.behavior.runCli([
+      "catalog",
+      "reparent",
+      shelves.id,
+      "--to",
+      "root",
+    ]);
+    expect(reparentRes.exitCode).toBe(0);
+    expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count2);
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+
+    const count3 = w.harness.inspection.realtimeSignals.length;
+
+    // catalog merge
+    const mergeRes = await w.harness.behavior.runCli([
+      "catalog",
+      "merge",
+      shelves.id,
+      storage.id,
+    ]);
+    expect(mergeRes.exitCode).toBe(0);
+    expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count3);
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+  });
 });
 
 describe("CLI Task Identity commands", () => {
@@ -243,5 +331,142 @@ describe("CLI Task Identity commands", () => {
     expect(assignment.status).toBe("assigned");
     expect(assignment.entityId).toBe(shelves.id);
     expect(assignment.provenance).toBe("automatic");
+  });
+
+  it("task mutations notify realtime views", async () => {
+    const { w, rootThread, storage } = await setup();
+
+    const count0 = w.harness.inspection.realtimeSignals.length;
+
+    // task assign
+    const assignRes = await w.harness.behavior.runCli(["task", "assign", rootThread.id, storage.id]);
+    expect(assignRes.exitCode).toBe(0);
+    expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count0);
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+
+    const count1 = w.harness.inspection.realtimeSignals.length;
+
+    // task clear
+    const clearRes = await w.harness.behavior.runCli(["task", "clear", rootThread.id]);
+    expect(clearRes.exitCode).toBe(0);
+    expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count1);
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+
+    const count2 = w.harness.inspection.realtimeSignals.length;
+
+    // task reclassify
+    const reclassRes = await w.harness.behavior.runCli(["task", "reclassify", rootThread.id]);
+    expect(reclassRes.exitCode).toBe(0);
+    expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count2);
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+  });
+
+  it("task reclassify with explicit --identity override assigns with manual provenance and no dummy evidence sentinel", async () => {
+    const { w, corpus, rootThread, storage } = await setup();
+
+    const res = await w.harness.behavior.runCli(["task", "reclassify", rootThread.id, "--identity", "Storage"]);
+    expect(res.exitCode).toBe(0);
+
+    const assignment = corpus.assignment(rootThread.id);
+    expect(assignment.entityId).toBe(storage.id);
+    expect(assignment.provenance).toBe("manual");
+    expect(assignment.evidence).toBeNull();
+  });
+
+  it("identity corrections leave thread placement untouched", async () => {
+    const { w, section, rootThread, storage } = await setup();
+
+    expect(w.threads.get(rootThread.id)?.sectionId).toBe(section.id);
+
+    // Assign to another entity
+    await w.harness.behavior.runCli(["task", "assign", rootThread.id, storage.id]);
+    expect(w.threads.get(rootThread.id)?.sectionId).toBe(section.id);
+
+    // Clear
+    await w.harness.behavior.runCli(["task", "clear", rootThread.id]);
+    expect(w.threads.get(rootThread.id)?.sectionId).toBe(section.id);
+
+    // Reclassify
+    await w.harness.behavior.runCli(["task", "reclassify", rootThread.id]);
+    expect(w.threads.get(rootThread.id)?.sectionId).toBe(section.id);
+  });
+
+  it("task reclassify on child thread classifies root thread and has immediate isFresh parity with Organize", async () => {
+    const prompts: string[] = [];
+    const { w, corpus, rootThread, childThread, shelves } = await setup({
+      onPrompt: (p) => prompts.push(p),
+    });
+
+    w.converse(rootThread.id, ["Design warehouse shelves distribution"]);
+    w.converse(childThread.id, ["Fix minor child button styling"]);
+
+    const db = openDatabase(w.bb);
+    db.prepare(
+      "INSERT INTO ws_analysis(thread_id, revision, at, result) VALUES (?, 1, 1, ?)",
+    ).run(
+      rootThread.id,
+      JSON.stringify({
+        recap: "Warehouse shelves distribution architecture",
+        state: "idle",
+        needsYou: null,
+        subject: null,
+        drift: null,
+      }),
+    );
+    db.prepare(
+      "INSERT INTO ws_analysis(thread_id, revision, at, result) VALUES (?, 1, 1, ?)",
+    ).run(
+      childThread.id,
+      JSON.stringify({
+        recap: "CSS button styling",
+        state: "idle",
+        needsYou: null,
+        subject: null,
+        drift: null,
+      }),
+    );
+
+    // Run CLI reclassify on the CHILD thread
+    const reclassRes = await w.harness.behavior.runCli(["task", "reclassify", childThread.id]);
+    expect(reclassRes.exitCode).toBe(0);
+
+    // 1. Root evidence was passed to classifier, not child evidence
+    const classifyPrompt = prompts.find((p) => p.includes("Classify the most specific"))!;
+    expect(classifyPrompt).toBeDefined();
+    expect(classifyPrompt).toContain("Root shelves task");
+    expect(classifyPrompt).toContain("Warehouse shelves distribution architecture");
+    expect(classifyPrompt).toContain("Design warehouse shelves distribution");
+    expect(classifyPrompt).not.toContain("Child review subtask");
+    expect(classifyPrompt).not.toContain("CSS button styling");
+    expect(classifyPrompt).not.toContain("Fix minor child button styling");
+
+    // 2. Child assignment inherits from root
+    const childAssign = corpus.assignment(childThread.id);
+    expect(childAssign.status).toBe("assigned");
+    expect(childAssign.entityId).toBe(shelves.id);
+    expect(childAssign.inheritedFrom).toBe(rootThread.id);
+    expect(childAssign.provenance).toBe("automatic");
+
+    // 3. Evidence matches Organize evidence exactly (human-readable project name)
+    const projects = await w.bb.sdk.projects.list();
+    const projectName = projects.find((p) => p.id === rootThread.projectId)?.name ?? null;
+    const expectedEvidence = classificationEvidence({
+      requests: ["Design warehouse shelves distribution"],
+      title: rootThread.title,
+      project: projectName,
+    });
+
+    expect(corpus.isFresh(rootThread.id, expectedEvidence)).toBe(true);
+    expect(corpus.isFresh(childThread.id, expectedEvidence)).toBe(true);
+
+    // 4. Organize reuses the fresh classification immediately without re-classifying
+    const classifyPromptsBefore = prompts.filter((p) => p.includes("Classify the most specific")).length;
+    const orgState = (await w.harness.behavior.callRpc("bootstrap", { action: "start" })) as {
+      state: { preview: { assignments: { threadId: string; workstream: string | null }[] } };
+    };
+    expect(orgState.state.preview).toBeDefined();
+    expect(orgState.state.preview.assignments.some((a) => a.threadId === rootThread.id)).toBe(true);
+    const classifyPromptsAfter = prompts.filter((p) => p.includes("Classify the most specific")).length;
+    expect(classifyPromptsAfter).toBe(classifyPromptsBefore);
   });
 });

@@ -414,11 +414,16 @@ describe("Catalog and Task Identity RPC Contract", () => {
     expect(capturedPrompt).not.toContain("Child Typo Fix");
     expect(capturedPrompt).not.toContain("CSS color tweak");
 
-    // Compute expected evidence from ROOT thread's evidence
+    // Compute expected evidence from ROOT thread's evidence matching Organize
+    const projects = await w.bb.sdk.projects.list();
+    const projectName =
+      (rootThread.projectId
+        ? projects.find((p) => p.id === rootThread.projectId)?.name
+        : null) ?? null;
     const rootEvidence = classificationEvidence({
       requests: ["Please design billing invoice engine"],
       title: rootThread.title,
-      project: rootThread.projectId,
+      project: projectName,
     });
 
     // Root thread must be fresh against root evidence
