@@ -290,6 +290,14 @@ function useWaitingCountdown(recap: Recap, cancelled: boolean) {
 
 type AgentTone = "running" | "input" | "error" | "done" | "unknown";
 
+/** A stand-in for an awaited agent's thread, for cards shown outside BB's thread list. */
+export type PreviewAgent = { title: string; tone: AgentTone; label: string };
+
+/** Stand-in agent threads by thread id; null when cards read live threads. */
+const PreviewAgents = createContext<Readonly<
+  Record<string, PreviewAgent>
+> | null>(null);
+
 const STARTING_STATUSES = new Set([
   "pending",
   "starting",
@@ -361,6 +369,7 @@ function AgentDot({ tone }: { tone: AgentTone }) {
 function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
   const compact = useContext(CompactContext);
   const { threads } = experimental_useSidebarThreads();
+  const previews = useContext(PreviewAgents);
   return (
     <ul
       aria-label="Awaited agents"
@@ -370,9 +379,10 @@ function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
       )}
     >
       {agents.map((agent) => {
-        const status = agentStatus(
-          threads.find((thread) => thread.id === agent.threadId),
-        );
+        const preview = previews?.[agent.threadId];
+        const status =
+          preview ??
+          agentStatus(threads.find((thread) => thread.id === agent.threadId));
         return (
           <li
             key={agent.threadId}
@@ -388,7 +398,7 @@ function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
               <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
                 <ActivityThreadLink
                   threadId={agent.threadId}
-                  fallback="Agent thread"
+                  fallback={preview?.title ?? "Agent thread"}
                 />
                 <span
                   aria-label="Agent status"
@@ -1205,28 +1215,33 @@ export function RecapCardPreview({
   showArchive = false,
   className,
   hashColors = NO_HASH_COLORS,
+  agents = null,
 }: {
   recap: Recap;
   layout: RecapLayout;
   showArchive?: boolean;
   className?: string;
   hashColors?: HashColorPrefs;
+  /** Stand-ins for the recap's awaited agent threads. */
+  agents?: Readonly<Record<string, PreviewAgent>> | null;
 }) {
   return (
-    <HashColors.Provider value={hashColors}>
-      <div inert className={cn(cardClass(recap.state, layout), className)}>
-        <CardBody
-          recap={recap}
-          layout={layout}
-          files={null}
-          threadId={null}
-          showArchive={showArchive}
-          archiveBusy={false}
-          archiveError={null}
-          waitingCancelled={false}
-        />
-      </div>
-    </HashColors.Provider>
+    <PreviewAgents.Provider value={agents}>
+      <HashColors.Provider value={hashColors}>
+        <div inert className={cn(cardClass(recap.state, layout), className)}>
+          <CardBody
+            recap={recap}
+            layout={layout}
+            files={null}
+            threadId={null}
+            showArchive={showArchive}
+            archiveBusy={false}
+            archiveError={null}
+            waitingCancelled={false}
+          />
+        </div>
+      </HashColors.Provider>
+    </PreviewAgents.Provider>
   );
 }
 

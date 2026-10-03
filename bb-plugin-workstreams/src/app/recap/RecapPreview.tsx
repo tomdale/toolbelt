@@ -6,12 +6,13 @@ import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Recap } from "../../domain/recap.ts";
 import type { RecapLayout } from "../../domain/recapPrefs.ts";
-import { RecapCardPreview } from "../composer/RecapCard.tsx";
+import { RecapCardPreview, type PreviewAgent } from "../composer/RecapCard.tsx";
 
 type Example = {
   label: string;
   recap: Recap;
   showArchive: boolean;
+  agents?: Record<string, PreviewAgent>;
 };
 
 const EXAMPLES: readonly Example[] = [
@@ -84,6 +85,18 @@ const EXAMPLES: readonly Example[] = [
   },
   {
     label: "Waiting",
+    agents: {
+      "preview-ui-agent": {
+        title: "Theme toggle UI",
+        tone: "done",
+        label: "Finished",
+      },
+      "preview-server-agent": {
+        title: "Theme preference API",
+        tone: "running",
+        label: "Running",
+      },
+    },
     showArchive: false,
     recap: {
       id: "preview-waiting",
@@ -239,6 +252,7 @@ export function RecapPreview({
                 recap={example.recap}
                 layout={layout}
                 showArchive={example.showArchive}
+                agents={example.agents}
                 hashColors={hashColors}
                 className="mb-0"
               />
