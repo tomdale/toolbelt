@@ -476,6 +476,8 @@
   content: "";
   opacity: var(--ws-sticky-fade, 0);
   transform: translateY(var(--ws-fade-y, 0px));
+}
+.ws-sticky-goal-root--animated::after {
   transition:
     opacity 150ms ease,
     transform 200ms ease;
@@ -483,6 +485,8 @@
 .ws-sticky-goal {
   position: absolute;
   inset: 0 0 auto;
+}
+.ws-sticky-goal-root--animated .ws-sticky-goal {
   transition: opacity 200ms ease;
 }
 .ws-sticky-goal__plate {
@@ -501,19 +505,34 @@
   position: absolute;
   top: 0;
   left: 0;
+}
+/* Motion applies only once a thread has settled (see StickyGoalHeader), so a
+   freshly opened thread renders the heading in place instead of gliding. */
+.ws-goal-overlay--animated .ws-goal-overlay__group {
+  transition:
+    transform 200ms ease,
+    width 200ms ease,
+    opacity 200ms ease;
+}
+.ws-goal-overlay--animated .ws-sticky-goal__title,
+.ws-goal-overlay--animated .ws-sticky-goal__subtitle {
   transition:
     transform 200ms ease,
     width 200ms ease,
     opacity 200ms ease;
 }
 @media (prefers-reduced-motion: reduce) {
-  .ws-sticky-goal-root::after,
-  .ws-sticky-goal,
-  .ws-goal-overlay__group,
-  .ws-sticky-goal__title,
-  .ws-sticky-goal__subtitle {
+  .ws-sticky-goal-root--animated::after,
+  .ws-sticky-goal-root--animated .ws-sticky-goal,
+  .ws-goal-overlay--animated .ws-goal-overlay__group,
+  .ws-goal-overlay--animated .ws-sticky-goal__title,
+  .ws-goal-overlay--animated .ws-sticky-goal__subtitle {
     transition: none;
   }
+}
+/* BB's thread title is replaced by the heading. */
+[data-ws-hide-title] .bb-thread-title {
+  display: none;
 }
 /* Each workstream's identity color comes from its hue (workstreamHue). */
 .ws-sticky-goal__workstream {
@@ -546,10 +565,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   transform-origin: 0 0;
-  transition:
-    transform 200ms ease,
-    width 200ms ease,
-    opacity 200ms ease;
   white-space: nowrap;
 }
 /* The title takes the theme font (Geist) like the timeline text, at a
