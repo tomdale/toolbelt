@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { useDebugMode } from "../debug/debug.ts";
 import { snoozeChoices, type ThreadSnooze } from "../../domain/snooze.ts";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
+import { corpusLabel } from "../../domain/corpus-label.ts";
+import { useSharedServerState } from "../serverState.ts";
 
 export type RowMenuHandlers = {
   move: (thread: PluginSidebarThread, sectionId: string | null) => void;
@@ -24,6 +26,9 @@ export type RowMenuHandlers = {
   wake: (thread: PluginSidebarThread) => void;
   /** Debug mode: opens the thread's model calls. */
   inspect: (thread: PluginSidebarThread) => void;
+  assignIdentity?: (thread: PluginSidebarThread, entityId: string) => void;
+  clearIdentity?: (thread: PluginSidebarThread) => void;
+  reclassifyIdentity?: (thread: PluginSidebarThread) => void;
 };
 
 /**
@@ -57,6 +62,18 @@ export function RowMenu({
   const actions = experimental_useSidebarThreadActions();
   const portalScope = usePortalScopeProps();
   const debug = useDebugMode();
+  const { server, rpc, refresh } = useSharedServerState();
+
+  const catalog = server.catalog;
+  const entities = catalog?.entities ?? [];
+  const assignment = catalog?.assignments[thread.id];
+  const currentEntity = assignment?.entityId
+    ? (entities.find((e) => e.id === assignment.entityId) ?? null)
+    : null;
+  const currentLabel = currentEntity
+    ? corpusLabel(currentEntity.id, entities).replace(/: /g, " › ")
+    : "Unresolved";
+  const isInherited = Boolean(assignment?.inheritedFrom);
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
@@ -112,6 +129,92 @@ export function RowMenu({
               Moves with its parent
             </Item>
           )}
+          <ContextMenu.Sub>
+            <SubTrigger>Product or feature</SubTrigger>
+            <ContextMenu.Portal>
+              <ContextMenu.SubContent
+                {...portalScope}
+                className="z-50 max-h-96 min-w-56 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
+              >
+                <div className="px-2 py-1.5 text-xs text-muted-foreground font-medium">
+                  Current: {currentLabel}
+                  {isInherited ? " (inherited)" : ""}
+                </div>
+                <Separator />
+                <Item
+                  onSelect={() => {
+                    if (handlers.reclassifyIdentity) {
+                      handlers.reclassifyIdentity(thread);
+                    } else {
+                      void rpc
+                        .call("taskReclassify", { threadId: thread.id })
+                        .then(() => refresh());
+                    }
+                  }}
+                >
+                  Reclassify
+                </Item>
+                {currentEntity ? (
+                  <Item
+                    onSelect={() => {
+                      if (handlers.clearIdentity) {
+                        handlers.clearIdentity(thread);
+                      } else {
+                        void rpc
+                          .call("taskClear", { threadId: thread.id })
+                          .then(() => refresh());
+                      }
+                    }}
+                  >
+                    Clear assignment
+                  </Item>
+                ) : null}
+                <Separator />
+                <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Assign to
+                </div>
+                {entities.length ? (
+                  entities
+                    .slice()
+                    .sort((a, b) => compareGroupNames(a.name, b.name))
+                    .map((entity) => {
+                      const label = corpusLabel(entity.id, entities).replace(
+                        /: /g,
+                        " › ",
+                      );
+                      const isSelected = entity.id === currentEntity?.id;
+                      return (
+                        <Item
+                          key={entity.id}
+                          disabled={isSelected}
+                          onSelect={() => {
+                            if (handlers.assignIdentity) {
+                              handlers.assignIdentity(thread, entity.id);
+                            } else {
+                              void rpc
+                                .call("taskAssign", {
+                                  threadId: thread.id,
+                                  entityId: entity.id,
+                                })
+                                .then(() => refresh());
+                            }
+                          }}
+                        >
+                          <span className="flex-1 truncate">{label}</span>
+                          {isSelected ? (
+                            <Icon name="Check" className="ml-2 size-3.5" />
+                          ) : null}
+                        </Item>
+                      );
+                    })
+                ) : (
+                  <Item disabled onSelect={() => undefined}>
+                    No catalog entities
+                  </Item>
+                )}
+              </ContextMenu.SubContent>
+            </ContextMenu.Portal>
+          </ContextMenu.Sub>
           <Item onSelect={() => handlers.rename(thread)}>Rename…</Item>
           <Item
             onSelect={() => void actions.setPinned(thread.id, !thread.isPinned)}
