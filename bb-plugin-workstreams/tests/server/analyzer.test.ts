@@ -161,7 +161,8 @@ describe("idle analysis", () => {
     );
     w2.addThread("t2", { latestAttentionAt: 10 });
     await w2.harness.behavior.callRpc("refresh", null);
-    // Seed a prior result to model an existing durable goal.
+    // Seed a prior result to model an existing durable goal. Results stored
+    // before goals became titles also carry the title that was inferred then.
     w2.bb.storage
       .database()
       .prepare(
@@ -176,7 +177,7 @@ describe("idle analysis", () => {
           state: "in_progress",
           needsYou: null,
           subject: null,
-          title: null,
+          title: "Legacy inferred title",
           goal: "Make onboarding easier to complete",
           drift: null,
           driftSectionId: null,
@@ -189,9 +190,101 @@ describe("idle analysis", () => {
     expect(w2.completions.at(-1)?.prompt).toContain(
       'Previously inferred durable goal: "Make onboarding easier to complete"',
     );
+    expect(w2.completions.at(-1)?.prompt).not.toContain("Legacy inferred");
     expect((await state(w2)).analysis.t2?.goal).toBe(
       "Make onboarding easier to complete",
     );
+  });
+
+  it("reads a result stored when a thread also had an inferred title", async () => {
+    const w = await setup();
+    w.addThread("t1", { latestAttentionAt: 10 });
+    await w.harness.behavior.callRpc("refresh", null);
+    const legacy = {
+      recap: "Fixed the parser.",
+      state: "review",
+      needsYou: null,
+      subject: "Alpha",
+      title: "Legacy inferred title",
+      goal: "Make onboarding easier to complete",
+      drift: null,
+      driftSectionId: null,
+      revision: 10,
+      at: 1,
+      model: "test",
+    };
+    w.bb.storage
+      .database()
+      .prepare(
+        "INSERT INTO ws_analysis (thread_id, revision, at, result) VALUES ('t1', 10, 1, ?)",
+      )
+      .run(JSON.stringify(legacy));
+    const { analysis } = await state(w);
+    expect(analysis.t1).toMatchObject({
+      recap: "Fixed the parser.",
+      state: "review",
+      goal: "Make onboarding easier to complete",
+    });
+    // The inferred title is not sent to clients.
+    expect(analysis.t1).not.toHaveProperty("title");
+    // The result is current, so nothing is analyzed again.
+    await expect(w.harness.behavior.runCli(["analyze"])).resolves.toMatchObject(
+      {
+        stdout: expect.stringContaining("Queued 0 threads"),
+      },
+    );
+  });
+
+  it("prints the goal, which is the thread's title, when asked to analyze one thread", async () => {
+    const w = await setup(() =>
+      JSON.stringify({
+        recap: "Working.",
+        state: "in_progress",
+        goal: "Make onboarding easier to complete",
+      }),
+    );
+    w.addThread("t1", { latestAttentionAt: 10 });
+    await w.harness.behavior.callRpc("refresh", null);
+    const { stdout } = await w.harness.behavior.runCli(["analyze", "t1"]);
+    expect(stdout).toContain("Goal: Make onboarding easier to complete");
+  });
+
+  it("never writes a goal carried over from before the cap as a title", async () => {
+    // Older results kept goals of up to 80 characters; a title stays short.
+    const legacy =
+      "Make onboarding easier to complete for people who are new here";
+    expect(legacy.length).toBeGreaterThan(60);
+    const w = await setup(() =>
+      JSON.stringify({ recap: "Working.", state: "in_progress", goal: null }),
+    );
+    w.addThread("t1", { title: null, latestAttentionAt: 10 });
+    await w.harness.behavior.callRpc("refresh", null);
+    w.bb.storage
+      .database()
+      .prepare(
+        "INSERT INTO ws_analysis (thread_id, revision, at, result) VALUES (?, ?, ?, ?)",
+      )
+      .run(
+        "t1",
+        9,
+        1,
+        JSON.stringify({
+          recap: "prior",
+          state: "in_progress",
+          needsYou: null,
+          subject: null,
+          goal: legacy,
+          drift: null,
+          driftSectionId: null,
+          revision: 9,
+          at: 1,
+          model: "test",
+        }),
+      );
+    await w.harness.behavior.runCli(["analyze", "t1"]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await state(w)).analysis.t1?.goal).toBe(legacy);
+    expect(w.threads.get("t1")?.title).toBeNull();
   });
 
   it("keeps at most four calls in flight", async () => {

@@ -6,8 +6,8 @@
  * as pending rather than current.
  *
  * Analysis only adds evidence. It never moves, renames, or files a thread
- * (SPEC I3); a suggested title reaches BB only through `onResult` and the
- * retitle policy (SPEC §10).
+ * (SPEC I3); the goal it infers reaches BB, as the thread's title, only
+ * through `onResult` and the retitle policy (SPEC §10.1).
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { AnalysisInput, ThreadAnalysis } from "../domain/analysis.ts";
@@ -15,6 +15,7 @@ import type { ModelChoice } from "../domain/prefs.ts";
 import type { Database } from "./db.ts";
 import { displayTitle, type InventoryThread } from "./inventory.ts";
 import { modelLabel, type Inference } from "./model.ts";
+import { inputText, isUserRequest, openingOf } from "./requests.ts";
 
 type Sdk = BbPluginApi["sdk"];
 
@@ -23,7 +24,6 @@ const CONCURRENCY = 4;
 /** First retry after a failed call; doubles per failure at the same revision. */
 const RETRY_AFTER_MS = 10 * 60_000;
 const MAX_ATTEMPTS = 3;
-const SYSTEM_PREFIX = "[bb system]";
 
 /** The stored result plus a drift target resolved to a section id. */
 export type StoredAnalysis = ThreadAnalysis & {
@@ -32,15 +32,6 @@ export type StoredAnalysis = ThreadAnalysis & {
   readonly traceId?: string | null;
 };
 
-type InputPart = { type: string; text?: string };
-function inputText(input: unknown): string {
-  if (!Array.isArray(input)) return "";
-  return (input as InputPart[])
-    .filter((part) => part?.type === "text" && typeof part.text === "string")
-    .map((part) => part.text)
-    .join("\n")
-    .trim();
-}
 function readResult(json: string): StoredAnalysis | undefined {
   try {
     return JSON.parse(json) as StoredAnalysis;
@@ -48,9 +39,6 @@ function readResult(json: string): StoredAnalysis | undefined {
     return undefined;
   }
 }
-
-const isUserRequest = (text: string) =>
-  text.length > 0 && !text.startsWith(SYSTEM_PREFIX);
 
 export class Analyzer {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -131,11 +119,7 @@ export class Analyzer {
         limit: "4",
       }),
     ]);
-    const opening = first
-      .map((event) =>
-        inputText((event.data as { input?: unknown } | null)?.input),
-      )
-      .find(isUserRequest);
+    const opening = openingOf(first);
     const recent = history
       .map((prompt) => inputText(prompt.input))
       .filter(isUserRequest)
@@ -414,12 +398,7 @@ export class Analyzer {
       .filter(isUserRequest)
       .slice(0, 2)
       .reverse();
-    const opening =
-      first
-        .map((event) =>
-          inputText((event.data as { input?: unknown } | null)?.input),
-        )
-        .find(isUserRequest) ?? "";
+    const opening = openingOf(first) ?? "";
     const requests = [
       ...(opening && !recent.includes(opening)
         ? [{ text: opening, initial: true }]

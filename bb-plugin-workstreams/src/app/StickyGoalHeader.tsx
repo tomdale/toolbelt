@@ -404,7 +404,7 @@ export function StickyGoalHeader(): React.ReactElement | null {
   // On a phone the title may take two lines; it is measured, once placed.
   const measureRef = useRef<HTMLHeadingElement>(null);
   const [wrappedLines, setWrappedLines] = useState(1);
-  const goal = context?.goal;
+  const title = context?.title;
   const paneWidth = placement?.pane.width ?? 0;
   const narrow = placement?.narrow ?? false;
   useLayoutEffect(() => {
@@ -417,7 +417,7 @@ export function StickyGoalHeader(): React.ReactElement | null {
     setWrappedLines(
       Math.min(2, Math.max(1, Math.round(probe.scrollHeight / line))),
     );
-  }, [narrow, goal, paneWidth, base, hasEyebrow]);
+  }, [narrow, title, paneWidth, base, hasEyebrow]);
   const titleLines = narrow ? wrappedLines : 1;
   const height = headingHeight(base, hasEyebrow, titleLines);
   // Collapsed, the heading goes to the title bar when it has room there, and
@@ -470,7 +470,7 @@ export function StickyGoalHeader(): React.ReactElement | null {
   ]);
 
   // The heading replaces BB's own thread title in the title bar, but only
-  // while it is actually drawn: a thread without a goal keeps its title.
+  // while it is actually drawn, so the title never shows twice.
   const showing = !!(mount && context && placement);
   useLayoutEffect(() => {
     if (!mount || !showing) return;
@@ -563,9 +563,9 @@ export function StickyGoalHeader(): React.ReactElement | null {
             : null),
         }}
       >
-        {context.goal}
+        {context.title}
       </h2>
-      {/* Measures how many lines the goal needs at the timeline's width. */}
+      {/* Measures how many lines the title needs at the timeline's width. */}
       {narrow && (
         <h2
           ref={measureRef}
@@ -573,7 +573,7 @@ export function StickyGoalHeader(): React.ReactElement | null {
           className="ws-sticky-goal__title ws-sticky-goal__probe"
           style={{ fontSize: base * TITLE_SIZE, width: placement.pane.width }}
         >
-          {context.goal}
+          {context.title}
         </h2>
       )}
       {context.subtask && (

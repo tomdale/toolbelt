@@ -13,7 +13,9 @@ import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import {
   analysisPrompt,
+  openingGoalPrompt,
   parseAnalysis,
+  parseOpeningGoal,
   type AnalysisInput,
   type AnalysisOutput,
 } from "../src/domain/analysis.ts";
@@ -33,11 +35,15 @@ type Case = {
 };
 type Result = {
   set: string;
-  mode: "cold" | "warm" | "untitled";
+  mode: "cold" | "warm" | "untitled" | "opening";
   id: string;
+  /** The title the fixture shows the model. */
+  title: string;
   expected: string[];
   project?: string;
   output: AnalysisOutput | null;
+  /** The opening-request call's goal, in `opening` mode. */
+  openingGoal?: string | null;
   error?: string;
   seconds: number;
   cost: number;
@@ -150,13 +156,15 @@ const subjectOk = (r: Result) => {
 /** Only high-confidence drift is surfaced to the user (SPEC §10). */
 const driftFlag = (r: Result) => r.output?.drift?.confidence === "high";
 const pct = (n: number, d: number) => (d ? `${n}/${d}` : "–");
+const median = (values: number[]) =>
+  [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] ?? 0;
 
 function score(results: Result[]) {
   const cold = results.filter((r) => r.mode === "cold");
   const warm = results.filter((r) => r.mode === "warm");
   const bySet = (set: string) => cold.filter((r) => r.set === set);
   const ok = (rs: Result[]) => rs.filter(subjectOk).length;
-  const valid = results.filter((r) => r.output).length;
+  const valid = results.filter((r) => !r.error).length;
   let together = 0;
   let recovered = 0;
   let apart = 0;
@@ -188,10 +196,18 @@ function score(results: Result[]) {
   const stated = cold.filter((r) => r.expectedState);
   const decisions = stated.filter((r) => r.expectedState === "needs_decision");
   const untitled = results.filter((r) => r.mode === "untitled");
-  const retitled = (r: Result) => Boolean(r.output?.title);
+  const opening = results.filter((r) => r.mode === "opening");
+  const named = (r: Result) => Boolean(r.output?.goal);
+  // A goal is the thread's title, so a goal that differs from the fixture's
+  // title is a rename.
+  const renamed = (r: Result) =>
+    Boolean(r.output?.goal) && norm(r.output!.goal!) !== norm(r.title);
   const drifted = warm.filter((r) => r.driftExpected);
   const healthy = warm.filter((r) => !r.driftExpected);
-  const seconds = results.map((r) => r.seconds).sort((a, b) => a - b);
+  const seconds = results
+    .filter((r) => r.mode !== "opening")
+    .map((r) => r.seconds)
+    .sort((a, b) => a - b);
   const q = (p: number) =>
     seconds[Math.min(seconds.length - 1, Math.floor(p * seconds.length))] ?? 0;
   return {
@@ -217,17 +233,25 @@ function score(results: Result[]) {
       falseAlarms: pct(healthy.filter(driftFlag).length, healthy.length),
       falseAlarmIds: healthy.filter(driftFlag).map((r) => `${r.set}:${r.id}`),
     },
-    title: {
-      untitledTitled: pct(untitled.filter(retitled).length, untitled.length),
-      sideQuestsRetitled: pct(drifted.filter(retitled).length, drifted.length),
-      healthyRetitled: pct(healthy.filter(retitled).length, healthy.length),
-      healthyRetitledIds: healthy
-        .filter(retitled)
-        .map((r) => `${r.set}:${r.id} → ${r.output?.title}`),
+    goal: {
+      untitledNamed: pct(untitled.filter(named).length, untitled.length),
+      sideQuestsRenamed: pct(drifted.filter(renamed).length, drifted.length),
+      healthyRenamed: pct(healthy.filter(renamed).length, healthy.length),
+      healthyRenamedIds: healthy
+        .filter(renamed)
+        .map((r) => `${r.set}:${r.id} → ${r.output?.goal}`),
       examples: [...untitled, ...drifted]
-        .filter(retitled)
+        .filter(named)
         .slice(0, 8)
-        .map((r) => `${r.set}:${r.id} → ${r.output?.title}`),
+        .map((r) => `${r.set}:${r.id} → ${r.output?.goal}`),
+    },
+    opening: {
+      named: pct(opening.filter((r) => r.openingGoal).length, opening.length),
+      medianSeconds: median(opening.map((r) => r.seconds)),
+      examples: opening
+        .filter((r) => r.openingGoal)
+        .slice(0, 8)
+        .map((r) => `${r.set}:${r.id} → ${r.openingGoal}`),
     },
     medianSeconds: q(0.5),
     p90Seconds: q(0.9),
@@ -276,6 +300,9 @@ for (const [set, cases] of sets)
           title: `${opening.slice(0, 77)}...`,
         },
       });
+      // The call that names a thread while its first turn runs sees the
+      // opening request alone.
+      jobs.push({ set, mode: "opening", c, input });
     }
     if (set === "drift" || set === "private" || set === "cases") {
       const own = c.drift ? c.drift.from[0]! : c.expected[0]!;
@@ -297,12 +324,28 @@ for (const model of models) {
       set: job.set,
       mode: job.mode,
       id: job.c.id,
+      title: job.c.title,
       expected: job.c.expected,
       project: job.c.project,
       expectedState: job.c.expectedState,
       driftExpected: job.mode === "warm" ? Boolean(job.c.drift) : undefined,
     };
     try {
+      if (job.mode === "opening") {
+        const { text, cost } = await complete(
+          model,
+          openingGoalPrompt({
+            request: job.input.requests[0]?.text ?? "",
+          }),
+        );
+        return {
+          ...base,
+          output: null,
+          openingGoal: parseOpeningGoal(text).goal,
+          seconds: (performance.now() - started) / 1000,
+          cost,
+        };
+      }
       const { text, cost } = await complete(model, analysisPrompt(job.input));
       return {
         ...base,
@@ -335,10 +378,14 @@ for (const model of models) {
           ...summary.drift,
           falseAlarmIds: summary.drift.falseAlarmIds.filter(isPublic),
         },
-        title: {
-          ...summary.title,
-          healthyRetitledIds: summary.title.healthyRetitledIds.filter(isPublic),
-          examples: summary.title.examples.filter(isPublic),
+        goal: {
+          ...summary.goal,
+          healthyRenamedIds: summary.goal.healthyRenamedIds.filter(isPublic),
+          examples: summary.goal.examples.filter(isPublic),
+        },
+        opening: {
+          ...summary.opening,
+          examples: summary.opening.examples.filter(isPublic),
         },
       },
       null,

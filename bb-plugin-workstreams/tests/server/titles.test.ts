@@ -17,9 +17,12 @@ type Entry = {
   threads: { id: string; name: string }[];
 };
 
-/** Every analysis suggests the next title in `titles` (null keeps it). */
+/**
+ * Every analysis infers the next goal in `goals`, which becomes the thread's
+ * title. The last one repeats; null infers none.
+ */
 async function setup(
-  titles: (string | null)[],
+  goals: (string | null)[],
   settings?: Record<string, string | boolean>,
 ) {
   let call = 0;
@@ -30,7 +33,7 @@ async function setup(
         recap: "Working.",
         state: "in_progress",
         subject: "Alpha",
-        title: titles[Math.min(call++, titles.length - 1)] ?? null,
+        goal: goals[Math.min(call++, goals.length - 1)] ?? null,
         drift: null,
       }),
   });
@@ -135,7 +138,22 @@ describe("keeping thread titles current", () => {
     clock.mockRestore();
   });
 
-  it("does nothing when the suggestion is null or the setting is off", async () => {
+  it("keeps a title that already states the goal", async () => {
+    const w = await setup(["Explain build caching"]);
+    w.addThread("t1", { title: "Explain build caching" });
+    await rpc(w, "refresh", null);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await turn(w, "t1", 100);
+    expect(w.threads.get("t1")?.title).toBe("Explain build caching");
+    expect(await retitles(w)).toEqual([]);
+    // The goal is still kept, as the context for the next analysis.
+    const { analysis } = await rpc<{
+      analysis: Record<string, { goal: string | null }>;
+    }>(w, "state", null);
+    expect(analysis.t1?.goal).toBe("Explain build caching");
+  });
+
+  it("does nothing when the goal is null or the setting is off", async () => {
     const kept = await setup([null]);
     kept.addThread("t1", { title: null });
     await rpc(kept, "refresh", null);

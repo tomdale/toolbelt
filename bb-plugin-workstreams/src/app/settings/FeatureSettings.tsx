@@ -181,7 +181,7 @@ export function ThreadsSettings() {
         label="Analysis model"
         description={
           prefs.threads.autoTitle
-            ? "Summarizes each thread after every turn for the sidebar, and writes titles while Keep titles current is on."
+            ? "Summarizes each thread after every turn for the sidebar, and names threads (from their first request, then after each turn) while Keep titles current is on."
             : "Summarizes each thread after every turn for the sidebar."
         }
         choice={prefs.threads.analysisModel}
@@ -189,7 +189,7 @@ export function ThreadsSettings() {
       />
       <SettingRow
         label="Keep titles current"
-        description="Write and update thread titles as work progresses."
+        description="Title each thread with its goal as soon as it starts, and update it as work progresses. A title you change is left alone."
         control={
           <SettingSwitch
             label="Keep titles current"

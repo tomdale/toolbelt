@@ -14,6 +14,7 @@ export type Usage = z.infer<typeof usageSchema>;
 
 export const TRACE_KINDS = [
   "analysis",
+  "opening-goal",
   "route",
   "classify",
   "regroup",
@@ -94,6 +95,7 @@ export const TRACE_KIND_TITLE: Record<TraceKind, string> = {
   classify: "Subject classification",
   regroup: "Active grouping",
   analysis: "Thread analysis",
+  "opening-goal": "Opening title",
   route: "Routing",
 };
 
@@ -102,6 +104,7 @@ export const TRACE_KIND_SHORT: Record<TraceKind, string> = {
   classify: "Classification",
   regroup: "Grouping",
   analysis: "Analysis",
+  "opening-goal": "Opening title",
   route: "Routing",
 };
 

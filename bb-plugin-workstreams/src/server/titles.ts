@@ -10,6 +10,7 @@ type Row = {
   written: string | null;
   locked: number;
   retitled_at: number | null;
+  provisional: number;
 };
 
 export function readTitleRecord(
@@ -18,7 +19,7 @@ export function readTitleRecord(
 ): TitleRecord | undefined {
   const row = db
     .prepare(
-      "SELECT observed, written, locked, retitled_at FROM ws_title WHERE thread_id = ?",
+      "SELECT observed, written, locked, retitled_at, provisional FROM ws_title WHERE thread_id = ?",
     )
     .get(threadId) as Row | undefined;
   return row
@@ -27,6 +28,7 @@ export function readTitleRecord(
         written: row.written,
         locked: row.locked === 1,
         retitledAt: row.retitled_at,
+        provisional: row.provisional === 1,
       }
     : undefined;
 }
@@ -37,15 +39,16 @@ export function writeTitleRecord(
   record: TitleRecord,
 ): void {
   db.prepare(
-    `INSERT INTO ws_title (thread_id, observed, written, locked, retitled_at) VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO ws_title (thread_id, observed, written, locked, retitled_at, provisional) VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(thread_id) DO UPDATE SET observed = excluded.observed, written = excluded.written,
-       locked = excluded.locked, retitled_at = excluded.retitled_at`,
+       locked = excluded.locked, retitled_at = excluded.retitled_at, provisional = excluded.provisional`,
   ).run(
     threadId,
     record.observed,
     record.written,
     record.locked ? 1 : 0,
     record.retitledAt,
+    record.provisional ? 1 : 0,
   );
 }
 

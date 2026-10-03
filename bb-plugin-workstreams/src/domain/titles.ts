@@ -2,11 +2,12 @@
  * Thread title ownership and the retitle policy (SPEC §10.1). Pure, so the
  * server and tests share one definition.
  *
- * BB exposes no provenance for a title, and emits no event when one changes
- * (SPEC §3). Ownership is therefore inferred from the sequence of raw titles
- * Workstreams has observed. BB's own title generator only fills a title that
- * is still empty, so a change from one title to another that Workstreams did
- * not write was made by the user or an agent, and is never overridden.
+ * A thread's title is its goal. BB exposes no provenance for a title, and
+ * emits no event when one changes (SPEC §3). Ownership is therefore inferred
+ * from the sequence of raw titles Workstreams has observed. BB's own title
+ * generator only fills a title that is still empty, so a change from one title
+ * to another that Workstreams did not write was made by the user or an agent,
+ * and is never overridden.
  */
 
 /** What Workstreams knows about one thread's title. */
@@ -19,11 +20,18 @@ export type TitleRecord = {
   readonly locked: boolean;
   /** When Workstreams last retitled the thread. */
   readonly retitledAt: number | null;
+  /**
+   * `written` was inferred from the opening request alone, while the first
+   * turn was still running. The first full analysis may replace it whatever
+   * the cooldown says; after that it is an ordinary Workstreams title.
+   */
+  readonly provisional: boolean;
 };
 
 /**
  * Titled threads are retitled at most this often, so a thread's name stays
- * recognizable while its focus is settling. Untitled threads are not limited.
+ * recognizable while its focus is settling. Untitled threads are not limited,
+ * and neither is a provisional title: it exists to be replaced.
  */
 export const RETITLE_COOLDOWN_MS = 60 * 60_000;
 
@@ -37,15 +45,23 @@ export function observeTitle(
   raw: string | null,
 ): TitleRecord {
   if (!record)
-    return { observed: raw, written: null, locked: false, retitledAt: null };
+    return {
+      observed: raw,
+      written: null,
+      locked: false,
+      retitledAt: null,
+      provisional: false,
+    };
   if (raw === record.observed) return record;
   // Clearing a title hands it back to automatic titling.
-  if (raw === null) return { ...record, observed: null, locked: false };
+  if (raw === null)
+    return { ...record, observed: null, locked: false, provisional: false };
   const renamedElsewhere = record.observed !== null && raw !== record.written;
   return {
     ...record,
     observed: raw,
     locked: record.locked || renamedElsewhere,
+    provisional: record.provisional && !renamedElsewhere,
   };
 }
 
@@ -54,7 +70,18 @@ const same = (a: string, b: string) =>
   b.replace(/\s+/g, " ").trim().toLowerCase();
 
 export type RetitleSkip =
-  "no-suggestion" | "unchanged" | "stale" | "locked" | "cooldown";
+  "no-suggestion" | "unchanged" | "stale" | "locked" | "cooldown" | "titled";
+
+/**
+ * What a suggested title was inferred from.
+ *
+ * - `analysis`: the full analysis of a finished turn. The thread must still be
+ *   idle at the analyzed revision.
+ * - `opening`: the opening request alone, while the first turn is still
+ *   running. It may only name a thread that has no title of its own, and only
+ *   until that turn ends: its analysis names the thread from then on.
+ */
+export type RetitleBasis = "analysis" | "opening";
 
 /**
  * Whether a suggested title may replace the thread's current one. `record`
@@ -71,18 +98,30 @@ export function retitleDecision(args: {
   suggestion: string | null;
   /** The thread revision the suggestion was made for. */
   revision: number;
+  basis: RetitleBasis;
   now: number;
 }): { ok: true } | { ok: false; reason: RetitleSkip } {
   const { record, thread, suggestion } = args;
   if (!suggestion) return { ok: false, reason: "no-suggestion" };
   if (same(suggestion, thread.displayTitle))
     return { ok: false, reason: "unchanged" };
+  if (args.basis === "opening") {
+    // A turn that finished meanwhile is being analyzed, and that names it.
+    if (thread.latestAttentionAt > args.revision)
+      return { ok: false, reason: "stale" };
+    if (record.locked) return { ok: false, reason: "locked" };
+    // Never replace a title that appeared since the request: BB's generator,
+    // the user, or an agent got there first.
+    if (thread.title !== null) return { ok: false, reason: "titled" };
+    return { ok: true };
+  }
   // A newer or running turn may have moved the focus again.
   if (thread.status !== "idle" || thread.latestAttentionAt > args.revision)
     return { ok: false, reason: "stale" };
   if (record.locked) return { ok: false, reason: "locked" };
   if (
     thread.title !== null &&
+    !record.provisional &&
     record.retitledAt !== null &&
     args.now - record.retitledAt < RETITLE_COOLDOWN_MS
   )

@@ -36,7 +36,7 @@ const ANALYSIS = {
   needsYou: null,
   subject: "Alpha",
   drift: null,
-  title: null,
+  goal: null,
 };
 const ROUTE = {
   outcome: "new-thread",
@@ -274,7 +274,7 @@ describe("debug mode on", () => {
 
   it("links an applied title to the analysis that suggested it", async () => {
     const w = await setup(true, () =>
-      JSON.stringify({ ...ANALYSIS, title: "Nested block parsing" }),
+      JSON.stringify({ ...ANALYSIS, goal: "Nested block parsing" }),
     );
     w.threads.set("t1", { ...w.threads.get("t1")!, title: null });
     await analyze(w, "t1");

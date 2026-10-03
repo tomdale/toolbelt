@@ -49,7 +49,8 @@ const ACTION_HELP: Record<Entry["action"], string> = {
   proposal: "Workstreams suggested an organization change for your decision.",
   "edit-workstream": "A workstream’s description or settings were changed.",
   route: "A new request was placed in a thread and workstream.",
-  retitle: "A thread title was updated to reflect its work.",
+  retitle:
+    "A thread was given its goal as its title, from its opening request or after a turn.",
 };
 const ENTRY_STATUS: Record<
   Entry["status"],
