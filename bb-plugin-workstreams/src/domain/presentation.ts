@@ -52,6 +52,20 @@ export function relativeAge(at: number, now: number): string {
   return `${Math.floor(days / 7)}w`;
 }
 
+/** The same age spelled out for assistive technology: "3 minutes ago". */
+export function relativeAgeLabel(at: number, now: number): string {
+  const minutes = Math.max(0, Math.floor((now - at) / 60_000));
+  const unit = (count: number, name: string) =>
+    `${count} ${name}${count === 1 ? "" : "s"} ago`;
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return unit(minutes, "minute");
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return unit(hours, "hour");
+  const days = Math.floor(hours / 24);
+  if (days < 14) return unit(days, "day");
+  return unit(Math.floor(days / 7), "week");
+}
+
 /**
  * Work-state glyphs, drawn beside BB's own status mark. `in_progress` and an
  * inferred `done` draw nothing: most threads are in one of those states, so

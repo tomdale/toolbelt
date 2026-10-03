@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * Which Home groups, folds, and thread trees the user opened or closed on this
@@ -35,16 +35,18 @@ function write(open: Open): void {
 /** A key the user never touched is open or closed by the caller's default. */
 export function useHomeState() {
   const [open, setOpen] = useState<Open>(read);
+  // Only a change the user made is written, and after it commits.
+  const changed = useRef(false);
+  useEffect(() => {
+    if (changed.current) write(open);
+  }, [open]);
   const isOpen = useCallback(
     (id: string, byDefault: boolean) => open[id] ?? byDefault,
     [open],
   );
   const update = useCallback((change: (current: Open) => Open) => {
-    setOpen((current) => {
-      const next = change(current);
-      write(next);
-      return next;
-    });
+    changed.current = true;
+    setOpen(change);
   }, []);
   const toggle = useCallback(
     (id: string, byDefault: boolean) =>

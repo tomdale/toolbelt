@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { UNSORTED_ID, type Group, type Row } from "../../domain/project.ts";
@@ -55,6 +55,11 @@ export function WorkstreamGroups({
   env: HomeEnv;
 }) {
   const [showLower, setShowLower] = useState(false);
+  // Without a prioritized workstream there is no toggle, and the next time one
+  // is prioritized the rest start hidden again.
+  useEffect(() => {
+    if (!plan.tiered) setShowLower(false);
+  }, [plan.tiered]);
   const lowerShown = !plan.tiered || showLower;
   const visibleGroups = [
     ...plan.pinned,
@@ -66,7 +71,7 @@ export function WorkstreamGroups({
     env.isOpen(groupKey(group.id), startsOpen(plan, group)),
   );
   const quiet = (group: Group<Thread>) =>
-    Boolean(plan.upNext?.focused) && !group.prioritized;
+    plan.focus.active && !group.prioritized;
   const renderGroup = (group: Group<Thread>, muted = false) => (
     <GroupSection
       key={group.id}
@@ -116,14 +121,11 @@ export function WorkstreamGroups({
                   ? "Hide lower priority workstreams"
                   : "Show lower priority workstreams"}
               </span>
-              {!showLower && plan.upNext && plan.upNext.elsewhere > 0 ? (
-                <span
-                  className="ws-home-pill ws-home-pill-quiet"
-                  title={`${plan.upNext.elsewhere} waiting on you`}
-                >
-                  <span aria-hidden="true">{plan.upNext.elsewhere}</span>
+              {!showLower && plan.focus.elsewhere > 0 ? (
+                <span className="ws-home-pill ws-home-pill-quiet">
+                  <span aria-hidden="true">{plan.focus.elsewhere}</span>
                   <span className="sr-only">
-                    , {plan.upNext.elsewhere} waiting on you
+                    , {plan.focus.elsewhere} waiting on you
                   </span>
                 </span>
               ) : null}
@@ -138,6 +140,7 @@ export function WorkstreamGroups({
                   id={DORMANT_KEY}
                   title="Dormant"
                   count={plan.dormant.length}
+                  unit="workstream"
                   env={env}
                 >
                   {plan.dormant.map((group) => (
@@ -162,10 +165,11 @@ export function WorkstreamGroups({
           id={SNOOZED_KEY}
           title="Snoozed"
           count={plan.snoozed.filter((row) => row.depth === 0).length}
+          unit="thread"
           env={env}
           standalone
         >
-          <ul className="ws-home-rows">
+          <ul className="ws-home-rows" role="list">
             {plan.snoozed.map((row) => {
               const snooze = env.snoozeOf(row.thread);
               return (
@@ -250,7 +254,10 @@ function GroupSection({
             className="ws-home-group-name"
           />
           {group.prioritized ? (
-            <PriorityIcon filled className="ws-home-flag-icon" />
+            <>
+              <PriorityIcon filled className="ws-home-flag-icon" />
+              <span className="sr-only">, prioritized</span>
+            </>
           ) : null}
           <span className="ws-home-counts">
             {showsCount(env.waitingCount, !open) && group.needsYou > 0 ? (
@@ -260,19 +267,26 @@ function GroupSection({
                     ? "ws-home-pill ws-home-pill-quiet"
                     : "ws-home-pill ws-amber-pill"
                 }
-                title={`${group.needsYou} waiting on you`}
               >
-                {group.needsYou}
+                <span aria-hidden="true">{group.needsYou}</span>
+                <span className="sr-only">
+                  , {group.needsYou} waiting on you
+                </span>
               </span>
             ) : null}
             {showsCount(env.threadCount, !open) && group.total > 0 ? (
-              <span className="ws-home-total">{group.total}</span>
+              <span className="ws-home-total">
+                <span aria-hidden="true">{group.total}</span>
+                <span className="sr-only">
+                  , {group.total} {group.total === 1 ? "thread" : "threads"}
+                </span>
+              </span>
             ) : null}
           </span>
         </button>
       </h3>
       {open ? (
-        <ul className="ws-home-rows">
+        <ul className="ws-home-rows" role="list">
           {rows.map((row: Row<Thread>) => {
             const children = descendants.get(row.thread.id) ?? 0;
             return (
@@ -308,6 +322,7 @@ function Fold({
   id,
   title,
   count,
+  unit,
   env,
   standalone = false,
   children,
@@ -315,6 +330,8 @@ function Fold({
   id: string;
   title: string;
   count: number;
+  /** What the count counts, for assistive technology. */
+  unit: string;
   env: HomeEnv;
   /** Drawn on its own, outside the Workstreams list. */
   standalone?: boolean;
@@ -339,7 +356,13 @@ function Fold({
           <span className="ws-home-dot ws-home-dot-none" aria-hidden="true" />
           <span className="ws-home-group-name">{title}</span>
           <span className="ws-home-counts">
-            <span className="ws-home-total">{count}</span>
+            <span className="ws-home-total">
+              <span aria-hidden="true">{count}</span>
+              <span className="sr-only">
+                , {count} {unit}
+                {count === 1 ? "" : "s"}
+              </span>
+            </span>
           </span>
         </button>
       </h3>

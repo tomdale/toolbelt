@@ -25,6 +25,12 @@ import { useSharedServerState } from "./serverState.ts";
 import { usePrefs } from "./prefs.ts";
 
 export type ServerState = {
+  /**
+   * The first read of plugin state has finished, whether or not it succeeded.
+   * Until then every other field is its empty default, which is not what the
+   * server holds; surfaces that would draw a wrong first frame wait for it.
+   */
+  ready?: boolean;
   workstreams: Record<string, MapRecord>;
   placements: Record<string, Placement>;
   analysis: Record<string, StoredAnalysis>;

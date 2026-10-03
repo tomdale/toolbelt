@@ -96,12 +96,15 @@ class ServerStore {
             ...state,
             order: normalizeOrder(state.order),
             snoozePrefs: parseSnoozePrefs(state.snoozePrefs),
+            ready: true,
           });
           this.pendingReorders.clear();
           this.pendingPrefs.clear();
         }
       } catch {
-        // Live BB data still renders; retain the last plugin snapshot.
+        // Live BB data still renders; retain the last plugin snapshot. A
+        // surface waiting for the first read stops waiting.
+        if (!this.value.ready) this.publish({ ...this.value, ready: true });
       }
     } while (this.dirty);
   }
