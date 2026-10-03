@@ -365,9 +365,9 @@ it("shows the Waiting goal as the title and the countdown in the footer", async 
   );
   const progress = slot.getByTestId("status-check-progress");
   expect(progress.style.width).toMatch(/%$/);
-  expect(
-    slot.getByRole("button", { name: "Cancel status check" }),
-  ).toBeTruthy();
+  const cancel = slot.getByRole("button", { name: "Cancel status check" });
+  expect(cancel.previousElementSibling?.contains(countdown)).toBe(true);
+  expect(cancel.className).not.toContain("ml-auto");
   expect(slot.queryByRole("list", { name: "Awaited agents" })).toBeNull();
   expect(slot.queryByRole("heading", { name: "Next" })).toBeNull();
   expect(slot.queryByRole("heading", { name: "Review" })).toBeNull();
