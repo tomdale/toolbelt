@@ -149,8 +149,7 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
   const suggestion = shownSuggestion(state);
   // An automatic destination has no row of its own — it already fills the
   // pickers — so ⌘⏎ submits what they show, as Enter does.
-  const autoDestination =
-    !suggestion && !state.pinned && hasDestination(state);
+  const autoDestination = !suggestion && !state.pinned && hasDestination(state);
   const projects = useProjects();
   const row = useRef<HTMLDivElement>(null);
   const applies = !!suggestion && suggestion.kind !== "thread";

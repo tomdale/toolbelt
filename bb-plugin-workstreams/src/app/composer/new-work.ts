@@ -783,10 +783,8 @@ export class NewWork {
           try {
             await this.applyPlacement(suggestion.placement);
           } catch (error) {
-            if (mine === this.generation) this.begin("apply", suggestion)(
-              "failed",
-              { error },
-            );
+            if (mine === this.generation)
+              this.begin("apply", suggestion)("failed", { error });
             return;
           }
           if (mine !== this.generation) return;
@@ -824,10 +822,8 @@ export class NewWork {
         try {
           await this.applyPlacement(suggestion.placement);
         } catch (error) {
-          if (mine === this.generation) this.begin("apply", suggestion)(
-            "failed",
-            { error },
-          );
+          if (mine === this.generation)
+            this.begin("apply", suggestion)("failed", { error });
           return;
         }
         if (mine !== this.generation) return;
@@ -900,9 +896,7 @@ export class NewWork {
       // A dismissed suggestion names no destination; an already-applied one
       // keeps the pickers it filled (autoApply is idempotent for it).
       await this.autoApply(
-        suggestion && suggestion.key === this.state.settled
-          ? null
-          : suggestion,
+        suggestion && suggestion.key === this.state.settled ? null : suggestion,
         mine,
       );
     } catch (error) {

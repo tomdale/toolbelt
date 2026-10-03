@@ -499,7 +499,6 @@ export const rpcContract = defineRpcContract({
           runtimeStatus: z.string(),
           hasPendingInteraction: z.boolean(),
           isArchived: z.boolean(),
-          providerId: z.string(),
         }),
       ),
     }),

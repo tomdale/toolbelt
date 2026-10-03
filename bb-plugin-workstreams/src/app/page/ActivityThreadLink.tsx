@@ -5,19 +5,28 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 
+/**
+ * A thread rendered like BB's timeline thread mentions: the person glyph and
+ * the thread's title in a pill. Threads outside the sidebar's list, such as
+ * hidden agent threads, show `fallback` and open `href` when given.
+ */
 export function ActivityThreadLink({
   threadId,
   fallback,
+  href: fallbackHref,
 }: {
   threadId: string;
   fallback?: string;
+  href?: string;
 }) {
   const { threads } = experimental_useSidebarThreads();
   const thread = threads.find((thread) => thread.id === threadId);
   const href =
-    thread?.projectId && thread.projectId !== "proj_personal"
-      ? `/projects/${encodeURIComponent(thread.projectId)}/threads/${encodeURIComponent(threadId)}`
-      : `/threads/${encodeURIComponent(threadId)}`;
+    !thread && fallbackHref
+      ? fallbackHref
+      : thread?.projectId && thread.projectId !== "proj_personal"
+        ? `/projects/${encodeURIComponent(thread.projectId)}/threads/${encodeURIComponent(threadId)}`
+        : `/threads/${encodeURIComponent(threadId)}`;
   return (
     <UrlLink
       href={href}

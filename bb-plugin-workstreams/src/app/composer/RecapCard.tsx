@@ -18,8 +18,6 @@ import {
   UrlLink,
   experimental_FileLink as FileLink,
   experimental_useSidebarThreads,
-  experimental_useProviders,
-  experimental_ProviderIcon as ProviderIcon,
   useComposer,
   useRealtime,
   useRpc,
@@ -298,8 +296,6 @@ export type AgentView = {
   title: string | null;
   /** Where the agent's thread opens; null when it cannot be opened. */
   href: string | null;
-  /** The agent provider the thread runs on, for its icon. */
-  providerId: string | null;
   tone: AgentTone;
   label: string;
 };
@@ -363,7 +359,6 @@ type FetchedAgent = AgentThread & {
   threadId: string;
   projectId: string;
   title: string;
-  providerId: string;
 };
 
 /** How often the card rereads agent threads the sidebar does not carry. */
@@ -423,7 +418,6 @@ function useAgentViews(
       views.set(threadId, {
         title: sidebar.displayTitle,
         href: sidebar.href,
-        providerId: sidebar.providerId,
         ...agentStatus(sidebar),
       });
       continue;
@@ -435,21 +429,18 @@ function useAgentViews(
         ? {
             title: thread.title,
             href: threadHref(thread.projectId, threadId),
-            providerId: thread.providerId,
             ...agentStatus(thread),
           }
         : fetched
           ? {
               title: null,
               href: null,
-              providerId: null,
               label: "Unavailable",
               tone: "unknown",
             }
           : {
               title: null,
               href: null,
-              providerId: null,
               label: "",
               tone: "unknown",
             },
@@ -474,40 +465,10 @@ const AGENT_LABEL: Record<AgentTone, string> = {
   unknown: "text-muted-foreground",
 };
 
-/** The agent's provider icon, badged with its status dot. */
-function AgentAvatar({ view }: { view: AgentView }) {
-  const { providers } = experimental_useProviders();
-  const provider = view.providerId
-    ? (providers.find((p) => p.id === view.providerId) ?? {
-        id: view.providerId,
-      })
-    : null;
-  return (
-    <span aria-hidden className="relative flex size-4 shrink-0">
-      {provider ? (
-        <ProviderIcon
-          providerKind="agent"
-          provider={provider}
-          fallback="UserRound"
-          className="size-4 text-muted-foreground"
-        />
-      ) : (
-        <Icon name="UserRound" className="size-4 text-muted-foreground" />
-      )}
-      <span
-        className={cn(
-          "absolute -bottom-px -right-px size-[7px] rounded-full ring-2 ring-background",
-          AGENT_DOT[view.tone],
-        )}
-      />
-    </span>
-  );
-}
-
 /**
- * The agents a waiting thread is waiting on, one row each: the agent's icon
- * and thread title, then its task. The whole row opens the agent's thread.
- * A running agent shows only its dot; any other status is named.
+ * The agents a waiting thread is waiting on, one row each: a status dot, the
+ * agent's thread as a mention pill, and its task. A running agent shows only
+ * its dot; any other status is named.
  */
 function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
   const compact = useContext(CompactContext);
@@ -516,7 +477,7 @@ function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
   return (
     <ul
       aria-label="Awaited agents"
-      className={cn("-mx-2 m-0 list-none p-0", compact ? "mt-1" : "mt-1.5")}
+      className={cn("m-0 list-none p-0", compact ? "mt-1" : "mt-1.5")}
     >
       {agents.map((agent) => {
         const view = views.get(agent.threadId)!;
@@ -525,26 +486,25 @@ function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
             key={agent.threadId}
             data-agent-status={view.tone}
             className={cn(
-              "group relative flex min-w-0 items-center gap-2 rounded-md px-2",
+              "flex min-w-0 items-center gap-2",
               compact ? "py-0.5" : "py-1",
-              view.href && "hover:bg-foreground/[0.06]",
             )}
           >
-            <AgentAvatar view={view} />
             <span
+              aria-hidden
               className={cn(
-                "max-w-[45%] shrink-0 truncate font-medium text-foreground",
-                body,
+                "size-[7px] shrink-0 rounded-full",
+                AGENT_DOT[view.tone],
               )}
-            >
-              {view.title ?? "Agent"}
+            />
+            <span className="flex min-w-0 max-w-[45%] shrink-0">
+              <ActivityThreadLink
+                threadId={agent.threadId}
+                fallback={view.title ?? "Agent thread"}
+                href={view.href ?? undefined}
+              />
             </span>
-            {/* Links inside the task stay clickable above the row's link. */}
-            <div
-              className={cn(
-                "min-w-0 flex-1 text-muted-foreground [&_a]:relative [&_a]:z-10 [&_p]:truncate",
-              )}
-            >
+            <div className="min-w-0 flex-1 text-muted-foreground [&_p]:truncate">
               <RecapText text={agent.task} typeClass={cn(body, "truncate")} />
             </div>
             {view.label ? (
@@ -557,21 +517,6 @@ function WaitingAgents({ agents }: { agents: readonly WaitingAgent[] }) {
               >
                 {view.label}
               </span>
-            ) : null}
-            {view.href ? (
-              <>
-                <Icon
-                  name="ChevronRight"
-                  aria-hidden
-                  className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-                />
-                <UrlLink
-                  href={view.href}
-                  title={`Open ${view.title ?? "agent thread"}`}
-                  aria-label={view.title ?? "Agent thread"}
-                  className="absolute inset-0 rounded-md focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
-                />
-              </>
             ) : null}
           </li>
         );

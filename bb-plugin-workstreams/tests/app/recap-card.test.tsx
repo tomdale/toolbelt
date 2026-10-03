@@ -490,7 +490,6 @@ it("reads hidden agent threads from the server", async () => {
               runtimeStatus: "active",
               hasPendingInteraction: false,
               isArchived: false,
-              providerId: "pi",
             },
           ]
         : [],
