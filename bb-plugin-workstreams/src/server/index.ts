@@ -10,7 +10,7 @@ import { GOAL_MAX, isCurrent } from "../domain/analysis.ts";
 import { registerAgentInstructions } from "./agents.ts";
 import { Analyzer } from "./analyzer.ts";
 import { RecapArchive } from "./archive.ts";
-import { Bootstrap } from "./bootstrap.ts";
+import { Coordinator } from "./coordinator.ts";
 import { sectionMembers } from "./cleanup.ts";
 import { WorkstreamMap } from "./map.ts";
 import { Router, type RouteDecision, type Environment } from "./router.ts";
@@ -93,6 +93,12 @@ export default async function plugin(bb: BbPluginApi) {
         .catch((error: unknown) =>
           bb.log.warn(`Marking ${threadId} unread failed: ${String(error)}`),
         );
+  };
+
+  const triggerCoordinatorIfAutomatic = (debounceMs = 50) => {
+    if (currentPrefs().organize.automatic) {
+      coordinator.trigger(debounceMs);
+    }
   };
 
   const currentPrefs = () => loadPrefs(db);
@@ -267,12 +273,11 @@ export default async function plugin(bb: BbPluginApi) {
   registerAgentInstructions(bb, recaps);
   const map = new WorkstreamMap(db);
   const corpus = new CorpusStore(db);
-  const bootstrap = new Bootstrap({
+  const coordinator = new Coordinator({
     db,
     service,
-    analyzer,
-    map,
     corpus,
+    analyzer,
     inference,
     model: async () => currentPrefs().organize.model,
     classificationModel: async () => currentPrefs().organize.model,
@@ -285,7 +290,7 @@ export default async function plugin(bb: BbPluginApi) {
     members: (sectionId) => sectionMembers(bb.sdk, sectionId),
     onChange: notify,
   });
-  bb.onDispose(() => bootstrap.dispose());
+  bb.onDispose(() => coordinator.dispose());
   const router = new Router({
     sdk: () => bb.sdk,
     corpus,
@@ -505,6 +510,7 @@ export default async function plugin(bb: BbPluginApi) {
             );
           void sweepSnoozes();
           map.refresh(service.threads(), analyzer.all());
+          triggerCoordinatorIfAutomatic(50);
         })
         .catch((error: unknown) =>
           bb.log.warn(`Reconcile failed: ${String(error)}`),
@@ -530,6 +536,7 @@ export default async function plugin(bb: BbPluginApi) {
     bb.events.on(event, () => {
       notify();
       reconcileSoon();
+      triggerCoordinatorIfAutomatic();
     });
   bb.events.on("thread.created", async ({ thread }) => {
     const metadata = await bb.sdk.threads.getPluginMetadata({
@@ -572,10 +579,12 @@ export default async function plugin(bb: BbPluginApi) {
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
     if (thread.visibility === "hidden") return;
     analyzer.onIdle(thread, lastAssistantText);
+    triggerCoordinatorIfAutomatic(200);
     return recaps.onIdle(thread.id);
   });
   bb.events.on("thread.active", ({ thread }) => {
     analyzer.onActive(thread.id);
+    triggerCoordinatorIfAutomatic(200);
     // Covers a thread whose first request this run didn't see dispatched.
     void opening.onRunning(thread);
   });
@@ -845,7 +854,8 @@ export default async function plugin(bb: BbPluginApi) {
     },
     catalog: async () => corpus.state(),
     catalogReset: async () => {
-      bootstrap.resetCatalog();
+      corpus.reset();
+      await coordinator.rebuild();
       return { ok: true as const };
     },
     catalogResolve: async ({ entityId }) => {
@@ -869,18 +879,21 @@ export default async function plugin(bb: BbPluginApi) {
           parentId ?? null,
           aliases ?? [],
         );
+        coordinator.trigger();
         notify();
         return { entity };
       }),
     catalogRename: ({ entityId, name }) =>
       userFacing(async () => {
         const entity = corpus.rename(entityId, name);
+        coordinator.trigger();
         notify();
         return { entity };
       }),
     catalogReparent: ({ entityId, parentId }) =>
       userFacing(async () => {
         const entity = corpus.reparent(entityId, parentId);
+        coordinator.trigger();
         notify();
         return { entity };
       }),
@@ -890,12 +903,14 @@ export default async function plugin(bb: BbPluginApi) {
           description,
           aliases,
         });
+        coordinator.trigger();
         notify();
         return { entity };
       }),
     catalogMerge: ({ sourceEntityId, targetEntityId }) =>
       userFacing(async () => {
         const result = corpus.merge(sourceEntityId, targetEntityId);
+        coordinator.trigger();
         notify();
         return result;
       }),
@@ -905,6 +920,7 @@ export default async function plugin(bb: BbPluginApi) {
         const assignment = corpus.assign(threadId, entityId, {
           provenance: "manual",
         });
+        coordinator.trigger();
         notify();
         return { assignment };
       }),
@@ -912,11 +928,16 @@ export default async function plugin(bb: BbPluginApi) {
       userFacing(async () => {
         await service.reconcile();
         const assignment = corpus.clear(threadId);
+        coordinator.trigger();
         notify();
         return { assignment };
       }),
     taskReclassify: ({ threadId, entityId, evidence }) =>
-      userFacing(() => reclassifyTask({ threadId, entityId, evidence })),
+      userFacing(async () => {
+        const result = await reclassifyTask({ threadId, entityId, evidence });
+        coordinator.trigger();
+        return result;
+      }),
     taskAssignment: ({ threadId }) =>
       userFacing(async () => {
         await service.reconcile();
@@ -936,7 +957,8 @@ export default async function plugin(bb: BbPluginApi) {
             .all() as { thread_id: string; target: string }[]
         ).map((r) => [r.thread_id, r.target]),
       ),
-      bootstrapped: bootstrap.isDone(),
+      bootstrapped: coordinator.isDone(),
+      organization: coordinator.state(),
       order: loadOrder(db),
       snoozes: snoozes.all(),
       snoozePrefs: loadSnoozePrefs(db),
@@ -1101,31 +1123,13 @@ export default async function plugin(bb: BbPluginApi) {
     archiveStatus: ({ threadId }) => archives.status(threadId),
     archive: ({ threadId, recapId }) =>
       userFacing(() => archives.archive(threadId, recapId)),
-    bootstrap: (input) =>
-      userFacing(async () => {
-        // Model steps take seconds and report progress over realtime; a
-        // refusal (already running, nothing to apply) still reaches the caller.
-        const settle = async (work: Promise<unknown>) => {
-          let refusal: unknown = null;
-          const done = work.then(
-            () => undefined,
-            (error: unknown) => {
-              if (error instanceof UserError) refusal = error;
-              else bb.log.warn(`Organizing failed: ${String(error)}`);
-            },
-          );
-          await Promise.race([
-            done,
-            new Promise((resolve) => setTimeout(resolve, 300)),
-          ]);
-          if (refusal) throw refusal;
-        };
-        if (input.action === "start") await settle(bootstrap.start());
-        else if (input.action === "apply")
-          await settle(bootstrap.apply(input.overrides, input.runId));
-        else if (input.action === "cancel") bootstrap.cancel();
-        return { state: bootstrap.state(), bootstrapped: bootstrap.isDone() };
-      }),
+    organization: async (input) => {
+      if (input?.action === "rebuild") {
+        const state = await coordinator.rebuild();
+        return { state };
+      }
+      return { state: coordinator.state() };
+    },
     journal: async (input) => {
       const entries = journal.list({
         limit: input?.limit,
@@ -1256,7 +1260,7 @@ export default async function plugin(bb: BbPluginApi) {
     journal,
     analyzer,
     recaps,
-    bootstrap,
+    coordinator,
     map,
     router,
     traces,

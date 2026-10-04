@@ -1170,7 +1170,7 @@ export class WorkstreamService {
     }
   }
 
-  private place(
+  place(
     threadId: string,
     sectionId: string | null,
     source: Source,
@@ -1215,7 +1215,7 @@ export class WorkstreamService {
       .run(threadId, sectionId, parentThreadId, title ?? null);
   }
 
-  private seeSection(sectionId: string, name: string): void {
+  seeSection(sectionId: string, name: string): void {
     this.db
       .prepare(
         `INSERT INTO ws_seen_section (section_id, name) VALUES (?, ?)

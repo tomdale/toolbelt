@@ -1,7 +1,6 @@
 /**
- * The Organize pane: one reviewed organizing pass (SPEC §8). A preview is a
- * whole-proposal decision: Apply performs it as one journaled batch, Discard
- * drops it, and Regenerate replaces it. Nothing moves before Apply.
+ * The Organize pane: live organization state and derived workstreams.
+ * Workstreams are always derived automatically from active task identities.
  */
 import {
   useCallback,
@@ -12,8 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { useRealtime, type useRpc } from "@get-bb/plugin-sdk/app";
-import type { RpcContract } from "../../server/contract.ts";
-import type { BootstrapState } from "../../server/bootstrap.ts";
+import type { LiveOrganization, RpcContract } from "../../server/contract.ts";
 import { cn } from "@/lib/utils";
 import { Icon } from "@/components/ui/icon";
 import { InspectButton } from "../debug/InspectButton.tsx";
@@ -24,7 +22,6 @@ import type { ReviewTask } from "./organize-review.ts";
 import { useThreadTotals, type ThreadTotals } from "./thread-totals.ts";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
-type Command = Parameters<Rpc["call"]>[1];
 
 export function Organize({
   rpc,
@@ -34,14 +31,13 @@ export function Organize({
 }: {
   rpc: Rpc;
   bootstrapped?: boolean;
-  /** Opens the Activity log, where an applied pass can be undone. */
+  /** Opens the Activity log. */
   onShowActivity?: () => void;
   /** Optional slot for cross-surface identity correction control from Phase 3. */
   renderTaskAction?: (task: ReviewTask) => ReactNode;
-  /** Shown only while no pass is running or awaiting review. */
   children?: ReactNode;
 }) {
-  const [state, setState] = useState<BootstrapState | null>(null);
+  const [state, setState] = useState<LiveOrganization | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -50,13 +46,14 @@ export function Organize({
   const command = useRef(0);
   const errorOwner = useRef<"read" | "command" | null>(null);
   const totals = useThreadTotals();
+
   const read = useCallback(async () => {
     const generation = ++requested.current;
     try {
-      const result = await rpc.call("bootstrap", { action: "get" });
+      const result = await rpc.call("organization", { action: "get" });
       if (generation < settled.current) return;
       settled.current = generation;
-      setState(result.state as BootstrapState | null);
+      setState(result.state);
       if (errorOwner.current === "read") {
         errorOwner.current = null;
         setError(null);
@@ -72,7 +69,8 @@ export function Organize({
       setLoaded(true);
     }
   }, [rpc]);
-  const send = async (input: Command) => {
+
+  const send = async (action: "rebuild") => {
     const owner = ++command.current;
     const generation = ++requested.current;
     settled.current = generation;
@@ -80,13 +78,13 @@ export function Organize({
     setError(null);
     setBusy(true);
     try {
-      const result = await rpc.call("bootstrap", input as never);
+      const result = await rpc.call("organization", { action });
       if (command.current !== owner) return;
       errorOwner.current = null;
       setError(null);
       if (generation >= settled.current) {
         settled.current = generation;
-        setState(result.state as BootstrapState | null);
+        setState(result.state);
       }
     } catch (cause) {
       if (command.current === owner) {
@@ -100,31 +98,31 @@ export function Organize({
       }
     }
   };
+
   useEffect(() => {
     void read();
   }, [read]);
+
   useRealtime("changed", () => void read());
-  const working = state?.status === "proposing" || state?.status === "applying";
+
+  const working =
+    state?.status === "classifying" ||
+    state?.status === "deriving" ||
+    state?.status === "syncing";
+
   useEffect(() => {
     if (!working) return;
     const timer = setInterval(() => void read(), 1000);
     return () => clearInterval(timer);
   }, [working, read]);
-  const preview = state?.status === "preview" ? state.preview : null;
+
   const review = useMemo(
-    () =>
-      state && preview ? buildReview(state, preview, totals.childrenOf) : null,
-    [state, preview, totals],
+    () => (state ? buildReview(state, totals.childrenOf) : null),
+    [state, totals],
   );
+
   if (!loaded) return null;
-  const inspect = state?.traceIds?.length ? (
-    <InspectButton
-      target={{ traceIds: state.traceIds }}
-      title="Organizing pass"
-      label="Inspect organizing pass"
-      className="text-muted-foreground"
-    />
-  ) : null;
+
   const commandError = error ? (
     <p
       role="alert"
@@ -134,24 +132,19 @@ export function Organize({
       {error}
     </p>
   ) : null;
+
   return (
     <section aria-label="Organize" className="flex flex-col gap-6 text-sm">
-      {state && review ? (
+      {state && state.status === "idle" && review ? (
         <ProposalReview
           review={review}
           busy={busy}
-          inspect={inspect}
+          inspect={null}
           alert={commandError}
           renderTaskAction={renderTaskAction}
-          onApply={() =>
-            void send({
-              action: "apply",
-              runId: state.startedAt,
-              overrides: [],
-            })
-          }
-          onDiscard={() => void send({ action: "cancel" })}
-          onRegenerate={() => void send({ action: "start" })}
+          onApply={() => void send("rebuild")}
+          onDiscard={() => void read()}
+          onRegenerate={() => void send("rebuild")}
         />
       ) : (
         <>
@@ -159,10 +152,9 @@ export function Organize({
             state={state}
             busy={busy}
             totals={totals}
-            inspect={inspect}
             alert={commandError}
-            onStart={() => void send({ action: "start" })}
-            onCancel={() => void send({ action: "cancel" })}
+            onStart={() => void send("rebuild")}
+            onCancel={() => void read()}
             onShowActivity={onShowActivity}
           />
           {!working ? children : null}
@@ -172,21 +164,19 @@ export function Organize({
   );
 }
 
-/** The pane before a preview exists: start, progress, failure or result. */
+/** The pane during work or failure. */
 function StatusPanel({
   state,
   busy,
   totals,
-  inspect,
   alert,
   onStart,
   onCancel,
   onShowActivity,
 }: {
-  state: BootstrapState | null;
+  state: LiveOrganization | null;
   busy: boolean;
   totals: ThreadTotals;
-  inspect: ReactNode;
   alert: ReactNode;
   onStart: () => void;
   onCancel: () => void;
@@ -195,36 +185,28 @@ function StatusPanel({
   const status = state?.status ?? "idle";
   const progress = state?.progress;
   const heading =
-    status === "proposing"
-      ? "Preparing a proposal"
-      : status === "applying"
-        ? "Applying organization"
-        : status === "applied"
-          ? "Organization applied"
-          : status === "failed"
-            ? "Organizing stopped"
-            : "Organize workstreams";
+    status === "classifying"
+      ? "Classifying tasks"
+      : status === "deriving" || status === "syncing"
+        ? "Updating workstreams"
+        : status === "failed"
+          ? "Organizing stopped"
+          : "Workstreams up to date";
+
   const detail =
-    status === "proposing"
-      ? progress?.stage === "classifying"
-        ? `Classifying tasks ${progress.completed} of ${progress.total}`
-        : progress?.stage === "regrouping"
-          ? "Grouping tasks into workstreams…"
-          : "Reading open threads…"
-      : status === "applying"
-        ? "Moving tasks and updating workstreams…"
-        : status === "applied"
-          ? "Undo the whole pass from Activity if anything looks wrong."
-          : status === "failed"
-            ? null
-            : totals.ready && totals.tasks
-              ? `Proposes one grouping for your ${plural(totals.tasks, "open task")}${totals.childThreads ? `; their ${plural(totals.childThreads, "child thread")} stay with them` : ""}. Catalog knowledge updates during preview; native placement changes only when you apply.`
-              : "Proposes one grouping for your open tasks. Catalog knowledge updates during preview; native placement changes only when you apply.";
-  const working = status === "proposing" || status === "applying";
+    status === "classifying"
+      ? `Classifying tasks ${progress?.completed ?? 0} of ${progress?.total ?? 0}`
+      : status === "deriving" || status === "syncing"
+        ? "Deriving workstreams from task identities…"
+        : status === "failed"
+          ? state?.error
+          : "Workstreams are automatically derived from active task identities.";
+
+  const working =
+    status === "classifying" || status === "deriving" || status === "syncing";
   const determinate =
-    status === "proposing" &&
-    progress?.stage === "classifying" &&
-    progress.total > 0;
+    status === "classifying" && progress && progress.total > 0;
+
   return (
     <div
       aria-busy={working || undefined}
@@ -236,7 +218,7 @@ function StatusPanel({
       <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
         <div className="min-w-0 flex-1 basis-64">
           <h2 className="flex items-center gap-1.5 text-[13px] font-medium">
-            {status === "applied" ? (
+            {status === "idle" ? (
               <Icon
                 name="Check"
                 aria-hidden
@@ -244,14 +226,13 @@ function StatusPanel({
               />
             ) : null}
             {heading}
-            {inspect}
           </h2>
           {detail ? (
             <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
               {detail}
             </p>
           ) : null}
-          {status === "proposing" && progress?.stage === "classifying" ? (
+          {status === "classifying" && progress ? (
             <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground/80">
               {progress.cached} already classified
               {progress.unresolved
@@ -261,9 +242,9 @@ function StatusPanel({
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {status === "proposing" ? (
+          {working ? (
             <button type="button" className={ghostButton} onClick={onCancel}>
-              Cancel
+              Refresh
             </button>
           ) : null}
           {status === "failed" ? (
@@ -276,27 +257,14 @@ function StatusPanel({
               Dismiss
             </button>
           ) : null}
-          {status === "applied" && onShowActivity ? (
-            <button
-              type="button"
-              className={ghostButton}
-              onClick={onShowActivity}
-            >
-              View in Activity
-            </button>
-          ) : null}
           {!working ? (
             <button
               type="button"
-              className={status === "applied" ? secondaryButton : primaryButton}
+              className={status === "failed" ? secondaryButton : primaryButton}
               disabled={busy}
               onClick={onStart}
             >
-              {status === "failed"
-                ? "Start over"
-                : status === "applied"
-                  ? "Organize again…"
-                  : "Organize…"}
+              {status === "failed" ? "Try again" : "Rebuild…"}
             </button>
           ) : null}
         </div>
@@ -304,7 +272,9 @@ function StatusPanel({
       {working ? (
         <>
           <ProgressBar
-            value={determinate ? progress!.completed / progress!.total : null}
+            value={
+              determinate ? progress!.completed / progress!.total : null
+            }
             label={
               determinate
                 ? `Classifying tasks ${progress!.completed} of ${progress!.total}`
@@ -321,14 +291,6 @@ function StatusPanel({
           {state.error}
         </p>
       ) : null}
-      {status === "applied" && state?.error ? (
-        <p
-          role="status"
-          className="mt-2 rounded-md bg-state-hover/60 px-2.5 py-1.5 text-xs text-muted-foreground"
-        >
-          {state.error}
-        </p>
-      ) : null}
       {alert ? <div className="mt-2">{alert}</div> : null}
     </div>
   );
@@ -341,23 +303,23 @@ function ProgressBar({
   value: number | null;
   label: string;
 }) {
+  const percent = value !== null ? Math.round(value * 100) : null;
   return (
     <div
       role="progressbar"
       aria-label={label}
+      aria-valuenow={percent ?? undefined}
       aria-valuemin={0}
       aria-valuemax={100}
-      aria-valuenow={value === null ? undefined : Math.round(value * 100)}
-      className="relative mt-3 h-1 overflow-hidden rounded-full bg-state-hover"
+      className="relative mt-3 h-1 w-full overflow-hidden rounded-full bg-muted"
     >
-      {value === null ? (
-        <span className="ws-progress-indeterminate absolute inset-y-0 w-1/3 rounded-full bg-primary/70" />
-      ) : (
-        <span
-          className="absolute inset-y-0 left-0 rounded-full bg-primary transition-[width] duration-300 ease-out"
-          style={{ width: `${Math.max(2, value * 100)}%` }}
-        />
-      )}
+      <div
+        className={cn(
+          "h-full bg-primary transition-[width] duration-200",
+          percent === null && "w-1/3 animate-pulse",
+        )}
+        style={{ width: percent !== null ? `${percent}%` : undefined }}
+      />
     </div>
   );
 }

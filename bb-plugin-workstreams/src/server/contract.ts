@@ -23,7 +23,6 @@ import {
 } from "../domain/trace.ts";
 import type { Environment } from "./router.ts";
 import { entrySchema, sourceSchema } from "./journal.ts";
-import { organizeProposalSchema } from "../domain/organize.ts";
 
 const placementSchema = z.object({
   sectionId: z.string().nullable(),
@@ -88,91 +87,70 @@ const canonicalAssignmentSchema = z.object({
   inheritedFrom: z.string().nullable(),
 });
 
-const moveSchema = z.object({
-  threadId: z.string(),
+export const liveOrganizationGroupMemberSchema = z.object({
+  id: z.string(),
   title: z.string(),
-  from: z.string().nullable(),
-  fromName: z.string(),
-  to: z.string().nullable(),
-  toName: z.string(),
+  completed: z.boolean(),
+  identityId: z.string().nullable(),
+  identityLabel: z.string().nullable(),
+  provenance: assignmentProvenanceSchema.nullable(),
   reason: z.string(),
-  accepted: z.boolean(),
-  confidence: z.enum(["high", "medium", "low"]).optional(),
-  traceId: z.string().nullable().optional(),
-  identityLabel: z.string().nullable().optional(),
-  identityStatus: assignmentStatusSchema.optional(),
-  provenance: assignmentProvenanceSchema.nullable().optional(),
 });
 
-const bootstrapSchema = z
-  .object({
-    status: z.enum(["proposing", "preview", "applying", "applied", "failed"]),
-    progress: z
-      .object({
-        stage: z.enum(["classifying", "regrouping"]),
-        completed: z.number().int().nonnegative(),
-        total: z.number().int().nonnegative(),
-        cached: z.number().int().nonnegative(),
-        unresolved: z.number().int().nonnegative(),
-      })
-      .optional(),
-    startedAt: z.number(),
-    updatedAt: z.number(),
-    error: z.string().nullable(),
-    roots: z.array(
-      z.object({
-        id: z.string(),
-        title: z.string(),
-        sectionId: z.string().nullable(),
-        completed: z.boolean().optional(),
-      }),
-    ),
-    mapSnapshot: z.array(
-      z.object({
-        sectionId: z.string(),
-        name: z.string(),
-        description: z.string().nullable(),
-        aliases: z.array(z.string()),
-        descriptionSource: z.enum(["user", "generated"]),
-      }),
-    ),
-    preview: z
-      .object({
-        catalogRevision: z.number().optional(),
-        isStale: z.boolean().optional(),
-        workstreams: z
-          .array(
-            organizeProposalSchema.shape.workstreams.element.extend({
-              description: z.string().max(300),
-            }),
-          )
-          .max(100),
-        assignments: organizeProposalSchema.shape.assignments,
-        removals: z.array(
-          z.object({
-            sectionId: z.string(),
-            name: z.string(),
-            latestArchivedAt: z.number().nullable(),
-            archivedThreads: z.array(
-              z.object({ id: z.string(), archivedAt: z.number() }),
-            ),
-          }),
-        ),
-        creates: z.array(
-          z.object({ name: z.string(), description: z.string() }),
-        ),
-        renames: z.array(
-          z.object({ sectionId: z.string(), from: z.string(), to: z.string() }),
-        ),
-        moves: z.array(moveSchema),
-        identities: z.record(z.string(), canonicalAssignmentSchema).optional(),
-        completedRoots: z.array(z.string()).optional(),
-      })
-      .nullable(),
-    entryId: z.string().nullable(),
-    traceIds: z.array(z.string()).default([]),
-  })
-  .nullable();
+export const liveOrganizationGroupSchema = z.object({
+  key: z.string(),
+  sectionId: z.string().nullable(),
+  name: z.string(),
+  description: z.string(),
+  activeCount: z.number(),
+  completedCount: z.number(),
+  totalCount: z.number(),
+  roots: z.array(liveOrganizationGroupMemberSchema),
+});
+
+export const liveOrganizationUnresolvedSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  completed: z.boolean(),
+  evidence: z.string().nullable(),
+  reason: z.string(),
+});
+
+export const liveOrganizationCountsSchema = z.object({
+  activeRoots: z.number(),
+  completedRoots: z.number(),
+  totalRoots: z.number(),
+  unresolvedRoots: z.number(),
+  activeWorkstreams: z.number(),
+});
+
+export const liveOrganizationSchema = z.object({
+  status: z.enum(["idle", "classifying", "deriving", "syncing", "failed"]),
+  progress: z
+    .object({
+      stage: z.enum(["classifying", "deriving", "syncing"]),
+      completed: z.number().int().nonnegative(),
+      total: z.number().int().nonnegative(),
+      cached: z.number().int().nonnegative(),
+      unresolved: z.number().int().nonnegative(),
+    })
+    .nullable(),
+  error: z.string().nullable(),
+  lastUpdatedAt: z.number().nullable(),
+  groups: z.array(liveOrganizationGroupSchema),
+  unresolved: z.array(liveOrganizationUnresolvedSchema),
+  counts: liveOrganizationCountsSchema,
+});
+
+export type LiveOrganization = z.infer<typeof liveOrganizationSchema>;
+export type LiveOrganizationGroup = z.infer<typeof liveOrganizationGroupSchema>;
+export type LiveOrganizationGroupMember = z.infer<
+  typeof liveOrganizationGroupMemberSchema
+>;
+export type LiveOrganizationUnresolved = z.infer<
+  typeof liveOrganizationUnresolvedSchema
+>;
+export type LiveOrganizationCounts = z.infer<typeof liveOrganizationCountsSchema>;
 
 const draftAncestorSchema = z.object({
   name: z.string().min(1),
@@ -716,6 +694,21 @@ export const rpcContract = defineRpcContract({
         assignments: {},
         revision: 1,
       }),
+      organization: liveOrganizationSchema.default({
+        status: "idle",
+        progress: null,
+        error: null,
+        lastUpdatedAt: null,
+        groups: [],
+        unresolved: [],
+        counts: {
+          activeRoots: 0,
+          completedRoots: 0,
+          totalRoots: 0,
+          unresolvedRoots: 0,
+          activeWorkstreams: 0,
+        },
+      }),
     }),
   },
   /**
@@ -792,30 +785,14 @@ export const rpcContract = defineRpcContract({
     input: z.object({ threadId: z.string().min(1), recapId: z.string() }),
     output: z.object({ ok: z.literal(true) }),
   },
-  bootstrap: {
-    input: z.discriminatedUnion("action", [
-      z.object({ action: z.literal("get") }),
-      z.object({ action: z.literal("start") }),
-      z.strictObject({
-        action: z.literal("apply"),
-        runId: z.number().int().nonnegative(),
-        overrides: z
-          .array(
-            z.strictObject({
-              threadId: z.string().min(1).max(200),
-              accepted: z.boolean(),
-            }),
-          )
-          .max(500)
-          .refine(
-            (items) =>
-              new Set(items.map((i) => i.threadId)).size === items.length,
-            "Duplicate thread overrides",
-          ),
-      }),
-      z.object({ action: z.literal("cancel") }),
-    ]),
-    output: z.object({ state: bootstrapSchema, bootstrapped: z.boolean() }),
+  organization: {
+    input: z
+      .object({
+        action: z.enum(["get", "rebuild"]).optional(),
+      })
+      .nullable()
+      .default(null),
+    output: z.object({ state: liveOrganizationSchema }),
   },
   journal: {
     input: z

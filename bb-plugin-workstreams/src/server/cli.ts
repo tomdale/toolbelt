@@ -18,7 +18,7 @@ import {
 import { relativeAge } from "../domain/presentation.ts";
 import { isCurrent, needsYou } from "../domain/analysis.ts";
 import type { Analyzer, StoredAnalysis } from "./analyzer.ts";
-import type { Bootstrap, BootstrapState } from "./bootstrap.ts";
+import type { Coordinator } from "./coordinator.ts";
 import type { WorkstreamMap } from "./map.ts";
 import type { RouteDecision, Router } from "./router.ts";
 import {
@@ -176,7 +176,7 @@ export function registerCli(
     journal,
     analyzer,
     recaps,
-    bootstrap,
+    coordinator,
     map,
     router,
     traces,
@@ -196,7 +196,7 @@ export function registerCli(
     journal: Journal;
     analyzer: Analyzer;
     recaps: AgentRecaps;
-    bootstrap: Bootstrap;
+    coordinator: Coordinator;
     map: WorkstreamMap;
     router: Router;
     traces: TraceStore;
@@ -551,38 +551,11 @@ export function registerCli(
           constraints: [
             { kind: "at-least-one", options: ["description", "alias"] },
           ],
-          async run({ positionals, options }) {
-            const section = resolveWorkstream(
-              await listSections(bb.sdk),
-              positionals.workstream,
+          async run() {
+            throw new PluginCliError(
+              "Workstream metadata is derived from the catalog. Use 'bb workstreams catalog edit' instead.",
+              { code: "derived_workstream_readonly" },
             );
-            if (!section)
-              throw new PluginCliError(
-                `No workstream named "${positionals.workstream}".`,
-                {
-                  code: "workstream_not_found",
-                  hint: "Run `bb workstreams list` to see workstream names and ids.",
-                },
-              );
-            map.edit(section.id, {
-              description: options.description,
-              aliases: options.alias.length ? options.alias : undefined,
-            });
-            journal.add({
-              action: "edit-workstream",
-              source: "user",
-              rationale: `Edited ${section.name}`,
-              threads: [],
-              workstreams: [{ id: section.id, name: section.name }],
-              undo: null,
-            });
-            const record = map.get(section.id);
-            return {
-              exitCode: 0,
-              stdout: options.json
-                ? JSON.stringify(record, null, 2)
-                : `${section.name}: ${record?.description ?? "(no description)"}${record?.aliases.length ? `\nAlso called: ${record.aliases.join(", ")}` : ""}`,
-            };
           },
         }),
         new: cliCommand({
@@ -717,62 +690,22 @@ export function registerCli(
         }),
         rebuild: cliCommand({
           summary:
-            "Organize every thread once: propose workstreams, file threads, and preview the result",
+            "Derive workstreams and update active navigation immediately",
           options: {
-            apply: {
-              type: "boolean",
-              description:
-                "Apply a saved preview as one undoable batch; requires --run-id",
-            },
-            "run-id": {
-              type: "integer",
-              min: 0,
-              max: Number.MAX_SAFE_INTEGER,
-              description: "The startedAt value of the reviewed preview",
-            },
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ options }) {
-            if (options.apply && options["run-id"] === undefined)
-              throw new PluginCliError(
-                "Apply requires --run-id from the preview.",
-                { code: "preview_required" },
-              );
-            const fail = (state: BootstrapState | null) => {
-              throw new PluginCliError(state?.error ?? "Organizing failed.", {
-                code: "organize_failed",
-              });
-            };
-            let state = options.apply
-              ? await bootstrap.apply([], options["run-id"]!).catch(fail)
-              : await bootstrap.start().catch(fail);
-            if (state.status !== (options.apply ? "applied" : "preview"))
-              fail(state);
+            const state = await coordinator.rebuild();
             if (options.json)
               return { exitCode: 0, stdout: JSON.stringify(state, null, 2) };
-            const p = state.preview!;
-            const moves = p.moves.filter((m) => m.accepted);
             const lines = [
-              `${options.apply ? "Applied" : "Preview"}: ${plural(moves.length, "move")}, ${plural(p.creates.length, "new workstream")}, ${plural(p.renames.length, "rename")}`,
-              `Run ID: ${state.startedAt}`,
-              ...p.removals.map(
-                (r) =>
-                  `  remove: ${r.name} (${r.archivedThreads.length} archived threads; threads preserved)`,
+              `Status: ${state.status}`,
+              `Workstreams: ${state.groups.length}`,
+              `Active roots: ${state.counts.activeRoots}, Completed: ${state.counts.completedRoots}, Unresolved: ${state.counts.unresolvedRoots}`,
+              ...state.groups.map(
+                (g) =>
+                  `  ${g.name} (${g.totalCount} tasks: ${g.activeCount} active, ${g.completedCount} completed)`,
               ),
-              ...p.workstreams.map((w) => `  ${w.name}: ${w.description}`),
-              ...p.moves.map(
-                (m) =>
-                  `  ${m.accepted ? "✓" : "·"} ${clip(m.title)}: ${m.fromName} → ${m.toName} (${m.reason})`,
-              ),
-              ...p.assignments
-                .filter((a) => a.workstream === null)
-                .map((a) => `  Unfiled: ${a.threadId}`),
-              ...(options.apply
-                ? []
-                : [
-                    "",
-                    `Review on the Workstreams page, or apply this preview with --apply --run-id ${state.startedAt}.`,
-                  ]),
             ];
             return { exitCode: 0, stdout: lines.join("\n") };
           },

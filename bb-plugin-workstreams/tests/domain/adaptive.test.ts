@@ -6,6 +6,8 @@ import {
 } from "../../src/domain/classify.ts";
 import {
   activeHome,
+  deriveActiveEntityIds,
+  isGroupingValid,
   parseRegroup,
   regroupPrompt,
 } from "../../src/domain/regroup.ts";
@@ -90,5 +92,77 @@ describe("separated classification and grouping", () => {
       }),
     ).toThrow("empty");
     expect(regroupPrompt(input)).not.toContain("threadId");
+  });
+
+  it("deterministically derives active groups enforcing capacity, contraction, and stability", () => {
+    // Sparse count contracts to product root
+    const sparse = deriveActiveEntityIds({
+      entities,
+      counts: { f: 2 },
+      active: ["f"],
+      capacity: 6,
+      collapseAt: 3,
+    });
+    expect(sparse).toEqual(["p"]);
+
+    // Exceeding capacity extracts feature cluster
+    const split = deriveActiveEntityIds({
+      entities,
+      counts: { p: 3, f: 4 },
+      active: ["p"],
+      capacity: 6,
+      collapseAt: 3,
+    });
+    expect(split.sort()).toEqual(["f", "p"]);
+    expect(
+      parseRegroup(JSON.stringify({ activeEntityIds: split }), {
+        entities,
+        counts: { p: 3, f: 4 },
+        active: ["p"],
+        capacity: 6,
+        collapseAt: 3,
+      }).activeEntityIds.sort(),
+    ).toEqual(["f", "p"]);
+
+    // Indivisible overflow keeps single overflow group and drops empty root
+    const overflow = deriveActiveEntityIds({
+      entities,
+      counts: { f: 8 },
+      active: ["p"],
+      capacity: 6,
+      collapseAt: 3,
+    });
+    expect(overflow).toEqual(["f"]);
+
+    // Stability: preserves valid active groups when load is within capacity
+    const stable = deriveActiveEntityIds({
+      entities,
+      counts: { p: 2, f: 3 },
+      active: ["f", "p"],
+      capacity: 6,
+      collapseAt: 3,
+    });
+    expect(stable.sort()).toEqual(["f", "p"]);
+
+    // Empty product with visible retention returns product root
+    const retained = deriveActiveEntityIds({
+      entities,
+      counts: {},
+      active: [],
+      capacity: 6,
+      collapseAt: 3,
+      visibleProductRoots: ["p"],
+    });
+    expect(retained).toEqual(["p"]);
+
+    // Completely empty product without retention returns no groups
+    const empty = deriveActiveEntityIds({
+      entities,
+      counts: {},
+      active: [],
+      capacity: 6,
+      collapseAt: 3,
+    });
+    expect(empty).toEqual([]);
   });
 });

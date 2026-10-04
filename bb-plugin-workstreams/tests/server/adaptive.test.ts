@@ -57,22 +57,12 @@ it("recognizes an inactive feature and retains subject through broad placement",
   });
   expect(world.sections).toHaveLength(1);
 });
-it("adaptive organization sends counts rather than tasks to regrouping and leaves mutations for Apply", async () => {
+it("adaptive organization classifies task and derives groups automatically", async () => {
   let featureId = "";
   world = await fakeWorld({
     complete: ({ prompt }) => {
       if (prompt.includes("Classify the most specific"))
         return JSON.stringify({ subjectId: featureId, proposed: null });
-      if (prompt.includes("Choose active navigation")) {
-        const snapshot = JSON.parse(prompt.split("Snapshot:\n")[1]!);
-        return JSON.stringify({
-          activeEntityIds: [
-            snapshot.entities.find(
-              (e: { parentId: string | null }) => e.parentId === null,
-            ).id,
-          ],
-        });
-      }
       return JSON.stringify({
         recap: "ongoing",
         state: "in_progress",
@@ -100,15 +90,11 @@ it("adaptive organization sends counts rather than tasks to regrouping and leave
     "Feature",
     corpus.list()[0]!.id,
   ).id;
-  const preview = await world.harness.behavior.callRpc("bootstrap", {
-    action: "start",
-  });
-  expect(preview).toMatchObject({ state: { status: "preview" } });
-  const prompt = world.completions.find((c) =>
-    c.prompt.includes("Choose active navigation"),
-  )!.prompt;
-  expect(prompt).toContain('"counts"');
-  expect(prompt).not.toContain("Lantern shelves task");
-  expect(world.sections).toHaveLength(1);
+  const org = (await world.harness.behavior.callRpc("organization", {
+    action: "rebuild",
+  })) as {
+    state: { status: string; groups: { name: string }[] };
+  };
+  expect(org.state.status).toBe("idle");
   expect(corpus.subjects().get("existing")).toBe(featureId);
 });

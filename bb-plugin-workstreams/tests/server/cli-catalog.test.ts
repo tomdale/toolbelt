@@ -461,11 +461,10 @@ describe("CLI Task Identity commands", () => {
 
     // 4. Organize reuses the fresh classification immediately without re-classifying
     const classifyPromptsBefore = prompts.filter((p) => p.includes("Classify the most specific")).length;
-    const orgState = (await w.harness.behavior.callRpc("bootstrap", { action: "start" })) as {
-      state: { preview: { assignments: { threadId: string; workstream: string | null }[] } };
+    const orgState = (await w.harness.behavior.callRpc("organization", { action: "rebuild" })) as {
+      state: { groups: { roots: { id: string }[] }[] };
     };
-    expect(orgState.state.preview).toBeDefined();
-    expect(orgState.state.preview.assignments.some((a) => a.threadId === rootThread.id)).toBe(true);
+    expect(orgState.state.groups.some((g) => g.roots.some((r) => r.id === rootThread.id))).toBe(true);
     const classifyPromptsAfter = prompts.filter((p) => p.includes("Classify the most specific")).length;
     expect(classifyPromptsAfter).toBe(classifyPromptsBefore);
   });
