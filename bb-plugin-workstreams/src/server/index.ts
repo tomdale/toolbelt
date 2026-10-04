@@ -17,12 +17,16 @@ import { Router, type RouteDecision, type Environment } from "./router.ts";
 import { CorpusStore, classificationEvidence } from "./corpus.ts";
 import { corpusLabel } from "../domain/corpus-label.ts";
 import { ancestors, activeHome } from "../domain/regroup.ts";
-import type { CanonicalAssignment, DraftSubjectProposal } from "../domain/corpus.ts";
+import type {
+  CanonicalAssignment,
+  DraftSubjectProposal,
+} from "../domain/corpus.ts";
 import { rpcContract } from "./contract.ts";
 import { hostContract } from "./inference/contract.ts";
 import { openDatabase } from "./db.ts";
 import { Journal } from "./journal.ts";
 import { Inference } from "./model.ts";
+import { adoptStoredGoals } from "./adopt.ts";
 import { OpeningTitles } from "./opening.ts";
 import { loadOrder, saveOrder } from "./order.ts";
 import { loadSpinner, saveSpinner } from "./spinner.ts";
@@ -39,7 +43,11 @@ import {
 } from "./recapPrefs.ts";
 import { ThreadSnoozes, loadSnoozePrefs, saveSnoozePrefs } from "./snooze.ts";
 import { hasPrefs, loadPrefs, savePrefs, seedPrefs } from "./prefs.ts";
-import { DEFAULT_MODELS, gatewayModel, type ModelChoice } from "../domain/prefs.ts";
+import {
+  DEFAULT_MODELS,
+  gatewayModel,
+  type ModelChoice,
+} from "../domain/prefs.ts";
 import { runWorker as completeWithWorker } from "./inference/worker.ts";
 
 export { rpcContract } from "./contract.ts";
@@ -477,6 +485,24 @@ export default async function plugin(bb: BbPluginApi) {
         .then(() => {
           analyzer.catchUp(service.threads());
           opening.sweep(service.threads());
+          void adoptStoredGoals({
+            db,
+            threads: () => service.threads(),
+            analysis: (threadId) => analyzer.get(threadId),
+            enabled: () => currentPrefs().threads.autoTitle,
+            retitle: (threadId, goal, revision, rationale) =>
+              service.retitle(threadId, goal, revision, "analysis", rationale),
+            log: (message) => bb.log.warn(message),
+          })
+            .then((adopted) => {
+              if (adopted > 0)
+                bb.log.info(
+                  `Titled ${adopted} threads from their stored goals`,
+                );
+            })
+            .catch((error: unknown) =>
+              bb.log.warn(`Adopting stored goals failed: ${String(error)}`),
+            );
           void sweepSnoozes();
           map.refresh(service.threads(), analyzer.all());
         })
