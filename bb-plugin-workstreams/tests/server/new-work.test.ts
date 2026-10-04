@@ -322,5 +322,3 @@ describe("sendToThread", () => {
     expect(w.sent).toHaveLength(0);
   });
 });
-
-
