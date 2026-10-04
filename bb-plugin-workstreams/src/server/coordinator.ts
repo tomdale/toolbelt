@@ -16,6 +16,7 @@ import {
   deriveActiveEntityIds,
 } from "../domain/regroup.ts";
 import { corpusLabel } from "../domain/corpus-label.ts";
+import type { CanonicalAssignment, CorpusEntity } from "../domain/corpus.ts";
 import type { Inference } from "./model.ts";
 import {
   listSections,
@@ -73,6 +74,7 @@ export class Coordinator {
   private controller: AbortController | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private lastSyncedHash: string | null = null;
+  private forceNextRun = false;
   private activeRun: Promise<LiveOrganization> | null = null;
 
   constructor(private readonly deps: CoordinatorDeps) {
@@ -136,6 +138,12 @@ export class Coordinator {
 
   async rebuild(): Promise<LiveOrganization> {
     this.lastSyncedHash = null;
+    this.forceNextRun = true;
+    if (this.running) {
+      this.rerunQueued = true;
+      await this.activeRun?.catch(() => {});
+      return this.run();
+    }
     return this.run();
   }
 
@@ -150,10 +158,12 @@ export class Coordinator {
     this.running = true;
     const controller = new AbortController();
     this.controller = controller;
+    const isForced = this.forceNextRun;
+    this.forceNextRun = false;
 
     const runPromise = (async () => {
       try {
-        const result = await this.executePass(controller.signal);
+        const result = await this.executePass(controller.signal, isForced);
         return result;
       } finally {
         this.running = false;
@@ -172,9 +182,23 @@ export class Coordinator {
     return runPromise;
   }
 
-  private async executePass(signal: AbortSignal): Promise<LiveOrganization> {
+  private async executePass(
+    signal: AbortSignal,
+    isForced = false,
+  ): Promise<LiveOrganization> {
     const currentState = this.state();
     const sdk = (this.deps.service as unknown as { sdk: () => BbPluginApi["sdk"] }).sdk();
+
+    let passContext: {
+      roots: InventoryThread[];
+      isCompletedMap: Map<string, boolean>;
+      assignments: Record<string, CanonicalAssignment>;
+      selectedEntityIds: string[];
+      entityToSection: Map<string, string>;
+      appliedSectionIds: Map<string, string | null>;
+      evidenceById: Map<string, string>;
+      entities: CorpusEntity[];
+    } | null = null;
 
     try {
       await this.deps.service.reconcile();
@@ -219,7 +243,7 @@ export class Coordinator {
         )
         .digest("hex");
 
-      if (this.lastSyncedHash === snapshotHash && currentState.status === "idle") {
+      if (!isForced && this.lastSyncedHash === snapshotHash && currentState.status === "idle") {
         return currentState;
       }
 
@@ -272,6 +296,7 @@ export class Coordinator {
           error: null,
         });
 
+        const catalogRevBefore = this.deps.corpus.revision();
         let cursor = 0;
         let classifyError: unknown = null;
 
@@ -279,6 +304,7 @@ export class Coordinator {
           while (!signal.aborted && !this.disposed && !classifyError && cursor < pending.length) {
             const thread = pending[cursor++]!;
             try {
+              const threadEvidence = evidenceById.get(thread.id)!;
               const { value } = await this.deps.inference.run(
                 "classify",
                 {
@@ -297,6 +323,36 @@ export class Coordinator {
 
               if (signal.aborted || this.disposed) return;
 
+              // Check if thread was manually assigned or cleared while inference was in-flight (Finding 3)
+              const currentAssignment = this.deps.corpus.assignment(thread.id);
+              if (currentAssignment.provenance === "manual") {
+                completed++;
+                continue;
+              }
+
+              // Check if thread was archived while inference was in-flight
+              const liveThread = await sdk.threads
+                .get({ threadId: thread.id })
+                .catch(() => null);
+              if (
+                !liveThread ||
+                liveThread.archivedAt !== null ||
+                liveThread.visibility === "hidden"
+              ) {
+                this.rerunQueued = true;
+                completed++;
+                continue;
+              }
+
+              // Check if evidence changed while inference in-flight
+              const liveTitle =
+                liveThread.title ?? liveThread.titleFallback ?? "";
+              if (liveTitle !== thread.title) {
+                this.rerunQueued = true;
+                completed++;
+                continue;
+              }
+
               const entity = value.subjectId
                 ? this.deps.corpus.list().find((e) => e.id === value.subjectId)
                 : value.proposed
@@ -306,10 +362,14 @@ export class Coordinator {
               if (entity) {
                 this.deps.corpus.assign(thread.id, entity.id, {
                   provenance: "automatic",
-                  evidence: evidenceById.get(thread.id)!,
+                  evidence: threadEvidence,
                 });
               } else {
-                this.deps.corpus.clear(thread.id);
+                // Persistent null result cached with automatic provenance (Finding 2)
+                this.deps.corpus.assign(thread.id, null, {
+                  provenance: "automatic",
+                  evidence: threadEvidence,
+                });
                 unresolved++;
               }
               completed++;
@@ -382,7 +442,7 @@ export class Coordinator {
         .map((e) => e.id);
 
       const policy = this.deps.policy?.() ?? { capacity: 6, collapseAt: 3 };
-      const selectedEntityIds = deriveActiveEntityIds({
+      const rawSelectedEntityIds = deriveActiveEntityIds({
         entities,
         counts,
         active: currentActive,
@@ -391,10 +451,37 @@ export class Coordinator {
         visibleProductRoots: Array.from(visibleProductRoots),
       });
 
+      // Filter to only groups that receive tasks (active or completed retention)
+      const groupLoads = new Map<string, number>();
+      for (const root of roots) {
+        const assignment = assignments[root.id];
+        if (assignment && assignment.status === "assigned" && assignment.entityId) {
+          const home = activeHome(assignment.entityId, rawSelectedEntityIds, entities);
+          if (home) {
+            groupLoads.set(home, (groupLoads.get(home) ?? 0) + 1);
+          }
+        }
+      }
+      const selectedEntityIds = rawSelectedEntityIds.filter(
+        (id) => (groupLoads.get(id) ?? 0) > 0,
+      );
+
       // 3. Sync Native Section Projection
       const liveSections = await listSections(sdk);
-      const groupBindings = this.deps.corpus.groups(); // sectionId -> entityId
+      const groupBindings = new Map(this.deps.corpus.groups()); // sectionId -> entityId
       const entityToSection = new Map<string, string>();
+      const appliedSectionIds = new Map<string, string | null>();
+
+      passContext = {
+        roots,
+        isCompletedMap,
+        assignments,
+        selectedEntityIds,
+        entityToSection,
+        appliedSectionIds,
+        evidenceById,
+        entities,
+      };
 
       for (const entityId of selectedEntityIds) {
         const entity = entities.find((e) => e.id === entityId)!;
@@ -406,23 +493,35 @@ export class Coordinator {
         );
 
         if (!section) {
-          // Check if an existing section matches the name and is not bound to another entity
+          // Check if an existing section matches the name and is not bound to another active entity
           const candidate = liveSections.find(
             (s) =>
               s.name.toLowerCase() === expectedName.toLowerCase() &&
-              (!groupBindings.has(s.id) || groupBindings.get(s.id) === entityId),
+              (!groupBindings.has(s.id) ||
+                groupBindings.get(s.id) === entityId ||
+                !selectedEntityIds.includes(groupBindings.get(s.id)!)),
           );
           if (candidate) {
             section = candidate;
             this.deps.corpus.bindGroup(section.id, entityId);
+            groupBindings.set(section.id, entityId); // Update local map (Finding 4)
           }
         }
 
         if (!section) {
-          // Create a new native section
+          // Create a new native section owned by workstreams (Finding 7)
           const created = await sdk.threadSections.create({ name: expectedName });
           section = { id: created.id, name: created.name };
+          const now = this.now();
+          this.deps.db
+            .prepare(
+              `INSERT INTO ws_workstream (section_id, description, description_source, created_by, created_at, updated_at)
+               VALUES (?, NULL, 'generated', 'workstreams', ?, ?)
+               ON CONFLICT(section_id) DO UPDATE SET created_by = 'workstreams'`,
+            )
+            .run(created.id, now, now);
           this.deps.corpus.bindGroup(created.id, entityId);
+          groupBindings.set(created.id, entityId); // Update local map (Finding 4)
           this.deps.service.seeSection(created.id, created.name);
         } else if (section.name !== expectedName) {
           // Rename section if entity name changed
@@ -463,147 +562,98 @@ export class Coordinator {
             root.title,
           );
         }
+        appliedSectionIds.set(root.id, targetSectionId);
       }
 
       // Clean up unused empty sections that belonged to Workstreams
+      const activeSectionIds = new Set(entityToSection.values());
+
       for (const section of liveSections) {
+        // Never delete an active section (Finding 4)
+        if (activeSectionIds.has(section.id)) continue;
+
         const boundEntityId = groupBindings.get(section.id);
         if (boundEntityId && !selectedEntityIds.includes(boundEntityId)) {
           const members = await this.deps.members(section.id);
           const activeMembers = members.filter((m) => m.archivedAt === null);
           if (activeMembers.length === 0) {
-            await sdk.threadSections.delete({ id: section.id });
+            // Check ownership safety policy (Finding 7)
+            const wsRow = this.deps.db
+              .prepare("SELECT created_by FROM ws_workstream WHERE section_id = ?")
+              .get(section.id) as { created_by: string } | undefined;
+
+            if (wsRow?.created_by === "workstreams") {
+              await sdk.threadSections.delete({ id: section.id });
+              this.deps.db
+                .prepare("DELETE FROM ws_seen_section WHERE section_id = ?")
+                .run(section.id);
+              this.deps.db
+                .prepare("DELETE FROM ws_workstream WHERE section_id = ?")
+                .run(section.id);
+            }
             this.deps.corpus.unbindGroup(section.id);
-            this.deps.db
-              .prepare("DELETE FROM ws_seen_section WHERE section_id = ?")
-              .run(section.id);
-            this.deps.db
-              .prepare("DELETE FROM ws_workstream WHERE section_id = ?")
-              .run(section.id);
+            groupBindings.delete(section.id);
           }
         }
       }
 
       // 4. Assemble LiveOrganizationState
-      const groupsMap = new Map<string, LiveOrganizationGroup>();
-      for (const entityId of selectedEntityIds) {
-        const entity = entities.find((e) => e.id === entityId)!;
-        const name = corpusLabel(entityId, entities);
-        groupsMap.set(entityId, {
-          key: entityId,
-          sectionId: entityToSection.get(entityId) ?? null,
-          name,
-          description: entity.description || name,
-          activeCount: 0,
-          completedCount: 0,
-          totalCount: 0,
-          roots: [],
-        });
-      }
-
-      const unresolvedTasks: LiveOrganizationUnresolved[] = [];
-      let activeRootsCount = 0;
-      let completedRootsCount = 0;
-
-      for (const root of roots) {
-        const assignment = assignments[root.id];
-        const isCompleted = isCompletedMap.get(root.id) ?? false;
-        if (isCompleted) {
-          completedRootsCount++;
-        } else {
-          activeRootsCount++;
-        }
-
-        if (!assignment || assignment.status === "unresolved" || !assignment.entityId) {
-          unresolvedTasks.push({
-            id: root.id,
-            title: root.title,
-            completed: isCompleted,
-            evidence: evidenceById.get(root.id) ?? null,
-            reason: isCompleted
-              ? "Completed task; unresolved identity."
-              : "Unresolved identity; remains unfiled.",
-          });
-          continue;
-        }
-
-        const homeEntityId = activeHome(
-          assignment.entityId,
-          selectedEntityIds,
-          entities,
-        );
-        const group = homeEntityId ? groupsMap.get(homeEntityId) : null;
-
-        if (group) {
-          if (isCompleted) {
-            group.completedCount++;
-          } else {
-            group.activeCount++;
-          }
-          group.totalCount++;
-
-          const entity = entities.find((e) => e.id === assignment.entityId);
-          const identityLabel = entity
-            ? corpusLabel(entity.id, entities)
-            : null;
-
-          let reason: string;
-          if (isCompleted) {
-            reason = `Completed task; retained in ${group.name}.`;
-          } else if (assignment.provenance === "manual") {
-            reason = `Manually assigned to ${identityLabel}; grouped in ${group.name}.`;
-          } else if (identityLabel && identityLabel !== group.name) {
-            reason = `Classified as ${identityLabel}; grouped under ${group.name}.`;
-          } else {
-            reason = `Classified as ${group.name}.`;
-          }
-
-          group.roots.push({
-            id: root.id,
-            title: root.title,
-            completed: isCompleted,
-            identityId: assignment.entityId,
-            identityLabel,
-            provenance: assignment.provenance,
-            reason,
-          });
-        } else {
-          unresolvedTasks.push({
-            id: root.id,
-            title: root.title,
-            completed: isCompleted,
-            evidence: evidenceById.get(root.id) ?? null,
-            reason: "No active home; remains unfiled.",
-          });
-        }
-      }
-
-      const finalGroups = Array.from(groupsMap.values()).filter(
-        (g) => g.totalCount > 0,
-      );
-
-      const finalState: LiveOrganization = {
+      const finalState = this.assembleLiveOrganizationState({
         status: "idle",
-        progress: null,
         error: null,
-        lastUpdatedAt: this.now(),
-        groups: finalGroups,
-        unresolved: unresolvedTasks,
-        counts: {
-          activeRoots: activeRootsCount,
-          completedRoots: completedRootsCount,
-          totalRoots: roots.length,
-          unresolvedRoots: unresolvedTasks.length,
-          activeWorkstreams: finalGroups.length,
-        },
-      };
+        roots,
+        isCompletedMap,
+        assignments,
+        selectedEntityIds,
+        entityToSection,
+        appliedSectionIds,
+        evidenceById,
+        entities,
+      });
 
       setMeta(this.deps.db, "bootstrapped", "1");
-      this.lastSyncedHash = snapshotHash;
+
+      // Post-sync fingerprint using appliedSectionIds (Finding 6)
+      const postSyncSnapshotHash = createHash("sha256")
+        .update(
+          JSON.stringify({
+            catalogRev: this.deps.corpus.revision(),
+            roots: roots.map((r) => [
+              r.id,
+              r.title,
+              appliedSectionIds.get(r.id) ?? r.sectionId,
+              isCompletedMap.get(r.id),
+              this.deps.corpus.assignment(r.id).entityId,
+              this.deps.corpus.assignment(r.id).status,
+              this.deps.corpus.assignment(r.id).provenance,
+            ]),
+          }),
+        )
+        .digest("hex");
+      this.lastSyncedHash = postSyncSnapshotHash;
+
       return this.save(finalState);
     } catch (err) {
       if (signal.aborted || this.disposed) return this.state();
       const errMsg = err instanceof Error ? err.message : String(err);
+
+      // Finding 9: Partial mutation state truth
+      if (passContext && passContext.selectedEntityIds.length > 0) {
+        const failedState = this.assembleLiveOrganizationState({
+          status: "failed",
+          error: errMsg,
+          roots: passContext.roots,
+          isCompletedMap: passContext.isCompletedMap,
+          assignments: passContext.assignments,
+          selectedEntityIds: passContext.selectedEntityIds,
+          entityToSection: passContext.entityToSection,
+          appliedSectionIds: passContext.appliedSectionIds,
+          evidenceById: passContext.evidenceById,
+          entities: passContext.entities,
+        });
+        return this.save(failedState);
+      }
+
       return this.save({
         ...currentState,
         status: "failed",
@@ -611,5 +661,144 @@ export class Coordinator {
         progress: null,
       });
     }
+  }
+
+  private assembleLiveOrganizationState(options: {
+    status: LiveOrganization["status"];
+    error: string | null;
+    roots: InventoryThread[];
+    isCompletedMap: Map<string, boolean>;
+    assignments: Record<string, CanonicalAssignment>;
+    selectedEntityIds: string[];
+    entityToSection: Map<string, string>;
+    appliedSectionIds: Map<string, string | null>;
+    evidenceById: Map<string, string>;
+    entities: CorpusEntity[];
+  }): LiveOrganization {
+    const {
+      status,
+      error,
+      roots,
+      isCompletedMap,
+      assignments,
+      selectedEntityIds,
+      entityToSection,
+      appliedSectionIds,
+      evidenceById,
+      entities,
+    } = options;
+
+    const groupsMap = new Map<string, LiveOrganizationGroup>();
+    for (const entityId of selectedEntityIds) {
+      const entity = entities.find((e) => e.id === entityId);
+      const name = entity ? corpusLabel(entityId, entities) : entityId;
+      groupsMap.set(entityId, {
+        key: entityId,
+        sectionId: entityToSection.get(entityId) ?? null,
+        name,
+        description: entity?.description || name,
+        activeCount: 0,
+        completedCount: 0,
+        totalCount: 0,
+        roots: [],
+      });
+    }
+
+    const unresolvedTasks: LiveOrganizationUnresolved[] = [];
+    let activeRootsCount = 0;
+    let completedRootsCount = 0;
+
+    for (const root of roots) {
+      const assignment = assignments[root.id];
+      const isCompleted = isCompletedMap.get(root.id) ?? false;
+      if (isCompleted) {
+        completedRootsCount++;
+      } else {
+        activeRootsCount++;
+      }
+
+      if (!assignment || assignment.status === "unresolved" || !assignment.entityId) {
+        unresolvedTasks.push({
+          id: root.id,
+          title: root.title,
+          completed: isCompleted,
+          evidence: evidenceById.get(root.id) ?? null,
+          reason: isCompleted
+            ? "Completed task; unresolved identity."
+            : "Unresolved identity; remains unfiled.",
+        });
+        continue;
+      }
+
+      const homeEntityId = activeHome(
+        assignment.entityId,
+        selectedEntityIds,
+        entities,
+      );
+      const group = homeEntityId ? groupsMap.get(homeEntityId) : null;
+
+      if (group) {
+        if (isCompleted) {
+          group.completedCount++;
+        } else {
+          group.activeCount++;
+        }
+        group.totalCount++;
+
+        const entity = entities.find((e) => e.id === assignment.entityId);
+        const identityLabel = entity
+          ? corpusLabel(entity.id, entities)
+          : null;
+
+        let reason: string;
+        if (isCompleted) {
+          reason = `Completed task; retained in ${group.name}.`;
+        } else if (assignment.provenance === "manual") {
+          reason = `Manually assigned to ${identityLabel}; grouped in ${group.name}.`;
+        } else if (identityLabel && identityLabel !== group.name) {
+          reason = `Classified as ${identityLabel}; grouped under ${group.name}.`;
+        } else {
+          reason = `Classified as ${group.name}.`;
+        }
+
+        group.roots.push({
+          id: root.id,
+          title: root.title,
+          completed: isCompleted,
+          identityId: assignment.entityId,
+          identityLabel,
+          provenance: assignment.provenance,
+          reason,
+        });
+      } else {
+        unresolvedTasks.push({
+          id: root.id,
+          title: root.title,
+          completed: isCompleted,
+          evidence: evidenceById.get(root.id) ?? null,
+          reason: "No active home; remains unfiled.",
+        });
+      }
+    }
+
+    const finalGroups = Array.from(groupsMap.values()).filter(
+      (g) => g.totalCount > 0,
+    );
+
+    return {
+      status,
+      progress: null,
+      error,
+      lastUpdatedAt: this.now(),
+      groups: finalGroups,
+      unresolved: unresolvedTasks,
+      counts: {
+        activeRoots: activeRootsCount,
+        completedRoots: completedRootsCount,
+        totalRoots: roots.length,
+        unresolvedRoots: unresolvedTasks.length,
+        activeWorkstreams: finalGroups.length,
+      },
+    };
   }
 }

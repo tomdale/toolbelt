@@ -31,6 +31,7 @@ export function isGroupingValid(
   counts: Record<string, number>,
   capacity: number,
   collapseAt?: number,
+  visibleProductRoots?: string[],
 ): boolean {
   if (activeIds.length === 0) return false;
   if (new Set(activeIds).size !== activeIds.length) return false;
@@ -51,7 +52,10 @@ export function isGroupingValid(
   }
 
   for (const [id, group] of members) {
-    if (!group.length) return false;
+    if (!group.length) {
+      if (visibleProductRoots?.includes(id)) continue;
+      return false;
+    }
     const load = group.reduce((sum, [, n]) => sum + n, 0);
     const isIndivisible = group.length === 1 && group[0]![0] === id;
     if (load > capacity && !isIndivisible) return false;
@@ -98,9 +102,12 @@ export function deriveActiveEntityIds(input: RegroupInput): string[] {
     );
     const productEntityIds = new Set(productEntities.map((e) => e.id));
 
+    // Partition counts for this product
+    const productCounts: Record<string, number> = {};
     let totalProductCount = 0;
     for (const [id, count] of Object.entries(positiveCounts)) {
       if (productEntityIds.has(id)) {
+        productCounts[id] = count;
         totalProductCount += count;
       }
     }
@@ -126,12 +133,16 @@ export function deriveActiveEntityIds(input: RegroupInput): string[] {
       isGroupingValid(
         prevProductActive,
         productEntities,
-        positiveCounts,
+        productCounts,
         capacity,
         collapseAt,
+        visibleProductRoots,
       )
     ) {
       selected.push(...prevProductActive);
+      if (visibleProductRoots?.includes(root.id) && !selected.includes(root.id)) {
+        selected.push(root.id);
+      }
       continue;
     }
 
@@ -139,10 +150,13 @@ export function deriveActiveEntityIds(input: RegroupInput): string[] {
     const derived = deriveProductGroups(
       root.id,
       productEntities,
-      positiveCounts,
+      productCounts,
       capacity,
     );
     selected.push(...derived);
+    if (visibleProductRoots?.includes(root.id) && !selected.includes(root.id)) {
+      selected.push(root.id);
+    }
   }
 
   return selected;

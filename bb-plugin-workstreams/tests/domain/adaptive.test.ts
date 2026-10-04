@@ -164,5 +164,32 @@ describe("separated classification and grouping", () => {
       collapseAt: 3,
     });
     expect(empty).toEqual([]);
+
+    // Multi-product workspaces: does not throw Unknown corpus identity when counts span products
+    const multiEntities: Entity[] = [
+      { id: "p1", name: "Product 1", description: "", parentId: null, aliases: [] },
+      { id: "f1", name: "Feature 1", description: "", parentId: "p1", aliases: [] },
+      { id: "p2", name: "Product 2", description: "", parentId: null, aliases: [] },
+      { id: "f2", name: "Feature 2", description: "", parentId: "p2", aliases: [] },
+    ];
+    const multi = deriveActiveEntityIds({
+      entities: multiEntities,
+      counts: { f1: 4, f2: 4 },
+      active: [],
+      capacity: 6,
+      collapseAt: 3,
+    });
+    expect(multi.sort()).toEqual(["p1", "p2"]);
+
+    // Completed retention on sibling expansion: product root retained when visibleProductRoots specified
+    const retainedOnExpansion = deriveActiveEntityIds({
+      entities,
+      counts: { f: 8 },
+      active: ["p"],
+      capacity: 6,
+      collapseAt: 3,
+      visibleProductRoots: ["p"],
+    });
+    expect(retainedOnExpansion.sort()).toEqual(["f", "p"]);
   });
 });

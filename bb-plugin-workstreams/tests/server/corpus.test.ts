@@ -663,4 +663,41 @@ describe("CorpusStore", () => {
     corpus.clear("t1");
     expect(corpus.revision()).toBeGreaterThan(rev1);
   });
+
+  it("persistent unresolved assignment and durable manual clear", () => {
+    const { corpus } = store();
+    const entity = corpus.create("Product", "Description");
+
+    // Automatic unresolved with evidence
+    corpus.assign("t-auto-null", null, {
+      provenance: "automatic",
+      evidence: "evidence-1",
+    });
+
+    const autoAssign = corpus.assignment("t-auto-null");
+    expect(autoAssign.status).toBe("unresolved");
+    expect(autoAssign.entityId).toBeNull();
+    expect(autoAssign.provenance).toBe("automatic");
+    expect(autoAssign.evidence).toBe("evidence-1");
+
+    // Freshness check with matching evidence
+    expect(corpus.isFresh("t-auto-null", "evidence-1")).toBe(true);
+    // Freshness check with different evidence
+    expect(corpus.isFresh("t-auto-null", "evidence-2")).toBe(false);
+
+    // Explicit manual clear
+    corpus.clear("t-manual-clear");
+    const manualAssign = corpus.assignment("t-manual-clear");
+    expect(manualAssign.status).toBe("unresolved");
+    expect(manualAssign.entityId).toBeNull();
+    expect(manualAssign.provenance).toBe("manual");
+    expect(manualAssign.evidence).toBeNull();
+
+    // Manual is always fresh regardless of evidence
+    expect(corpus.isFresh("t-manual-clear", "any-evidence")).toBe(true);
+
+    // No fake catalog identity created in catalog
+    expect(corpus.list()).toHaveLength(1);
+    expect(corpus.list()[0]!.id).toBe(entity.id);
+  });
 });

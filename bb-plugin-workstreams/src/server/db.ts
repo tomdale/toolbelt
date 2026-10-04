@@ -309,6 +309,15 @@ const MIGRATIONS = [
   "ALTER TABLE ws_corpus_subject ADD COLUMN evidence TEXT",
   "ALTER TABLE ws_corpus_subject ADD COLUMN source TEXT NOT NULL DEFAULT 'legacy'",
   "ALTER TABLE ws_title ADD COLUMN provisional INTEGER NOT NULL DEFAULT 0",
+  `CREATE TABLE IF NOT EXISTS ws_corpus_subject_v2 (
+    thread_id TEXT PRIMARY KEY,
+    entity_id TEXT REFERENCES ws_corpus_entity(id),
+    evidence TEXT,
+    source TEXT NOT NULL DEFAULT 'legacy'
+  )`,
+  "INSERT OR REPLACE INTO ws_corpus_subject_v2(thread_id, entity_id, evidence, source) SELECT thread_id, entity_id, evidence, source FROM ws_corpus_subject",
+  "DROP TABLE ws_corpus_subject",
+  "ALTER TABLE ws_corpus_subject_v2 RENAME TO ws_corpus_subject",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

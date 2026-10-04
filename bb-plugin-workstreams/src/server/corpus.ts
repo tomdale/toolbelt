@@ -447,7 +447,7 @@ export class CorpusStore {
         "SELECT entity_id, evidence, source FROM ws_corpus_subject WHERE thread_id = ?",
       )
       .get(rootId) as
-      | { entity_id: string; evidence: string | null; source: string }
+      | { entity_id: string | null; evidence: string | null; source: string }
       | undefined;
 
     if (!row) {
@@ -463,23 +463,25 @@ export class CorpusStore {
       };
     }
 
+    const provenance: AssignmentProvenance =
+      row.source === "manual" ? "manual" : "automatic";
+
     const entities = this.list();
-    const entity = entities.find((e) => e.id === row.entity_id);
+    const entity = row.entity_id
+      ? entities.find((e) => e.id === row.entity_id)
+      : null;
     if (!entity) {
       return {
         threadId,
         entityId: null,
         status: "unresolved",
-        provenance: null,
+        provenance,
         label: null,
         ancestorIds: [],
-        evidence: null,
+        evidence: row.evidence ?? null,
         inheritedFrom: isChild ? rootId : null,
       };
     }
-
-    const provenance: AssignmentProvenance =
-      row.source === "manual" ? "manual" : "automatic";
 
     return {
       threadId,
@@ -499,7 +501,7 @@ export class CorpusStore {
 
     const subjects = new Map<
       string,
-      { entityId: string; evidence: string | null; source: string }
+      { entityId: string | null; evidence: string | null; source: string }
     >();
     const subjectRows = this.db
       .prepare(
@@ -507,7 +509,7 @@ export class CorpusStore {
       )
       .all() as {
       thread_id: string;
-      entity_id: string;
+      entity_id: string | null;
       evidence: string | null;
       source: string;
     }[];
@@ -562,22 +564,22 @@ export class CorpusStore {
         };
         continue;
       }
-      const entity = byId.get(subject.entityId);
+      const entity = subject.entityId ? byId.get(subject.entityId) : null;
+      const provenance: AssignmentProvenance =
+        subject.source === "manual" ? "manual" : "automatic";
       if (!entity) {
         result[threadId] = {
           threadId,
           entityId: null,
           status: "unresolved",
-          provenance: null,
+          provenance,
           label: null,
           ancestorIds: [],
-          evidence: null,
+          evidence: subject.evidence ?? null,
           inheritedFrom: isChild ? rootId : null,
         };
         continue;
       }
-      const provenance: AssignmentProvenance =
-        subject.source === "manual" ? "manual" : "automatic";
       result[threadId] = {
         threadId,
         entityId: entity.id,
@@ -594,11 +596,11 @@ export class CorpusStore {
 
   assign(
     threadId: string,
-    entityId: string,
-    options?: { provenance?: AssignmentProvenance; evidence?: string },
+    entityId: string | null,
+    options?: { provenance?: AssignmentProvenance; evidence?: string | null },
   ): CanonicalAssignment {
     return this.db.transaction(() => {
-      if (!this.getById(entityId))
+      if (entityId !== null && !this.getById(entityId))
         throw new Error(`Unknown corpus entity: ${entityId}`);
       if (!threadId.trim()) throw new Error("Thread ID must not be empty");
 
@@ -613,7 +615,7 @@ export class CorpusStore {
           "SELECT entity_id, evidence, source FROM ws_corpus_subject WHERE thread_id = ?",
         )
         .get(rootId) as
-        | { entity_id: string; evidence: string | null; source: string }
+        | { entity_id: string | null; evidence: string | null; source: string }
         | undefined;
 
       if (
@@ -624,6 +626,9 @@ export class CorpusStore {
       ) {
         return this.assignment(threadId);
       }
+
+      const isInitialClear =
+        !existing && entityId === null && provenance === "manual";
 
       this.db
         .prepare(
@@ -636,22 +641,18 @@ export class CorpusStore {
         )
         .run(rootId, entityId, evidence, provenance);
 
-      this.bumpRevision();
+      if (!isInitialClear) {
+        this.bumpRevision();
+      }
       return this.assignment(threadId);
     })();
   }
 
   clear(threadId: string): CanonicalAssignment {
-    return this.db.transaction(() => {
-      const rootId = this.findRootThread(threadId);
-      const res = this.db
-        .prepare("DELETE FROM ws_corpus_subject WHERE thread_id = ?")
-        .run(rootId);
-      if (res.changes > 0) {
-        this.bumpRevision();
-      }
-      return this.assignment(threadId);
-    })();
+    return this.assign(threadId, null, {
+      provenance: "manual",
+      evidence: null,
+    });
   }
 
   reclassify(
@@ -659,12 +660,9 @@ export class CorpusStore {
     entityId: string | null,
     evidence?: string,
   ): CanonicalAssignment {
-    if (entityId === null) {
-      return this.clear(threadId);
-    }
     return this.assign(threadId, entityId, {
       provenance: evidence ? "automatic" : "manual",
-      evidence,
+      evidence: evidence ?? null,
     });
   }
 
@@ -675,16 +673,17 @@ export class CorpusStore {
         "SELECT evidence, source FROM ws_corpus_subject WHERE thread_id = ?",
       )
       .get(rootId) as { evidence: string | null; source: string } | undefined;
+    if (!row) return false;
     return (
-      row?.source === "manual" ||
-      (row?.source === "automatic" && row.evidence === evidence)
+      row.source === "manual" ||
+      (row.source === "automatic" && row.evidence === evidence)
     );
   }
 
   subjects(): Map<string, string> {
     const rows = this.db
       .prepare(
-        "SELECT thread_id, entity_id FROM ws_corpus_subject ORDER BY thread_id",
+        "SELECT thread_id, entity_id FROM ws_corpus_subject WHERE entity_id IS NOT NULL ORDER BY thread_id",
       )
       .all() as { thread_id: string; entity_id: string }[];
     return new Map(

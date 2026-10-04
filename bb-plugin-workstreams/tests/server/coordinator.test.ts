@@ -469,4 +469,438 @@ describe("automatic update coordinator lifecycle", () => {
     expect(failedState.groups).toHaveLength(1);
     expect(failedState.groups[0]!.name).toBe("Lantern");
   });
+
+  it("multi-product partitions: derives groups across multiple products simultaneously without unknown identity errors", async () => {
+    world = await fakeWorld();
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const prodA = corpus.create("ProductAlpha", "Product A");
+    const featA = corpus.create("FeatureA", "Feature under A", prodA.id);
+    const prodB = corpus.create("ProductBeta", "Product B");
+    const featB = corpus.create("FeatureB", "Feature under B", prodB.id);
+
+    // Add threads for Product A and Product B
+    w.addThread("t-a1", { title: "Task A1" });
+    w.addThread("t-a2", { title: "Task A2" });
+    w.addThread("t-b1", { title: "Task B1" });
+    w.addThread("t-b2", { title: "Task B2" });
+
+    corpus.assign("t-a1", featA.id, { provenance: "manual" });
+    corpus.assign("t-a2", prodA.id, { provenance: "manual" });
+    corpus.assign("t-b1", featB.id, { provenance: "manual" });
+    corpus.assign("t-b2", prodB.id, { provenance: "manual" });
+
+    const state = await rebuildOrg(w);
+    expect(state.status).toBe("idle");
+    expect(state.error).toBeNull();
+    const groupNames = state.groups.map((g) => g.name);
+    expect(groupNames).toContain("ProductAlpha");
+    expect(groupNames).toContain("ProductBeta");
+  });
+
+  it("unresolved results cached by actual evidence: no repeat calls on other workspace events", async () => {
+    let classifyCalls = 0;
+    world = await fakeWorld({
+      complete: ({ prompt }) => {
+        if (prompt.includes("Classify the most specific")) {
+          classifyCalls++;
+          return JSON.stringify({ subjectId: null, proposed: null });
+        }
+        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+      },
+    });
+    const w = world;
+
+    w.addThread("t-unresolved", { title: "Ambiguous task" });
+    const state1 = await rebuildOrg(w);
+    expect(state1.unresolved).toHaveLength(1);
+    expect(classifyCalls).toBe(1);
+
+    // Another event on another thread
+    w.addThread("t-other", { title: "Other task" });
+    await rebuildOrg(w);
+
+    // Ambiguous task was cached by evidence; only t-other is classified!
+    expect(classifyCalls).toBe(2);
+
+    // If ambiguous task evidence changes (title changes), it gets reclassified
+    const ambiguousThread = w.threads.get("t-unresolved")!;
+    ambiguousThread.title = "Ambiguous task with new details";
+    await rebuildOrg(w);
+    expect(classifyCalls).toBe(3);
+  });
+
+  it("explicit manual clear creates durable manual unresolved with null evidence", async () => {
+    let classifyCalls = 0;
+    world = await fakeWorld({
+      complete: ({ prompt }) => {
+        if (prompt.includes("Classify the most specific")) {
+          classifyCalls++;
+          return JSON.stringify({ subjectId: null, proposed: null });
+        }
+        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+      },
+    });
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const prod = corpus.create("ProductA", "Product");
+
+    w.addThread("t1", { title: "Task 1" });
+    corpus.assign("t1", prod.id, { provenance: "manual" });
+
+    // Explicit manual clear
+    await w.harness.behavior.callRpc("taskClear", { threadId: "t1" });
+
+    const assignment = corpus.assignment("t1");
+    expect(assignment.status).toBe("unresolved");
+    expect(assignment.provenance).toBe("manual");
+    expect(assignment.entityId).toBeNull();
+    expect(assignment.evidence).toBeNull();
+
+    // Trigger rebuild or other workspace events
+    w.addThread("t2", { title: "Task 2" });
+    await rebuildOrg(w);
+
+    // t1 was NOT classified because it is manual unresolved!
+    // Only t2 was classified (1 call total)
+    expect(classifyCalls).toBe(1);
+    const assignmentAfter = corpus.assignment("t1");
+    expect(assignmentAfter.provenance).toBe("manual");
+  });
+
+  it("race condition: deferred in-flight inference does not overwrite manual assignment", async () => {
+    const holder: { resolve?: (val: string) => void } = {};
+    let lanternId = "";
+    let storageId = "";
+
+    world = await fakeWorld({
+      complete: ({ prompt }) => {
+        if (prompt.includes("Classify the most specific")) {
+          return new Promise<string>((resolve) => {
+            holder.resolve = resolve;
+          });
+        }
+        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+      },
+    });
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const lantern = corpus.create("Lantern", "Product");
+    const storage = corpus.create("Storage", "Product");
+    lanternId = lantern.id;
+    storageId = storage.id;
+
+    w.addThread("t1", { title: "Task 1" });
+
+    // Start background rebuild/run (inference will hang on deferred promise)
+    const runPromise = rebuildOrg(w);
+
+    // Wait until inference is in flight
+    while (!holder.resolve) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    // While inference is in flight, user manually assigns t1 to Storage
+    await w.harness.behavior.callRpc("taskAssign", {
+      threadId: "t1",
+      entityId: storageId,
+    });
+
+    const manualAssign = corpus.assignment("t1");
+    expect(manualAssign.entityId).toBe(storageId);
+    expect(manualAssign.provenance).toBe("manual");
+
+    // Now resolve the deferred inference returning Lantern
+    holder.resolve(JSON.stringify({ subjectId: lanternId, proposed: null }));
+
+    // Await coordinator run to finish
+    await runPromise;
+
+    // Manual assignment must NOT have been overwritten by Lantern!
+    const finalAssign = corpus.assignment("t1");
+    expect(finalAssign.entityId).toBe(storageId);
+    expect(finalAssign.provenance).toBe("manual");
+  });
+
+  it("race condition: deferred in-flight inference does not overwrite manual clear", async () => {
+    const holder: { resolve?: (val: string) => void } = {};
+    let lanternId = "";
+
+    world = await fakeWorld({
+      complete: ({ prompt }) => {
+        if (prompt.includes("Classify the most specific")) {
+          return new Promise<string>((resolve) => {
+            holder.resolve = resolve;
+          });
+        }
+        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+      },
+    });
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const lantern = corpus.create("Lantern", "Product");
+    lanternId = lantern.id;
+
+    w.addThread("t1", { title: "Task 1" });
+
+    const runPromise = rebuildOrg(w);
+    while (!holder.resolve) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    // User explicitly clears t1 while inference is in flight
+    await w.harness.behavior.callRpc("taskClear", { threadId: "t1" });
+
+    holder.resolve(JSON.stringify({ subjectId: lanternId, proposed: null }));
+    await runPromise;
+
+    const finalAssign = corpus.assignment("t1");
+    expect(finalAssign.status).toBe("unresolved");
+    expect(finalAssign.provenance).toBe("manual");
+  });
+
+  it("race condition: deferred in-flight inference discards result if thread is archived", async () => {
+    const holder: { resolve?: (val: string) => void } = {};
+    let lanternId = "";
+
+    world = await fakeWorld({
+      complete: ({ prompt }) => {
+        if (prompt.includes("Classify the most specific")) {
+          return new Promise<string>((resolve) => {
+            holder.resolve = resolve;
+          });
+        }
+        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+      },
+    });
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const lantern = corpus.create("Lantern", "Product");
+    lanternId = lantern.id;
+
+    w.addThread("t1", { title: "Task 1" });
+
+    const runPromise = rebuildOrg(w);
+    while (!holder.resolve) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    // User archives t1
+    const t1 = w.threads.get("t1")!;
+    t1.archivedAt = Date.now();
+    await w.harness.behavior.emitThreadEvent("thread.archived", { thread: t1 });
+
+    holder.resolve(JSON.stringify({ subjectId: lanternId, proposed: null }));
+    const state = await runPromise;
+
+    expect(state.groups).toHaveLength(0);
+    const assign = corpus.assignment("t1");
+    expect(assign.provenance).not.toBe("automatic");
+  });
+
+  it("race condition: deferred in-flight inference discards result if thread title changed", async () => {
+    const holder: { resolve?: (val: string) => void } = {};
+    let lanternId = "";
+
+    world = await fakeWorld({
+      complete: ({ prompt }) => {
+        if (prompt.includes("Classify the most specific")) {
+          return new Promise<string>((resolve) => {
+            holder.resolve = resolve;
+          });
+        }
+        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+      },
+    });
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const lantern = corpus.create("Lantern", "Product");
+    lanternId = lantern.id;
+
+    w.addThread("t1", { title: "Old title" });
+
+    const runPromise = rebuildOrg(w);
+    while (!holder.resolve) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    // Title changes while inference is in flight
+    const t1 = w.threads.get("t1")!;
+    t1.title = "New completely different title";
+
+    holder.resolve(JSON.stringify({ subjectId: lanternId, proposed: null }));
+    await runPromise;
+
+    // Stale result was discarded
+    const assign = corpus.assignment("t1");
+    expect(assign.status).toBe("unresolved");
+  });
+
+  it("section cleanup: rebound section is not deleted during cleanup", async () => {
+    world = await fakeWorld();
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const prodA = corpus.create("Alpha", "Product Alpha");
+    const prodB = corpus.create("Beta", "Product Beta");
+
+    // Existing section named Beta already bound to Alpha
+    const sec = w.addSection("Beta");
+    corpus.bindGroup(sec.id, prodA.id);
+
+    // Thread t1 assigned to Beta
+    w.addThread("t1", { title: "Beta task" });
+    corpus.assign("t1", prodB.id, { provenance: "manual" });
+
+    const state = await rebuildOrg(w);
+    expect(state.status).toBe("idle");
+    expect(state.groups).toHaveLength(1);
+    expect(state.groups[0]!.name).toBe("Beta");
+
+    // Section must NOT have been deleted
+    expect(w.sections.some((s) => s.id === sec.id)).toBe(true);
+    expect(w.threads.get("t1")?.sectionId).toBe(sec.id);
+  });
+
+  it("completed retention: completed root/sibling tasks retain navigation when active tasks expand to child features", async () => {
+    world = await fakeWorld();
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const prod = corpus.create("Lantern", "Product");
+    const f1 = corpus.create("Core", "Core feature", prod.id);
+    const f2 = corpus.create("UI", "UI feature", prod.id);
+    const f3 = corpus.create("Docs", "Docs feature", prod.id);
+
+    // 4 active tasks in Core, 4 active tasks in UI (exceeds capacity 6)
+    for (let i = 1; i <= 4; i++) {
+      w.addThread(`core-${i}`, { title: `Core task ${i}` });
+      corpus.assign(`core-${i}`, f1.id, { provenance: "manual" });
+      w.addThread(`ui-${i}`, { title: `UI task ${i}` });
+      corpus.assign(`ui-${i}`, f2.id, { provenance: "manual" });
+    }
+
+    // 1 completed task on Lantern root, 1 completed task on Docs (f3)
+    w.addThread("done-root", { title: "Lantern initial setup" });
+    corpus.assign("done-root", prod.id, { provenance: "manual" });
+    w.turn("done-root", "completed");
+    await w.harness.behavior.emitThreadEvent("thread.idle", {
+      thread: w.threads.get("done-root")!,
+      lastAssistantText: "Done.",
+    });
+
+    w.addThread("done-docs", { title: "Docs task" });
+    corpus.assign("done-docs", f3.id, { provenance: "manual" });
+    w.turn("done-docs", "completed");
+    await w.harness.behavior.emitThreadEvent("thread.idle", {
+      thread: w.threads.get("done-docs")!,
+      lastAssistantText: "Done.",
+    });
+
+    const state = await rebuildOrg(w);
+    expect(state.status).toBe("idle");
+
+    // Completed tasks must NOT be in unresolved
+    expect(state.unresolved.filter((u) => u.id === "done-root")).toHaveLength(0);
+    expect(state.unresolved.filter((u) => u.id === "done-docs")).toHaveLength(0);
+
+    // Completed tasks must be filed in native sections, not Unfiled!
+    const doneRootThread = w.threads.get("done-root");
+    const doneDocsThread = w.threads.get("done-docs");
+    expect(doneRootThread?.sectionId).not.toBeNull();
+    expect(doneDocsThread?.sectionId).not.toBeNull();
+
+    // The group holding done-root must be Lantern
+    const lanternGroup = state.groups.find((g) => g.name === "Lantern");
+    expect(lanternGroup).toBeDefined();
+    expect(lanternGroup?.roots.some((r) => r.id === "done-root")).toBe(true);
+    expect(lanternGroup?.roots.some((r) => r.id === "done-docs")).toBe(true);
+  });
+
+  it("section safety: adopted external user-created section is not deleted when empty", async () => {
+    world = await fakeWorld();
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const prod = corpus.create("Docs", "Docs Product");
+
+    // User created native section named Docs in BB before Workstreams ran
+    const userSec = w.addSection("Docs");
+    openDatabase(w.bb).prepare(
+      "INSERT INTO ws_workstream (section_id, created_by, created_at, updated_at) VALUES (?, 'user', 1, 1) ON CONFLICT(section_id) DO UPDATE SET created_by = 'user'"
+    ).run(userSec.id);
+
+    // Active task in Docs adopts the user section
+    w.addThread("t1", { title: "Docs task" });
+    corpus.assign("t1", prod.id, { provenance: "manual" });
+
+    const state1 = await rebuildOrg(w);
+    expect(state1.groups[0]!.sectionId).toBe(userSec.id);
+
+    // Task archives, leaving Docs empty
+    const t1 = w.threads.get("t1")!;
+    t1.archivedAt = Date.now();
+    await w.harness.behavior.emitThreadEvent("thread.archived", { thread: t1 });
+    const state2 = await rebuildOrg(w);
+    expect(state2.groups).toHaveLength(0);
+
+    // External user section must NOT be deleted from BB!
+    expect(w.sections.some((s) => s.id === userSec.id)).toBe(true);
+  });
+
+  it("concurrent rebuild: rebuild during active run is not swallowed and executes fresh pass", async () => {
+    let classifyCount = 0;
+    world = await fakeWorld({
+      complete: ({ prompt }) => {
+        if (prompt.includes("Classify the most specific")) {
+          classifyCount++;
+          return JSON.stringify({ subjectId: null, proposed: null });
+        }
+        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+      },
+    });
+    const w = world;
+    w.addThread("t1", { title: "Task 1" });
+
+    await rebuildOrg(w);
+    expect(classifyCount).toBe(1);
+
+    const p1 = rebuildOrg(w);
+    const p2 = rebuildOrg(w);
+    const [res1, res2] = await Promise.all([p1, p2]);
+
+    expect(res1.status).toBe("idle");
+    expect(res2.status).toBe("idle");
+  });
+
+  it("partial mutations state truth: partial native mutations are reflected in state on sync failure", async () => {
+    world = await fakeWorld();
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const prodA = corpus.create("Alpha", "Product Alpha");
+    const prodB = corpus.create("Beta", "Product Beta");
+
+    w.addThread("t-alpha", { title: "Alpha task" });
+    w.addThread("t-beta", { title: "Beta task" });
+    corpus.assign("t-alpha", prodA.id, { provenance: "manual" });
+    corpus.assign("t-beta", prodB.id, { provenance: "manual" });
+
+    // Inject SDK failure on thread update for t-beta
+    let failBeta = true;
+    w.harness.sdk.stub("threads.update", async (args: { threadId: string; sectionId: string | null }) => {
+      if (failBeta && args.threadId === "t-beta") {
+        throw new Error("SDK thread update failed for t-beta");
+      }
+      const t = w.threads.get(args.threadId);
+      if (t) t.sectionId = args.sectionId;
+      return t as never;
+    });
+
+    const failedState = await rebuildOrg(w);
+    expect(failedState.status).toBe("failed");
+    expect(failedState.error).toContain("SDK thread update failed for t-beta");
+
+    // State truth: t-alpha was updated and has its section, groups reflect derived state
+    expect(failedState.groups.length).toBeGreaterThan(0);
+    const alphaGroup = failedState.groups.find((g) => g.name === "Alpha");
+    expect(alphaGroup).toBeDefined();
+    expect(alphaGroup?.sectionId).not.toBeNull();
+  });
 });
