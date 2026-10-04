@@ -80,12 +80,9 @@ describe("Catalog and Task Identity RPC Contract", () => {
     // Thread is STILL in Alpha section! Native section placement did not move!
     expect(w.threads.get("t-task")?.sectionId).toBe(alpha.id);
 
-    // Moving thread to another section preserves identity
+    // Changing thread section in BB preserves identity
     const beta = w.addSection("Beta");
-    await w.harness.behavior.callRpc("moveThread", {
-      threadId: thread.id,
-      sectionId: beta.id,
-    });
+    w.threads.set(thread.id, { ...w.threads.get(thread.id)!, sectionId: beta.id });
     expect(w.threads.get("t-task")?.sectionId).toBe(beta.id);
 
     const afterMove = (await w.harness.behavior.callRpc("taskAssignment", {

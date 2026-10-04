@@ -15,8 +15,6 @@ import { corpusLabel } from "../../domain/corpus-label.ts";
 import { useSharedServerState } from "../serverState.ts";
 
 export type RowMenuHandlers = {
-  move: (thread: PluginSidebarThread, sectionId: string | null) => void;
-  newWorkstream: (thread: PluginSidebarThread) => void;
   rename: (thread: PluginSidebarThread) => void;
   openParent: (thread: PluginSidebarThread) => void;
   /** Snoozes until a time, or (null) until the thread's next activity. */
@@ -92,43 +90,6 @@ export function RowMenu({
             </Item>
           ) : null}
           <Separator />
-          {isRoot ? (
-            <ContextMenu.Sub>
-              <SubTrigger>Move to workstream</SubTrigger>
-              <ContextMenu.Portal>
-                <ContextMenu.SubContent
-                  {...portalScope}
-                  className="z-50 max-h-96 min-w-48 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
-                >
-                  {[...sections]
-                    .sort((a, b) => compareGroupNames(a.name, b.name))
-                    .map((section) => (
-                      <Item
-                        key={section.id}
-                        disabled={section.id === workstreamId}
-                        onSelect={() => handlers.move(thread, section.id)}
-                      >
-                        {section.name}
-                      </Item>
-                    ))}
-                  <Item
-                    disabled={workstreamId === null}
-                    onSelect={() => handlers.move(thread, null)}
-                  >
-                    Unfiled
-                  </Item>
-                  <Separator />
-                  <Item onSelect={() => handlers.newWorkstream(thread)}>
-                    New workstream…
-                  </Item>
-                </ContextMenu.SubContent>
-              </ContextMenu.Portal>
-            </ContextMenu.Sub>
-          ) : (
-            <Item disabled onSelect={() => undefined}>
-              Moves with its parent
-            </Item>
-          )}
           <ContextMenu.Sub>
             <SubTrigger>Product or feature</SubTrigger>
             <ContextMenu.Portal>

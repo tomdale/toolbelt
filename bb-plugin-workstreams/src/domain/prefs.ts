@@ -107,7 +107,7 @@ const GROUPS = {
     suggestionsModel: [modelChoiceSchema, DEFAULT_MODELS.suggestions],
   },
   organize: {
-    /** Proposes workstreams and files threads when you organize. */
+    /** Classifies tasks and structures the catalog when needed. */
     model: [modelChoiceSchema, DEFAULT_MODELS.organize],
     capacity: [z.number().int().min(2).max(100), 6],
     collapseAt: [z.number().int().min(0).max(99), 3],

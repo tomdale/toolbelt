@@ -498,10 +498,7 @@ describe("thread list", () => {
     const newWork = empty.getByRole("button", { name: "New work in Zeta" });
     expect(newWork.classList.contains("opacity-0")).toBe(false);
     fireEvent.click(newWork);
-    const dialog = within(
-      await screen.findByRole("dialog", { name: "New work" }),
-    );
-    expect(dialog.getByRole("button", { name: /Zeta/ })).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "New work" })).toBeTruthy();
     slot.lifecycle.unmount();
   });
 
@@ -683,47 +680,6 @@ describe("thread list", () => {
       ),
     ).toHaveLength(0);
     second.lifecycle.unmount();
-  });
-
-  it("moves a root through the context menu", async () => {
-    const slot = await mount(undefined, { settings: { showRecent: false } });
-    const link = within(
-      slot.getByRole("region", { name: "Unfiled" }),
-    ).getByRole("link", {
-      name: "Loose task",
-    });
-    fireEvent.contextMenu(link.closest("li")!);
-    const move = await slot.findByRole("menuitem", {
-      name: "Move to workstream",
-    });
-    fireEvent.keyDown(move, { key: "ArrowRight" });
-    fireEvent.click(await slot.findByRole("menuitem", { name: "Beta" }));
-    await waitFor(() =>
-      expect(
-        slot.inspection.rpcCalls.some((c) => c.method === "moveThread"),
-      ).toBe(true),
-    );
-    const call = slot.inspection.rpcCalls.find(
-      (c) => c.method === "moveThread",
-    );
-    expect(call?.input).toEqual({ threadId: "loose", sectionId: "sec_b" });
-    slot.lifecycle.unmount();
-  });
-
-  it("does not offer to move a child on its own", async () => {
-    const slot = await mount(undefined, { settings: { showRecent: false } });
-    const link = within(slot.getByRole("region", { name: "Alpha" })).getByRole(
-      "link",
-      {
-        name: "Kid task",
-      },
-    );
-    fireEvent.contextMenu(link.closest("li")!);
-    const item = await slot.findByRole("menuitem", {
-      name: "Moves with its parent",
-    });
-    expect(item.getAttribute("aria-disabled")).toBe("true");
-    slot.lifecycle.unmount();
   });
 
   it("offers Product or feature submenu in row menu", async () => {
@@ -1516,7 +1472,6 @@ it("keeps a snoozed child moving with its parent", async () => {
       name: "Kid task",
     }),
   );
-  expect(await screen.findByText("Moves with its parent")).toBeTruthy();
   expect(screen.getByText("Wake now")).toBeTruthy();
   slot.lifecycle.unmount();
 });
@@ -1528,7 +1483,7 @@ it("marks the row menu's submenus with a chevron", async () => {
       name: "Root task",
     }),
   );
-  for (const name of ["Move to workstream", "Snooze"]) {
+  for (const name of ["Product or feature", "Snooze"]) {
     const item = await screen.findByRole("menuitem", { name });
     expect(item.getAttribute("aria-haspopup")).toBe("menu");
     expect(item.querySelector('[data-icon="ChevronRight"]')).not.toBeNull();
@@ -1683,59 +1638,6 @@ describe("prioritized workstreams", () => {
       hasPendingInteraction: true,
       latestAttentionAt: at,
     });
-
-  it("prioritizes from the header menu and pins the workstream below Up Next", async () => {
-    const slot = await mount(
-      [
-        asking("a1", "sec_a", 100),
-        sidebarThread("z1", { sectionId: "sec_z", title: "Zeta task" }),
-      ],
-      { activeThreadId: null },
-    );
-    await waitFor(() =>
-      expect(regions(slot)).toEqual([
-        "Up Next",
-        "Recent",
-        "Alpha",
-        "Zeta",
-        "Beta",
-      ]),
-    );
-    const zeta = slot.getByRole("region", { name: "Zeta" });
-    fireEvent.contextMenu(within(zeta).getByRole("button", { name: "Zeta" }));
-    fireEvent.click(await slot.findByRole("menuitem", { name: "Prioritize" }));
-    // The rest hide behind the lower-priority toggle.
-    await waitFor(() =>
-      expect(regions(slot)).toEqual(["Up Next", "Zeta", "Recent"]),
-    );
-    expect(
-      within(slot.getByRole("region", { name: "Zeta" }))
-        .getByRole("button", { name: "Remove priority from Zeta" })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
-    expect(
-      slot.inspection.rpcCalls.find((c) => c.method === "reorder")?.input,
-    ).toEqual({ kind: "prioritized", ids: ["sec_z"] });
-
-    fireEvent.contextMenu(
-      within(slot.getByRole("region", { name: "Zeta" })).getByRole("button", {
-        name: "Zeta",
-      }),
-    );
-    fireEvent.click(
-      await slot.findByRole("menuitem", { name: "Remove priority" }),
-    );
-    await waitFor(() =>
-      expect(regions(slot)).toEqual([
-        "Up Next",
-        "Recent",
-        "Alpha",
-        "Zeta",
-        "Beta",
-      ]),
-    );
-    slot.lifecycle.unmount();
-  });
 
   it("prioritizes from the header's inline button", async () => {
     const slot = await mount(

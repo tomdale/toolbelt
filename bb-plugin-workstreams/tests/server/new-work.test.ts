@@ -259,52 +259,32 @@ describe("startThread", () => {
     input: [{ type: "text", text: "Fix the parser", mentions: [] }],
   };
 
-  it("spawns the composer's request in the chosen workstream", async () => {
-    const { w, alpha } = await setup({});
-    const result = await w.harness.behavior.callRpc("startThread", {
-      sectionId: alpha.id,
+  it("spawns the composer's request with identity and no destination section", async () => {
+    const { w } = await setup({});
+    const result = (await w.harness.behavior.callRpc("startThread", {
+      identity: {
+        entityId: null,
+        proposal: { name: "Parser", description: "Parser feature" },
+        provenance: "manual",
+      },
       execution: { ...execution, unexpected: "dropped" },
-    });
-    expect(result).toEqual({ threadId: "spawn1", sectionId: alpha.id });
+    })) as { threadId: string; sectionId: string | null };
+    expect(result).toEqual({ threadId: "spawn1", sectionId: null });
     expect(w.spawned[0]).toMatchObject({
       ...execution,
-      sectionId: alpha.id,
-      pluginMetadata: {
-        kind: "task",
-        filedBy: "user",
-        workstreamAtCreation: alpha.id,
-      },
+      sectionId: null,
     });
     expect(w.spawned[0]).not.toHaveProperty("unexpected");
-    const [entry] = await journal(w);
-    expect(entry).toMatchObject({
-      action: "route",
-      source: "user",
-      rationale: "Started in Alpha from New work",
-      threads: [{ id: "spawn1" }],
-    });
   });
 
-  it("marks a thread without a workstream as deliberately unassigned", async () => {
-    const { w } = await setup({});
-    await w.harness.behavior.callRpc("startThread", {
-      sectionId: null,
-      execution,
-    });
-    expect(w.spawned[0]).toMatchObject({
-      sectionId: null,
-      pluginMetadata: { unassignedByRouter: true, filedBy: "user" },
-    });
-  });
-
-  it("refuses a workstream that no longer exists", async () => {
+  it("refuses an unknown subject identity", async () => {
     const { w } = await setup({});
     await expect(
       w.harness.behavior.callRpc("startThread", {
-        sectionId: "sec_gone",
+        identity: { entityId: "ent_nonexistent", provenance: "manual" },
         execution,
       }),
-    ).rejects.toThrow(/no longer exists/);
+    ).rejects.toThrow(/Unknown subject identity/);
     expect(w.spawned).toHaveLength(0);
   });
 });
@@ -343,17 +323,4 @@ describe("sendToThread", () => {
   });
 });
 
-it("createWorkstream records the proposed scope", async () => {
-  const { w } = await setup({});
-  const { sectionId } = (await w.harness.behavior.callRpc("createWorkstream", {
-    name: "Billing",
-    description: "Invoices and payment flows",
-  })) as { sectionId: string };
-  const state = (await w.harness.behavior.callRpc("state", null)) as {
-    workstreams: Record<string, { name: string; description: string | null }>;
-  };
-  expect(state.workstreams[sectionId]).toMatchObject({
-    name: "Billing",
-    description: "Invoices and payment flows",
-  });
-});
+

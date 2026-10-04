@@ -45,6 +45,11 @@ export function planDrop<T extends WorkstreamThread>(
     };
   }
 
+  if (drop.fromGroupId !== drop.toGroupId) {
+    // Cross-group moving is disabled; navigation is derived by coordinator.
+    return { move: null, reorder: null };
+  }
+
   const group = [
     ...projection.groups,
     projection.unsorted,
@@ -53,33 +58,20 @@ export function planDrop<T extends WorkstreamThread>(
   const roots = (group?.rows ?? [])
     .filter((row) => row.depth === 0)
     .map((row) => row.thread.id);
-  const moved = drop.fromGroupId !== drop.toGroupId;
   let ids: string[];
   if (drop.overThreadId === null) {
     // Dropped on a group header: the top of that group.
     ids = placeBefore(roots, drop.threadId, roots[0] ?? null);
-  } else if (!moved) {
+  } else {
     // Matches the live preview, where the dragged tree takes the target's slot.
     ids = arrayMove(
       roots,
       roots.indexOf(drop.threadId),
       roots.indexOf(drop.overThreadId),
     );
-  } else {
-    const at = roots.indexOf(drop.overThreadId);
-    ids = placeBefore(
-      roots,
-      drop.threadId,
-      drop.below ? (roots[at + 1] ?? null) : drop.overThreadId,
-    );
   }
   return {
-    move: moved
-      ? {
-          threadId: drop.threadId,
-          sectionId: drop.toGroupId === UNSORTED_ID ? null : drop.toGroupId,
-        }
-      : null,
+    move: null,
     reorder: { kind: "threads", groupId: drop.toGroupId, ids },
   };
 }

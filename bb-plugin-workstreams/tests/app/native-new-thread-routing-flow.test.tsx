@@ -105,9 +105,9 @@ async function mount(
   const methods = [
     "prefs",
     "state",
+    "catalog",
     "route",
     "routeCancel",
-    "createWorkstream",
     "sendToThread",
     "startThread",
   ];
@@ -177,90 +177,81 @@ async function mount(
   return { w, alpha, beta, slot, dispatch, journal, send };
 }
 
-it("files an untouched automatic destination through host metadata", async () => {
-  const { w, alpha, slot, dispatch, journal } = await mount({
+it("submits classified automatic identity through host metadata and assigns on server", async () => {
+  const { w, slot, dispatch } = await mount({
     outcome: "new-thread",
-    workstream: "Alpha",
+    subject: "Alpha",
     title: "Fix tabs",
   });
   const prompt = "Fix the parser in Alpha so it handles tabs";
   await act(() => slot.behavior.setComposerText(prompt));
-  await screen.findByRole("button", { name: "Workstream: Alpha" });
+  await screen.findByRole("button", { name: "Product or feature: Alpha" });
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
-  expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: expect.objectContaining({
-      routeId: expect.any(String),
-      sectionId: alpha.id,
-    }),
+  expect(slot.inspection.composer.submits[0]!.experimental_data).toMatchObject({
+    identity: {
+      entityId: expect.any(String),
+      provenance: "automatic",
+    },
   });
   await dispatch(prompt);
-  expect(w.threads.get("composed")?.sectionId).toBe(alpha.id);
-  expect(await journal()).toEqual([
-    expect.objectContaining({ action: "move", source: "router" }),
-  ]);
+  const corpus = new CorpusStore(openDatabase(w.bb));
+  const assignment = corpus.assignment("composed");
+  expect(assignment.status).toBe("assigned");
   expect(w.spawned).toEqual([]);
   expect(w.sent).toEqual([]);
 });
 
-it("files a manual Workstream selection through host metadata and the server dispatch hook", async () => {
-  const { w, beta, slot, dispatch, journal } = await mount({
+it("submits manual product or feature selection through host metadata", async () => {
+  const { w, slot, dispatch } = await mount({
     outcome: "new-thread",
-    workstream: "Alpha",
+    subject: "Alpha",
     title: "Write docs",
   });
   const prompt = "Write docs for Alpha";
   await act(() => slot.behavior.setComposerText(prompt));
-  // The field may already show the automatic home; the pick overrides it.
-  fireEvent.click(await screen.findByRole("button", { name: /Workstream:/ }));
-  fireEvent.click(await screen.findByRole("option", { name: "Beta" }));
+  fireEvent.click(await screen.findByRole("button", { name: /Product or feature:/ }));
+  fireEvent.click(await screen.findByText("Beta"));
+  await screen.findByRole("button", { name: "Product or feature: Beta" });
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
-  expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: { sectionId: beta.id },
+  expect(slot.inspection.composer.submits[0]!.experimental_data).toMatchObject({
+    identity: {
+      entityId: expect.any(String),
+      provenance: "manual",
+    },
   });
   await dispatch(prompt);
-  expect(w.threads.get("composed")?.sectionId).toBe(beta.id);
-  expect(await journal()).toEqual([
-    expect.objectContaining({ action: "move", source: "user" }),
-  ]);
+  const corpus = new CorpusStore(openDatabase(w.bb));
+  expect(corpus.assignment("composed").status).toBe("assigned");
   expect(w.spawned).toEqual([]);
 });
 
-it("accepts a new workstream in the UI and files exactly once even when dispatch is repeated", async () => {
-  const { w, slot, dispatch, journal } = await mount({
-    outcome: "new-workstream",
-    name: "Billing",
-    description: "Invoices",
+it("submits a new feature proposal in the UI through host metadata", async () => {
+  const { w, slot, dispatch } = await mount({
+    outcome: "new-thread",
     title: "Invoice export",
   });
-  const prompt = "Add invoice export to a new Billing service";
+  const prompt = "Add invoice export";
   await act(() => slot.behavior.setComposerText(prompt));
-  await screen.findByRole("button", { name: "Workstream: Billing" });
+  fireEvent.click(await screen.findByRole("button", { name: /Product or feature:/ }));
+  const searchInput = screen.getByPlaceholderText("Find a product or feature");
+  fireEvent.change(searchInput, { target: { value: "Billing" } });
+  fireEvent.click(await screen.findByRole("option", { name: /New feature proposal “Billing”/ }));
+  await screen.findByRole("button", { name: "Product or feature: Billing" });
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
-  const billing = w.sections.find((section) => section.name === "Billing")!;
-  expect(billing).toBeDefined();
-  expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: expect.objectContaining({
-      routeId: expect.any(String),
-      sectionId: billing.id,
-    }),
+  expect(slot.inspection.composer.submits[0]!.experimental_data).toMatchObject({
+    identity: {
+      proposal: { name: "Billing", description: "" },
+      provenance: "manual",
+    },
   });
-  await dispatch(prompt, true);
-  expect(
-    w.sections.filter((section) => section.name === "Billing"),
-  ).toHaveLength(1);
-  expect(w.threads.get("composed")?.sectionId).toBe(billing.id);
-  expect(await journal()).toEqual([
-    expect.objectContaining({ action: "move", source: "router" }),
-  ]);
-  expect(
-    slot.inspection.rpcCalls.filter(
-      (call) => call.method === "createWorkstream",
-    ),
-  ).toHaveLength(1);
-  expect(w.spawned).toEqual([]);
+  await dispatch(prompt);
+  const corpus = new CorpusStore(openDatabase(w.bb));
+  const created = corpus.list().find((e) => e.name === "Billing");
+  expect(created).toBeDefined();
+  expect(corpus.assignment("composed").entityId).toBe(created!.id);
 });
 
 it("retains the complete draft after a server send failure and can retry successfully", async () => {
@@ -326,64 +317,6 @@ it("retains the complete draft after a server send failure and can retry success
   expect(slot.inspection.composer.draft.attachments).toEqual([]);
   expect(send).toHaveBeenCalledTimes(2);
   expect(await continuationEntries()).toHaveLength(1);
-});
-
-it("overrides automatic placement with No workstream and transmits sectionId: null (Bug 1)", async () => {
-  const { w, slot, dispatch } = await mount({
-    outcome: "new-thread",
-    workstream: "Alpha",
-    title: "Fix tabs",
-  });
-  const prompt = "Fix the parser in Alpha so it handles tabs";
-  await act(() => slot.behavior.setComposerText(prompt));
-  const wsBtn = await screen.findByRole("button", {
-    name: "Workstream: Alpha",
-  });
-  fireEvent.click(wsBtn);
-  const noneOption = await screen.findByText("No workstream");
-  fireEvent.click(noneOption);
-  await screen.findByRole("button", { name: "Workstream: No workstream" });
-
-  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
-  await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
-  expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: expect.objectContaining({
-      sectionId: null,
-    }),
-  });
-  await dispatch(prompt);
-  expect(w.threads.get("composed")?.sectionId).toBeNull();
-});
-
-it("submits sectionId: null metadata when pinning No workstream from initial unfiled state before suggestions arrive (Bug 2)", async () => {
-  const { w, slot, dispatch } = await mount({
-    outcome: "new-thread",
-    workstream: "Alpha",
-    title: "Write docs",
-  });
-  const prompt = "Task without workstream";
-  await act(() => slot.behavior.setComposerText(prompt));
-
-  // Before suggestions arrive, initial placement is unfiled:
-  const workstreamButton = await screen.findByRole("button", {
-    name: "Workstream: Automatic",
-  });
-  fireEvent.click(workstreamButton);
-  const noneOption = await screen.findByRole("option", {
-    name: "No workstream",
-  });
-  fireEvent.click(noneOption);
-  await screen.findByRole("button", { name: "Workstream: No workstream" });
-
-  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
-  await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
-  expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: {
-      sectionId: null,
-    },
-  });
-  await dispatch(prompt);
-  expect(w.threads.get("composed")?.sectionId).toBeNull();
 });
 
 it("submits honest manual unresolved identity through native submission and leaves thread unassigned on server", async () => {

@@ -334,9 +334,6 @@ export default async function plugin(bb: BbPluginApi) {
       const data =
         ctx.experimental_submission?.pluginId === bb.pluginId
           ? (ctx.experimental_submission.data as {
-              routeId?: string;
-              sectionId?: string | null;
-              newWorkstream?: { name: string; description?: string } | null;
               identity?: {
                 entityId?: string | null;
                 proposal?: DraftSubjectProposal | null;
@@ -345,96 +342,32 @@ export default async function plugin(bb: BbPluginApi) {
             } | null)
           : null;
       const identity = data?.identity !== undefined ? data.identity : undefined;
-      const decision = data?.routeId
-        ? router.recall({ id: data.routeId, prompt: ctx.input.text })
-        : null;
-      if (decision && data?.sectionId !== undefined) {
-        const accepted: RouteDecision =
-          decision.outcome === "new-workstream"
-            ? {
-                ...decision,
-                outcome: "new-thread",
-                sectionId: data.sectionId,
-                workstream: data.sectionId
-                  ? (map.get(data.sectionId)?.name ?? decision.name)
-                  : null,
-                title: "",
-                placement: decision.placement,
-              }
-            : decision.outcome === "new-thread"
-              ? { ...decision, sectionId: data.sectionId }
-              : decision;
-        setTimeout(() => {
-          router
-            .fileComposed(
-              ctx.thread.id,
-              accepted,
-              identity,
-              ctx.parentThreadId ?? null,
-            )
-            .catch((error: unknown) =>
-              bb.log.warn(`Filing a composed thread failed: ${String(error)}`),
-            );
-        }, 0);
-      } else if (decision) {
-        setTimeout(() => {
-          router
-            .fileComposed(
-              ctx.thread.id,
-              decision,
-              identity,
-              ctx.parentThreadId ?? null,
-            )
-            .catch((error: unknown) =>
-              bb.log.warn(`Filing a composed thread failed: ${String(error)}`),
-            );
-        }, 0);
-      } else if (data) {
-        setTimeout(async () => {
-          try {
-            let sectionId = data.sectionId ?? null;
-            let newlyCreated = false;
-            if (data.newWorkstream) {
-              const created = await service.createWorkstream(
-                data.newWorkstream.name,
-                "user",
-              );
-              sectionId = created.sectionId;
-              newlyCreated = true;
-              if (data.newWorkstream.description)
-                map.describe(sectionId, data.newWorkstream.description);
+      setTimeout(async () => {
+        try {
+          service.seeThread(
+            ctx.thread.id,
+            null,
+            ctx.parentThreadId ?? null,
+          );
+          if (!ctx.parentThreadId && identity !== undefined) {
+            if (identity?.proposal) {
+              const entity = corpus.rememberProposal(identity.proposal);
+              corpus.assign(ctx.thread.id, entity.id, {
+                provenance: identity.provenance ?? "automatic",
+              });
+            } else if (identity?.entityId) {
+              corpus.assign(ctx.thread.id, identity.entityId, {
+                provenance: identity.provenance ?? "manual",
+              });
+            } else if (identity?.provenance === "manual") {
+              corpus.clear(ctx.thread.id);
             }
-            let assignedEntityId: string | null = null;
-            service.seeThread(
-              ctx.thread.id,
-              sectionId,
-              ctx.parentThreadId ?? null,
-            );
-            if (!ctx.parentThreadId) {
-              if (identity?.proposal) {
-                const entity = corpus.rememberProposal(identity.proposal);
-                assignedEntityId = entity.id;
-                corpus.assign(ctx.thread.id, entity.id, {
-                  provenance: identity.provenance ?? "automatic",
-                });
-              } else if (identity?.entityId) {
-                assignedEntityId = identity.entityId;
-                corpus.assign(ctx.thread.id, identity.entityId, {
-                  provenance: identity.provenance ?? "manual",
-                });
-              }
-            }
-            if (newlyCreated && sectionId && assignedEntityId) {
-              corpus.bindGroup(sectionId, assignedEntityId);
-            }
-            if (sectionId) {
-              await service.fileIfUnsorted(ctx.thread.id, sectionId, "user");
-            }
-          } catch (error: unknown) {
-            bb.log.warn(`Filing a composed thread failed: ${String(error)}`);
           }
-        }, 0);
-      }
+          triggerCoordinatorIfAutomatic(10);
+        } catch (error: unknown) {
+          bb.log.warn(`Filing a composed thread failed: ${String(error)}`);
+        }
+      }, 0);
     }
     return { action: "proceed" };
   });
@@ -749,18 +682,18 @@ export default async function plugin(bb: BbPluginApi) {
           claim,
         });
       }),
-    startThread: ({ sectionId, newWorkstream, identity, execution }) =>
-      userFacing(() =>
-        router.start({
-          sectionId,
-          newWorkstream,
+    startThread: ({ identity, execution }) =>
+      userFacing(async () => {
+        const result = await router.start({
           identity,
           execution: execution as unknown as SpawnArgs & {
             projectId: string;
             environment: Environment;
           },
-        }),
-      ),
+        });
+        triggerCoordinatorIfAutomatic(10);
+        return result;
+      }),
     sendToThread: ({ threadId, input, traceId }) =>
       userFacing(() =>
         router.send(threadId, "user", {
@@ -1022,22 +955,6 @@ export default async function plugin(bb: BbPluginApi) {
       bb.realtime.publish("spinner", { spinner: saved });
       return { spinner: saved };
     },
-    editWorkstream: ({ sectionId, description, aliases }) =>
-      userFacing(async () => {
-        const record = map.get(sectionId);
-        if (!record) throw new UserError("That workstream no longer exists.");
-        map.edit(sectionId, { description, aliases });
-        journal.add({
-          action: "edit-workstream",
-          source: "user",
-          rationale: `Edited ${record.name}'s ${description !== undefined ? "description" : "aliases"}`,
-          threads: [],
-          workstreams: [{ id: sectionId, name: record.name }],
-          undo: null,
-        });
-        notify();
-        return { ok: true as const };
-      }),
     drift: ({ threadId, action }) =>
       userFacing(async () => {
         const analysis = analyzer.get(threadId);
@@ -1147,39 +1064,6 @@ export default async function plugin(bb: BbPluginApi) {
         })),
       };
     },
-    moveThread: ({ threadId, sectionId }) =>
-      userFacing(async () => ({
-        entry: await service.move(threadId, sectionId, "user"),
-      })),
-    createWorkstream: ({ name, description, threadId, subjectId }) =>
-      userFacing(async () => {
-        if (subjectId && !corpus.getById(subjectId))
-          throw new Error("Unknown subject identity.");
-        const bound = subjectId
-          ? [...corpus.groups()].find(([, id]) => id === subjectId)?.[0]
-          : null;
-        if (
-          subjectId &&
-          map
-            .list()
-            .some(
-              (r) =>
-                r.name.toLowerCase() === name.toLowerCase() &&
-                r.sectionId !== bound,
-            )
-        )
-          throw new Error("That group name belongs to a different identity.");
-        const created = await service.createWorkstream(name, "user");
-        if (subjectId) corpus.bindGroup(created.sectionId, subjectId);
-        if (description?.trim())
-          map.describe(created.sectionId, description.trim());
-        if (threadId) await service.move(threadId, created.sectionId, "user");
-        return created;
-      }),
-    renameWorkstream: ({ sectionId, name }) =>
-      userFacing(async () => ({
-        entry: await service.renameWorkstream(sectionId, name, "user"),
-      })),
     undo: ({ entryId }) =>
       userFacing(async () => {
         const entry = await service.undo(entryId);

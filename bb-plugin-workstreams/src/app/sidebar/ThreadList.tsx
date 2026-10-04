@@ -194,10 +194,7 @@ export function WorkstreamsThreadList({
       [section]: { ...current[section], ...change },
     }));
   const [nameRequest, setNameRequest] = useState<NameRequest | null>(null);
-  const [newWork, setNewWork] = useState<{
-    workstreamId: string | null;
-    workstreamName?: string;
-  } | null>(null);
+  const [newWork, setNewWork] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAllNeeds, setShowAllNeeds] = useState(false);
   const [showLower, setShowLower] = useState(false);
@@ -358,8 +355,6 @@ export function WorkstreamsThreadList({
   const onDrop = (drop: Drop) => {
     setError(null);
     const plan = planDrop(drop, projection, sections, ws.server.order);
-    if (plan.move)
-      ws.moveThread(plan.move.threadId, plan.move.sectionId).catch(report);
     if (plan.reorder) ws.reorder(plan.reorder).catch(report);
   };
   const { contextProps, dropGroupId } = useSidebarDnd({
@@ -368,19 +363,6 @@ export function WorkstreamsThreadList({
   });
 
   const handlers: RowMenuHandlers = {
-    move: (thread, sectionId) => {
-      setError(null);
-      ws.moveThread(thread.id, sectionId).catch(report);
-    },
-    newWorkstream: (thread) =>
-      setNameRequest({
-        title: "New workstream",
-        initial: "",
-        submitLabel: "Create and move",
-        onSubmit: async (name) => {
-          await ws.rpc.call("createWorkstream", { name, threadId: thread.id });
-        },
-      }),
     rename: (thread) =>
       setNameRequest({
         title: "Rename thread",
@@ -402,15 +384,6 @@ export function WorkstreamsThreadList({
   };
   const snoozePrefs = ws.snoozePrefs;
   const defaultSnoozeTitle = `Snooze ${describeWake(wakeTime(snoozePrefs.default, now, snoozePrefs.morningHour), now)}`;
-  const renameWorkstream = (group: ThreadGroup) =>
-    setNameRequest({
-      title: "Rename workstream",
-      initial: group.name,
-      submitLabel: "Rename",
-      onSubmit: async (name) => {
-        await ws.rpc.call("renameWorkstream", { sectionId: group.id, name });
-      },
-    });
 
   /** An unfiled row has no workstream to name, so it shows its age instead. */
   const workstreamName = (row: ThreadRow) =>
@@ -741,13 +714,8 @@ export function WorkstreamsThreadList({
       : lowerCollapsed(group.id),
     toggle: () =>
       group.prioritized ? toggle(group.id) : lowerToggle(group.id),
-    onRename: () => renameWorkstream(group),
     onTogglePriority: () => togglePriority(group),
-    onNewThread: () =>
-      setNewWork({
-        workstreamId: group.id,
-        workstreamName: group.name,
-      }),
+    onNewThread: () => setNewWork(true),
   });
   /** An item that opens and closes with its presence phase. */
   const present = (entry: PresenceEntry<unknown>, children: ReactNode) => (
@@ -848,7 +816,6 @@ export function WorkstreamsThreadList({
                   {renderSortableGroup(group, {
                     collapsed: isCollapsed(group.id, true),
                     toggle: () => toggle(group.id, true),
-                    onRename: () => renameWorkstream(group),
                     onTogglePriority: () => togglePriority(group),
                     muted: true,
                   })}
@@ -875,7 +842,7 @@ export function WorkstreamsThreadList({
         <div className="mx-2 flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setNewWork({ workstreamId: null })}
+            onClick={() => setNewWork(true)}
             className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-[13px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
           >
             <span aria-hidden="true">＋</span> New work…
@@ -888,10 +855,8 @@ export function WorkstreamsThreadList({
           />
         </div>
         <NewWorkDialog
-          open={newWork !== null}
-          workstreamId={newWork?.workstreamId ?? null}
-          workstreamName={newWork?.workstreamName ?? null}
-          onClose={() => setNewWork(null)}
+          open={newWork}
+          onClose={() => setNewWork(false)}
         />
         {error ? (
           <p

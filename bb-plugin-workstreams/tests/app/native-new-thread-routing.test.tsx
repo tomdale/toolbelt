@@ -23,18 +23,20 @@ beforeAll(() => {
 });
 afterEach(cleanup);
 
-const workstreamDecision: RouteDecision = {
+const identityDecision: RouteDecision = {
   id: "route-alpha",
   traceId: "trace-alpha",
   confidence: "high",
   reason: "Belongs in Alpha",
-  subject: null,
+  subject: "Alpha",
+  subjectId: "ent_alpha",
   outcome: "new-thread",
-  sectionId: "section-alpha",
-  workstream: "Alpha",
+  sectionId: null,
+  workstream: null,
   title: "",
   placement: null,
 };
+
 const continuationDecision: RouteDecision = {
   id: "route-continuation",
   traceId: "trace-continuation",
@@ -84,14 +86,6 @@ function RootComposerWithPickerRow() {
   );
 }
 
-type Attachment = {
-  name: string;
-  path: string;
-  sizeBytes: number;
-  type: "localImage" | "localFile";
-  mimeType?: string;
-};
-
 function DialogComposer() {
   const composer = useComposer();
   return (
@@ -115,85 +109,91 @@ function DialogComposer() {
 function mount(
   decision: RouteDecision,
   options: {
+    component?: typeof RootComposer;
     sendFails?: boolean;
-    createWorkstreamFails?: boolean;
-    workstreams?: Record<string, unknown>;
-    targetProjectId?: string;
-    attachments?: Partial<Attachment>[];
-    component?: React.ComponentType;
+    entities?: { id: string; name: string; description: string; parentId: string | null; aliases: string[] }[];
   } = {},
 ) {
+  const Component = options.component ?? RootComposer;
   const route = vi.fn(async () => decision);
-  const sendToThread = vi.fn(async (_input: unknown) => {
+  const routeCancel = vi.fn(async () => ({ canceled: true }));
+  const startThread = vi.fn(async () => ({
+    threadId: "thread-started",
+    sectionId: null,
+  }));
+  const sendToThread = vi.fn(async () => {
     if (options.sendFails) throw new Error("send failed");
     return { threadId: "thread-parser" };
   });
-  const startThread = vi.fn(async (_input: unknown) => ({
-    threadId: "thread-created",
-  }));
-  const createWorkstream = vi.fn(async () => {
-    if (options.createWorkstreamFails)
-      throw new Error("create workstream failed");
-    return {
-      sectionId: "section-created",
-      entry: { workstreams: [{ id: "section-created", name: "Billing" }] },
-    };
-  });
-  const copyAttachments = vi.fn(async () => {});
+
   const slot = renderSlot(
     {
-      component: options.component ?? RootComposer,
+      component: Component,
     },
     {},
     {
-      composer: {
-        text: "",
-        attachments: (options.attachments ?? []).map((a, i) => ({
-          name: a.name ?? `file-${i}.txt`,
-          path: a.path ?? `/workspace/file-${i}.txt`,
-          sizeBytes: a.sizeBytes ?? 100,
-          type: a.type ?? "localFile",
-          ...(a.mimeType ? { mimeType: a.mimeType } : {}),
-        })),
-        scope: { kind: "new-thread", projectId: "project-alpha" },
-        selection: { projectId: "project-alpha" },
-      },
       sdk: {
         projects: {
-          list: async () => [],
-          attachments: { copy: copyAttachments },
+          list: vi.fn(async () => [{ id: "project-alpha", name: "Alpha", kind: "directory" }]),
         },
         threads: {
-          get: async ({ threadId }: { threadId: string }) => ({
-            id: threadId,
-            projectId: options.targetProjectId ?? "project-alpha",
-            archivedAt: null,
-          }),
+          get: vi.fn(async () => ({ id: "thread-parser", projectId: "project-alpha" })),
         },
       } as never,
+      composer: {
+        scope: { kind: "new-thread", projectId: "project-alpha" },
+        text: "",
+        selection: { projectId: "project-alpha", environment: { type: "project-default" } },
+      } as never,
       rpc: {
-        prefs: async () => ({ prefs: {} }),
-        state: async () => ({
+        prefs: () => ({
+          prefs: {
+            newWork: {
+              suggestions: true,
+              suggestionsModel: { kind: "gateway", model: "model-test" },
+            },
+          },
+        }),
+        state: () => ({
           ...emptyState(),
-          workstreams: options.workstreams ?? {},
-          order: { workstreams: [], threads: {}, prioritized: [] },
+          catalog: {
+            entities: options.entities ?? [
+              {
+                id: "ent_alpha",
+                name: "Alpha",
+                description: "Alpha product",
+                parentId: null,
+                aliases: [],
+              },
+            ],
+            groups: {},
+            assignments: {},
+            revision: 1,
+          },
+        }),
+        catalog: () => ({
+          entities: options.entities ?? [
+            {
+              id: "ent_alpha",
+              name: "Alpha",
+              description: "Alpha product",
+              parentId: null,
+              aliases: [],
+            },
+          ],
+          groups: {},
+          assignments: {},
+          revision: 1,
         }),
         route,
-        routeCancel: async () => ({ canceled: true }),
+        routeCancel,
         startThread,
         sendToThread,
-        createWorkstream,
-      } as never,
+      },
     },
   );
-  return {
-    slot,
-    route,
-    sendToThread,
-    startThread,
-    createWorkstream,
-    copyAttachments,
-  };
+
+  return { slot, route, startThread, sendToThread };
 }
 
 async function typePrompt(
@@ -203,97 +203,52 @@ async function typePrompt(
   await act(() => slot.behavior.setComposerText(text));
 }
 
-it("fills the field with the classified home and files it through host submit metadata", async () => {
-  const { slot, route, startThread } = mount(workstreamDecision);
+it("fills the field with the classified identity and submits it through host submit metadata", async () => {
+  const { slot, route, startThread } = mount(identityDecision);
   await typePrompt(slot, "Fix the parser in Alpha");
   const field = await screen.findByRole("button", {
-    name: "Workstream: Alpha",
+    name: "Product or feature: Alpha",
   });
   expect(field.dataset.wsAuto).toBe("true");
   expect(route).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: { routeId: "route-alpha", sectionId: "section-alpha" },
-  });
-  expect(startThread).not.toHaveBeenCalled();
-  expect(
-    slot.inspection.rpcCalls.filter((call) => call.method === "route"),
-  ).toHaveLength(1);
-});
-
-it("places the Workstream picker before the project picker in the host picker row", async () => {
-  mount(workstreamDecision, { component: RootComposerWithPickerRow });
-  const picker = await screen.findByRole("button", {
-    name: "Workstream: Automatic",
-  });
-  const anchor = picker.closest("[data-ws-workstream-slot]");
-  expect(anchor).toBeTruthy();
-  expect(
-    anchor!.compareDocumentPosition(
-      document.querySelector("[data-promptbox-project-control]")!,
-    ) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(
-    document
-      .querySelector("[data-promptbox]")!
-      .compareDocumentPosition(anchor!) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-});
-
-it("draws the picker with the plugin's declared icons, never BB's fallback", async () => {
-  mount(workstreamDecision);
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Workstream: Automatic" }),
-  );
-  fireEvent.click(await screen.findByRole("option", { name: "No workstream" }));
-  const picker = await screen.findByRole("button", {
-    name: "Workstream: No workstream",
-  });
-  expect(picker.dataset.wsAuto).toBeUndefined();
-  // BB draws an undeclared icon name as a lightning bolt.
-  expect(
-    picker.querySelector('[data-icon="workstreams/workstream-none"]'),
-  ).toBeTruthy();
-  expect(picker.querySelector('[data-icon="CircleDashed"]')).toBeNull();
-});
-
-it("shows each workstream's description under its name and searches it", async () => {
-  mount(workstreamDecision, {
-    workstreams: {
-      alpha: {
-        sectionId: "section-alpha",
-        name: "Alpha",
-        description: "Adaptive grouping for threads",
+    experimental_data: {
+      identity: {
+        entityId: "ent_alpha",
+        proposal: null,
+        provenance: "automatic",
       },
-      beta: { sectionId: "section-beta", name: "Beta", description: null },
     },
   });
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Workstream: Automatic" }),
-  );
-  expect(await screen.findByText("Adaptive grouping for threads")).toBeTruthy();
-  fireEvent.change(screen.getByPlaceholderText(/Find or create/), {
-    target: { value: "adaptive" },
-  });
-  expect(screen.getByText("Alpha")).toBeTruthy();
-  expect(screen.queryByText("Beta")).toBeNull();
+  expect(startThread).not.toHaveBeenCalled();
 });
 
-it("leaves a classification that names no home out of the host submit metadata", async () => {
-  const unsure = {
-    ...workstreamDecision,
+it("places the Product or feature picker in the host picker row", async () => {
+  mount(identityDecision, { component: RootComposerWithPickerRow });
+  const picker = await screen.findByRole("button", {
+    name: "Product or feature: Automatic",
+  });
+  expect(picker).toBeTruthy();
+  expect(picker.getAttribute("data-ws-identity-control")).toBe("");
+  expect(screen.queryByRole("button", { name: /Workstream:/ })).toBeNull();
+});
+
+it("leaves an unsure classification out of the host submit metadata", async () => {
+  const unsure: RouteDecision = {
+    ...identityDecision,
     id: "route-unsure",
-    outcome: "unsure" as const,
+    outcome: "unsure",
     candidates: [],
-    sectionId: null,
-    workstream: null,
+    subject: null,
+    subjectId: null,
   };
   const { slot, route, startThread } = mount(unsure);
   await typePrompt(slot, "Something vague");
   await waitFor(() => expect(route).toHaveBeenCalledTimes(1));
   expect(
-    screen.getByRole("button", { name: "Workstream: Automatic" }),
+    screen.getByRole("button", { name: "Product or feature: Automatic" }),
   ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
@@ -303,54 +258,55 @@ it("leaves a classification that names no home out of the host submit metadata",
   expect(startThread).not.toHaveBeenCalled();
 });
 
-it("creates a proposed workstream when submitting, and files it through host metadata", async () => {
-  const newWorkstream: RouteDecision = {
+it("submits manual null identity when selecting Unresolved", async () => {
+  const { slot } = mount(identityDecision);
+  await typePrompt(slot, "Some unresolvable request");
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Product or feature: Alpha" }),
+  );
+  fireEvent.click(await screen.findByRole("option", { name: "Unresolved" }));
+  await screen.findByRole("button", { name: "Product or feature: Unresolved" });
+  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
+  await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
+  expect(slot.inspection.composer.submits[0]).toEqual({
+    experimental_data: {
+      identity: {
+        entityId: null,
+        proposal: null,
+        provenance: "manual",
+      },
+    },
+  });
+});
+
+it("submits proposal identity when proposing a new feature", async () => {
+  const proposalDecision: RouteDecision = {
     id: "route-billing",
     traceId: "trace-billing",
     confidence: "high",
     reason: "A new effort",
-    subject: null,
-    outcome: "new-workstream",
-    name: "Billing",
-    description: "Invoices",
-    title: "Invoice export",
+    subject: "Billing",
+    proposal: { name: "Billing", description: "Invoices" },
+    outcome: "new-thread",
+    sectionId: null,
+    workstream: null,
+    title: "",
     placement: null,
   };
-  const { slot, startThread, createWorkstream } = mount(newWorkstream);
-  await typePrompt(slot, "Add invoice export");
-  const field = await screen.findByRole("button", {
-    name: "Workstream: Billing",
-  });
-  expect(field.dataset.wsAuto).toBe("true");
-  expect(createWorkstream).not.toHaveBeenCalled();
+  const { slot } = mount(proposalDecision);
+  await typePrompt(slot, "Add invoice billing");
+  await screen.findByRole("button", { name: "Product or feature: Billing" });
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
-  expect(createWorkstream).toHaveBeenCalledTimes(1);
   expect(slot.inspection.composer.submits[0]).toEqual({
     experimental_data: {
-      routeId: "route-billing",
-      sectionId: "section-created",
+      identity: {
+        entityId: null,
+        proposal: { name: "Billing", description: "Invoices" },
+        provenance: "automatic",
+      },
     },
   });
-  expect(startThread).not.toHaveBeenCalled();
-});
-
-it("files an explicitly selected workstream through ordinary host form submit", async () => {
-  const { slot, startThread } = mount(workstreamDecision, {
-    workstreams: { beta: { sectionId: "section-beta", name: "Beta" } },
-  });
-  await typePrompt(slot, "Write docs");
-  await screen.findByRole("button", { name: "Workstream: Automatic" });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Workstream: Automatic" }),
-  );
-  fireEvent.click(await screen.findByRole("option", { name: "Beta" }));
-  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
-  await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
-  expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: { sectionId: "section-beta" },
-  });
-  expect(startThread).not.toHaveBeenCalled();
 });
 
 it("sends an accepted continuation once without starting another thread", async () => {
@@ -363,7 +319,7 @@ it("sends an accepted continuation once without starting another thread", async 
     }),
   );
   await waitFor(() => expect(sendToThread).toHaveBeenCalledTimes(1));
-  expect(sendToThread.mock.calls[0]?.[0]).toMatchObject({
+  expect((sendToThread.mock.calls as any)[0]?.[0]).toMatchObject({
     threadId: "thread-parser",
     input: [{ type: "text", text: "Also handle CRLF", mentions: [] }],
     traceId: "trace-continuation",
@@ -389,13 +345,11 @@ it("retains the composer draft when sending a continuation fails", async () => {
 });
 
 it("does not render routing controls or intercept submits when inside a dialog", async () => {
-  const { slot, route } = mount(workstreamDecision, {
+  const { slot, route } = mount(identityDecision, {
     component: DialogComposer,
   });
   await typePrompt(slot, "Fix the parser in Alpha");
-  expect(
-    screen.queryByRole("button", { name: "Apply and start the thread" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: /Product or feature:/ })).toBeNull();
   expect(screen.queryByRole("button", { name: /Workstream:/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
@@ -403,102 +357,4 @@ it("does not render routing controls or intercept submits when inside a dialog",
     experimental_data: null,
   });
   expect(route).not.toHaveBeenCalled();
-});
-
-it("submits sectionId: null metadata when manually clearing workstream back to No workstream (Bug 1)", async () => {
-  const { slot } = mount(workstreamDecision, {
-    workstreams: { beta: { sectionId: "section-beta", name: "Beta" } },
-  });
-  await typePrompt(slot, "Write docs");
-  await screen.findByRole("button", { name: "Workstream: Automatic" });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Workstream: Automatic" }),
-  );
-  fireEvent.click(await screen.findByRole("option", { name: "Beta" }));
-  expect(
-    await screen.findByRole("button", { name: "Workstream: Beta" }),
-  ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Workstream: Beta" }));
-  fireEvent.click(await screen.findByRole("option", { name: "No workstream" }));
-  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
-  await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
-  expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: {
-      sectionId: null,
-    },
-  });
-});
-
-it("retains the draft and reports an alert when creating a proposal on submit fails", async () => {
-  const newWorkstream: RouteDecision = {
-    id: "route-billing",
-    traceId: "trace-billing",
-    confidence: "high",
-    reason: "A new effort",
-    subject: null,
-    outcome: "new-workstream",
-    name: "Billing",
-    description: "Invoices",
-    title: "Invoice export",
-    placement: null,
-  };
-  const { slot } = mount(newWorkstream, { createWorkstreamFails: true });
-  await typePrompt(slot, "Add invoice export");
-  await screen.findByRole("button", { name: "Workstream: Billing" });
-  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
-  await waitFor(() =>
-    expect(
-      screen.getAllByText("create workstream failed").length,
-    ).toBeGreaterThan(0),
-  );
-  expect(slot.inspection.composer.submits).toHaveLength(0);
-  expect(slot.inspection.composer.draft.text).toBe("Add invoice export");
-});
-
-it("copies draft attachments across projects when sending an accepted continuation", async () => {
-  const { slot, sendToThread, copyAttachments } = mount(continuationDecision, {
-    targetProjectId: "project-beta",
-    attachments: [{ path: "/workspace/notes.txt" }],
-  });
-  await typePrompt(slot, "Also handle CRLF");
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: /Accept suggestion: Send to Parser fix/,
-    }),
-  );
-  await waitFor(() => expect(sendToThread).toHaveBeenCalledTimes(1));
-  expect(copyAttachments).toHaveBeenCalledWith({
-    projectId: "project-beta",
-    sourceProjectId: "project-alpha",
-    paths: ["/workspace/notes.txt"],
-  });
-  expect(slot.inspection.composer.draft.text).toBe("");
-  expect(slot.inspection.composer.draft.attachments).toEqual([]);
-  expect(slot.inspection.navigateCalls).toEqual([
-    { method: "toThread", threadId: "thread-parser" },
-  ]);
-});
-
-it("dismisses a suggestion behind a pinned field and submits with null metadata", async () => {
-  const { slot } = mount(workstreamDecision);
-  await typePrompt(slot, "Fix the parser in Alpha");
-  // Pin the field on No workstream: the suggestion keeps its row there.
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Workstream: Automatic" }),
-  );
-  fireEvent.click(await screen.findByRole("option", { name: "No workstream" }));
-  await screen.findByRole("button", { name: "Apply and start the thread" });
-  fireEvent.click(screen.getByRole("button", { name: "Dismiss suggestion" }));
-  await waitFor(() =>
-    expect(
-      screen.queryByRole("button", { name: "Apply and start the thread" }),
-    ).toBeNull(),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
-  await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
-  expect(slot.inspection.composer.submits[0]).toEqual({
-    experimental_data: {
-      sectionId: null,
-    },
-  });
 });

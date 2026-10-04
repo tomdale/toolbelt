@@ -67,26 +67,11 @@ describe("planDrop", () => {
     });
   });
 
-  it("moves a root into another group above or below the target", () => {
+  it("disallows moving a root across groups via drag and drop", () => {
     expect(planDrop(threadDrop(), projection, sections, EMPTY_ORDER)).toEqual({
-      move: { threadId: "b1", sectionId: "sec_a" },
-      reorder: {
-        kind: "threads",
-        groupId: "sec_a",
-        ids: ["a1", "b1", "a2", "a3"],
-      },
+      move: null,
+      reorder: null,
     });
-    expect(
-      planDrop(threadDrop({ below: true }), projection, sections, EMPTY_ORDER)
-        .reorder,
-    ).toEqual({
-      kind: "threads",
-      groupId: "sec_a",
-      ids: ["a1", "a2", "b1", "a3"],
-    });
-  });
-
-  it("files a root dropped on a group header at its top, and into Unfiled", () => {
     expect(
       planDrop(
         threadDrop({ toGroupId: "unsorted", overThreadId: null }),
@@ -95,8 +80,8 @@ describe("planDrop", () => {
         EMPTY_ORDER,
       ),
     ).toEqual({
-      move: { threadId: "b1", sectionId: null },
-      reorder: { kind: "threads", groupId: "unsorted", ids: ["b1", "u1"] },
+      move: null,
+      reorder: null,
     });
   });
 });

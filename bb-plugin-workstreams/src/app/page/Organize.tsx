@@ -5,21 +5,24 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { useRealtime, type useRpc } from "@get-bb/plugin-sdk/app";
-import type { LiveOrganization, RpcContract } from "../../server/contract.ts";
+import type {
+  LiveOrganization,
+  LiveOrganizationGroup,
+  LiveOrganizationGroupMember,
+  LiveOrganizationUnresolved,
+  RpcContract,
+} from "../../server/contract.ts";
 import { cn } from "@/lib/utils";
 import { Icon } from "@/components/ui/icon";
-import { InspectButton } from "../debug/InspectButton.tsx";
 import { ghostButton, primaryButton, secondaryButton } from "./controls.ts";
-import { buildReview } from "./organize-review.ts";
-import { ProposalReview, plural } from "./OrganizeReview.tsx";
-import type { ReviewTask } from "./organize-review.ts";
-import { useThreadTotals, type ThreadTotals } from "./thread-totals.ts";
+import { TaskIdentity } from "../task/TaskIdentity.tsx";
+import { WorkstreamName } from "../WorkstreamName.tsx";
+import { TAG_ICON } from "../workstream-icon.ts";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 
@@ -33,8 +36,8 @@ export function Organize({
   bootstrapped?: boolean;
   /** Opens the Activity log. */
   onShowActivity?: () => void;
-  /** Optional slot for cross-surface identity correction control from Phase 3. */
-  renderTaskAction?: (task: ReviewTask) => ReactNode;
+  /** Optional slot for cross-surface identity correction control. */
+  renderTaskAction?: (task: { id: string; title: string }) => ReactNode;
   children?: ReactNode;
 }) {
   const [state, setState] = useState<LiveOrganization | null>(null);
@@ -45,7 +48,6 @@ export function Organize({
   const settled = useRef(0);
   const command = useRef(0);
   const errorOwner = useRef<"read" | "command" | null>(null);
-  const totals = useThreadTotals();
 
   const read = useCallback(async () => {
     const generation = ++requested.current;
@@ -116,11 +118,6 @@ export function Organize({
     return () => clearInterval(timer);
   }, [working, read]);
 
-  const review = useMemo(
-    () => (state ? buildReview(state, totals.childrenOf) : null),
-    [state, totals],
-  );
-
   if (!loaded) return null;
 
   const commandError = error ? (
@@ -135,51 +132,99 @@ export function Organize({
 
   return (
     <section aria-label="Organize" className="flex flex-col gap-6 text-sm">
-      {state && state.status === "idle" && review ? (
-        <ProposalReview
-          review={review}
-          busy={busy}
-          inspect={null}
-          alert={commandError}
+      <StatusPanel
+        state={state}
+        busy={busy}
+        alert={commandError}
+        onRetry={() => void send("rebuild")}
+        onRebuild={() => void send("rebuild")}
+        onRefresh={() => void read()}
+        onShowActivity={onShowActivity}
+      />
+
+      {state && state.counts ? (
+        <CountsSummary counts={state.counts} />
+      ) : null}
+
+      {state && state.unresolved.length > 0 ? (
+        <UnresolvedSection
+          unresolved={state.unresolved}
           renderTaskAction={renderTaskAction}
-          onApply={() => void send("rebuild")}
-          onDiscard={() => void read()}
-          onRegenerate={() => void send("rebuild")}
         />
-      ) : (
-        <>
-          <StatusPanel
-            state={state}
-            busy={busy}
-            totals={totals}
-            alert={commandError}
-            onStart={() => void send("rebuild")}
-            onCancel={() => void read()}
-            onShowActivity={onShowActivity}
-          />
-          {!working ? children : null}
-        </>
-      )}
+      ) : null}
+
+      {state && state.groups.length > 0 ? (
+        <LiveGroupsSection
+          groups={state.groups}
+          renderTaskAction={renderTaskAction}
+        />
+      ) : null}
+
+      {!working ? children : null}
     </section>
   );
 }
 
-/** The pane during work or failure. */
+function CountsSummary({ counts }: { counts: LiveOrganization["counts"] }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="rounded-lg border border-border bg-card p-3">
+        <span className="text-[11px] font-medium text-muted-foreground">
+          Active tasks
+        </span>
+        <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">
+          {counts.activeRoots}
+        </p>
+      </div>
+      <div className="rounded-lg border border-border bg-card p-3">
+        <span className="text-[11px] font-medium text-muted-foreground">
+          Active workstreams
+        </span>
+        <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">
+          {counts.activeWorkstreams}
+        </p>
+      </div>
+      <div className="rounded-lg border border-border bg-card p-3">
+        <span className="text-[11px] font-medium text-muted-foreground">
+          Unresolved
+        </span>
+        <p
+          className={cn(
+            "mt-0.5 text-lg font-semibold tabular-nums",
+            counts.unresolvedRoots > 0
+              ? "text-amber-600 dark:text-amber-400"
+              : "text-foreground",
+          )}
+        >
+          {counts.unresolvedRoots}
+        </p>
+      </div>
+      <div className="rounded-lg border border-border bg-card p-3">
+        <span className="text-[11px] font-medium text-muted-foreground">
+          Completed (retained)
+        </span>
+        <p className="mt-0.5 text-lg font-semibold tabular-nums text-muted-foreground">
+          {counts.completedRoots}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function StatusPanel({
   state,
   busy,
-  totals,
   alert,
-  onStart,
-  onCancel,
-  onShowActivity,
+  onRetry,
+  onRebuild,
+  onRefresh,
 }: {
   state: LiveOrganization | null;
   busy: boolean;
-  totals: ThreadTotals;
   alert: ReactNode;
-  onStart: () => void;
-  onCancel: () => void;
+  onRetry: () => void;
+  onRebuild: () => void;
+  onRefresh: () => void;
   onShowActivity?: () => void;
 }) {
   const status = state?.status ?? "idle";
@@ -243,28 +288,28 @@ function StatusPanel({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {working ? (
-            <button type="button" className={ghostButton} onClick={onCancel}>
+            <button type="button" className={ghostButton} onClick={onRefresh}>
               Refresh
             </button>
           ) : null}
           {status === "failed" ? (
             <button
               type="button"
-              className={ghostButton}
+              className={secondaryButton}
               disabled={busy}
-              onClick={onCancel}
+              onClick={onRetry}
             >
-              Dismiss
+              Try again
             </button>
           ) : null}
-          {!working ? (
+          {!working && status !== "failed" ? (
             <button
               type="button"
-              className={status === "failed" ? secondaryButton : primaryButton}
+              className={primaryButton}
               disabled={busy}
-              onClick={onStart}
+              onClick={onRebuild}
             >
-              {status === "failed" ? "Try again" : "Rebuild…"}
+              Rebuild…
             </button>
           ) : null}
         </div>
@@ -293,6 +338,178 @@ function StatusPanel({
       ) : null}
       {alert ? <div className="mt-2">{alert}</div> : null}
     </div>
+  );
+}
+
+function UnresolvedSection({
+  unresolved,
+  renderTaskAction,
+}: {
+  unresolved: LiveOrganizationUnresolved[];
+  renderTaskAction?: (task: { id: string; title: string }) => ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+      <div className="flex items-center gap-2">
+        <Icon
+          name="HelpCircle"
+          className="size-4 text-amber-600 dark:text-amber-400"
+          aria-hidden="true"
+        />
+        <h2 className="text-xs font-semibold text-foreground">
+          Unresolved tasks ({unresolved.length})
+        </h2>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        These active tasks have no assigned Product or Feature. They appear under
+        Unfiled in the sidebar. Assigning a product or feature moves them
+        automatically.
+      </p>
+      <ul className="mt-3 divide-y divide-border/50">
+        {unresolved.map((task) => (
+          <li
+            key={task.id}
+            className="flex flex-wrap items-center justify-between gap-2 py-2"
+          >
+            <div className="min-w-0 flex-1">
+              <span className="font-medium text-foreground">{task.title}</span>
+              {task.reason ? (
+                <p className="text-[11px] text-muted-foreground">
+                  {task.reason}
+                </p>
+              ) : null}
+            </div>
+            <div className="shrink-0">
+              {renderTaskAction ? (
+                renderTaskAction(task)
+              ) : (
+                <TaskIdentity threadId={task.id} />
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function LiveGroupsSection({
+  groups,
+  renderTaskAction,
+}: {
+  groups: LiveOrganizationGroup[];
+  renderTaskAction?: (task: { id: string; title: string }) => ReactNode;
+}) {
+  return (
+    <div className="space-y-4">
+      <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+        Derived Workstreams ({groups.length})
+      </h2>
+      <div className="space-y-3">
+        {groups.map((group) => (
+          <GroupCard
+            key={group.key}
+            group={group}
+            renderTaskAction={renderTaskAction}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GroupCard({
+  group,
+  renderTaskAction,
+}: {
+  group: LiveOrganizationGroup;
+  renderTaskAction?: (task: { id: string; title: string }) => ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 shadow-xs">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <WorkstreamName name={group.name} className="font-semibold text-sm" />
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+              {group.activeCount} active · {group.totalCount} total
+            </span>
+          </div>
+          {group.description ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {group.description}
+            </p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className={ghostButton}
+          aria-expanded={expanded}
+        >
+          {expanded ? "Collapse" : "Expand"}
+        </button>
+      </div>
+
+      {expanded && group.roots.length > 0 ? (
+        <ul className="mt-3 divide-y divide-border/40 border-t border-border/40 pt-1">
+          {group.roots.map((root) => (
+            <GroupMemberRow
+              key={root.id}
+              root={root}
+              renderTaskAction={renderTaskAction}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function GroupMemberRow({
+  root,
+  renderTaskAction,
+}: {
+  root: LiveOrganizationGroupMember;
+  renderTaskAction?: (task: { id: string; title: string }) => ReactNode;
+}) {
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2 py-2">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              "font-medium text-xs",
+              root.completed
+                ? "text-muted-foreground line-through"
+                : "text-foreground",
+            )}
+          >
+            {root.title}
+          </span>
+          {root.identityLabel ? (
+            <span className="inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground font-medium">
+              <Icon name={TAG_ICON} className="size-2.5 opacity-70" aria-hidden="true" />
+              {root.identityLabel}
+            </span>
+          ) : null}
+        </div>
+        {root.reason ? (
+          <p className="mt-0.5 text-[11px] text-muted-foreground/80">
+            {root.reason}
+          </p>
+        ) : null}
+      </div>
+      <div className="shrink-0">
+        {renderTaskAction ? (
+          renderTaskAction(root)
+        ) : (
+          <TaskIdentity threadId={root.id} />
+        )}
+      </div>
+    </li>
   );
 }
 
