@@ -1,14 +1,13 @@
-# Organizing workstreams
+# Live-derived workstreams organization
 
 A workstream is a recognizable ongoing effort represented by a native BB
-section. Organization is an explicit operation: open **Workstreams →
-Organize**, review the proposed organization, then choose **Apply
-organization**. Cancel leaves membership and descriptions unchanged.
+section. Workstreams are **always derived automatically** from active task
+identities in the Catalog. Navigation syncs automatically to BB native sections
+without manual placement or preview/apply staging.
 
-## Two-stage adaptive organization
+## How live derivation works
 
-Rather than a single whole-tree prompt, the organizer runs in two distinct
-stages:
+The system operates continuously through a coordinated automatic lifecycle:
 
 ### 1. Classification
 
@@ -17,71 +16,35 @@ the `classify` model. Inputs contain the thread title, recap, project context,
 and relevant user requests.
 Explicit manual selections (`provenance: manual`) remain authoritative and are
 never overwritten by automatic classification. Missing or stale classifications
-run with up to three concurrent workers. Progress reports completed, cached,
-and unresolved tasks before proceeding.
+run with bounded concurrency. Manual unresolved tasks persist as explicit null
+assignments.
 
-### 2. Regrouping
+### 2. Deterministic regrouping
 
-Once all active roots have canonical assignments, the organizer groups them
-adaptively using `regroup`. It counts active, non-completed tasks per product
-and feature in the Catalog and selects active navigation homes based on:
+Once active roots have assignments, the coordinator groups them
+deterministically using `deriveActiveEntityIds` from `domain/regroup.ts`:
 
-- **Group capacity**: maximum current tasks per workstream (default: 6). Tasks
-  concerning one indivisible feature may exceed capacity in their own group.
-- **Contraction threshold**: at or below this product task count (default: 3),
-  previews return to a broad product group rather than fragmenting.
+- **Partition by product roots**: Entities are grouped under their top-level Catalog product (`parentId === null`).
+- **Group capacity**: Maximum active tasks per workstream (default: 6). Leaf feature identities above capacity may stand as indivisible leaf groups.
+- **Contraction threshold**: At or below this product task count (default: 3), navigation contracts to the broad product root workstream.
+- **Active count vs. completed retention**: Only active (non-completed) roots drive capacity and expansion pressure. Completed tasks exert 0 expansion pressure and remain navigable under their product root.
+- **Stability**: Existing active workstream homes are preserved when they continue to satisfy capacity and coverage constraints.
+- **Unresolved tasks**: Tasks with unresolved identities map to Unfiled (`sectionId: null`) and are surfaced in `state.unresolved`.
 
-Completed roots (`state: "done"`) and child workers do not inflate these counts.
+## Organize pane
 
-## Truthful reasons and retention
+The **Workstreams → Organize** pane explains the current live projection:
 
-The preview displays specific canonical product/feature identities independently
-of target workstreams, with truthful reasons explaining each assignment:
+- **Status and progress**: Live state (`idle`, `classifying`, `deriving`, `syncing`, `failed`), progress metrics, and error reporting with a **Try again** retry action.
+- **Counts summary**: Active tasks, active workstreams, unresolved tasks, and completed tasks retained.
+- **Derived workstreams**: Current workstreams with active and total counts, member tasks, feature identities, and derivation reasons.
+- **Unresolved correction**: Dedicated section listing unfiled unresolved tasks with inline product/feature assignment controls. Correcting an identity immediately updates navigation.
+- **Rebuild**: Explicit action to re-run full derivation across all active threads.
 
-- **Specific feature grouped broadly**: `Classified as <Feature>; grouped under <Workstream>.`
-- **Explicit manual assignment**: `Manually assigned to <Feature>; grouped in <Workstream>.`
-- **Completed task retained**: `Completed task; retained in <Workstream>.`
-- **Unresolved task retained**: `Unresolved identity; retained in <Workstream>.`
-- **Unfiled unresolved task**: `Unresolved identity; remains unfiled.`
+## Catalog and derived navigation
 
-Unresolved threads in existing workstreams retain their homes rather than
-being dumped into unfiled.
-
-## Revision safety and stale preview invalidation
-
-Organize previews capture `catalogRevision` at generation time. Any Catalog
-mutation — entity creation, renaming, reparenting, merging, task assignment, or
-clearing an identity — increments `catalogRevision`.
-
-When `catalogRevision` advances:
-- The saved preview is marked stale (`isStale: true`).
-- The UI displays an invalidation banner and disables the **Apply** button.
-- Users are prompted to **Regenerate** the preview against the updated knowledge.
-- Calling `bootstrap.apply` on a stale preview safely rejects with a `UserError`,
-  preventing applying outdated grouping proposals.
-
-## Preview and Apply
-
-The preview lists the proposed workstreams with routing metadata and all assigned
-roots, including roots that stay put. Uncheck a move to keep the current placement.
-User-authored descriptions are preserved.
-
-Apply consumes the saved preview, not another model result. It revalidates
-section names and metadata; threads moved, hidden, archived, deleted or reparented
-since the preview are skipped. New sections are created only for moves surviving
-preflight.
-
-The preview also lists unused homes for removal: completely empty sections, or
-archived-only sections whose newest archive is over 24 hours old. Hidden
-non-archived threads block removal. Apply rereads every member and rechecks the
-24-hour rule.
-
-Deleting a home preserves its threads and leaves its archived members unassigned.
-Undo recreates the name and routing metadata, then restores eligible archived
-members and roots moved by the batch. Activity records the application as one
-undoable batch.
-
-## Steady state
-
-Between organizing runs, membership stays fixed while recaps, attention
-indicators, titles, and snooze stay current independently.
+The **Catalog** is the retained hierarchy of known Products and Features.
+Workstream navigation groups are derived from Catalog structure:
+- Catalog entries label their current navigation home as derived.
+- Editing the Catalog (renaming, reparenting, merging) automatically updates navigation.
+- Task identity corrections (assigning or clearing a product/feature) trigger immediate derivation.

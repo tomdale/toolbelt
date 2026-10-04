@@ -352,45 +352,6 @@ export function registerCli(
             };
           },
         }),
-        file: cliCommand({
-          summary: "File a root thread (and its children) under a workstream",
-          positionals: [
-            { name: "thread", description: "Thread id", required: true },
-            {
-              name: "workstream",
-              description:
-                "Workstream name or section id; `unfiled` to remove it from any workstream",
-              required: true,
-            },
-          ],
-          options: { json: { type: "boolean", description: "Print JSON" } },
-          async run({ positionals, options }) {
-            const sections = await listSections(bb.sdk);
-            const target = isUnfiled(positionals.workstream)
-              ? null
-              : resolveWorkstream(sections, positionals.workstream);
-            if (target === null && !isUnfiled(positionals.workstream))
-              throw new PluginCliError(
-                `No workstream named "${positionals.workstream}".`,
-                {
-                  code: "workstream_not_found",
-                  hint: "Run `bb workstreams list` to see workstream names and ids.",
-                },
-              );
-            const entry = await service
-              .move(positionals.thread, target?.id ?? null, "user")
-              .catch(fail);
-            const message = entry
-              ? entry.rationale
-              : "Already there; nothing changed.";
-            return {
-              exitCode: 0,
-              stdout: options.json
-                ? JSON.stringify({ changed: entry !== null, entry }, null, 2)
-                : message,
-            };
-          },
-        }),
         log: cliCommand({
           summary:
             "Show the activity log: every change Workstreams made or observed",
@@ -484,142 +445,6 @@ export function registerCli(
             };
           },
         }),
-        prioritize: cliCommand({
-          summary:
-            "Prioritize a workstream: it pins to the top of the sidebar, and while it has threads waiting on you, Up Next shows only prioritized workstreams",
-          positionals: [
-            {
-              name: "workstream",
-              description: "Workstream name or section id",
-              required: true,
-            },
-          ],
-          options: {
-            off: { type: "boolean", description: "Remove the priority" },
-          },
-          async run({ positionals, options }) {
-            const section = resolveWorkstream(
-              await listSections(bb.sdk),
-              positionals.workstream,
-            );
-            if (!section)
-              throw new PluginCliError(
-                `No workstream named "${positionals.workstream}".`,
-                {
-                  code: "workstream_not_found",
-                  hint: "Run `bb workstreams list` to see workstream names and ids.",
-                },
-              );
-            const current = arrangement
-              .load()
-              .prioritized.filter((id) => id !== section.id);
-            arrangement.setPrioritized(
-              options.off ? current : [...current, section.id],
-            );
-            return {
-              exitCode: 0,
-              stdout: options.off
-                ? `${section.name} is no longer prioritized.`
-                : `Prioritized ${section.name}.`,
-            };
-          },
-        }),
-        edit: cliCommand({
-          summary:
-            "Edit a workstream's description or aliases; your description always wins over a generated one",
-          positionals: [
-            {
-              name: "workstream",
-              description: "Workstream name or section id",
-              required: true,
-            },
-          ],
-          options: {
-            description: {
-              type: "string",
-              description: "One line: what work belongs here (empty clears it)",
-            },
-            alias: {
-              type: "string",
-              repeatable: true,
-              split: ",",
-              description:
-                "Other names for this workstream (replaces the list; repeat or comma-separate)",
-            },
-            json: { type: "boolean", description: "Print JSON" },
-          },
-          constraints: [
-            { kind: "at-least-one", options: ["description", "alias"] },
-          ],
-          async run() {
-            throw new PluginCliError(
-              "Workstream metadata is derived from the catalog. Use 'bb workstreams catalog edit' instead.",
-              { code: "derived_workstream_readonly" },
-            );
-          },
-        }),
-        new: cliCommand({
-          summary:
-            "Start new work where it belongs: continue a thread, start one in a workstream, or start a new workstream",
-          positionals: [
-            {
-              name: "prompt",
-              description: "What the work is (the first message)",
-              required: true,
-            },
-          ],
-          options: {
-            workstream: {
-              type: "string",
-              description: "Start it in this workstream (name or section id)",
-            },
-            project: {
-              type: "string",
-              description: "Prefer this project id",
-            },
-            "dry-run": {
-              type: "boolean",
-              description: "Print the route without acting",
-            },
-            json: { type: "boolean", description: "Print JSON" },
-          },
-          async run({ positionals, options }) {
-            const prompt = positionals.prompt;
-            let workstreamId: string | null = null;
-            if (options.workstream) {
-              const section = resolveWorkstream(
-                await listSections(bb.sdk),
-                options.workstream,
-              );
-              if (!section)
-                throw new PluginCliError(
-                  `No workstream named "${options.workstream}".`,
-                  { code: "workstream_not_found" },
-                );
-              workstreamId = section.id;
-            }
-            const decision = await router
-              .route(prompt, {
-                pickedProjectId: options.project ?? null,
-                workstreamId,
-              })
-              .catch(fail);
-            // Scripts can't see a preview: continue only when sure.
-            const acted = await actOn(
-              router,
-              decision,
-              positionals.prompt,
-              options["dry-run"],
-              "router",
-            );
-            return {
-              exitCode: acted.outcome === "unsure" ? 3 : 0,
-              stdout: options.json
-                ? JSON.stringify(acted, null, 2)
-                : describeOutcome(acted, options["dry-run"]),
-            };
-          },
-        }),
         handoff: cliCommand({
           summary:
             "Transfer a request with explicit user approval to a new thread, a new workstream, or an existing thread",
@@ -685,6 +510,39 @@ export function registerCli(
               stdout: options.json
                 ? JSON.stringify(acted)
                 : describeOutcome(acted, options["dry-run"]),
+            };
+          },
+        }),
+        organization: cliCommand({
+          summary: "Read or retry the current live organization state",
+          options: {
+            retry: {
+              type: "boolean",
+              description: "Retry failed derivation or trigger rebuild",
+            },
+            json: { type: "boolean", description: "Print JSON" },
+          },
+          async run({ options }) {
+            const state = options.retry
+              ? await coordinator.rebuild().catch(fail)
+              : coordinator.state();
+            if (options.json)
+              return {
+                exitCode: state.status === "failed" ? 1 : 0,
+                stdout: JSON.stringify(state, null, 2),
+              };
+            const lines = [
+              `Status: ${state.status}${state.error ? ` (${state.error})` : ""}`,
+              `Workstreams: ${state.groups.length}`,
+              `Active roots: ${state.counts.activeRoots}, Completed: ${state.counts.completedRoots}, Unresolved: ${state.counts.unresolvedRoots}`,
+              ...state.groups.map(
+                (g) =>
+                  `  ${g.name} (${g.totalCount} tasks: ${g.activeCount} active, ${g.completedCount} completed)`,
+              ),
+            ];
+            return {
+              exitCode: state.status === "failed" ? 1 : 0,
+              stdout: lines.join("\n"),
             };
           },
         }),

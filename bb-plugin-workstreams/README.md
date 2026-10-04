@@ -1,36 +1,23 @@
 # Workstreams for BB
 
-Workstreams organizes your BB threads into **workstreams** when you ask.
-Tasks are classified against the Catalog, then grouped adaptively into
-workstreams based on current task counts by product and feature; preview the
-organization, then apply. A workstream is a native BB section, so the built-in
-sidebar and Workstreams always agree on where a thread lives. [SPEC.md](SPEC.md)
-is the full design and the contract the code is checked against.
+Workstreams organizes your BB threads into **workstreams** derived
+automatically from active task identities. Tasks are classified against the
+Catalog, and active navigation groups are derived deterministically based on
+task counts by product and feature. A workstream is a native BB section, so the
+built-in sidebar and Workstreams always agree on where a thread lives.
+[SPEC.md](SPEC.md) is the full design and the contract the code is checked
+against.
 
 ## What it does
 
 - **Sidebar thread list** (select it under Settings → Appearance → Sidebar):
-  - **＋ New work** opens BB's own new-thread composer with one more field,
-    Workstream, at the start of the picker row. The field starts **Automatic**:
-    when you pause typing, the classifier fills it — and the project and
-    environment pickers — with the home it names, marked ✦ in the magic tint; a
-    proposed new workstream is created when the thread starts. Enter starts the
-    thread exactly as the pickers show. Touching any picker (a workstream, No
-    workstream, the project, or the environment) pins everything in the ordinary
-    muted treatment and stops the automatic updates; choosing Automatic again
-    unpins. A suggested thread is never applied automatically: it appears under
-    the composer as Send to, and ⌘⏎ (Ctrl+⏎) or its button queues the draft
-    there and closes the dialog. A workstream's **＋** preselects it.
-    On a phone, BB's picker row is full with its own project, environment,
-    branch and permission chips, so the Workstream and Product or feature fields
-    become one **Workstream** chip on a line of its own above the prompt box,
-    showing where the thread will be filed. Tapping it opens a sheet with a
-    **Workstream** tab and a **Product or feature** tab, each showing its current
-    value over the same searchable list; picking an entry closes the sheet. On
-    wider screens the two chips stay in BB's row and shrink, their labels
-    ellipsizing, before they paint over BB's own. On a touch screen the
-    suggestion under the composer drops its keyboard hints: tap the sentence to
-    apply it, or **Start** (**Send**, for a thread) to apply it and start.
+  - **＋ New work** opens the composer with a **Product or feature** field in the
+    picker row. The field defaults to **Automatic**: when you pause typing, the
+    classifier suggests the most specific product or feature. You can also pick a
+    known product or feature from the Catalog, propose a new feature, or explicitly
+    mark the task **Unresolved**. New work never asks for a destination workstream;
+    submitting creates the thread with its identity, and Workstreams derives its
+    section navigation automatically.
   - **Up Next**: a pending approval or question, or a thread whose latest turn
     asks you to decide something. These rows sit at the top in an amber block
     with a slow shimmer, under an always-open header, each naming its
@@ -206,17 +193,11 @@ is the full design and the contract the code is checked against.
   with Undo. A title you or an
   agent set is never changed; clear it to hand it back. Turn this off in the
   Threads settings section.
-- **Organize** (Organize tab, or `bb workstreams rebuild`): classifies open
-  thread roots against the Catalog, then regroups them adaptively into
-  workstreams based on concurrent task counts and capacity policy. Review the
-  proposal, inspect specific feature identities and truthful reasons, then
-  Apply as one undoable batch. Between runs, membership stays fixed.
-  Unassigned roots remain Unfiled. Homes default to concrete products/projects;
-  high-volume products may subdivide into `<Product>: <Area>` homes; substantial
-  initiatives can stand alone. Apply also removes previewed empty homes or
-  archived-only homes whose newest archive is over 24 hours old, preserving
-  threads and Undo. Any Catalog edit bumps revision, safely marking previews
-  stale until regenerated. See [Organizing workstreams](docs/organization.md).
+- **Organize** (Organize tab, or `bb workstreams rebuild`): explains the
+  current live projection of derived workstreams with active and total counts,
+  feature identities, derivation status/progress/error, and unresolved task
+  correction controls. Retries failed derivations with **Try again**. See
+  [Organizing workstreams](docs/organization.md).
 - **Catalog** (Catalog tab, or `bb workstreams catalog list`): the retained
   hierarchy of known Products and Features, whether or not they have active
   tasks. Each identity has a name, description, optional parent link, and
@@ -289,13 +270,12 @@ bb workstreams show <workstream> [--json]      # threads nested, with where each
 bb workstreams file <thread> <workstream>      # file a root thread; `unfiled` removes it
 bb workstreams edit <workstream> [--description <text>] [--alias <a,b>]
 bb workstreams prioritize <workstream> [--off] # pin it and focus Up Next on it
-bb workstreams new "<prompt>" [--workstream <w>] [--project <id>] [--dry-run]
 bb workstreams handoff --request-stdin [--note <text>] [--dry-run] [--json] <<'EOF'
 <the user's request, verbatim>
 EOF
 bb workstreams analyze [<thread>]              # analyze now, or catch up
-bb workstreams rebuild                         # generate a saved preview
-bb workstreams rebuild --apply --run-id <id>   # apply that preview, no new model call
+bb workstreams organization [--retry] [--json] # read or retry live organization
+bb workstreams rebuild                         # re-derive workstreams immediately
 bb workstreams log [--since 7d] [--external]   # the activity log
 bb workstreams undo <entry-id>
 bb workstreams trace [<id>] [--thread <id>] [--entry <id>] [--kind <kind>] [--json]

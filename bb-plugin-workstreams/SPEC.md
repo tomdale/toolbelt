@@ -14,10 +14,10 @@ context constantly. Workstreams answers five questions at a glance:
 - What needs Tom now?
 - Where does new work go?
 
-Workstreams organizes open threads on explicit request. Tasks are classified
-against the Catalog, then grouped adaptively based on current task counts by
-product and feature; the user previews and applies the result. Between runs,
-membership stays fixed while recaps and attention indicators stay current.
+Workstreams organizes active threads automatically. Tasks are classified
+against the Catalog, then grouped deterministically into workstreams based on
+active task counts by product and feature; navigation syncs automatically to BB
+native sections without manual placement or preview/apply staging.
 
 Workstreams has five responsibilities:
 

@@ -280,7 +280,7 @@ describe("native composer", () => {
     );
     expect(decision).toEqual({ action: "proceed" });
     await new Promise((r) => setTimeout(r, 20));
-    expect(w.threads.get("composed")?.sectionId).toBe(alpha.id);
+    expect(w.threads.get("composed")?.sectionId).toBeNull();
     // Unrelated sends are untouched.
     const other = w.addThread("other", { createdAt: Date.now() });
     await hook(
@@ -295,8 +295,8 @@ describe("native composer", () => {
   });
 });
 
-describe("bb workstreams new", () => {
-  it("exits 3 with candidates when unsure, and changes nothing", async () => {
+describe("bb workstreams new removed", () => {
+  it("rejects retired new command", async () => {
     const { w } = await setup({
       outcome: "unsure",
       candidates: [{ threadId: "a1" }, { workstream: "Alpha" }],
@@ -306,8 +306,7 @@ describe("bb workstreams new", () => {
       "new",
       "Tweak the Alpha thing",
     ]);
-    expect(result.exitCode).toBe(3);
-    expect(result.stdout).toContain("@thread:a1");
+    expect(result.exitCode).not.toBe(0);
     expect(w.spawned).toHaveLength(0);
     expect(w.sent).toHaveLength(0);
   });
@@ -369,7 +368,7 @@ describe("composer filing guards", () => {
     expect(w.threads.get("uncanceled")?.sectionId).toBeNull();
   });
 
-  it("files a thread when submission contains only a manually chosen sectionId", async () => {
+  it("ignores manual destination sectionId in submission", async () => {
     const { w } = await setup(answer);
     const beta = w.addSection("Beta");
     const composed = w.addThread("manual", { createdAt: Date.now() });
@@ -387,7 +386,7 @@ describe("composer filing guards", () => {
     expect(result).toEqual({ action: "proceed" });
     await hook(context);
     await new Promise((r) => setTimeout(r, 20));
-    expect(w.threads.get("manual")?.sectionId).toBe(beta.id);
+    expect(w.threads.get("manual")?.sectionId).toBeNull();
   });
 
   it("preserves an existing section when submission contains a manual sectionId for an already sorted thread", async () => {
@@ -414,7 +413,7 @@ describe("composer filing guards", () => {
     expect(w.threads.get("already-sorted")?.sectionId).toBe(gamma.id);
   });
 
-  it("files an accepted existing workstream suggestion carrying routeId and sectionId", async () => {
+  it("submits identity and does not manually file sectionId", async () => {
     const { w, alpha } = await setup(answer);
     const decision = (await w.harness.behavior.callRpc("route", {
       prompt,
@@ -438,7 +437,7 @@ describe("composer filing guards", () => {
     await hook(acceptedContext);
     await hook(acceptedContext);
     await new Promise((r) => setTimeout(r, 20));
-    expect(w.threads.get("accepted-existing")?.sectionId).toBe(alpha.id);
+    expect(w.threads.get("accepted-existing")?.sectionId).toBeNull();
   });
 
   it("ignores experimental submission from another plugin", async () => {
@@ -460,51 +459,14 @@ describe("composer filing guards", () => {
     expect(w.threads.get("foreign")?.sectionId).toBeNull();
   });
 
-  it("files an accepted new workstream without creating it twice", async () => {
-    const { w } = await setup({
-      outcome: "new-workstream",
-      name: "Billing",
-      description: "Invoices",
-      title: "Invoice export",
-      code: true,
-      confidence: "high",
-      reason: "A new effort",
-    });
-    const prompt = "Add invoice export";
-    const decision = await w.harness.behavior.callRpc("route", {
-      prompt,
-      suggest: true,
-      nativeComposer: true,
-      draftKey: "native-draft",
-    });
-    const created = (await w.harness.behavior.callRpc("createWorkstream", {
-      name: "Billing",
-      description: "Invoices",
-    })) as {
-      sectionId: string;
-      entry: { workstreams: { id: string; name: string }[] };
-    };
-    const composed = w.addThread("accepted", { createdAt: Date.now() });
-    const acceptedContext = makeMessageDispatchHookContext({
-      thread: composed,
-      input: { text: prompt },
-      origin: "app",
-      experimental_submission: {
-        pluginId: "workstreams",
-        data: {
-          routeId: (decision as { id: string }).id,
-          sectionId: created.sectionId,
-        },
-      },
-    });
-    const hook = w.harness.registrations.hooks["message.dispatch"]!;
-    await hook(acceptedContext);
-    await hook(acceptedContext);
-    await new Promise((r) => setTimeout(r, 30));
-    expect(
-      w.sections.filter((section) => section.name === "Billing"),
-    ).toHaveLength(1);
-    expect(w.threads.get("accepted")?.sectionId).toBe(created.sectionId);
+  it("rejects retired createWorkstream RPC", async () => {
+    const { w } = await setup(answer);
+    await expect(
+      w.harness.behavior.callRpc("createWorkstream", {
+        name: "Billing",
+        description: "Invoices",
+      }),
+    ).rejects.toThrow(/no rpc method "createWorkstream"/);
   });
 
   it("ignores follow-ups and a decision made for different text", async () => {
@@ -1459,7 +1421,7 @@ it("validates execution environments and prevents replacing explicit placement",
   expect(w.spawned).toHaveLength(0);
 });
 
-it("keeps CLI workstream selection and original message after claiming previews", async () => {
+it("rejects retired new command with workstream option", async () => {
   const { w, alpha } = await setup(rawOutcomes.continue);
   const prompt = "A fresh Alpha task";
   const result = await w.harness.behavior.runCli([
@@ -1469,11 +1431,8 @@ it("keeps CLI workstream selection and original message after claiming previews"
     "Alpha",
     "--json",
   ]);
-  expect(result.exitCode).toBe(0);
-  expect(w.spawned).toHaveLength(1);
-  expect(w.spawned[0]).toMatchObject({ prompt, sectionId: alpha.id });
-  expect(w.sent).toHaveLength(0);
-  expect(routePrompts(w)).toHaveLength(0);
+  expect(result.exitCode).not.toBe(0);
+  expect(w.spawned).toHaveLength(0);
 });
 
 for (const mention of ["@thread:a1", "@section:sec_1"]) {

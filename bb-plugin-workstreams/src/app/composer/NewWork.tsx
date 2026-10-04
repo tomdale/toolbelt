@@ -24,6 +24,7 @@ import type { RpcContract } from "../../server/contract.ts";
 import type { RouteDecision } from "../../server/router.ts";
 import { useHostPickerRow } from "./host-picker-row.ts";
 import { NewWork as NewWorkModel, NewWorkContext } from "./new-work.ts";
+import { NewWorkBridge } from "./NewWorkBridge.tsx";
 import { useDebugMode } from "../debug/debug.ts";
 import { NewWorkDebug } from "./NewWorkDebug.tsx";
 import { SuggestionRow } from "./Suggestion.tsx";
@@ -32,14 +33,9 @@ import { WorkstreamPicker } from "./WorkstreamPicker.tsx";
 export function NewWorkDialog({
   open,
   onClose,
-  workstreamId = null,
-  workstreamName = null,
 }: {
   open: boolean;
   onClose: () => void;
-  /** Preselects this workstream, as a workstream's ＋ does. */
-  workstreamId?: string | null;
-  workstreamName?: string | null;
 }) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -56,12 +52,7 @@ export function NewWorkDialog({
             <span className="sr-only">Close</span>
           </DialogClose>
         </div>
-        {open ? (
-          <NewWork
-            key={workstreamId ?? "auto"}
-            {...{ onClose, workstreamId, workstreamName }}
-          />
-        ) : null}
+        {open ? <NewWork onClose={onClose} /> : null}
       </DialogContent>
     </Dialog>
   );
@@ -69,12 +60,8 @@ export function NewWorkDialog({
 
 function NewWork({
   onClose,
-  workstreamId,
-  workstreamName,
 }: {
   onClose: () => void;
-  workstreamId: string | null;
-  workstreamName: string | null;
 }) {
   const rpc = useRpc<RpcContract>();
   const navigate = useBbNavigate();
@@ -84,10 +71,9 @@ function NewWork({
     const draftKey = crypto.randomUUID();
     return new NewWorkModel(
       {
-        route: async (prompt, selectedWorkstreamId) =>
+        route: async (prompt) =>
           (await rpc.call("route", {
             prompt,
-            selectedWorkstreamId,
             suggest: true,
             draftKey,
           })) as RouteDecision,
@@ -96,22 +82,8 @@ function NewWork({
             // A cancel that can't reach the server only costs one wasted call.
           });
         },
-        createWorkstream: async (name: string, description: string) => {
-          const created = await rpc.call("createWorkstream", {
-            name,
-            ...(description ? { description } : {}),
-          });
-          return {
-            sectionId: created.sectionId,
-            name: created.entry.workstreams[0]?.name ?? name,
-          };
-        },
-        startThread: (sectionId, request, options) => {
+        startThread: (request, options) => {
           return rpc.call("startThread", {
-            sectionId,
-            ...(options?.newWorkstream
-              ? { newWorkstream: options.newWorkstream }
-              : {}),
             ...(options?.identity ? { identity: options.identity } : {}),
             // The server forwards only the fields spawn takes.
             execution: JSON.parse(JSON.stringify(request)) as NewThreadRequest &
@@ -125,10 +97,16 @@ function NewWork({
             traceId,
           });
         },
+        sendDraftToThread: async (threadId, traceId) => {
+          await rpc.call("sendToThread", {
+            threadId,
+            input: [{ type: "text", text: newWork.snapshot().text, mentions: [] }],
+            traceId,
+          });
+          onClose();
+          navigate.toThread(threadId);
+        },
       },
-      workstreamId
-        ? { id: workstreamId, name: workstreamName ?? workstreamId }
-        : null,
     );
   });
   useEffect(() => () => newWork.dispose(), [newWork]);
@@ -164,10 +142,11 @@ function NewWork({
   return (
     <NewWorkContext.Provider value={newWork}>
       <div ref={setRoot} className="ws-new-work">
+        <NewWorkBridge />
         {compact ? <div className="ws-route-strip">{picker}</div> : null}
         <Composer
           layout="document"
-          draftKey={`workstreams-new:${workstreamId ?? "auto"}`}
+          draftKey="workstreams-new:auto"
           onSubmit={submit}
         />
         {compact ? null : pickerRow ? (

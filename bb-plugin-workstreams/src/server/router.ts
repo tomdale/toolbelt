@@ -1167,12 +1167,10 @@ export class Router {
   }
 
   /**
-   * Starts New work's thread exactly as the composer resolved it, filed in
-   * `sectionId` or deliberately left without a workstream.
+   * Starts New work's thread with the composer's resolved request and
+   * product/feature identity; section navigation is derived automatically.
    */
   async start(options: {
-    sectionId?: string | null;
-    newWorkstream?: { name: string; description?: string } | null;
     identity?: {
       entityId?: string | null;
       proposal?: DraftSubjectProposal | null;
@@ -1180,30 +1178,8 @@ export class Router {
     } | null;
     execution: SpawnArgs & { projectId: string; environment: Environment };
   }): Promise<{ threadId: string; sectionId: string | null }> {
-    const sectionId = options.sectionId ?? null;
-    const newWorkstream = options.newWorkstream ?? null;
     const identity = options.identity ?? null;
     const execution = options.execution;
-
-    let effectiveSectionId = sectionId;
-    let createdSectionId: string | null = null;
-    if (newWorkstream) {
-      const created = await this.deps.service.createWorkstream(
-        newWorkstream.name,
-        "user",
-      );
-      createdSectionId = created.sectionId;
-      effectiveSectionId = created.sectionId;
-      if (newWorkstream.description) {
-        this.deps.map.describe(createdSectionId, newWorkstream.description);
-      }
-    }
-
-    const record = effectiveSectionId
-      ? this.deps.map.get(effectiveSectionId)
-      : null;
-    if (effectiveSectionId && !record)
-      throw new UserError("That workstream no longer exists.");
 
     if (identity?.entityId && !this.deps.corpus?.getById(identity.entityId))
       throw new UserError("Unknown subject identity.");
@@ -1216,52 +1192,32 @@ export class Router {
       ]),
     ) as unknown as SpawnArgs;
 
-    let thread: { id: string; title?: string | null };
-    try {
-      thread = await this.spawnFiled(fields, effectiveSectionId, "user");
-      this.deps.service.seeThread(
-        thread.id,
-        effectiveSectionId,
-        null,
-        thread.title ?? undefined,
-      );
-    } catch (error) {
-      if (createdSectionId) {
-        try {
-          this.deps.corpus?.unbindGroup(createdSectionId);
-          await this.deps.sdk().threadSections.delete({ id: createdSectionId });
-        } catch {
-          // ignore cleanup errors on rollback
-        }
-      }
-      throw error;
-    }
+    const thread = await this.spawnFiled(fields, null, "user");
+    this.deps.service.seeThread(
+      thread.id,
+      null,
+      null,
+      thread.title ?? undefined,
+    );
 
-    let assignedEntityId: string | null = null;
     if (identity?.proposal) {
       const entity = this.deps.corpus!.rememberProposal(identity.proposal);
-      assignedEntityId = entity.id;
       this.deps.corpus!.assign(thread.id, entity.id, {
         provenance: identity.provenance ?? "automatic",
       });
     } else if (identity?.entityId) {
-      assignedEntityId = identity.entityId;
       this.deps.corpus!.assign(thread.id, identity.entityId, {
         provenance: identity.provenance ?? "manual",
       });
+    } else if (identity?.provenance === "manual") {
+      this.deps.corpus!.clear(thread.id);
     }
 
-    if (createdSectionId && assignedEntityId) {
-      this.deps.corpus?.bindGroup(createdSectionId, assignedEntityId);
-    }
-
-    this.deps.service.recordCreated(thread.id, effectiveSectionId, "user", {
+    this.deps.service.recordCreated(thread.id, null, "user", {
       title: thread.title || "New thread",
-      rationale: record
-        ? `Started in ${record.name} from New work`
-        : "Started without a workstream from New work",
+      rationale: "Started from New work",
     });
-    return { threadId: thread.id, sectionId: effectiveSectionId };
+    return { threadId: thread.id, sectionId: null };
   }
 
   /**
@@ -1351,30 +1307,8 @@ export class Router {
     if (!entry || entry.used) return;
     entry.used = true;
 
-    let sectionId: string | null = null;
-    let newlyCreatedSectionId: string | null = null;
-    if (decision.outcome === "new-thread") {
-      sectionId = decision.sectionId;
-    } else if (decision.outcome === "new-workstream") {
-      const created = await this.deps.service.createWorkstream(
-        decision.name,
-        "router",
-      );
-      sectionId = created.sectionId;
-      newlyCreatedSectionId = created.sectionId;
-      if (decision.description)
-        this.deps.map.describe(sectionId, decision.description);
-    } else if (decision.outcome === "continue") {
-      // The user started a new thread instead: keep it with that thread's work.
-      const target = this.deps.service
-        .threads()
-        .find((t) => t.id === decision.threadId);
-      sectionId = target?.sectionId ?? null;
-    }
+    this.deps.service.seeThread(threadId, null, parentThreadId ?? null);
 
-    this.deps.service.seeThread(threadId, sectionId, parentThreadId ?? null);
-
-    let assignedEntityId: string | null = null;
     if (!parentThreadId) {
       const identity =
         identityOverride !== undefined
@@ -1388,44 +1322,21 @@ export class Router {
       if (identity?.proposal) {
         const entity = this.deps.corpus?.rememberProposal(identity.proposal);
         if (entity) {
-          assignedEntityId = entity.id;
           this.deps.corpus?.assign(threadId, entity.id, {
             provenance: identity.provenance ?? "automatic",
           });
         }
       } else if (identity?.entityId) {
-        assignedEntityId = identity.entityId;
         this.deps.corpus?.assign(threadId, identity.entityId, {
           provenance: identity.provenance ?? "manual",
         });
       }
     }
 
-    if (newlyCreatedSectionId && assignedEntityId) {
-      this.deps.corpus?.bindGroup(newlyCreatedSectionId, assignedEntityId);
-    }
-
     this.deps.inference.link(decision.traceId, {
       kind: "thread",
       ref: threadId,
     });
-    if (decision.outcome === "new-workstream" && sectionId)
-      this.deps.inference.link(decision.traceId, {
-        kind: "section",
-        ref: sectionId,
-      });
-    // Only if it is still unfiled: a filing the user made meanwhile wins.
-    if (!sectionId) return;
-    const logged = await this.deps.service.fileIfUnsorted(
-      threadId,
-      sectionId,
-      "router",
-    );
-    if (logged)
-      this.deps.inference.link(decision.traceId, {
-        kind: "entry",
-        ref: logged.id,
-      });
   }
 
   /**

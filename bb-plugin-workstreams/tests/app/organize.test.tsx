@@ -127,14 +127,11 @@ describe("Organize view", () => {
 
     const slot = await mount(async () => ({ state: idleState }));
     await waitFor(() =>
-      expect(
-        slot.getByText(
-          "All tasks are already in their recommended workstreams. Nothing changes until you apply.",
-        ),
-      ).toBeTruthy(),
+      expect(slot.getByText("Workstreams up to date")).toBeTruthy(),
     );
-    // Expand Alpha group
-    fireEvent.click(slot.getByRole("button", { name: /^Alpha/ }));
-    expect(await slot.findByText("Platform · Alpha")).toBeTruthy();
+    expect(slot.getByText("Alpha")).toBeTruthy();
+    expect(slot.getByText("Task 1")).toBeTruthy();
+    expect(slot.getByText("Platform · Alpha")).toBeTruthy();
+    expect(slot.getByText("Classified as Alpha.")).toBeTruthy();
   });
 });

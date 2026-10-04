@@ -259,7 +259,7 @@ export function NewWorkSettings() {
       />
       <SettingRow
         label="Suggestions while typing"
-        description="Suggest a workstream for a new thread as you write."
+        description="Suggest a product or feature for a new thread as you write."
         control={
           <SettingSwitch
             label="Suggestions while typing"
@@ -270,7 +270,7 @@ export function NewWorkSettings() {
       />
       <ModelField
         label="Suggestions model"
-        description="Suggests a workstream for a new-thread draft as you type."
+        description="Suggests a product or feature for a new-thread draft as you type."
         choice={prefs.newWork.suggestionsModel}
         disabled={!prefs.newWork.suggestions}
         onChange={(suggestionsModel) =>
@@ -288,13 +288,13 @@ export function OrganizeSettings() {
     <SectionRows>
       <ModelField
         label="Organizing model"
-        description="Proposes workstream organization when you click Organize."
+        description="Classifies tasks and structures the catalog when needed."
         choice={prefs.organize.model}
         onChange={(model) => update({ organize: { model } })}
       />
       <SettingRow
         label="Group capacity"
-        description="Maximum current tasks per workstream in reviewed previews. Tasks concerning one indivisible feature may exceed it."
+        description="Maximum active tasks per workstream. Indivisible leaf features may exceed it."
         control={
           <Stepper
             label="Group capacity"
@@ -314,7 +314,7 @@ export function OrganizeSettings() {
       />
       <SettingRow
         label="Contraction threshold"
-        description="At or below this product task count, previews return to a broad product group."
+        description="At or below this active task count for a product, navigation contracts to the product root workstream."
         control={
           <Stepper
             label="Contraction threshold"

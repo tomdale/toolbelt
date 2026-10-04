@@ -468,4 +468,27 @@ describe("CLI Task Identity commands", () => {
     const classifyPromptsAfter = prompts.filter((p) => p.includes("Classify the most specific")).length;
     expect(classifyPromptsAfter).toBe(classifyPromptsBefore);
   });
+
+  it("reads and retries organization via CLI and rejects removed manual placement commands", async () => {
+    const { w } = await setup();
+
+    // 1. organization read
+    const readRes = await w.harness.behavior.runCli(["organization", "--json"]);
+    expect(readRes.exitCode).toBe(0);
+    const readState = JSON.parse(readRes.stdout);
+    expect(readState).toHaveProperty("status");
+    expect(readState).toHaveProperty("counts");
+
+    // 2. organization retry
+    const retryRes = await w.harness.behavior.runCli(["organization", "--retry", "--json"]);
+    expect(retryRes.exitCode).toBe(0);
+    const retryState = JSON.parse(retryRes.stdout);
+    expect(retryState.status).toBe("idle");
+
+    // 3. Removed manual placement commands are not recognized
+    for (const cmd of ["file", "new", "prioritize", "edit"]) {
+      const res = await w.harness.behavior.runCli([cmd]);
+      expect(res.exitCode).not.toBe(0);
+    }
+  });
 });

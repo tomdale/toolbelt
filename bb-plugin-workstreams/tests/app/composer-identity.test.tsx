@@ -128,25 +128,19 @@ function mount(decision: RouteDecision = sampleDecision) {
   return { slot, rpc, onClose };
 }
 
-describe("Composer Identity & Placement Separation UI", () => {
-  it("renders two compact independently actionable controls", async () => {
+describe("Composer Identity UI", () => {
+  it("renders product or feature identity control, never destination control", async () => {
     mount();
     const identityControl = await screen.findByRole("button", {
       name: /Product or feature:/,
     });
-    const workstreamControl = await screen.findByRole("button", {
-      name: /Workstream:/,
-    });
 
     expect(identityControl).toBeDefined();
-    expect(workstreamControl).toBeDefined();
     expect(identityControl.getAttribute("data-ws-identity-control")).toBe("");
-    expect(workstreamControl.getAttribute("data-ws-workstream-control")).toBe(
-      "",
-    );
+    expect(screen.queryByRole("button", { name: /Workstream:/ })).toBeNull();
   });
 
-  it("changing placement does not erase selected identity", async () => {
+  it("selecting identity submits with identity and no destination section", async () => {
     const { rpc } = mount();
 
     // 1. Pick an identity explicitly
@@ -168,58 +162,44 @@ describe("Composer Identity & Placement Separation UI", () => {
       name: "Product or feature: Storage: Shelves",
     });
 
-    // 2. Change placement explicitly to Beta
-    const workstreamButton = await screen.findByRole("button", {
-      name: /Workstream:/,
-    });
-    fireEvent.click(workstreamButton);
-
-    const betaOption = await screen.findByText("Beta");
-    fireEvent.click(betaOption);
-
-    // Verify placement updated to Beta
-    await screen.findByRole("button", { name: "Workstream: Beta" });
-
-    // Verify identity is STILL Storage: Shelves! Not erased!
-    await screen.findByRole("button", {
-      name: "Product or feature: Storage: Shelves",
-    });
-
-    // 3. Submit and verify startThread receives both
+    // 2. Submit and verify startThread receives identity only
     fireEvent.click(screen.getByTestId("bb-new-thread-composer-submit"));
     await waitFor(() => expect(rpc.startThread).toHaveBeenCalledTimes(1));
 
     expect(rpc.startThread.mock.calls[0]![0]).toMatchObject({
-      sectionId: "sec_b",
       identity: {
         entityId: "ent_shelves",
         provenance: "manual",
       },
     });
+    expect(rpc.startThread.mock.calls[0]![0]).not.toHaveProperty("sectionId");
+    expect(rpc.startThread.mock.calls[0]![0]).not.toHaveProperty("newWorkstream");
   });
 
-  it("manual identity does not force a move of manual placement", async () => {
-    mount();
+  it("selecting manual unresolved submits with unresolved identity", async () => {
+    const { rpc } = mount();
 
-    // 1. Pick Beta as manual placement
-    const workstreamButton = await screen.findByRole("button", {
-      name: /Workstream:/,
-    });
-    fireEvent.click(workstreamButton);
-    fireEvent.click(await screen.findByText("Beta"));
-    await screen.findByRole("button", { name: "Workstream: Beta" });
-
-    // 2. Pick identity Sidebar
     const identityButton = await screen.findByRole("button", {
       name: /Product or feature:/,
     });
     fireEvent.click(identityButton);
-    fireEvent.click(await screen.findByText("Sidebar"));
 
-    // Placement must REMAIN Beta! Manual identity must not force a move!
-    await screen.findByRole("button", { name: "Workstream: Beta" });
+    const unresolvedOption = await screen.findByText("Unresolved");
+    fireEvent.click(unresolvedOption);
+
     await screen.findByRole("button", {
-      name: "Product or feature: Sidebar",
+      name: "Product or feature: Unresolved",
+    });
+
+    fireEvent.click(screen.getByTestId("bb-new-thread-composer-submit"));
+    await waitFor(() => expect(rpc.startThread).toHaveBeenCalledTimes(1));
+
+    expect(rpc.startThread.mock.calls[0]![0]).toMatchObject({
+      identity: {
+        entityId: null,
+        proposal: null,
+        provenance: "manual",
+      },
     });
   });
 

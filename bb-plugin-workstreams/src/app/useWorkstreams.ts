@@ -118,52 +118,10 @@ export function useWorkstreams() {
   const now = useNow();
   const { rpc, server, refresh, reorder, setSnooze } = useServerState();
 
-  // Moves in flight, by thread: the section the thread is headed to. The row
-  // shows there until BB's live list catches up, or the move fails.
-  const [moving, setMoving] = useState<ReadonlyMap<string, string | null>>(
-    () => new Map(),
-  );
-  const settle = useCallback((threadId: string) => {
-    setMoving((prev) => {
-      if (!prev.has(threadId)) return prev;
-      const next = new Map(prev);
-      next.delete(threadId);
-      return next;
-    });
-  }, []);
-  useEffect(() => {
-    for (const thread of threads)
-      if (moving.has(thread.id) && moving.get(thread.id) === thread.sectionId)
-        settle(thread.id);
-  }, [threads, moving, settle]);
-  const moveThread = useCallback(
-    async (threadId: string, sectionId: string | null) => {
-      setMoving((prev) => new Map(prev).set(threadId, sectionId));
-      try {
-        await rpc.call("moveThread", { threadId, sectionId });
-      } catch (cause) {
-        settle(threadId);
-        throw cause;
-      }
-    },
-    [rpc, settle],
-  );
-  const placed = useMemo(
-    () =>
-      moving.size === 0
-        ? threads
-        : threads.map((thread) =>
-            moving.has(thread.id)
-              ? { ...thread, sectionId: moving.get(thread.id)! }
-              : thread,
-          ),
-    [threads, moving],
-  );
-
   const { analysis, recaps, order, snoozes } = server;
   const projection: Projection<PluginSidebarThread> = useMemo(
     () =>
-      projectWorkstreams(placed, sections, {
+      projectWorkstreams(threads, sections, {
         now,
         needsYou: (thread) => {
           const work = workView(thread, analysis[thread.id], recaps[thread.id]);
@@ -183,7 +141,7 @@ export function useWorkstreams() {
         },
       }),
     [
-      placed,
+      threads,
       sections,
       now,
       analysis,
@@ -206,7 +164,6 @@ export function useWorkstreams() {
     rpc,
     refresh,
     reorder,
-    moveThread,
     setSnooze,
     snoozeOf: (thread: PluginSidebarThread) => {
       const snooze = snoozes[thread.id];

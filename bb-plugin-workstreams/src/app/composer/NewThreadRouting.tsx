@@ -102,10 +102,9 @@ export function NewThreadRouting() {
     const draftKey = composer.key;
     const nativeModel = new NewWorkModel(
       {
-        route: async (prompt, selectedWorkstreamId, pickedProjectId) =>
+        route: async (prompt, _workstreamId, pickedProjectId) =>
           (await rpc.call("route", {
             prompt,
-            selectedWorkstreamId,
             pickedProjectId,
             suggest: true,
             offerNewThread: true,
@@ -114,16 +113,6 @@ export function NewThreadRouting() {
           })) as RouteDecision,
         cancelRoute: () => {
           void rpc.call("routeCancel", { draftKey }).catch(() => {});
-        },
-        createWorkstream: async (name: string, description: string) => {
-          const created = await rpc.call("createWorkstream", {
-            name,
-            ...(description ? { description } : {}),
-          });
-          return {
-            sectionId: created.sectionId,
-            name: created.entry.workstreams[0]?.name ?? name,
-          };
         },
         startThread: () => {
           throw new Error("The host new-thread composer submits this draft.");
@@ -135,7 +124,7 @@ export function NewThreadRouting() {
             traceId,
           });
         },
-        submitWithRoute: (routeId, sectionId) => {
+        submitWithRoute: (_routeId, _sectionId) => {
           const snapshot = model ? model.snapshot() : null;
           const identity = snapshot?.identity
             ? {
@@ -145,8 +134,6 @@ export function NewThreadRouting() {
               }
             : null;
           const experimental_data: Record<string, unknown> = {};
-          if (routeId) experimental_data.routeId = routeId;
-          if (sectionId !== undefined) experimental_data.sectionId = sectionId;
           if (identity) experimental_data.identity = identity;
           return composerRef.current.submit({
             experimental_data: Object.keys(experimental_data).length
@@ -214,11 +201,7 @@ export function NewThreadRouting() {
     const current = model ? model.snapshot() : null;
     if (!model || !current) return;
     if (
-      !current.workstream &&
-      !current.pendingNew &&
       !current.identity &&
-      !current.pinned &&
-      !current.acceptedRoute &&
       !current.decision
     )
       return;
@@ -235,9 +218,6 @@ export function NewThreadRouting() {
       void (async () => {
         try {
           const snapshot = model.snapshot();
-          const sectionId =
-            snapshot.workstream?.id ??
-            (snapshot.pendingNew ? await model.createPending() : null);
           const identity = snapshot.identity
             ? {
                 entityId: snapshot.identity.entityId,
@@ -245,23 +225,14 @@ export function NewThreadRouting() {
                 provenance: snapshot.identity.provenance,
               }
             : null;
-          const routeId = snapshot.acceptedRoute?.routeId ?? null;
           const experimental_data: Record<string, unknown> = {};
-          if (sectionId) {
-            experimental_data.sectionId = sectionId;
-          } else if (snapshot.pinned) {
-            experimental_data.sectionId = null;
-          }
           if (identity) experimental_data.identity = identity;
-          if (routeId) experimental_data.routeId = routeId;
           await composerRef.current.submit({
             experimental_data: Object.keys(experimental_data).length
               ? (experimental_data as Record<string, unknown> as any)
               : null,
           });
         } catch (error) {
-          // Submitting can fail; the host already
-          // prevented its own submit, so say why nothing started.
           model.reportError(error);
         }
       })();
@@ -272,11 +243,7 @@ export function NewThreadRouting() {
     composer,
     model,
     root,
-    state.workstream,
-    state.pendingNew,
     state.identity,
-    state.pinned,
-    state.acceptedRoute,
     state.decision,
   ]);
   // The picker row sits below the prompt box, outside this banner, so on a

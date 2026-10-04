@@ -95,7 +95,7 @@ describe("Catalog UI & Maintenance", () => {
     expect(
       screen.getAllByText("Retained (no active workstream)").length,
     ).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Workstream: Lantern Alpha")).toBeTruthy();
+    expect(screen.getByText("Home: Lantern Alpha (derived)")).toBeTruthy();
 
     // Filter by alias "Storage"
     fireEvent.change(screen.getByLabelText("Search products and features"), {

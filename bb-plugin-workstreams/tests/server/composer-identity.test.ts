@@ -80,21 +80,17 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
       storageEntity.id,
     );
 
-    // Submit thread in broader home "Storage", with specific identity "Shelves"
-    const { threadId, sectionId } = (await w.harness.behavior.callRpc(
+    // Submit thread with specific identity "Shelves"
+    const { threadId } = (await w.harness.behavior.callRpc(
       "startThread",
       {
-        sectionId: storageSection.id,
         identity: {
           entityId: shelves.id,
           provenance: "manual",
         },
         execution: defaultExecution,
       },
-    )) as { threadId: string; sectionId: string };
-
-    expect(sectionId).toBe(storageSection.id);
-    expect(w.threads.get(threadId)?.sectionId).toBe(storageSection.id);
+    )) as { threadId: string; sectionId: string | null };
 
     const { assignment } = (await w.harness.behavior.callRpc("taskAssignment", {
       threadId,
@@ -106,45 +102,17 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
     expect(assignment.provenance).toBe("manual");
   });
 
-  it("placement override preserves identity", async () => {
+  it("submitting identity assigns task without manual placement", async () => {
     world = await fakeWorld();
     const w = world;
     const db = openDatabase(w.bb);
     const corpus = new CorpusStore(db);
 
-    const alpha = w.addSection("Alpha");
-    const beta = w.addSection("Beta");
-    await w.harness.behavior.callRpc("refresh", null);
     const feature = corpus.remember("Feature Alpha", "Alpha feature");
-    corpus.bindGroup(alpha.id, feature.id);
 
-    // Manual placement override: user chooses Beta instead of Alpha, keeping Feature Alpha identity
     const { threadId: t1, sectionId: s1 } = (await w.harness.behavior.callRpc(
       "startThread",
       {
-        sectionId: beta.id,
-        identity: {
-          entityId: feature.id,
-          provenance: "manual",
-        },
-        execution: defaultExecution,
-      },
-    )) as { threadId: string; sectionId: string };
-
-    expect(s1).toBe(beta.id);
-    expect(w.threads.get(t1)?.sectionId).toBe(beta.id);
-
-    const a1 = (await w.harness.behavior.callRpc("taskAssignment", {
-      threadId: t1,
-    })) as { assignment: CanonicalAssignment };
-    expect(a1.assignment.entityId).toBe(feature.id);
-    expect(a1.assignment.provenance).toBe("manual");
-
-    // Manual placement override: user chooses No workstream (null), keeping Feature Alpha identity
-    const { threadId: t2, sectionId: s2 } = (await w.harness.behavior.callRpc(
-      "startThread",
-      {
-        sectionId: null,
         identity: {
           entityId: feature.id,
           provenance: "manual",
@@ -153,13 +121,12 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
       },
     )) as { threadId: string; sectionId: string | null };
 
-    expect(s2).toBeNull();
-    expect(w.threads.get(t2)?.sectionId).toBeNull();
-
-    const a2 = (await w.harness.behavior.callRpc("taskAssignment", {
-      threadId: t2,
+    expect(s1).toBeNull();
+    const a1 = (await w.harness.behavior.callRpc("taskAssignment", {
+      threadId: t1,
     })) as { assignment: CanonicalAssignment };
-    expect(a2.assignment.entityId).toBe(feature.id);
+    expect(a1.assignment.entityId).toBe(feature.id);
+    expect(a1.assignment.provenance).toBe("manual");
   });
 
   it("explicit selection stays manual", async () => {
@@ -249,7 +216,6 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 30));
 
-    expect(w.threads.get("t-composed")?.sectionId).toBe(alpha.id);
     const assignment = corpus.assignment("t-composed");
     expect(assignment.status).toBe("assigned");
     expect(assignment.entityId).toBe(feature.id);
@@ -292,7 +258,6 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 30));
 
-    expect(w.threads.get("t-proposal")?.sectionId).toBe(alpha.id);
     const created = corpus.list().find((e) => e.name === "Brand New Feature");
     expect(created).toBeDefined();
 
@@ -499,9 +464,6 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 30));
 
-    expect(w.threads.get("t-composed-unbound")?.sectionId).toBe(
-      legacySection.id,
-    );
     expect(corpus.assignment("t-composed-unbound").entityId).toBe(feature.id);
 
     // CRITICAL: The existing section must remain UNBOUND
@@ -541,7 +503,6 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 30));
 
-    expect(w.threads.get("t-composed-route")?.sectionId).toBe(legacySection.id);
     expect(corpus.assignment("t-composed-route").entityId).toBe(feature.id);
 
     // CRITICAL: The existing section still must remain UNBOUND
@@ -751,7 +712,7 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 30));
 
-    expect(w.threads.get("t-unresolved")?.sectionId).toBe(alphaSection.id);
+    expect(w.threads.get("t-unresolved")?.sectionId).toBeNull();
     const assignment = corpus.assignment("t-unresolved");
     expect(assignment.status).toBe("unresolved");
     expect(assignment.entityId).toBeNull();
@@ -763,11 +724,7 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
     const db = openDatabase(w.bb);
     const corpus = new CorpusStore(db);
 
-    const alpha = w.addSection("Alpha");
-    await w.harness.behavior.callRpc("refresh", null);
-
     const { threadId } = (await w.harness.behavior.callRpc("startThread", {
-      sectionId: alpha.id,
       identity: {
         entityId: null,
         proposal: null,

@@ -128,39 +128,22 @@ function placementText(
 /** The suggestion's action, its target, and the details it would also set. */
 export function describeSuggestion(
   suggestion: Suggestion,
-  projects: Map<string, ProjectInfo>,
+  _projects?: Map<string, ProjectInfo>,
 ): { action: string; target: string; details: string[] } {
-  switch (suggestion.kind) {
-    case "thread":
-      return {
-        action: "Send to",
-        target: suggestion.title,
-        details: suggestion.workstream ? [suggestion.workstream] : [],
-      };
-    case "workstream":
-      return {
-        action: "Start in",
-        target: suggestion.name,
-        details: placementText(suggestion.placement, projects),
-      };
-    case "new-workstream":
-      return {
-        action: "New workstream",
-        target: suggestion.name,
-        details: placementText(suggestion.placement, projects),
-      };
-  }
+  return {
+    action: "Send to",
+    target: suggestion.title,
+    details: suggestion.workstream ? [suggestion.workstream] : [],
+  };
 }
 
 export function SuggestionRow({ newWork }: { newWork: NewWork }) {
   const state = useSyncExternalStore(newWork.subscribe, newWork.snapshot);
   const suggestion = shownSuggestion(state);
-  // An automatic destination has no row of its own — it already fills the
-  // pickers — so ⌘⏎ submits what they show, as Enter does.
-  const autoDestination = !suggestion && !state.pinned && hasDestination(state);
+  const autoDestination = false;
   const projects = useProjects();
   const row = useRef<HTMLDivElement>(null);
-  const applies = !!suggestion && suggestion.kind !== "thread";
+  const applies = false;
   useEffect(() => {
     if (!suggestion && !autoDestination) return;
     const inDialog = (target: EventTarget | null) => {

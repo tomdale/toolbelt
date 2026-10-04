@@ -286,7 +286,7 @@ export function Catalog({
                             className="size-2.5"
                             aria-hidden="true"
                           />
-                          Workstream: {boundWorkstreamName}
+                          Home: {boundWorkstreamName} (derived)
                         </span>
                       ) : (
                         <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">

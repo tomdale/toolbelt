@@ -456,20 +456,12 @@ export const rpcContract = defineRpcContract({
     }),
   },
   /**
-   * Starts New work's thread with the composer's resolved request, filed in
-   * `sectionId` or deliberately without a workstream.
+   * Starts New work's thread with the composer's resolved request and
+   * product/feature identity; section navigation is derived automatically.
    */
   startThread: {
     input: z.object({
       identity: taskIdentitySubmissionSchema.nullable().optional(),
-      sectionId: z.string().min(1).nullable().optional(),
-      newWorkstream: z
-        .object({
-          name: z.string().min(1),
-          description: z.string().default(""),
-        })
-        .nullable()
-        .optional(),
       execution: z
         .object({
           projectId: z.string().min(1),
@@ -759,14 +751,6 @@ export const rpcContract = defineRpcContract({
     input: z.object({ spinner: spinnerSchema }),
     output: z.object({ spinner: spinnerSchema }),
   },
-  editWorkstream: {
-    input: z.object({
-      sectionId: z.string().min(1),
-      description: z.string().max(300).nullable().optional(),
-      aliases: z.array(z.string().max(80)).max(20).optional(),
-    }),
-    output: z.object({ ok: z.literal(true) }),
-  },
   /** The per-thread drift flag's actions (SPEC §9, §10). */
   drift: {
     input: z.object({
@@ -808,30 +792,6 @@ export const rpcContract = defineRpcContract({
         entrySchema.extend({ traceIds: z.array(z.string()) }),
       ),
     }),
-  },
-  moveThread: {
-    input: z.object({
-      threadId: z.string().min(1),
-      sectionId: z.string().min(1).nullable(),
-    }),
-    output: z.object({ entry: entrySchema.nullable() }),
-  },
-  createWorkstream: {
-    input: z.object({
-      subjectId: z.string().optional(),
-      name: z.string().min(1).max(200),
-      /** The scope the router proposed with a new workstream. */
-      description: z.string().max(500).optional(),
-      threadId: z.string().min(1).optional(),
-    }),
-    output: z.object({ sectionId: z.string(), entry: entrySchema }),
-  },
-  renameWorkstream: {
-    input: z.object({
-      sectionId: z.string().min(1),
-      name: z.string().min(1).max(200),
-    }),
-    output: z.object({ entry: entrySchema.nullable() }),
   },
   undo: {
     input: z.object({ entryId: z.string().min(1) }),

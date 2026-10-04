@@ -244,10 +244,10 @@ it("saves New work preferences and disables the suggestions model when suggestio
   const slot = await mount("new-work");
   await slot.findByRole("switch", { name: "Suggestions while typing" });
   expect(
-    slot.getByText("Suggests a workstream for a new-thread draft as you type."),
+    slot.getByText("Suggest a product or feature for a new thread as you write."),
   ).toBeTruthy();
   expect(
-    slot.getByText("Suggests a workstream for a new-thread draft as you type."),
+    slot.getByText("Suggests a product or feature for a new-thread draft as you type."),
   ).toBeTruthy();
   fireEvent.click(await slot.findByRole("button", { name: "Home project" }));
   fireEvent.click(
