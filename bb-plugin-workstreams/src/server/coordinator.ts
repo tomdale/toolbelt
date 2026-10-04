@@ -4,10 +4,7 @@ import { buildForest } from "../domain/tree.ts";
 import { isCurrent } from "../domain/analysis.ts";
 import type { ModelChoice } from "../domain/prefs.ts";
 import type { Analyzer } from "./analyzer.ts";
-import {
-  sectionMembers,
-  type CleanupMember,
-} from "./cleanup.ts";
+import { sectionMembers, type CleanupMember } from "./cleanup.ts";
 import { getMeta, setMeta, type Database } from "./db.ts";
 import { classificationEvidence, type CorpusStore } from "./corpus.ts";
 import {
@@ -18,10 +15,7 @@ import {
 import { corpusLabel } from "../domain/corpus-label.ts";
 import type { CanonicalAssignment, CorpusEntity } from "../domain/corpus.ts";
 import type { Inference } from "./model.ts";
-import {
-  listSections,
-  type InventoryThread,
-} from "./inventory.ts";
+import { listSections, type InventoryThread } from "./inventory.ts";
 import type { WorkstreamService } from "./service.ts";
 import type {
   LiveOrganization,
@@ -187,7 +181,9 @@ export class Coordinator {
     isForced = false,
   ): Promise<LiveOrganization> {
     const currentState = this.state();
-    const sdk = (this.deps.service as unknown as { sdk: () => BbPluginApi["sdk"] }).sdk();
+    const sdk = (
+      this.deps.service as unknown as { sdk: () => BbPluginApi["sdk"] }
+    ).sdk();
 
     let passContext: {
       roots: InventoryThread[];
@@ -208,9 +204,7 @@ export class Coordinator {
       // Only independently actionable visible, non-archived roots
       const roots = forest.roots
         .map((r) => r.thread)
-        .filter(
-          (t) => !t.isHidden && !t.isArchived,
-        );
+        .filter((t) => !t.isHidden && !t.isArchived);
 
       const analysis = this.deps.analyzer.all();
       const isCompletedMap = new Map<string, boolean>();
@@ -218,8 +212,8 @@ export class Coordinator {
         const assessment = analysis[root.id];
         const done = Boolean(
           assessment &&
-            isCurrent(assessment, root) &&
-            assessment.state === "done",
+          isCurrent(assessment, root) &&
+          assessment.state === "done",
         );
         isCompletedMap.set(root.id, done);
       }
@@ -243,7 +237,11 @@ export class Coordinator {
         )
         .digest("hex");
 
-      if (!isForced && this.lastSyncedHash === snapshotHash && currentState.status === "idle") {
+      if (
+        !isForced &&
+        this.lastSyncedHash === snapshotHash &&
+        currentState.status === "idle"
+      ) {
         return currentState;
       }
 
@@ -269,7 +267,10 @@ export class Coordinator {
         evidenceById.set(root.id, evidence);
 
         // Manual assignment is authoritative; otherwise classify if missing or stale
-        if (assignment.provenance !== "manual" && !this.deps.corpus.isFresh(root.id, evidence)) {
+        if (
+          assignment.provenance !== "manual" &&
+          !this.deps.corpus.isFresh(root.id, evidence)
+        ) {
           pending.push(root);
         }
       }
@@ -301,7 +302,12 @@ export class Coordinator {
         let classifyError: unknown = null;
 
         const worker = async () => {
-          while (!signal.aborted && !this.disposed && !classifyError && cursor < pending.length) {
+          while (
+            !signal.aborted &&
+            !this.disposed &&
+            !classifyError &&
+            cursor < pending.length
+          ) {
             const thread = pending[cursor++]!;
             try {
               const threadEvidence = evidenceById.get(thread.id)!;
@@ -353,6 +359,26 @@ export class Coordinator {
                 continue;
               }
 
+              const liveRequests =
+                (await this.deps.requests?.(thread.id)) ?? [];
+              if (
+                classificationEvidence({
+                  title: liveTitle,
+                  requests: liveRequests,
+                  project: projects.get(liveThread.projectId) ?? null,
+                }) !== threadEvidence
+              ) {
+                this.rerunQueued = true;
+                completed++;
+                continue;
+              }
+              // Recheck after SDK/evidence awaits so a concurrent correction stays authoritative.
+              if (
+                this.deps.corpus.assignment(thread.id).provenance === "manual"
+              ) {
+                completed++;
+                continue;
+              }
               const entity = value.subjectId
                 ? this.deps.corpus.list().find((e) => e.id === value.subjectId)
                 : value.proposed
@@ -422,7 +448,11 @@ export class Coordinator {
       for (const root of roots) {
         const assignment = assignments[root.id];
         const isCompleted = isCompletedMap.get(root.id) ?? false;
-        if (assignment && assignment.status === "assigned" && assignment.entityId) {
+        if (
+          assignment &&
+          assignment.status === "assigned" &&
+          assignment.entityId
+        ) {
           const rootAncestor = assignment.ancestorIds.at(-1);
           if (rootAncestor) {
             visibleProductRoots.add(rootAncestor);
@@ -455,8 +485,16 @@ export class Coordinator {
       const groupLoads = new Map<string, number>();
       for (const root of roots) {
         const assignment = assignments[root.id];
-        if (assignment && assignment.status === "assigned" && assignment.entityId) {
-          const home = activeHome(assignment.entityId, rawSelectedEntityIds, entities);
+        if (
+          assignment &&
+          assignment.status === "assigned" &&
+          assignment.entityId
+        ) {
+          const home = activeHome(
+            assignment.entityId,
+            rawSelectedEntityIds,
+            entities,
+          );
           if (home) {
             groupLoads.set(home, (groupLoads.get(home) ?? 0) + 1);
           }
@@ -510,7 +548,9 @@ export class Coordinator {
 
         if (!section) {
           // Create a new native section owned by workstreams (Finding 7)
-          const created = await sdk.threadSections.create({ name: expectedName });
+          const created = await sdk.threadSections.create({
+            name: expectedName,
+          });
           section = { id: created.id, name: created.name };
           const now = this.now();
           this.deps.db
@@ -525,7 +565,10 @@ export class Coordinator {
           this.deps.service.seeSection(created.id, created.name);
         } else if (section.name !== expectedName) {
           // Rename section if entity name changed
-          await sdk.threadSections.update({ id: section.id, name: expectedName });
+          await sdk.threadSections.update({
+            id: section.id,
+            name: expectedName,
+          });
           section = { id: section.id, name: expectedName };
           this.deps.service.seeSection(section.id, expectedName);
         }
@@ -538,7 +581,11 @@ export class Coordinator {
         const assignment = assignments[root.id];
         let targetSectionId: string | null = null;
 
-        if (assignment && assignment.status === "assigned" && assignment.entityId) {
+        if (
+          assignment &&
+          assignment.status === "assigned" &&
+          assignment.entityId
+        ) {
           const homeEntityId = activeHome(
             assignment.entityId,
             selectedEntityIds,
@@ -579,7 +626,9 @@ export class Coordinator {
           if (activeMembers.length === 0) {
             // Check ownership safety policy (Finding 7)
             const wsRow = this.deps.db
-              .prepare("SELECT created_by FROM ws_workstream WHERE section_id = ?")
+              .prepare(
+                "SELECT created_by FROM ws_workstream WHERE section_id = ?",
+              )
               .get(section.id) as { created_by: string } | undefined;
 
             if (wsRow?.created_by === "workstreams") {
@@ -717,7 +766,11 @@ export class Coordinator {
         activeRootsCount++;
       }
 
-      if (!assignment || assignment.status === "unresolved" || !assignment.entityId) {
+      if (
+        !assignment ||
+        assignment.status === "unresolved" ||
+        !assignment.entityId
+      ) {
         unresolvedTasks.push({
           id: root.id,
           title: root.title,
@@ -746,9 +799,7 @@ export class Coordinator {
         group.totalCount++;
 
         const entity = entities.find((e) => e.id === assignment.entityId);
-        const identityLabel = entity
-          ? corpusLabel(entity.id, entities)
-          : null;
+        const identityLabel = entity ? corpusLabel(entity.id, entities) : null;
 
         let reason: string;
         if (isCompleted) {

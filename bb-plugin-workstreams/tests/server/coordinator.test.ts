@@ -400,7 +400,11 @@ describe("automatic update coordinator lifecycle", () => {
           classifyCalls++;
           return JSON.stringify({ subjectId: null, proposed: null });
         }
-        return JSON.stringify({ recap: "ok", state: "in_progress", subject: null });
+        return JSON.stringify({
+          recap: "ok",
+          state: "in_progress",
+          subject: null,
+        });
       },
     });
 
@@ -444,7 +448,11 @@ describe("automatic update coordinator lifecycle", () => {
           if (shouldFail) throw new Error("Model gateway unavailable");
           return JSON.stringify({ subjectId: lanternId, proposed: null });
         }
-        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Lantern" });
+        return JSON.stringify({
+          recap: "ok",
+          state: "in_progress",
+          subject: "Lantern",
+        });
       },
     });
 
@@ -506,7 +514,11 @@ describe("automatic update coordinator lifecycle", () => {
           classifyCalls++;
           return JSON.stringify({ subjectId: null, proposed: null });
         }
-        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+        return JSON.stringify({
+          recap: "ok",
+          state: "in_progress",
+          subject: "Work",
+        });
       },
     });
     const w = world;
@@ -538,7 +550,11 @@ describe("automatic update coordinator lifecycle", () => {
           classifyCalls++;
           return JSON.stringify({ subjectId: null, proposed: null });
         }
-        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+        return JSON.stringify({
+          recap: "ok",
+          state: "in_progress",
+          subject: "Work",
+        });
       },
     });
     const w = world;
@@ -580,7 +596,11 @@ describe("automatic update coordinator lifecycle", () => {
             holder.resolve = resolve;
           });
         }
-        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+        return JSON.stringify({
+          recap: "ok",
+          state: "in_progress",
+          subject: "Work",
+        });
       },
     });
     const w = world;
@@ -633,7 +653,11 @@ describe("automatic update coordinator lifecycle", () => {
             holder.resolve = resolve;
           });
         }
-        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+        return JSON.stringify({
+          recap: "ok",
+          state: "in_progress",
+          subject: "Work",
+        });
       },
     });
     const w = world;
@@ -670,7 +694,11 @@ describe("automatic update coordinator lifecycle", () => {
             holder.resolve = resolve;
           });
         }
-        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+        return JSON.stringify({
+          recap: "ok",
+          state: "in_progress",
+          subject: "Work",
+        });
       },
     });
     const w = world;
@@ -709,7 +737,11 @@ describe("automatic update coordinator lifecycle", () => {
             holder.resolve = resolve;
           });
         }
-        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+        return JSON.stringify({
+          recap: "ok",
+          state: "in_progress",
+          subject: "Work",
+        });
       },
     });
     const w = world;
@@ -727,6 +759,47 @@ describe("automatic update coordinator lifecycle", () => {
     // Title changes while inference is in flight
     const t1 = w.threads.get("t1")!;
     t1.title = "New completely different title";
+
+    holder.resolve(JSON.stringify({ subjectId: lanternId, proposed: null }));
+    await runPromise;
+
+    // Stale result was discarded
+    const assign = corpus.assignment("t1");
+    expect(assign.status).toBe("unresolved");
+  });
+
+  it("race condition: deferred in-flight inference discards result if requests changed without a title change", async () => {
+    const holder: { resolve?: (val: string) => void } = {};
+    let lanternId = "";
+
+    world = await fakeWorld({
+      complete: ({ prompt }) => {
+        if (prompt.includes("Classify the most specific")) {
+          return new Promise<string>((resolve) => {
+            holder.resolve = resolve;
+          });
+        }
+        return JSON.stringify({
+          recap: "ok",
+          state: "in_progress",
+          subject: "Work",
+        });
+      },
+    });
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const lantern = corpus.create("Lantern", "Product");
+    lanternId = lantern.id;
+
+    w.addThread("t1", { title: "Same title" });
+    w.converse("t1", ["Work on Lantern"]);
+
+    const runPromise = rebuildOrg(w);
+    while (!holder.resolve) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    w.converse("t1", ["Work on a different product"]);
 
     holder.resolve(JSON.stringify({ subjectId: lanternId, proposed: null }));
     await runPromise;
@@ -799,8 +872,12 @@ describe("automatic update coordinator lifecycle", () => {
     expect(state.status).toBe("idle");
 
     // Completed tasks must NOT be in unresolved
-    expect(state.unresolved.filter((u) => u.id === "done-root")).toHaveLength(0);
-    expect(state.unresolved.filter((u) => u.id === "done-docs")).toHaveLength(0);
+    expect(state.unresolved.filter((u) => u.id === "done-root")).toHaveLength(
+      0,
+    );
+    expect(state.unresolved.filter((u) => u.id === "done-docs")).toHaveLength(
+      0,
+    );
 
     // Completed tasks must be filed in native sections, not Unfiled!
     const doneRootThread = w.threads.get("done-root");
@@ -823,9 +900,11 @@ describe("automatic update coordinator lifecycle", () => {
 
     // User created native section named Docs in BB before Workstreams ran
     const userSec = w.addSection("Docs");
-    openDatabase(w.bb).prepare(
-      "INSERT INTO ws_workstream (section_id, created_by, created_at, updated_at) VALUES (?, 'user', 1, 1) ON CONFLICT(section_id) DO UPDATE SET created_by = 'user'"
-    ).run(userSec.id);
+    openDatabase(w.bb)
+      .prepare(
+        "INSERT INTO ws_workstream (section_id, created_by, created_at, updated_at) VALUES (?, 'user', 1, 1) ON CONFLICT(section_id) DO UPDATE SET created_by = 'user'",
+      )
+      .run(userSec.id);
 
     // Active task in Docs adopts the user section
     w.addThread("t1", { title: "Docs task" });
@@ -853,7 +932,11 @@ describe("automatic update coordinator lifecycle", () => {
           classifyCount++;
           return JSON.stringify({ subjectId: null, proposed: null });
         }
-        return JSON.stringify({ recap: "ok", state: "in_progress", subject: "Work" });
+        return JSON.stringify({
+          recap: "ok",
+          state: "in_progress",
+          subject: "Work",
+        });
       },
     });
     const w = world;
@@ -884,14 +967,17 @@ describe("automatic update coordinator lifecycle", () => {
 
     // Inject SDK failure on thread update for t-beta
     let failBeta = true;
-    w.harness.sdk.stub("threads.update", async (args: { threadId: string; sectionId: string | null }) => {
-      if (failBeta && args.threadId === "t-beta") {
-        throw new Error("SDK thread update failed for t-beta");
-      }
-      const t = w.threads.get(args.threadId);
-      if (t) t.sectionId = args.sectionId;
-      return t as never;
-    });
+    w.harness.sdk.stub(
+      "threads.update",
+      async (args: { threadId: string; sectionId: string | null }) => {
+        if (failBeta && args.threadId === "t-beta") {
+          throw new Error("SDK thread update failed for t-beta");
+        }
+        const t = w.threads.get(args.threadId);
+        if (t) t.sectionId = args.sectionId;
+        return t as never;
+      },
+    );
 
     const failedState = await rebuildOrg(w);
     expect(failedState.status).toBe("failed");
