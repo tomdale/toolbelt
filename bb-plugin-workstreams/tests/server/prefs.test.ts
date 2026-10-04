@@ -109,7 +109,6 @@ describe("Workstreams prefs", () => {
         model: { kind: "gateway", model: "openai/old-organize" },
         capacity: 6,
         collapseAt: 3,
-        automatic: false,
       },
       advanced: { hostId: "host-a", debug: true },
     });

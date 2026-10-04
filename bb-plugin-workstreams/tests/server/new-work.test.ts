@@ -38,8 +38,18 @@ async function setup(
         if (answer.outcome === "unsure") {
           return JSON.stringify({ subjectId: null, proposed: null });
         }
+        const requestSection = prompt.slice(prompt.indexOf("## Request"));
+        if (
+          requestSection.includes("Alpha") ||
+          requestSection.includes("Fix the parser")
+        ) {
+          return JSON.stringify({
+            subjectId: alphaEntityId,
+            proposed: null,
+          });
+        }
         return JSON.stringify({
-          subjectId: alphaEntityId,
+          subjectId: null,
           proposed: null,
         });
       }

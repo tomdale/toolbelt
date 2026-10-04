@@ -15,6 +15,8 @@ const REQUEST =
   "Fix the stale build cache in the monorepo, it keeps serving old output";
 const isOpening = (prompt: string) =>
   prompt.includes("You name one new agent thread from its opening request");
+const openingCalls = (w: World) =>
+  w.completions.filter((call) => isOpening(call.prompt));
 
 type Entry = {
   id: string;
@@ -80,7 +82,13 @@ async function setup(
   complete: FakeCompletion,
   settings?: Record<string, string | boolean>,
 ) {
-  world = await fakeWorld({ complete, settings });
+  const wrappedComplete: FakeCompletion = (call) => {
+    if (call.prompt.includes("Classify the most specific")) {
+      return JSON.stringify({ subjectId: null, proposed: null });
+    }
+    return complete(call);
+  };
+  world = await fakeWorld({ complete: wrappedComplete, settings });
   return world;
 }
 
@@ -145,7 +153,7 @@ describe("naming a thread from its opening request", () => {
     const decision = await firstMessage(w);
     // The turn is admitted at once; the title is still being inferred.
     expect(decision).toEqual({ action: "proceed" });
-    await vi.waitFor(() => expect(w.completions).toHaveLength(1));
+    await vi.waitFor(() => expect(openingCalls(w)).toHaveLength(1));
     expect(w.threads.get("t1")?.title).toBeNull();
 
     pending.release(opening("Fix stale build cache"));
@@ -173,8 +181,8 @@ describe("naming a thread from its opening request", () => {
     newThread(w);
     await firstMessage(w);
     await vi.waitFor(() => expect(w.threads.get("t1")?.title).not.toBeNull());
-    expect(w.completions).toHaveLength(1);
-    const { prompt, model } = w.completions[0]!;
+    expect(openingCalls(w)).toHaveLength(1);
+    const { prompt, model } = openingCalls(w)[0]!;
     expect(model).toBe("google/gemini-3.1-flash-lite");
     expect(prompt).toContain(REQUEST);
     expect(prompt).toContain('Return {"goal": string|null}');
@@ -187,7 +195,7 @@ describe("naming a thread from its opening request", () => {
       thread: w.threads.get("t1")!,
     });
     await flush();
-    expect(w.completions).toHaveLength(1);
+    expect(openingCalls(w)).toHaveLength(1);
   });
 
   it("is replaced by the first analysis whatever the hour's cooldown says", async () => {
@@ -256,7 +264,7 @@ describe("naming a thread from its opening request", () => {
       newThread(w);
       await w.harness.behavior.callRpc("refresh", null);
       await firstMessage(w);
-      await vi.waitFor(() => expect(w.completions).toHaveLength(1));
+      await vi.waitFor(() => expect(openingCalls(w)).toHaveLength(1));
       // BB's generator, the user, or an agent titles the thread meanwhile.
       w.threads.set("t1", { ...w.threads.get("t1")!, title: rival });
       pending.release(opening("Fix stale build cache"));
@@ -281,7 +289,7 @@ describe("naming a thread from its opening request", () => {
     await firstMessage(w);
     await flush();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(w.completions).toHaveLength(0);
+    expect(openingCalls(w)).toHaveLength(0);
     expect(w.threads.get("t1")?.title).toBeNull();
   });
 
@@ -315,7 +323,7 @@ describe("naming a thread from its opening request", () => {
     await firstMessage(w);
     await flush();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(w.completions).toHaveLength(0);
+    expect(openingCalls(w)).toHaveLength(0);
     expect(w.threads.get("t1")?.title).toBeNull();
   });
 
@@ -326,7 +334,7 @@ describe("naming a thread from its opening request", () => {
     );
     newThread(w);
     await firstMessage(w);
-    await vi.waitFor(() => expect(w.completions).toHaveLength(1));
+    await vi.waitFor(() => expect(openingCalls(w)).toHaveLength(1));
     await rpc(w, "setPrefs", { patch: { threads: { autoTitle: false } } });
     pending.release(opening("Fix stale build cache"));
     await flush();
@@ -342,7 +350,7 @@ describe("naming a thread from its opening request", () => {
       );
       newThread(w);
       expect(await firstMessage(w)).toEqual({ action: "proceed" });
-      await vi.waitFor(() => expect(w.completions).toHaveLength(1));
+      await vi.waitFor(() => expect(openingCalls(w)).toHaveLength(1));
       await flush();
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(w.threads.get("t1")?.title).toBeNull();
@@ -406,7 +414,7 @@ describe("naming a thread from its opening request", () => {
     );
     newThread(w);
     await firstMessage(w);
-    await vi.waitFor(() => expect(w.completions).toHaveLength(1));
+    await vi.waitFor(() => expect(openingCalls(w)).toHaveLength(1));
     // A quick turn: it finishes before the model answers.
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     await finishTurn(w, "t1", 200);
@@ -423,7 +431,7 @@ describe("naming a thread from its opening request", () => {
     const w = await setup(models({ opening: [null] }));
     newThread(w);
     await firstMessage(w, "t1", "hi there");
-    await vi.waitFor(() => expect(w.completions).toHaveLength(1));
+    await vi.waitFor(() => expect(openingCalls(w)).toHaveLength(1));
     await flush();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(w.threads.get("t1")?.title).toBeNull();
@@ -504,7 +512,7 @@ describe("naming a thread from its opening request", () => {
         expect(await arrange(w)).toEqual({ action: "proceed" });
         await flush();
         await new Promise((resolve) => setTimeout(resolve, 20));
-        expect(w.completions).toHaveLength(0);
+        expect(openingCalls(w)).toHaveLength(0);
         expect(await retitles(w)).toEqual([]);
       });
   });
@@ -516,7 +524,7 @@ describe("naming a thread from its opening request", () => {
     expect(await firstMessage(w, "t1", undefined as unknown as string)).toEqual(
       { action: "proceed" },
     );
-    expect(w.completions).toHaveLength(0);
+    expect(openingCalls(w)).toHaveLength(0);
   });
 
   it("doesn't fail the turn when the model does", async () => {
@@ -525,7 +533,7 @@ describe("naming a thread from its opening request", () => {
     });
     newThread(w);
     expect(await firstMessage(w)).toEqual({ action: "proceed" });
-    await vi.waitFor(() => expect(w.completions).toHaveLength(1));
+    await vi.waitFor(() => expect(openingCalls(w)).toHaveLength(1));
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(w.threads.get("t1")?.title).toBeNull();
   });
@@ -540,8 +548,8 @@ describe("naming a thread from its opening request", () => {
     await vi.waitFor(() =>
       expect(w.threads.get("t1")?.title).toBe("Fix stale build cache"),
     );
-    expect(w.completions).toHaveLength(1);
-    expect(w.completions[0]!.prompt).toContain(REQUEST);
+    expect(openingCalls(w)).toHaveLength(1);
+    expect(openingCalls(w)[0]!.prompt).toContain(REQUEST);
     expect((await retitles(w))[0]?.rationale).toBe(
       "Titled from the opening request",
     );
@@ -594,7 +602,7 @@ describe("naming a thread from its opening request", () => {
     await vi.waitFor(() => expect(release).toHaveLength(4));
     await flush();
     expect(peak).toBe(4);
-    expect(w.completions).toHaveLength(4);
+    expect(openingCalls(w)).toHaveLength(4);
     for (const send of release.splice(0))
       send(opening("Fix stale build cache"));
     await vi.waitFor(() => expect(inFlight).toBe(0));
@@ -619,25 +627,26 @@ describe("naming a thread from its opening request", () => {
         threads: string[];
       }[];
     }>(w, "traces", {});
-    expect(traces).toHaveLength(1);
-    expect(traces[0]).toMatchObject({
+    const openingTraces = traces.filter((t) => t.kind === "opening-goal");
+    expect(openingTraces).toHaveLength(1);
+    expect(openingTraces[0]).toMatchObject({
       kind: "opening-goal",
       status: "ok",
       summary: "goal “Fix stale build cache”",
       threads: ["t1"],
     });
     // The label is the request's opening words, as BB shows them.
-    expect(traces[0]!.label.length).toBeLessThanOrEqual(60);
-    expect(traces[0]!.label).toMatch(
+    expect(openingTraces[0]!.label.length).toBeLessThanOrEqual(60);
+    expect(openingTraces[0]!.label).toMatch(
       /^Fix the stale build cache in the monorepo/,
     );
     const { trace } = await rpc<{
       trace: { outcome: unknown; links: { kind: string }[]; prompt: string };
-    }>(w, "trace", { id: traces[0]!.id });
+    }>(w, "trace", { id: openingTraces[0]!.id });
     expect(trace.outcome).toMatchObject({ title: "applied" });
     expect(trace.links.map((l) => l.kind).sort()).toEqual(["entry", "thread"]);
     const [entry] = await retitles(w);
-    expect(entry!.traceIds).toEqual([traces[0]!.id]);
+    expect(entry!.traceIds).toEqual([openingTraces[0]!.id]);
   });
 
   it("records why a title it inferred wasn't applied", async () => {
@@ -648,13 +657,18 @@ describe("naming a thread from its opening request", () => {
     );
     newThread(w);
     await firstMessage(w);
-    await vi.waitFor(() => expect(w.completions).toHaveLength(1));
+    await vi.waitFor(() => expect(openingCalls(w)).toHaveLength(1));
     w.threads.set("t1", { ...w.threads.get("t1")!, title: "Given elsewhere" });
     pending.release(opening("Fix stale build cache"));
     await new Promise((resolve) => setTimeout(resolve, 30));
-    const { traces } = await rpc<{ traces: { id: string }[] }>(w, "traces", {});
+    const { traces } = await rpc<{ traces: { id: string; kind: string }[] }>(
+      w,
+      "traces",
+      {},
+    );
+    const openingTrace = traces.find((t) => t.kind === "opening-goal");
     const { trace } = await rpc<{ trace: { outcome: unknown } }>(w, "trace", {
-      id: traces[0]!.id,
+      id: openingTrace!.id,
     });
     expect(trace.outcome).toMatchObject({ title: "not applied: titled" });
   });

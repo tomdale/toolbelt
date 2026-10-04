@@ -223,7 +223,20 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
   });
 
   it("stale route/restart fallback carries proposal", async () => {
-    world = await fakeWorld();
+    world = await fakeWorld({
+      complete: ({ prompt }) => {
+        if (prompt.includes("Classify the most specific")) {
+          return JSON.stringify({
+            subjectId: null,
+            proposed: {
+              name: "Brand New Feature",
+              description: "Proposed in draft",
+            },
+          });
+        }
+        return JSON.stringify({ recap: "ok", state: "done" });
+      },
+    });
     const w = world;
     const db = openDatabase(w.bb);
     const corpus = new CorpusStore(db);

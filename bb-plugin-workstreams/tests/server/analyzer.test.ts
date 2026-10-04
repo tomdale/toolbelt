@@ -11,7 +11,31 @@ afterEach(async () => {
 });
 
 async function setup(complete?: FakeCompletion) {
-  world = await fakeWorld({ complete });
+  world = await fakeWorld({
+    complete: (call) => {
+      if (call.prompt.includes("Classify the most specific")) {
+        if (
+          call.prompt.includes("Alpha") ||
+          call.prompt.includes("t1") ||
+          call.prompt.includes("parent")
+        ) {
+          return JSON.stringify({
+            subjectId: null,
+            proposed: { name: "Alpha", description: "Alpha workstream" },
+          });
+        }
+        return JSON.stringify({ subjectId: null, proposed: null });
+      }
+      if (complete) return complete(call);
+      return JSON.stringify({
+        recap: "Fixed the bug; tests pass.",
+        state: "review",
+        needsYou: null,
+        subject: "Alpha",
+        drift: null,
+      });
+    },
+  });
   return world;
 }
 
@@ -36,6 +60,10 @@ const settle = async (ms: number) => {
   // Let the queued run's awaits finish.
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
+const analyses = (w: World) =>
+  w.completions.filter((c) =>
+    c.prompt.includes("You describe one agent thread"),
+  );
 
 describe("idle analysis", () => {
   it("analyzes a thread a few seconds after its turn completes", async () => {
@@ -46,11 +74,11 @@ describe("idle analysis", () => {
     await w.harness.behavior.callRpc("refresh", null);
     await idle(w, "t1", "Fixed; tests pass.");
     await settle(1_000);
-    expect(w.completions).toHaveLength(0);
+    expect(analyses(w)).toHaveLength(0);
     await settle(5_000);
-    expect(w.completions).toHaveLength(1);
-    expect(w.completions[0]!.prompt).toContain("Fixed; tests pass.");
-    expect(w.completions[0]!.model).toBe("google/gemini-3.1-flash-lite");
+    expect(analyses(w)).toHaveLength(1);
+    expect(analyses(w)[0]!.prompt).toContain("Fixed; tests pass.");
+    expect(analyses(w)[0]!.model).toBe("google/gemini-3.1-flash-lite");
     const { analysis } = await state(w);
     expect(analysis.t1).toMatchObject({
       state: "review",
@@ -68,7 +96,7 @@ describe("idle analysis", () => {
       thread: w.threads.get("t1")!,
     });
     await settle(10_000);
-    expect(w.completions).toHaveLength(0);
+    expect(analyses(w)).toHaveLength(0);
   });
 
   it("only reads from BB: never moves, renames, or files a thread", async () => {
@@ -100,6 +128,7 @@ describe("idle analysis", () => {
       "threads.timeline",
       "threadSections.list",
       "hosts.list",
+      "projects.list",
     ]);
     const calls = w.harness.inspection.sdk.calls.slice(before);
     expect(calls.map((c) => c.path)).toContain("threads.get");
@@ -323,7 +352,7 @@ describe("idle analysis", () => {
     await w.harness.behavior.callRpc("refresh", null);
     const first = await w.harness.behavior.runCli(["analyze"]);
     expect(first.stdout).toContain("Queued 1 thread");
-    await vi.waitFor(() => expect(w.completions).toHaveLength(1));
+    await vi.waitFor(() => expect(analyses(w)).toHaveLength(1));
     const again = await w.harness.behavior.runCli(["analyze"]);
     expect(again.stdout).toContain("Queued 0 threads");
   });
@@ -351,6 +380,9 @@ describe("idle analysis", () => {
   it("runs again when a turn completes while its run is in flight", async () => {
     const release: (() => void)[] = [];
     const w = await setup(async ({ prompt }) => {
+      if (!prompt.includes("You describe one agent thread")) {
+        return JSON.stringify({ subjectId: null, proposed: null });
+      }
       await new Promise<void>((resolve) => release.push(resolve));
       return JSON.stringify({
         recap: prompt.includes("second") ? "second" : "first",
@@ -389,7 +421,7 @@ describe("idle analysis", () => {
     const queue = async () =>
       (await w.harness.behavior.runCli(["analyze"])).stdout;
     expect(await queue()).toContain("Queued 1 thread");
-    await vi.waitFor(() => expect(w.completions).toHaveLength(1));
+    await vi.waitFor(() => expect(analyses(w)).toHaveLength(1));
     await new Promise((r) => setTimeout(r, 10));
     expect(await queue()).toContain("Queued 0 threads");
     fail = false;
@@ -403,7 +435,10 @@ describe("idle analysis", () => {
 
   it("doesn't write back a thread deleted while its run was in flight", async () => {
     const release: (() => void)[] = [];
-    const w = await setup(async () => {
+    const w = await setup(async ({ prompt }) => {
+      if (!prompt.includes("You describe one agent thread")) {
+        return JSON.stringify({ subjectId: null, proposed: null });
+      }
       await new Promise<void>((resolve) => release.push(resolve));
       return JSON.stringify({ recap: "late", state: "done" });
     });

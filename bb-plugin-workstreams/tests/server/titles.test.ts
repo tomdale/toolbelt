@@ -28,14 +28,18 @@ async function setup(
   let call = 0;
   world = await fakeWorld({
     settings,
-    complete: () =>
-      JSON.stringify({
+    complete: ({ prompt }) => {
+      if (prompt.includes("Classify the most specific")) {
+        return JSON.stringify({ subjectId: null, proposed: null });
+      }
+      return JSON.stringify({
         recap: "Working.",
         state: "in_progress",
         subject: "Alpha",
         goal: goals[Math.min(call++, goals.length - 1)] ?? null,
         drift: null,
-      }),
+      });
+    },
   });
   return world;
 }

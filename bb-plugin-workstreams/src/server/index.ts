@@ -95,10 +95,8 @@ export default async function plugin(bb: BbPluginApi) {
         );
   };
 
-  const triggerCoordinatorIfAutomatic = (debounceMs = 50) => {
-    if (currentPrefs().organize.automatic) {
-      coordinator.trigger(debounceMs);
-    }
+  const triggerCoordinator = (debounceMs = 50) => {
+    coordinator.trigger(debounceMs);
   };
 
   const currentPrefs = () => loadPrefs(db);
@@ -363,7 +361,7 @@ export default async function plugin(bb: BbPluginApi) {
               corpus.clear(ctx.thread.id);
             }
           }
-          triggerCoordinatorIfAutomatic(10);
+          triggerCoordinator(10);
         } catch (error: unknown) {
           bb.log.warn(`Filing a composed thread failed: ${String(error)}`);
         }
@@ -443,7 +441,7 @@ export default async function plugin(bb: BbPluginApi) {
             );
           void sweepSnoozes();
           map.refresh(service.threads(), analyzer.all());
-          triggerCoordinatorIfAutomatic(50);
+          triggerCoordinator(50);
         })
         .catch((error: unknown) =>
           bb.log.warn(`Reconcile failed: ${String(error)}`),
@@ -469,7 +467,7 @@ export default async function plugin(bb: BbPluginApi) {
     bb.events.on(event, () => {
       notify();
       reconcileSoon();
-      triggerCoordinatorIfAutomatic();
+      triggerCoordinator();
     });
   bb.events.on("thread.created", async ({ thread }) => {
     const metadata = await bb.sdk.threads.getPluginMetadata({
@@ -512,12 +510,12 @@ export default async function plugin(bb: BbPluginApi) {
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
     if (thread.visibility === "hidden") return;
     analyzer.onIdle(thread, lastAssistantText);
-    triggerCoordinatorIfAutomatic(200);
+    triggerCoordinator(200);
     return recaps.onIdle(thread.id);
   });
   bb.events.on("thread.active", ({ thread }) => {
     analyzer.onActive(thread.id);
-    triggerCoordinatorIfAutomatic(200);
+    triggerCoordinator(200);
     // Covers a thread whose first request this run didn't see dispatched.
     void opening.onRunning(thread);
   });
@@ -691,7 +689,7 @@ export default async function plugin(bb: BbPluginApi) {
             environment: Environment;
           },
         });
-        triggerCoordinatorIfAutomatic(10);
+        triggerCoordinator(10);
         return result;
       }),
     sendToThread: ({ threadId, input, traceId }) =>

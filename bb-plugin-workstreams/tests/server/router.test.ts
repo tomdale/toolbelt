@@ -37,8 +37,15 @@ async function setup(
             proposed: { name: "Billing", description: "Invoices" },
           });
         }
+        const requestSection = prompt.slice(prompt.indexOf("## Request"));
+        if (requestSection.includes("Alpha") || requestSection.includes("Fix the parser")) {
+          return JSON.stringify({
+            subjectId: seededEntityId,
+            proposed: null,
+          });
+        }
         return JSON.stringify({
-          subjectId: seededEntityId,
+          subjectId: null,
           proposed: null,
         });
       }
@@ -501,8 +508,12 @@ describe("composer filing guards", () => {
   it("never files a thread the user filed first", async () => {
     const { w } = await setup(answer);
     const beta = w.addSection("Beta");
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const betaEntity = corpus.create("Beta", "Beta effort");
+    corpus.bindGroup(beta.id, betaEntity.id);
     await route(w, prompt);
     const composed = w.addThread("composed", { createdAt: Date.now() });
+    corpus.assign(composed.id, betaEntity.id, { provenance: "manual" });
     const hook = w.harness.registrations.hooks["message.dispatch"]!;
     const context = makeMessageDispatchHookContext({
       thread: composed,

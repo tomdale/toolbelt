@@ -111,7 +111,6 @@ const GROUPS = {
     model: [modelChoiceSchema, DEFAULT_MODELS.organize],
     capacity: [z.number().int().min(2).max(100), 6],
     collapseAt: [z.number().int().min(0).max(99), 3],
-    automatic: [z.boolean(), false],
   },
   advanced: {
     /** The machine whose Pi key runs gateway calls; "" picks the only one. */

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fakeWorld } from "./fake-bb.ts";
 import { CorpusStore } from "../../src/server/corpus.ts";
 import { openDatabase } from "../../src/server/db.ts";
@@ -988,5 +988,138 @@ describe("automatic update coordinator lifecycle", () => {
     const alphaGroup = failedState.groups.find((g) => g.name === "Alpha");
     expect(alphaGroup).toBeDefined();
     expect(alphaGroup?.sectionId).not.toBeNull();
+  });
+
+  it("event lifecycle: thread-created, idle, and manual assignment events trigger coordinator and derive groups without rebuild", async () => {
+    let classifyCalls = 0;
+    let lanternId = "";
+    world = await fakeWorld({
+      complete: ({ prompt }) => {
+        if (prompt.includes("Classify the most specific")) {
+          classifyCalls++;
+          const requestSection = prompt.slice(prompt.indexOf("## Request"));
+          if (
+            requestSection.includes("Lantern") ||
+            requestSection.includes("t1") ||
+            requestSection.includes("t2")
+          ) {
+            return JSON.stringify({ subjectId: lanternId, proposed: null });
+          }
+          return JSON.stringify({ subjectId: null, proposed: null });
+        }
+        return JSON.stringify({
+          recap: "working",
+          state: "in_progress",
+          subject: "Lantern",
+        });
+      },
+    });
+
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const lantern = corpus.create("Lantern", "Product");
+    lanternId = lantern.id;
+    const compass = corpus.create("Compass", "Navigation product");
+
+    // 1. Thread created event: automatically classifies and derives group WITHOUT rebuild
+    const t1 = w.addThread("t1", {
+      title: "Lantern core fix",
+      sectionId: null,
+    });
+    await w.harness.behavior.emitThreadEvent("thread.created", {
+      thread: t1,
+    });
+
+    // Wait for event-driven coordinator run to settle into idle state and place thread
+    await vi.waitFor(
+      () => {
+        const row = w.bb.storage
+          .database()
+          .prepare(
+            "SELECT value FROM ws_meta WHERE key = 'live_organization'",
+          )
+          .get() as { value: string } | undefined;
+        const org = row ? JSON.parse(row.value) : null;
+        expect(org?.status).toBe("idle");
+        expect(org?.groups).toHaveLength(1);
+        expect(org?.groups[0]?.name).toBe("Lantern");
+        expect(w.threads.get("t1")?.sectionId).not.toBeNull();
+      },
+      { timeout: 2000 },
+    );
+
+    const section = w.sections.find((s) => s.name === "Lantern");
+    expect(section).toBeDefined();
+    expect(w.threads.get("t1")?.sectionId).toBe(section!.id);
+
+    // 2. Thread idle event: new thread goes idle and triggers coordinator without rebuild
+    const t2 = w.addThread("t2", {
+      title: "Lantern styling",
+      sectionId: null,
+    });
+    await w.harness.behavior.emitThreadEvent("thread.idle", {
+      thread: t2,
+      lastAssistantText: "Done.",
+    });
+
+    await vi.waitFor(
+      () => {
+        expect(w.threads.get("t2")?.sectionId).toBe(section!.id);
+      },
+      { timeout: 2000 },
+    );
+
+    // 3. Manual assignment event: reassign thread to Compass via taskAssign RPC without rebuild
+    await w.harness.behavior.callRpc("taskAssign", {
+      threadId: "t1",
+      entityId: compass.id,
+    });
+
+    await vi.waitFor(
+      () => {
+        const compassSection = w.sections.find((s) => s.name === "Compass");
+        expect(compassSection).toBeDefined();
+        expect(w.threads.get("t1")?.sectionId).toBe(compassSection!.id);
+      },
+      { timeout: 2000 },
+    );
+
+    // 4. Verify no model call loops / storm: classify calls are bounded
+    // Add an unresolved thread that emits thread.idle and verify it doesn't loop
+    const tUnresolved = w.addThread("t-unresolved", {
+      title: "Unrelated question",
+      sectionId: null,
+    });
+    await w.harness.behavior.emitThreadEvent("thread.idle", {
+      thread: tUnresolved,
+      lastAssistantText: "Answering question.",
+    });
+
+    await vi.waitFor(
+      () => {
+        const row = w.bb.storage
+          .database()
+          .prepare(
+            "SELECT value FROM ws_meta WHERE key = 'live_organization'",
+          )
+          .get() as { value: string } | undefined;
+        const org = row ? JSON.parse(row.value) : null;
+        expect(org?.status).toBe("idle");
+        expect(
+          org?.unresolved.some((u: { id: string }) => u.id === "t-unresolved"),
+        ).toBe(true);
+      },
+      { timeout: 2000 },
+    );
+
+    const callsAfterSettle = classifyCalls;
+    // Emit another event on unresolved thread; ensure calls do not storm
+    await w.harness.behavior.emitThreadEvent("thread.idle", {
+      thread: tUnresolved,
+      lastAssistantText: "Still unrelated.",
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    // Since evidence didn't change (requests are empty), isFresh prevents re-classifying t-unresolved
+    expect(classifyCalls).toBe(callsAfterSettle);
   });
 });
