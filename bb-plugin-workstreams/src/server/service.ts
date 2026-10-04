@@ -255,13 +255,15 @@ export class WorkstreamService {
    * retitle policy (SPEC §10.1). `revision` is the thread revision the goal
    * was inferred for, and `basis` says from what: a finished turn's analysis,
    * or the opening request alone while the first turn runs. When the policy
-   * declines, nothing changes and `skipped` says why.
+   * declines, nothing changes and `skipped` says why. `rationale` replaces
+   * the journal entry's usual explanation when the caller knows a better one.
    */
   retitle(
     threadId: string,
     suggestion: string | null,
     revision: number,
     basis: RetitleBasis = "analysis",
+    rationale?: string,
   ): Promise<{ entry: JournalEntry | null; skipped: string | null }> {
     return this.serial(async () => {
       const sdk = this.sdk();
@@ -325,13 +327,14 @@ export class WorkstreamService {
         action: "retitle",
         source: "auto",
         rationale:
-          basis === "opening"
+          rationale ??
+          (basis === "opening"
             ? "Titled from the opening request"
             : record.provisional
               ? `Retitled after the first turn from ${from}`
               : thread.title
                 ? `Retitled from ${from}`
-                : "Titled an untitled thread",
+                : "Titled an untitled thread"),
         threads: [{ id: threadId, name: suggestion }],
         workstreams: [],
         undo: { kind: "retitle", threadId, from: thread.title, to: suggestion },

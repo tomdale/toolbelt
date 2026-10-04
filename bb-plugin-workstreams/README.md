@@ -201,7 +201,9 @@ is the full design and the contract the code is checked against.
   its first request within seconds, while its first turn is still running. The
   analysis after that turn keeps the title or replaces it with a sharper goal;
   after that a title changes at most once an hour, and only when the thread's
-  objective does. Each title is logged in Activity with Undo. A title you or an
+  objective does. Threads analyzed before titles followed goals, which BB never
+  titled, are given their stored goal once. Each title is logged in Activity
+  with Undo. A title you or an
   agent set is never changed; clear it to hand it back. Turn this off in the
   Threads settings section.
 - **Organize** (Organize tab, or `bb workstreams rebuild`): classifies open

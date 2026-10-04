@@ -505,6 +505,16 @@ the first turn runs, as a **provisional** title, journaled like any retitle.
   goal whatever the hour's cooldown says, and settles it when the goal is the
   same. From then on it is an ordinary Workstreams title.
 
+**Adoption.** A thread analyzed before goals were titles has a stored goal and
+no title. Once, on the first reconciliation that sees threads while `autoTitle`
+is on, each idle, visible, unlocked thread with no title of its own and a stored
+goal of at most 60 characters is given that goal as its title through the
+ordinary retitle policy: a thread that has moved on since its analysis waits for
+its next one. Each is a journaled `retitle` with Undo, the rationale saying it
+came from the stored goal. A pass that finds no threads, or runs with `autoTitle`
+off, is not spent, and one that met a BB failure is repeated. `ws_meta` records
+the finished pass as `goal_titles_adopted`.
+
 **Ownership.** BB exposes no title provenance and no title event (§3), so
 Workstreams records each thread's observed raw title (`ws_title`), from the
 reconciler and again just before any retitle. BB's generator only fills an empty
@@ -518,7 +528,7 @@ anyone else changes or clears it.
 Each retitle is journaled (`retitle`, provenance `auto`) with Undo, which
 restores the previous title while it is still the one Workstreams wrote. The
 rationale says which retitle it was: from the opening request, after the first
-turn, from another title, or of an untitled thread.
+turn, from the stored goal, from another title, or of an untitled thread.
 
 ### 10.2 Agent recaps
 
@@ -857,7 +867,7 @@ statement IDs.
 ```
 bb-plugin-workstreams/
   src/domain/    tree · project (thread trees → groups and bands) · organize · analysis · router · schemas
-  src/server/    index · prefs · map · journal · service · analyzer · opening · router · bootstrap · inference/{host,gateway,worker} · cli · agents
+  src/server/    index · prefs · map · journal · service · analyzer · opening · adopt · router · bootstrap · inference/{host,gateway,worker} · cli · agents
   src/app/       index · useWorkstreams (live hook + one state RPC + realtime) · sidebar/* · home/* (phone Home screen) · page/* · header/* (parent link) · composer/* (New work intake and thread cards)
   tests/         domain (real exported snapshots) · server (mock SDK) · app (renderSlot)
 ```
