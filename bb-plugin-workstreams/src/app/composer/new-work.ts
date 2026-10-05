@@ -519,6 +519,8 @@ export class NewWork {
       const suggestion = suggestionFrom(decision);
       finish("ok", { output: { decision, suggestion } });
 
+      // The shared route also finds continuation suggestions, but a manual
+      // identity remains authoritative when its result arrives.
       let nextIdentity = this.state.identity;
       if (this.state.identity?.provenance !== "manual") {
         if (decision.subjectId) {

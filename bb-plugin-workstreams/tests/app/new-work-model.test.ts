@@ -161,6 +161,11 @@ describe("NewWork model: manual identity selection and manual unresolved", () =>
       label: "Storage",
       provenance: "manual",
     });
+    expect(identityDisplay(newWork.snapshot())).toMatchObject({
+      label: "Storage",
+      auto: false,
+      selected: true,
+    });
 
     newWork.observe("Some text about invoices");
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);

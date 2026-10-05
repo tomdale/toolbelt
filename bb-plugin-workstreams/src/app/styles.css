@@ -880,7 +880,8 @@
 .ws-new-work,
 .ws-native-new-thread-routing,
 .ws-suggestion,
-[data-ws-workstream-slot] {
+[data-ws-workstream-slot],
+[data-ws-identity-control] {
   --ws-magic: color-mix(
     in oklab,
     var(--color-violet-500, oklch(60.6% 0.25 292.717)) 70%,
@@ -905,6 +906,15 @@
 }
 [data-ws-workstream-control][data-ws-stale] .ws-spark {
   animation: ws-spark-pulse 1.2s ease-in-out infinite;
+}
+
+/* The identity field shows classifier-owned values in the same magic color. */
+[data-ws-identity-control][data-ws-auto] {
+  color: var(--ws-magic);
+  font-weight: 500;
+}
+[data-ws-identity-control][data-ws-auto] .ws-spark {
+  color: var(--ws-magic);
 }
 
 /*

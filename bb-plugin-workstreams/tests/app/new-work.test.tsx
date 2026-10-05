@@ -143,12 +143,14 @@ async function type(slot: ReturnType<typeof mount>["slot"], text: string) {
 }
 
 describe("NewWork dialog UI", () => {
-  it("adds a Product or feature field in the picker row and never a destination picker", async () => {
+  it("shows Automatic as the default Product or feature value", async () => {
     mount(inAlpha);
     const field = await screen.findByRole("button", {
       name: "Product or feature: Automatic",
     });
-    expect(field).toBeTruthy();
+    expect(field.textContent).toContain("Automatic");
+    expect(field.textContent).not.toContain("Concerning");
+    expect(field.dataset.wsAuto).toBe("true");
     expect(screen.queryByRole("button", { name: /Workstream:/ })).toBeNull();
   });
 
@@ -158,6 +160,7 @@ describe("NewWork dialog UI", () => {
     const field = await screen.findByRole("button", {
       name: "Product or feature: Alpha",
     });
+    expect(field.textContent).toContain("Alpha");
     expect(field.dataset.wsAuto).toBe("true");
     expect(rpc.route).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -203,9 +206,11 @@ describe("NewWork dialog UI", () => {
 
     fireEvent.click(field);
     fireEvent.click(await screen.findByRole("option", { name: "Unresolved" }));
-    await screen.findByRole("button", {
+    const manualField = await screen.findByRole("button", {
       name: "Product or feature: Unresolved",
     });
+    expect(manualField.textContent).toContain("Unresolved");
+    expect(manualField.dataset.wsAuto).toBeUndefined();
 
     fireEvent.click(screen.getByTestId("bb-new-thread-composer-submit"));
     await waitFor(() => expect(rpc.startThread).toHaveBeenCalledTimes(1));

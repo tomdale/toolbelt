@@ -62,7 +62,7 @@ export function IdentityControl({ newWork }: { newWork: NewWork }) {
             <Icon name={TAG_ICON} className="size-3.5 shrink-0" aria-hidden />
           )}
           <ChipLabel>
-            {state.identity ? state.identity.label : `Concerning: ${label}`}
+            {display.label}
           </ChipLabel>
         </span>
         <Icon
