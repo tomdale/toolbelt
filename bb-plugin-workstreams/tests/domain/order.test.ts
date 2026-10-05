@@ -75,4 +75,42 @@ describe("manual order in the projection", () => {
       "kid",
     ]);
   });
+
+  it("keeps pinned threads above manually ordered threads in each workstream", () => {
+    const p = projectWorkstreams(
+      [
+        thread("pinned", {
+          sectionId: "sec_a",
+          isPinned: true,
+          pinSortKey: "b",
+          latestAttentionAt: now - 10,
+        }),
+        thread("pinned-first", {
+          sectionId: "sec_a",
+          isPinned: true,
+          pinSortKey: "a",
+          latestAttentionAt: now - 20,
+        }),
+        ...threads,
+      ],
+      sections,
+      {
+        now,
+        order: {
+          workstreams: [],
+          threads: { sec_a: ["a3", "a1", "a2"] },
+          prioritized: [],
+        },
+      },
+    );
+
+    expect(p.groups[0]!.rows.map((row) => row.thread.id)).toEqual([
+      "pinned-first",
+      "pinned",
+      "a3",
+      "a1",
+      "a2",
+      "kid",
+    ]);
+  });
 });

@@ -176,12 +176,15 @@ export function projectWorkstreams<T extends WorkstreamThread>(
   for (const [key, roots] of rootsBySection) {
     const workstreamId = key === UNSORTED_ID ? null : key;
     const rows: Row<T>[] = [];
-    const ordered = applyOrder(
-      roots,
-      options.order?.threads[key],
-      (root) => root.thread.id,
-      "first",
-    );
+    const ordered = [
+      ...roots.filter((root) => root.thread.isPinned),
+      ...applyOrder(
+        roots.filter((root) => !root.thread.isPinned),
+        options.order?.threads[key],
+        (root) => root.thread.id,
+        "first",
+      ),
+    ];
     for (const node of ordered.flatMap((root) => flatten(root))) {
       const row: Row<T> = {
         thread: node.thread,
