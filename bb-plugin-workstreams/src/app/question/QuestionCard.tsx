@@ -81,7 +81,6 @@ export function QuestionAnchor() {
       });
     } catch {
       setError("Could not send your answer. Please try again.");
-    } finally {
       setBusy(false);
     }
   };
@@ -175,11 +174,12 @@ export function QuestionInteraction({
         onSubmit={(answers) => {
           setBusy(true);
           setError(null);
-          void submit(JSON.parse(JSON.stringify({ answers })) as JsonValue)
-            .catch(() =>
-              setError("Could not send your answer. Please try again."),
-            )
-            .finally(() => setBusy(false));
+          void submit(
+            JSON.parse(JSON.stringify({ answers })) as JsonValue,
+          ).catch(() => {
+            setError("Could not send your answer. Please try again.");
+            setBusy(false);
+          });
         }}
         onCancel={handleCancel}
       />

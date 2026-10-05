@@ -20,6 +20,7 @@ const interactionOptionSchema = z.object({
 const interactionQuestionSchema = z.object({
   id: z.string().min(1),
   prompt: z.string().min(1),
+  details: z.string().min(1).optional(),
   shortLabel: z.string().min(1),
   multiSelect: z.boolean(),
   options: z.array(interactionOptionSchema).max(MAX_OPTIONS),
@@ -92,6 +93,14 @@ const toolQuestionSchema = z.strictObject({
     .describe(
       'The complete question to ask the user. Should be clear, specific, and end with a question mark. Example: "Which library should we use for date formatting?" If multiSelect is true, phrase it accordingly, e.g. "Which features do you want to enable?"',
     ),
+  details: z
+    .string()
+    .min(1)
+    .refine(nonBlank, "Details cannot be blank")
+    .optional()
+    .describe(
+      "Optional always-visible context displayed directly below the question and above its answer options. Put proposal lists and other information the user must see before deciding here, not in an option preview.",
+    ),
   header: z
     .string()
     .min(1)
@@ -124,6 +133,7 @@ export type ToolInput = z.infer<typeof toolInputSchema>;
 
 interface ToolResultQuestion {
   question: string;
+  details?: string;
   header: string;
   options: Array<{ label: string; description: string; preview?: string }>;
   multiSelect: boolean;

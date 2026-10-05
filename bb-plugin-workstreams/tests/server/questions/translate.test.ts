@@ -31,6 +31,21 @@ describe("tool input validation", () => {
     expect(parsed.questions[0]?.multiSelect).toBe(false);
   });
 
+  it("accepts always-visible details alongside a question", () => {
+    const parsed = parseInput({
+      questions: [
+        {
+          question: "Apply these renames?",
+          header: "Rename",
+          details: "Old title → New title",
+          options: [{ label: "Apply", description: "Rename the threads." }],
+        },
+      ],
+    });
+    const payload = buildInteractionPayload(parsed);
+    expect(payload.questions[0]?.details).toBe("Old title → New title");
+  });
+
   it("accepts a valid call", () => {
     expect(
       validateToolInput(
@@ -81,7 +96,12 @@ describe("buildInteractionPayload", () => {
     const payload = buildInteractionPayload(
       parseInput({
         questions: [
-          { question: "Which DB?", header: "DB", options: twoOptions },
+          {
+            question: "Which DB?",
+            header: "DB",
+            details: "- Old title → New title",
+            options: twoOptions,
+          },
           {
             question: "Which cache?",
             header: "Cache",
@@ -108,6 +128,10 @@ describe("buildInteractionPayload", () => {
     expect(payload.questions[0]?.options.map((option) => option.value)).toEqual(
       ["q0o0", "q0o1"],
     );
+    const result = buildToolResult(payload, {
+      answers: { q0: { selected: ["q0o0"] } },
+    });
+    expect(result.questions[0]?.details).toBe("- Old title → New title");
     expect(payload.questions[1]?.multiSelect).toBe(true);
     expect(payload.questions[1]?.options[0]?.value).toBe("q1o0");
   });
@@ -154,7 +178,7 @@ describe("buildInteractionPayload", () => {
 });
 
 describe("assertInteractionPayloadFits", () => {
-  it("rejects a payload whose previews would blow the interaction limit", () => {
+  it("rejects oversized total question content with actionable guidance", () => {
     const preview = "x".repeat(4096);
     const questions = Array.from({ length: 4 }, (_unused, index) => ({
       question: `Question ${index}?`,
@@ -169,6 +193,9 @@ describe("assertInteractionPayloadFits", () => {
 
     expect(() => assertInteractionPayloadFits(payload)).toThrow(
       PreviewTooLargeError,
+    );
+    expect(() => assertInteractionPayloadFits(payload)).toThrow(
+      "question details or option previews",
     );
   });
 

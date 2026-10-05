@@ -25,6 +25,7 @@ export function QuestionHistoryCard({ record }: { record: QuestionHistory }) {
         {record.payload.questions.map((q) => (
           <section key={q.id} className="space-y-2 text-sm">
             <Markdown content={q.prompt} />
+            {q.details ? <Markdown content={q.details} /> : null}
             {q.options.length ? (
               <details className="text-xs text-muted-foreground">
                 <summary className="cursor-pointer">Options offered</summary>

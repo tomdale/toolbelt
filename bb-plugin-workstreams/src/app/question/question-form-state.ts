@@ -8,6 +8,7 @@ export interface QuestionOption {
 export interface Question {
   id: string;
   prompt: string;
+  details?: string;
   shortLabel: string;
   multiSelect: boolean;
   allowFreeText: boolean;

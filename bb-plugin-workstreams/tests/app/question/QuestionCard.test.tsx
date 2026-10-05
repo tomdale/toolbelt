@@ -150,6 +150,47 @@ describe("question interaction adapter", () => {
     sessionStorage.clear();
   });
 
+  it("flushes typed free text on unmount before draft debounce", async () => {
+    sessionStorage.clear();
+    const slot = render({
+      ...singleSelect,
+      durableId: "unmount-draft-test",
+    } as InteractionPayload);
+    fireEvent.click(getButtonByText(slot, "Other…"));
+    fireEvent.change(slot.getByRole("textbox", { name: "Database answer" }), {
+      target: { value: "typed immediately before interruption" },
+    });
+    slot.lifecycle.unmount();
+
+    const banner = app.composerCustomizations
+      .find((c) => c.id === "recap")!
+      .banners!.find((b) => b.id === "question")!;
+    const recover = vi.fn(async () => ({ ok: true }));
+    const composer = renderSlot(
+      banner,
+      {},
+      {
+        composer: { scope: { kind: "thread", threadId: "thr_test" } },
+        rpc: {
+          question_pending: () => ({
+            id: "unmount-draft-test",
+            recoverable: true,
+            payload: singleSelect,
+          }),
+          question_recover: recover,
+        },
+      },
+    );
+    const restored = await composer.findByRole("textbox", {
+      name: "Database answer",
+    });
+    expect((restored as HTMLTextAreaElement).value).toBe(
+      "typed immediately before interruption",
+    );
+    composer.lifecycle.unmount();
+    sessionStorage.clear();
+  });
+
   it("submits the selected option value", () => {
     const submit = vi.fn(async (_value: unknown) => undefined);
     const slot = render(singleSelect, { submit });
@@ -162,6 +203,31 @@ describe("question interaction adapter", () => {
     expect(submit.mock.calls[0]?.[0]).toEqual({
       answers: { q0: { selected: ["q0o1"] } },
     } satisfies InteractionResponse);
+  });
+
+  it("shows always-visible details before the answer options", () => {
+    const details = "- Old title → New title";
+    const slot = render({
+      questions: [
+        {
+          ...singleSelect.questions[0]!,
+          details,
+        },
+      ],
+    });
+    const prompt = slot.getByRole("heading", {
+      name: "Which database should we use?",
+    });
+    const detailsText = slot.getAllByTestId("bb-markdown")[1]!.parentElement!;
+    const option = slot.getByText("Postgres");
+    expect(
+      prompt.compareDocumentPosition(detailsText) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      detailsText.compareDocumentPosition(option) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("passes heading Markdown to the host renderer and keeps the legend readable", () => {
@@ -190,6 +256,28 @@ describe("question interaction adapter", () => {
     expect(getButtonByText(slot, "Database").title).toBe(
       "Can you retry vc login?",
     );
+  });
+
+  it("debounces draft persistence while typing and saves the latest text", async () => {
+    sessionStorage.clear();
+    const slot = render({
+      ...singleSelect,
+      durableId: "debounced-draft-test",
+    } as InteractionPayload);
+    fireEvent.click(getButtonByText(slot, "Other…"));
+    const answer = slot.getByRole("textbox", { name: "Database answer" });
+    fireEvent.change(answer, { target: { value: "first" } });
+    fireEvent.change(answer, { target: { value: "latest answer" } });
+
+    expect(sessionStorage.length).toBe(0);
+    await vi.waitFor(() => {
+      const value = sessionStorage.getItem(
+        "ws-question-draft:debounced-draft-test",
+      );
+      expect(value).not.toBeNull();
+      expect(JSON.parse(value!).q0.otherText).toBe("latest answer");
+    });
+    sessionStorage.clear();
   });
 
   it("shows an awaiting-answer state", () => {
@@ -251,6 +339,23 @@ describe("question interaction adapter", () => {
     expect(
       slot.container.querySelector("[data-testid='bb-new-thread-composer']"),
     ).toBeNull();
+  });
+
+  it("keeps Submit pending after a successful response until the interaction closes", async () => {
+    let resolveSubmit!: () => void;
+    const submit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSubmit = resolve;
+        }),
+    );
+    const slot = render(singleSelect, { submit });
+    fireEvent.click(getButtonByText(slot, "SQLite"));
+    fireEvent.click(getButtonByText(slot, "Submit"));
+    expect(getButtonByText(slot, "Submitting…").disabled).toBe(true);
+    resolveSubmit();
+    await Promise.resolve();
+    expect(getButtonByText(slot, "Submitting…").disabled).toBe(true);
   });
 
   it("preserves the answer and displays submission failures", async () => {

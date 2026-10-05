@@ -5,6 +5,10 @@ export const questionResultSchema = z.object({
   questions: z.array(
     z.object({
       question: z.string(),
+      details: z
+        .string()
+        .optional()
+        .refine((value) => value === undefined || value.trim().length > 0),
       header: z.string(),
       options: z.array(
         z.object({

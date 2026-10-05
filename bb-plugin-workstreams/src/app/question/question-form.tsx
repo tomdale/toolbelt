@@ -240,7 +240,11 @@ function QuestionInputBlock({
   };
 
   return (
-    <fieldset disabled={disabled} className="min-w-0">
+    <fieldset
+      disabled={disabled}
+      className="min-w-0"
+      aria-describedby={question.details ? `${question.id}-details` : undefined}
+    >
       <legend className="sr-only">{plainText(question.prompt)}</legend>
       {question.prompt ? (
         <div
@@ -252,6 +256,14 @@ function QuestionInputBlock({
           )}
         >
           <Markdown content={question.prompt} className={MARKDOWN_CLASS} />
+        </div>
+      ) : null}
+      {question.details ? (
+        <div
+          id={`${question.id}-details`}
+          className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1"
+        >
+          <Markdown content={question.details} />
         </div>
       ) : null}
       <div className="mt-1.5 space-y-px">
@@ -441,14 +453,25 @@ export function QuestionForm({
     return createInitialFormState(questions);
   });
   const [currentIndex, setCurrentIndex] = useState(0);
+  const latestFormState = useRef(formState);
+  latestFormState.current = formState;
+  const persistDraft = useCallback(
+    (state: QuestionFormState) => {
+      if (!storageKey) return;
+      try {
+        sessionStorage.setItem(storageKey, JSON.stringify(state));
+      } catch {
+        /* Keep the form usable without storage. */
+      }
+    },
+    [storageKey],
+  );
   useEffect(() => {
     if (!storageKey) return;
-    try {
-      sessionStorage.setItem(storageKey, JSON.stringify(formState));
-    } catch {
-      /* Keep the form usable without storage. */
-    }
-  }, [storageKey, formState]);
+    const timeout = window.setTimeout(() => persistDraft(formState), 250);
+    return () => window.clearTimeout(timeout);
+  }, [storageKey, formState, persistDraft]);
+  useEffect(() => () => persistDraft(latestFormState.current), [persistDraft]);
   const formRef = useRef<HTMLDivElement>(null);
   const { shortcuts, registerChoiceHandler } = useQuestionFormHost();
   const totalQuestions = questions.length;
@@ -641,7 +664,7 @@ export function QuestionForm({
             {disabled ? (
               <Icon name="Spinner" className="size-3 animate-spin" />
             ) : null}
-            {isLast ? "Submit" : "Next"}
+            {disabled ? "Submitting…" : isLast ? "Submit" : "Next"}
           </Button>
         </div>
       </div>

@@ -25,7 +25,7 @@ export const MAX_INTERACTION_PAYLOAD_BYTES = 60 * 1024;
 export class PreviewTooLargeError extends Error {
   constructor(byteLength: number) {
     super(
-      `The questions are too large to display (${byteLength} bytes of option previews, limit ${MAX_INTERACTION_PAYLOAD_BYTES}). Shorten or drop the option previews and call the tool again.`,
+      `The question content is too large to display (${byteLength} bytes, limit ${MAX_INTERACTION_PAYLOAD_BYTES}). Shorten the question details or option previews and call the tool again.`,
     );
     this.name = "PreviewTooLargeError";
   }
@@ -51,6 +51,7 @@ export function buildInteractionPayload(input: ToolInput): InteractionPayload {
     questions: input.questions.map((question, index) => ({
       id: questionId(index),
       prompt: question.question,
+      ...(question.details === undefined ? {} : { details: question.details }),
       shortLabel: question.header,
       multiSelect: question.multiSelect,
       options: question.options.map((option, optionIndex) => {
@@ -214,6 +215,7 @@ export function buildToolResult(
   return {
     questions: payload.questions.map((question) => ({
       question: question.prompt,
+      ...(question.details === undefined ? {} : { details: question.details }),
       header: question.shortLabel,
       options: question.options.map((option) => ({
         label: option.label,

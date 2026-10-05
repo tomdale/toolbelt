@@ -16,6 +16,7 @@ it("renders the saved Q&A at the form row without a header or panel", async () =
       {
         id: "q0",
         prompt: "Which database?",
+        details: "Compare **managed** and local options.",
         shortLabel: "Database",
         multiSelect: false,
         allowFreeText: true,
@@ -61,6 +62,7 @@ it("renders the saved Q&A at the form row without a header or panel", async () =
             questions: [
               {
                 question: "Which database?",
+                details: "Compare **managed** and local options.",
                 header: "Database",
                 multiSelect: false,
                 options: [],
@@ -74,6 +76,7 @@ it("renders the saved Q&A at the form row without a header or panel", async () =
   );
   await slot.findByText("SQLite with replicas");
   expect(slot.getByText("Which database?")).toBeTruthy();
+  expect(slot.getByText("Compare **managed** and local options.")).toBeTruthy();
   expect(slot.getByText("Options offered")).toBeTruthy();
   expect(slot.getByText("CREATE TABLE test;")).toBeTruthy();
   expect(slot.queryByText("Original row")).toBeNull();
