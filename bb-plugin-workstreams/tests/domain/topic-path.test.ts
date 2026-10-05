@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { corpusLabel } from "../../src/domain/corpus-label.ts";
+import { topicPath } from "../../src/domain/topic-path.ts";
 it("distinguishes repeated feature names under different component scopes", () => {
   const entities = [
     { id: "p", name: "Lantern", parentId: null, description: "", aliases: [] },
@@ -8,6 +8,6 @@ it("distinguishes repeated feature names under different component scopes", () =
     { id: "x", name: "Settings", parentId: "a", description: "", aliases: [] },
     { id: "y", name: "Settings", parentId: "b", description: "", aliases: [] },
   ];
-  expect(corpusLabel("x", entities)).toBe("Lantern: Archive: Settings");
-  expect(corpusLabel("y", entities)).toBe("Lantern: Sharing: Settings");
+  expect(topicPath("x", entities)).toBe("Lantern: Archive: Settings");
+  expect(topicPath("y", entities)).toBe("Lantern: Sharing: Settings");
 });

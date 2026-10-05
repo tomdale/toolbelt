@@ -13,11 +13,8 @@ export const usageSchema = z.object({
 export type Usage = z.infer<typeof usageSchema>;
 
 export const TRACE_KINDS = [
-  "analysis",
-  "opening-goal",
-  "route",
-  "classify",
-  "regroup",
+  "quick-analysis",
+  "full-analysis",
 ] as const;
 export type TraceKind = (typeof TRACE_KINDS)[number];
 
@@ -92,20 +89,14 @@ export type NewTrace = Omit<
 
 /** How the inspector and the CLI name each kind of call. */
 export const TRACE_KIND_TITLE: Record<TraceKind, string> = {
-  classify: "Subject classification",
-  regroup: "Active grouping",
-  analysis: "Thread analysis",
-  "opening-goal": "Opening title",
-  route: "Routing",
+  "quick-analysis": "Quick analysis",
+  "full-analysis": "Full analysis",
 };
 
 /** Compact labels for narrow columns, such as the Activity log's. */
 export const TRACE_KIND_SHORT: Record<TraceKind, string> = {
-  classify: "Classification",
-  regroup: "Grouping",
-  analysis: "Analysis",
-  "opening-goal": "Opening title",
-  route: "Routing",
+  "quick-analysis": "Quick analysis",
+  "full-analysis": "Full analysis",
 };
 
 export const TRACE_STATUS_TITLE: Record<TraceStatus, string> = {

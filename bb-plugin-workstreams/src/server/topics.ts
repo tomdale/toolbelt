@@ -1,22 +1,27 @@
-import { corpusLabel } from "../domain/corpus-label.ts";
+import { topicPath } from "../domain/topic-path.ts";
 import {
-  entityAncestors,
+  topicAncestors,
   resolveProposal,
   type AssignmentProvenance,
-  type CanonicalAssignment,
-  type CatalogState,
-  type CorpusEntity,
+  type TopicAssignment,
+  type TopicState,
+  type Topic,
   type DraftSubjectProposal,
-} from "../domain/corpus.ts";
+} from "../domain/topics.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { getMeta, setMeta, type Database } from "./db.ts";
 
-export const CLASSIFICATION_VERSION = "catalog-semantics-v1";
+/** Bump to settle every thread's topic again with changed classification rules. */
+export const CLASSIFICATION_VERSION = "topics-v2";
 
-export function classificationEvidence(input: {
+/**
+ * The basis of an automatic topic: what it was classified from. Only the
+ * user's requests and the project decide a topic, so a retitle never makes a
+ * topic stale.
+ */
+export function topicBasis(input: {
   version?: string;
   requests?: readonly unknown[];
-  title?: string | null;
   project?: string | null;
 }): string {
   return createHash("sha256")
@@ -24,26 +29,23 @@ export function classificationEvidence(input: {
       JSON.stringify({
         version: input.version ?? CLASSIFICATION_VERSION,
         requests: input.requests ?? [],
-        title: input.title ?? "",
         project: input.project ?? null,
       }),
     )
     .digest("hex");
 }
 
-export type CorpusSeed = {
-  readonly sectionId: string;
-  readonly name: string;
-  readonly description: string;
-  readonly aliases: readonly string[];
-};
+const readSource = (source: string): AssignmentProvenance =>
+  source === "manual" || source === "inherited" || source === "quick"
+    ? source
+    : "full";
 
 const normalize = (value: string) => value.trim().toLowerCase();
 const cleanAliases = (aliases: readonly string[]) => [
   ...new Set(aliases.map((alias) => alias.trim()).filter(Boolean)),
 ];
 
-export class CorpusStore {
+export class TopicStore {
   constructor(private readonly db: Database) {}
 
   revision(): number {
@@ -57,7 +59,7 @@ export class CorpusStore {
     return next;
   }
 
-  list(): CorpusEntity[] {
+  list(): Topic[] {
     const rows = this.db
       .prepare(
         "SELECT id, name, description, parent_id, aliases FROM ws_corpus_entity ORDER BY id",
@@ -78,116 +80,11 @@ export class CorpusStore {
     }));
   }
 
-  getById(id: string): CorpusEntity | null {
+  getById(id: string): Topic | null {
     return this.list().find((entity) => entity.id === id) ?? null;
   }
 
-  seed(records: readonly CorpusSeed[]): void {
-    const seed = this.db.transaction(() => {
-      const existing = this.groups();
-      this.db.prepare("DELETE FROM ws_corpus_group").run();
-      for (const record of records) {
-        const linked = existing.get(record.sectionId);
-        const entity = linked ? this.getById(linked) : null;
-        if (entity) {
-          const name = entity.name;
-          const aliases = cleanAliases([
-            ...entity.aliases,
-            ...record.aliases,
-            ...(name !== entity.name ? [entity.name] : []),
-          ]).filter((alias) => normalize(alias) !== normalize(name));
-          if (
-            aliases.some((alias) => {
-              const other = this.resolve(alias, entity.parentId);
-              return other && other.id !== entity.id;
-            })
-          )
-            throw new Error(
-              "Corpus metadata aliases conflict with another identity.",
-            );
-          const sameName = this.resolve(name, entity.parentId);
-          if (sameName && sameName.id !== entity.id)
-            throw new Error(
-              "Corpus metadata name conflicts with another identity.",
-            );
-          this.db
-            .prepare(
-              "UPDATE ws_corpus_entity SET name = ?, description = ?, aliases = ? WHERE id = ?",
-            )
-            .run(
-              name,
-              entity.description || record.description.trim(),
-              JSON.stringify(aliases),
-              entity.id,
-            );
-          this.bindGroupWithoutRevision(record.sectionId, entity.id);
-          continue;
-        }
-        const discovered = this.rememberInternal(
-          record.name,
-          record.description,
-          null,
-          record.aliases,
-        );
-        this.bindGroupWithoutRevision(record.sectionId, discovered.id);
-      }
-      this.bumpRevision();
-    });
-    seed();
-  }
-
-  reset(): void {
-    this.db.transaction(() => {
-      this.db.prepare("DELETE FROM ws_corpus_subject").run();
-      this.db.prepare("DELETE FROM ws_corpus_group").run();
-      this.db.prepare("UPDATE ws_corpus_entity SET parent_id = NULL").run();
-      this.db.prepare("DELETE FROM ws_corpus_entity").run();
-      this.bumpRevision();
-    })();
-  }
-
-  /** Navigation labels can bind existing identities, never establish semantic knowledge. */
-  syncGroups(records: readonly CorpusSeed[]): boolean {
-    const entities = this.list();
-    const existing = this.groups();
-    const desired = new Map<string, string>();
-    for (const record of records) {
-      const entity =
-        entities.find((e) => e.id === existing.get(record.sectionId)) ??
-        entities.find(
-          (e) =>
-            normalize(corpusLabel(e.id, entities)) === normalize(record.name),
-        );
-      if (entity) desired.set(record.sectionId, entity.id);
-    }
-
-    let changed = existing.size !== desired.size;
-    if (!changed) {
-      for (const [secId, entId] of desired) {
-        if (existing.get(secId) !== entId) {
-          changed = true;
-          break;
-        }
-      }
-    }
-    if (!changed) {
-      return false;
-    }
-
-    this.db.transaction(() => {
-      this.db.prepare("DELETE FROM ws_corpus_group").run();
-      const insert = this.db.prepare(
-        "INSERT INTO ws_corpus_group(section_id, entity_id) VALUES (?, ?)",
-      );
-      for (const [sectionId, entityId] of desired) {
-        insert.run(sectionId, entityId);
-      }
-      this.bumpRevision();
-    })();
-    return true;
-  }
-
-  resolve(name: string, parentId: string | null = null): CorpusEntity | null {
+  resolve(name: string, parentId: string | null = null): Topic | null {
     const target = normalize(name);
     for (const entity of this.list()) {
       if (entity.parentId !== parentId) continue;
@@ -205,11 +102,11 @@ export class CorpusStore {
     description: string,
     parentId: string | null = null,
     aliases: readonly string[] = [],
-  ): CorpusEntity {
+  ): Topic {
     const cleanName = name.trim();
-    if (!cleanName) throw new Error("Corpus entity name must not be empty");
+    if (!cleanName) throw new Error("Topic name must not be empty");
     if (parentId !== null && !this.getById(parentId))
-      throw new Error(`Unknown corpus parent: ${parentId}`);
+      throw new Error(`Unknown topic parent: ${parentId}`);
     this.assertParentChainAcyclic(parentId);
 
     const existing = this.resolve(cleanName, parentId);
@@ -228,7 +125,7 @@ export class CorpusStore {
         })
       )
         throw new Error(
-          "Corpus alias already resolves to another identity in this parent scope",
+          "Topic alias already resolves to another topic in this parent scope",
         );
       const nextDescription = description.trim() || existing.description;
       this.db
@@ -248,13 +145,13 @@ export class CorpusStore {
     if (
       cleanAliasList.some((alias) => normalize(alias) === normalize(cleanName))
     )
-      throw new Error("Corpus entity alias must differ from its name");
+      throw new Error("Topic alias must differ from its name");
     if (cleanAliasList.some((alias) => this.resolve(alias, parentId)))
       throw new Error(
-        "Corpus alias already resolves to an entity in this parent scope",
+        "Topic alias already resolves to an entity in this parent scope",
       );
 
-    const entity: CorpusEntity = {
+    const entity: Topic = {
       id: randomUUID(),
       name: cleanName,
       description: cleanDescription,
@@ -263,7 +160,7 @@ export class CorpusStore {
     };
     this.db
       .prepare(
-        "INSERT INTO ws_corpus_entity(id, name, description, parent_id, aliases) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO ws_corpus_entity(id, name, description, parent_id, aliases, origin) VALUES (?, ?, ?, ?, ?, 'discovered')",
       )
       .run(
         entity.id,
@@ -280,18 +177,18 @@ export class CorpusStore {
     description: string = "",
     parentId: string | null = null,
     aliases: readonly string[] = [],
-  ): CorpusEntity {
+  ): Topic {
     return this.db.transaction(() => {
       const cleanName = name.trim();
-      if (!cleanName) throw new Error("Corpus entity name must not be empty");
+      if (!cleanName) throw new Error("Topic name must not be empty");
       if (parentId !== null && !this.getById(parentId))
-        throw new Error(`Unknown corpus parent: ${parentId}`);
+        throw new Error(`Unknown topic parent: ${parentId}`);
       this.assertParentChainAcyclic(parentId);
 
       const existing = this.resolve(cleanName, parentId);
       if (existing) {
         throw new Error(
-          `Corpus entity '${cleanName}' already exists in this parent scope`,
+          `Topic '${cleanName}' already exists in this parent scope`,
         );
       }
 
@@ -302,16 +199,16 @@ export class CorpusStore {
           (alias) => normalize(alias) === normalize(cleanName),
         )
       )
-        throw new Error("Corpus entity alias must differ from its name");
+        throw new Error("Topic alias must differ from its name");
 
       for (const alias of cleanAliasList) {
         if (this.resolve(alias, parentId))
           throw new Error(
-            `Corpus alias '${alias}' already resolves to an entity in this parent scope`,
+            `Topic alias '${alias}' already resolves to an entity in this parent scope`,
           );
       }
 
-      const entity: CorpusEntity = {
+      const entity: Topic = {
         id: randomUUID(),
         name: cleanName,
         description: cleanDescription,
@@ -341,7 +238,7 @@ export class CorpusStore {
     description: string,
     parentId: string | null = null,
     aliases: readonly string[] = [],
-  ): CorpusEntity {
+  ): Topic {
     return this.db.transaction(() => {
       const entity = this.rememberInternal(
         name,
@@ -355,15 +252,15 @@ export class CorpusStore {
   }
 
   /**
-   * Records a discovered identity under its deepest existing ancestor, resolved
+   * Records a discovered topic under its deepest existing ancestor, resolved
    * against the Catalog as it is now: it may have changed since the proposal
-   * was classified. A proposal that names an existing identity returns it
+   * was classified. A proposal that names an existing topic returns it
    * unchanged.
    */
-  rememberProposal(draft: DraftSubjectProposal): CorpusEntity {
+  rememberProposal(draft: DraftSubjectProposal): Topic {
     return this.db.transaction(() => {
       if (draft.parentId && !this.getById(draft.parentId))
-        throw new Error(`Unknown corpus parent: ${draft.parentId}`);
+        throw new Error(`Unknown topic parent: ${draft.parentId}`);
       const resolved = resolveProposal(draft, this.list());
       if (resolved.subjectId !== null) return this.getById(resolved.subjectId)!;
       const proposal = resolved.proposed;
@@ -386,7 +283,7 @@ export class CorpusStore {
 
   private bindGroupWithoutRevision(sectionId: string, entityId: string): void {
     if (!this.getById(entityId))
-      throw new Error(`Unknown corpus entity: ${entityId}`);
+      throw new Error(`Unknown topic: ${entityId}`);
     this.db
       .prepare(
         "INSERT INTO ws_corpus_group(section_id, entity_id) VALUES (?, ?) ON CONFLICT(section_id) DO UPDATE SET entity_id = excluded.entity_id",
@@ -396,7 +293,7 @@ export class CorpusStore {
 
   bindGroup(sectionId: string, entityId: string): void {
     if (!this.getById(entityId))
-      throw new Error(`Unknown corpus entity: ${entityId}`);
+      throw new Error(`Unknown topic: ${entityId}`);
     const existing = this.groups().get(sectionId);
     if (existing === entityId) return;
     this.bindGroupWithoutRevision(sectionId, entityId);
@@ -439,7 +336,7 @@ export class CorpusStore {
     return currentId;
   }
 
-  assignment(threadId: string): CanonicalAssignment {
+  assignment(threadId: string): TopicAssignment {
     const rootId = this.findRootThread(threadId);
     const isChild = rootId !== threadId;
     const row = this.db
@@ -463,8 +360,7 @@ export class CorpusStore {
       };
     }
 
-    const provenance: AssignmentProvenance =
-      row.source === "manual" ? "manual" : "automatic";
+    const provenance = readSource(row.source);
 
     const entities = this.list();
     const entity = row.entity_id
@@ -488,14 +384,14 @@ export class CorpusStore {
       entityId: entity.id,
       status: "assigned",
       provenance,
-      label: corpusLabel(entity.id, entities),
-      ancestorIds: entityAncestors(entity.id, entities),
+      label: topicPath(entity.id, entities),
+      ancestorIds: topicAncestors(entity.id, entities),
       evidence: row.evidence ?? null,
       inheritedFrom: isChild ? rootId : null,
     };
   }
 
-  assignments(): Record<string, CanonicalAssignment> {
+  assignments(): Record<string, TopicAssignment> {
     const entities = this.list();
     const byId = new Map(entities.map((e) => [e.id, e]));
 
@@ -546,7 +442,7 @@ export class CorpusStore {
       ...subjects.keys(),
     ]);
 
-    const result: Record<string, CanonicalAssignment> = {};
+    const result: Record<string, TopicAssignment> = {};
     for (const threadId of threadIds) {
       const rootId = resolveRoot(threadId);
       const isChild = rootId !== threadId;
@@ -565,8 +461,7 @@ export class CorpusStore {
         continue;
       }
       const entity = subject.entityId ? byId.get(subject.entityId) : null;
-      const provenance: AssignmentProvenance =
-        subject.source === "manual" ? "manual" : "automatic";
+      const provenance = readSource(subject.source);
       if (!entity) {
         result[threadId] = {
           threadId,
@@ -585,8 +480,8 @@ export class CorpusStore {
         entityId: entity.id,
         status: "assigned",
         provenance,
-        label: corpusLabel(entity.id, entities),
-        ancestorIds: entityAncestors(entity.id, entities),
+        label: topicPath(entity.id, entities),
+        ancestorIds: topicAncestors(entity.id, entities),
         evidence: subject.evidence ?? null,
         inheritedFrom: isChild ? rootId : null,
       };
@@ -598,16 +493,15 @@ export class CorpusStore {
     threadId: string,
     entityId: string | null,
     options?: { provenance?: AssignmentProvenance; evidence?: string | null },
-  ): CanonicalAssignment {
+  ): TopicAssignment {
     return this.db.transaction(() => {
       if (entityId !== null && !this.getById(entityId))
-        throw new Error(`Unknown corpus entity: ${entityId}`);
+        throw new Error(`Unknown topic: ${entityId}`);
       if (!threadId.trim()) throw new Error("Thread ID must not be empty");
 
       const rootId = this.findRootThread(threadId);
 
-      const provenance: AssignmentProvenance =
-        options?.provenance ?? (options?.evidence ? "automatic" : "manual");
+      const provenance: AssignmentProvenance = options?.provenance ?? "manual";
       const evidence: string | null = options?.evidence ?? null;
 
       const existing = this.db
@@ -648,36 +542,150 @@ export class CorpusStore {
     })();
   }
 
-  clear(threadId: string): CanonicalAssignment {
+  clear(threadId: string): TopicAssignment {
     return this.assign(threadId, null, {
       provenance: "manual",
       evidence: null,
     });
   }
 
-  reclassify(
+  /**
+   * Applies an analysis's topic under the source priority (see
+   * `AssignmentProvenance`): your topic is never replaced, an inherited one
+   * only by Full analysis on a scope shift, and Quick analysis only fills a
+   * thread that has no topic yet or replaces its own earlier guess. Returns
+   * whether the assignment changed.
+   */
+  applyAnalysis(
     threadId: string,
-    entityId: string | null,
-    evidence?: string,
-  ): CanonicalAssignment {
-    return this.assign(threadId, entityId, {
-      provenance: evidence ? "automatic" : "manual",
-      evidence: evidence ?? null,
-    });
+    answer: {
+      subjectId: string | null;
+      proposed: DraftSubjectProposal | null;
+      scopeShift?: boolean;
+    },
+    kind: "full" | "quick",
+    basis: string | null,
+  ): boolean {
+    return this.db.transaction(() => {
+      const rootId = this.findRootThread(threadId);
+      const row = this.db
+        .prepare(
+          "SELECT entity_id, evidence, source FROM ws_corpus_subject WHERE thread_id = ?",
+        )
+        .get(rootId) as
+        | { entity_id: string | null; evidence: string | null; source: string }
+        | undefined;
+      const current = row ? readSource(row.source) : null;
+      if (current === "manual") return false;
+      if (current === "inherited" && !(kind === "full" && answer.scopeShift)) {
+        // Settled from these requests: a later turn without a new request
+        // has nothing to reconsider.
+        if (kind === "full" && basis && row?.evidence !== basis)
+          this.db
+            .prepare(
+              "UPDATE ws_corpus_subject SET evidence = ? WHERE thread_id = ?",
+            )
+            .run(basis, rootId);
+        return false;
+      }
+      if (kind === "quick" && current !== null && current !== "quick")
+        return false;
+      const entity = answer.subjectId
+        ? this.getById(answer.subjectId)
+        : answer.proposed
+          ? this.rememberProposal(answer.proposed)
+          : null;
+      const entityId = entity?.id ?? null;
+      if (
+        row &&
+        row.entity_id === entityId &&
+        readSource(row.source) === kind &&
+        (row.evidence ?? null) === basis
+      )
+        return false;
+      const changed =
+        !row || row.entity_id !== entityId || readSource(row.source) !== kind;
+      this.db
+        .prepare(
+          `INSERT INTO ws_corpus_subject(thread_id, entity_id, evidence, source)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(thread_id) DO UPDATE SET
+             entity_id = excluded.entity_id,
+             evidence = excluded.evidence,
+             source = excluded.source`,
+        )
+        .run(rootId, entityId, basis, kind);
+      if (changed) this.bumpRevision();
+      return changed;
+    })();
   }
 
-  isFresh(threadId: string, evidence: string): boolean {
-    const rootId = this.findRootThread(threadId);
+  /**
+   * Gives a thread that has no topic of its own the topic of the thread it
+   * was started from. Returns whether it changed anything.
+   */
+  inherit(threadId: string, fromThreadId: string): boolean {
+    const source = this.assignment(fromThreadId);
+    if (!source.entityId) return false;
+    return this.inheritTopic(threadId, source.entityId);
+  }
+
+  /**
+   * Gives a thread that has no topic of its own, or only Quick analysis's
+   * guess, the topic `entityId` as inherited.
+   */
+  inheritTopic(threadId: string, entityId: string): boolean {
+    if (!this.getById(entityId)) return false;
+    const current = this.assignment(threadId);
+    if (current.provenance !== null && current.provenance !== "quick")
+      return false;
+    this.assign(threadId, entityId, { provenance: "inherited" });
+    return true;
+  }
+
+  /** The basis the thread's automatic topic was settled from, if any. */
+  basis(threadId: string): string | null {
     const row = this.db
-      .prepare(
-        "SELECT evidence, source FROM ws_corpus_subject WHERE thread_id = ?",
-      )
-      .get(rootId) as { evidence: string | null; source: string } | undefined;
-    if (!row) return false;
-    return (
-      row.source === "manual" ||
-      (row.source === "automatic" && row.evidence === evidence)
-    );
+      .prepare("SELECT evidence FROM ws_corpus_subject WHERE thread_id = ?")
+      .get(this.findRootThread(threadId)) as
+      { evidence: string | null } | undefined;
+    return row?.evidence ?? null;
+  }
+
+  /** Forgets a deleted thread's topic, so it no longer keeps a topic in use. */
+  forget(threadId: string): void {
+    this.db
+      .prepare("DELETE FROM ws_corpus_subject WHERE thread_id = ?")
+      .run(threadId);
+  }
+
+  /**
+   * Removes discovered topics that no thread has, no workstream uses, and
+   * that have no subtopics, deepest first. Topics you created are kept.
+   */
+  prune(): Topic[] {
+    return this.db.transaction(() => {
+      const removed: Topic[] = [];
+      for (;;) {
+        const row = this.db
+          .prepare(
+            `SELECT e.id FROM ws_corpus_entity e
+             WHERE e.origin = 'discovered'
+               AND NOT EXISTS (SELECT 1 FROM ws_corpus_subject s WHERE s.entity_id = e.id)
+               AND NOT EXISTS (SELECT 1 FROM ws_corpus_group g WHERE g.entity_id = e.id)
+               AND NOT EXISTS (SELECT 1 FROM ws_corpus_entity c WHERE c.parent_id = e.id)
+             LIMIT 1`,
+          )
+          .get() as { id: string } | undefined;
+        if (!row) break;
+        removed.push(this.getById(row.id)!);
+        this.db
+          .prepare("DELETE FROM ws_corpus_entity WHERE id = ?")
+          .run(row.id);
+      }
+      if (removed.length) this.bumpRevision();
+      return removed;
+    })();
   }
 
   subjects(): Map<string, string> {
@@ -698,10 +706,10 @@ export class CorpusStore {
       description?: string;
       aliases?: readonly string[];
     },
-  ): CorpusEntity {
+  ): Topic {
     return this.db.transaction(() => {
       const entity = this.getById(entityId);
-      if (!entity) throw new Error(`Unknown corpus entity: ${entityId}`);
+      if (!entity) throw new Error(`Unknown topic: ${entityId}`);
 
       let cleanName = entity.name;
       if (updates.name !== undefined) {
@@ -711,7 +719,7 @@ export class CorpusStore {
           const conflict = this.resolve(cleanName, entity.parentId);
           if (conflict && conflict.id !== entityId) {
             throw new Error(
-              `Corpus entity name conflicts with an existing identity in this parent scope: ${cleanName}`,
+              `Topic name conflicts with an existing topic in this parent scope: ${cleanName}`,
             );
           }
         }
@@ -730,7 +738,7 @@ export class CorpusStore {
             (alias) => normalize(alias) === normalize(cleanName),
           )
         ) {
-          throw new Error("Corpus entity alias must differ from its name");
+          throw new Error("Topic alias must differ from its name");
         }
         if (
           cleanAliasList.some((alias) => {
@@ -739,7 +747,7 @@ export class CorpusStore {
           })
         ) {
           throw new Error(
-            "Corpus alias already resolves to an entity in this parent scope",
+            "Topic alias already resolves to an entity in this parent scope",
           );
         }
         nextAliases = cleanAliasList;
@@ -763,7 +771,12 @@ export class CorpusStore {
         .prepare(
           "UPDATE ws_corpus_entity SET name = ?, description = ?, aliases = ? WHERE id = ?",
         )
-        .run(cleanName, nextDescription, JSON.stringify(nextAliases), entity.id);
+        .run(
+          cleanName,
+          nextDescription,
+          JSON.stringify(nextAliases),
+          entity.id,
+        );
 
       this.bumpRevision();
       return {
@@ -775,22 +788,22 @@ export class CorpusStore {
     })();
   }
 
-  rename(entityId: string, newName: string): CorpusEntity {
+  rename(entityId: string, newName: string): Topic {
     return this.edit(entityId, { name: newName });
   }
 
-  reparent(entityId: string, newParentId: string | null): CorpusEntity {
+  reparent(entityId: string, newParentId: string | null): Topic {
     return this.db.transaction(() => {
       const entity = this.getById(entityId);
-      if (!entity) throw new Error(`Unknown corpus entity: ${entityId}`);
+      if (!entity) throw new Error(`Unknown topic: ${entityId}`);
       if (entity.parentId === newParentId) return entity;
       if (newParentId === entityId)
         throw new Error("Cannot reparent an entity under itself");
 
       if (newParentId !== null) {
         const parent = this.getById(newParentId);
-        if (!parent) throw new Error(`Unknown corpus parent: ${newParentId}`);
-        const parentAncestors = entityAncestors(newParentId, this.list());
+        if (!parent) throw new Error(`Unknown topic parent: ${newParentId}`);
+        const parentAncestors = topicAncestors(newParentId, this.list());
         if (parentAncestors.includes(entityId)) {
           throw new Error(
             `Cannot reparent: entity ${entityId} is an ancestor of ${newParentId} (cycle detected)`,
@@ -801,7 +814,7 @@ export class CorpusStore {
       const conflict = this.resolve(entity.name, newParentId);
       if (conflict && conflict.id !== entityId) {
         throw new Error(
-          `Corpus entity name conflicts with an existing identity in target parent scope: ${entity.name}`,
+          `Topic name conflicts with an existing topic in target parent scope: ${entity.name}`,
         );
       }
 
@@ -809,7 +822,7 @@ export class CorpusStore {
         const other = this.resolve(alias, newParentId);
         if (other && other.id !== entityId) {
           throw new Error(
-            `Corpus alias '${alias}' conflicts with an existing identity in target parent scope`,
+            `Topic alias '${alias}' conflicts with an existing topic in target parent scope`,
           );
         }
       }
@@ -826,7 +839,7 @@ export class CorpusStore {
   updateMetadata(
     entityId: string,
     updates: { description?: string; aliases?: readonly string[] },
-  ): CorpusEntity {
+  ): Topic {
     return this.edit(entityId, updates);
   }
 
@@ -834,7 +847,7 @@ export class CorpusStore {
     sourceEntityId: string,
     targetEntityId: string,
   ): {
-    target: CorpusEntity;
+    target: Topic;
     affectedThreads: number;
     reparentedChildren: number;
   } {
@@ -849,7 +862,7 @@ export class CorpusStore {
       if (!target) throw new Error(`Unknown target entity: ${targetEntityId}`);
 
       const entities = this.list();
-      const targetAncestors = entityAncestors(target.id, entities);
+      const targetAncestors = topicAncestors(target.id, entities);
       const targetIsDescendantOfSource = targetAncestors.includes(source.id);
 
       const newTargetParentId = targetIsDescendantOfSource
@@ -860,7 +873,7 @@ export class CorpusStore {
       if (newTargetParentId !== null) {
         const newParent = this.getById(newTargetParentId);
         if (!newParent)
-          throw new Error(`Unknown corpus parent: ${newTargetParentId}`);
+          throw new Error(`Unknown topic parent: ${newTargetParentId}`);
       }
 
       const combinedAliases = cleanAliases([
@@ -881,14 +894,14 @@ export class CorpusStore {
       for (const sibling of targetSiblings) {
         if (normalize(sibling.name) === normalize(target.name)) {
           throw new Error(
-            `Corpus entity name conflicts with an existing identity in target parent scope: ${target.name}`,
+            `Topic name conflicts with an existing topic in target parent scope: ${target.name}`,
           );
         }
         if (
           sibling.aliases.some((a) => normalize(a) === normalize(target.name))
         ) {
           throw new Error(
-            `Corpus entity name conflicts with an existing alias in target parent scope: ${target.name}`,
+            `Topic name conflicts with an existing alias in target parent scope: ${target.name}`,
           );
         }
         for (const alias of combinedAliases) {
@@ -897,7 +910,7 @@ export class CorpusStore {
             sibling.aliases.some((a) => normalize(a) === normalize(alias))
           ) {
             throw new Error(
-              `Corpus alias '${alias}' conflicts with an existing identity in target parent scope`,
+              `Topic alias '${alias}' conflicts with an existing topic in target parent scope`,
             );
           }
         }
@@ -913,7 +926,7 @@ export class CorpusStore {
           .run(source.parentId, target.id);
       }
 
-      const mergeSubtree = (src: CorpusEntity, dst: CorpusEntity) => {
+      const mergeSubtree = (src: Topic, dst: Topic) => {
         // 1. Move subjects assigned to src -> dst
         const subjectUpdate = this.db
           .prepare(
@@ -957,7 +970,7 @@ export class CorpusStore {
               sibling.aliases.some((a) => normalize(a) === normalize(alias))
             ) {
               throw new Error(
-                `Corpus alias '${alias}' conflicts with an existing identity in target parent scope`,
+                `Topic alias '${alias}' conflicts with an existing topic in target parent scope`,
               );
             }
           }
@@ -991,7 +1004,7 @@ export class CorpusStore {
                 )
               ) {
                 throw new Error(
-                  `Corpus entity name conflicts with an existing identity in target parent scope: ${child.name}`,
+                  `Topic name conflicts with an existing topic in target parent scope: ${child.name}`,
                 );
               }
               for (const alias of child.aliases) {
@@ -1002,7 +1015,7 @@ export class CorpusStore {
                   )
                 ) {
                   throw new Error(
-                    `Corpus alias '${alias}' conflicts with an existing identity in target parent scope`,
+                    `Topic alias '${alias}' conflicts with an existing topic in target parent scope`,
                   );
                 }
               }
@@ -1040,7 +1053,7 @@ export class CorpusStore {
     })();
   }
 
-  state(): CatalogState {
+  state(): TopicState {
     const entities = this.list();
     const groups: Record<string, string> = {};
     for (const [sectionId, entityId] of this.groups()) {
@@ -1059,10 +1072,10 @@ export class CorpusStore {
     let currentId = parentId;
     while (currentId !== null) {
       if (visited.has(currentId))
-        throw new Error(`Corpus parent cycle detected at: ${currentId}`);
+        throw new Error(`Topic parent cycle detected at: ${currentId}`);
       visited.add(currentId);
       const current = this.getById(currentId);
-      if (!current) throw new Error(`Unknown corpus parent: ${currentId}`);
+      if (!current) throw new Error(`Unknown topic parent: ${currentId}`);
       currentId = current.parentId;
     }
   }

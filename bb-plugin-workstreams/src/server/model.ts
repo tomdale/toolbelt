@@ -4,24 +4,13 @@
  * live call, its debug trace (SPEC §11.6), and a replay from the inspector.
  */
 import {
-  analysisPrompt,
-  openingGoalPrompt,
-  parseAnalysis,
-  parseOpeningGoal,
-  type AnalysisInput,
-  type OpeningGoalInput,
+  fullAnalysisPrompt,
+  parseFullAnalysis,
+  parseQuickAnalysis,
+  quickAnalysisPrompt,
+  type FullAnalysisInput,
+  type QuickAnalysisInput,
 } from "../domain/analysis.ts";
-import { parseRoute, routePrompt, type RouteInput } from "../domain/router.ts";
-import {
-  classifyPrompt,
-  parseClassification,
-  type ClassifyInput,
-} from "../domain/classify.ts";
-import {
-  regroupPrompt,
-  parseRegroup,
-  type RegroupInput,
-} from "../domain/regroup.ts";
 import {
   TRACE_KIND_TITLE,
   type Trace,
@@ -44,26 +33,15 @@ import { UserError } from "./service.ts";
 import { boundedJson, type TraceStore } from "./trace.ts";
 
 export const MODEL_CALLS = {
-  classify: {
-    prompt: (input: ClassifyInput) => classifyPrompt(input),
-    parse: (text: string, input: ClassifyInput) =>
-      parseClassification(text, input),
+  "quick-analysis": {
+    prompt: (input: QuickAnalysisInput) => quickAnalysisPrompt(input),
+    parse: (text: string, input: QuickAnalysisInput) =>
+      parseQuickAnalysis(text, input),
   },
-  regroup: {
-    prompt: (input: RegroupInput) => regroupPrompt(input),
-    parse: (text: string, input: RegroupInput) => parseRegroup(text, input),
-  },
-  analysis: {
-    prompt: (input: AnalysisInput) => analysisPrompt(input),
-    parse: (text: string, input: AnalysisInput) => parseAnalysis(text, input),
-  },
-  "opening-goal": {
-    prompt: (input: OpeningGoalInput) => openingGoalPrompt(input),
-    parse: (text: string) => parseOpeningGoal(text),
-  },
-  route: {
-    prompt: (input: RouteInput) => routePrompt(input),
-    parse: (text: string, input: RouteInput) => parseRoute(text, input),
+  "full-analysis": {
+    prompt: (input: FullAnalysisInput) => fullAnalysisPrompt(input),
+    parse: (text: string, input: FullAnalysisInput) =>
+      parseFullAnalysis(text, input),
   },
 } satisfies Record<
   TraceKind,
@@ -97,43 +75,42 @@ export function summarize(
   value: unknown,
   input: unknown,
 ): string | null {
+  const topicOf = (
+    topic: {
+      subjectId: string | null;
+      proposed: { name: string } | null;
+    } | null,
+    entities: readonly { id: string; name: string }[] | undefined,
+  ) =>
+    topic
+      ? topic.subjectId
+        ? (entities?.find((e) => e.id === topic.subjectId)?.name ??
+          topic.subjectId)
+        : topic.proposed
+          ? `new topic ${topic.proposed.name}`
+          : "no topic"
+      : null;
   switch (kind) {
-    case "classify": {
-      const result = value as OutputOf<"classify">;
-      return result.subjectId ?? result.proposed?.name ?? "Unresolved subject";
-    }
-    case "regroup":
-      return `${(value as OutputOf<"regroup">).activeEntityIds.length} active groups`;
-    case "analysis": {
-      const a = value as OutputOf<"analysis">;
+    case "quick-analysis": {
+      const q = value as OutputOf<"quick-analysis">;
       return [
-        a.state.replace("_", " "),
-        a.subject,
-        a.drift
-          ? `drift → ${a.drift.workstream ?? a.drift.newName} (${a.drift.confidence})`
-          : null,
-        a.goal ? `goal “${a.goal}”` : null,
+        q.goal ? `goal “${q.goal}”` : "no goal",
+        topicOf(q, (input as QuickAnalysisInput).entities),
       ]
         .filter(Boolean)
         .join(" · ");
     }
-    case "opening-goal": {
-      const goal = (value as OutputOf<"opening-goal">).goal;
-      return goal ? `goal “${goal}”` : "no goal: the request doesn’t say";
-    }
-    case "route": {
-      const r = value as OutputOf<"route">;
-      if (r.outcome === "unsure") return `unsure: ${r.reason}`;
-      const sure = ` (${r.confidence})`;
-      if (r.outcome === "continue") {
-        const title = (input as RouteInput).threads.find(
-          (t) => t.id === r.threadId,
-        )?.title;
-        return `continue ${title ? `“${title}”` : r.threadId}${sure}`;
-      }
-      return r.outcome === "new-thread"
-        ? `new thread in ${r.workstream}${sure}`
-        : `new workstream ${r.name}${sure}`;
+    case "full-analysis": {
+      const a = value as OutputOf<"full-analysis">;
+      return [
+        a.status ? a.status.state.replace("_", " ") : "reported",
+        a.goal ? `goal “${a.goal}”` : null,
+        a.topic
+          ? `${topicOf(a.topic, (input as FullAnalysisInput).topic?.entities)}${a.topic.scopeShift ? " (scope shift)" : ""}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
     }
   }
 }

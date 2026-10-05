@@ -15,7 +15,7 @@ afterEach(cleanup);
 const trace = (id: string, overrides = {}) => ({
   id,
   at: 1000,
-  kind: "analysis",
+  kind: "full-analysis",
   status: "ok",
   label: id,
   model: "test/model",
@@ -78,7 +78,7 @@ async function page(rpc: Record<string, unknown>) {
 it("filters internal calls, exposes metadata and event internals, and opens the full inspector", async () => {
   const traces = [
     trace("ok"),
-    trace("bad", { kind: "route", status: "failed", error: "Offline" }),
+    trace("bad", { kind: "quick-analysis", status: "failed", error: "Offline" }),
     trace("replay", { replayOf: "ok" }),
   ];
   const slot = await page({
@@ -146,7 +146,7 @@ it("filters internal calls, exposes metadata and event internals, and opens the 
   expect(slot.getByText("1 model calls shown · $0.0100")).toBeTruthy();
   fireEvent.change(
     slot.getByRole("combobox", { name: "Filter by model call kind" }),
-    { target: { value: "route" } },
+    { target: { value: "quick-analysis" } },
   );
   expect(await slot.findByText("bad")).toBeTruthy();
   fireEvent.change(slot.getByRole("combobox", { name: "Filter by action" }), {
@@ -197,7 +197,7 @@ it("ignores a stale trace request after changing the kind filter", async () => {
   let resolveFirst!: (value: unknown) => void;
   const traces = vi.fn(({ kind }: { kind?: string }) =>
     kind
-      ? { traces: [trace("route-current", { kind: "route" })] }
+      ? { traces: [trace("route-current", { kind: "quick-analysis" })] }
       : new Promise((resolve) => {
           resolveFirst = resolve;
         }),
@@ -206,11 +206,11 @@ it("ignores a stale trace request after changing the kind filter", async () => {
   await waitFor(() => expect(traces).toHaveBeenCalledTimes(1));
   fireEvent.change(
     slot.getByRole("combobox", { name: "Filter by model call kind" }),
-    { target: { value: "route" } },
+    { target: { value: "quick-analysis" } },
   );
   await slot.findByText("route-current");
   await act(async () =>
-    resolveFirst({ traces: [trace("route-stale", { kind: "route" })] }),
+    resolveFirst({ traces: [trace("route-stale", { kind: "quick-analysis" })] }),
   );
   expect(slot.getByText("route-current")).toBeTruthy();
   expect(slot.queryByText("route-stale")).toBeNull();

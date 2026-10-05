@@ -36,6 +36,7 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
   UNFILED_NAME,
+  UNSORTED_ID,
   type Group,
   type Row as RowModel,
 } from "../../domain/project.ts";
@@ -64,6 +65,7 @@ import {
   type Drop,
 } from "./dnd.tsx";
 import { planDrop } from "./drop.ts";
+import { setComposerPreset } from "../composer/preset.ts";
 import { describeWake, shortWake, wakeTime } from "../../domain/snooze.ts";
 import { snoozeThread, wakeThread } from "../snooze/actions.ts";
 import { CustomSnoozeDialog } from "../snooze/CustomSnoozeDialog.tsx";
@@ -714,7 +716,11 @@ export function WorkstreamsThreadList({
     toggle: () =>
       group.prioritized ? toggle(group.id) : lowerToggle(group.id),
     onTogglePriority: () => togglePriority(group),
-    onNewThread: () => navigate.toCompose({ focusPrompt: true }),
+    // The new thread starts with this workstream's topic.
+    onNewThread: () => {
+      if (group.id !== UNSORTED_ID) setComposerPreset(group.id, group.name);
+      navigate.toCompose({ focusPrompt: true });
+    },
   });
   /** An item that opens and closes with its presence phase. */
   const present = (entry: PresenceEntry<unknown>, children: ReactNode) => (

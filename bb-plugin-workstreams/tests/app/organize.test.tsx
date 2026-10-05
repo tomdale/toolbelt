@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import type { LiveOrganization } from "../../src/server/contract.ts";
+import type { OrganizerState } from "../../src/server/contract.ts";
 
 afterEach(cleanup);
 
@@ -24,7 +24,7 @@ const emptyCounts = {
   activeWorkstreams: 0,
 };
 
-const snapshot = (error: string | null, status: LiveOrganization["status"] = "failed"): LiveOrganization => ({
+const snapshot = (error: string | null, status: OrganizerState["status"] = "failed"): OrganizerState => ({
   status,
   progress: null,
   error,
@@ -34,7 +34,7 @@ const snapshot = (error: string | null, status: LiveOrganization["status"] = "fa
   counts: emptyCounts,
 });
 
-type RpcResult = { state: LiveOrganization };
+type RpcResult = { state: OrganizerState };
 
 async function mount(organization: (input: unknown) => Promise<RpcResult>) {
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
@@ -55,7 +55,7 @@ async function mount(organization: (input: unknown) => Promise<RpcResult>) {
 
 describe("Organize view", () => {
   it("shows classification progress during classifying state", async () => {
-    const progress: LiveOrganization = {
+    const progress: OrganizerState = {
       status: "classifying",
       progress: {
         stage: "classifying",
@@ -73,7 +73,7 @@ describe("Organize view", () => {
 
     const slot = await mount(async () => ({ state: progress }));
     const bar = await slot.findByRole("progressbar", {
-      name: "Classifying tasks 4 of 12",
+      name: "Analyzing threads 4 of 12",
     });
     expect(bar.getAttribute("aria-valuenow")).toBe("33");
     expect(slot.getByText("3 already classified · 1 unresolved")).toBeTruthy();
@@ -88,7 +88,7 @@ describe("Organize view", () => {
   });
 
   it("renders derived workstreams when status is idle", async () => {
-    const idleState: LiveOrganization = {
+    const idleState: OrganizerState = {
       status: "idle",
       progress: null,
       error: null,
@@ -107,9 +107,9 @@ describe("Organize view", () => {
               id: "t1",
               title: "Task 1",
               completed: false,
-              identityId: "sec_a",
-              identityLabel: "Platform · Alpha",
-              provenance: "automatic",
+              topicId: "sec_a",
+              topicLabel: "Platform · Alpha",
+              provenance: "full",
               reason: "Classified as Alpha.",
             },
           ],

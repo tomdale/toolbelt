@@ -31,8 +31,9 @@ const DEFAULT_ANSWER = JSON.stringify({
   recap: "Fixed the bug; tests pass.",
   state: "review",
   needsYou: null,
-  subject: "Alpha",
-  drift: null,
+  goal: null,
+  subjectId: null,
+  proposed: null,
 });
 
 export async function fakeWorld(

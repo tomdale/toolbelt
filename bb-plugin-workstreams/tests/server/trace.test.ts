@@ -34,20 +34,11 @@ const ANALYSIS = {
   recap: "Fixed the parser; tests pass.",
   state: "review",
   needsYou: null,
-  subject: "Alpha",
-  drift: null,
   goal: null,
 };
-const ROUTE = {
-  outcome: "new-thread",
-  workstream: "Alpha",
-  title: "Fix the Alpha parser",
-  code: true,
-  confidence: "high",
-  reason: "Alpha parser work",
-};
-const isRoute = (prompt: string) =>
-  prompt.includes("Someone is starting new work");
+const QUICK = { goal: "Alpha parser tabs", subjectId: null, proposed: null };
+const isQuick = (prompt: string) =>
+  prompt.includes("You name one new agent thread");
 
 async function setup(debug: boolean, complete?: FakeCompletion) {
   world = await fakeWorld({
@@ -55,8 +46,8 @@ async function setup(debug: boolean, complete?: FakeCompletion) {
     complete:
       complete ??
       (({ prompt }) =>
-        isRoute(prompt)
-          ? JSON.stringify(ROUTE)
+        isQuick(prompt)
+          ? JSON.stringify(QUICK)
           : {
               text: JSON.stringify(ANALYSIS),
               reasoning: "**Weighing the state**\n\nThe tests pass.",
@@ -92,71 +83,6 @@ describe("debug mode off", () => {
 });
 
 describe("debug mode on", () => {
-  it("creates a visible triage thread in the Workstreams workstream with diagnostics", async () => {
-    const w = await setup(true);
-    const result = await rpc<{ threadId: string; sectionId: string }>(
-      w,
-      "flagRoute",
-      {
-        diagnostics: '{"decision":{"outcome":"new-thread"}}',
-        projectId: "proj_1",
-      },
-    );
-    expect(result).toEqual({ threadId: "spawn1", sectionId: "sec_2" });
-    expect(w.sections).toContainEqual(
-      expect.objectContaining({ id: "sec_2", name: "Workstreams" }),
-    );
-    expect(
-      (await rpc<{ entries: { rationale: string }[] }>(w, "journal", {}))
-        .entries,
-    ).toContainEqual(
-      expect.objectContaining({
-        rationale: "Flagged a potentially inaccurate classifier result",
-      }),
-    );
-    expect(w.spawned[0]).toMatchObject({
-      projectId: "proj_1",
-      sectionId: "sec_2",
-      title: "Inaccurate classifier result",
-      visibility: "visible",
-      permissionMode: "accept-edits",
-      prompt: expect.stringContaining('{"decision":{"outcome":"new-thread"}}'),
-    });
-  });
-
-  it("reuses the Workstreams workstream and falls back to the first available project", async () => {
-    const w = await setup(true);
-    const workstreams = w.addSection("Workstreams");
-    const result = await rpc<{ threadId: string; sectionId: string }>(
-      w,
-      "flagRoute",
-      { diagnostics: "{}", projectId: "project-gone" },
-    );
-    expect(result.sectionId).toBe(workstreams.id);
-    expect(w.sections).toHaveLength(2);
-    expect(w.spawned[0]).toMatchObject({
-      projectId: "proj_1",
-      sectionId: workstreams.id,
-    });
-    expect(
-      (await rpc<{ entries: { rationale: string }[] }>(w, "journal", {}))
-        .entries,
-    ).toContainEqual(
-      expect.objectContaining({
-        rationale: "Flagged a potentially inaccurate classifier result",
-      }),
-    );
-  });
-
-  it("refuses to create a report if Debug mode is off", async () => {
-    const w = await setup(false);
-    await expect(rpc(w, "flagRoute", { diagnostics: "{}" })).rejects.toThrow(
-      /Enable Debug mode/,
-    );
-    expect(w.spawned).toHaveLength(0);
-    expect(w.sections).toHaveLength(1);
-  });
-
   it("records an analysis call with its prompt, reasoning, response, and result", async () => {
     const w = await setup(true);
     await analyze(w, "t1");
@@ -164,10 +90,10 @@ describe("debug mode on", () => {
       link: { kind: "thread", ref: "t1" },
     });
     expect(summary).toMatchObject({
-      kind: "analysis",
+      kind: "full-analysis",
       status: "ok",
       label: "Alpha parser",
-      summary: "review · Alpha",
+      summary: "review · no topic",
       threads: ["t1"],
     });
     const state = await rpc<{
@@ -180,8 +106,10 @@ describe("debug mode on", () => {
     expect(full.system).toContain("Return only the requested JSON");
     expect(full.reasoning).toBe("**Weighing the state**\n\nThe tests pass.");
     expect(full.response).toBe(JSON.stringify(ANALYSIS));
-    expect(full.parsed).toMatchObject({ recap: ANALYSIS.recap });
-    expect(full.outcome).toMatchObject({ driftSectionId: null });
+    expect(full.parsed).toMatchObject({ status: { recap: ANALYSIS.recap } });
+    expect(full.outcome).toMatchObject({
+      storedForRevision: expect.any(Number),
+    });
     expect(full.links).toContainEqual({ kind: "thread", ref: "t1" });
     // The stored input is redacted like the prompt.
     expect(JSON.stringify(full.input)).not.toContain("sk-abcdefghijklmnop");
@@ -192,7 +120,7 @@ describe("debug mode on", () => {
     const w = await setup(true, () => "not json at all");
     await analyze(w, "t1").catch(() => null);
     const [summary] = await traces(w);
-    expect(summary).toMatchObject({ kind: "analysis", status: "invalid" });
+    expect(summary).toMatchObject({ kind: "full-analysis", status: "invalid" });
     // Labels are redacted like prompts.
     expect(summary!.label).toBe("Alpha parser");
     expect(summary!.error).toBeTruthy();
@@ -205,70 +133,19 @@ describe("debug mode on", () => {
     expect(state.analysis.t1).toBeUndefined();
   });
 
-  it("ties a routing call to the thread it started and the journal entry", async () => {
+  it("records a composer preview's Quick analysis", async () => {
     const w = await setup(true);
-    const decision = await rpc<{ id: string; traceId: string | null }>(
+    const preview = await rpc<{ traceId: string | null; goal: string | null }>(
       w,
-      "route",
+      "preview",
       { prompt: "Fix the Alpha parser's handling of nested blocks" },
     );
-    expect(decision.traceId).toBeTruthy();
-    const { threadId } = await rpc<{ threadId: string }>(w, "routeExecute", {
-      decisionId: decision.id,
-      prompt: "Fix the Alpha parser's handling of nested blocks",
-    });
-    const full = (await trace(w, decision.traceId!))!;
+    expect(preview.goal).toBe("Alpha parser tabs");
+    const full = (await trace(w, preview.traceId!))!;
     expect(full).toMatchObject({
-      kind: "route",
+      kind: "quick-analysis",
       status: "ok",
-      summary: "new thread in Alpha (high)",
-    });
-    expect(full.outcome).toMatchObject({
-      decision: { outcome: "new-thread", workstream: "Alpha" },
-    });
-    expect(full.links).toContainEqual({ kind: "thread", ref: threadId });
-
-    const { entries } = await rpc<{
-      entries: { action: string; traceIds: string[] }[];
-    }>(w, "journal", {});
-    const route = entries.find((e) => e.action === "route")!;
-    expect(route.traceIds).toEqual([decision.traceId]);
-    expect(
-      (await traces(w, { link: { kind: "thread", ref: threadId } })).map(
-        (t) => t.id,
-      ),
-    ).toContain(decision.traceId);
-  });
-
-  it("keeps the routing call behind an unsure decision's chosen workstream", async () => {
-    const w = await setup(true, ({ prompt }) =>
-      isRoute(prompt)
-        ? JSON.stringify({
-            outcome: "unsure",
-            candidates: [{ workstream: "Alpha" }],
-            reason: "Two could fit",
-          })
-        : JSON.stringify(ANALYSIS),
-    );
-    const prompt = "Tidy up the parser and the renderer together";
-    const unsure = await rpc<{
-      id: string;
-      traceId: string;
-      candidates: { sectionId: string }[];
-    }>(w, "route", { prompt });
-    expect(unsure.traceId).toBeTruthy();
-    const chosen = await rpc<{ outcome: string; traceId: string | null }>(
-      w,
-      "route",
-      {
-        prompt,
-        workstreamId: unsure.candidates[0]!.sectionId,
-        fromDecisionId: unsure.id,
-      },
-    );
-    expect(chosen).toMatchObject({
-      outcome: "new-thread",
-      traceId: unsure.traceId,
+      summary: "goal “Alpha parser tabs” · no topic",
     });
   });
 
@@ -287,7 +164,6 @@ describe("debug mode on", () => {
     // The retitle adds to the analysis outcome rather than replacing it.
     expect((await trace(w, retitle.traceIds[0]!))!.outcome).toMatchObject({
       title: "applied",
-      driftSectionId: null,
       storedForRevision: expect.any(Number),
     });
   });
@@ -329,16 +205,16 @@ describe("debug mode on", () => {
     const w = await setup(true);
     await analyze(w, "t1");
     const list = await w.harness.behavior.runCli(["trace", "--thread", "t1"]);
-    expect(list.stdout).toContain("analysis");
+    expect(list.stdout).toContain("full-analysis");
     const [summary] = await traces(w);
     const shown = await w.harness.behavior.runCli(["trace", summary!.id]);
-    expect(shown.stdout).toContain("Thread analysis: Alpha parser");
+    expect(shown.stdout).toContain("Full analysis: Alpha parser");
     expect(shown.stdout).toContain("── Reasoning ──");
     expect(shown.stdout).toContain("── Prompt ──");
   });
 });
 
-describe("routing previews", () => {
+describe("composer previews", () => {
   const prompt = "Fix the Alpha parser so it handles tab characters";
   /** Route calls wait until the test answers them or the call is aborted. */
   const pending = () => {
@@ -348,7 +224,7 @@ describe("routing previews", () => {
       answer: () => void;
     }[] = [];
     const complete: FakeCompletion = (call) =>
-      isRoute(call.prompt)
+      isQuick(call.prompt)
         ? new Promise((resolve, reject) => {
             call.signal?.addEventListener("abort", () =>
               reject(call.signal!.reason),
@@ -356,7 +232,7 @@ describe("routing previews", () => {
             calls.push({
               prompt: call.prompt,
               signal: call.signal,
-              answer: () => resolve(JSON.stringify(ROUTE)),
+              answer: () => resolve(JSON.stringify(QUICK)),
             });
           })
         : JSON.stringify(ANALYSIS);
@@ -371,13 +247,13 @@ describe("routing previews", () => {
   it("aborts the model call of a draft's older preview and does not trace it", async () => {
     const { calls, complete } = pending();
     const w = await setup(true, complete);
-    const first = rpc(w, "route", { prompt, draftKey: "draft-1" });
+    const first = rpc(w, "preview", { prompt, draftKey: "draft-1" });
     const firstSettled = first.then(
       () => "resolved",
       (error: unknown) => String(error),
     );
     await started(calls, 1);
-    const second = rpc<{ outcome: string }>(w, "route", {
+    const second = rpc<{ goal: string | null }>(w, "preview", {
       prompt: `${prompt} and spaces`,
       draftKey: "draft-1",
     });
@@ -385,8 +261,8 @@ describe("routing previews", () => {
     expect(calls[0]!.signal?.aborted).toBe(true);
     expect(await firstSettled).toContain("the draft changed");
     calls[1]!.answer();
-    expect((await second).outcome).toBe("new-thread");
-    const routes = (await traces(w)).filter((t) => t.kind === "route");
+    expect((await second).goal).toBe("Alpha parser tabs");
+    const routes = (await traces(w)).filter((t) => t.kind === "quick-analysis");
     expect(routes).toHaveLength(1);
     expect(routes[0]).toMatchObject({ status: "ok" });
   });
@@ -394,22 +270,22 @@ describe("routing previews", () => {
   it("aborts a draft's preview on cancel, and leaves other drafts alone", async () => {
     const { calls, complete } = pending();
     const w = await setup(true, complete);
-    const mine = rpc(w, "route", { prompt, draftKey: "mine" }).catch(
+    const mine = rpc(w, "preview", { prompt, draftKey: "mine" }).catch(
       () => "aborted",
     );
-    const other = rpc<{ outcome: string }>(w, "route", {
+    const other = rpc<{ goal: string | null }>(w, "preview", {
       prompt,
       draftKey: "other",
     });
     await started(calls, 2);
-    expect(await rpc(w, "routeCancel", { draftKey: "mine" })).toEqual({
+    expect(await rpc(w, "previewCancel", { draftKey: "mine" })).toEqual({
       canceled: true,
     });
     expect(await mine).toBe("aborted");
-    expect(await rpc(w, "routeCancel", { draftKey: "mine" })).toEqual({
+    expect(await rpc(w, "previewCancel", { draftKey: "mine" })).toEqual({
       canceled: false,
     });
     calls[1]!.answer();
-    expect((await other).outcome).toBe("new-thread");
+    expect((await other).goal).toBe("Alpha parser tabs");
   });
 });

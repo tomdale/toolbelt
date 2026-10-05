@@ -44,7 +44,6 @@ describe("planDrop", () => {
         EMPTY_ORDER,
       ),
     ).toEqual({
-      move: null,
       reorder: { kind: "workstreams", ids: ["sec_c", "sec_a", "sec_b"] },
     });
   });
@@ -62,14 +61,12 @@ describe("planDrop", () => {
         EMPTY_ORDER,
       ),
     ).toEqual({
-      move: null,
       reorder: { kind: "threads", groupId: "sec_a", ids: ["a3", "a1", "a2"] },
     });
   });
 
   it("disallows moving a root across groups via drag and drop", () => {
     expect(planDrop(threadDrop(), projection, sections, EMPTY_ORDER)).toEqual({
-      move: null,
       reorder: null,
     });
     expect(
@@ -80,7 +77,6 @@ describe("planDrop", () => {
         EMPTY_ORDER,
       ),
     ).toEqual({
-      move: null,
       reorder: null,
     });
   });

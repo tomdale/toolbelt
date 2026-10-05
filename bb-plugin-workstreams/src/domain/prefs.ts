@@ -47,9 +47,10 @@ export function gatewayModel(choice: ModelChoice): string | null {
 
 /** Eval-tested defaults (see SPEC.md and eval/). */
 export const DEFAULT_MODELS = {
-  analysis: { kind: "gateway", model: "google/gemini-3.1-flash-lite" },
-  suggestions: { kind: "gateway", model: "google/gemini-3.1-flash-lite" },
-  organize: { kind: "gateway", model: "openai/gpt-6-sol-fast" },
+  /** Quick analysis: a draft or first request, while you wait. */
+  quick: { kind: "gateway", model: "google/gemini-3.1-flash-lite" },
+  /** Full analysis: the settled goal, topic, and status at a turn's end. */
+  full: { kind: "gateway", model: "openai/gpt-6-sol-fast" },
 } as const satisfies Record<string, ModelChoice>;
 
 export const RECENT_LIMIT = { min: 1, max: 20, fallback: 5 } as const;
@@ -92,8 +93,6 @@ const GROUPS = {
   threads: {
     /** Title untitled threads with their goal and retitle them as work moves on. */
     autoTitle: [z.boolean(), true],
-    /** Summarizes each thread after every turn, and names threads. */
-    analysisModel: [modelChoiceSchema, DEFAULT_MODELS.analysis],
     /** A link to the parent thread in child threads' headers. */
     showParentLink: [z.boolean(), false],
     /** An icon-only Archive button in thread headers. */
@@ -102,13 +101,16 @@ const GROUPS = {
   newWork: {
     /** Where work with no code target starts; "" is a personal workspace. */
     homeProjectId: [z.string(), ""],
-    /** Suggest a home for a new-thread draft while the user types. */
+    /** Preview a draft's topic and title in the composer while you type. */
     suggestions: [z.boolean(), true],
-    suggestionsModel: [modelChoiceSchema, DEFAULT_MODELS.suggestions],
+  },
+  analysis: {
+    /** Quick analysis: a draft's or first request's goal and topic, in seconds. */
+    quickModel: [modelChoiceSchema, DEFAULT_MODELS.quick],
+    /** Full analysis: settles goal, topic, and status when a turn ends. */
+    fullModel: [modelChoiceSchema, DEFAULT_MODELS.full],
   },
   organize: {
-    /** Classifies tasks and structures the catalog when needed. */
-    model: [modelChoiceSchema, DEFAULT_MODELS.organize],
     capacity: [z.number().int().min(2).max(100), 6],
     collapseAt: [z.number().int().min(0).max(99), 3],
   },
@@ -159,7 +161,22 @@ export const prefsPatchSchema = z
 
 export function parsePrefs(raw: unknown): Prefs {
   const value = raw && typeof raw === "object" ? raw : {};
-  const groups = value as Record<string, unknown>;
+  const groups = { ...(value as Record<string, unknown>) };
+  // Preferences saved before the two analyses carry their models elsewhere:
+  // the suggestions model ran the quick calls, and the organizing model ran
+  // classification, which Full analysis now does.
+  if (!groups.analysis || typeof groups.analysis !== "object") {
+    const field = (group: string, key: string) => {
+      const g = groups[group];
+      return g && typeof g === "object"
+        ? (g as Record<string, unknown>)[key]
+        : undefined;
+    };
+    groups.analysis = {
+      quickModel: field("newWork", "suggestionsModel"),
+      fullModel: field("organize", "model"),
+    };
+  }
   return prefsSchema.parse(
     Object.fromEntries(
       groupNames.map((g) => {

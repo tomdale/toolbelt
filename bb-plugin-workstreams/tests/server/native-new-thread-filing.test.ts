@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import { fakeWorld } from "./fake-bb.ts";
-import { CorpusStore } from "../../src/server/corpus.ts";
+import { TopicStore } from "../../src/server/topics.ts";
 import { openDatabase } from "../../src/server/db.ts";
 import { ComposedDrafts, draftText } from "../../src/server/composed-drafts.ts";
 
@@ -61,8 +61,8 @@ describe("message.dispatch for the New thread view", () => {
   async function setup() {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
-    const feature = corpus.remember("Parser", "Parser feature");
+    const corpus = new TopicStore(openDatabase(w.bb));
+    const feature = corpus.create("Parser", "Parser feature");
     const hook = w.harness.registrations.hooks["message.dispatch"]!;
     const dispatch = async (threadId: string, text: string) => {
       const thread = w.addThread(threadId, { createdAt: Date.now() });

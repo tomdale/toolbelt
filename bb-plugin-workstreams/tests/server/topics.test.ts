@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/server/db.ts";
-import { CorpusStore } from "../../src/server/corpus.ts";
-import { entityAncestors } from "../../src/domain/corpus.ts";
+import { TopicStore } from "../../src/server/topics.ts";
+import { topicAncestors } from "../../src/domain/topics.ts";
 
 const hosts: ReturnType<typeof createFakePluginHost>[] = [];
 const store = () => {
   const host = createFakePluginHost({ pluginId: `corpus-${hosts.length}` });
   hosts.push(host);
-  return { host, corpus: new CorpusStore(openDatabase(host.bb)) };
+  return { host, corpus: new TopicStore(openDatabase(host.bb)) };
 };
 
 afterEach(async () => {
@@ -17,8 +17,8 @@ afterEach(async () => {
   );
 });
 
-describe("CorpusStore", () => {
-  it("builds missing local ancestry and resets all Catalog data only", () => {
+describe("TopicStore", () => {
+  it("builds missing local ancestry", () => {
     const { corpus } = store();
     const direct = corpus.rememberProposal({
       name: "Root Item",
@@ -39,32 +39,6 @@ describe("CorpusStore", () => {
     const product = corpus.resolve("Lantern")!;
     const sidebar = corpus.resolve("Sidebar", product.id)!;
     expect(child.parentId).toBe(sidebar.id);
-    corpus.assign("t", child.id, {
-      evidence: "evidence",
-      provenance: "automatic",
-    });
-    corpus.syncGroups([
-      {
-        sectionId: "g",
-        name: "Lantern: Sidebar: Up Next",
-        description: "",
-        aliases: [],
-      },
-    ]);
-    expect(corpus.groups().get("g")).toBe(child.id);
-    corpus.reset();
-    expect(corpus.list()).toEqual([]);
-    expect(corpus.subjects().size).toBe(0);
-    expect(corpus.groups().size).toBe(0);
-    corpus.syncGroups([
-      {
-        sectionId: "g",
-        name: "Core & Architecture",
-        description: "",
-        aliases: [],
-      },
-    ]);
-    expect(corpus.list()).toEqual([]);
   });
   it("records a proposal that restates existing ancestry under that ancestry", () => {
     const { corpus } = store();
@@ -104,7 +78,7 @@ describe("CorpusStore", () => {
         description: "",
         parentId: "missing",
       }),
-    ).toThrow(/Unknown corpus parent/);
+    ).toThrow(/Unknown topic parent/);
   });
   it("rejects conflicting aliases on existing identities without changing storage", () => {
     const { corpus } = store();
@@ -116,40 +90,6 @@ describe("CorpusStore", () => {
     );
     expect(corpus.list()).toEqual(before);
     expect(corpus.resolve("Beta")?.id).toBe(beta.id);
-  });
-  it("keeps semantic names independent of changed navigation labels", () => {
-    const { corpus } = store();
-    corpus.seed([
-      { sectionId: "s", name: "Lantern", description: "old", aliases: [] },
-    ]);
-    const root = corpus.list()[0]!;
-    corpus.seed([
-      {
-        sectionId: "s",
-        name: "Beacon",
-        description: "new",
-        aliases: ["Light"],
-      },
-    ]);
-    expect(corpus.resolve("Beacon")).toBeNull();
-    expect(corpus.resolve("Lantern")?.id).toBe(root.id);
-    expect(corpus.resolve("Light")?.description).toBe("old");
-    const feature = corpus.remember("Shelves", "feature", root.id);
-    corpus.bindGroup("f", feature.id);
-    corpus.seed([
-      { sectionId: "s", name: "Beacon", description: "new", aliases: [] },
-      {
-        sectionId: "f",
-        name: "Beacon: Shelves",
-        description: "feature",
-        aliases: [],
-      },
-    ]);
-    expect(corpus.list()).toHaveLength(2);
-    expect(corpus.list().find((e) => e.id === feature.id)?.name).toBe(
-      "Shelves",
-    );
-    expect(corpus.groups().get("f")).toBe(feature.id);
   });
   it("adds its migration without breaking already-migrated storage", () => {
     const { host } = store();
@@ -184,24 +124,6 @@ describe("CorpusStore", () => {
     ).toBeTruthy();
   });
 
-  it("seeds exact section labels and keeps entities after their groups disappear", () => {
-    const { corpus } = store();
-    corpus.seed([
-      {
-        sectionId: "group-1",
-        name: "Product: Billing",
-        description: "Billing work",
-        aliases: ["Invoices"],
-      },
-    ]);
-    const seeded = corpus.list()[0]!;
-    expect(seeded.name).toBe("Product: Billing");
-    expect(seeded.parentId).toBeNull();
-    corpus.seed([]);
-    expect(corpus.groups()).toEqual(new Map());
-    expect(corpus.list()).toEqual([seeded]);
-  });
-
   it("resolves aliases and scopes matching names by explicit parent", () => {
     const { corpus } = store();
     const left = corpus.remember("Platform", "", null);
@@ -219,7 +141,7 @@ describe("CorpusStore", () => {
     const { host, corpus } = store();
     const db = openDatabase(host.bb);
     expect(() => corpus.remember("Orphan", "", "missing")).toThrow(
-      /Unknown corpus parent/,
+      /Unknown topic parent/,
     );
     const root = corpus.remember("Root", "");
     const child = corpus.remember("Child", "", root.id);
@@ -238,7 +160,7 @@ describe("CorpusStore", () => {
   it("rejects assignment to unknown entities and retains specific subjects under broad placement", () => {
     const { corpus } = store();
     expect(() => corpus.assign("thread-x", "missing")).toThrow(
-      /Unknown corpus entity/,
+      /Unknown topic/,
     );
     const broad = corpus.remember("Engineering", "");
     const specific = corpus.remember("Billing migration", "", broad.id);
@@ -350,23 +272,27 @@ describe("CorpusStore", () => {
     expect(reparented.parentId).toBe(root.id);
   });
 
-  it("keeps manual selections stable across restart and immune to fresh checks", () => {
+  it("keeps manual selections stable across restart and analyses", () => {
     const { host, corpus } = store();
     const entity = corpus.remember("Billing", "Billing feature");
     corpus.assign("t1", entity.id, { provenance: "manual" });
-
-    // isFresh always true for manual selections regardless of evidence string
-    expect(corpus.isFresh("t1", "different-evidence")).toBe(true);
+    expect(
+      corpus.applyAnalysis(
+        "t1",
+        { subjectId: null, proposed: null },
+        "full",
+        "basis",
+      ),
+    ).toBe(false);
 
     // Reopen store from same db (simulating restart)
     const db = openDatabase(host.bb);
-    const reloaded = new CorpusStore(db);
+    const reloaded = new TopicStore(db);
 
     const assignment = reloaded.assignment("t1");
     expect(assignment.status).toBe("assigned");
     expect(assignment.entityId).toBe(entity.id);
     expect(assignment.provenance).toBe("manual");
-    expect(reloaded.isFresh("t1", "another-evidence")).toBe(true);
   });
 
   it("ensures children inherit root identity and mutations apply to root", () => {
@@ -456,37 +382,6 @@ describe("CorpusStore", () => {
     expect(() =>
       corpus.updateMetadata(feature.id, { aliases: ["Payments"] }),
     ).toThrow(/already resolves to an entity/);
-  });
-
-  it("syncGroups does not bump revision on no-op", () => {
-    const { corpus } = store();
-    const entity = corpus.create("Engineering", "Engineering work");
-    const records = [
-      {
-        sectionId: "sec-1",
-        name: "Engineering",
-        description: "Engineering work",
-        aliases: [],
-      },
-    ];
-
-    // First sync binds group and bumps revision
-    const rev1 = corpus.revision();
-    expect(corpus.syncGroups(records)).toBe(true);
-    const rev2 = corpus.revision();
-    expect(rev2).toBeGreaterThan(rev1);
-
-    // Repeated sync with identical bindings is a no-op
-    expect(corpus.syncGroups(records)).toBe(false);
-    expect(corpus.revision()).toBe(rev2);
-
-    // bindGroup with existing binding is a no-op
-    corpus.bindGroup("sec-1", entity.id);
-    expect(corpus.revision()).toBe(rev2);
-
-    // unbindGroup with nonexistent section is a no-op
-    corpus.unbindGroup("nonexistent-sec");
-    expect(corpus.revision()).toBe(rev2);
   });
 
   it("enforces strict creation vs discovery remember upsert", () => {
@@ -590,9 +485,9 @@ describe("CorpusStore", () => {
     const reparentedQueue = corpus.getById(sourceQueue.id);
     expect(reparentedQueue?.parentId).toBe(targetBackend.id);
 
-    // Descendant entityAncestors works cleanly without crashes or missing identities
+    // Descendant topicAncestors works cleanly without crashes or missing identities
     const entities = corpus.list();
-    const migrationAncestors = entityAncestors(sourceMigrations.id, entities);
+    const migrationAncestors = topicAncestors(sourceMigrations.id, entities);
     expect(migrationAncestors).toEqual([
       sourceMigrations.id,
       targetDb.id,
@@ -664,40 +559,78 @@ describe("CorpusStore", () => {
     expect(corpus.revision()).toBeGreaterThan(rev1);
   });
 
-  it("persistent unresolved assignment and durable manual clear", () => {
+
+  it("applies analyses under the source priority", () => {
     const { corpus } = store();
-    const entity = corpus.create("Product", "Description");
-
-    // Automatic unresolved with evidence
-    corpus.assign("t-auto-null", null, {
-      provenance: "automatic",
-      evidence: "evidence-1",
+    const a = corpus.create("Alpha", "");
+    const b = corpus.create("Beta", "");
+    const answer = (id: string | null, scopeShift = false) => ({
+      subjectId: id,
+      proposed: null,
+      scopeShift,
     });
+    // Quick fills an empty thread and replaces only its own guess.
+    expect(corpus.applyAnalysis("t", answer(a.id), "quick", null)).toBe(true);
+    expect(corpus.applyAnalysis("t", answer(b.id), "quick", null)).toBe(true);
+    expect(corpus.assignment("t").provenance).toBe("quick");
+    // Full settles over quick, and quick never replaces full.
+    expect(corpus.applyAnalysis("t", answer(a.id), "full", "k1")).toBe(true);
+    expect(corpus.applyAnalysis("t", answer(b.id), "quick", null)).toBe(false);
+    expect(corpus.assignment("t")).toMatchObject({
+      entityId: a.id,
+      provenance: "full",
+      evidence: "k1",
+    });
+    // Inherited changes only on a scope shift from Full analysis.
+    corpus.assign("i", a.id, { provenance: "inherited" });
+    expect(corpus.applyAnalysis("i", answer(b.id), "full", "k2")).toBe(false);
+    expect(corpus.basis("i")).toBe("k2");
+    expect(corpus.applyAnalysis("i", answer(b.id), "quick", null)).toBe(false);
+    expect(corpus.applyAnalysis("i", answer(b.id, true), "full", "k3")).toBe(
+      true,
+    );
+    expect(corpus.assignment("i")).toMatchObject({
+      entityId: b.id,
+      provenance: "full",
+    });
+  });
 
-    const autoAssign = corpus.assignment("t-auto-null");
-    expect(autoAssign.status).toBe("unresolved");
-    expect(autoAssign.entityId).toBeNull();
-    expect(autoAssign.provenance).toBe("automatic");
-    expect(autoAssign.evidence).toBe("evidence-1");
+  it("inherits a topic only into a thread with none or a quick guess", () => {
+    const { corpus } = store();
+    const a = corpus.create("Alpha", "");
+    const b = corpus.create("Beta", "");
+    corpus.assign("source", a.id, { provenance: "full" });
+    expect(corpus.inherit("fork", "source")).toBe(true);
+    expect(corpus.assignment("fork")).toMatchObject({
+      entityId: a.id,
+      provenance: "inherited",
+    });
+    corpus.assign("mine", b.id, { provenance: "manual" });
+    expect(corpus.inherit("mine", "source")).toBe(false);
+    expect(corpus.inherit("orphan", "nobody")).toBe(false);
+  });
 
-    // Freshness check with matching evidence
-    expect(corpus.isFresh("t-auto-null", "evidence-1")).toBe(true);
-    // Freshness check with different evidence
-    expect(corpus.isFresh("t-auto-null", "evidence-2")).toBe(false);
-
-    // Explicit manual clear
-    corpus.clear("t-manual-clear");
-    const manualAssign = corpus.assignment("t-manual-clear");
-    expect(manualAssign.status).toBe("unresolved");
-    expect(manualAssign.entityId).toBeNull();
-    expect(manualAssign.provenance).toBe("manual");
-    expect(manualAssign.evidence).toBeNull();
-
-    // Manual is always fresh regardless of evidence
-    expect(corpus.isFresh("t-manual-clear", "any-evidence")).toBe(true);
-
-    // No fake catalog identity created in catalog
-    expect(corpus.list()).toHaveLength(1);
-    expect(corpus.list()[0]!.id).toBe(entity.id);
+  it("prunes discovered topics nothing uses, deepest first, and keeps yours", () => {
+    const { corpus } = store();
+    const mine = corpus.create("Mine", "");
+    const leaf = corpus.rememberProposal({
+      name: "Leaf",
+      description: "",
+      parentId: null,
+      ancestors: [{ name: "Found", description: "" }],
+    });
+    const used = corpus.rememberProposal({
+      name: "Used",
+      description: "",
+      parentId: null,
+    });
+    corpus.assign("t", used.id, { provenance: "full" });
+    const removed = corpus.prune().map((t) => t.name);
+    expect(removed).toEqual(["Leaf", "Found"]);
+    expect(corpus.getById(leaf.id)).toBeNull();
+    expect(corpus.getById(mine.id)).not.toBeNull();
+    expect(corpus.getById(used.id)).not.toBeNull();
+    corpus.forget("t");
+    expect(corpus.prune().map((t) => t.name)).toEqual(["Used"]);
   });
 });

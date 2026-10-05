@@ -12,7 +12,7 @@ const body = () => within(document.body);
 const summary = (id: string, overrides: Record<string, unknown> = {}) => ({
   id,
   at: Date.now() - 60_000,
-  kind: "analysis",
+  kind: "full-analysis",
   status: "ok",
   label: "Alpha parser",
   model: "google/gemini-3.1-flash-lite",
@@ -145,11 +145,11 @@ it("lists model calls in the Activity log in Debug mode", async () => {
             traces: [
               summary("tr1", {
                 at: now - 60_000,
-                summary: "review · Alpha · drift → Beta (high)",
+                summary: "review · goal “Alpha parser tabs” · Alpha",
               }),
               summary("tr2", {
                 at: now - 180_000,
-                kind: "route",
+                kind: "quick-analysis",
                 label: "Fix the parser",
                 status: "invalid",
                 error: "Unexpected token",
@@ -161,7 +161,7 @@ it("lists model calls in the Activity log in Debug mode", async () => {
     );
   const off = page(false);
   expect(await off.findByText("Moved from Unfiled to Beta")).toBeTruthy();
-  expect(off.queryByText("review · Alpha · drift → Beta (high)")).toBeNull();
+  expect(off.queryByText("Ready for your review")).toBeNull();
   off.unmount();
 
   const on = page(true);
@@ -169,7 +169,7 @@ it("lists model calls in the Activity log in Debug mode", async () => {
   // Newest first: the analysis, the move, then the failed routing call.
   const rows = on.getAllByRole("listitem").map((li) => li.textContent ?? "");
   const order = [
-    "Different workstream: Beta",
+    "Alpha parser tabs",
     "Moved from Unfiled",
     "Fix the parser",
   ].map((text) => rows.findIndex((row) => row.includes(text)));

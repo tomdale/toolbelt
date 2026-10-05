@@ -1,4 +1,13 @@
-import type { ClassifyInput } from "../src/domain/classify.ts";
+import type { Entity } from "../src/domain/classify.ts";
+
+/** One classification case's evidence, as Full analysis is shown it. */
+export type ClassifyInput = {
+  /** The thread's title and summary, standing in for its latest reply. */
+  prompt: string;
+  entities: Entity[];
+  project?: string | null;
+  requests?: string[];
+};
 export const entities = [
   {
     id: "platform",

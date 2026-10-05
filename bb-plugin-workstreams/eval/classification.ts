@@ -1,5 +1,15 @@
-import { writeFile, readFile } from "node:fs/promises";
-import { classifyPrompt, parseClassification } from "../src/domain/classify.ts";
+import { writeFile } from "node:fs/promises";
+/**
+ * Live evaluation of classification through Full analysis's prompt and
+ * parser. Opt-in and never part of `npm test`: it calls a paid model.
+ */
+import {
+  fullAnalysisPrompt,
+  parseFullAnalysis,
+  type FullAnalysisInput,
+} from "../src/domain/analysis.ts";
+import type { TopicAnswer } from "../src/domain/classify.ts";
+import type { ClassifyInput } from "./classification-cases.ts";
 import {
   gatewayKey,
   gatewayComplete,
@@ -9,9 +19,24 @@ import { cases } from "./classification-cases.ts";
 const apiKey = await gatewayKey();
 if (!apiKey) throw new Error("AI Gateway authentication required");
 const model = process.env.EVAL_MODEL ?? "google/gemini-3.8-flash";
-const baseline = process.env.EVAL_BASELINE
-  ? await readFile(process.env.EVAL_BASELINE, "utf8")
-  : null;
+/** A case as the turn-end Full analysis of its thread would see it. */
+function toFullInput(input: ClassifyInput): FullAnalysisInput {
+  const requests = input.requests?.length
+    ? input.requests.map((text, i) => ({ text, initial: i === 0 }))
+    : [{ text: input.prompt, initial: true }];
+  return {
+    title: input.prompt.split("\n")[0] ?? "",
+    requests,
+    lastAssistantText: input.prompt,
+    report: null,
+    mode: "full",
+    topic: {
+      entities: input.entities,
+      project: input.project ?? null,
+      current: null,
+    },
+  };
+}
 const results: {
   id: string;
   pass: boolean;
@@ -20,7 +45,7 @@ const results: {
   capability?: boolean;
   hierarchy?: boolean;
   expected?: string | null;
-  value?: ReturnType<typeof parseClassification>;
+  value?: TopicAnswer;
   response?: string;
   expectedPath?: string[];
   cost?: number;
@@ -41,14 +66,8 @@ await Promise.all(
       const test = process.env.EVAL_COLD
         ? { ...original, input: { ...original.input, entities: [] } }
         : original;
-      const prompt = baseline
-        ? baseline.replace(
-            "__EVIDENCE__",
-            classifyPrompt(test.input).split(
-              "Catalog indentation expresses parentage; bracketed IDs identify existing entries.",
-            )[1]!,
-          )
-        : classifyPrompt(test.input);
+      const fullInput = toFullInput(test.input);
+      const prompt = fullAnalysisPrompt(fullInput);
       try {
         const result = await gatewayComplete({
           apiKey,
@@ -57,7 +76,11 @@ await Promise.all(
           prompt,
           maxTokens: 4096,
         });
-        const value = parseClassification(result.text, test.input);
+        const { topic } = parseFullAnalysis(result.text, fullInput);
+        const value: TopicAnswer = {
+          subjectId: topic?.subjectId ?? null,
+          proposed: topic?.proposed ?? null,
+        };
         results.push({
           id: test.id,
           expected: test.expected,

@@ -11,18 +11,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { RpcContract } from "../../server/contract.ts";
-import type { CorpusEntity } from "../../domain/corpus.ts";
-import { entityAncestors } from "../../domain/corpus.ts";
-import { corpusLabel } from "../../domain/corpus-label.ts";
+import type { Topic } from "../../domain/topics.ts";
+import { topicAncestors } from "../../domain/topics.ts";
+import { topicPath } from "../../domain/topic-path.ts";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 
 export type DialogState =
   | { kind: "create"; parentId: string | null }
-  | { kind: "rename"; entity: CorpusEntity }
-  | { kind: "reparent"; entity: CorpusEntity }
-  | { kind: "merge"; entity: CorpusEntity }
-  | { kind: "metadata"; entity: CorpusEntity }
+  | { kind: "rename"; entity: Topic }
+  | { kind: "reparent"; entity: Topic }
+  | { kind: "merge"; entity: Topic }
+  | { kind: "metadata"; entity: Topic }
   | null;
 
 export function CreateEntityDialog({
@@ -33,7 +33,7 @@ export function CreateEntityDialog({
   onClose,
 }: {
   parentId: string | null;
-  entities: readonly CorpusEntity[];
+  entities: readonly Topic[];
   rpc: Rpc;
   onSuccess: () => void;
   onClose: () => void;
@@ -122,7 +122,7 @@ export function CreateEntityDialog({
               <option value="">None (top level)</option>
               {entities.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {corpusLabel(e.id, entities).replace(/: /g, " › ")}
+                  {topicPath(e.id, entities).replace(/: /g, " › ")}
                 </option>
               ))}
             </select>
@@ -181,7 +181,7 @@ export function RenameEntityDialog({
   onSuccess,
   onClose,
 }: {
-  entity: CorpusEntity;
+  entity: Topic;
   rpc: Rpc;
   onSuccess: () => void;
   onClose: () => void;
@@ -271,8 +271,8 @@ export function ReparentEntityDialog({
   onSuccess,
   onClose,
 }: {
-  entity: CorpusEntity;
-  entities: readonly CorpusEntity[];
+  entity: Topic;
+  entities: readonly Topic[];
   rpc: Rpc;
   onSuccess: () => void;
   onClose: () => void;
@@ -285,7 +285,7 @@ export function ReparentEntityDialog({
   const invalidParentIds = new Set<string>([entity.id]);
   for (const other of entities) {
     try {
-      const ancestors = entityAncestors(other.id, entities);
+      const ancestors = topicAncestors(other.id, entities);
       if (ancestors.includes(entity.id)) {
         invalidParentIds.add(other.id);
       }
@@ -349,7 +349,7 @@ export function ReparentEntityDialog({
               <option value="">None (top level)</option>
               {validParents.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {corpusLabel(e.id, entities).replace(/: /g, " › ")}
+                  {topicPath(e.id, entities).replace(/: /g, " › ")}
                 </option>
               ))}
             </select>
@@ -382,8 +382,8 @@ export function MergeEntityDialog({
   onSuccess,
   onClose,
 }: {
-  entity: CorpusEntity;
-  entities: readonly CorpusEntity[];
+  entity: Topic;
+  entities: readonly Topic[];
   rpc: Rpc;
   onSuccess: () => void;
   onClose: () => void;
@@ -396,7 +396,7 @@ export function MergeEntityDialog({
   const invalid = new Set<string>([entity.id]);
   for (const other of entities) {
     try {
-      const ancestors = entityAncestors(other.id, entities);
+      const ancestors = topicAncestors(other.id, entities);
       if (ancestors.includes(entity.id)) {
         invalid.add(other.id);
       }
@@ -463,7 +463,7 @@ export function MergeEntityDialog({
               </option>
               {validTargets.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {corpusLabel(e.id, entities).replace(/: /g, " › ")}
+                  {topicPath(e.id, entities).replace(/: /g, " › ")}
                 </option>
               ))}
             </select>
@@ -495,7 +495,7 @@ export function EditMetadataDialog({
   onSuccess,
   onClose,
 }: {
-  entity: CorpusEntity;
+  entity: Topic;
   rpc: Rpc;
   onSuccess: () => void;
   onClose: () => void;

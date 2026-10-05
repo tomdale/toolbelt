@@ -1,80 +1,32 @@
 /**
- * New work's state: Product/Feature identity and automatic suggestions.
- * Workstreams are always derived automatically from active task identities;
- * New work never solicits or sets a destination workstream.
+ * The New thread composer's state: the new thread's topic, and Quick
+ * analysis's preview of it while you type. The topic decides the workstream,
+ * so the composer never asks for one.
  */
 import { createContext } from "react";
 import type { ComposerSelection } from "@get-bb/plugin-sdk/app";
-import type { RouteDecision } from "../../server/router.ts";
-import type { DraftSubjectProposal } from "../../domain/corpus.ts";
+import type { Preview } from "../../server/preview.ts";
+import type { DraftSubjectProposal } from "../../domain/topics.ts";
 import { routeDelay } from "./timing.ts";
 
+/**
+ * The topic the field shows: one you picked, Quick analysis's preview
+ * (`automatic`), or the topic of the workstream whose ＋ opened the composer
+ * (`inherited`, by `sectionId`). Previews never replace a picked or
+ * inherited topic.
+ */
 export type IdentityChoice = {
   entityId: string | null;
   proposal: DraftSubjectProposal | null;
   label: string;
-  provenance: "manual" | "automatic";
+  provenance: "manual" | "automatic" | "inherited";
+  sectionId?: string | null;
 } | null;
-
-type SuggestionBase = {
-  key: string;
-  reason: string;
-  traceId: string | null;
-  identity?: {
-    entityId?: string | null;
-    proposal?: DraftSubjectProposal | null;
-    label: string;
-  } | null;
-};
-
-/** Suggestions for explicit thread continuation. */
-export type Suggestion = SuggestionBase & {
-  kind: "thread";
-  threadId: string;
-  title: string;
-  workstream: string | null;
-};
-
-/** Suggestion from a route decision (thread continuation only). */
-export function suggestionFrom(decision: RouteDecision): Suggestion | null {
-  const identity =
-    decision.subjectId || decision.proposal || decision.subject
-      ? {
-          entityId: decision.subjectId ?? null,
-          proposal: decision.proposal ?? null,
-          label:
-            decision.subject ??
-            decision.proposal?.name ??
-            decision.subjectId ??
-            "",
-        }
-      : null;
-  const base = {
-    key: decision.id,
-    reason: decision.reason,
-    traceId: decision.traceId,
-    identity,
-  };
-  if (decision.outcome === "continue") {
-    return {
-      ...base,
-      kind: "thread",
-      threadId: decision.threadId,
-      title: decision.threadTitle,
-      workstream: decision.workstream,
-    };
-  }
-  return null;
-}
 
 export type NewWorkEvent = {
   id: number;
   at: number;
-  kind:
-    | "classify"
-    | "accept"
-    | "dismiss"
-    | "select-identity";
+  kind: "classify" | "select-identity";
   status: "pending" | "ok" | "failed" | "superseded";
   durationMs: number | null;
   input: unknown;
@@ -88,21 +40,17 @@ export type NewWorkState = {
   text: string;
   identity: IdentityChoice;
   selection: ComposerSelection | null;
-  suggestion: Suggestion | null;
-  decision: RouteDecision | null;
+  /** Quick analysis's latest preview of the draft. */
+  decision: Preview | null;
   classifying: boolean;
-  settled: string | null;
-  accepting: boolean;
   error: string | null;
   errors: number;
   events: readonly NewWorkEvent[];
 };
 
 export type NewWorkDeps = {
-  route(prompt: string, pickedProjectId: string | null): Promise<RouteDecision>;
+  route(prompt: string, pickedProjectId: string | null): Promise<Preview>;
   cancelRoute(): void;
-  /** Queues the composer's whole draft in `threadId` and opens it. */
-  sendDraftToThread(threadId: string, traceId: string | null): Promise<void>;
 };
 
 export function identityDisplay(state: NewWorkState): {
@@ -133,42 +81,14 @@ export function identityDisplay(state: NewWorkState): {
 }
 
 export function composerSummary(state: NewWorkState): {
-  identityLabel: string;
+  topicLabel: string;
   text: string;
 } {
-  const ident = state.identity ? state.identity.label : "Unresolved";
+  const ident = state.identity ? state.identity.label : "No topic";
   return {
-    identityLabel: ident,
+    topicLabel: ident,
     text: `Concerning ${ident}`,
   };
-}
-
-/** Legacy stub: destination selection is removed. */
-export function hasDestination(_state: NewWorkState): boolean {
-  return false;
-}
-
-export function suggestionVisibility(state: NewWorkState): string {
-  const { suggestion } = state;
-  if (!state.text) return "Hidden: the draft is empty.";
-  if (!suggestion)
-    return state.classifying
-      ? "Waiting for the first classification."
-      : state.decision
-        ? "None: the router named no continuation thread."
-        : "None yet: classification runs once typing pauses.";
-  if (suggestion.key === state.settled)
-    return "Hidden: you accepted or dismissed it.";
-  return state.classifying
-    ? "Shown, while newer text is being classified."
-    : "Shown.";
-}
-
-export function shownSuggestion(state: NewWorkState): Suggestion | null {
-  const { suggestion } = state;
-  if (!state.text || !suggestion || suggestion.key === state.settled)
-    return null;
-  return suggestion;
 }
 
 const messageOf = (error: unknown) =>
@@ -187,11 +107,8 @@ export class NewWork {
       text: "",
       identity: null,
       selection: null,
-      suggestion: null,
       decision: null,
       classifying: false,
-      settled: null,
-      accepting: false,
       error: null,
       errors: 0,
       events: [],
@@ -258,12 +175,11 @@ export class NewWork {
       ...(trimmed
         ? {}
         : {
-            suggestion: null,
             decision: null,
             identity:
-              this.state.identity?.provenance === "manual"
-                ? this.state.identity
-                : null,
+              this.state.identity?.provenance === "automatic"
+                ? null
+                : this.state.identity,
           }),
     });
     this.schedule();
@@ -287,13 +203,13 @@ export class NewWork {
           entityId: choice.entityId ?? null,
           proposal: choice.proposal ?? null,
           label:
-            choice.label ?? (choice.entityId ? choice.entityId : "Unresolved"),
+            choice.label ?? (choice.entityId ? choice.entityId : "No topic"),
           provenance,
         }
       : {
           entityId: null,
           proposal: null,
-          label: "Unresolved",
+          label: "No topic",
           provenance,
         };
     this.begin("select-identity", {
@@ -303,6 +219,25 @@ export class NewWork {
     })("ok");
     this.set({
       identity: nextChoice,
+      error: null,
+    });
+  }
+
+  /** Starts the thread with the topic of the workstream whose ＋ opened it. */
+  selectWorkstream(sectionId: string, label: string) {
+    this.begin("select-identity", {
+      from: this.state.identity,
+      to: { sectionId, label },
+      provenance: "inherited",
+    })("ok");
+    this.set({
+      identity: {
+        entityId: null,
+        proposal: null,
+        label,
+        provenance: "inherited",
+        sectionId,
+      },
       error: null,
     });
   }
@@ -336,34 +271,6 @@ export class NewWork {
 
   reportError(error: unknown) {
     this.set({ error: messageOf(error), errors: this.state.errors + 1 });
-  }
-
-  dismiss() {
-    const suggestion = shownSuggestion(this.state);
-    if (!suggestion) return;
-    this.begin("dismiss", { suggestion })("ok");
-    this.set({ settled: suggestion.key, error: null });
-  }
-
-  /** Sends the draft to the shown suggestion's thread. */
-  async accept(): Promise<void> {
-    const suggestion = shownSuggestion(this.state);
-    if (!suggestion || this.state.accepting) return;
-    this.set({ accepting: true, error: null });
-    const finish = this.begin("accept", { suggestion });
-    try {
-      await this.deps.sendDraftToThread(
-        suggestion.threadId,
-        suggestion.traceId,
-      );
-      this.set({ settled: suggestion.key });
-      finish("ok", { output: "Sent the draft to the suggested thread." });
-    } catch (error) {
-      finish("failed", { error });
-      if (this.state.error === null) this.reportError(error);
-    } finally {
-      this.set({ accepting: false });
-    }
   }
 
   dispose() {
@@ -402,13 +309,14 @@ export class NewWork {
         finish("superseded", { output: decision });
         return;
       }
-      const suggestion = suggestionFrom(decision);
-      finish("ok", { output: { decision, suggestion } });
+      finish("ok", { output: { decision } });
 
-      // The shared route also finds continuation suggestions, but a manual
-      // identity remains authoritative when its result arrives.
+      // A picked or inherited topic stays when a preview arrives.
       let nextIdentity = this.state.identity;
-      if (this.state.identity?.provenance !== "manual") {
+      if (
+        !this.state.identity ||
+        this.state.identity.provenance === "automatic"
+      ) {
         if (decision.subjectId) {
           nextIdentity = {
             entityId: decision.subjectId,
@@ -428,11 +336,11 @@ export class NewWork {
         }
       }
 
-      this.set({ decision, suggestion, identity: nextIdentity });
+      this.set({ decision, identity: nextIdentity });
     } catch (error) {
       finish(mine === this.generation ? "failed" : "superseded", { error });
       if (mine === this.generation)
-        console.warn("Workstreams couldn't classify draft:", error);
+        console.warn("Workstreams couldn't preview the draft:", error);
     } finally {
       if (mine === this.generation) {
         this.pending = false;

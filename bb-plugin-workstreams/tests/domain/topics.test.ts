@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   nearestActive,
   resolveProposal,
-  type CorpusEntity,
-} from "../../src/domain/corpus.ts";
+  type Topic,
+} from "../../src/domain/topics.ts";
 
-const entity = (id: string, parentId: string | null = null): CorpusEntity => ({
+const entity = (id: string, parentId: string | null = null): Topic => ({
   id,
   name: id,
   description: "",
@@ -14,7 +14,7 @@ const entity = (id: string, parentId: string | null = null): CorpusEntity => ({
 });
 
 describe("resolveProposal", () => {
-  const catalog: CorpusEntity[] = [
+  const catalog: Topic[] = [
     { ...entity("subagents"), name: "Subagents" },
     { ...entity("bb-plugin", "subagents"), name: "BB Plugin" },
     { ...entity("workstreams"), name: "Workstreams", aliases: ["WS"] },

@@ -29,17 +29,13 @@ async function page(summary: string | null, overrides = {}) {
         prefs: () => ({
           prefs: {
             sidebar: { showForYou: true, showRecent: true, recentLimit: 5 },
-            threads: {
-              autoTitle: true,
-              analysisModel: { kind: "gateway", model: "m" },
-              showParentLink: false,
+            threads: { autoTitle: true, showParentLink: false },
+            newWork: { homeProjectId: "", suggestions: true },
+            analysis: {
+              quickModel: { kind: "gateway", model: "m" },
+              fullModel: { kind: "gateway", model: "m" },
             },
-            newWork: {
-              homeProjectId: "",
-              suggestions: true,
-              suggestionsModel: { kind: "gateway", model: "m" },
-            },
-            organize: { model: { kind: "gateway", model: "m" } },
+            organize: {},
             advanced: { hostId: "", debug: true },
           },
         }),
@@ -50,7 +46,7 @@ async function page(summary: string | null, overrides = {}) {
             {
               id: "t",
               at: 1000,
-              kind: "analysis",
+              kind: "full-analysis",
               status: "ok",
               label: "Fix parser",
               model: "test/model",
@@ -69,19 +65,18 @@ async function page(summary: string | null, overrides = {}) {
   );
 }
 
-it("labels lifecycle and subject, explains review on focus, and hides metrics by default", async () => {
-  const slot = await page(
-    "review · BB · drift → Workstreams (high) · new title “Fix parser”",
-  );
+it("labels status and topic, explains review on focus, and hides metrics by default", async () => {
+  const slot = await page("review · goal “Fix parser tabs” · BB");
   const row = (await slot.findByText("Fix parser", { exact: true })).closest(
     "li",
   )!;
   expect(within(row).getByText("Work status:")).toBeTruthy();
-  expect(within(row).getByText("Subject:")).toBeTruthy();
-  expect(within(row).queryByText("Workstream:")).toBeNull();
-  expect(
-    within(row).getByText(/Different workstream: Workstreams/),
-  ).toBeTruthy();
+  expect(within(row).getByText("Topic:").parentElement!.textContent).toBe(
+    "Topic: BB",
+  );
+  expect(within(row).getByText("Title:").parentElement!.textContent).toBe(
+    "Title: “Fix parser tabs”",
+  );
   expect(
     within(row).getByText("Technical details").closest("details")!.open,
   ).toBe(false);
@@ -100,40 +95,23 @@ it("labels lifecycle and subject, explains review on focus, and hides metrics by
   expect(within(row).getByText("Duration")).toBeTruthy();
 });
 
-it("does not mistake a title an earlier analysis suggested for a subject", async () => {
-  const slot = await page("done · new title “Parser complete”");
-  await slot.findByText("Done");
-  expect(slot.queryByText("Subject:")).toBeNull();
-  expect(slot.getByText("Title: “Parser complete”")).toBeTruthy();
+it("labels a turn the agent reported itself", async () => {
+  const slot = await page("reported · goal “Parser complete”");
+  await slot.findByText("Reported by the agent");
+  expect(slot.queryByText("Topic:")).toBeNull();
 });
 
-it("shows the goal an analysis inferred as the title it suggests", async () => {
-  const slot = await page("done · Lumen · goal “Fix stale build cache”");
-  await slot.findByText("Done");
-  expect(slot.getByText("Subject:").parentElement!.textContent).toBe(
-    "Subject: Lumen",
-  );
-  expect(slot.getByText("Title: “Fix stale build cache”")).toBeTruthy();
-});
-
-it("shows what the opening-request call named a thread", async () => {
-  const slot = await page("goal “Fix stale build cache”", {
-    kind: "opening-goal",
+it("shows what Quick analysis named a new thread", async () => {
+  const slot = await page("goal “Fix stale build cache” · Lumen", {
+    kind: "quick-analysis",
     label: "Fix the stale build cache in the monorepo",
   });
   const row = (
     await slot.findByText("Fix the stale build cache in the monorepo")
   ).closest("li")!;
-  expect(within(row).getByText("Opening title")).toBeTruthy();
+  expect(within(row).getByText("Quick analysis")).toBeTruthy();
   expect(within(row).getByText("Model result:")).toBeTruthy();
   expect(within(row).getByText(/Title: “Fix stale build cache”/)).toBeTruthy();
-  const none = await page("no goal: the request doesn’t say", {
-    kind: "opening-goal",
-    label: "hi",
-  });
-  expect(
-    await none.findByText("no goal: the request doesn’t say"),
-  ).toBeTruthy();
 });
 
 it("preserves unknown summary formats as labeled model results", async () => {

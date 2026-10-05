@@ -178,14 +178,10 @@ export function ThreadsSettings() {
   return (
     <SectionRows>
       <ModelField
-        label="Analysis model"
-        description={
-          prefs.threads.autoTitle
-            ? "Summarizes each thread after every turn for the sidebar, and names threads (from their first request, then after each turn) while Keep titles current is on."
-            : "Summarizes each thread after every turn for the sidebar."
-        }
-        choice={prefs.threads.analysisModel}
-        onChange={(analysisModel) => update({ threads: { analysisModel } })}
+        label="Full analysis model"
+        description="When a turn ends after a new request, settles the thread's goal (its title, while Keep titles current is on) and its topic, and its status when the agent didn't report one."
+        choice={prefs.analysis.fullModel}
+        onChange={(fullModel) => update({ analysis: { fullModel } })}
       />
       <SettingRow
         label="Keep titles current"
@@ -259,7 +255,7 @@ export function NewWorkSettings() {
       />
       <SettingRow
         label="Suggestions while typing"
-        description="Suggest a product or feature for a new thread as you write."
+        description="Preview a new thread's topic in the composer as you write, using the Quick analysis model."
         control={
           <SettingSwitch
             label="Suggestions while typing"
@@ -269,13 +265,10 @@ export function NewWorkSettings() {
         }
       />
       <ModelField
-        label="Suggestions model"
-        description="Suggests a product or feature for a new-thread draft as you type."
-        choice={prefs.newWork.suggestionsModel}
-        disabled={!prefs.newWork.suggestions}
-        onChange={(suggestionsModel) =>
-          update({ newWork: { suggestionsModel } })
-        }
+        label="Quick analysis model"
+        description="Titles a new thread and picks its topic from its first request, and previews both in the composer as you type."
+        choice={prefs.analysis.quickModel}
+        onChange={(quickModel) => update({ analysis: { quickModel } })}
       />
     </SectionRows>
   );
@@ -286,15 +279,9 @@ export function OrganizeSettings() {
   if (!prefs) return <Loading />;
   return (
     <SectionRows>
-      <ModelField
-        label="Organizing model"
-        description="Picks each thread's topic and adds topics when needed."
-        choice={prefs.organize.model}
-        onChange={(model) => update({ organize: { model } })}
-      />
       <SettingRow
         label="Group capacity"
-        description="Maximum active tasks per workstream. Indivisible leaf features may exceed it."
+        description="Most active threads per workstream before it splits into its subtopics. A single subtopic may exceed it."
         control={
           <Stepper
             label="Group capacity"
@@ -314,7 +301,7 @@ export function OrganizeSettings() {
       />
       <SettingRow
         label="Contraction threshold"
-        description="At or below this active task count for a product, navigation contracts to the product root workstream."
+        description="A product with this many active threads or fewer gets one workstream for all its topics."
         control={
           <Stepper
             label="Contraction threshold"

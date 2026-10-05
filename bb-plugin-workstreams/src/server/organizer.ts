@@ -3,42 +3,35 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { buildForest } from "../domain/tree.ts";
 import type { Recap } from "../domain/recap.ts";
 import { isDone, workView } from "../domain/status.ts";
-import type { ModelChoice } from "../domain/prefs.ts";
 import type { Analyzer } from "./analyzer.ts";
-import { sectionMembers, type CleanupMember } from "./cleanup.ts";
+import type { CleanupMember } from "./cleanup.ts";
 import { getMeta, setMeta, type Database } from "./db.ts";
-import { classificationEvidence, type CorpusStore } from "./corpus.ts";
+import type { TopicStore } from "./topics.ts";
 import {
   activeHome,
   ancestors,
   deriveActiveEntityIds,
 } from "../domain/regroup.ts";
-import { corpusLabel } from "../domain/corpus-label.ts";
-import type { CanonicalAssignment, CorpusEntity } from "../domain/corpus.ts";
-import type { Inference } from "./model.ts";
+import { topicPath } from "../domain/topic-path.ts";
+import type { TopicAssignment, Topic } from "../domain/topics.ts";
 import { listSections, type InventoryThread } from "./inventory.ts";
 import type { WorkstreamService } from "./service.ts";
 import type { Journal, NewEntry } from "./journal.ts";
 import type {
-  LiveOrganization,
-  LiveOrganizationCounts,
-  LiveOrganizationGroup,
-  LiveOrganizationGroupMember,
-  LiveOrganizationUnresolved,
+  OrganizerState,
+  OrganizerStateCounts,
+  OrganizerStateGroup,
+  OrganizerStateGroupMember,
+  OrganizerStateUnresolved,
 } from "./contract.ts";
 
-export type CoordinatorDeps = {
+export type OrganizerDeps = {
   db: Database;
   service: WorkstreamService;
-  corpus: CorpusStore;
+  topics: TopicStore;
   analyzer: Analyzer;
   /** Agent recaps for each thread's latest turn; they outrank analysis. */
   recaps?: () => Record<string, Recap>;
-  inference: Inference;
-  model: () => Promise<ModelChoice>;
-  classificationModel?: () => Promise<ModelChoice>;
-  requests?: (threadId: string) => Promise<string[]>;
-  projects?: () => Promise<{ id: string; name: string }[]>;
   members: (sectionId: string) => Promise<CleanupMember[]>;
   /** Records each pass's section changes in Activity. */
   journal?: Journal;
@@ -49,7 +42,7 @@ export type CoordinatorDeps = {
 
 const KEY = "live_organization";
 
-const DEFAULT_COUNTS: LiveOrganizationCounts = {
+const DEFAULT_COUNTS: OrganizerStateCounts = {
   activeRoots: 0,
   completedRoots: 0,
   totalRoots: 0,
@@ -57,7 +50,7 @@ const DEFAULT_COUNTS: LiveOrganizationCounts = {
   activeWorkstreams: 0,
 };
 
-const DEFAULT_STATE: LiveOrganization = {
+const DEFAULT_STATE: OrganizerState = {
   status: "idle",
   progress: null,
   error: null,
@@ -67,7 +60,7 @@ const DEFAULT_STATE: LiveOrganization = {
   counts: DEFAULT_COUNTS,
 };
 
-export class Coordinator {
+export class Organizer {
   private running = false;
   private rerunQueued = false;
   private disposed = false;
@@ -75,9 +68,9 @@ export class Coordinator {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private lastSyncedHash: string | null = null;
   private forceNextRun = false;
-  private activeRun: Promise<LiveOrganization> | null = null;
+  private activeRun: Promise<OrganizerState> | null = null;
 
-  constructor(private readonly deps: CoordinatorDeps) {
+  constructor(private readonly deps: OrganizerDeps) {
     const current = this.state();
     if (
       current &&
@@ -96,17 +89,17 @@ export class Coordinator {
     return (this.deps.now ?? Date.now)();
   }
 
-  state(): LiveOrganization {
+  state(): OrganizerState {
     const raw = getMeta(this.deps.db, KEY);
     if (!raw) return DEFAULT_STATE;
     try {
-      return JSON.parse(raw) as LiveOrganization;
+      return JSON.parse(raw) as OrganizerState;
     } catch {
       return DEFAULT_STATE;
     }
   }
 
-  private save(state: LiveOrganization): LiveOrganization {
+  private save(state: OrganizerState): OrganizerState {
     setMeta(this.deps.db, KEY, JSON.stringify(state));
     this.deps.onChange();
     return state;
@@ -136,7 +129,7 @@ export class Coordinator {
     }, debounceMs);
   }
 
-  async rebuild(): Promise<LiveOrganization> {
+  async rebuild(): Promise<OrganizerState> {
     this.lastSyncedHash = null;
     this.forceNextRun = true;
     if (this.running) {
@@ -147,7 +140,7 @@ export class Coordinator {
     return this.run();
   }
 
-  async run(): Promise<LiveOrganization> {
+  async run(): Promise<OrganizerState> {
     if (this.disposed) return this.state();
 
     if (this.running) {
@@ -185,7 +178,7 @@ export class Coordinator {
   private async executePass(
     signal: AbortSignal,
     isForced = false,
-  ): Promise<LiveOrganization> {
+  ): Promise<OrganizerState> {
     const currentState = this.state();
     const sdk = (
       this.deps.service as unknown as { sdk: () => BbPluginApi["sdk"] }
@@ -194,12 +187,12 @@ export class Coordinator {
     let passContext: {
       roots: InventoryThread[];
       isCompletedMap: Map<string, boolean>;
-      assignments: Record<string, CanonicalAssignment>;
+      assignments: Record<string, TopicAssignment>;
       selectedEntityIds: string[];
       entityToSection: Map<string, string>;
       appliedSectionIds: Map<string, string | null>;
       evidenceById: Map<string, string>;
-      entities: CorpusEntity[];
+      entities: Topic[];
     } | null = null;
 
     try {
@@ -222,7 +215,7 @@ export class Coordinator {
         );
 
       // Check if snapshot is identical to last completed run
-      const catalogRev = this.deps.corpus.revision();
+      const catalogRev = this.deps.topics.revision();
       const snapshotHash = createHash("sha256")
         .update(
           JSON.stringify({
@@ -232,9 +225,9 @@ export class Coordinator {
               r.title,
               r.sectionId,
               isCompletedMap.get(r.id),
-              this.deps.corpus.assignment(r.id).entityId,
-              this.deps.corpus.assignment(r.id).status,
-              this.deps.corpus.assignment(r.id).provenance,
+              this.deps.topics.assignment(r.id).entityId,
+              this.deps.topics.assignment(r.id).status,
+              this.deps.topics.assignment(r.id).provenance,
             ]),
           }),
         )
@@ -248,202 +241,16 @@ export class Coordinator {
         return currentState;
       }
 
-      // Projects context
-      const projects = new Map(
-        ((await this.deps.projects?.()) ?? []).map((p) => [p.id, p.name]),
-      );
-
-      // 1. Classification stage
-      const requestsById = new Map<string, string[]>();
+      // What each root's topic was settled from, shown for roots with none.
       const evidenceById = new Map<string, string>();
-      const pending: InventoryThread[] = [];
-
       for (const root of roots) {
-        const assignment = this.deps.corpus.assignment(root.id);
-        const requests = (await this.deps.requests?.(root.id)) ?? [];
-        requestsById.set(root.id, requests);
-        const evidence = classificationEvidence({
-          requests,
-          title: root.title,
-          project: projects.get(root.projectId) ?? null,
-        });
-        evidenceById.set(root.id, evidence);
-
-        // Manual assignment is authoritative; otherwise classify if missing or stale
-        if (
-          assignment.provenance !== "manual" &&
-          !this.deps.corpus.isFresh(root.id, evidence)
-        ) {
-          pending.push(root);
-        }
+        const basis = this.deps.topics.basis(root.id);
+        if (basis) evidenceById.set(root.id, basis);
       }
-
-      if (pending.length > 0) {
-        const model = await this.deps.model();
-        const classificationModel =
-          (await this.deps.classificationModel?.()) ?? model;
-
-        let completed = 0;
-        let unresolved = 0;
-        const cached = roots.length - pending.length;
-
-        this.save({
-          ...currentState,
-          status: "classifying",
-          progress: {
-            stage: "classifying",
-            completed: 0,
-            total: pending.length,
-            cached,
-            unresolved: 0,
-          },
-          error: null,
-        });
-
-        const catalogRevBefore = this.deps.corpus.revision();
-        let cursor = 0;
-        let classifyError: unknown = null;
-
-        const worker = async () => {
-          while (
-            !signal.aborted &&
-            !this.disposed &&
-            !classifyError &&
-            cursor < pending.length
-          ) {
-            const thread = pending[cursor++]!;
-            try {
-              const threadEvidence = evidenceById.get(thread.id)!;
-              const { value } = await this.deps.inference.run(
-                "classify",
-                {
-                  prompt: `${thread.title}\n${analysis[thread.id]?.recap ?? ""}`,
-                  entities: this.deps.corpus.list(),
-                  project: projects.get(thread.projectId) ?? null,
-                  requests: requestsById.get(thread.id),
-                },
-                {
-                  model: classificationModel,
-                  signal,
-                  threadId: thread.id,
-                  label: thread.title,
-                },
-              );
-
-              if (signal.aborted || this.disposed) return;
-
-              // Check if thread was manually assigned or cleared while inference was in-flight (Finding 3)
-              const currentAssignment = this.deps.corpus.assignment(thread.id);
-              if (currentAssignment.provenance === "manual") {
-                completed++;
-                continue;
-              }
-
-              // Check if thread was archived while inference was in-flight
-              const liveThread = await sdk.threads
-                .get({ threadId: thread.id })
-                .catch(() => null);
-              if (
-                !liveThread ||
-                liveThread.archivedAt !== null ||
-                liveThread.visibility === "hidden"
-              ) {
-                this.rerunQueued = true;
-                completed++;
-                continue;
-              }
-
-              // Check if evidence changed while inference in-flight
-              const liveTitle =
-                liveThread.title ?? liveThread.titleFallback ?? "";
-              if (liveTitle !== thread.title) {
-                this.rerunQueued = true;
-                completed++;
-                continue;
-              }
-
-              const liveRequests =
-                (await this.deps.requests?.(thread.id)) ?? [];
-              if (
-                classificationEvidence({
-                  title: liveTitle,
-                  requests: liveRequests,
-                  project: projects.get(liveThread.projectId) ?? null,
-                }) !== threadEvidence
-              ) {
-                this.rerunQueued = true;
-                completed++;
-                continue;
-              }
-              // Recheck after SDK/evidence awaits so a concurrent correction stays authoritative.
-              if (
-                this.deps.corpus.assignment(thread.id).provenance === "manual"
-              ) {
-                completed++;
-                continue;
-              }
-              const entity = value.subjectId
-                ? this.deps.corpus.list().find((e) => e.id === value.subjectId)
-                : value.proposed
-                  ? this.deps.corpus.rememberProposal(value.proposed)
-                  : null;
-
-              if (entity) {
-                this.deps.corpus.assign(thread.id, entity.id, {
-                  provenance: "automatic",
-                  evidence: threadEvidence,
-                });
-              } else {
-                // Persistent null result cached with automatic provenance (Finding 2)
-                this.deps.corpus.assign(thread.id, null, {
-                  provenance: "automatic",
-                  evidence: threadEvidence,
-                });
-                unresolved++;
-              }
-              completed++;
-
-              this.save({
-                ...this.state(),
-                progress: {
-                  stage: "classifying",
-                  completed,
-                  total: pending.length,
-                  cached,
-                  unresolved,
-                },
-              });
-            } catch (err) {
-              classifyError ??= err;
-            }
-          }
-        };
-
-        await Promise.all(
-          Array.from({ length: Math.min(3, pending.length) }, worker),
-        );
-
-        if (signal.aborted || this.disposed) return this.state();
-
-        if (classifyError) {
-          const errMsg =
-            classifyError instanceof Error
-              ? classifyError.message
-              : String(classifyError);
-          return this.save({
-            ...currentState,
-            status: "failed",
-            error: errMsg,
-            progress: null,
-          });
-        }
-      }
-
-      if (signal.aborted || this.disposed) return this.state();
 
       // 2. Derivation stage
-      const entities = this.deps.corpus.list();
-      const assignments = this.deps.corpus.assignments();
+      const entities = this.deps.topics.list();
+      const assignments = this.deps.topics.assignments();
 
       const counts: Record<string, number> = {};
       const visibleProductRoots = new Set<string>();
@@ -469,7 +276,7 @@ export class Coordinator {
 
       const currentActive = entities
         .filter((e) => {
-          const groups = this.deps.corpus.groups();
+          const groups = this.deps.topics.groups();
           return Array.from(groups.values()).includes(e.id);
         })
         .map((e) => e.id);
@@ -532,11 +339,11 @@ export class Coordinator {
           const liveSections = await listSections(sdk);
           for (const section of liveSections)
             changes.name(section.id, section.name);
-          const groupBindings = new Map(this.deps.corpus.groups()); // sectionId -> entityId
+          const groupBindings = new Map(this.deps.topics.groups()); // sectionId -> entityId
 
           for (const entityId of selectedEntityIds) {
             const entity = entities.find((e) => e.id === entityId)!;
-            const expectedName = corpusLabel(entityId, entities);
+            const expectedName = topicPath(entityId, entities);
 
             // Check if an existing section is already bound to this entityId
             let section = liveSections.find(
@@ -554,7 +361,7 @@ export class Coordinator {
               );
               if (candidate) {
                 section = candidate;
-                this.deps.corpus.bindGroup(section.id, entityId);
+                this.deps.topics.bindGroup(section.id, entityId);
                 groupBindings.set(section.id, entityId); // Update local map (Finding 4)
               }
             }
@@ -575,7 +382,7 @@ export class Coordinator {
                ON CONFLICT(section_id) DO UPDATE SET created_by = 'workstreams'`,
                 )
                 .run(created.id, now, now);
-              this.deps.corpus.bindGroup(created.id, entityId);
+              this.deps.topics.bindGroup(created.id, entityId);
               groupBindings.set(created.id, entityId); // Update local map (Finding 4)
               this.deps.service.seeSection(created.id, created.name);
             } else if (section.name !== expectedName) {
@@ -640,7 +447,6 @@ export class Coordinator {
                   from,
                   to: targetSectionId,
                 });
-                this.deps.service.place(root.id, targetSectionId, "auto", null);
                 this.deps.service.seeThread(
                   root.id,
                   targetSectionId,
@@ -683,7 +489,7 @@ export class Coordinator {
                     .prepare("DELETE FROM ws_workstream WHERE section_id = ?")
                     .run(section.id);
                 }
-                this.deps.corpus.unbindGroup(section.id);
+                this.deps.topics.unbindGroup(section.id);
                 groupBindings.delete(section.id);
               }
             }
@@ -696,8 +502,24 @@ export class Coordinator {
         }
       });
 
-      // 4. Assemble LiveOrganizationState
-      const finalState = this.assembleLiveOrganizationState({
+      // Topics Workstreams discovered that nothing uses any more go away.
+      const pruned = this.deps.topics.prune();
+      if (pruned.length)
+        this.deps.journal?.add({
+          action: "remove-topic",
+          source: "auto",
+          rationale:
+            pruned.length === 1
+              ? `Removed the unused topic ${pruned[0]!.name}`
+              : `Removed ${pruned.length} unused topics`,
+          threads: [],
+          workstreams: [],
+          undo: null,
+          detail: pruned.map((topic) => `Removed ${topic.name}`).join("\n"),
+        });
+
+      // 4. Assemble OrganizerState
+      const finalState = this.assembleOrganizerState({
         status: "idle",
         error: null,
         roots,
@@ -716,15 +538,15 @@ export class Coordinator {
       const postSyncSnapshotHash = createHash("sha256")
         .update(
           JSON.stringify({
-            catalogRev: this.deps.corpus.revision(),
+            catalogRev: this.deps.topics.revision(),
             roots: roots.map((r) => [
               r.id,
               r.title,
               appliedSectionIds.get(r.id) ?? r.sectionId,
               isCompletedMap.get(r.id),
-              this.deps.corpus.assignment(r.id).entityId,
-              this.deps.corpus.assignment(r.id).status,
-              this.deps.corpus.assignment(r.id).provenance,
+              this.deps.topics.assignment(r.id).entityId,
+              this.deps.topics.assignment(r.id).status,
+              this.deps.topics.assignment(r.id).provenance,
             ]),
           }),
         )
@@ -738,7 +560,7 @@ export class Coordinator {
 
       // Finding 9: Partial mutation state truth
       if (passContext && passContext.selectedEntityIds.length > 0) {
-        const failedState = this.assembleLiveOrganizationState({
+        const failedState = this.assembleOrganizerState({
           status: "failed",
           error: errMsg,
           roots: passContext.roots,
@@ -772,18 +594,18 @@ export class Coordinator {
     if (entry) this.deps.journal?.add(entry);
   }
 
-  private assembleLiveOrganizationState(options: {
-    status: LiveOrganization["status"];
+  private assembleOrganizerState(options: {
+    status: OrganizerState["status"];
     error: string | null;
     roots: InventoryThread[];
     isCompletedMap: Map<string, boolean>;
-    assignments: Record<string, CanonicalAssignment>;
+    assignments: Record<string, TopicAssignment>;
     selectedEntityIds: string[];
     entityToSection: Map<string, string>;
     appliedSectionIds: Map<string, string | null>;
     evidenceById: Map<string, string>;
-    entities: CorpusEntity[];
-  }): LiveOrganization {
+    entities: Topic[];
+  }): OrganizerState {
     const {
       status,
       error,
@@ -797,10 +619,10 @@ export class Coordinator {
       entities,
     } = options;
 
-    const groupsMap = new Map<string, LiveOrganizationGroup>();
+    const groupsMap = new Map<string, OrganizerStateGroup>();
     for (const entityId of selectedEntityIds) {
       const entity = entities.find((e) => e.id === entityId);
-      const name = entity ? corpusLabel(entityId, entities) : entityId;
+      const name = entity ? topicPath(entityId, entities) : entityId;
       groupsMap.set(entityId, {
         key: entityId,
         sectionId: entityToSection.get(entityId) ?? null,
@@ -813,7 +635,7 @@ export class Coordinator {
       });
     }
 
-    const unresolvedTasks: LiveOrganizationUnresolved[] = [];
+    const unresolvedTasks: OrganizerStateUnresolved[] = [];
     let activeRootsCount = 0;
     let completedRootsCount = 0;
 
@@ -837,8 +659,8 @@ export class Coordinator {
           completed: isCompleted,
           evidence: evidenceById.get(root.id) ?? null,
           reason: isCompleted
-            ? "Completed task; unresolved identity."
-            : "Unresolved identity; remains unfiled.",
+            ? "Done; no topic."
+            : "No topic yet, so it stays Unfiled.",
         });
         continue;
       }
@@ -859,25 +681,25 @@ export class Coordinator {
         group.totalCount++;
 
         const entity = entities.find((e) => e.id === assignment.entityId);
-        const identityLabel = entity ? corpusLabel(entity.id, entities) : null;
+        const topicLabel = entity ? topicPath(entity.id, entities) : null;
 
         let reason: string;
         if (isCompleted) {
-          reason = `Completed task; retained in ${group.name}.`;
+          reason = `Done; kept in ${group.name}.`;
         } else if (assignment.provenance === "manual") {
-          reason = `Manually assigned to ${identityLabel}; grouped in ${group.name}.`;
-        } else if (identityLabel && identityLabel !== group.name) {
-          reason = `Classified as ${identityLabel}; grouped under ${group.name}.`;
+          reason = `You set its topic to ${topicLabel}; filed in ${group.name}.`;
+        } else if (topicLabel && topicLabel !== group.name) {
+          reason = `Its topic is ${topicLabel}; filed in ${group.name}.`;
         } else {
-          reason = `Classified as ${group.name}.`;
+          reason = `Its topic is ${group.name}.`;
         }
 
         group.roots.push({
           id: root.id,
           title: root.title,
           completed: isCompleted,
-          identityId: assignment.entityId,
-          identityLabel,
+          topicId: assignment.entityId,
+          topicLabel,
           provenance: assignment.provenance,
           reason,
         });
@@ -887,7 +709,7 @@ export class Coordinator {
           title: root.title,
           completed: isCompleted,
           evidence: evidenceById.get(root.id) ?? null,
-          reason: "No active home; remains unfiled.",
+          reason: "Its topic has no workstream, so it stays Unfiled.",
         });
       }
     }

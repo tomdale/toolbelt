@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { emptyState, section, sidebarThread } from "./fixtures.ts";
-import type { CatalogState, CorpusEntity } from "../../src/domain/corpus.ts";
+import type { TopicState, Topic } from "../../src/domain/topics.ts";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -11,7 +11,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-const entities: CorpusEntity[] = [
+const entities: Topic[] = [
   {
     id: "prod_platform",
     name: "Platform",
@@ -35,7 +35,7 @@ const entities: CorpusEntity[] = [
   },
 ];
 
-const catalogState: CatalogState = {
+const catalogState: TopicState = {
   entities,
   groups: { sec_a: "prod_platform" },
   assignments: {
@@ -53,7 +53,7 @@ const catalogState: CatalogState = {
       threadId: "t-child",
       entityId: "feat_auth",
       status: "assigned",
-      provenance: "automatic",
+      provenance: "full",
       label: "Platform: Auth",
       ancestorIds: ["feat_auth", "prod_platform"],
       evidence: "recap analysis",
@@ -63,7 +63,7 @@ const catalogState: CatalogState = {
       threadId: "t-auto",
       entityId: "feat_auth",
       status: "assigned",
-      provenance: "automatic",
+      provenance: "full",
       label: "Platform: Auth",
       ancestorIds: ["feat_auth", "prod_platform"],
       evidence: "recap analysis",
@@ -97,7 +97,7 @@ async function mountTaskIdentityHeader(
   threadId: string,
   options: {
     threads?: ReturnType<typeof sidebarThread>[];
-    catalog?: CatalogState;
+    catalog?: TopicState;
     rpcCalls?: { method: string; args: unknown }[];
   } = {},
 ) {
@@ -175,7 +175,7 @@ async function mountTaskIdentityHeader(
               threadId,
               entityId: "feat_auth",
               status: "assigned",
-              provenance: "automatic",
+              provenance: "full",
               label: "Platform: Auth",
               ancestorIds: ["feat_auth", "prod_platform"],
               evidence: "model reclassify",
@@ -221,15 +221,15 @@ describe("Topic control", () => {
     slot.lifecycle.unmount();
   });
 
-  it("shows Unclassified when the classifier found no topic", async () => {
+  it("shows No topic when Workstreams found none", async () => {
     const slot = await mountTaskIdentityHeader("t-unresolved-in-workstream");
     const button = await slot.findByRole("button", {
-      name: "Topic: Unclassified (automatic)",
+      name: "Topic: No topic (automatic)",
     });
     expect(button.className).toContain("ws-task-identity-unresolved");
     fireEvent.click(button);
     const automatic = await screen.findByRole("button", { name: /^Automatic/ });
-    expect(automatic.textContent).toBe("AutomaticUnclassified");
+    expect(automatic.textContent).toBe("AutomaticNo topic");
     slot.lifecycle.unmount();
   });
 

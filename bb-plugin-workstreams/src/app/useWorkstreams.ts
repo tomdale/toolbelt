@@ -8,15 +8,13 @@ import {
   experimental_useSidebarThreads,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
-import type { Placement } from "../server/service.ts";
 import type { MapRecord } from "../server/map.ts";
 import { projectWorkstreams, type Projection } from "../domain/project.ts";
-import { isCurrent } from "../domain/analysis.ts";
 import type { Recap } from "../domain/recap.ts";
 import { needsYou, workView } from "../domain/status.ts";
 import type { ManualOrder } from "../domain/order.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
-import type { CatalogState } from "../domain/corpus.ts";
+import type { TopicState } from "../domain/topics.ts";
 import {
   isSnoozed,
   type SnoozePrefs,
@@ -33,17 +31,15 @@ export type ServerState = {
    */
   ready?: boolean;
   workstreams: Record<string, MapRecord>;
-  placements: Record<string, Placement>;
   analysis: Record<string, StoredAnalysis>;
   /** Agent recaps for each thread's latest turn. */
   recaps: Record<string, Recap>;
-  driftDismissed: Record<string, string>;
   bootstrapped: boolean;
   lastReconciledAt: number | null;
   order: ManualOrder;
   snoozes: Record<string, ThreadSnooze>;
   snoozePrefs: SnoozePrefs;
-  catalog?: CatalogState;
+  catalog?: TopicState;
 };
 
 export type ReorderChange =
@@ -133,28 +129,4 @@ export function useWorkstreams() {
     showArchived: prefs?.sidebar.showArchived ?? true,
     showParentThreadLink: prefs?.threads.showParentLink ?? false,
   };
-}
-
-/**
- * A task thread's drift flag: a current, high-confidence analysis that the
- * latest request belongs elsewhere, not already dismissed for that target.
- */
-export function driftOf(
-  thread: { id: string; status: string; latestAttentionAt: number } | undefined,
-  server: ServerState,
-): { target: string; sectionId: string | null } | null {
-  if (!thread) return null;
-  const analysis = server.analysis[thread.id];
-  if (!isCurrent(analysis, thread)) return null;
-  const drift = analysis.drift;
-  if (!drift || drift.confidence !== "high") return null;
-  const key = analysis.driftSectionId ?? drift.newName ?? "";
-  if (!key || server.driftDismissed[thread.id] === key) return null;
-  const name =
-    (analysis.driftSectionId
-      ? server.workstreams[analysis.driftSectionId]?.name
-      : null) ??
-    drift.workstream ??
-    drift.newName;
-  return name ? { target: name, sectionId: analysis.driftSectionId } : null;
 }

@@ -22,8 +22,8 @@ import {
 } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
-import { corpusLabel } from "../../domain/corpus-label.ts";
-import type { CorpusEntity } from "../../domain/corpus.ts";
+import { topicPath } from "../../domain/topic-path.ts";
+import type { Topic } from "../../domain/topics.ts";
 import {
   Command,
   CommandGroup,
@@ -127,8 +127,8 @@ function Description({ text }: { text: string | null | undefined }) {
 
 /** Matches search queries against entity name, full ancestry, aliases, and description. */
 export function matchesEntity(
-  entity: CorpusEntity,
-  entities: readonly CorpusEntity[],
+  entity: Topic,
+  entities: readonly Topic[],
   query: string,
 ): boolean {
   if (!query) return true;
@@ -153,11 +153,11 @@ export function matchesEntity(
 
 /**
  * The Catalog's entities, fetched each time `enabled` turns on (a picker
- * opening) so the list reflects products and features added since.
+ * opening) so the list reflects topics added since.
  */
-export function useCatalogEntities(enabled: boolean): CorpusEntity[] {
+export function useCatalogEntities(enabled: boolean): Topic[] {
   const rpc = useRpc<RpcContract>();
-  const [entities, setEntities] = useState<CorpusEntity[]>([]);
+  const [entities, setEntities] = useState<Topic[]>([]);
   useEffect(() => {
     if (!enabled) return;
     let live = true;
@@ -174,7 +174,7 @@ export function useCatalogEntities(enabled: boolean): CorpusEntity[] {
   return entities;
 }
 
-/** The Product or feature field's value as the pickers state it. */
+/** The Topic field's value as the pickers state it. */
 export function identityValue(state: NewWorkState): string {
   return state.identity ? state.identity.label : "Automatic";
 }
@@ -182,7 +182,7 @@ export function identityValue(state: NewWorkState): string {
 export interface OptionsProps {
   newWork: NewWork;
   /** The Catalog, empty until `useCatalogEntities` has loaded it. */
-  entities: readonly CorpusEntity[];
+  entities: readonly Topic[];
   query: string;
   onQueryChange: (query: string) => void;
   /** Runs after a choice has been applied, so the surface can close. */
@@ -190,7 +190,7 @@ export interface OptionsProps {
   variant?: OptionsVariant;
 }
 
-/** The Product or feature list: Automatic, the Catalog, a new proposal, Unresolved. */
+/** The Topic list: Automatic, the topic tree, a new topic, and No topic. */
 export function IdentityOptions({
   newWork,
   entities,
@@ -207,8 +207,8 @@ export function IdentityOptions({
       .filter((e) => matchesEntity(e, entities, needle))
       .sort((a, b) =>
         compareGroupNames(
-          corpusLabel(a.id, entities),
-          corpusLabel(b.id, entities),
+          topicPath(a.id, entities),
+          topicPath(b.id, entities),
         ),
       );
   }, [entities, needle]);
@@ -221,7 +221,7 @@ export function IdentityOptions({
 
   return (
     <Command
-      label="Search products and features"
+      label="Search topics"
       shouldFilter={false}
       defaultValue={
         variant === "sheet"
@@ -235,8 +235,8 @@ export function IdentityOptions({
       className="min-h-0"
     >
       <CommandInput
-        aria-label="Search products and features"
-        placeholder="Find a product or feature"
+        aria-label="Search topics"
+        placeholder="Find a topic"
         value={query}
         onValueChange={onQueryChange}
         className={styles.input}
@@ -263,7 +263,7 @@ export function IdentityOptions({
                   styles.note,
                 )}
               >
-                The classifier identifies products and features
+                Workstreams picks the topic from the request
               </span>
             </span>
             <Icon
@@ -279,7 +279,7 @@ export function IdentityOptions({
         {visibleEntities.length ? (
           <CommandGroup heading="Products and features">
             {visibleEntities.map((entity) => {
-              const fullLabel = corpusLabel(entity.id, entities);
+              const fullLabel = topicPath(entity.id, entities);
               const isSelected =
                 isManual && state.identity?.entityId === entity.id;
               return (
@@ -345,7 +345,7 @@ export function IdentityOptions({
                 aria-hidden
               />
               <span className="min-w-0 flex-1 truncate">
-                New feature proposal “{query.trim()}”
+                New topic “{query.trim()}”
               </span>
             </CommandItem>
           ) : null}
@@ -363,7 +363,7 @@ export function IdentityOptions({
               className="size-4 text-muted-foreground"
               aria-hidden
             />
-            Unresolved
+            No topic
             <Icon
               name="Check"
               className={cn(

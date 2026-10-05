@@ -99,8 +99,8 @@ it("forwards saved Pi Gateway controls through host RPC and traces the direct pr
     const db = world.bb.storage.database();
     savePrefs(db, {
       advanced: { debug: true },
-      threads: {
-        analysisModel: {
+      analysis: {
+        fullModel: {
           kind: "provider",
           providerId: "pi",
           model: "vercel-ai-gateway/openai/test",

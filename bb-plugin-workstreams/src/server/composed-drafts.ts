@@ -1,6 +1,6 @@
 /**
- * Pairs a thread BB's native New thread view just created with the Product or
- * feature its Workstreams banner showed for that draft.
+ * Pairs a thread BB's native New thread view just created with the topic its
+ * Workstreams banner showed for that draft.
  *
  * The banner can attach the choice as submit data only when it sees the
  * submit: BB's Enter key calls the composer's submit directly and fires no
@@ -10,12 +10,19 @@
  * fresh first message against them by text. Either side can arrive first: a
  * dispatch with no matching draft waits briefly for a late report.
  */
-import type { DraftSubjectProposal } from "../domain/corpus.ts";
+import type { DraftSubjectProposal } from "../domain/topics.ts";
 
+/**
+ * The topic a composer showed: one you picked (`manual`), the topic of the
+ * workstream whose ＋ opened it (`inherited`, by `sectionId`), or Quick
+ * analysis's preview (`automatic`), with the goal that titles the thread.
+ */
 export type ComposedIdentity = {
   entityId?: string | null;
   proposal?: DraftSubjectProposal | null;
-  provenance?: "manual" | "automatic";
+  provenance?: "manual" | "automatic" | "inherited";
+  sectionId?: string | null;
+  goal?: string | null;
 } | null;
 
 type Draft = { text: string; identity: ComposedIdentity; at: number };

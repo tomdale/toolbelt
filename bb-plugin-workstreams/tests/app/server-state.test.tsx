@@ -43,10 +43,8 @@ afterEach(() => {
 function state(revision = 1): ServerState {
   return {
     workstreams: {},
-    placements: {},
     analysis: {},
     recaps: {},
-    driftDismissed: {},
     bootstrapped: true,
     lastReconciledAt: revision,
     order: { workstreams: [], threads: {}, prioritized: [] },
@@ -261,21 +259,19 @@ describe("shared server state", () => {
     });
     await slot.behavior.emitRealtime("changed", {});
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
-    firstRead.resolve({ ...state(2), driftDismissed: { t: "server-change" } });
+    firstRead.resolve({ ...state(2), bootstrapped: false });
     await Promise.resolve();
-    expect(consumers.get(0)!.server.driftDismissed).toEqual({});
+    expect(consumers.get(0)!.server.lastReconciledAt).not.toBe(2);
     write.resolve({
       order: { workstreams: ["a"], threads: {}, prioritized: [] },
     });
     await mutation;
     await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
-    secondRead.resolve({ ...state(3), driftDismissed: { t: "server-change" } });
+    secondRead.resolve({ ...state(3), bootstrapped: false });
     await waitFor(() =>
       expect(consumers.get(0)!.server.lastReconciledAt).toBe(3),
     );
-    expect(consumers.get(0)!.server.driftDismissed).toEqual({
-      t: "server-change",
-    });
+    expect(consumers.get(0)!.server.bootstrapped).toBe(false);
   });
 
   it("rolls back rejected preferences and shows authoritative normalization", async () => {

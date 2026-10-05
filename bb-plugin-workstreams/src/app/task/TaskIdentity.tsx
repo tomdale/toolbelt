@@ -7,8 +7,8 @@ import {
 } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { useSharedServerState } from "../serverState.ts";
-import type { CanonicalAssignment, CorpusEntity } from "../../domain/corpus.ts";
-import { corpusLabel } from "../../domain/corpus-label.ts";
+import type { TopicAssignment, Topic } from "../../domain/topics.ts";
+import { topicPath } from "../../domain/topic-path.ts";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
 import { TAG_ICON } from "../workstream-icon.ts";
 
@@ -20,20 +20,22 @@ import { TAG_ICON } from "../workstream-icon.ts";
  * parent thread's topic and can't be set on its own.
  */
 
-const UNCLASSIFIED = "Unclassified";
+const UNCLASSIFIED = "No topic";
 const CLASSIFYING = "Classifying…";
 
-const topicPath = (id: string, entities: readonly CorpusEntity[]) =>
-  corpusLabel(id, entities).replace(/: /g, " › ");
+const displayTopicPath = (id: string, entities: readonly Topic[]) =>
+  topicPath(id, entities).replace(/: /g, " › ");
 
 /** Whether the classifier, not the user, owns this thread's topic. */
-export const isAutomaticTopic = (assignment: CanonicalAssignment | null) =>
+export const isAutomaticTopic = (assignment: TopicAssignment | null) =>
   assignment?.provenance !== "manual";
 
 export type TopicButtonProps = {
   /** The effective topic path, or null when the thread has none. */
   label: string | null;
   isAutomatic: boolean;
+  /** Where the topic came from, for its description. */
+  provenance?: TopicAssignment["provenance"];
   isFork?: boolean;
   isClassifying?: boolean;
   isCompact?: boolean;
@@ -45,6 +47,7 @@ export type TopicButtonProps = {
 export function TopicButton({
   label,
   isAutomatic,
+  provenance = null,
   isFork = false,
   isClassifying = false,
   isCompact = false,
@@ -55,9 +58,13 @@ export function TopicButton({
   const displayLabel = isClassifying ? CLASSIFYING : (label ?? UNCLASSIFIED);
   const source = isFork
     ? "same as parent thread"
-    : isAutomatic
-      ? "automatic"
-      : "chosen by you";
+    : !isAutomatic
+      ? "chosen by you"
+      : provenance === "quick"
+        ? "a quick guess until the first turn ends"
+        : provenance === "inherited"
+          ? "from where the thread started"
+          : "automatic";
 
   return (
     <button
@@ -83,8 +90,8 @@ export function TopicButton({
 }
 
 export type TopicPickerProps = {
-  assignment: CanonicalAssignment | null;
-  entities: readonly CorpusEntity[];
+  assignment: TopicAssignment | null;
+  entities: readonly Topic[];
   onSelectTopic: (entityId: string) => Promise<void> | void;
   onSelectAutomatic: () => Promise<void> | void;
   onClose?: () => void;
@@ -110,7 +117,7 @@ export function TopicPicker({
     pending === "automatic"
       ? CLASSIFYING
       : automatic && currentEntity
-        ? topicPath(currentEntity.id, entities)
+        ? displayTopicPath(currentEntity.id, entities)
         : automatic
           ? UNCLASSIFIED
           : "Let Workstreams choose";
@@ -121,15 +128,15 @@ export function TopicPicker({
       .filter((entity) => {
         if (!needle) return true;
         return (
-          corpusLabel(entity.id, entities).toLowerCase().includes(needle) ||
+          displayTopicPath(entity.id, entities).toLowerCase().includes(needle) ||
           entity.description.toLowerCase().includes(needle) ||
           entity.aliases.some((a) => a.toLowerCase().includes(needle))
         );
       })
       .sort((a, b) =>
         compareGroupNames(
-          corpusLabel(a.id, entities),
-          corpusLabel(b.id, entities),
+          displayTopicPath(a.id, entities),
+          displayTopicPath(b.id, entities),
         ),
       );
   }, [entities, search]);
@@ -216,7 +223,7 @@ export function TopicPicker({
               >
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">
-                    {topicPath(entity.id, entities)}
+                    {displayTopicPath(entity.id, entities)}
                   </div>
                   {entity.aliases.length ? (
                     <div className="truncate text-[10px] text-muted-foreground">
@@ -272,7 +279,7 @@ export function TaskIdentity({
   const currentEntity = assignment?.entityId
     ? (entities.find((e) => e.id === assignment.entityId) ?? null)
     : null;
-  const label = currentEntity ? topicPath(currentEntity.id, entities) : null;
+  const label = currentEntity ? displayTopicPath(currentEntity.id, entities) : null;
   const isFork = Boolean(assignment?.inheritedFrom);
   const automatic = isAutomaticTopic(assignment);
 
@@ -282,8 +289,8 @@ export function TaskIdentity({
     onAssigned?.(entityId);
   };
 
-  // Automatic runs the classifier now and stores its result as automatic,
-  // which also lifts a topic the user chose earlier.
+  // Automatic hands the topic back to Workstreams, which settles it now with
+  // Full analysis; that also lifts a topic the user chose earlier.
   const selectAutomatic = async () => {
     setClassifying(true);
     try {
@@ -299,6 +306,7 @@ export function TaskIdentity({
     <TopicButton
       label={label}
       isAutomatic={automatic}
+      provenance={assignment?.provenance ?? null}
       isFork={isFork}
       isClassifying={classifying}
       isCompact={isCompactViewport}

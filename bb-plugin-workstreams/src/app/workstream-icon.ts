@@ -15,7 +15,7 @@ export const WORKSTREAM_ICON = "workstreams/workstream";
 export const NO_WORKSTREAM_ICON = "workstreams/workstream-none";
 
 /**
- * A price tag, for a Catalog product or feature. BB's icon set has no tag, and
+ * A price tag, for a topic. BB's icon set has no tag, and
  * an unknown icon name draws BB's lightning-bolt fallback, so it is declared in
  * the manifest like the marks above.
  */

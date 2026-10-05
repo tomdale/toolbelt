@@ -18,9 +18,8 @@ import { relativeAge } from "../domain/presentation.ts";
 import { isCurrent } from "../domain/analysis.ts";
 import { needsYou, workView } from "../domain/status.ts";
 import type { Analyzer, StoredAnalysis } from "./analyzer.ts";
-import type { Coordinator } from "./coordinator.ts";
+import type { Organizer } from "./organizer.ts";
 import type { WorkstreamMap } from "./map.ts";
-import type { RouteDecision, Router } from "./router.ts";
 import {
   listActiveThreads,
   listSections,
@@ -36,11 +35,11 @@ import {
 } from "../domain/trace.ts";
 import type { TraceStore } from "./trace.ts";
 import type { StoredOrder } from "./order.ts";
-import type { CorpusStore } from "./corpus.ts";
-import type { CorpusEntity, CanonicalAssignment } from "../domain/corpus.ts";
-import { corpusLabel } from "../domain/corpus-label.ts";
+import type { TopicStore } from "./topics.ts";
+import type { Topic, TopicAssignment } from "../domain/topics.ts";
+import { topicPath } from "../domain/topic-path.ts";
 import { activeHome } from "../domain/regroup.ts";
-import { DEFAULT_MODELS, type Prefs } from "../domain/prefs.ts";
+import type { Prefs } from "../domain/prefs.ts";
 import type { Inference } from "./model.ts";
 
 const TITLE_MAX = 80;
@@ -63,10 +62,19 @@ function resolveWorkstream(sections: Section[], arg: string): Section | null {
   );
 }
 
-function resolveEntity(corpus: CorpusStore, arg: string): CorpusEntity {
-  const direct = corpus.getById(arg);
+/** How `thread show` names where a thread's topic came from. */
+const TOPIC_SOURCE_LABEL = {
+  manual: "set by you",
+  inherited: "inherited from where the thread started",
+  full: "settled by Full analysis",
+  quick: "Quick analysis's guess from the first request",
+  none: "none yet",
+} as const;
+
+function resolveTopic(topics: TopicStore, arg: string): Topic {
+  const direct = topics.getById(arg);
   if (direct) return direct;
-  const list = corpus.list();
+  const list = topics.list();
   const lowered = arg.trim().toLowerCase();
   const byName = list.find((e) => e.name.toLowerCase() === lowered);
   if (byName) return byName;
@@ -74,7 +82,7 @@ function resolveEntity(corpus: CorpusStore, arg: string): CorpusEntity {
     e.aliases.some((a) => a.toLowerCase() === lowered),
   );
   if (byAlias) return byAlias;
-  throw new PluginCliError(`Unknown product or feature: "${arg}"`, {
+  throw new PluginCliError(`Unknown topic: "${arg}"`, {
     code: "catalog_entity_not_found",
   });
 }
@@ -176,12 +184,11 @@ export function registerCli(
     journal,
     analyzer,
     recaps,
-    coordinator,
+    organizer,
     map,
-    router,
     traces,
     arrangement,
-    corpus,
+    topics,
     inference,
     currentPrefs,
     notify,
@@ -196,19 +203,16 @@ export function registerCli(
     journal: Journal;
     analyzer: Analyzer;
     recaps: AgentRecaps;
-    coordinator: Coordinator;
+    organizer: Organizer;
     map: WorkstreamMap;
-    router: Router;
     traces: TraceStore;
-    corpus: CorpusStore;
+    topics: TopicStore;
     inference?: Inference;
     currentPrefs?: () => Prefs;
     notify?: () => void;
     reclassifyTask?: (input: {
       threadId: string;
-      entityId?: string | null;
-      evidence?: string;
-    }) => Promise<{ assignment: CanonicalAssignment }>;
+    }) => Promise<{ assignment: TopicAssignment }>;
   },
 ): void {
   const load = async () => {
@@ -418,16 +422,12 @@ export function registerCli(
                 stdout: options.json
                   ? JSON.stringify({ ...result, seconds }, null, 2)
                   : [
-                      `${result.state.replace("_", " ")} · ${result.subject ?? "no subject"} · ${seconds}s · ${result.model}`,
+                      `${result.state.replace("_", " ")}${result.reported ? " (reported)" : ""} · ${seconds}s · ${result.model}`,
                       result.recap,
                       ...(result.goal ? [`Goal: ${result.goal}`] : []),
+                      `Topic: ${topics.assignment(positionals.thread).label ?? "none"}`,
                       ...(result.needsYou
                         ? [`Up Next: ${result.needsYou}`]
-                        : []),
-                      ...(result.drift
-                        ? [
-                            `Drift (${result.drift.confidence}): ${result.drift.workstream ?? result.drift.newName}`,
-                          ]
                         : []),
                     ].join("\n"),
               };
@@ -442,127 +442,41 @@ export function registerCli(
             };
           },
         }),
-        handoff: cliCommand({
-          summary:
-            "Transfer a request with explicit user approval to a new thread, a new workstream, or an existing thread",
-          options: {
-            request: {
-              type: "string",
-              stdin: true,
-              required: true,
-              description:
-                "The user's request, verbatim. Prefer --request-stdin with a quoted heredoc",
-            },
-            note: {
-              type: "string",
-              description: "Context for the receiving thread (one line)",
-            },
-            "dry-run": {
-              type: "boolean",
-              description: "Print the route without acting",
-            },
-            json: { type: "boolean", description: "Print JSON" },
-          },
-          async run({ options }, ctx) {
-            const caller = ctx.threadId;
-            if (!caller)
-              throw new PluginCliError(
-                "Run handoff from inside a BB thread (BB_THREAD_ID is not set).",
-                { code: "no_caller" },
-              );
-            const request = options.request.trim();
-            if (!request)
-              throw new PluginCliError("The request is empty.", {
-                code: "empty_request",
-              });
-            if (!options["dry-run"])
-              takeHandoffSlot(caller, await turnOf(bb, caller));
-            const source = await bb.sdk.threads.get({ threadId: caller });
-            const decision = await router
-              .route(request, {
-                // Never back to the caller, or to the thread that handed the
-                // caller its work: a handoff doesn't bounce. Keep a filed
-                // caller's handoff in its workstream.
-                exclude: [caller, ...(await handedOffFrom(bb, caller))],
-                workstreamId: source.sectionId ?? null,
-                about: caller,
-              })
-              .catch(fail);
-            const note = options.note
-              ? ` (${options.note.replace(/\s+/g, " ").slice(0, 200)})`
-              : "";
-            // Plugin-sent messages show as the user's (SPEC §5), so the
-            // receiving thread is told where this came from.
-            const message = `Handed off from @thread:${caller}${note}. You own this task and the user continues here. The dispatch to this receiving thread fulfills any instruction in the original request to start or move the work into another thread. Carry out the remaining task here, retaining its execution preferences. Resolve repository or environment setup as part of the task; transfer ownership again only with a further explicit user request or approval.\n\nOriginal user request (preserved verbatim):\n${request}`;
-            const acted = await actOn(
-              router,
-              decision,
-              request,
-              options["dry-run"],
-              "handoff",
-              { message, spawnedFrom: caller },
-            );
-            return {
-              exitCode: acted.outcome === "unsure" ? 3 : 0,
-              stdout: options.json
-                ? JSON.stringify(acted)
-                : describeOutcome(acted, options["dry-run"]),
-            };
-          },
-        }),
         organization: cliCommand({
-          summary: "Read or retry the current live organization state",
+          summary:
+            "Show how threads are organized into workstreams, or organize them again now",
           options: {
-            retry: {
+            rebuild: {
               type: "boolean",
-              description: "Retry failed derivation or trigger rebuild",
+              description:
+                "Run an organizer pass now, and retry one that failed",
             },
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ options }) {
-            const state = options.retry
-              ? await coordinator.rebuild().catch(fail)
-              : coordinator.state();
+            const state = options.rebuild
+              ? await organizer.rebuild().catch(fail)
+              : organizer.state();
+            const coverage = analyzer.coverage();
             if (options.json)
               return {
                 exitCode: state.status === "failed" ? 1 : 0,
-                stdout: JSON.stringify(state, null, 2),
+                stdout: JSON.stringify({ ...state, coverage }, null, 2),
               };
             const lines = [
               `Status: ${state.status}${state.error ? ` (${state.error})` : ""}`,
               `Workstreams: ${state.groups.length}`,
-              `Active roots: ${state.counts.activeRoots}, Completed: ${state.counts.completedRoots}, Unresolved: ${state.counts.unresolvedRoots}`,
+              `Active threads: ${state.counts.activeRoots}, done: ${state.counts.completedRoots}, no topic: ${state.counts.unresolvedRoots}`,
+              `Agent reports: ${coverage.reported} of ${coverage.analyzed} analyzed latest turns`,
               ...state.groups.map(
                 (g) =>
-                  `  ${g.name} (${g.totalCount} tasks: ${g.activeCount} active, ${g.completedCount} completed)`,
+                  `  ${g.name} (${plural(g.totalCount, "thread")}: ${g.activeCount} active, ${g.completedCount} done)`,
               ),
             ];
             return {
               exitCode: state.status === "failed" ? 1 : 0,
               stdout: lines.join("\n"),
             };
-          },
-        }),
-        rebuild: cliCommand({
-          summary:
-            "Derive workstreams and update active navigation immediately",
-          options: {
-            json: { type: "boolean", description: "Print JSON" },
-          },
-          async run({ options }) {
-            const state = await coordinator.rebuild();
-            if (options.json)
-              return { exitCode: 0, stdout: JSON.stringify(state, null, 2) };
-            const lines = [
-              `Status: ${state.status}`,
-              `Workstreams: ${state.groups.length}`,
-              `Active roots: ${state.counts.activeRoots}, Completed: ${state.counts.completedRoots}, Unresolved: ${state.counts.unresolvedRoots}`,
-              ...state.groups.map(
-                (g) =>
-                  `  ${g.name} (${g.totalCount} tasks: ${g.activeCount} active, ${g.completedCount} completed)`,
-              ),
-            ];
-            return { exitCode: 0, stdout: lines.join("\n") };
           },
         }),
         trace: cliCommand({
@@ -653,13 +567,13 @@ export function registerCli(
             };
           },
         }),
-        "catalog list": cliCommand({
+        "topics list": cliCommand({
           summary: "List all topics",
           options: {
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ options }) {
-            const entities = corpus.list();
+            const entities = topics.list();
             if (options.json) {
               const items = entities.map((e) => ({
                 id: e.id,
@@ -667,7 +581,7 @@ export function registerCli(
                 description: e.description,
                 parentId: e.parentId,
                 aliases: e.aliases,
-                path: corpusLabel(e.id, entities),
+                path: topicPath(e.id, entities),
               }));
               return {
                 exitCode: 0,
@@ -678,12 +592,12 @@ export function registerCli(
               return { exitCode: 0, stdout: "No topics yet." };
             }
             const sorted = [...entities].sort((a, b) =>
-              corpusLabel(a.id, entities).localeCompare(
-                corpusLabel(b.id, entities),
+              topicPath(a.id, entities).localeCompare(
+                topicPath(b.id, entities),
               ),
             );
             const lines = sorted.map((e) => {
-              const label = corpusLabel(e.id, entities);
+              const label = topicPath(e.id, entities);
               const aliases =
                 e.aliases.length > 0
                   ? ` [aliases: ${e.aliases.join(", ")}]`
@@ -693,11 +607,11 @@ export function registerCli(
             return { exitCode: 0, stdout: lines.join("\n") };
           },
         }),
-        "catalog show": cliCommand({
+        "topics show": cliCommand({
           summary: "Show a topic's details",
           positionals: [
             {
-              name: "identity",
+              name: "topic",
               description: "Topic name or ID",
               required: true,
             },
@@ -706,14 +620,14 @@ export function registerCli(
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ positionals, options }) {
-            const entity = resolveEntity(corpus, positionals.identity);
-            const entities = corpus.list();
-            const label = corpusLabel(entity.id, entities);
-            const groups = corpus.groups();
+            const entity = resolveTopic(topics, positionals.topic);
+            const entities = topics.list();
+            const label = topicPath(entity.id, entities);
+            const groups = topics.groups();
             const home = activeHome(entity.id, [...groups.values()], entities);
-            const assignments = corpus.assignments();
+            const assignments = topics.assignments();
             const assignedThreads = (
-              Object.values(assignments) as CanonicalAssignment[]
+              Object.values(assignments) as TopicAssignment[]
             ).filter((a) => a.entityId === entity.id);
             if (options.json) {
               return {
@@ -731,7 +645,7 @@ export function registerCli(
               };
             }
             const lines = [
-              `Product/Feature: ${label}`,
+              `Topic: ${label}`,
               `ID:              ${entity.id}`,
               `Description:     ${entity.description || "(none)"}`,
               `Parent:          ${entity.parentId ?? "(root)"}`,
@@ -741,7 +655,7 @@ export function registerCli(
             return { exitCode: 0, stdout: lines.join("\n") };
           },
         }),
-        "catalog create": cliCommand({
+        "topics create": cliCommand({
           summary: "Create a topic",
           positionals: [
             {
@@ -768,7 +682,7 @@ export function registerCli(
           async run({ positionals, options }) {
             let parentId: string | null = null;
             if (options.parent) {
-              const parent = resolveEntity(corpus, options.parent);
+              const parent = resolveTopic(topics, options.parent);
               parentId = parent.id;
             }
             const aliases = options.aliases
@@ -778,13 +692,14 @@ export function registerCli(
                   .filter(Boolean)
               : [];
             try {
-              const entity = corpus.create(
+              const entity = topics.create(
                 positionals.name,
                 options.description ?? "",
                 parentId,
                 aliases,
               );
               notify?.();
+              organizer.trigger();
               if (options.json) {
                 return {
                   exitCode: 0,
@@ -803,11 +718,11 @@ export function registerCli(
             }
           },
         }),
-        "catalog edit": cliCommand({
+        "topics edit": cliCommand({
           summary: "Edit a topic's name, description, or aliases",
           positionals: [
             {
-              name: "identity",
+              name: "topic",
               description: "Topic name or ID to edit",
               required: true,
             },
@@ -822,9 +737,9 @@ export function registerCli(
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ positionals, options }) {
-            const entity = resolveEntity(corpus, positionals.identity);
+            const entity = resolveTopic(topics, positionals.topic);
             try {
-              const updated = corpus.edit(entity.id, {
+              const updated = topics.edit(entity.id, {
                 name: options.name,
                 description: options.description,
                 aliases:
@@ -836,6 +751,7 @@ export function registerCli(
                     : undefined,
               });
               notify?.();
+              organizer.trigger();
               if (options.json) {
                 return {
                   exitCode: 0,
@@ -844,7 +760,7 @@ export function registerCli(
               }
               return {
                 exitCode: 0,
-                stdout: `Updated product/feature "${updated.name}" (${updated.id}).`,
+                stdout: `Updated topic "${updated.name}" (${updated.id}).`,
               };
             } catch (err) {
               throw new PluginCliError(
@@ -854,11 +770,11 @@ export function registerCli(
             }
           },
         }),
-        "catalog reparent": cliCommand({
+        "topics reparent": cliCommand({
           summary: "Move a topic under a different parent",
           positionals: [
             {
-              name: "identity",
+              name: "topic",
               description: "Topic name or ID to move",
               required: true,
             },
@@ -867,20 +783,21 @@ export function registerCli(
             to: {
               type: "string",
               description:
-                'New parent product/feature name or ID, or "root" for top-level',
+                'New parent topic name or ID, or "root" for top-level',
             },
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ positionals, options }) {
-            const entity = resolveEntity(corpus, positionals.identity);
+            const entity = resolveTopic(topics, positionals.topic);
             let newParentId: string | null = null;
             if (options.to && options.to.toLowerCase() !== "root") {
-              const parent = resolveEntity(corpus, options.to);
+              const parent = resolveTopic(topics, options.to);
               newParentId = parent.id;
             }
             try {
-              const updated = corpus.reparent(entity.id, newParentId);
+              const updated = topics.reparent(entity.id, newParentId);
               notify?.();
+              organizer.trigger();
               if (options.json) {
                 return {
                   exitCode: 0,
@@ -888,7 +805,7 @@ export function registerCli(
                 };
               }
               const targetName = newParentId
-                ? (corpus.getById(newParentId)?.name ?? newParentId)
+                ? (topics.getById(newParentId)?.name ?? newParentId)
                 : "root";
               return {
                 exitCode: 0,
@@ -902,7 +819,7 @@ export function registerCli(
             }
           },
         }),
-        "catalog merge": cliCommand({
+        "topics merge": cliCommand({
           summary:
             "Merge a topic into another, moving its threads and subtopics",
           positionals: [
@@ -921,11 +838,12 @@ export function registerCli(
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ positionals, options }) {
-            const source = resolveEntity(corpus, positionals.source);
-            const target = resolveEntity(corpus, positionals.target);
+            const source = resolveTopic(topics, positionals.source);
+            const target = resolveTopic(topics, positionals.target);
             try {
-              const result = corpus.merge(source.id, target.id);
+              const result = topics.merge(source.id, target.id);
               notify?.();
+              organizer.trigger();
               if (options.json) {
                 return {
                   exitCode: 0,
@@ -944,8 +862,9 @@ export function registerCli(
             }
           },
         }),
-        "task show": cliCommand({
-          summary: "Show canonical identity and classification for a thread",
+        "thread show": cliCommand({
+          summary:
+            "Show a thread's topic, where it came from, and its workstream",
           positionals: [
             {
               name: "thread",
@@ -959,8 +878,8 @@ export function registerCli(
           async run({ positionals, options }) {
             await service.reconcile();
             const thread = resolveThread(service, positionals.thread);
-            const assignment = corpus.assignment(thread.id);
-            const rootId = corpus.findRootThread(thread.id);
+            const assignment = topics.assignment(thread.id);
+            const rootId = topics.findRootThread(thread.id);
             const rootThread =
               rootId !== thread.id
                 ? service.threads().find((t) => t.id === rootId)
@@ -989,20 +908,18 @@ export function registerCli(
             const lines = [
               `Thread:          ${clip(thread.title)} (@thread:${thread.id})`,
               `Workstream:      ${sectionName}`,
-              `Product/Feature: ${assignment.label ?? "Unresolved"} (${assignment.status})`,
-              `Provenance:      ${assignment.provenance ?? "(none)"}`,
+              `Topic:           ${assignment.label ?? "none"}`,
+              `Source:          ${TOPIC_SOURCE_LABEL[assignment.provenance ?? "none"]}`,
               ...(assignment.inheritedFrom
-                ? [`Inherited from:  @thread:${assignment.inheritedFrom}`]
-                : []),
-              ...(assignment.evidence
-                ? [`Evidence:        ${assignment.evidence}`]
+                ? [`Follows parent:  @thread:${assignment.inheritedFrom}`]
                 : []),
             ];
             return { exitCode: 0, stdout: lines.join("\n") };
           },
         }),
-        "task assign": cliCommand({
-          summary: "Manually assign a thread to a product or feature identity",
+        "thread assign": cliCommand({
+          summary:
+            "Set a thread's topic yourself; Workstreams then leaves it alone",
           positionals: [
             {
               name: "thread",
@@ -1010,7 +927,7 @@ export function registerCli(
               required: true,
             },
             {
-              name: "identity",
+              name: "topic",
               description: "Topic name or ID",
               required: true,
             },
@@ -1021,11 +938,12 @@ export function registerCli(
           async run({ positionals, options }) {
             await service.reconcile();
             const thread = resolveThread(service, positionals.thread);
-            const entity = resolveEntity(corpus, positionals.identity);
-            const assignment = corpus.assign(thread.id, entity.id, {
+            const entity = resolveTopic(topics, positionals.topic);
+            const assignment = topics.assign(thread.id, entity.id, {
               provenance: "manual",
             });
             notify?.();
+            organizer.trigger();
             if (options.json) {
               return {
                 exitCode: 0,
@@ -1038,9 +956,9 @@ export function registerCli(
             };
           },
         }),
-        "task clear": cliCommand({
+        "thread clear": cliCommand({
           summary:
-            "Clear a thread's product or feature identity (mark unresolved)",
+            "Set a thread to have no topic yourself, so it stays Unfiled",
           positionals: [
             {
               name: "thread",
@@ -1054,8 +972,11 @@ export function registerCli(
           async run({ positionals, options }) {
             await service.reconcile();
             const thread = resolveThread(service, positionals.thread);
-            const assignment = corpus.clear(thread.id);
+            const assignment = topics.assign(thread.id, null, {
+              provenance: "manual",
+            });
             notify?.();
+            organizer.trigger();
             if (options.json) {
               return {
                 exitCode: 0,
@@ -1064,13 +985,13 @@ export function registerCli(
             }
             return {
               exitCode: 0,
-              stdout: `Cleared product/feature identity for @thread:${thread.id} (unresolved).`,
+              stdout: `@thread:${thread.id} has no topic now, and stays Unfiled.`,
             };
           },
         }),
-        "task reclassify": cliCommand({
+        "thread reclassify": cliCommand({
           summary:
-            "Classify a thread's topic again with the model, or set it directly",
+            "Hand a thread's topic back to Workstreams and settle it now with Full analysis",
           positionals: [
             {
               name: "thread",
@@ -1079,21 +1000,11 @@ export function registerCli(
             },
           ],
           options: {
-            identity: {
-              type: "string",
-              description:
-                "Optional explicit product/feature name or ID override",
-            },
             json: { type: "boolean", description: "Print JSON" },
           },
           async run({ positionals, options }) {
             await service.reconcile();
             const thread = resolveThread(service, positionals.thread);
-            let entityId: string | undefined = undefined;
-            if (options.identity) {
-              const entity = resolveEntity(corpus, options.identity);
-              entityId = entity.id;
-            }
             if (!reclassifyTask) {
               throw new PluginCliError(
                 "Inference is unavailable for reclassification.",
@@ -1102,7 +1013,6 @@ export function registerCli(
             }
             const { assignment } = await reclassifyTask({
               threadId: thread.id,
-              entityId,
             }).catch((error: unknown) => {
               throw new PluginCliError(
                 error instanceof Error ? error.message : String(error),
@@ -1117,171 +1027,11 @@ export function registerCli(
             }
             return {
               exitCode: 0,
-              stdout: `Reclassified @thread:${thread.id} as ${assignment.label ?? "Unresolved"} (${assignment.status}).`,
+              stdout: `@thread:${thread.id}'s topic is now ${assignment.label ?? "none"}.`,
             };
           },
         }),
       },
     }),
   );
-}
-
-export type Acted = {
-  outcome: RouteDecision["outcome"];
-  threadId: string | null;
-  link: string | null;
-  workstream: string | null;
-  reason: string;
-  candidates?: string[];
-  /**
-   * The routing call's debug trace (`bb workstreams trace <id>`); present
-   * only when Debug mode recorded one.
-   */
-  traceId?: string;
-};
-
-/**
- * The policy for callers that can't preview (scripts, agent handoffs):
- * new threads and workstreams act at once, a continue acts only at high
- * confidence and otherwise starts a thread in that thread's workstream, and
- * unsure changes nothing.
- */
-export async function actOn(
-  router: Router,
-  decision: RouteDecision,
-  prompt: string,
-  dryRun: boolean,
-  source: "router" | "handoff",
-  options: { message?: string; spawnedFrom?: string | null } = {},
-): Promise<Acted> {
-  let final = decision;
-  // Continue only when sure; otherwise start a thread in the target's
-  // workstream (SPEC §5), or change nothing when it has none.
-  if (
-    final.outcome === "continue" &&
-    (final.confidence !== "high" || final.threadId === options.spawnedFrom)
-  ) {
-    router.forget(decision.id);
-    final = final.sectionId
-      ? {
-          ...(await router.route(prompt, {
-            workstreamId: final.sectionId,
-            exclude: options.spawnedFrom ?? null,
-          })),
-          // The routing call that picked the thread still explains this.
-          traceId: final.traceId,
-        }
-      : ({ ...final, outcome: "unsure", candidates: [] } as RouteDecision);
-  }
-  const workstream =
-    final.outcome === "new-thread"
-      ? final.workstream
-      : final.outcome === "new-workstream"
-        ? final.name
-        : final.outcome === "continue"
-          ? final.workstream
-          : null;
-  if (final.outcome === "unsure" || dryRun) {
-    // A previewed route must not file a later thread with the same text.
-    router.forget(decision.id);
-    router.forget(final.id);
-  }
-  if (final.outcome === "unsure")
-    return {
-      outcome: "unsure",
-      threadId: null,
-      link: null,
-      workstream: null,
-      reason: final.reason,
-      ...(final.traceId ? { traceId: final.traceId } : {}),
-      candidates:
-        "candidates" in final
-          ? final.candidates.map((c) =>
-              c.kind === "thread"
-                ? `@thread:${c.threadId} (${c.title})`
-                : `${c.name} (workstream)`,
-            )
-          : [],
-    };
-  const result = dryRun
-    ? { threadId: final.outcome === "continue" ? final.threadId : null }
-    : await router.execute(final, prompt, source, options);
-  return {
-    outcome: final.outcome,
-    threadId: result.threadId,
-    link: result.threadId ? `@thread:${result.threadId}` : null,
-    workstream,
-    reason: final.reason,
-    ...(final.traceId ? { traceId: final.traceId } : {}),
-  };
-}
-
-export function describeOutcome(acted: Acted, dryRun = false): string {
-  if (acted.outcome === "unsure")
-    return [
-      `Not sure where this goes: ${acted.reason}`,
-      ...(acted.candidates ?? []).map((c) => `  - ${c}`),
-      "Nothing was started.",
-    ].join("\n");
-  const verb =
-    acted.outcome === "continue"
-      ? dryRun
-        ? "Would send to"
-        : "Sent to"
-      : acted.outcome === "new-workstream"
-        ? dryRun
-          ? "Would start in new workstream"
-          : "Started in new workstream"
-        : dryRun
-          ? "Would start in"
-          : "Started in";
-  return `${verb} ${acted.outcome === "continue" ? (acted.link ?? "") : (acted.workstream ?? "")}${
-    acted.link && acted.outcome !== "continue" ? `: ${acted.link}` : ""
-  }\n${acted.reason}`;
-}
-
-const HANDOFFS_PER_TURN = 3;
-const handoffs = new Map<string, { turn: number; count: number }>();
-
-/**
- * The caller's current turn: the last completed one, which changes when the
- * turn making these calls completes. If BB can't say, a 15-minute window
- * stands in so the limit can't stick forever.
- */
-async function turnOf(bb: BbPluginApi, threadId: string): Promise<number> {
-  try {
-    const thread = await bb.sdk.threads.get({ threadId });
-    return thread.latestAttentionAt ?? thread.updatedAt;
-  } catch {
-    return -Math.floor(Date.now() / (15 * 60_000));
-  }
-}
-
-/** At most three handoffs per turn per calling thread (SPEC §5). */
-function takeHandoffSlot(caller: string, turn: number): void {
-  const current = handoffs.get(caller);
-  const count = current && current.turn === turn ? current.count : 0;
-  if (count >= HANDOFFS_PER_TURN)
-    throw new PluginCliError(
-      `This thread already handed off ${HANDOFFS_PER_TURN} requests this turn. Ask the user before handing off more.`,
-      { code: "handoff_limit" },
-    );
-  handoffs.set(caller, { turn, count: count + 1 });
-}
-
-/** The thread a handoff came from, per the caller's Workstreams metadata. */
-async function handedOffFrom(
-  bb: BbPluginApi,
-  threadId: string,
-): Promise<string[]> {
-  try {
-    const metadata = (await bb.sdk.threads.getPluginMetadata({ threadId })) as {
-      spawnedFrom?: unknown;
-    };
-    return typeof metadata.spawnedFrom === "string"
-      ? [metadata.spawnedFrom]
-      : [];
-  } catch {
-    return [];
-  }
 }

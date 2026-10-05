@@ -21,23 +21,24 @@ import { primaryButton } from "./controls.ts";
 import { StatusMark } from "../sidebar/StatusMark.tsx";
 import { useWorkstreams, type WorkView } from "../useWorkstreams.ts";
 import { Activity } from "./Activity.tsx";
-import { MapTab } from "./MapTab.tsx";
+import { Organize } from "./Organize.tsx";
+import { TaskIdentity } from "../task/TaskIdentity.tsx";
 import { Catalog } from "./Catalog.tsx";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
 import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 
-type Tab = "overview" | "topics" | "map" | "activity";
+type Tab = "overview" | "topics" | "organization" | "activity";
 const TAB_LABEL: Record<Tab, string> = {
   overview: "Overview",
   topics: "Topics",
-  map: "Organize",
+  organization: "Organization",
   activity: "Activity",
 };
 
 /**
- * `subPath` deep links select the topics, map, or activity view. `catalog`
- * is the topics view's former name and still opens it.
+ * `subPath` deep links select the topics, organization, or activity view.
+ * `catalog` and `map` are former names and still open their views.
  */
 function tabOf(subPath: string): {
   tab: Tab;
@@ -47,7 +48,8 @@ function tabOf(subPath: string): {
   const [head, ...rest] = subPath.split("/");
   if (head === "topics" || head === "catalog")
     return { tab: "topics", focus: null };
-  if (head === "map") return { tab: "map", focus: null };
+  if (head === "organization" || head === "map")
+    return { tab: "organization", focus: null };
   if (head === "activity")
     return { tab: "activity", focus: rest.join("/") || null };
   if (head === "debug")
@@ -62,7 +64,7 @@ export function WorkstreamsPage({
   const navigate = useBbNavigate();
   const linked = tabOf(subPath);
   const [tab, setTab] = useState<Tab>(linked.tab);
-  const tabs: Tab[] = ["overview", "topics", "map", "activity"];
+  const tabs: Tab[] = ["overview", "topics", "organization", "activity"];
   useLayoutEffect(() => setTab(tabOf(subPath).tab), [subPath]);
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
@@ -166,12 +168,15 @@ export function WorkstreamsPage({
             {!ws.server.bootstrapped && ws.status === "ready" ? (
               <button
                 type="button"
-                onClick={() => setTab("map")}
+                onClick={() => setTab("organization")}
                 className="mt-6 w-full rounded-lg border border-border px-4 py-3 text-left text-sm hover:bg-state-hover"
               >
-                <span className="font-medium">Organize your workstreams</span>
+                <span className="font-medium">
+                  See how threads are organized
+                </span>
                 <span className="block text-xs text-muted-foreground">
-                  One reviewed pass groups your open threads by product.
+                  Workstreams files each open thread in the workstream for its
+                  topic.
                 </span>
               </button>
             ) : null}
@@ -210,13 +215,15 @@ export function WorkstreamsPage({
           </div>
         ) : tab === "topics" ? (
           <Catalog rpc={ws.rpc} serverCatalog={ws.server.catalog} />
-        ) : tab === "map" ? (
-          <MapTab
-            rpc={ws.rpc}
-            records={Object.values(ws.server.workstreams)}
-            bootstrapped={ws.server.bootstrapped}
-            onShowActivity={() => setTab("activity")}
-          />
+        ) : tab === "organization" ? (
+          <div className="mt-6">
+            <Organize
+              rpc={ws.rpc}
+              bootstrapped={ws.server.bootstrapped}
+              onShowActivity={() => setTab("activity")}
+              renderTaskAction={(task) => <TaskIdentity threadId={task.id} />}
+            />
+          </div>
         ) : (
           <Activity
             rpc={ws.rpc}

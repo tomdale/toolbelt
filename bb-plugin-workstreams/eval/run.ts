@@ -1,23 +1,24 @@
 /**
- * Live evaluation of the per-thread analysis prompt (SPEC §10). Opt-in and
+ * Live evaluation of Full analysis and Quick analysis (SPEC §10). Opt-in and
  * never part of `npm test`: it calls models through Pi's AI Gateway.
  *
  *   node eval/run.ts [model ...]
  *
- * Every case goes through the production prompt (`analysisPrompt`) and parser.
- * Fixtures may carry a `project` field for provenance; it is never sent.
- * See README.md for fixtures, modes, and the pass bar.
+ * Every case goes through the production prompts and parsers, with an empty
+ * topic tree, so the topic a case gets is the one the model proposes; it is
+ * scored against the fixture's expected product names. Fixtures may carry a
+ * `project` field for provenance; it is never sent. See README.md.
  */
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import {
-  analysisPrompt,
-  openingGoalPrompt,
-  parseAnalysis,
-  parseOpeningGoal,
-  type AnalysisInput,
-  type AnalysisOutput,
+  fullAnalysisPrompt,
+  parseFullAnalysis,
+  parseQuickAnalysis,
+  quickAnalysisPrompt,
+  type FullAnalysisInput,
+  type WorkState,
 } from "../src/domain/analysis.ts";
 import {
   gatewayComplete,
@@ -30,32 +31,36 @@ type Case = {
   project?: string;
   excerpts: string;
   expected: string[];
-  expectedState?: AnalysisOutput["state"];
-  drift?: { from: string[] } | null;
+  expectedState?: WorkState;
+};
+/** What a run produced: status, goal, and the topic's name. */
+type Output = {
+  state: WorkState | null;
+  goal: string | null;
+  subject: string | null;
 };
 type Result = {
   set: string;
-  mode: "cold" | "warm" | "untitled" | "opening";
+  mode: "cold" | "untitled" | "opening";
   id: string;
   /** The title the fixture shows the model. */
   title: string;
   expected: string[];
   project?: string;
-  output: AnalysisOutput | null;
-  /** The opening-request call's goal, in `opening` mode. */
+  output: Output | null;
+  /** Quick analysis's goal, in `opening` mode. */
   openingGoal?: string | null;
   error?: string;
   seconds: number;
   cost: number;
   expectedState?: string;
-  driftExpected?: boolean;
 };
 
 const env = process.env;
 const models = process.argv.slice(2).length
   ? process.argv.slice(2)
   : ["google/gemini-3.1-flash-lite", "openai/gpt-4.1-mini"];
-const PUBLIC = ["cases", "holdout", "delegation", "state", "drift"];
+const PUBLIC = ["cases", "holdout", "delegation", "state"];
 const privateSet = env.EVAL_PRIVATE;
 if (privateSet) {
   const root = env.EVAL_PRIVATE_ROOT;
@@ -73,11 +78,8 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 const NO_SUBJECT = new Set(["unclassified", "crossprojectcoordination"]);
 
 /** Splits a fixture excerpt into requests and the last assistant message. */
-export function toInput(
-  c: Case,
-  warm?: { own: string; others: string[] },
-): AnalysisInput {
-  const requests: AnalysisInput["requests"][number][] = [];
+export function toInput(c: Case): FullAnalysisInput {
+  const requests: FullAnalysisInput["requests"][number][] = [];
   let lastAssistantText: string | null = null;
   const sections = c.excerpts.split(
     /\n\n(?=Initial user request|Recent user request|Last assistant report)/,
@@ -99,10 +101,9 @@ export function toInput(
   }
   return {
     title: c.title,
-    workstream: warm
-      ? { name: warm.own, description: null, subjects: [] }
-      : null,
-    otherWorkstreams: warm ? warm.others : null,
+    mode: "full",
+    report: null,
+    topic: { entities: [], project: null, current: null },
     // Keep the most recent two requests, as production does.
     requests: [
       ...requests.filter((r) => r.initial).slice(0, 1),
@@ -153,15 +154,12 @@ const subjectOk = (r: Result) => {
   if (subject === null) return r.expected.some((e) => NO_SUBJECT.has(norm(e)));
   return r.expected.some((e) => norm(e) === norm(subject));
 };
-/** Only high-confidence drift is surfaced to the user (SPEC §10). */
-const driftFlag = (r: Result) => r.output?.drift?.confidence === "high";
 const pct = (n: number, d: number) => (d ? `${n}/${d}` : "–");
 const median = (values: number[]) =>
   [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] ?? 0;
 
 function score(results: Result[]) {
   const cold = results.filter((r) => r.mode === "cold");
-  const warm = results.filter((r) => r.mode === "warm");
   const bySet = (set: string) => cold.filter((r) => r.set === set);
   const ok = (rs: Result[]) => rs.filter(subjectOk).length;
   const valid = results.filter((r) => !r.error).length;
@@ -202,8 +200,7 @@ function score(results: Result[]) {
   // title is a rename.
   const renamed = (r: Result) =>
     Boolean(r.output?.goal) && norm(r.output!.goal!) !== norm(r.title);
-  const drifted = warm.filter((r) => r.driftExpected);
-  const healthy = warm.filter((r) => !r.driftExpected);
+  const titled = cold.filter((r) => r.output);
   const seconds = results
     .filter((r) => r.mode !== "opening")
     .map((r) => r.seconds)
@@ -228,19 +225,13 @@ function score(results: Result[]) {
       decisions.filter((r) => r.output?.state === "needs_decision").length,
       decisions.length,
     ),
-    drift: {
-      detected: pct(drifted.filter(driftFlag).length, drifted.length),
-      falseAlarms: pct(healthy.filter(driftFlag).length, healthy.length),
-      falseAlarmIds: healthy.filter(driftFlag).map((r) => `${r.set}:${r.id}`),
-    },
     goal: {
       untitledNamed: pct(untitled.filter(named).length, untitled.length),
-      sideQuestsRenamed: pct(drifted.filter(renamed).length, drifted.length),
-      healthyRenamed: pct(healthy.filter(renamed).length, healthy.length),
-      healthyRenamedIds: healthy
+      renamed: pct(titled.filter(renamed).length, titled.length),
+      renamedIds: titled
         .filter(renamed)
         .map((r) => `${r.set}:${r.id} → ${r.output?.goal}`),
-      examples: [...untitled, ...drifted]
+      examples: untitled
         .filter(named)
         .slice(0, 8)
         .map((r) => `${r.set}:${r.id} → ${r.output?.goal}`),
@@ -276,16 +267,16 @@ for (const name of PUBLIC)
 if (privateSet)
   sets.push(["private", JSON.parse(await readFile(privateSet, "utf8"))]);
 
-// Warm mode files each case under a workstream and offers the others as
-// drift targets: its original product for a side quest, its own otherwise.
-const pool = [
-  ...new Set(sets.flatMap(([, cs]) => cs.map((c) => c.expected[0]!))),
-];
-type Job = { set: string; mode: Result["mode"]; c: Case; input: AnalysisInput };
+type Job = {
+  set: string;
+  mode: Result["mode"];
+  c: Case;
+  input: FullAnalysisInput;
+};
 const jobs: Job[] = [];
 for (const [set, cases] of sets)
   for (const c of cases) {
-    if (set !== "drift") jobs.push({ set, mode: "cold", c, input: toInput(c) });
+    jobs.push({ set, mode: "cold", c, input: toInput(c) });
     // Untitled: BB shows the opening words of the first request instead.
     if (set === "cases" || set === "state") {
       const input = toInput(c);
@@ -304,16 +295,6 @@ for (const [set, cases] of sets)
       // opening request alone.
       jobs.push({ set, mode: "opening", c, input });
     }
-    if (set === "drift" || set === "private" || set === "cases") {
-      const own = c.drift ? c.drift.from[0]! : c.expected[0]!;
-      if (NO_SUBJECT.has(norm(own))) continue;
-      // Aliases of the case's own product aren't "other" workstreams.
-      const aliases = new Set([own, ...c.expected].map(norm));
-      const others = pool.filter(
-        (n) => !aliases.has(norm(n)) && !NO_SUBJECT.has(norm(n)),
-      );
-      jobs.push({ set, mode: "warm", c, input: toInput(c, { own, others }) });
-    }
   }
 
 const report: Record<string, unknown> = {};
@@ -328,28 +309,37 @@ for (const model of models) {
       expected: job.c.expected,
       project: job.c.project,
       expectedState: job.c.expectedState,
-      driftExpected: job.mode === "warm" ? Boolean(job.c.drift) : undefined,
     };
     try {
       if (job.mode === "opening") {
+        const quick = {
+          request: job.input.requests[0]?.text ?? "",
+          entities: [],
+        };
         const { text, cost } = await complete(
           model,
-          openingGoalPrompt({
-            request: job.input.requests[0]?.text ?? "",
-          }),
+          quickAnalysisPrompt(quick),
         );
         return {
           ...base,
           output: null,
-          openingGoal: parseOpeningGoal(text).goal,
+          openingGoal: parseQuickAnalysis(text, quick).goal,
           seconds: (performance.now() - started) / 1000,
           cost,
         };
       }
-      const { text, cost } = await complete(model, analysisPrompt(job.input));
+      const { text, cost } = await complete(
+        model,
+        fullAnalysisPrompt(job.input),
+      );
+      const parsed = parseFullAnalysis(text, job.input);
       return {
         ...base,
-        output: parseAnalysis(text, job.input),
+        output: {
+          state: parsed.status?.state ?? null,
+          goal: parsed.goal,
+          subject: parsed.topic?.proposed?.name ?? null,
+        },
         seconds: (performance.now() - started) / 1000,
         cost,
       };
@@ -374,13 +364,9 @@ for (const model of models) {
         ...summary,
         anchoredOnProject: summary.anchoredOnProject.length,
         misses: summary.misses.filter(isPublic),
-        drift: {
-          ...summary.drift,
-          falseAlarmIds: summary.drift.falseAlarmIds.filter(isPublic),
-        },
         goal: {
           ...summary.goal,
-          healthyRenamedIds: summary.goal.healthyRenamedIds.filter(isPublic),
+          renamedIds: summary.goal.renamedIds.filter(isPublic),
           examples: summary.goal.examples.filter(isPublic),
         },
         opening: {

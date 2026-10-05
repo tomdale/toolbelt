@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeThreadResponse } from "@get-bb/plugin-sdk/testing";
+import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
 import { fakeWorld, type FakeCompletion } from "./fake-bb.ts";
+import { TopicStore } from "../../src/server/topics.ts";
+import { openDatabase } from "../../src/server/db.ts";
+import { RECAP_TOOL } from "../../src/domain/recap.ts";
 
 type World = Awaited<ReturnType<typeof fakeWorld>>;
 let world: World | null = null;
@@ -13,26 +17,11 @@ afterEach(async () => {
 async function setup(complete?: FakeCompletion) {
   world = await fakeWorld({
     complete: (call) => {
-      if (call.prompt.includes("Classify the most specific")) {
-        if (
-          call.prompt.includes("Alpha") ||
-          call.prompt.includes("t1") ||
-          call.prompt.includes("parent")
-        ) {
-          return JSON.stringify({
-            subjectId: null,
-            proposed: { name: "Alpha", description: "Alpha workstream" },
-          });
-        }
-        return JSON.stringify({ subjectId: null, proposed: null });
-      }
       if (complete) return complete(call);
       return JSON.stringify({
         recap: "Fixed the bug; tests pass.",
         state: "review",
         needsYou: null,
-        subject: "Alpha",
-        drift: null,
       });
     },
   });
@@ -44,7 +33,7 @@ type Analysis = {
   goal: string | null;
   state: string;
   revision: number;
-  driftSectionId: string | null;
+  reported?: boolean;
 };
 const state = async (w: World) =>
   (await w.harness.behavior.callRpc("state", null)) as {
@@ -78,7 +67,7 @@ describe("idle analysis", () => {
     await settle(5_000);
     expect(analyses(w)).toHaveLength(1);
     expect(analyses(w)[0]!.prompt).toContain("Fixed; tests pass.");
-    expect(analyses(w)[0]!.model).toBe("google/gemini-3.1-flash-lite");
+    expect(analyses(w)[0]!.model).toBe("openai/gpt-6-sol-fast");
     const { analysis } = await state(w);
     expect(analysis.t1).toMatchObject({
       state: "review",
@@ -99,77 +88,122 @@ describe("idle analysis", () => {
     expect(analyses(w)).toHaveLength(0);
   });
 
-  it("only reads from BB: never moves, renames, or files a thread", async () => {
+  it("settles a root's goal and topic after a new request", async () => {
+    let topicId = "";
     const w = await setup(() =>
       JSON.stringify({
-        recap: "Now building a markdown viewer.",
+        recap: "Building the viewer.",
         state: "in_progress",
-        subject: "Markdown viewer",
-        drift: { workstream: "Beta", newName: null, confidence: "high" },
+        goal: "Markdown viewer themes",
+        subjectId: topicId,
+        proposed: null,
       }),
     );
-    const alpha = w.addSection("Alpha");
-    const beta = w.addSection("Beta");
-    w.addThread("t1", { sectionId: alpha.id });
+    const corpus = new TopicStore(openDatabase(w.bb));
+    topicId = corpus.create("Viewer", "Markdown viewer").id;
+    w.addThread("t1", { latestAttentionAt: 10, status: "idle" });
+    w.converse("t1", ["Add themes to the markdown viewer"]);
     await w.harness.behavior.callRpc("refresh", null);
-    const before = w.harness.inspection.sdk.calls.length;
+    await w.harness.behavior.runCli(["analyze", "t1"]);
+    expect(analyses(w).at(-1)!.prompt).toContain("[" + topicId + "]");
+    expect(corpus.assignment("t1")).toMatchObject({
+      entityId: topicId,
+      provenance: "full",
+    });
+    expect((await state(w)).analysis.t1?.goal).toBe("Markdown viewer themes");
+  });
+
+  it("asks nothing when the agent reported a turn with no new request", async () => {
+    const w = await setup(() =>
+      JSON.stringify({
+        recap: "Working.",
+        state: "in_progress",
+        goal: "Markdown viewer themes",
+      }),
+    );
+    w.addThread("t1", { latestAttentionAt: 10, status: "idle" });
+    w.converse("t1", ["Add themes to the markdown viewer"]);
+    await w.harness.behavior.callRpc("refresh", null);
+    await w.harness.behavior.runCli(["analyze", "t1"]);
+    const asked = analyses(w).length;
+
+    // The agent reports a later turn that you sent nothing new for.
+    await w.harness.behavior.resolveAgentConfiguration(
+      makePluginAgentConfigurationContext({
+        thread: { id: "t1", parentThreadId: null },
+      }),
+    );
+    w.threads.set("t1", { ...w.threads.get("t1")!, latestAttentionAt: 20 });
+    w.turn("t1");
+    await w.harness.behavior.callAgentTool(
+      RECAP_TOOL,
+      { state: "complete", goal: "Shipped themes", latest: ["Added themes"] },
+      { threadId: "t1" },
+    );
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     await idle(w, "t1");
     await settle(6_000);
+    expect(analyses(w)).toHaveLength(asked);
     const { analysis } = await state(w);
-    expect(analysis.t1?.driftSectionId).toBe(beta.id);
-    expect(w.threads.get("t1")?.sectionId).toBe(alpha.id);
-    const READS = new Set([
-      "threads.get",
-      "threads.list",
-      "threads.promptHistory",
-      "threads.output",
-      "threads.events.list",
-      "threads.timeline",
-      "threadSections.list",
-      "hosts.list",
-      "projects.list",
-    ]);
-    const calls = w.harness.inspection.sdk.calls.slice(before);
-    expect(calls.map((c) => c.path)).toContain("threads.get");
-    expect(calls.map((c) => c.path).filter((p) => !READS.has(p))).toEqual([]);
+    expect(analysis.t1).toMatchObject({
+      revision: 20,
+      state: "done",
+      reported: true,
+      goal: "Markdown viewer themes",
+    });
   });
 
-  it("offers drift targets only to task threads, never the project name", async () => {
-    const w = await setup();
-    const alpha = w.addSection("Alpha");
-    w.addSection("Beta");
-    w.addThread("parent", { sectionId: alpha.id, projectId: "proj_secret" });
-    w.addThread("child", { parentThreadId: "parent" });
-    await w.harness.behavior.callRpc("refresh", null);
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    await idle(w, "parent");
-    await idle(w, "child");
-    await settle(6_000);
-    const analyses = w.completions.filter((c) =>
-      c.prompt.includes("You describe one agent thread"),
+  it("asks only for status after a turn with no new request and no report", async () => {
+    const w = await setup(() =>
+      JSON.stringify({
+        recap: "Waiting on CI.",
+        state: "blocked",
+        goal: "Markdown viewer themes",
+      }),
     );
-    const [parent, child] = [
-      analyses.find((c) => c.prompt.includes('Title: "Thread parent"')),
-      analyses.find((c) => c.prompt.includes('Title: "Thread child"')),
-    ];
-    expect(parent?.prompt).toContain('Other workstreams: ["Beta"]');
-    expect(child?.prompt).toContain('Workstream: "Alpha"');
-    expect(child?.prompt).toContain("- drift: null.");
-    for (const c of w.completions) {
-      expect(c.prompt).not.toContain("proj_");
-      expect(c.prompt).not.toContain("Zebracorn");
-    }
-    // Thread analysis does not fetch project details.
-    expect(
-      w.harness.inspection.sdk.calls.filter((c) => c.path === "projects.get"),
-    ).toEqual([]);
+    w.addThread("t1", { latestAttentionAt: 10, status: "idle" });
+    w.converse("t1", ["Add themes to the markdown viewer"]);
+    await w.harness.behavior.callRpc("refresh", null);
+    await w.harness.behavior.runCli(["analyze", "t1"]);
+    w.threads.set("t1", { ...w.threads.get("t1")!, latestAttentionAt: 20 });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await idle(w, "t1");
+    await settle(6_000);
+    const last = analyses(w).at(-1)!.prompt;
+    expect(last).not.toContain('"goal"');
+    expect(last).not.toContain('"subjectId"');
+    expect((await state(w)).analysis.t1).toMatchObject({
+      revision: 20,
+      state: "blocked",
+    });
+  });
+
+  it("never asks for the topic of a thread whose topic you set", async () => {
+    const w = await setup();
+    const corpus = new TopicStore(openDatabase(w.bb));
+    const mine = corpus.create("Mine", "");
+    w.addThread("t1", { latestAttentionAt: 10, status: "idle" });
+    corpus.assign("t1", mine.id, { provenance: "manual" });
+    await w.harness.behavior.callRpc("refresh", null);
+    await w.harness.behavior.runCli(["analyze", "t1"]);
+    expect(analyses(w).at(-1)!.prompt).not.toContain('"subjectId"');
+    expect(corpus.assignment("t1").provenance).toBe("manual");
+  });
+
+  it("gives a delegate a status and goal, never a topic of its own", async () => {
+    const w = await setup();
+    w.addThread("parent", { status: "idle" });
+    w.addThread("child", { parentThreadId: "parent", status: "idle" });
+    await w.harness.behavior.callRpc("refresh", null);
+    await w.harness.behavior.runCli(["analyze", "child"]);
+    expect(analyses(w).at(-1)!.prompt).not.toContain('"subjectId"');
+    for (const c of w.completions) expect(c.prompt).not.toContain("proj_");
   });
 
   it("uses the previous durable goal as input and carries it forward when omitted", async () => {
     let previous: string | null = null;
     const w = await setup(({ prompt }) => {
-      const match = prompt.match(/Previously inferred durable goal: "([^"]+)"/);
+      const match = prompt.match(/Previously settled goal: "([^"]+)"/);
       previous = match?.[1] ?? null;
       return JSON.stringify({
         recap: "Still making progress",
@@ -217,7 +251,7 @@ describe("idle analysis", () => {
       );
     await w2.harness.behavior.runCli(["analyze", "t2"]);
     expect(w2.completions.at(-1)?.prompt).toContain(
-      'Previously inferred durable goal: "Make onboarding easier to complete"',
+      'Previously settled goal: "Make onboarding easier to complete"',
     );
     expect(w2.completions.at(-1)?.prompt).not.toContain("Legacy inferred");
     expect((await state(w2)).analysis.t2?.goal).toBe(
@@ -256,7 +290,11 @@ describe("idle analysis", () => {
     });
     // The inferred title is not sent to clients.
     expect(analysis.t1).not.toHaveProperty("title");
-    // The result is current, so nothing is analyzed again.
+    // The result is current and the thread has a topic, so nothing is
+    // analyzed again.
+    new TopicStore(openDatabase(w.bb)).assign("t1", null, {
+      provenance: "manual",
+    });
     await expect(w.harness.behavior.runCli(["analyze"])).resolves.toMatchObject(
       {
         stdout: expect.stringContaining("Queued 0 threads"),

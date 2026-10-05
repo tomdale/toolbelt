@@ -1,6 +1,6 @@
 /**
- * The Organize pane: live organization state and derived workstreams.
- * Workstreams are always derived automatically from active task identities.
+ * The Organization tab: what the organizer did with each thread. Each thread's
+ * topic decides its workstream; threads with no topic stay Unfiled.
  */
 import {
   useCallback,
@@ -11,10 +11,10 @@ import {
 } from "react";
 import { useRealtime, type useRpc } from "@get-bb/plugin-sdk/app";
 import type {
-  LiveOrganization,
-  LiveOrganizationGroup,
-  LiveOrganizationGroupMember,
-  LiveOrganizationUnresolved,
+  OrganizerState,
+  OrganizerStateGroup,
+  OrganizerStateGroupMember,
+  OrganizerStateUnresolved,
   RpcContract,
 } from "../../server/contract.ts";
 import { cn } from "@/lib/utils";
@@ -40,7 +40,7 @@ export function Organize({
   renderTaskAction?: (task: { id: string; title: string }) => ReactNode;
   children?: ReactNode;
 }) {
-  const [state, setState] = useState<LiveOrganization | null>(null);
+  const [state, setState] = useState<OrganizerState | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -131,7 +131,7 @@ export function Organize({
   ) : null;
 
   return (
-    <section aria-label="Organize" className="flex flex-col gap-6 text-sm">
+    <section aria-label="Organization" className="flex flex-col gap-6 text-sm">
       <StatusPanel
         state={state}
         busy={busy}
@@ -142,9 +142,7 @@ export function Organize({
         onShowActivity={onShowActivity}
       />
 
-      {state && state.counts ? (
-        <CountsSummary counts={state.counts} />
-      ) : null}
+      {state && state.counts ? <CountsSummary counts={state.counts} /> : null}
 
       {state && state.unresolved.length > 0 ? (
         <UnresolvedSection
@@ -165,12 +163,12 @@ export function Organize({
   );
 }
 
-function CountsSummary({ counts }: { counts: LiveOrganization["counts"] }) {
+function CountsSummary({ counts }: { counts: OrganizerState["counts"] }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <div className="rounded-lg border border-border bg-card p-3">
         <span className="text-[11px] font-medium text-muted-foreground">
-          Active tasks
+          Active threads
         </span>
         <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">
           {counts.activeRoots}
@@ -186,7 +184,7 @@ function CountsSummary({ counts }: { counts: LiveOrganization["counts"] }) {
       </div>
       <div className="rounded-lg border border-border bg-card p-3">
         <span className="text-[11px] font-medium text-muted-foreground">
-          Unresolved
+          No topic
         </span>
         <p
           className={cn(
@@ -201,7 +199,7 @@ function CountsSummary({ counts }: { counts: LiveOrganization["counts"] }) {
       </div>
       <div className="rounded-lg border border-border bg-card p-3">
         <span className="text-[11px] font-medium text-muted-foreground">
-          Completed (retained)
+          Done
         </span>
         <p className="mt-0.5 text-lg font-semibold tabular-nums text-muted-foreground">
           {counts.completedRoots}
@@ -219,7 +217,7 @@ function StatusPanel({
   onRebuild,
   onRefresh,
 }: {
-  state: LiveOrganization | null;
+  state: OrganizerState | null;
   busy: boolean;
   alert: ReactNode;
   onRetry: () => void;
@@ -231,7 +229,7 @@ function StatusPanel({
   const progress = state?.progress;
   const heading =
     status === "classifying"
-      ? "Classifying tasks"
+      ? "Analyzing threads"
       : status === "deriving" || status === "syncing"
         ? "Updating workstreams"
         : status === "failed"
@@ -240,12 +238,12 @@ function StatusPanel({
 
   const detail =
     status === "classifying"
-      ? `Classifying tasks ${progress?.completed ?? 0} of ${progress?.total ?? 0}`
+      ? `Analyzing threads ${progress?.completed ?? 0} of ${progress?.total ?? 0}`
       : status === "deriving" || status === "syncing"
-        ? "Deriving workstreams from task identities…"
+        ? "Filing threads by topic…"
         : status === "failed"
           ? state?.error
-          : "Workstreams are automatically derived from active task identities.";
+          : "Each thread is in the workstream for its topic.";
 
   const working =
     status === "classifying" || status === "deriving" || status === "syncing";
@@ -317,12 +315,10 @@ function StatusPanel({
       {working ? (
         <>
           <ProgressBar
-            value={
-              determinate ? progress!.completed / progress!.total : null
-            }
+            value={determinate ? progress!.completed / progress!.total : null}
             label={
               determinate
-                ? `Classifying tasks ${progress!.completed} of ${progress!.total}`
+                ? `Analyzing threads ${progress!.completed} of ${progress!.total}`
                 : heading
             }
           />
@@ -345,7 +341,7 @@ function UnresolvedSection({
   unresolved,
   renderTaskAction,
 }: {
-  unresolved: LiveOrganizationUnresolved[];
+  unresolved: OrganizerStateUnresolved[];
   renderTaskAction?: (task: { id: string; title: string }) => ReactNode;
 }) {
   return (
@@ -357,13 +353,12 @@ function UnresolvedSection({
           aria-hidden="true"
         />
         <h2 className="text-xs font-semibold text-foreground">
-          Unresolved tasks ({unresolved.length})
+          Threads with no topic ({unresolved.length})
         </h2>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        These active tasks have no assigned Product or Feature. They appear under
-        Unfiled in the sidebar. Assigning a product or feature moves them
-        automatically.
+        Workstreams couldn't tell what these threads are about, so they are
+        Unfiled. Setting a topic files them in its workstream.
       </p>
       <ul className="mt-3 divide-y divide-border/50">
         {unresolved.map((task) => (
@@ -397,7 +392,7 @@ function LiveGroupsSection({
   groups,
   renderTaskAction,
 }: {
-  groups: LiveOrganizationGroup[];
+  groups: OrganizerStateGroup[];
   renderTaskAction?: (task: { id: string; title: string }) => ReactNode;
 }) {
   return (
@@ -422,7 +417,7 @@ function GroupCard({
   group,
   renderTaskAction,
 }: {
-  group: LiveOrganizationGroup;
+  group: OrganizerStateGroup;
   renderTaskAction?: (task: { id: string; title: string }) => ReactNode;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -432,7 +427,10 @@ function GroupCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <WorkstreamName name={group.name} className="font-semibold text-sm" />
+            <WorkstreamName
+              name={group.name}
+              className="font-semibold text-sm"
+            />
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
               {group.activeCount} active · {group.totalCount} total
             </span>
@@ -472,7 +470,7 @@ function GroupMemberRow({
   root,
   renderTaskAction,
 }: {
-  root: LiveOrganizationGroupMember;
+  root: OrganizerStateGroupMember;
   renderTaskAction?: (task: { id: string; title: string }) => ReactNode;
 }) {
   return (
@@ -489,10 +487,14 @@ function GroupMemberRow({
           >
             {root.title}
           </span>
-          {root.identityLabel ? (
+          {root.topicLabel ? (
             <span className="inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground font-medium">
-              <Icon name={TAG_ICON} className="size-2.5 opacity-70" aria-hidden="true" />
-              {root.identityLabel}
+              <Icon
+                name={TAG_ICON}
+                className="size-2.5 opacity-70"
+                aria-hidden="true"
+              />
+              {root.topicLabel}
             </span>
           ) : null}
         </div>

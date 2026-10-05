@@ -1,4 +1,4 @@
-export type CorpusEntity = {
+export type Topic = {
   id: string;
   name: string;
   description: string;
@@ -6,10 +6,21 @@ export type CorpusEntity = {
   aliases: string[];
 };
 
-export type AssignmentProvenance = "manual" | "automatic";
+/**
+ * Where a thread's topic came from, in priority order: a topic you set, one
+ * inherited from the thread or workstream the thread was started from, one
+ * Full analysis settled at a turn's end, and Quick analysis's guess from the
+ * first request. A later source never replaces an earlier one, except that
+ * Full analysis replaces an inherited topic when the scope shifts.
+ */
+export type AssignmentProvenance = "manual" | "inherited" | "full" | "quick";
+
+/** Whether Workstreams chose the topic, so it may change it again. */
+export const isAutomatic = (provenance: AssignmentProvenance | null) =>
+  provenance !== null && provenance !== "manual";
 export type AssignmentStatus = "assigned" | "unresolved";
 
-export type CanonicalAssignment = {
+export type TopicAssignment = {
   threadId: string;
   entityId: string | null;
   status: AssignmentStatus;
@@ -20,15 +31,15 @@ export type CanonicalAssignment = {
   inheritedFrom: string | null;
 };
 
-export type CatalogGroupBinding = {
+export type TopicGroupBinding = {
   sectionId: string;
   entityId: string;
 };
 
-export type CatalogState = {
-  entities: CorpusEntity[];
+export type TopicState = {
+  entities: Topic[];
   groups: Record<string, string>;
-  assignments: Record<string, CanonicalAssignment>;
+  assignments: Record<string, TopicAssignment>;
   revision: number;
 };
 
@@ -50,7 +61,7 @@ export type ActiveGroup = {
 };
 
 /** Returns ancestor entity IDs from nearest up to root. */
-export function entityAncestors(
+export function topicAncestors(
   id: string,
   entities: readonly { id: string; parentId: string | null }[],
 ): string[] {
@@ -58,17 +69,17 @@ export function entityAncestors(
   let current: string | null = id;
   const seen = new Set<string>();
   while (current) {
-    if (seen.has(current)) throw new Error("Corpus contains a cycle.");
+    if (seen.has(current)) throw new Error("Topic tree contains a cycle.");
     seen.add(current);
     result.push(current);
     const entity = entities.find((e) => e.id === current);
-    if (!entity) throw new Error(`Unknown corpus identity: ${current}`);
+    if (!entity) throw new Error(`Unknown topic: ${current}`);
     current = entity.parentId;
   }
   return result;
 }
 
-/** A proposal resolved against the Catalog: an existing identity, or a discovery. */
+/** A proposal resolved against the topic tree: an existing topic, or a discovery. */
 export type ResolvedProposal =
   | { subjectId: string; proposed: null }
   | { subjectId: null; proposed: DraftSubjectProposal };
@@ -85,16 +96,16 @@ const sameName = (
 
 /**
  * Anchors a proposal at its deepest existing ancestor, so `parentId` names that
- * identity and `ancestors` lists only missing parents. Classifiers sometimes
+ * topic and `ancestors` lists only missing parents. Classifiers sometimes
  * restate existing ancestry in `ancestors` (parent "Subagents" with ancestors
  * ["Subagents"]); taken verbatim, that creates a same-named copy of the parent.
  *
- * Each segment, outermost first and the leaf last, that names an identity on
+ * Each segment, outermost first and the leaf last, that names an topic on
  * the anchor's own path or an existing child of the anchor (an existing root
  * without one) becomes the anchor; the first other segment starts the missing
- * remainder. Names match by name or alias, ignoring case, as the Catalog's
+ * remainder. Names match by name or alias, ignoring case, as the topic tree's
  * sibling lookup does. When the leaf resolves too, the proposal is that
- * existing identity.
+ * existing topic.
  */
 export function resolveProposal(
   proposal: DraftSubjectProposal,
@@ -111,7 +122,7 @@ export function resolveProposal(
   let resolved = 0;
   for (const segment of segments) {
     const restated = anchor
-      ? entityAncestors(anchor, entities).find((id) =>
+      ? topicAncestors(anchor, entities).find((id) =>
           sameName(byId.get(id)!, segment.name),
         )
       : undefined;
@@ -141,7 +152,7 @@ export function resolveProposal(
 /** Returns the nearest ancestor of a subject entity that has an active group. */
 export function nearestActive(
   subjectId: string,
-  entities: readonly CorpusEntity[],
+  entities: readonly Topic[],
   groups: ReadonlyMap<string, string>,
 ): string | null {
   const byId = new Map(entities.map((entity) => [entity.id, entity]));
@@ -155,7 +166,7 @@ export function nearestActive(
     sections.sort((a, b) => a.localeCompare(b));
 
   const visited = new Set<string>();
-  let current: CorpusEntity | undefined = byId.get(subjectId);
+  let current: Topic | undefined = byId.get(subjectId);
   while (current && !visited.has(current.id)) {
     visited.add(current.id);
     const sectionId = activeSections.get(current.id)?.[0];

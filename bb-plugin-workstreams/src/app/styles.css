@@ -878,7 +878,6 @@
  * picker row, outside any plugin wrapper.
  */
 .ws-native-new-thread-routing,
-.ws-suggestion,
 [data-ws-workstream-slot],
 [data-ws-identity-control] {
   --ws-magic: color-mix(
@@ -916,143 +915,17 @@
   color: var(--ws-magic);
 }
 
-/*
- * New work's suggestion: the home classification found for the draft, under
- * the composer. It is tinted as a proposal rather than a control, and ✦ marks
- * it as the model's.
- */
-.ws-suggestion {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-top: 8px;
-  border: 1px solid color-mix(in oklab, var(--ws-magic) 30%, var(--border));
-  border-radius: 10px;
-  background: color-mix(in oklab, var(--ws-magic) 6%, transparent);
-  animation: ws-suggestion-in 180ms ease-out both;
-}
-.ws-suggestion-accept {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 8px 7px 12px;
-  border-radius: 9px;
-  font-size: 12px;
-  line-height: 1.25rem;
-  text-align: left;
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-.ws-suggestion-accept:hover {
-  color: var(--foreground);
-  background: color-mix(in oklab, var(--ws-magic) 8%, transparent);
-}
-.ws-suggestion-accept:focus-visible,
-.ws-suggestion-dismiss:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 1px var(--ring);
-}
-.ws-suggestion-accept:disabled {
-  cursor: default;
-  opacity: 0.7;
-}
-.ws-suggestion-spark {
-  flex-shrink: 0;
-  color: var(--ws-magic);
-}
-.ws-suggestion[data-stale] .ws-suggestion-spark {
-  animation: ws-spark-pulse 1.2s ease-in-out infinite;
-}
-.ws-suggestion-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.ws-suggestion-target {
-  font-weight: 500;
-  color: var(--foreground);
-}
-.ws-suggestion-kbd {
-  flex-shrink: 0;
-  padding: 0 5px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-family: inherit;
-  font-size: 11px;
-  color: var(--muted-foreground);
-  background: var(--background);
-}
-.ws-suggestion-key {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 6px;
-  border-radius: 6px;
-  font-size: 12px;
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-.ws-suggestion-key:hover {
-  color: var(--foreground);
-  background: color-mix(in oklab, var(--ws-magic) 10%, transparent);
-}
-.ws-suggestion-key:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 1px var(--ring);
-}
-.ws-suggestion-key:disabled {
-  cursor: default;
-  opacity: 0.7;
-}
-.ws-suggestion-dismiss {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-right: 3px;
-  border-radius: 6px;
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-.ws-suggestion-dismiss:hover {
-  color: var(--foreground);
-  background: color-mix(in oklab, var(--ws-magic) 10%, transparent);
-}
 .ws-suggestion-error {
   margin-top: 8px;
   padding: 0 14px;
   font-size: 12px;
   color: var(--destructive);
 }
-@keyframes ws-suggestion-in {
-  from {
-    opacity: 0;
-    transform: translateY(-2px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
 @keyframes ws-spark-pulse {
-  50% {
-    opacity: 0.35;
-  }
+  50% { opacity: 0.35; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ws-suggestion,
-  .ws-suggestion[data-stale] .ws-suggestion-spark,
-  [data-ws-workstream-control][data-ws-stale] .ws-spark {
-    animation: none;
-  }
+  [data-ws-workstream-control][data-ws-stale] .ws-spark { animation: none; }
 }
 
 /* A row with children and a status mark shows the disclosure chevron in

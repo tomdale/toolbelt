@@ -1,42 +1,18 @@
 # Workstreams
 
-Workstreams organizes open BB threads into recognizable ongoing efforts.
-A task concerns one **Product or feature** identity in the Catalog (or is
-unresolved), while its thread occupies a **Workstream** (or is unfiled).
-Identity and section placement are independent.
+Workstreams keeps BB threads' goals, topics, status, and activity current, then derives native BB workstreams from each root's topic.
 
-Click **Organize** to classify open threads against the Catalog and group
-them adaptively based on concurrent task counts by product and feature, then
-**Apply organization**. Any Catalog edit bumps revision, safely marking previews
-stale until regenerated. Each workstream is a native BB section, and children
-follow their root's section and inherit its Catalog identity.
+## Phases
 
-The **Catalog** tab maintains all known products and features in an explicit
-hierarchy with descriptions, aliases, and related tasks, and supports scoped
-create, edit, reparent, and merge operations.
+- **Quick analysis** runs on a composer draft or first request and returns a goal and topic. A matching composer result is reused when the first request is sent.
+- **Full analysis** runs at turn end, settles the goal and topic, and supplies recap and fallback status only when the agent did not report.
+- **Organization** deterministically syncs workstreams and membership from topic assignments without model calls. Sidebar moves are logged and reverted; changing a topic changes the workstream.
+- **Activity** records automatic and observed changes, with undo where supported.
 
-New work is BB's New thread view with a Product or feature field; the
-Workstreams ＋ buttons open it. When you pause
-typing, it classifies the draft against the Catalog, fills the field, and can
-suggest an existing thread to continue. Suggestions can be disabled in New work
-settings; when disabled, typing-pause requests return no suggestion and make no
-model call. Nothing changes until you accept a suggestion or start the thread.
+A thread spawned from another thread inherits its topic; a thread created from a workstream's ＋ inherits that workstream's topic. Otherwise Quick analysis classifies its first request or leaves it Unfiled. Explicit composer choices are manual.
 
-Each thread's agent ends its turns with a question card or a recap: complete, or
-ready for review with Review steps naming what to check. The recap sits above
-the composer with a dismiss ✕ and, once the work is done, Archive; its state
-marks the thread in the sidebar.
+The sidebar includes Up Next, Recent, workstream groups, snooze, and archive views. The **Organization** page shows current derived state; **Topics** manages the topic tree; **Activity** shows changes and model calls. Settings separate the Quick analysis and Full analysis models.
 
-The sidebar puts Up Next, the workstreams you prioritized, and Recent above the
-other workstream groups; while a prioritized workstream has a thread waiting, Up
-Next shows only those. On a phone, the Home screen shows the same Up Next block
-over your threads grouped by workstream, in place of BB's flat Recent list. A
-thread's title is its goal, set from its first request within seconds and kept
-current as its objective changes; the sidebar, the heading above the thread, and
-Activity all show that one name. Recaps, work state, and snooze stay current
-independently of organization. Activity records changes with rationale and Undo,
-including the organizing batch's placements and routing metadata. Manual changes
-made elsewhere are respected. Workstreams' preferences are grouped by feature
-and stored in plugin storage. Model choices use BB's provider/model picker:
-gateway-backed models use a direct completion from the configured machine; other
-provider models run in a hidden BB worker thread.
+The recap tool's `goal` field remains unchanged for compatibility with running agent sessions.
+
+See [README.md](README.md) for usage and [SPEC.md](SPEC.md) for the product contract.

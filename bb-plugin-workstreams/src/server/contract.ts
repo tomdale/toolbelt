@@ -21,36 +21,19 @@ import {
   traceSchema,
   traceSummarySchema,
 } from "../domain/trace.ts";
-import type { Environment } from "./router.ts";
-import { entrySchema, sourceSchema } from "./journal.ts";
-
-const placementSchema = z.object({
-  sectionId: z.string().nullable(),
-  source: sourceSchema,
-  at: z.number(),
-  entryId: z.string().nullable(),
-});
+import { entrySchema } from "./journal.ts";
 
 const analysisSchema = z.object({
   recap: z.string(),
   state: z.enum(WORK_STATES),
   needsYou: z.string().nullable(),
-  subject: z.string().nullable(),
-  // What the thread is for, which is also its title. Older analysis rows
-  // predate goals, and rows from when a thread also had an inferred title
-  // carry a `title` that is not sent.
+  // What the thread is for, which is also its title. Older rows predate goals.
   goal: z.string().nullable().default(null),
-  drift: z
-    .object({
-      workstream: z.string().nullable(),
-      newName: z.string().nullable(),
-      confidence: z.enum(["high", "medium", "low"]),
-    })
-    .nullable(),
-  driftSectionId: z.string().nullable(),
   revision: z.number(),
   at: z.number(),
   model: z.string(),
+  reported: z.boolean().optional(),
+  requestsKey: z.string().nullable().optional(),
   traceId: z.string().nullable().default(null),
 });
 
@@ -60,7 +43,8 @@ const recordSchema = z.object({
   description: z.string().nullable(),
   descriptionSource: z.enum(["generated", "user"]),
   aliases: z.array(z.string()),
-  subjects: z.array(z.string()),
+  /** The topic the workstream belongs to; its name and description come from it. */
+  topicId: z.string().nullable(),
   projects: z.array(
     z.object({
       projectId: z.string(),
@@ -73,10 +57,15 @@ const recordSchema = z.object({
   updatedAt: z.number(),
 });
 
-const assignmentProvenanceSchema = z.enum(["manual", "automatic"]);
+const assignmentProvenanceSchema = z.enum([
+  "manual",
+  "inherited",
+  "full",
+  "quick",
+]);
 const assignmentStatusSchema = z.enum(["assigned", "unresolved"]);
 
-const canonicalAssignmentSchema = z.object({
+const topicAssignmentSchema = z.object({
   threadId: z.string(),
   entityId: z.string().nullable(),
   status: assignmentStatusSchema,
@@ -87,17 +76,17 @@ const canonicalAssignmentSchema = z.object({
   inheritedFrom: z.string().nullable(),
 });
 
-export const liveOrganizationGroupMemberSchema = z.object({
+export const organizerStateGroupMemberSchema = z.object({
   id: z.string(),
   title: z.string(),
   completed: z.boolean(),
-  identityId: z.string().nullable(),
-  identityLabel: z.string().nullable(),
+  topicId: z.string().nullable(),
+  topicLabel: z.string().nullable(),
   provenance: assignmentProvenanceSchema.nullable(),
   reason: z.string(),
 });
 
-export const liveOrganizationGroupSchema = z.object({
+export const organizerStateGroupSchema = z.object({
   key: z.string(),
   sectionId: z.string().nullable(),
   name: z.string(),
@@ -105,10 +94,10 @@ export const liveOrganizationGroupSchema = z.object({
   activeCount: z.number(),
   completedCount: z.number(),
   totalCount: z.number(),
-  roots: z.array(liveOrganizationGroupMemberSchema),
+  roots: z.array(organizerStateGroupMemberSchema),
 });
 
-export const liveOrganizationUnresolvedSchema = z.object({
+export const organizerStateNoTopicSchema = z.object({
   id: z.string(),
   title: z.string(),
   completed: z.boolean(),
@@ -116,7 +105,7 @@ export const liveOrganizationUnresolvedSchema = z.object({
   reason: z.string(),
 });
 
-export const liveOrganizationCountsSchema = z.object({
+export const organizerStateCountsSchema = z.object({
   activeRoots: z.number(),
   completedRoots: z.number(),
   totalRoots: z.number(),
@@ -124,7 +113,7 @@ export const liveOrganizationCountsSchema = z.object({
   activeWorkstreams: z.number(),
 });
 
-export const liveOrganizationSchema = z.object({
+export const organizerStateSchema = z.object({
   status: z.enum(["idle", "classifying", "deriving", "syncing", "failed"]),
   progress: z
     .object({
@@ -137,20 +126,22 @@ export const liveOrganizationSchema = z.object({
     .nullable(),
   error: z.string().nullable(),
   lastUpdatedAt: z.number().nullable(),
-  groups: z.array(liveOrganizationGroupSchema),
-  unresolved: z.array(liveOrganizationUnresolvedSchema),
-  counts: liveOrganizationCountsSchema,
+  groups: z.array(organizerStateGroupSchema),
+  unresolved: z.array(organizerStateNoTopicSchema),
+  counts: organizerStateCountsSchema,
 });
 
-export type LiveOrganization = z.infer<typeof liveOrganizationSchema>;
-export type LiveOrganizationGroup = z.infer<typeof liveOrganizationGroupSchema>;
-export type LiveOrganizationGroupMember = z.infer<
-  typeof liveOrganizationGroupMemberSchema
+export type OrganizerState = z.infer<typeof organizerStateSchema>;
+export type OrganizerStateGroup = z.infer<typeof organizerStateGroupSchema>;
+export type OrganizerStateGroupMember = z.infer<
+  typeof organizerStateGroupMemberSchema
 >;
-export type LiveOrganizationUnresolved = z.infer<
-  typeof liveOrganizationUnresolvedSchema
+export type OrganizerStateUnresolved = z.infer<
+  typeof organizerStateNoTopicSchema
 >;
-export type LiveOrganizationCounts = z.infer<typeof liveOrganizationCountsSchema>;
+export type OrganizerStateCounts = z.infer<
+  typeof organizerStateCountsSchema
+>;
 
 const draftAncestorSchema = z.object({
   name: z.string().min(1),
@@ -164,12 +155,18 @@ export const draftSubjectProposalSchema = z.object({
   ancestors: z.array(draftAncestorSchema).nullable().optional(),
 });
 
+/**
+ * The topic the New thread composer shows for a draft. `automatic` is Quick
+ * analysis's preview, with the goal it would title the thread with;
+ * `inherited` is the topic of the workstream whose ＋ opened the composer.
+ */
 export const taskIdentitySubmissionSchema = z.object({
   entityId: z.string().min(1).nullable().optional(),
   proposal: draftSubjectProposalSchema.nullable().optional(),
-  provenance: assignmentProvenanceSchema.optional(),
+  provenance: z.enum(["manual", "automatic", "inherited"]).optional(),
+  sectionId: z.string().min(1).nullable().optional(),
+  goal: z.string().max(200).nullable().optional(),
 });
-
 
 const entitySchema = z.object({
   id: z.string(),
@@ -182,7 +179,7 @@ const entitySchema = z.object({
 const catalogStateSchema = z.object({
   entities: z.array(entitySchema),
   groups: z.record(z.string(), z.string()),
-  assignments: z.record(z.string(), canonicalAssignmentSchema),
+  assignments: z.record(z.string(), topicAssignmentSchema),
   revision: z.number(),
 });
 
@@ -209,144 +206,22 @@ const orderSchema = z.object({
   prioritized: z.array(z.string()),
 });
 
-const routeBase = {
+/** What a new thread from a composer draft would start with. */
+export const previewSchema = z.object({
   id: z.string(),
   confidence: z.enum(["high", "medium", "low"]),
   reason: z.string(),
+  /** The topic's label, for display. */
   subject: z.string().nullable(),
   subjectId: z.string().nullable().optional(),
   proposal: draftSubjectProposalSchema.nullable().optional(),
+  /** Quick analysis's goal for the new thread, its provisional title. */
+  goal: z.string().nullable().optional(),
   traceId: z.string().nullable(),
   explanation: z
     .object({ notes: z.array(z.string()), durationMs: z.number() })
     .optional(),
-};
-/** The supported SDK environment selection union, validated before routing or execution. */
-export const environmentSchema = z.discriminatedUnion("type", [
-  z.strictObject({
-    type: z.literal("reuse"),
-    environmentId: z.string().min(1),
-  }),
-  z.strictObject({
-    type: z.literal("host"),
-    hostId: z.string().min(1).optional(),
-    workspace: z.discriminatedUnion("type", [
-      z.strictObject({
-        type: z.literal("unmanaged"),
-        path: z.string().nullable(),
-        branch: z
-          .discriminatedUnion("kind", [
-            z.strictObject({
-              kind: z.literal("existing"),
-              name: z.string().min(1),
-            }),
-            z.strictObject({
-              kind: z.literal("new"),
-              baseBranch: z.string().min(1),
-            }),
-          ])
-          .optional(),
-      }),
-      z.strictObject({
-        type: z.literal("managed-worktree"),
-        baseBranch: z.discriminatedUnion("kind", [
-          z.strictObject({ kind: z.literal("default") }),
-          z.strictObject({ kind: z.literal("named"), name: z.string().min(1) }),
-        ]),
-      }),
-      z.strictObject({ type: z.literal("personal") }),
-    ]),
-  }),
-  z.strictObject({ type: z.literal("project-default") }),
-  z.strictObject({
-    type: z.literal("provider"),
-    environmentProviderId: z.string().min(1),
-    inputs: z.json().nullable().default(null),
-    machine: z
-      .discriminatedUnion("type", [
-        z.strictObject({
-          type: z.literal("existing"),
-          hostId: z.string().min(1),
-        }),
-        z.strictObject({
-          type: z.literal("new"),
-          machineProviderId: z.string().min(1),
-          inputs: z.json().nullable().default(null),
-        }),
-      ])
-      .optional(),
-  }),
-]) satisfies z.ZodType<Environment>;
-
-const placementSchema2 = z.object({
-  projectId: z.string(),
-  environment: environmentSchema,
-  label: z.string(),
 });
-export const routeIntentSchema = z.object({
-  action: z.enum(["new-thread", "send-message", "new-workstream"]).optional(),
-  destination: z
-    .discriminatedUnion("kind", [
-      z.object({ kind: z.literal("workstream"), id: z.string() }),
-      z.object({ kind: z.literal("thread"), id: z.string() }),
-      z.object({ kind: z.literal("none") }),
-    ])
-    .optional(),
-  placement: z
-    .object({
-      projectId: z.string().optional(),
-      environment: environmentSchema.optional(),
-    })
-    .optional(),
-  workstreamName: z.string().optional(),
-});
-const newThreadRouteSchema = z.object({
-  ...routeBase,
-  outcome: z.literal("new-thread"),
-  sectionId: z.string().nullable(),
-  workstream: z.string().nullable(),
-  title: z.string(),
-  placement: placementSchema2.nullable(),
-});
-export const routeSchema = z.discriminatedUnion("outcome", [
-  z.object({
-    ...routeBase,
-    outcome: z.literal("continue"),
-    threadId: z.string(),
-    threadTitle: z.string(),
-    workstream: z.string().nullable(),
-    sectionId: z.string().nullable(),
-    alternative: newThreadRouteSchema.optional(),
-  }),
-  newThreadRouteSchema,
-  z.object({
-    ...routeBase,
-    outcome: z.literal("new-workstream"),
-    name: z.string(),
-    description: z.string(),
-    title: z.string(),
-    placement: placementSchema2.nullable(),
-  }),
-  z.object({
-    ...routeBase,
-    outcome: z.literal("unsure"),
-    candidates: z.array(
-      z.union([
-        z.object({
-          kind: z.literal("thread"),
-          threadId: z.string(),
-          title: z.string(),
-        }),
-        z.object({
-          kind: z.literal("workstream"),
-          sectionId: z.string(),
-          name: z.string(),
-        }),
-      ]),
-    ),
-  }),
-]);
-
 export const rpcContract = defineRpcContract({
   question_at: {
     input: z.object({
@@ -354,10 +229,6 @@ export const rpcContract = defineRpcContract({
       interactionId: z.string().min(1),
     }),
     output: questionHistorySchema.nullable(),
-  },
-  question_history: {
-    input: z.object({ threadId: z.string().min(1) }),
-    output: z.array(questionHistorySchema),
   },
   question_pending: {
     input: z.object({ threadId: z.string().min(1) }),
@@ -378,85 +249,33 @@ export const rpcContract = defineRpcContract({
     }),
     output: z.object({ ok: z.literal(true) }),
   },
-  /** Where new work would go (SPEC §6). Changes nothing. */
-  route: {
+  /**
+   * The New thread composer's preview of a draft (SPEC §6): Quick analysis's
+   * goal and topic for the new thread, or the topic of a mentioned
+   * workstream. Changes nothing.
+   */
+  preview: {
     input: z.object({
       prompt: z.string().min(1).max(20_000),
       pickedProjectId: z.string().nullable().optional(),
-      workstreamId: z.string().nullable().optional(),
       /**
-       * The workstream New work's field shows: still classified, but the
-       * model is told to prefer it. `workstreamId` skips the model instead.
-       */
-      selectedWorkstreamId: z.string().nullable().optional(),
-      intent: routeIntentSchema.nullable().optional(),
-      /**
-       * When the route continues an inferred thread, also preview the new
-       * thread the work would start instead, as its `alternative`.
-       */
-      offerNewThread: z.boolean().optional(),
-      /**
-       * New work's suggestion: return the single most likely home, which may
-       * be a new workstream, and keep nothing to execute later. Accepting it
-       * goes through `sendToThread`.
-       */
-      suggest: z.boolean().optional(),
-      /** Keep this preview available for the native composer dispatch hook. */
-      nativeComposer: z.boolean().optional(),
-      /**
-       * The unsure decision whose candidate `workstreamId` is: its routing
-       * call keeps explaining the result (SPEC §11.6).
-       */
-      fromDecisionId: z.string().nullable().optional(),
-      /**
-       * The composer draft this preview is for. A newer `route` or a
-       * `routeCancel` for the same draft aborts this one's model call.
+       * The composer draft this preview is for. A newer `preview` or a
+       * `previewCancel` for the same draft aborts this one's model call.
        */
       draftKey: z.string().min(1).max(500).nullable().optional(),
     }),
-    output: routeSchema,
+    output: previewSchema,
   },
   /**
-   * Aborts the in-flight `route` for a draft, because its text changed.
+   * Aborts the in-flight `preview` for a draft, because its text changed.
    * Returns whether one was running.
    */
-  routeCancel: {
+  previewCancel: {
     input: z.object({ draftKey: z.string().min(1).max(500) }),
     output: z.object({ canceled: z.boolean() }),
   },
   /**
-   * Acts on a previewed route: sends to the thread, or spawns the thread
-   * (with the composer's execution choices when given). `choice` overrides an
-   * unsure decision with one of its candidates.
-   */
-  routeExecute: {
-    input: z.object({
-      decisionId: z.string().min(1),
-      prompt: z.string().min(1).max(20_000),
-      choice: z
-        .union([
-          z.object({ threadId: z.string() }),
-          z.object({ sectionId: z.string() }),
-        ])
-        .nullable()
-        .optional(),
-      execution: z
-        .object({
-          projectId: z.string().optional(),
-          environment: environmentSchema.optional(),
-        })
-        .catchall(z.unknown())
-        .nullable()
-        .optional(),
-      intent: routeIntentSchema.nullable().optional(),
-    }),
-    output: z.object({
-      threadId: z.string().nullable(),
-      sectionId: z.string().nullable(),
-    }),
-  },
-  /**
-   * The Product or feature the New thread banner shows for a draft, reported
+   * The topic the New thread composer shows for a draft, reported
    * as the draft changes so the dispatch hook can file the thread a plain
    * Enter creates (`ComposedDrafts`). Empty text forgets the draft.
    */
@@ -467,18 +286,6 @@ export const rpcContract = defineRpcContract({
       identity: taskIdentitySubmissionSchema.nullable(),
     }),
     output: z.object({ filed: z.boolean() }),
-  },
-  /**
-   * Queues New work's draft in an existing thread. `traceId` links the
-   * routing call that suggested it.
-   */
-  sendToThread: {
-    input: z.object({
-      threadId: z.string().min(1),
-      input: z.array(z.unknown()).min(1),
-      traceId: z.string().nullable().optional(),
-    }),
-    output: z.object({ threadId: z.string() }),
   },
   /**
    * The recap card's contents: the agent's recap for the thread's latest
@@ -580,17 +387,6 @@ export const rpcContract = defineRpcContract({
     input: z.null(),
     output: catalogStateSchema,
   },
-  catalogReset: {
-    input: z.object({ confirm: z.literal(true) }),
-    output: z.object({ ok: z.literal(true) }),
-  },
-  catalogResolve: {
-    input: z.object({ entityId: z.string().min(1) }),
-    output: z.object({
-      sectionId: z.string().nullable(),
-      name: z.string().nullable(),
-    }),
-  },
   catalogCreate: {
     input: z.object({
       name: z.string().min(1).max(200),
@@ -633,39 +429,29 @@ export const rpcContract = defineRpcContract({
       reparentedChildren: z.number(),
     }),
   },
+  /** Sets a thread's topic yourself; null means it has no topic. */
   taskAssign: {
     input: z.object({
       threadId: z.string().min(1),
-      entityId: z.string().min(1),
+      entityId: z.string().min(1).nullable(),
     }),
-    output: z.object({ assignment: canonicalAssignmentSchema }),
+    output: z.object({ assignment: topicAssignmentSchema }),
   },
-  taskClear: {
-    input: z.object({ threadId: z.string().min(1) }),
-    output: z.object({ assignment: canonicalAssignmentSchema }),
-  },
+  /**
+   * Hands a thread's topic back to Workstreams ("Automatic") and settles it
+   * now with Full analysis.
+   */
   taskReclassify: {
-    input: z.object({
-      threadId: z.string().min(1),
-      entityId: z.string().min(1).optional(),
-      evidence: z.string().optional(),
-    }),
-    output: z.object({ assignment: canonicalAssignmentSchema }),
-  },
-  taskAssignment: {
     input: z.object({ threadId: z.string().min(1) }),
-    output: z.object({ assignment: canonicalAssignmentSchema }),
+    output: z.object({ assignment: topicAssignmentSchema }),
   },
   state: {
     input: z.null(),
     output: z.object({
       workstreams: z.record(z.string(), recordSchema),
-      placements: z.record(z.string(), placementSchema),
       analysis: z.record(z.string(), analysisSchema),
       /** Agent recaps for each thread's latest turn, dismissed ones included. */
       recaps: z.record(z.string(), recapSchema).default({}),
-      /** Drift flags dismissed, by thread: the target that was dismissed. */
-      driftDismissed: z.record(z.string(), z.string()),
       bootstrapped: z.boolean(),
       lastReconciledAt: z.number().nullable(),
       /** The sidebar's drag-and-drop order. */
@@ -680,7 +466,7 @@ export const rpcContract = defineRpcContract({
         assignments: {},
         revision: 1,
       }),
-      organization: liveOrganizationSchema.default({
+      organization: organizerStateSchema.default({
         status: "idle",
         progress: null,
         error: null,
@@ -745,14 +531,6 @@ export const rpcContract = defineRpcContract({
     input: z.object({ spinner: spinnerSchema }),
     output: z.object({ spinner: spinnerSchema }),
   },
-  /** The per-thread drift flag's actions (SPEC §9, §10). */
-  drift: {
-    input: z.object({
-      threadId: z.string().min(1),
-      action: z.enum(["handoff", "move", "dismiss"]),
-    }),
-    output: z.object({ threadId: z.string().nullable() }),
-  },
   /** The recap whose Archive button may show: the thread has no outstanding work. */
   archiveStatus: {
     input: z.object({ threadId: z.string().min(1) }),
@@ -770,7 +548,7 @@ export const rpcContract = defineRpcContract({
       })
       .nullable()
       .default(null),
-    output: z.object({ state: liveOrganizationSchema }),
+    output: z.object({ state: organizerStateSchema }),
   },
   journal: {
     input: z
@@ -812,14 +590,6 @@ export const rpcContract = defineRpcContract({
   trace: {
     input: z.object({ id: z.string().min(1) }),
     output: z.object({ trace: traceSchema.nullable() }),
-  },
-  /** Files a Debug-mode classifier report in the Workstreams workstream. */
-  flagRoute: {
-    input: z.object({
-      diagnostics: z.string().min(1).max(1_000_000),
-      projectId: z.string().min(1).nullable().optional(),
-    }),
-    output: z.object({ threadId: z.string(), sectionId: z.string() }),
   },
   /** Sends a trace's prompt to its model again; changes nothing else. */
   traceReplay: {

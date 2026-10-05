@@ -4,8 +4,8 @@
  * command.
  *
  * New-work UI ONLY exposes Product/Feature identity selection, auto
- * suggestion, and manual Unresolved. Workstreams are always derived
- * automatically from active task identities by the coordinator.
+ * preview, and No topic. The topic decides the thread's workstream, so
+ * the composer never asks for one.
  */
 import { useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,7 @@ export function IdentityControl({ newWork }: { newWork: NewWork }) {
         type="button"
         variant="ghost"
         size="sm"
-        aria-label={`Product or feature: ${label}`}
+        aria-label={`Topic: ${label}`}
         data-ws-identity-control=""
         data-ws-auto={display.auto || undefined}
         className={CHIP_CLASS}
@@ -61,9 +61,7 @@ export function IdentityControl({ newWork }: { newWork: NewWork }) {
           ) : (
             <Icon name={TAG_ICON} className="size-3.5 shrink-0" aria-hidden />
           )}
-          <ChipLabel>
-            {display.label}
-          </ChipLabel>
+          <ChipLabel>{display.label}</ChipLabel>
         </span>
         <Icon
           name="ChevronDown"
@@ -79,8 +77,8 @@ export function IdentityControl({ newWork }: { newWork: NewWork }) {
       {trigger}
       <PopoverContent
         align="start"
-        aria-label="Product or feature"
-        mobileTitle="Product or feature"
+        aria-label="Topic"
+        mobileTitle="Topic"
         className="flex max-h-[min(var(--radix-popover-content-available-height),calc(100dvh-0.5rem))] w-64 flex-col overflow-hidden p-0 max-md:min-h-0 max-md:flex-1"
       >
         <IdentityOptions

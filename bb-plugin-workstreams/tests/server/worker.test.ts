@@ -29,8 +29,8 @@ it("uses the worker path only when gatewayModel returns null", async () => {
   const db = w.bb.storage.database();
   const { savePrefs } = await import("../../src/server/prefs.ts");
   savePrefs(db, {
-    threads: {
-      analysisModel: {
+    analysis: {
+      fullModel: {
         kind: "provider",
         providerId: "openai",
         model: "gpt-5.5",

@@ -165,12 +165,12 @@ export default definePluginApp((app) => {
   });
   app.slots.settingsSection({
     id: "new-work",
-    title: "New work",
+    title: "New threads",
     component: NewWorkSettings,
   });
   app.slots.settingsSection({
     id: "organize",
-    title: "Organize",
+    title: "Organization",
     component: OrganizeSettings,
   });
   app.slots.settingsSection({

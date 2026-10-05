@@ -4,8 +4,8 @@ import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { RpcContract } from "../../server/contract.ts";
-import type { CatalogState, CorpusEntity } from "../../domain/corpus.ts";
-import { corpusLabel } from "../../domain/corpus-label.ts";
+import type { TopicState, Topic } from "../../domain/topics.ts";
+import { topicPath } from "../../domain/topic-path.ts";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
 import {
   CreateEntityDialog,
@@ -25,14 +25,14 @@ type Rpc = ReturnType<typeof useRpc<RpcContract>>;
  */
 export type CatalogProps = {
   rpc: Rpc;
-  serverCatalog?: CatalogState;
+  serverCatalog?: TopicState;
 };
 
-const topicPath = (id: string, entities: readonly CorpusEntity[]) =>
-  corpusLabel(id, entities).replace(/: /g, " › ");
+const displayTopicPath = (id: string, entities: readonly Topic[]) =>
+  topicPath(id, entities).replace(/: /g, " › ");
 
 export function Catalog({ rpc, serverCatalog }: CatalogProps) {
-  const [localCatalog, setLocalCatalog] = useState<CatalogState | null>(null);
+  const [localCatalog, setLocalCatalog] = useState<TopicState | null>(null);
   const [query, setQuery] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeDialog, setActiveDialog] = useState<DialogState>(null);
@@ -77,7 +77,7 @@ export function Catalog({ rpc, serverCatalog }: CatalogProps) {
           (entity) =>
             !needle ||
             [
-              corpusLabel(entity.id, all),
+              displayTopicPath(entity.id, all),
               entity.description,
               ...entity.aliases,
             ].some((text) => text.toLowerCase().includes(needle)),
@@ -96,13 +96,13 @@ export function Catalog({ rpc, serverCatalog }: CatalogProps) {
       }
     }
 
-    const rows: { entity: CorpusEntity; label: string; depth: number }[] = [];
+    const rows: { entity: Topic; label: string; depth: number }[] = [];
     const visit = (parentId: string | null, depth: number) => {
       for (const entity of all
         .filter((e) => e.parentId === parentId)
         .sort((a, b) => compareGroupNames(a.name, b.name))) {
         if (matches.has(entity.id)) {
-          rows.push({ entity, label: topicPath(entity.id, all), depth });
+          rows.push({ entity, label: displayTopicPath(entity.id, all), depth });
         }
         visit(entity.id, depth + 1);
       }

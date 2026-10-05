@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
 import { RECAP_TOOL } from "../../src/domain/recap.ts";
 import { fakeWorld } from "./fake-bb.ts";
-import { CorpusStore } from "../../src/server/corpus.ts";
+import { TopicStore } from "../../src/server/topics.ts";
 import { openDatabase } from "../../src/server/db.ts";
-import type { LiveOrganization } from "../../src/server/contract.ts";
+import type { OrganizerState } from "../../src/server/contract.ts";
 
 type World = Awaited<ReturnType<typeof fakeWorld>>;
 let world: World | null = null;
@@ -14,99 +14,93 @@ afterEach(async () => {
   world = null;
 });
 
-const getOrg = async (w: World): Promise<LiveOrganization> => {
+const getOrg = async (w: World): Promise<OrganizerState> => {
   const result = (await w.harness.behavior.callRpc("organization", null)) as {
-    state: LiveOrganization;
+    state: OrganizerState;
   };
   return result.state;
 };
 
-const rebuildOrg = async (w: World): Promise<LiveOrganization> => {
+const rebuildOrg = async (w: World): Promise<OrganizerState> => {
   const result = (await w.harness.behavior.callRpc("organization", {
     action: "rebuild",
-  })) as { state: LiveOrganization };
+  })) as { state: OrganizerState };
   return result.state;
 };
 
 describe("automatic update coordinator lifecycle", () => {
-  it("initial populate: classifies missing roots, derives groups, and syncs native sections", async () => {
+  it("initial populate: Full analysis settles each root's topic, and organizing files it", async () => {
     let lanternId = "";
     world = await fakeWorld({
-      complete: ({ prompt }) => {
-        if (prompt.includes("Classify the most specific")) {
-          return JSON.stringify({ subjectId: lanternId, proposed: null });
-        }
-        return JSON.stringify({
+      complete: () =>
+        JSON.stringify({
           recap: "working",
           state: "in_progress",
-          subject: "Lantern",
-        });
-      },
+          goal: "Lantern work",
+          subjectId: lanternId,
+          proposed: null,
+        }),
     });
-
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
-    const lantern = corpus.create("Lantern", "Product");
-    lanternId = lantern.id;
-
+    const corpus = new TopicStore(openDatabase(w.bb));
+    lanternId = corpus.create("Lantern", "Product").id;
     w.addThread("t1", { title: "Lantern core fix", sectionId: null });
     w.addThread("t2", { title: "Lantern styling", sectionId: null });
+    await w.harness.behavior.callRpc("refresh", null);
+    await w.harness.behavior.runCli(["analyze", "t1"]);
+    await w.harness.behavior.runCli(["analyze", "t2"]);
 
     const state = await rebuildOrg(w);
-
     expect(state.status).toBe("idle");
     expect(state.counts.activeRoots).toBe(2);
-    expect(state.counts.activeWorkstreams).toBe(1);
-    expect(state.groups).toHaveLength(1);
-    expect(state.groups[0]!.name).toBe("Lantern");
-
-    // Native section synced
-    const section = w.sections.find((s) => s.name === "Lantern");
-    expect(section).toBeDefined();
-    expect(w.threads.get("t1")?.sectionId).toBe(section!.id);
-    expect(w.threads.get("t2")?.sectionId).toBe(section!.id);
+    expect(state.groups.map((g) => g.name)).toEqual(["Lantern"]);
+    const section = w.sections.find((s) => s.name === "Lantern")!;
+    expect(w.threads.get("t1")?.sectionId).toBe(section.id);
+    expect(w.threads.get("t2")?.sectionId).toBe(section.id);
   });
 
-  it("new root: automatically classifies new thread and updates placement", async () => {
-    let lanternId = "";
+  it("organizing never calls a model", async () => {
+    const calls: string[] = [];
     world = await fakeWorld({
       complete: ({ prompt }) => {
-        if (prompt.includes("Classify the most specific")) {
-          return JSON.stringify({ subjectId: lanternId, proposed: null });
-        }
-        return JSON.stringify({
-          recap: "working",
-          state: "in_progress",
-          subject: "Lantern",
-        });
+        calls.push(prompt);
+        return JSON.stringify({ recap: "r", state: "done" });
       },
     });
-
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    w.addThread("t1", { title: "No topic yet" });
+    await rebuildOrg(w);
+    await rebuildOrg(w);
+    expect(calls).toHaveLength(0);
+  });
+  it("new root: a thread created from another starts with its topic", async () => {
+    world = await fakeWorld();
+    const w = world;
+    const corpus = new TopicStore(openDatabase(w.bb));
     const lantern = corpus.create("Lantern", "Product");
-    lanternId = lantern.id;
-
     w.addThread("t1", { title: "Lantern task 1" });
+    corpus.assign("t1", lantern.id, { provenance: "full" });
     await rebuildOrg(w);
 
-    // Add new thread
-    w.addThread("t2", { title: "Lantern task 2" });
-    await w.harness.behavior.emitThreadEvent("thread.created", {
-      thread: w.threads.get("t2")!,
+    // A fork of t1 inherits its topic as soon as it exists.
+    const t2 = w.addThread("t2", {
+      title: "Lantern task 2",
+      sourceThreadId: "t1",
     });
-
-    // Rebuild/trigger
+    await w.harness.behavior.emitThreadEvent("thread.created", { thread: t2 });
+    expect(corpus.assignment("t2")).toMatchObject({
+      entityId: lantern.id,
+      provenance: "inherited",
+    });
     const state = await rebuildOrg(w);
     expect(state.counts.activeRoots).toBe(2);
     const section = w.sections.find((s) => s.name === "Lantern")!;
     expect(w.threads.get("t2")?.sectionId).toBe(section.id);
   });
-
   it("correct identity: manual assignment is authoritative and moves the root", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const lantern = corpus.create("Lantern", "Product");
     const compass = corpus.create("Compass", "Product");
 
@@ -134,7 +128,7 @@ describe("automatic update coordinator lifecycle", () => {
   it("archive: removes archived thread from active navigation and cleans up empty section", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const lantern = corpus.create("Lantern", "Product");
 
     w.addThread("t1", { title: "Lantern task" });
@@ -161,7 +155,7 @@ describe("automatic update coordinator lifecycle", () => {
     world = await fakeWorld();
     const w = world;
     const db = openDatabase(w.bb);
-    const corpus = new CorpusStore(db);
+    const corpus = new TopicStore(db);
     const lantern = corpus.create("Lantern", "Product");
     const shelves = corpus.create("Shelves", "Feature", lantern.id);
 
@@ -230,7 +224,7 @@ describe("automatic update coordinator lifecycle", () => {
   it("reparent: derived groups follow catalog reparenting", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const p1 = corpus.create("ProductOne", "Product 1");
     const p2 = corpus.create("ProductTwo", "Product 2");
     const feat = corpus.create("FeatureX", "Feature", p1.id);
@@ -257,7 +251,7 @@ describe("automatic update coordinator lifecycle", () => {
   it("merge: merges entity and updates derived workstream placement", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const oldProd = corpus.create("OldProduct", "Old");
     const newProd = corpus.create("NewProduct", "New");
 
@@ -283,7 +277,7 @@ describe("automatic update coordinator lifecycle", () => {
   it("no child inflation: child worker threads do not increment active counts", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const lantern = corpus.create("Lantern", "Product");
 
     w.addThread("root1", { title: "Root task" });
@@ -306,7 +300,7 @@ describe("automatic update coordinator lifecycle", () => {
     world = await fakeWorld();
     const w = world;
     const db = openDatabase(w.bb);
-    const corpus = new CorpusStore(db);
+    const corpus = new TopicStore(db);
     const lantern = corpus.create("Lantern", "Product");
 
     // All tasks completed
@@ -361,14 +355,14 @@ describe("automatic update coordinator lifecycle", () => {
     expect(state.counts.unresolvedRoots).toBe(1);
     expect(state.unresolved).toHaveLength(1);
     expect(state.unresolved[0]!.id).toBe("u1");
-    expect(state.unresolved[0]!.reason).toContain("Unresolved");
+    expect(state.unresolved[0]!.reason).toContain("No topic");
     expect(w.threads.get("u1")?.sectionId).toBeNull();
   });
 
   it("stable group IDs: section ID is preserved when derived identity persists", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const lantern = corpus.create("Lantern", "Product");
 
     w.addThread("t1", { title: "Task 1" });
@@ -424,7 +418,7 @@ describe("automatic update coordinator lifecycle", () => {
   it("no loops from derived writes", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const lantern = corpus.create("Lantern", "Product");
 
     w.addThread("t1", { title: "Task 1" });
@@ -441,49 +435,10 @@ describe("automatic update coordinator lifecycle", () => {
     expect(refreshed.changed).toBe(false);
   });
 
-  it("failure last-good state: inference failure retains previous valid groups", async () => {
-    let shouldFail = false;
-    let lanternId = "";
-    world = await fakeWorld({
-      complete: ({ prompt }) => {
-        if (prompt.includes("Classify the most specific")) {
-          if (shouldFail) throw new Error("Model gateway unavailable");
-          return JSON.stringify({ subjectId: lanternId, proposed: null });
-        }
-        return JSON.stringify({
-          recap: "ok",
-          state: "in_progress",
-          subject: "Lantern",
-        });
-      },
-    });
-
-    const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
-    const lantern = corpus.create("Lantern", "Product");
-    lanternId = lantern.id;
-
-    w.addThread("t1", { title: "Task 1" });
-    const goodState = await rebuildOrg(w);
-    expect(goodState.status).toBe("idle");
-    expect(goodState.groups).toHaveLength(1);
-
-    // Now make model fail on new thread classification
-    shouldFail = true;
-    w.addThread("t2", { title: "Task 2 needing classify" });
-    const failedState = await rebuildOrg(w);
-
-    expect(failedState.status).toBe("failed");
-    expect(failedState.error).toContain("Model gateway unavailable");
-    // Previous good groups are preserved!
-    expect(failedState.groups).toHaveLength(1);
-    expect(failedState.groups[0]!.name).toBe("Lantern");
-  });
-
   it("multi-product partitions: derives groups across multiple products simultaneously without unknown identity errors", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const prodA = corpus.create("ProductAlpha", "Product A");
     const featA = corpus.create("FeatureA", "Feature under A", prodA.id);
     const prodB = corpus.create("ProductBeta", "Product B");
@@ -508,313 +463,38 @@ describe("automatic update coordinator lifecycle", () => {
     expect(groupNames).toContain("ProductBeta");
   });
 
-  it("unresolved results cached by actual evidence: no repeat calls on other workspace events", async () => {
-    let classifyCalls = 0;
+  it("no topic set yourself stays: analysis never gives that thread one", async () => {
     world = await fakeWorld({
-      complete: ({ prompt }) => {
-        if (prompt.includes("Classify the most specific")) {
-          classifyCalls++;
-          return JSON.stringify({ subjectId: null, proposed: null });
-        }
-        return JSON.stringify({
+      complete: () =>
+        JSON.stringify({
           recap: "ok",
           state: "in_progress",
-          subject: "Work",
-        });
-      },
+          goal: "Task",
+          subjectId: prodId,
+          proposed: null,
+        }),
     });
+    let prodId = "";
     const w = world;
-
-    w.addThread("t-unresolved", { title: "Ambiguous task" });
-    const state1 = await rebuildOrg(w);
-    expect(state1.unresolved).toHaveLength(1);
-    expect(classifyCalls).toBe(1);
-
-    // Another event on another thread
-    w.addThread("t-other", { title: "Other task" });
-    await rebuildOrg(w);
-
-    // Ambiguous task was cached by evidence; only t-other is classified!
-    expect(classifyCalls).toBe(2);
-
-    // If ambiguous task evidence changes (title changes), it gets reclassified
-    const ambiguousThread = w.threads.get("t-unresolved")!;
-    ambiguousThread.title = "Ambiguous task with new details";
-    await rebuildOrg(w);
-    expect(classifyCalls).toBe(3);
-  });
-
-  it("explicit manual clear creates durable manual unresolved with null evidence", async () => {
-    let classifyCalls = 0;
-    world = await fakeWorld({
-      complete: ({ prompt }) => {
-        if (prompt.includes("Classify the most specific")) {
-          classifyCalls++;
-          return JSON.stringify({ subjectId: null, proposed: null });
-        }
-        return JSON.stringify({
-          recap: "ok",
-          state: "in_progress",
-          subject: "Work",
-        });
-      },
-    });
-    const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
-    const prod = corpus.create("ProductA", "Product");
-
-    w.addThread("t1", { title: "Task 1" });
-    corpus.assign("t1", prod.id, { provenance: "manual" });
-
-    // Explicit manual clear
-    await w.harness.behavior.callRpc("taskClear", { threadId: "t1" });
-
-    const assignment = corpus.assignment("t1");
-    expect(assignment.status).toBe("unresolved");
-    expect(assignment.provenance).toBe("manual");
-    expect(assignment.entityId).toBeNull();
-    expect(assignment.evidence).toBeNull();
-
-    // Trigger rebuild or other workspace events
-    w.addThread("t2", { title: "Task 2" });
-    await rebuildOrg(w);
-
-    // t1 was NOT classified because it is manual unresolved!
-    // Only t2 was classified (1 call total)
-    expect(classifyCalls).toBe(1);
-    const assignmentAfter = corpus.assignment("t1");
-    expect(assignmentAfter.provenance).toBe("manual");
-  });
-
-  it("race condition: deferred in-flight inference does not overwrite manual assignment", async () => {
-    const holder: { resolve?: (val: string) => void } = {};
-    let lanternId = "";
-    let storageId = "";
-
-    world = await fakeWorld({
-      complete: ({ prompt }) => {
-        if (prompt.includes("Classify the most specific")) {
-          return new Promise<string>((resolve) => {
-            holder.resolve = resolve;
-          });
-        }
-        return JSON.stringify({
-          recap: "ok",
-          state: "in_progress",
-          subject: "Work",
-        });
-      },
-    });
-    const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
-    const lantern = corpus.create("Lantern", "Product");
-    const storage = corpus.create("Storage", "Product");
-    lanternId = lantern.id;
-    storageId = storage.id;
-
-    w.addThread("t1", { title: "Task 1" });
-
-    // Start background rebuild/run (inference will hang on deferred promise)
-    const runPromise = rebuildOrg(w);
-
-    // Wait until inference is in flight
-    while (!holder.resolve) {
-      await new Promise((r) => setTimeout(r, 10));
-    }
-
-    // While inference is in flight, user manually assigns t1 to Storage
+    const corpus = new TopicStore(openDatabase(w.bb));
+    prodId = corpus.create("ProductA", "Product").id;
+    w.addThread("t1", { title: "Task 1", status: "idle" });
+    w.converse("t1", ["Do the thing"]);
+    await w.harness.behavior.callRpc("refresh", null);
     await w.harness.behavior.callRpc("taskAssign", {
       threadId: "t1",
-      entityId: storageId,
+      entityId: null,
     });
-
-    const manualAssign = corpus.assignment("t1");
-    expect(manualAssign.entityId).toBe(storageId);
-    expect(manualAssign.provenance).toBe("manual");
-
-    // Now resolve the deferred inference returning Lantern
-    holder.resolve(JSON.stringify({ subjectId: lanternId, proposed: null }));
-
-    // Await coordinator run to finish
-    await runPromise;
-
-    // Manual assignment must NOT have been overwritten by Lantern!
-    const finalAssign = corpus.assignment("t1");
-    expect(finalAssign.entityId).toBe(storageId);
-    expect(finalAssign.provenance).toBe("manual");
-  });
-
-  it("race condition: deferred in-flight inference does not overwrite manual clear", async () => {
-    const holder: { resolve?: (val: string) => void } = {};
-    let lanternId = "";
-
-    world = await fakeWorld({
-      complete: ({ prompt }) => {
-        if (prompt.includes("Classify the most specific")) {
-          return new Promise<string>((resolve) => {
-            holder.resolve = resolve;
-          });
-        }
-        return JSON.stringify({
-          recap: "ok",
-          state: "in_progress",
-          subject: "Work",
-        });
-      },
+    await w.harness.behavior.runCli(["analyze", "t1"]);
+    expect(corpus.assignment("t1")).toMatchObject({
+      status: "unresolved",
+      provenance: "manual",
     });
-    const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
-    const lantern = corpus.create("Lantern", "Product");
-    lanternId = lantern.id;
-
-    w.addThread("t1", { title: "Task 1" });
-
-    const runPromise = rebuildOrg(w);
-    while (!holder.resolve) {
-      await new Promise((r) => setTimeout(r, 10));
-    }
-
-    // User explicitly clears t1 while inference is in flight
-    await w.harness.behavior.callRpc("taskClear", { threadId: "t1" });
-
-    holder.resolve(JSON.stringify({ subjectId: lanternId, proposed: null }));
-    await runPromise;
-
-    const finalAssign = corpus.assignment("t1");
-    expect(finalAssign.status).toBe("unresolved");
-    expect(finalAssign.provenance).toBe("manual");
   });
-
-  it("race condition: deferred in-flight inference discards result if thread is archived", async () => {
-    const holder: { resolve?: (val: string) => void } = {};
-    let lanternId = "";
-
-    world = await fakeWorld({
-      complete: ({ prompt }) => {
-        if (prompt.includes("Classify the most specific")) {
-          return new Promise<string>((resolve) => {
-            holder.resolve = resolve;
-          });
-        }
-        return JSON.stringify({
-          recap: "ok",
-          state: "in_progress",
-          subject: "Work",
-        });
-      },
-    });
-    const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
-    const lantern = corpus.create("Lantern", "Product");
-    lanternId = lantern.id;
-
-    w.addThread("t1", { title: "Task 1" });
-
-    const runPromise = rebuildOrg(w);
-    while (!holder.resolve) {
-      await new Promise((r) => setTimeout(r, 10));
-    }
-
-    // User archives t1
-    const t1 = w.threads.get("t1")!;
-    t1.archivedAt = Date.now();
-    await w.harness.behavior.emitThreadEvent("thread.archived", { thread: t1 });
-
-    holder.resolve(JSON.stringify({ subjectId: lanternId, proposed: null }));
-    const state = await runPromise;
-
-    expect(state.groups).toHaveLength(0);
-    const assign = corpus.assignment("t1");
-    expect(assign.provenance).not.toBe("automatic");
-  });
-
-  it("race condition: deferred in-flight inference discards result if thread title changed", async () => {
-    const holder: { resolve?: (val: string) => void } = {};
-    let lanternId = "";
-
-    world = await fakeWorld({
-      complete: ({ prompt }) => {
-        if (prompt.includes("Classify the most specific")) {
-          return new Promise<string>((resolve) => {
-            holder.resolve = resolve;
-          });
-        }
-        return JSON.stringify({
-          recap: "ok",
-          state: "in_progress",
-          subject: "Work",
-        });
-      },
-    });
-    const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
-    const lantern = corpus.create("Lantern", "Product");
-    lanternId = lantern.id;
-
-    w.addThread("t1", { title: "Old title" });
-
-    const runPromise = rebuildOrg(w);
-    while (!holder.resolve) {
-      await new Promise((r) => setTimeout(r, 10));
-    }
-
-    // Title changes while inference is in flight
-    const t1 = w.threads.get("t1")!;
-    t1.title = "New completely different title";
-
-    holder.resolve(JSON.stringify({ subjectId: lanternId, proposed: null }));
-    await runPromise;
-
-    // Stale result was discarded
-    const assign = corpus.assignment("t1");
-    expect(assign.status).toBe("unresolved");
-  });
-
-  it("race condition: deferred in-flight inference discards result if requests changed without a title change", async () => {
-    const holder: { resolve?: (val: string) => void } = {};
-    let lanternId = "";
-
-    world = await fakeWorld({
-      complete: ({ prompt }) => {
-        if (prompt.includes("Classify the most specific")) {
-          return new Promise<string>((resolve) => {
-            holder.resolve = resolve;
-          });
-        }
-        return JSON.stringify({
-          recap: "ok",
-          state: "in_progress",
-          subject: "Work",
-        });
-      },
-    });
-    const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
-    const lantern = corpus.create("Lantern", "Product");
-    lanternId = lantern.id;
-
-    w.addThread("t1", { title: "Same title" });
-    w.converse("t1", ["Work on Lantern"]);
-
-    const runPromise = rebuildOrg(w);
-    while (!holder.resolve) {
-      await new Promise((r) => setTimeout(r, 10));
-    }
-
-    w.converse("t1", ["Work on a different product"]);
-
-    holder.resolve(JSON.stringify({ subjectId: lanternId, proposed: null }));
-    await runPromise;
-
-    // Stale result was discarded
-    const assign = corpus.assignment("t1");
-    expect(assign.status).toBe("unresolved");
-  });
-
   it("section cleanup: rebound section is not deleted during cleanup", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const prodA = corpus.create("Alpha", "Product Alpha");
     const prodB = corpus.create("Beta", "Product Beta");
 
@@ -839,7 +519,7 @@ describe("automatic update coordinator lifecycle", () => {
   it("completed retention: completed root/sibling tasks retain navigation when active tasks expand to child features", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const prod = corpus.create("Lantern", "Product");
     const f1 = corpus.create("Core", "Core feature", prod.id);
     const f2 = corpus.create("UI", "UI feature", prod.id);
@@ -897,7 +577,7 @@ describe("automatic update coordinator lifecycle", () => {
   it("section safety: adopted external user-created section is not deleted when empty", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const prod = corpus.create("Docs", "Docs Product");
 
     // User created native section named Docs in BB before Workstreams ran
@@ -927,38 +607,18 @@ describe("automatic update coordinator lifecycle", () => {
   });
 
   it("concurrent rebuild: rebuild during active run is not swallowed and executes fresh pass", async () => {
-    let classifyCount = 0;
-    world = await fakeWorld({
-      complete: ({ prompt }) => {
-        if (prompt.includes("Classify the most specific")) {
-          classifyCount++;
-          return JSON.stringify({ subjectId: null, proposed: null });
-        }
-        return JSON.stringify({
-          recap: "ok",
-          state: "in_progress",
-          subject: "Work",
-        });
-      },
-    });
+    world = await fakeWorld();
     const w = world;
     w.addThread("t1", { title: "Task 1" });
-
     await rebuildOrg(w);
-    expect(classifyCount).toBe(1);
-
-    const p1 = rebuildOrg(w);
-    const p2 = rebuildOrg(w);
-    const [res1, res2] = await Promise.all([p1, p2]);
-
+    const [res1, res2] = await Promise.all([rebuildOrg(w), rebuildOrg(w)]);
     expect(res1.status).toBe("idle");
     expect(res2.status).toBe("idle");
   });
-
   it("partial mutations state truth: partial native mutations are reflected in state on sync failure", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const prodA = corpus.create("Alpha", "Product Alpha");
     const prodB = corpus.create("Beta", "Product Beta");
 
@@ -992,133 +652,40 @@ describe("automatic update coordinator lifecycle", () => {
     expect(alphaGroup?.sectionId).not.toBeNull();
   });
 
-  it("event lifecycle: thread-created, idle, and manual assignment events trigger coordinator and derive groups without rebuild", async () => {
-    let classifyCalls = 0;
-    let lanternId = "";
-    world = await fakeWorld({
-      complete: ({ prompt }) => {
-        if (prompt.includes("Classify the most specific")) {
-          classifyCalls++;
-          const requestSection = prompt.slice(prompt.indexOf("## Request"));
-          if (
-            requestSection.includes("Lantern") ||
-            requestSection.includes("t1") ||
-            requestSection.includes("t2")
-          ) {
-            return JSON.stringify({ subjectId: lanternId, proposed: null });
-          }
-          return JSON.stringify({ subjectId: null, proposed: null });
-        }
-        return JSON.stringify({
-          recap: "working",
-          state: "in_progress",
-          subject: "Lantern",
-        });
-      },
-    });
-
+  it("event lifecycle: topic changes trigger the organizer without a rebuild", async () => {
+    world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const lantern = corpus.create("Lantern", "Product");
-    lanternId = lantern.id;
     const compass = corpus.create("Compass", "Navigation product");
+    const t1 = w.addThread("t1", { title: "Lantern core fix", sectionId: null });
+    await w.harness.behavior.emitThreadEvent("thread.created", { thread: t1 });
 
-    // 1. Thread created event: automatically classifies and derives group WITHOUT rebuild
-    const t1 = w.addThread("t1", {
-      title: "Lantern core fix",
-      sectionId: null,
+    await w.harness.behavior.callRpc("taskAssign", {
+      threadId: "t1",
+      entityId: lantern.id,
     });
-    await w.harness.behavior.emitThreadEvent("thread.created", {
-      thread: t1,
-    });
-
-    // Wait for event-driven coordinator run to settle into idle state and place thread
     await vi.waitFor(
       () => {
-        const row = w.bb.storage
-          .database()
-          .prepare("SELECT value FROM ws_meta WHERE key = 'live_organization'")
-          .get() as { value: string } | undefined;
-        const org = row ? JSON.parse(row.value) : null;
-        expect(org?.status).toBe("idle");
-        expect(org?.groups).toHaveLength(1);
-        expect(org?.groups[0]?.name).toBe("Lantern");
-        expect(w.threads.get("t1")?.sectionId).not.toBeNull();
+        const section = w.sections.find((s) => s.name === "Lantern");
+        expect(section).toBeDefined();
+        expect(w.threads.get("t1")?.sectionId).toBe(section!.id);
       },
       { timeout: 2000 },
     );
 
-    const section = w.sections.find((s) => s.name === "Lantern");
-    expect(section).toBeDefined();
-    expect(w.threads.get("t1")?.sectionId).toBe(section!.id);
-
-    // 2. Thread idle event: new thread goes idle and triggers coordinator without rebuild
-    const t2 = w.addThread("t2", {
-      title: "Lantern styling",
-      sectionId: null,
-    });
-    await w.harness.behavior.emitThreadEvent("thread.idle", {
-      thread: t2,
-      lastAssistantText: "Done.",
-    });
-
-    await vi.waitFor(
-      () => {
-        expect(w.threads.get("t2")?.sectionId).toBe(section!.id);
-      },
-      { timeout: 2000 },
-    );
-
-    // 3. Manual assignment event: reassign thread to Compass via taskAssign RPC without rebuild
     await w.harness.behavior.callRpc("taskAssign", {
       threadId: "t1",
       entityId: compass.id,
     });
-
     await vi.waitFor(
       () => {
-        const compassSection = w.sections.find((s) => s.name === "Compass");
-        expect(compassSection).toBeDefined();
-        expect(w.threads.get("t1")?.sectionId).toBe(compassSection!.id);
+        const section = w.sections.find((s) => s.name === "Compass");
+        expect(section).toBeDefined();
+        expect(w.threads.get("t1")?.sectionId).toBe(section!.id);
       },
       { timeout: 2000 },
     );
-
-    // 4. Verify no model call loops / storm: classify calls are bounded
-    // Add an unresolved thread that emits thread.idle and verify it doesn't loop
-    const tUnresolved = w.addThread("t-unresolved", {
-      title: "Unrelated question",
-      sectionId: null,
-    });
-    await w.harness.behavior.emitThreadEvent("thread.idle", {
-      thread: tUnresolved,
-      lastAssistantText: "Answering question.",
-    });
-
-    await vi.waitFor(
-      () => {
-        const row = w.bb.storage
-          .database()
-          .prepare("SELECT value FROM ws_meta WHERE key = 'live_organization'")
-          .get() as { value: string } | undefined;
-        const org = row ? JSON.parse(row.value) : null;
-        expect(org?.status).toBe("idle");
-        expect(
-          org?.unresolved.some((u: { id: string }) => u.id === "t-unresolved"),
-        ).toBe(true);
-      },
-      { timeout: 2000 },
-    );
-
-    const callsAfterSettle = classifyCalls;
-    // Emit another event on unresolved thread; ensure calls do not storm
-    await w.harness.behavior.emitThreadEvent("thread.idle", {
-      thread: tUnresolved,
-      lastAssistantText: "Still unrelated.",
-    });
-    await new Promise((r) => setTimeout(r, 300));
-    // Since evidence didn't change (requests are empty), isFresh prevents re-classifying t-unresolved
-    expect(classifyCalls).toBe(callsAfterSettle);
   });
 });
 
@@ -1159,7 +726,7 @@ describe("organizer status and Activity", () => {
   it("counts a thread whose agent reported it complete as done", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const lantern = corpus.create("Lantern", "Product");
     w.addThread("t1", { status: "idle", latestAttentionAt: 500 });
     w.addThread("t2", { status: "idle", latestAttentionAt: 500 });
@@ -1179,7 +746,7 @@ describe("organizer status and Activity", () => {
   it("records each pass's section changes as one automatic entry", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const lantern = corpus.create("Lantern", "Product");
     w.addThread("t1", { title: "Lantern core fix", sectionId: null });
     corpus.assign("t1", lantern.id, { provenance: "manual" });
@@ -1207,7 +774,7 @@ describe("organizer status and Activity", () => {
   it("moves a thread back after a move made outside Workstreams, and says so", async () => {
     world = await fakeWorld();
     const w = world;
-    const corpus = new CorpusStore(openDatabase(w.bb));
+    const corpus = new TopicStore(openDatabase(w.bb));
     const lantern = corpus.create("Lantern", "Product");
     w.addThread("t1", { title: "Lantern core fix", sectionId: null });
     corpus.assign("t1", lantern.id, { provenance: "manual" });

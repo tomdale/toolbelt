@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import { fakeWorld, type FakeCompletion } from "./fake-bb.ts";
+import { TopicStore } from "../../src/server/topics.ts";
+import { openDatabase } from "../../src/server/db.ts";
+
+/*
+ * Quick analysis's title: a new thread named from its first request while
+ * its first turn runs. These threads already have a topic, so Quick analysis
+ * is asked only for the title; starting-topic.test.ts covers the topic.
+ */
 
 type World = Awaited<ReturnType<typeof fakeWorld>>;
 let world: World | null = null;
@@ -15,6 +23,11 @@ const REQUEST =
   "Fix the stale build cache in the monorepo, it keeps serving old output";
 const isOpening = (prompt: string) =>
   prompt.includes("You name one new agent thread from its opening request");
+/** Gives a thread a topic, so Quick analysis has only its title to settle. */
+const topicked = (w: World, id: string) =>
+  new TopicStore(openDatabase(w.bb)).assign(id, null, {
+    provenance: "manual",
+  });
 const openingCalls = (w: World) =>
   w.completions.filter((call) => isOpening(call.prompt));
 
@@ -56,13 +69,7 @@ function gate() {
 
 const opening = (goal: string | null) => JSON.stringify({ goal });
 const analysis = (goal: string | null) =>
-  JSON.stringify({
-    recap: "Working.",
-    state: "in_progress",
-    subject: "Alpha",
-    goal,
-    drift: null,
-  });
+  JSON.stringify({ recap: "Working.", state: "in_progress", goal });
 
 /** Answers each kind of call from its own queue; the last answer repeats. */
 function models(answers: {
@@ -82,18 +89,13 @@ async function setup(
   complete: FakeCompletion,
   settings?: Record<string, string | boolean>,
 ) {
-  const wrappedComplete: FakeCompletion = (call) => {
-    if (call.prompt.includes("Classify the most specific")) {
-      return JSON.stringify({ subjectId: null, proposed: null });
-    }
-    return complete(call);
-  };
-  world = await fakeWorld({ complete: wrappedComplete, settings });
+  world = await fakeWorld({ complete, settings });
   return world;
 }
 
 /** A thread whose first turn is starting, as BB shows it before any title. */
 function newThread(w: World, id = "t1", overrides = {}) {
+  topicked(w, id);
   return w.addThread(id, {
     title: null,
     titleFallback: "Fix the stale build cache in the monorepo, it keeps serv…",
@@ -185,7 +187,7 @@ describe("naming a thread from its opening request", () => {
     const { prompt, model } = openingCalls(w)[0]!;
     expect(model).toBe("google/gemini-3.1-flash-lite");
     expect(prompt).toContain(REQUEST);
-    expect(prompt).toContain('Return {"goal": string|null}');
+    expect(prompt).toContain('Return {"goal": string|null, "subjectId": string|null');
     expect(prompt).not.toContain("Last assistant");
     expect(prompt).not.toContain("Zebracorn");
     // BB re-runs the hook for a queued message, a retry, and a restart; the
@@ -392,10 +394,10 @@ describe("naming a thread from its opening request", () => {
     expect(w.threads.get("t1")?.title).toBeNull();
     const { traces } = await rpc<{
       traces: { kind: string; status: string; error: string | null }[];
-    }>(w, "traces", { kind: "opening-goal" });
+    }>(w, "traces", { kind: "quick-analysis" });
     expect(traces).toMatchObject([
       {
-        kind: "opening-goal",
+        kind: "quick-analysis",
         status: "failed",
         error: "The model didn't answer within 15 seconds.",
       },
@@ -627,12 +629,12 @@ describe("naming a thread from its opening request", () => {
         threads: string[];
       }[];
     }>(w, "traces", {});
-    const openingTraces = traces.filter((t) => t.kind === "opening-goal");
+    const openingTraces = traces.filter((t) => t.kind === "quick-analysis");
     expect(openingTraces).toHaveLength(1);
     expect(openingTraces[0]).toMatchObject({
-      kind: "opening-goal",
+      kind: "quick-analysis",
       status: "ok",
-      summary: "goal “Fix stale build cache”",
+      summary: "goal “Fix stale build cache” · no topic",
       threads: ["t1"],
     });
     // The label is the request's opening words, as BB shows them.
@@ -666,7 +668,7 @@ describe("naming a thread from its opening request", () => {
       "traces",
       {},
     );
-    const openingTrace = traces.find((t) => t.kind === "opening-goal");
+    const openingTrace = traces.find((t) => t.kind === "quick-analysis");
     const { trace } = await rpc<{ trace: { outcome: unknown } }>(w, "trace", {
       id: openingTrace!.id,
     });

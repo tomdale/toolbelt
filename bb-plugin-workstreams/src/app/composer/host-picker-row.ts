@@ -1,5 +1,5 @@
 /**
- * Finds a place for New work's Product or feature field in BB's own picker
+ * Finds a place for the New thread composer's Topic field in BB's own picker
  * row, before the project picker, so it reads as one more of BB's fields.
  *
  * BB offers plugins no slot in that row. This keeps one anchor element of

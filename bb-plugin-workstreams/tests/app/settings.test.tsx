@@ -46,8 +46,8 @@ it("registers settings in feature order", async () => {
     ["threads", "Threads"],
     ["recap", "Recap"],
     ["snooze", "Snooze"],
-    ["new-work", "New work"],
-    ["organize", "Organize"],
+    ["new-work", "New threads"],
+    ["organize", "Organization"],
     ["advanced", "Advanced"],
   ]);
 });
@@ -240,14 +240,13 @@ it("saves the Show archive button switch, on by default", async () => {
   ).toEqual([{ patch: { threads: { showArchiveButton: false } } }]);
 });
 
-it("saves New work preferences and disables the suggestions model when suggestions are off", async () => {
+it("saves New threads preferences, keeping the Quick analysis model when suggestions are off", async () => {
   const slot = await mount("new-work");
   await slot.findByRole("switch", { name: "Suggestions while typing" });
   expect(
-    slot.getByText("Suggest a product or feature for a new thread as you write."),
-  ).toBeTruthy();
-  expect(
-    slot.getByText("Suggests a product or feature for a new-thread draft as you type."),
+    slot.getByText(
+      "Preview a new thread's topic in the composer as you write, using the Quick analysis model.",
+    ),
   ).toBeTruthy();
   fireEvent.click(await slot.findByRole("button", { name: "Home project" }));
   fireEvent.click(
@@ -269,9 +268,10 @@ it("saves New work preferences and disables the suggestions model when suggestio
     { patch: { newWork: { homeProjectId: "" } } },
     { patch: { newWork: { suggestions: false } } },
   ]);
+  // Quick analysis still titles new threads, so its model stays available.
   expect(
     slot.getByTestId("bb-provider-model-picker").getAttribute("data-disabled"),
-  ).toBe("true");
+  ).not.toBe("true");
 });
 
 it("shows the worker-thread note for a non-gateway analysis model", async () => {
@@ -294,8 +294,8 @@ it("shows the worker-thread note for a non-gateway analysis model", async () => 
   );
 });
 
-it("saves the organizing model selection", async () => {
-  const slot = await mount("organize");
+it("shows the Full analysis model with its eval-tested default", async () => {
+  const slot = await mount("threads");
   const picker = await slot.findByTestId("bb-provider-model-picker");
   expect(picker).toBeTruthy();
   expect(

@@ -1,60 +1,29 @@
-# Live-derived workstreams organization
+# Organization
 
-A workstream is a recognizable ongoing effort represented by a native BB
-section. Workstreams are **always derived automatically** from active task
-identities in the Catalog. Navigation syncs automatically to BB native sections
-without manual placement or preview/apply staging.
+Workstreams derives BB sections from root threads' topics. The topic assignment is authoritative: moving a root in BB's sidebar is logged and reverted; assigning another topic changes its workstream. Delegates follow their root.
 
-## How live derivation works
+## Organizer pass
 
-The system operates continuously through a coordinated automatic lifecycle:
+The organizer is deterministic and makes no model calls. After relevant fact or lifecycle changes it:
 
-### 1. Classification
+1. Reads visible, non-archived roots, stored topic assignments, and statuses.
+2. Chooses workstream topics according to active-root counts, capacity, collapse threshold, and existing valid bindings.
+3. Creates, renames, or removes topic-bound sections and files roots to match.
+4. Logs outside section changes, then restores topic-derived membership.
+5. Prunes discovered topics that have no assigned roots, workstream, or child topics.
 
-Roots missing a fresh stored subject are classified against the Catalog using
-the `classify` model. Inputs contain the thread title, recap, project context,
-and relevant user requests.
-Explicit manual selections (`provenance: manual`) remain authoritative and are
-never overwritten by automatic classification. Missing or stale classifications
-run with bounded concurrency. Manual unresolved tasks persist as explicit null
-assignments.
+A pass uses the service's serial queue so reconciliation and section mutations cannot interleave. Each pass that changes sections or membership is recorded as one Activity entry. Topic edits and assignments are recorded too. Undo is available where it can preserve the topic-only rule; the organizer restores derived membership when a later pass runs.
 
-### 2. Deterministic regrouping
+## Starting topics
 
-Once active roots have assignments, the coordinator groups them
-deterministically using `deriveActiveEntityIds` from `domain/regroup.ts`:
+A root spawned from another thread inherits that thread's topic. A root started from a workstream's ＋ inherits the bound topic. Otherwise Quick analysis of the first request supplies a topic or leaves the root Unfiled. Explicit composer choices have manual priority. Full analysis may replace an inherited topic only when it reports a scope shift.
 
-- **Partition by product roots**: Entities are grouped under their top-level Catalog product (`parentId === null`).
-- **Group capacity**: Maximum active tasks per workstream (default: 6). Leaf feature identities above capacity may stand as indivisible leaf groups.
-- **Contraction threshold**: At or below this product task count (default: 3), navigation contracts to the broad product root workstream.
-- **Active count vs. completed retention**: Only active (non-completed) roots drive capacity and expansion pressure. Completed tasks exert 0 expansion pressure and remain navigable under their product root. A root is completed when its agent's recap reports the latest turn complete, or, without a recap, when the current analysis says done: the same status rule (`domain/status.ts`) the sidebar uses.
-- **Stability**: Existing active workstream homes are preserved when they continue to satisfy capacity and coverage constraints.
-- **Unresolved tasks**: Tasks with unresolved identities map to Unfiled (`sectionId: null`) and are surfaced in `state.unresolved`.
+## Topic tree
 
-## Activity
+Topics provide a workstream's name, description, and aliases. Edit them in Topics or with `bb workstreams topics`; merges remain manual. Discovered topics are pruned only when unused and childless. Database names remain stable for migration compatibility.
 
-Section changes run in the service's mutation queue, never interleaved with a
-move, retitle, or reconcile. Each pass that creates, renames, or removes a
-workstream or moves a thread records one Activity entry (source automatic)
-listing every change. These entries have no Undo: workstreams follow topics,
-so the next pass would redo whatever an undo reverted. To move a thread,
-change its topic. A move made in BB's own sidebar is recorded as made outside
-Workstreams, and the next pass moves the thread back and records that too.
+## Observability
 
-## Organize pane
+The Organization page reports organizer state and agent-report coverage. `bb workstreams organization` reads current state; `bb workstreams organization --rebuild` runs a fresh pass. `bb workstreams log` shows Activity, including a sidebar move and its automatic reversion.
 
-The **Workstreams → Organize** pane explains the current live projection:
-
-- **Status and progress**: Live state (`idle`, `classifying`, `deriving`, `syncing`, `failed`), progress metrics, and error reporting with a **Try again** retry action.
-- **Counts summary**: Active tasks, active workstreams, unresolved tasks, and completed tasks retained.
-- **Derived workstreams**: Current workstreams with active and total counts, member tasks, feature identities, and derivation reasons.
-- **Unresolved correction**: Dedicated section listing unfiled unresolved tasks with inline product/feature assignment controls. Correcting an identity immediately updates navigation.
-- **Rebuild**: Explicit action to re-run full derivation across all active threads.
-
-## Catalog and derived navigation
-
-The **Catalog** is the retained hierarchy of known Products and Features.
-Workstream navigation groups are derived from Catalog structure:
-- Catalog entries label their current navigation home as derived.
-- Editing the Catalog (renaming, reparenting, merging) automatically updates navigation.
-- Task identity corrections (assigning or clearing a product/feature) trigger immediate derivation.
+The composer preview is Quick analysis, not an organization preview. See the [plugin specification](../SPEC.md) for the lifecycle contract.

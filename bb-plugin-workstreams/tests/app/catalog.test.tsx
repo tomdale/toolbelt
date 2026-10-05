@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { installTestPluginRuntime } from "@get-bb/plugin-sdk/testing/app";
 import { Catalog } from "../../src/app/page/Catalog.tsx";
-import type { CatalogState, CorpusEntity } from "../../src/domain/corpus.ts";
+import type { TopicState, Topic } from "../../src/domain/topics.ts";
 
 beforeEach(() => {
   installTestPluginRuntime();
@@ -17,7 +17,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-const entries: CorpusEntity[] = [
+const entries: Topic[] = [
   {
     id: "p",
     name: "Lantern",
@@ -41,7 +41,7 @@ const entries: CorpusEntity[] = [
   },
 ];
 
-const catalogState: CatalogState = {
+const catalogState: TopicState = {
   entities: entries,
   groups: { sec_1: "p" },
   assignments: {
@@ -59,7 +59,7 @@ const catalogState: CatalogState = {
       threadId: "t-child",
       entityId: "f",
       status: "assigned",
-      provenance: "automatic",
+      provenance: "full",
       label: "Lantern: Shelves",
       ancestorIds: ["f", "p"],
       evidence: "recap",

@@ -1,8 +1,6 @@
-import type {
-  ClassifyInput,
-  parseClassification,
-} from "../src/domain/classify.ts";
-type Result = ReturnType<typeof parseClassification>;
+import type { TopicAnswer } from "../src/domain/classify.ts";
+import type { ClassifyInput } from "./classification-cases.ts";
+type Result = TopicAnswer;
 /** Evaluation-only synonym sets; production routing never uses them. Score baseline and candidate with the same sets. */
 const aliases: Record<string, RegExp> = {
   Automations:

@@ -4,7 +4,11 @@
  * the server, the app, and tests share one definition.
  */
 import { z } from "zod";
-import type { ThreadAnalysis } from "./analysis.ts";
+import type {
+  AgentReport,
+  StoredAnalysis,
+  WorkState,
+} from "./analysis.ts";
 
 export const RECAP_TOOL = "WorkstreamsRecap";
 
@@ -493,25 +497,13 @@ links: optional, only in the review state and only for artifacts or pages explic
 For complete and review, \`next\` holds messages the user might send — a follow-up action or question. Prefer { title, message, description? }. Keep title a very short sentence-case button label, at most 28 characters (ideally 2–4 words); validation enforces the limit. Put the exact self-contained plain-text request (at most 120 characters) in message; it is sent verbatim. Use optional description (at most 120 characters) for longer context or why the choice may be useful; it appears on hover and in the action menu. Do not cram the message into the title. Strings remain supported for simple actions and are shown as the full label. Omit closing periods. Do not restate choices elsewhere or offer work you should do yourself. Omit next while waiting.
 The user decides whether to archive the thread from the recap. When a question card is dismissed or expires, treat the question as unanswered and unapproved, and continue only work that does not depend on it.`;
 
-/**
- * A thread's work as its agent reported it, in analysis's shape: the recap's
- * state and first result over `base`, a current analysis that still supplies
- * subject and drift. The agent's report outranks analysis for the turn it
- * describes.
- */
-export function reportedAnalysis(
-  recap: Recap,
-  thread: { latestAttentionAt: number },
-  base?: ThreadAnalysis & { driftSectionId: string | null },
-): ThreadAnalysis & { driftSectionId: string | null; traceId: string | null } {
+/** How the agent's report of a turn reads as a status. */
+export function reportedStatus(recap: Recap): {
+  recap: string;
+  state: WorkState;
+  needsYou: null;
+} {
   return {
-    subject: null,
-    goal: base?.goal ?? null,
-    drift: null,
-    driftSectionId: null,
-    model: "agent",
-    traceId: null,
-    ...base,
     recap: plainText(recapItemText(recap.latest[0] ?? recap.goal)),
     state:
       recap.state === "complete"
@@ -520,6 +512,35 @@ export function reportedAnalysis(
           ? "in_progress"
           : "review",
     needsYou: null,
+  };
+}
+
+/** The agent's report as Full analysis is shown it. */
+export function agentReport(recap: Recap): AgentReport {
+  return {
+    state: recap.state,
+    headline: plainText(recap.goal),
+    latest: recap.latest.map((item) => plainText(recapItemText(item))),
+  };
+}
+
+/**
+ * A thread's work as its agent reported it, in analysis's shape: the recap's
+ * state and first result over `base`, a current analysis that still supplies
+ * the goal. The agent's report outranks analysis for the turn it describes.
+ */
+export function reportedAnalysis(
+  recap: Recap,
+  thread: { latestAttentionAt: number },
+  base?: StoredAnalysis,
+): StoredAnalysis {
+  return {
+    goal: base?.goal ?? null,
+    model: "agent",
+    traceId: null,
+    ...base,
+    ...reportedStatus(recap),
+    reported: true,
     revision: thread.latestAttentionAt,
     at: recap.at,
   };

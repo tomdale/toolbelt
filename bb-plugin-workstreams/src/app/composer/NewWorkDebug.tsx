@@ -1,9 +1,9 @@
 /**
- * New work's Debug section (SPEC §11.6): a collapsed disclosure under the
- * composer with what it takes to judge a suggestion: the result and its
- * placement, the model's reason, the inputs the model was given, the
- * server's notes on each deterministic step, and the exact prompt and raw
- * response. Copy diagnostics adds New work's state and activity log.
+ * The New thread composer's Debug section (SPEC §11.6): a collapsed
+ * disclosure under the composer with what it takes to judge a preview: the
+ * topic and goal, the reason, what Quick analysis was given, the server's
+ * notes on each step, and the exact prompt and raw response. Copy
+ * diagnostics adds the composer's state and activity log.
  */
 import {
   useEffect,
@@ -11,59 +11,24 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
-import { toast } from "sonner";
+import { useRpc } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
-import type { RouteInput } from "../../domain/router.ts";
+import type { QuickAnalysisInput } from "../../domain/analysis.ts";
 import type { Trace } from "../../domain/trace.ts";
 import type { RpcContract } from "../../server/contract.ts";
-import type { Placement, RouteDecision } from "../../server/router.ts";
+import type { Preview } from "../../server/preview.ts";
 import { Code, json, smallButton } from "../debug/Inspector.tsx";
-import { suggestionVisibility, type NewWork } from "./new-work.ts";
-import { useProjects } from "./Suggestion.tsx";
-
-/** The model sees only this many threads (see `routePrompt`). */
-const OFFERED_THREADS = 30;
+import type { NewWork } from "./new-work.ts";
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const clip = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max - 1)}…` : text;
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
-function decisionTarget(decision: RouteDecision): string {
-  switch (decision.outcome) {
-    case "continue":
-      return `Continue “${decision.threadTitle}”`;
-    case "new-thread":
-      return decision.workstream
-        ? `New thread in ${decision.workstream}`
-        : "New thread without a workstream";
-    case "new-workstream":
-      return `New workstream “${decision.name}”`;
-    case "unsure":
-      return `Unsure (${plural(decision.candidates.length, "candidate")})`;
-  }
-}
-
-function placementText(
-  placement: Placement | null,
-  projects: ReturnType<typeof useProjects>,
-): string {
-  if (!placement) return "None: the Project picker stays as it is";
-  const project = projects.get(placement.projectId);
-  const name = !project
-    ? placement.projectId
-    : project.personal
-      ? `${project.name} (shown as No project)`
-      : project.name;
-  return `${name} · ${placement.label}`;
-}
-
-function projectHint(hosts: readonly string[] | null | undefined): string {
-  if (!hosts) return "None";
-  return hosts.length
-    ? `Picked project hosts ${hosts.join(", ")}`
-    : "Picked project hosts no workstream";
+function decisionTarget(decision: Preview): string {
+  return decision.subject
+    ? `New thread about ${decision.subject}`
+    : "New thread with no topic yet";
 }
 
 /** The decision's recorded model call, once loaded. */
@@ -118,16 +83,13 @@ function Heading({ children }: { children: ReactNode }) {
 export function NewWorkDebug({ newWork }: { newWork: NewWork }) {
   const state = useSyncExternalStore(newWork.subscribe, newWork.snapshot);
   const rpc = useRpc<RpcContract>();
-  const navigate = useBbNavigate();
-  const projects = useProjects();
   const { decision } = state;
   const traceId = decision?.traceId ?? null;
   const loaded = useTrace(traceId);
   const trace = loaded?.trace ?? null;
-  const input = (trace?.input ?? null) as Partial<RouteInput> | null;
+  const input = (trace?.input ?? null) as Partial<QuickAnalysisInput> | null;
   const notes = decision?.explanation?.notes ?? [];
   const [copied, setCopied] = useState(false);
-  const [flagging, setFlagging] = useState(false);
   const copy = async () => {
     const { events, ...dialog } = state;
     try {
@@ -140,39 +102,13 @@ export function NewWorkDebug({ newWork }: { newWork: NewWork }) {
       // Clipboard access can be denied; the section still shows the essentials.
     }
   };
-  const visibility = suggestionVisibility(state);
-  const flagResult = async () => {
-    if (!decision || flagging) return;
-    setFlagging(true);
-    try {
-      const result = await rpc.call("flagRoute", {
-        diagnostics: json({
-          decision,
-          trace,
-          traceError: loaded?.error ?? null,
-          dialog: state,
-          events: state.events,
-        }),
-        projectId: state.selection?.projectId ?? null,
-      });
-      navigate.toThread(result.threadId);
-    } catch (cause) {
-      toast.error(
-        cause instanceof Error ? cause.message : "Couldn't report the result.",
-      );
-    } finally {
-      setFlagging(false);
-    }
-  };
   return (
     <details className="ws-new-work-debug group/debug mt-3 rounded-lg border border-dashed border-border">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
         <Icon name="Bug" aria-hidden className="size-3.5 shrink-0" />
         <span className="font-medium">Debug</span>
         <span className="min-w-0 flex-1 truncate">
-          {decision
-            ? `${decisionTarget(decision)} · ${visibility}`
-            : visibility}
+          {decision ? decisionTarget(decision) : "No preview yet"}
         </span>
         <span
           aria-hidden
@@ -189,24 +125,21 @@ export function NewWorkDebug({ newWork }: { newWork: NewWork }) {
               <Field label="Outcome">
                 {decisionTarget(decision)} · {decision.confidence} confidence
               </Field>
-              {"placement" in decision ? (
-                <Field label="Project">
-                  {placementText(decision.placement, projects)}
-                </Field>
+              {decision.goal ? (
+                <Field label="Title">{decision.goal}</Field>
               ) : null}
               <Field label="Reason">{decision.reason || "—"}</Field>
-              <Field label="Suggestion">{visibility}</Field>
             </Fields>
           </>
         ) : (
           <p className="text-muted-foreground">
-            No classification has finished for this draft yet.
+            No preview has finished for this draft yet.
           </p>
         )}
         {decision && !traceId ? (
           <p className="mt-3 text-muted-foreground">
-            No model call was recorded: the router decided without one, or Debug
-            mode was off when it ran.
+            No model call was recorded: the preview needed none, or Debug mode
+            was off when it ran.
           </p>
         ) : null}
         {traceId && !loaded ? (
@@ -222,20 +155,11 @@ export function NewWorkDebug({ newWork }: { newWork: NewWork }) {
             <Heading>Model inputs</Heading>
             <Fields>
               <Field label="Request">
-                “{clip(input?.prompt ?? trace.label, 160)}”
+                “{clip(input?.request ?? trace.label, 160)}”
               </Field>
-              <Field label="Workstream">
-                {input?.selectedWorkstream ?? "None selected"}
-              </Field>
-              <Field label="Project hint">
-                {projectHint(input?.pickedProjectHosts)}
-              </Field>
-              <Field label="Offered">
-                {plural(input?.workstreams?.length ?? 0, "workstream")} ·{" "}
-                {plural(
-                  Math.min(input?.threads?.length ?? 0, OFFERED_THREADS),
-                  "thread",
-                )}
+              <Field label="Project">{input?.project ?? "None"}</Field>
+              <Field label="Topics offered">
+                {plural(input?.entities?.length ?? 0, "topic")}
               </Field>
               <Field label="Model">
                 {trace.model} · {seconds(trace.durationMs)}
@@ -286,26 +210,10 @@ export function NewWorkDebug({ newWork }: { newWork: NewWork }) {
           </details>
         ) : null}
         <div className="mt-3 flex flex-wrap justify-end gap-2">
-          {decision ? (
-            <button
-              type="button"
-              onClick={() => void flagResult()}
-              disabled={flagging || (!!traceId && !loaded)}
-              title="Creates a triage thread in the Workstreams workstream with this decision and its diagnostics"
-              className={smallButton}
-            >
-              <Icon
-                name={flagging ? "Spinner" : "Bug"}
-                aria-hidden
-                className={`size-3.5 ${flagging ? "animate-spin" : ""}`}
-              />
-              {flagging ? "Creating report…" : "Flag inaccurate result"}
-            </button>
-          ) : null}
           <button
             type="button"
             onClick={() => void copy()}
-            title="Copies the decision, model call, New work state and activity as JSON"
+            title="Copies the preview, model call, composer state and activity as JSON"
             className={smallButton}
           >
             <Icon

@@ -1,340 +1,46 @@
 # Workstreams for BB
 
-Workstreams organizes your BB threads into **workstreams** derived
-automatically from active task identities. Tasks are classified against the
-Catalog, and active navigation groups are derived deterministically based on
-task counts by product and feature. A workstream is a native BB section, so the
-built-in sidebar and Workstreams always agree on where a thread lives.
-[SPEC.md](SPEC.md) is the full design and the contract the code is checked
-against.
+Workstreams maintains BB threads' goals, topics, status, and activity. A root's **Topic** determines its **Workstream** (a native BB section); delegates use their root's topic and section. A sidebar move is logged and reverted. Change a root's topic to change its workstream.
 
-## What it does
+## How it works
 
-- **Sidebar thread list** (select it under Settings → Appearance → Sidebar):
-  - **New work** happens in BB's New thread view (a workstream's ＋ opens it),
-    where Workstreams adds a **Product or feature** field to the picker row.
-    The field defaults to **Automatic**: when you pause typing, the classifier
-    suggests the most specific product or feature. You can also pick a known
-    product or feature from the Catalog, propose a new feature, or explicitly
-    mark the task **Unresolved**. New work never asks for a destination workstream;
-    submitting creates the thread with its identity, and Workstreams derives its
-    section navigation automatically.
-  - **Up Next**: a pending approval or question, or a thread whose latest turn
-    asks you to decide something. These rows sit at the top in an amber block
-    with a slow shimmer, under an always-open header, each naming its
-    workstream. The block shows five rows, with Show more for the rest. A
-    delegate's question folds into its parent's newer one. A selected row stays
-    in the block through read and status updates until you deselect it or select
-    another thread; snoozing or archiving still puts it away immediately. The
-    the **Sidebar** settings can hide it.
-  - **Prioritized workstreams**: hover a workstream header and click its flag,
-    or right-click it → **Prioritize** (or `bb workstreams prioritize`).
-    Prioritized workstreams pin directly below Up Next and keep the flag shown;
-    click it again to remove the priority. While any workstream is prioritized,
-    the others (with Unfiled and Dormant) are hidden behind **Show lower
-    priority workstreams** below the prioritized ones; it reveals them
-    collapsed, and hiding them again resets that. While any of them has a thread
-    in Up Next, Up Next shows only prioritized threads; the toggle counts the
-    threads it leaves out, which wait in their workstreams. A prioritized thread
-    arriving never takes away the row of the thread you have open; it leaves
-    when you select another. Rows open and close smoothly rather than jumping.
-  - **Recent**: the most recently active threads not already in Up Next, up to
-    the configurable limit. The **Sidebar** settings can hide this band.
-  - **One group per workstream**, in BB's section order until you drag a header
-    to reorder them. Each thread tree is filed under its root thread's section,
-    exactly as BB's own sidebar does. Drag a root thread to reorder it within
-    its group or drop it on another group to move it there; its children come
-    with it, and threads you never placed stay newest first above the ones you
-    did.
-  - **Unfiled**: threads in no workstream, as a group after the populated
-    workstreams. It appears only while it has threads.
-  - **Empty workstreams** follow Unfiled, with an inline **New work** button
-    scoped to that workstream and no zero thread count.
-  - A collapsed **Dormant** fold for populated workstreams with no threads
-    touched in 30 days.
-  - A collapsed **Snoozed** fold. Snoozing a thread takes it (and its children)
-    out of Up Next, Recent, and its group until it wakes. the **Sidebar**
-    settings can hide the fold without showing those threads elsewhere. Hover a
-    row and click its alarm clock to snooze with your default (Tomorrow morning
-    unless changed), or rest the pointer on it for a menu of quick choices.
-    Right-click → **Snooze** lists them all: 30 minutes, 1 hour, 3 hours,
-    Tomorrow morning, This weekend, Next week, Until it updates, or a date and
-    time you pick. The thread header has the same choices as a split button, and
-    the command palette has "Workstreams: snooze this thread". Settings →
-    **Snooze** picks the default, the hover menu's choices (up to four), and
-    when morning is. A timed snooze returns the thread marked unread at its
-    time; "Until it updates" returns it at its next activity; sending the thread
-    a message or **Wake now** ends any snooze.
-  - The **Sidebar** settings also control the **Archived** fold; when hidden,
-    Workstreams does not request archived pages. **Working Indicator** controls
-    the working thread spinner animation and colors. In **Sidebar → Details**,
-    **Timestamp** chooses Always (the default), On Hover, or Never for thread
-    ages. On Hover ages also appear on keyboard focus. Workstream names and
-    shortcut hints remain visible regardless of this setting. **Thread count**
-    and **Waiting count** each choose Always, When Collapsed (the default), or
-    Never for workstream headers.
-  - Rows show BB's status, a work-state mark (✓ complete, ◇ review, and ↻
-    working from the agent's recap; ◆ decision, ◇ review, ⏸ blocked from
-    analysis when a thread has no recap; hover for where it stopped), unread
-    state, drafts, shortcuts and pull requests. The **Working Indicator**
-    settings choose the working thread's spinner and colors (BB's own by
-    default). Hover a row for its Snooze and Archive buttons; right-click to
-    move, rename, pin, mark read, snooze, archive, or delete.
-- **Phone Home screen**: on a phone, BB's new-thread view is the composer
-  pinned to the bottom with a flat Recent list above it. Workstreams replaces
-  that list with **Up Next**, in the sidebar's amber block, over your threads
-  organized by workstream:
-  - **Up Next** uses the sidebar's membership, order, prioritized focus, and
-    five-row limit with Show more. Each row has the thread's status mark, its BB
-    title, its workstream in the workstream's color, what it asks, and its age,
-    and is at least 56px tall.
-  - **Workstreams** follow: prioritized ones first and open, the others in the
-    sidebar's sort order, then Unfiled, a collapsed **Dormant** fold, and a
-    collapsed **Snoozed** fold. A group opens and closes from its 48px header,
-    which carries the waiting count and thread count the **Sidebar** settings
-    choose. Groups start closed, except prioritized workstreams and the only
-    workstream there is; **Expand all** and **Collapse all** switch every group
-    at once. A thread with child threads has a trailing count that folds them.
-    While any workstream is prioritized the others wait behind **Show lower
-    priority workstreams**, which counts the waiting threads Up Next left out.
-    Workstreams with no threads, and the Archived fold, are left off; the New
-    work picker still offers every workstream. What you opened or closed is kept
-    on that device.
-  - The **Sidebar** settings for Up Next, Snoozed, Timestamp (ages show for
-    Always only: a phone has no hover), counts, and workstream order apply here
-    too. **Home screen → Up Next and workstreams on phones** turns the whole
-    section off and brings back BB's own Recent list.
-  - Wide windows show nothing here: the sidebar is there. On a phone the section
-    steps aside, leaving BB's list, while threads fail to load or there is
-    nothing to list.
-- **Question cards**: agents without a native question tool get
-  `AskUserQuestion`, which asks one to four questions with suggested answers and
-  freeform input. The card appears above the composer in the recap card's place
-  and style, with an amber accent; the thread reads as waiting until it is
-  answered or dismissed. Number keys pick options, and ⌘⏎ (Ctrl+⏎) in the
-  freeform field submits or advances. Questions are saved before opening: a
-  plugin reload or interrupted waiter restores an answerable card, with partial
-  input retained in the same browser tab. A restored answer resumes the agent
-  through an ordinary user message because BB no longer retains the original
-  tool waiter. Native waiting status is not restored, and the card can briefly
-  disappear while the frontend reloads. Explicit Cancel dismisses the question
-  without granting approval; a native timeout leaves the saved question
-  available to answer later. Recap reminders stand aside while a saved question
-  is pending. Answered questions stay in the transcript rather than being
-  suppressed. Expand the question's form row where it occurred to read the
-  prompt and your answer inline; **Options offered** reveals suggestions and
-  previews. Saved answers remain associated with that original row after
-  interruption and recovery. Older forms can recover retained answers from a
-  bounded transcript scan; missing historical answers are never inferred.
-- **Workstreams page** (`/plugins/workstreams/home`):
-  - **Overview**: workstreams ranked by what needs you, each thread with where
-    it stopped. Search with `/`.
-  - **Map**: edit each workstream's description and aliases, and organize once
-    (below).
-  - **Activity**: every change and proposal with its time, rationale, source,
-    and Undo, filterable by workstream, action, and needs-review.
-- **Recaps**: every thread except side chats gets a `WorkstreamsRecap` tool, and
-  its agent ends each turn with a question card (AskUserQuestion or the
-  provider's own), a **review**, **complete**, or **waiting** recap. Waiting
-  identifies the async task the agent is waiting on, with a timeout in seconds.
-  A countdown shows when the next status check is due. At the deadline, an
-  agent-only prompt asks the agent to check status if no newer turn has started.
-  Fresh input cancels the check. A recap is a Goal heading, one to three Latest
-  results, for review one to three **Review** steps naming what to inspect or
-  try and the expected result, and links to files or pages. Every recap list
-  accepts plain strings or `{ text, detail }` items; `detail` appears as a
-  subdued subrow. Legacy `{ step, expect }` items remain supported. Keep
-  distinct results in separate items rather than joining them with semicolons.
-  One Latest result or Review step reads as plain text, more as a list. File
-  links inside the thread's workspace open there, others through its machine.
-  The card shows a state line (Ready for Review, Complete, or Waiting), the
-  goal, and Done and Review rows for review recaps, with links under Review.
-  Waiting recaps show the goal as the title, one row per awaited agent with
-  its live status, and a footer counting down to the next check. Dismissing a
-  waiting card also cancels its check. Complete recaps show just results. The **Compact** layout keeps the
-  goal and one essential row in smaller type: the goal, results, or review
-  steps, with an icon-only Archive beside ✕. The card sits above the composer,
-  with a dismiss ✕ in its corner and, when the thread can be archived,
-  **Archive** at the right of a footer strip along its bottom edge. Click a
-  suggested action to send it; Shift-click to add its text to the draft instead,
-  or choose **Edit in composer** from the overflow menu. Resting the pointer on
-  an action (or focusing it by keyboard) opens a small arrowed hint with its
-  description (or, without one, the message it sends) and a reminder that a
-  click sends and a ⇧ click edits. Its state marks the
-  sidebar row. Each recap also stays in the thread as a tinted **Recap** tool
-  row; expand it to read the recap. Fresh input clears the card. A turn that
-  ends without either gets an agent-only reminder, three by default (Settings →
-  **Recap**: on/off, reminders 0–10, and a Full or Compact layout). BB reports
-  turn completion after the fact, so the turn's own reply is already visible
-  when the reminder arrives. The tool reaches each thread when its provider
-  session next starts. Reminders go only to threads that certainly have it:
-  threads created since recaps were turned on (for a fork, the thread its fork
-  chain started from), and threads whose agent has called it.
-- **Archive**: on a complete or review recap, when BB has no unfinished tasks,
-  goals, queued messages, interactions, or background work, and every child and
-  lifecycle dependent is complete. Archiving a review recap accepts its result.
-  Archive rechecks outstanding work. Typing a continuation, adding an
-  attachment, or starting new work withdraws it for that recap; clearing the
-  draft doesn't bring it back. Dismiss hides the card on every client and keeps
-  the sidebar mark. Workstreams never archives automatically.
-- **Analysis**: a few seconds after each turn, one small model call records the
-  thread's one-line summary, work state, subject, goal, and (for top-level
-  threads) whether its latest request drifted to another workstream. Results are
-  tied to the turn they describe and show as updating once a new turn starts. A
-  recap outranks analysis for the work state. Analysis itself never moves
-  anything.
-- **Titles**: a thread's title is its goal, a short phrase for what the thread
-  is for, so the sidebar, the heading above the thread, Overview, Up Next,
-  Activity, and the CLI all name it the same way. A new thread is titled from
-  its first request within seconds, while its first turn is still running. The
-  analysis after that turn keeps the title or replaces it with a sharper goal;
-  after that a title changes at most once an hour, and only when the thread's
-  objective does. Threads analyzed before titles followed goals, which BB never
-  titled, are given their stored goal once. Each title is logged in Activity
-  with Undo. A title you or an
-  agent set is never changed; clear it to hand it back. Turn this off in the
-  Threads settings section.
-- **Organize** (Organize tab, or `bb workstreams rebuild`): explains the
-  current live projection of derived workstreams with active and total counts,
-  feature identities, derivation status/progress/error, and unresolved task
-  correction controls. Retries failed derivations with **Try again**. See
-  [Organizing workstreams](docs/organization.md).
-- **Catalog** (Catalog tab, or `bb workstreams catalog list`): the retained
-  hierarchy of known Products and Features, whether or not they have active
-  tasks. Each identity has a name, description, optional parent link, and
-  aliases. The tab provides searching by full path or alias, viewing related
-  tasks, and maintenance dialogs for creating, editing, reparenting, and
-  merging identities.
-- **Model settings**: Threads analysis, New work suggestions, and Organize each
-  use their own selected model. Pi AI Gateway models run as direct completions;
-  explicit reasoning levels use Gateway's shared effort control, and service
-  tiers are forwarded as routing hints. Other providers run in hidden workers.
-  Unavailable worker models or unsupported controls fail rather than silently
-  substituting another selection. Built-in model choices leave reasoning at the
-  provider default. Gateway may translate effort for the serving model, and a
-  requested service tier is not a guarantee of the tier served.
-- **Routing**: New work, in BB's New thread view, classifies the draft against
-  the Catalog when you pause typing and fills the Automatic Product or feature
-  field. Enter starts the thread with what the field shows;
-  a suggested thread to continue waits for an explicit acceptance (⌘⏎, Send,
-  or a click). Identity selection and section placement are independent.
-- **Agent tools**: threads receive question support and recap guidance through
-  `bb.agents.configure`, independently of workstream placement or parent links.
-  Side chats receive question support without recap enrollment; internal
-  inference workers receive neither. Repository and environment guidance belongs
-  to repository instructions and the execution plugins.
-- **Parent link** in child threads' headers (the Threads settings section).
-- **Archive button** in thread headers: just the archive icon, on by default
-  (the Threads settings section turns it off). It archives through BB's own
-  flow, as a sidebar row's Archive does, so BB confirms first when child
-  threads will be archived too and offers Undo afterwards.
-- **Reconciler**: BB emits no events for section changes, so Workstreams
-  compares BB's state with its own every minute. Changes made elsewhere are
-  recorded as made "outside Workstreams" and never overridden.
+- **Quick analysis** runs on a draft while typing and on a new thread's first request. It returns a goal and topic; the matching preview is reused when that first request is sent. A quick topic files the thread immediately.
+- **Full analysis** runs at turn end. It settles the goal and topic, and supplies recap, status, and needs-you only when the agent did not report.
+- **Starting topics** inherit from a source thread or workstream's ＋. Otherwise Quick analysis classifies the first request or leaves it Unfiled. Explicit Topic picks are manual.
+- **Organization** deterministically groups topics and syncs native sections after facts change; it makes no model calls. The Organization tab reports current state and agent-report coverage.
+- **Topics** manages the topic tree. **Activity** records changes, outside moves and reversion, and model calls, with undo where supported.
 
-- **Debug mode** (the Advanced preference, off by default): every model call is
-  recorded with the exact prompt, the model's reasoning summary, the raw
-  response, the parsed result, and what Workstreams did with it. A small bug
-  button appears wherever Workstreams used a model: the thread header, the New
-  work, Activity entries, the organizing review, generated descriptions,
-  Overview rows, and the sidebar row menu (**Inspect model calls…**). It opens a
-  side pane with those calls. **Run again** sends the same prompt to the same
-  model to show whether the answer is stable, without changing anything.
-  Activity lists each model call among the changes, including calls that made no
-  change. Model rows use a quiet surface tint and a Model badge, and prioritize
-  the event, subject, and labeled assessment. Related threads use BB-style
-  thread-reference pills on an aligned row, with host-owned link navigation.
-  Small information buttons explain event names and lifecycle terms on hover or
-  keyboard focus. **Technical details** reveals labeled model, duration, token
-  usage, and cost measurements plus prompt inspection; these measurements stay
-  collapsed by default. Debug controls in **Activity** filter by call kind and
-  failures, show the count and cost of visible calls, load older calls, and
-  clear traces without deleting activity changes. Journal entries also expose
-  expandable internal details. Records include redacted thread excerpts and are
-  kept for 7 days (at most 1,000).
-
-Workstreams settings are grouped by feature and stored in plugin storage. Model
-choices use BB's provider/model picker. AI Gateway choices, including BB's Pi AI
-Gateway provider, use a direct completion from the configured analysis machine
-and its Pi key. Other provider choices run in a hidden BB worker thread; these
-calls take several seconds longer. Provider catalogs determine the available
-model, reasoning level, and service tier at execution time. Analysis model
-changes should pass the eval (`eval/README.md`).
+The recap tool's `goal` field remains unchanged for compatibility with running agent sessions.
 
 ## CLI
 
 ```sh
-bb workstreams list [--json]                   # workstreams with counts
-bb workstreams show <workstream> [--json]      # threads nested, with where each stopped
-bb workstreams file <thread> <workstream>      # file a root thread; `unfiled` removes it
-bb workstreams edit <workstream> [--description <text>] [--alias <a,b>]
-bb workstreams prioritize <workstream> [--off] # pin it and focus Up Next on it
-bb workstreams handoff --request-stdin [--note <text>] [--dry-run] [--json] <<'EOF'
-<the user's request, verbatim>
-EOF
-bb workstreams analyze [<thread>]              # analyze now, or catch up
-bb workstreams organization [--retry] [--json] # read or retry live organization
-bb workstreams rebuild                         # re-derive workstreams immediately
-bb workstreams log [--since 7d] [--external]   # the activity log
+bb workstreams list [--json]
+bb workstreams show <workstream> [--json]
+bb workstreams organization [--rebuild] [--json]
+bb workstreams log [--since 7d] [--external] [--json]
+bb workstreams analyze [<thread>] [--json]
 bb workstreams undo <entry-id>
 bb workstreams trace [<id>] [--thread <id>] [--entry <id>] [--kind <kind>] [--json]
-                                               # Debug mode: recorded model calls
-
-# Catalog maintenance
-bb workstreams catalog list [--json]           # all products and features
-bb workstreams catalog show <id-or-name>       # details, home, and assigned tasks
-bb workstreams catalog create <name> [--parent <p>] [--description <d>] [--aliases <a,b>]
-bb workstreams catalog edit <id-or-name> [--name <n>] [--description <d>] [--aliases <a,b>]
-bb workstreams catalog reparent <id-or-name> --to <new-parent-or-root>
-bb workstreams catalog merge <source> <target> # merge identities and move tasks
-
-# Task identity
-bb workstreams task show <thread-id> [--json]  # canonical product/feature assignment
-bb workstreams task assign <thread-id> <id-or-name> # manually assign identity
-bb workstreams task clear <thread-id>          # clear identity (mark unresolved)
-bb workstreams task reclassify <thread-id> [--identity <id-or-name>] # classify via model
+bb workstreams topics list|show|create|edit|reparent|merge …
+bb workstreams thread show|assign|clear|reclassify …
 ```
 
-A workstream argument is a section id or its name (case-insensitive). `new` and
-`handoff` exit 3 when the router is unsure, printing the candidates.
+Run `bb workstreams --help` for argument details.
+
+## Settings
+
+Quick analysis and Full analysis have separate model settings. The Quick analysis model remains available when typing suggestions are disabled because first-send analysis still uses it. Capacity and collapse threshold control grouping; other settings cover titles, sidebar, recaps, snooze, and display.
 
 ## Development
 
-The package uses the published Plugin SDK pinned in its lockfile. New work
-embeds BB's native composer unchanged and places its Product or feature field
-in BB's picker row (see SPEC §6). Build and verify in an isolated task; deploy only from
-the canonical checkout.
+Build and verify in an isolated task worktree; deploy only from the canonical checkout.
 
 ```sh
 npm ci
 npm run typecheck
-npm test
+npx vitest run
 npm run build
-# Then run the repository's scripts/bb-plugin-smoke against this package.
-node eval/run.ts      # analysis eval (calls models); see eval/README.md
-node eval/route.ts    # routing eval
 ```
 
-- `src/domain/`: pure logic: `tree.ts` (exact-once forests), `project.ts` (the
-  projection shared by the sidebar, page, and CLI), `analysis.ts`,
-  `organize.ts`, `router.ts`.
-- `src/server/`: `service.ts` (mutations, batches, undo, reconciler),
-  `analyzer.ts`, `recap.ts` (the recap tool and reminders), `archive.ts`,
-  `bootstrap.ts`, `router.ts`, `agents.ts` (`configure`), `map.ts`,
-  `journal.ts`, `db.ts` (append-only migrations; the existing migration IDs
-  remain append-only), `cli.ts`, `contract.ts`, `model.ts` (every model call's
-  prompt and parser, and Debug mode's recording), `trace.ts` (the trace store),
-  `inference/` (the host entry that runs Pi).
-- `src/app/`: the sidebar list, the phone Home screen (`home/`), the page, the
-  thread header actions, the recap card, New work, and `debug/` (inspect
-  buttons, the inspector pane), fed by `useWorkstreams.ts`.
-
-To check the exact-once guarantee against real data, export a snapshot to
-private storage (it contains thread titles) and point the test at it:
-
-```sh
-jq -n --argjson threads "$(bb thread list --json)" \
-  --argjson sections "$(bb thread section list --json)" \
-  '{threads: $threads, sections: $sections}' > /private/path/snapshot.json
-WORKSTREAMS_SNAPSHOT=/private/path/snapshot.json npm test
-```
+Then run the repository's `scripts/bb-plugin-smoke` against this package. Opt-in model evaluations are in [eval/README.md](eval/README.md); they make paid calls and are not part of the test suite. See [PLUGIN_OVERVIEW.md](PLUGIN_OVERVIEW.md) and [Organization](docs/organization.md) for details.

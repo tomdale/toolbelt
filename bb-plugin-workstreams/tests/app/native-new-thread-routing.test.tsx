@@ -10,7 +10,8 @@ import {
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { useComposer } from "@get-bb/plugin-sdk/app";
 import { NewThreadRouting } from "../../src/app/composer/NewThreadRouting.tsx";
-import type { RouteDecision } from "../../src/server/router.ts";
+import { setComposerPreset } from "../../src/app/composer/preset.ts";
+import type { Preview } from "../../src/server/preview.ts";
 import { emptyState } from "./fixtures.ts";
 
 beforeAll(() => {
@@ -23,31 +24,14 @@ beforeAll(() => {
 });
 afterEach(cleanup);
 
-const identityDecision: RouteDecision = {
+const identityDecision: Preview = {
   id: "route-alpha",
   traceId: "trace-alpha",
   confidence: "high",
   reason: "Belongs in Alpha",
   subject: "Alpha",
   subjectId: "ent_alpha",
-  outcome: "new-thread",
-  sectionId: null,
-  workstream: null,
-  title: "",
-  placement: null,
-};
-
-const continuationDecision: RouteDecision = {
-  id: "route-continuation",
-  traceId: "trace-continuation",
-  confidence: "high",
-  reason: "Continues the parser fix",
-  subject: null,
-  outcome: "continue",
-  threadId: "thread-parser",
-  threadTitle: "Parser fix",
-  workstream: "Alpha",
-  sectionId: "section-alpha",
+  goal: "Alpha parser",
 };
 
 function RootComposer() {
@@ -107,20 +91,15 @@ function DialogComposer() {
 }
 
 function mount(
-  decision: RouteDecision,
+  decision: Preview,
   options: {
     component?: typeof RootComposer;
-    sendFails?: boolean;
     entities?: { id: string; name: string; description: string; parentId: string | null; aliases: string[] }[];
   } = {},
 ) {
   const Component = options.component ?? RootComposer;
   const route = vi.fn(async () => decision);
   const routeCancel = vi.fn(async () => ({ canceled: true }));
-  const sendToThread = vi.fn(async () => {
-    if (options.sendFails) throw new Error("send failed");
-    return { threadId: "thread-parser" };
-  });
   const draftIdentity = vi.fn(async () => ({ filed: false }));
 
   const slot = renderSlot(
@@ -147,7 +126,6 @@ function mount(
           prefs: {
             newWork: {
               suggestions: true,
-              suggestionsModel: { kind: "gateway", model: "model-test" },
             },
           },
         }),
@@ -182,15 +160,14 @@ function mount(
           assignments: {},
           revision: 1,
         }),
-        route,
-        routeCancel,
-        sendToThread,
+        preview: route,
+        previewCancel: routeCancel,
         draftIdentity,
       },
     },
   );
 
-  return { slot, route, sendToThread, draftIdentity };
+  return { slot, route, draftIdentity };
 }
 
 async function typePrompt(
@@ -204,7 +181,7 @@ it("fills the field with the classified identity and submits it through host sub
   const { slot, route } = mount(identityDecision);
   await typePrompt(slot, "Fix the parser in Alpha");
   const field = await screen.findByRole("button", {
-    name: "Product or feature: Alpha",
+    name: "Topic: Alpha",
   });
   expect(field.dataset.wsAuto).toBe("true");
   expect(route).toHaveBeenCalledTimes(1);
@@ -216,35 +193,36 @@ it("fills the field with the classified identity and submits it through host sub
         entityId: "ent_alpha",
         proposal: null,
         provenance: "automatic",
+        goal: "Alpha parser",
       },
     },
   });
 });
 
-it("places the Product or feature picker in the host picker row", async () => {
+it("places the Topic picker in the host picker row", async () => {
   mount(identityDecision, { component: RootComposerWithPickerRow });
   const picker = await screen.findByRole("button", {
-    name: "Product or feature: Automatic",
+    name: "Topic: Automatic",
   });
   expect(picker).toBeTruthy();
   expect(picker.getAttribute("data-ws-identity-control")).toBe("");
   expect(screen.queryByRole("button", { name: /Workstream:/ })).toBeNull();
 });
 
-it("leaves an unsure classification out of the host submit metadata", async () => {
-  const unsure: RouteDecision = {
+it("leaves a preview with no topic out of the host submit metadata", async () => {
+  const unsure: Preview = {
     ...identityDecision,
     id: "route-unsure",
-    outcome: "unsure",
-    candidates: [],
+    confidence: "low",
     subject: null,
     subjectId: null,
+    goal: null,
   };
   const { slot, route } = mount(unsure);
   await typePrompt(slot, "Something vague");
   await waitFor(() => expect(route).toHaveBeenCalledTimes(1));
   expect(
-    screen.getByRole("button", { name: "Product or feature: Automatic" }),
+    screen.getByRole("button", { name: "Topic: Automatic" }),
   ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
@@ -253,14 +231,14 @@ it("leaves an unsure classification out of the host submit metadata", async () =
   });
 });
 
-it("submits manual null identity when selecting Unresolved", async () => {
+it("submits a picked No topic when selecting it", async () => {
   const { slot } = mount(identityDecision);
   await typePrompt(slot, "Some unresolvable request");
   fireEvent.click(
-    await screen.findByRole("button", { name: "Product or feature: Alpha" }),
+    await screen.findByRole("button", { name: "Topic: Alpha" }),
   );
-  fireEvent.click(await screen.findByRole("option", { name: "Unresolved" }));
-  await screen.findByRole("button", { name: "Product or feature: Unresolved" });
+  fireEvent.click(await screen.findByRole("option", { name: "No topic" }));
+  await screen.findByRole("button", { name: "Topic: No topic" });
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   expect(slot.inspection.composer.submits[0]).toEqual({
@@ -275,22 +253,17 @@ it("submits manual null identity when selecting Unresolved", async () => {
 });
 
 it("submits proposal identity when proposing a new feature", async () => {
-  const proposalDecision: RouteDecision = {
+  const proposalDecision: Preview = {
     id: "route-billing",
     traceId: "trace-billing",
     confidence: "high",
     reason: "A new effort",
     subject: "Billing",
     proposal: { name: "Billing", description: "Invoices" },
-    outcome: "new-thread",
-    sectionId: null,
-    workstream: null,
-    title: "",
-    placement: null,
   };
   const { slot } = mount(proposalDecision);
   await typePrompt(slot, "Add invoice billing");
-  await screen.findByRole("button", { name: "Product or feature: Billing" });
+  await screen.findByRole("button", { name: "Topic: Billing" });
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   expect(slot.inspection.composer.submits[0]).toEqual({
@@ -299,43 +272,10 @@ it("submits proposal identity when proposing a new feature", async () => {
         entityId: null,
         proposal: { name: "Billing", description: "Invoices" },
         provenance: "automatic",
+        goal: null,
       },
     },
   });
-});
-
-it("sends an accepted continuation once without starting another thread", async () => {
-  const { slot, route, sendToThread } =
-    mount(continuationDecision);
-  await typePrompt(slot, "Also handle CRLF");
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: /Accept suggestion: Send to Parser fix/,
-    }),
-  );
-  await waitFor(() => expect(sendToThread).toHaveBeenCalledTimes(1));
-  expect((sendToThread.mock.calls as any)[0]?.[0]).toMatchObject({
-    threadId: "thread-parser",
-    input: [{ type: "text", text: "Also handle CRLF", mentions: [] }],
-    traceId: "trace-continuation",
-  });
-  expect(slot.inspection.composer.submits).toHaveLength(0);
-  expect(route).toHaveBeenCalledTimes(1);
-});
-
-it("retains the composer draft when sending a continuation fails", async () => {
-  const { slot } = mount(continuationDecision, { sendFails: true });
-  await typePrompt(slot, "Also handle CRLF");
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: /Accept suggestion: Send to Parser fix/,
-    }),
-  );
-  await waitFor(() =>
-    expect(screen.getAllByText("send failed").length).toBeGreaterThan(0),
-  );
-  expect(slot.inspection.composer.draft.text).toBe("Also handle CRLF");
-  expect(slot.inspection.navigateCalls).toHaveLength(0);
 });
 
 it("does not render routing controls or intercept submits when inside a dialog", async () => {
@@ -343,7 +283,7 @@ it("does not render routing controls or intercept submits when inside a dialog",
     component: DialogComposer,
   });
   await typePrompt(slot, "Fix the parser in Alpha");
-  expect(screen.queryByRole("button", { name: /Product or feature:/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Topic:/ })).toBeNull();
   expect(screen.queryByRole("button", { name: /Workstream:/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
@@ -356,18 +296,23 @@ it("does not render routing controls or intercept submits when inside a dialog",
 it("reports the draft's identity so a plain Enter can be filed", async () => {
   const { slot, draftIdentity } = mount(identityDecision);
   await typePrompt(slot, "Fix the parser in Alpha");
-  await screen.findByRole("button", { name: "Product or feature: Alpha" });
+  await screen.findByRole("button", { name: "Topic: Alpha" });
   await waitFor(() =>
     expect(draftIdentity).toHaveBeenLastCalledWith({
       draftKey: expect.any(String),
       text: "Fix the parser in Alpha",
-      identity: { entityId: "ent_alpha", proposal: null, provenance: "automatic" },
+      identity: {
+        entityId: "ent_alpha",
+        proposal: null,
+        provenance: "automatic",
+        goal: "Alpha parser",
+      },
     }),
   );
   fireEvent.click(
-    await screen.findByRole("button", { name: "Product or feature: Alpha" }),
+    await screen.findByRole("button", { name: "Topic: Alpha" }),
   );
-  fireEvent.click(await screen.findByRole("option", { name: "Unresolved" }));
+  fireEvent.click(await screen.findByRole("option", { name: "No topic" }));
   await waitFor(() =>
     expect(draftIdentity).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -377,43 +322,23 @@ it("reports the draft's identity so a plain Enter can be filed", async () => {
   );
 });
 
-it("sends to the suggested thread on ⌘⏎, as in New work", async () => {
-  const { slot, sendToThread } = mount(continuationDecision);
-  await typePrompt(slot, "Also handle CRLF");
-  await screen.findByRole("button", {
-    name: /Accept suggestion: Send to Parser fix/,
-  });
-  fireEvent.keyDown(screen.getByRole("button", { name: "Host submit" }), {
-    key: "Enter",
-    metaKey: true,
-    ctrlKey: true,
-  });
-  await waitFor(() => expect(sendToThread).toHaveBeenCalledTimes(1));
-  expect((sendToThread.mock.calls as any)[0]?.[0]).toMatchObject({
-    threadId: "thread-parser",
-  });
-  expect(slot.inspection.composer.submits).toHaveLength(0);
-});
 
-it("ignores ⌘⏎ from outside its composer", async () => {
-  const { slot, sendToThread } = mount(continuationDecision);
-  await typePrompt(slot, "Also handle CRLF");
-  await screen.findByRole("button", {
-    name: /Accept suggestion: Send to Parser fix/,
+it("starts with the topic of the workstream whose ＋ opened it", async () => {
+  setComposerPreset("section-docs", "Docs");
+  const { slot } = mount(identityDecision);
+  await typePrompt(slot, "Add an example");
+  const field = await screen.findByRole("button", { name: "Topic: Docs" });
+  expect(field.dataset.wsAuto).not.toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
+  await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
+  expect(slot.inspection.composer.submits[0]).toEqual({
+    experimental_data: {
+      identity: {
+        entityId: null,
+        proposal: null,
+        provenance: "inherited",
+        sectionId: "section-docs",
+      },
+    },
   });
-  fireEvent.keyDown(document.body, { key: "Enter", metaKey: true, ctrlKey: true });
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  expect(sendToThread).not.toHaveBeenCalled();
-});
-
-it("shows a failed send once", async () => {
-  const { slot } = mount(continuationDecision, { sendFails: true });
-  await typePrompt(slot, "Also handle CRLF");
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: /Accept suggestion: Send to Parser fix/,
-    }),
-  );
-  await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(1));
-  expect(screen.getByRole("alert").textContent).toBe("send failed");
 });

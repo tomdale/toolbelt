@@ -1,10 +1,11 @@
 /**
- * The workstream map (SPEC §7): one record per native section, keyed by
- * `sectionId`, with the name mirrored from BB. Evidence and subjects are
- * refreshed deterministically from live threads and analysis; a description
- * the user wrote always wins over a generated one.
+ * The workstream view (SPEC §7): one record per native section, keyed by
+ * `sectionId`, with the name mirrored from BB. A workstream bound to a topic
+ * takes its description and aliases from that topic, so what a workstream is
+ * about is written in one place, the Topics tab. A section with no topic
+ * keeps its own stored description. Projects and activity are refreshed
+ * deterministically from live threads.
  */
-import type { StoredAnalysis } from "./analyzer.ts";
 import type { Database } from "./db.ts";
 import type { InventoryThread } from "./inventory.ts";
 import { buildForest } from "../domain/tree.ts";
@@ -21,7 +22,8 @@ export type MapRecord = {
   description: string | null;
   descriptionSource: "generated" | "user";
   aliases: string[];
-  subjects: string[];
+  /** The topic the workstream belongs to, when Workstreams keeps it for one. */
+  topicId: string | null;
   projects: MapProject[];
   evidence: { threadCount: number; lastActiveAt: number };
   createdBy: "user" | "workstreams";
@@ -34,8 +36,10 @@ type Row = {
   description: string | null;
   description_source: MapRecord["descriptionSource"];
   aliases: string;
-  subjects: string;
   projects: string;
+  topic_id: string | null;
+  topic_description: string | null;
+  topic_aliases: string | null;
   evidence: string;
   created_by: MapRecord["createdBy"];
   updated_at: number;
@@ -49,8 +53,6 @@ const parse = <T>(json: string, fallback: T): T => {
   }
 };
 
-const SUBJECTS_MAX = 12;
-
 export class WorkstreamMap {
   constructor(
     private readonly db: Database,
@@ -61,18 +63,25 @@ export class WorkstreamMap {
     return (
       this.db
         .prepare(
-          `SELECT w.*, s.name FROM ws_workstream w
+          `SELECT w.*, s.name, e.id AS topic_id, e.description AS topic_description, e.aliases AS topic_aliases
+           FROM ws_workstream w
            JOIN ws_seen_section s ON s.section_id = w.section_id
+           LEFT JOIN ws_corpus_group g ON g.section_id = w.section_id
+           LEFT JOIN ws_corpus_entity e ON e.id = g.entity_id
            ORDER BY s.name COLLATE NOCASE`,
         )
         .all() as Row[]
     ).map((row) => ({
       sectionId: row.section_id,
       name: row.name ?? "",
-      description: row.description,
+      description: row.topic_id
+        ? row.topic_description || null
+        : row.description,
       descriptionSource: row.description_source,
-      aliases: parse(row.aliases, []),
-      subjects: parse(row.subjects, []),
+      aliases: row.topic_id
+        ? parse(row.topic_aliases ?? "[]", [])
+        : parse(row.aliases, []),
+      topicId: row.topic_id,
       projects: parse(row.projects, []),
       evidence: {
         threadCount: 0,
@@ -88,52 +97,11 @@ export class WorkstreamMap {
     return this.list().find((record) => record.sectionId === sectionId);
   }
 
-  /** A user edit; the description then stays theirs (SPEC §7). */
-  edit(
-    sectionId: string,
-    patch: { description?: string | null; aliases?: string[] },
-  ): void {
-    const at = this.now();
-    if (patch.description !== undefined)
-      this.db
-        .prepare(
-          `UPDATE ws_workstream SET description = ?, description_source = 'user', metadata_revision = metadata_revision + 1, updated_at = ? WHERE section_id = ?`,
-        )
-        .run(patch.description?.trim() || null, at, sectionId);
-    if (patch.aliases !== undefined)
-      this.db
-        .prepare(
-          "UPDATE ws_workstream SET aliases = ?, metadata_revision = metadata_revision + 1, updated_at = ? WHERE section_id = ?",
-        )
-        .run(
-          JSON.stringify(
-            [
-              ...new Set(patch.aliases.map((a) => a.trim()).filter(Boolean)),
-            ].slice(0, 20),
-          ),
-          at,
-          sectionId,
-        );
-  }
-
-  /** Stores a generated description unless the user wrote one. */
-  describe(sectionId: string, description: string): void {
-    this.db
-      .prepare(
-        `UPDATE ws_workstream SET description = ?, metadata_revision = metadata_revision + 1, updated_at = ?
-         WHERE section_id = ? AND description_source = 'generated'`,
-      )
-      .run(description, this.now(), sectionId);
-  }
-
   /**
    * Deterministic evidence from live roots: thread counts, last activity,
-   * the projects the work runs in, and the subjects analysis found.
+   * and the projects the work runs in.
    */
-  refresh(
-    threads: readonly InventoryThread[],
-    analysis: Readonly<Record<string, StoredAnalysis>>,
-  ): void {
+  refresh(threads: readonly InventoryThread[]): void {
     const forest = buildForest(threads);
     const bySection = new Map<string, InventoryThread[]>();
     for (const root of forest.roots) {
@@ -145,7 +113,7 @@ export class WorkstreamMap {
       ]);
     }
     const update = this.db.prepare(
-      `UPDATE ws_workstream SET subjects = @subjects, projects = @projects, evidence = @evidence
+      `UPDATE ws_workstream SET projects = @projects, evidence = @evidence
        WHERE section_id = @id`,
     );
     const tx = this.db.transaction(() => {
@@ -157,9 +125,6 @@ export class WorkstreamMap {
             (t) => forest.rootOf.get(t.id)?.id === root.id && t.id !== root.id,
           ),
         ]);
-        const subjects = rank(
-          roots.map((root) => analysis[root.id]?.subject ?? null),
-        ).slice(0, SUBJECTS_MAX);
         // Delegates count too: a coordinating root often runs in one project
         // while the code work its children do runs in another.
         const projects = rank(members.map((thread) => thread.projectId)).map(
@@ -176,7 +141,6 @@ export class WorkstreamMap {
         );
         update.run({
           id: record.sectionId,
-          subjects: JSON.stringify(subjects),
           projects: JSON.stringify(projects),
           evidence: JSON.stringify({
             threadCount: members.length,

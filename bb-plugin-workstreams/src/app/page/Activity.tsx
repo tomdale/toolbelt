@@ -35,8 +35,9 @@ const ACTION_LABEL: Record<Entry["action"], string> = {
   batch: "Reorganize",
   proposal: "Proposal",
   "edit-workstream": "Edit",
-  route: "New work",
+  route: "New thread",
   retitle: "Updated title",
+  "remove-topic": "Removed topic",
 };
 
 const ACTION_HELP: Record<Entry["action"], string> = {
@@ -51,6 +52,8 @@ const ACTION_HELP: Record<Entry["action"], string> = {
   route: "A new request was placed in a thread and workstream.",
   retitle:
     "A thread was given its goal as its title, from its opening request or after a turn.",
+  "remove-topic":
+    "Topics Workstreams had discovered were removed because no thread or workstream used them.",
 };
 const ENTRY_STATUS: Record<
   Entry["status"],

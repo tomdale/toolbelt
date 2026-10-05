@@ -13,7 +13,7 @@ import { useComposer } from "@get-bb/plugin-sdk/app";
 import { NewThreadRouting } from "../../src/app/composer/NewThreadRouting.tsx";
 import { fakeWorld } from "../server/fake-bb.ts";
 import { openDatabase } from "../../src/server/db.ts";
-import { CorpusStore } from "../../src/server/corpus.ts";
+import { TopicStore } from "../../src/server/topics.ts";
 
 let world: Awaited<ReturnType<typeof fakeWorld>> | null = null;
 beforeAll(() => {
@@ -48,67 +48,38 @@ function RootComposer() {
   );
 }
 
-async function mount(
-  answer: Record<string, unknown>,
-  options: { sendFails?: boolean } = {},
-) {
+async function mount(answer: Record<string, unknown>) {
   let seededAlphaId = "";
-  const send = vi.fn(async () => {
-    if (options.sendFails) throw new Error("send failed");
-  });
   world = await fakeWorld({
-    send,
-    complete: ({ prompt }) => {
-      if (prompt.includes("Classify the most specific")) {
-        if (answer.outcome === "new-workstream" || answer.name === "Billing") {
-          return JSON.stringify({
-            subjectId: null,
-            proposed: {
-              name: String(answer.name ?? "Billing"),
-              description: "",
-            },
-          });
-        }
-        return JSON.stringify({
-          subjectId: seededAlphaId,
-          proposed: null,
-        });
-      }
-      return JSON.stringify(
-        prompt.includes("Someone is starting new work")
-          ? { confidence: "high", reason: "Same effort", code: true, ...answer }
-          : { recap: "r", state: "done", subject: null },
-      );
-    },
+    complete: ({ prompt }) =>
+      JSON.stringify(
+        prompt.includes("You name one new agent thread")
+          ? answer.name === "Billing"
+            ? {
+                goal: "Invoice export",
+                subjectId: null,
+                proposed: { name: "Billing", description: "" },
+              }
+            : { goal: "Alpha parser tabs", subjectId: seededAlphaId, proposed: null }
+          : { recap: "r", state: "done" },
+      ),
   });
   const w = world;
   const alpha = w.addSection("Alpha");
   const beta = w.addSection("Beta");
-  const corpus = new CorpusStore(openDatabase(w.bb));
-  corpus.seed([
-    {
-      sectionId: alpha.id,
-      name: "Alpha",
-      description: "Alpha effort",
-      aliases: [],
-    },
-    {
-      sectionId: beta.id,
-      name: "Beta",
-      description: "Beta effort",
-      aliases: [],
-    },
-  ]);
-  seededAlphaId = corpus.list().find((e) => e.name === "Alpha")!.id;
+  const corpus = new TopicStore(openDatabase(w.bb));
+  const alphaTopic = corpus.create("Alpha", "Alpha effort");
+  corpus.bindGroup(alpha.id, alphaTopic.id);
+  corpus.bindGroup(beta.id, corpus.create("Beta", "Beta effort").id);
+  seededAlphaId = alphaTopic.id;
   w.addThread("a1", { sectionId: alpha.id, title: "Alpha task" });
   await w.harness.behavior.callRpc("refresh", null);
   const methods = [
     "prefs",
     "state",
     "catalog",
-    "route",
-    "routeCancel",
-    "sendToThread",
+    "preview",
+    "previewCancel",
   ];
   const rpc = Object.fromEntries(
     methods.map((method) => [
@@ -122,16 +93,7 @@ async function mount(
     {
       composer: {
         text: "",
-        attachments: options.sendFails
-          ? [
-              {
-                name: "notes.txt",
-                path: "/workspace/notes.txt",
-                sizeBytes: 100,
-                type: "localFile",
-              },
-            ]
-          : [],
+        attachments: [],
         scope: { kind: "new-thread", projectId: "proj_1" },
         selection: { projectId: "proj_1" },
       },
@@ -145,7 +107,10 @@ async function mount(
   const dispatch = async (prompt: string, repeat = false) => {
     expect(slot.inspection.composer.submits).toHaveLength(1);
     const submission = slot.inspection.composer.submits[0]!;
-    const thread = w.addThread("composed", { createdAt: Date.now() });
+    const thread = w.addThread("composed", {
+      createdAt: Date.now(),
+      title: null,
+    });
     const context = makeMessageDispatchHookContext({
       thread,
       input: { text: prompt },
@@ -173,7 +138,7 @@ async function mount(
       entry.threads.some((thread) => thread.id === "composed"),
     );
   };
-  return { w, alpha, beta, slot, dispatch, journal, send };
+  return { w, alpha, beta, slot, dispatch, journal };
 }
 
 it("submits classified automatic identity through host metadata and assigns on server", async () => {
@@ -184,7 +149,7 @@ it("submits classified automatic identity through host metadata and assigns on s
   });
   const prompt = "Fix the parser in Alpha so it handles tabs";
   await act(() => slot.behavior.setComposerText(prompt));
-  await screen.findByRole("button", { name: "Product or feature: Alpha" });
+  await screen.findByRole("button", { name: "Topic: Alpha" });
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   expect(slot.inspection.composer.submits[0]!.experimental_data).toMatchObject({
@@ -194,14 +159,18 @@ it("submits classified automatic identity through host metadata and assigns on s
     },
   });
   await dispatch(prompt);
-  const corpus = new CorpusStore(openDatabase(w.bb));
+  const corpus = new TopicStore(openDatabase(w.bb));
   const assignment = corpus.assignment("composed");
-  expect(assignment.status).toBe("assigned");
+  expect(assignment).toMatchObject({ status: "assigned", provenance: "quick" });
+  // The composer's preview titles the thread, with no second call.
+  await waitFor(() =>
+    expect(w.threads.get("composed")?.title).toBe("Alpha parser tabs"),
+  );
   expect(w.spawned).toEqual([]);
   expect(w.sent).toEqual([]);
 });
 
-it("submits manual product or feature selection through host metadata", async () => {
+it("submits a picked topic through host metadata", async () => {
   const { w, slot, dispatch } = await mount({
     outcome: "new-thread",
     subject: "Alpha",
@@ -209,9 +178,9 @@ it("submits manual product or feature selection through host metadata", async ()
   });
   const prompt = "Write docs for Alpha";
   await act(() => slot.behavior.setComposerText(prompt));
-  fireEvent.click(await screen.findByRole("button", { name: /Product or feature:/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /Topic:/ }));
   fireEvent.click(await screen.findByText("Beta"));
-  await screen.findByRole("button", { name: "Product or feature: Beta" });
+  await screen.findByRole("button", { name: "Topic: Beta" });
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   expect(slot.inspection.composer.submits[0]!.experimental_data).toMatchObject({
@@ -221,23 +190,23 @@ it("submits manual product or feature selection through host metadata", async ()
     },
   });
   await dispatch(prompt);
-  const corpus = new CorpusStore(openDatabase(w.bb));
+  const corpus = new TopicStore(openDatabase(w.bb));
   expect(corpus.assignment("composed").status).toBe("assigned");
   expect(w.spawned).toEqual([]);
 });
 
-it("submits a new feature proposal in the UI through host metadata", async () => {
+it("submits a new topic picked in the UI through host metadata", async () => {
   const { w, slot, dispatch } = await mount({
     outcome: "new-thread",
     title: "Invoice export",
   });
   const prompt = "Add invoice export";
   await act(() => slot.behavior.setComposerText(prompt));
-  fireEvent.click(await screen.findByRole("button", { name: /Product or feature:/ }));
-  const searchInput = screen.getByPlaceholderText("Find a product or feature");
+  fireEvent.click(await screen.findByRole("button", { name: /Topic:/ }));
+  const searchInput = screen.getByPlaceholderText("Find a topic");
   fireEvent.change(searchInput, { target: { value: "Billing" } });
-  fireEvent.click(await screen.findByRole("option", { name: /New feature proposal “Billing”/ }));
-  await screen.findByRole("button", { name: "Product or feature: Billing" });
+  fireEvent.click(await screen.findByRole("option", { name: /New topic “Billing”/ }));
+  await screen.findByRole("button", { name: "Topic: Billing" });
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   expect(slot.inspection.composer.submits[0]!.experimental_data).toMatchObject({
@@ -247,78 +216,13 @@ it("submits a new feature proposal in the UI through host metadata", async () =>
     },
   });
   await dispatch(prompt);
-  const corpus = new CorpusStore(openDatabase(w.bb));
+  const corpus = new TopicStore(openDatabase(w.bb));
   const created = corpus.list().find((e) => e.name === "Billing");
   expect(created).toBeDefined();
   expect(corpus.assignment("composed").entityId).toBe(created!.id);
 });
 
-it("retains the complete draft after a server send failure and can retry successfully", async () => {
-  const { w, slot, send } = await mount(
-    { outcome: "continue", threadId: "a1" },
-    { sendFails: true },
-  );
-  const prompt = "Also handle CRLF in the parser fix @thread:a1";
-  await act(() => slot.behavior.setComposerText(prompt));
-  const draft = structuredClone(slot.inspection.composer.draft);
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: /Accept suggestion: Send to Alpha task/,
-    }),
-  );
-  await waitFor(() =>
-    expect(screen.getAllByText("send failed").length).toBeGreaterThan(0),
-  );
-  expect(send).toHaveBeenCalledTimes(1);
-  expect(slot.inspection.composer.draft).toEqual(draft);
-  expect(slot.inspection.composer.submits).toEqual([]);
-  expect(slot.inspection.navigateCalls).toEqual([]);
-  expect(w.sent).toEqual([]);
-  expect(w.spawned).toEqual([]);
-  const continuationEntries = async () => {
-    const result = (await w.harness.behavior.callRpc("journal", null)) as {
-      entries: { action: string; threads: { id: string }[] }[];
-    };
-    return result.entries.filter(
-      (entry) =>
-        entry.action === "route" &&
-        entry.threads.some((thread) => thread.id === "a1"),
-    );
-  };
-  expect(await continuationEntries()).toEqual([]);
-  send.mockResolvedValue(undefined);
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: /Accept suggestion: Send to Alpha task/,
-    }),
-  );
-  await waitFor(() =>
-    expect(slot.inspection.navigateCalls).toEqual([
-      { method: "toThread", threadId: "a1" },
-    ]),
-  );
-  expect(w.sent).toEqual([
-    {
-      threadId: "a1",
-      mode: "queue-if-active",
-      input: [
-        { type: "text", text: prompt, mentions: [] },
-        {
-          type: "localFile",
-          path: "/workspace/notes.txt",
-          name: "notes.txt",
-          sizeBytes: 100,
-        },
-      ],
-    },
-  ]);
-  expect(slot.inspection.composer.draft.text).toBe("");
-  expect(slot.inspection.composer.draft.attachments).toEqual([]);
-  expect(send).toHaveBeenCalledTimes(2);
-  expect(await continuationEntries()).toHaveLength(1);
-});
-
-it("submits honest manual unresolved identity through native submission and leaves thread unassigned on server", async () => {
+it("submits a picked No topic through native submission and leaves the thread without one", async () => {
   const { w, slot, dispatch } = await mount({
     outcome: "new-thread",
     workstream: "Alpha",
@@ -328,15 +232,15 @@ it("submits honest manual unresolved identity through native submission and leav
   await act(() => slot.behavior.setComposerText(prompt));
 
   const identityButton = await screen.findByRole("button", {
-    name: /Product or feature:/,
+    name: /Topic:/,
   });
   fireEvent.click(identityButton);
   const unresolvedOption = await screen.findByRole("option", {
-    name: "Unresolved",
+    name: "No topic",
   });
   fireEvent.click(unresolvedOption);
   await screen.findByRole("button", {
-    name: "Product or feature: Unresolved",
+    name: "Topic: No topic",
   });
 
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
@@ -349,7 +253,7 @@ it("submits honest manual unresolved identity through native submission and leav
     },
   });
   await dispatch(prompt);
-  const corpus = new CorpusStore(openDatabase(w.bb));
+  const corpus = new TopicStore(openDatabase(w.bb));
   const assignment = corpus.assignment("composed");
   expect(assignment.status).toBe("unresolved");
 });

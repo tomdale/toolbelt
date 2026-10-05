@@ -1,24 +1,24 @@
 /**
- * Names a thread from its opening request while its first turn is still
- * running (SPEC §10.1), so a thread has a title as soon as it has a request
- * instead of after the turn that may take an hour.
+ * Quick analysis (SPEC §10.1): a new thread's goal and topic from its first
+ * request, while its first turn is still running, so the thread is titled and
+ * filed within seconds instead of after a turn that may take an hour. Full
+ * analysis of the first finished turn then settles both.
  *
- * One small call sees the opening request and nothing else, and its goal is
- * applied as a provisional title: the analysis of the first finished turn
- * keeps, refines, or replaces it. Everything here is best effort and apart
- * from the turn it names:
+ * Everything here is best effort and apart from the turn it describes:
  *
  * - Nothing waits on it. `onDispatch` runs inside BB's admission checkpoint,
  *   which fails the message if its handler throws or is slow, so it only
  *   decides whether to start the call, and never throws.
- * - A failed or slow call is logged and forgotten; the thread keeps BB's
- *   placeholder until its first analysis names it.
- * - A thread is tried once per run, and only while it has no title of its
- *   own. A title that appears first, from BB's generator, the user, or an
- *   agent, is never replaced here (the retitle policy re-checks at the write).
+ * - A failed or slow call is logged and forgotten; Full analysis covers it.
+ * - A thread is tried once per run. Its title is written only while it has
+ *   none of its own (the retitle policy re-checks at the write), and its
+ *   topic only while it has none (the topic store enforces that).
+ * - When the New thread composer already ran Quick analysis on the text that
+ *   was sent, its result is applied as is, with no second call.
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { clip } from "../domain/analysis.ts";
+import { clip, type QuickAnalysisOutput } from "../domain/analysis.ts";
+import type { Entity } from "../domain/classify.ts";
 import type { ModelChoice } from "../domain/prefs.ts";
 import type { Database } from "./db.ts";
 import type { InventoryThread } from "./inventory.ts";
@@ -28,7 +28,7 @@ import { readTitleRecord } from "./titles.ts";
 
 type Sdk = BbPluginApi["sdk"];
 
-/** Gives up on a model that hasn't answered; the thread's analysis names it. */
+/** Gives up on a model that hasn't answered; Full analysis covers it. */
 export const OPENING_TIMEOUT_MS = 15_000;
 /**
  * Calls in flight at once. A thread that finds them busy isn't marked tried,
@@ -43,6 +43,8 @@ const LABEL_MAX = 60;
 export type OpeningThread = {
   readonly id: string;
   readonly title: string | null;
+  readonly projectId?: string;
+  readonly parentThreadId?: string | null;
   readonly visibility: string;
   readonly archivedAt: number | null;
   readonly latestAttentionAt?: number | null;
@@ -58,7 +60,7 @@ export type OpeningDispatch = {
   readonly input: { readonly text: string };
 };
 
-export class OpeningTitles {
+export class QuickAnalysis {
   /** Threads tried in this run, however it went: at most one call each. */
   private readonly tried = new Set<string>();
   private inFlight = 0;
@@ -84,6 +86,18 @@ export class OpeningTitles {
         revision: number,
         traceId: string | null,
       ) => Promise<void>;
+      /** Topics, for a root's first topic. */
+      topics?: {
+        entities(): Entity[];
+        project(projectId: string): Promise<string | null>;
+        /** Whether the thread has no topic yet, so a quick one may fill it. */
+        open(threadId: string): boolean;
+        apply(
+          threadId: string,
+          answer: Pick<QuickAnalysisOutput, "subjectId" | "proposed">,
+          traceId: string | null,
+        ): void;
+      };
       log: (message: string) => void;
     },
   ) {}
@@ -102,13 +116,44 @@ export class OpeningTitles {
    * request is known: BB records the request only after admission. Queued
    * messages and retries come back through here, so a thread is tried once.
    */
-  onDispatch(ctx: OpeningDispatch): void {
+  onDispatch(ctx: OpeningDispatch, preset?: QuickAnalysisOutput | null): void {
     try {
       if (ctx.attempt !== "start-turn" || ctx.origin === null) return;
-      this.begin(ctx.thread, ctx.input.text.trim());
+      if (preset) this.applyPreset(ctx.thread, preset);
+      else this.begin(ctx.thread, ctx.input.text.trim());
     } catch (error) {
-      this.deps.log(`Opening title failed: ${String(error)}`);
+      this.deps.log(`Quick analysis failed: ${String(error)}`);
     }
+  }
+
+  /** Applies the composer's result for the text that was sent. */
+  private applyPreset(thread: OpeningThread, preset: QuickAnalysisOutput) {
+    const titled = this.eligible(thread);
+    if (!titled && !this.wantsTopic(thread)) return;
+    this.tried.add(thread.id);
+    const revision = thread.latestAttentionAt ?? thread.updatedAt;
+    if (this.wantsTopic(thread))
+      this.deps.topics?.apply(thread.id, preset, null);
+    if (preset.goal && titled)
+      void this.deps
+        .apply(thread.id, preset.goal, revision, null)
+        .catch((error: unknown) =>
+          this.deps.log(
+            `Quick title for ${thread.id} failed: ${String(error)}`,
+          ),
+        );
+  }
+
+  /** A root with no topic yet, which Quick analysis may give one. */
+  private wantsTopic(thread: OpeningThread): boolean {
+    return (
+      !this.disposed &&
+      !this.deps.analyzed(thread.id) &&
+      !thread.parentThreadId &&
+      thread.visibility !== "hidden" &&
+      thread.archivedAt === null &&
+      (this.deps.topics?.open(thread.id) ?? false)
+    );
   }
 
   /**
@@ -118,11 +163,12 @@ export class OpeningTitles {
    */
   async onRunning(thread: OpeningThread): Promise<void> {
     try {
-      if (!this.eligible(thread)) return;
+      if (!this.eligible(thread) && !this.wantsTopic(thread)) return;
+      if (this.tried.has(thread.id)) return;
       const request = await openingRequest(this.deps.sdk(), thread.id);
       if (request) this.begin(thread, request);
     } catch (error) {
-      this.deps.log(`Opening title for ${thread.id} failed: ${String(error)}`);
+      this.deps.log(`Quick analysis for ${thread.id} failed: ${String(error)}`);
     }
   }
 
@@ -133,7 +179,9 @@ export class OpeningTitles {
   sweep(threads: readonly InventoryThread[]): void {
     for (const candidate of threads) {
       if (
-        candidate.ownTitle !== null ||
+        (candidate.ownTitle !== null &&
+          (candidate.parentThreadId !== null ||
+            !(this.deps.topics?.open(candidate.id) ?? false))) ||
         candidate.status === "idle" ||
         candidate.status === "error" ||
         !this.available(candidate.id)
@@ -151,7 +199,7 @@ export class OpeningTitles {
     }
   }
 
-  /** Cheap checks first: this runs for every turn of every thread. */
+  /** Whether the thread may be titled now. Cheap checks first: this runs often. */
   private eligible(thread: OpeningThread): boolean {
     return (
       thread.title === null &&
@@ -175,13 +223,15 @@ export class OpeningTitles {
   }
 
   private begin(thread: OpeningThread, request: string): void {
-    if (!isUserRequest(request) || !this.eligible(thread)) return;
+    if (!isUserRequest(request)) return;
+    if (!this.eligible(thread) && !this.wantsTopic(thread)) return;
+    if (this.tried.has(thread.id) || this.inFlight >= MAX_IN_FLIGHT) return;
     this.tried.add(thread.id);
     this.inFlight++;
     void this.run(thread, request)
       .catch((error: unknown) =>
         this.deps.log(
-          `Opening title for ${thread.id} failed: ${error instanceof Error ? error.message : String(error)}`,
+          `Quick analysis for ${thread.id} failed: ${error instanceof Error ? error.message : String(error)}`,
         ),
       )
       .finally(() => {
@@ -193,9 +243,18 @@ export class OpeningTitles {
     // Anything that has happened to the thread since is the retitle policy's
     // to weigh against this revision.
     const revision = thread.latestAttentionAt ?? thread.updatedAt;
+    // The topic tree and project matter only when there's a topic to choose.
+    const topics = this.wantsTopic(thread) ? this.deps.topics : undefined;
     const { value, traceId } = await this.deps.inference.run(
-      "opening-goal",
-      { request },
+      "quick-analysis",
+      {
+        request,
+        project:
+          topics && thread.projectId
+            ? await topics.project(thread.projectId)
+            : null,
+        entities: topics?.entities() ?? [],
+      },
       {
         model: await this.deps.model(),
         threadId: thread.id,
@@ -205,12 +264,15 @@ export class OpeningTitles {
       },
     );
     if (this.disposed) return;
+    if (topics && this.wantsTopic(thread))
+      topics.apply(thread.id, value, traceId);
     if (!value.goal) {
       this.deps.inference.annotate(traceId, {
         title: "not applied: the request doesn't say what the work is",
       });
       return;
     }
-    await this.deps.apply(thread.id, value.goal, revision, traceId);
+    if (this.eligible(thread) || this.tried.has(thread.id))
+      await this.deps.apply(thread.id, value.goal, revision, traceId);
   }
 }

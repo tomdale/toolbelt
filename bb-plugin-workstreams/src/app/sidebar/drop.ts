@@ -9,7 +9,6 @@ import {
   type ManualOrder,
 } from "../../domain/order.ts";
 import {
-  UNSORTED_ID,
   type Projection,
   type Section,
   type WorkstreamThread,
@@ -17,9 +16,11 @@ import {
 import type { ReorderChange } from "../useWorkstreams.ts";
 import type { Drop } from "./dnd.tsx";
 
+/**
+ * What a sidebar drop changes: only the order. A thread's workstream follows
+ * its topic, so dragging a thread into another group doesn't move it there.
+ */
 export type DropPlan = {
-  /** A root filed into another workstream (null section = Unfiled). */
-  move: { threadId: string; sectionId: string | null } | null;
   reorder: ReorderChange | null;
 };
 
@@ -38,16 +39,15 @@ export function planDrop<T extends WorkstreamThread>(
     ).map((s) => s.id);
     const from = ids.indexOf(drop.groupId);
     const to = ids.indexOf(drop.overGroupId);
-    if (from < 0 || to < 0 || from === to) return { move: null, reorder: null };
+    if (from < 0 || to < 0 || from === to) return { reorder: null };
     return {
-      move: null,
       reorder: { kind: "workstreams", ids: arrayMove(ids, from, to) },
     };
   }
 
   if (drop.fromGroupId !== drop.toGroupId) {
     // Cross-group moving is disabled; navigation is derived by coordinator.
-    return { move: null, reorder: null };
+    return { reorder: null };
   }
 
   const group = [
@@ -71,7 +71,6 @@ export function planDrop<T extends WorkstreamThread>(
     );
   }
   return {
-    move: null,
     reorder: { kind: "threads", groupId: drop.toGroupId, ids },
   };
 }

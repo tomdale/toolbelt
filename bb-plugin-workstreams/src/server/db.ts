@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
 export type Database = ReturnType<BbPluginApi["storage"]["database"]>;
 
+// The established ws_corpus_* table names hold topics, assignments, and section bindings.
 /**
  * Append-only migration list: statement index is the durable migration ID.
  * Applied entries must stay unchanged, even when later entries remove their
@@ -318,6 +319,16 @@ const MIGRATIONS = [
   "INSERT OR REPLACE INTO ws_corpus_subject_v2(thread_id, entity_id, evidence, source) SELECT thread_id, entity_id, evidence, source FROM ws_corpus_subject",
   "DROP TABLE ws_corpus_subject",
   "ALTER TABLE ws_corpus_subject_v2 RENAME TO ws_corpus_subject",
+  // Topics Workstreams discovered may be pruned once unused; yours never are.
+  "ALTER TABLE ws_corpus_entity ADD COLUMN origin TEXT NOT NULL DEFAULT 'user'",
+  "UPDATE ws_corpus_subject SET source = 'full' WHERE source IN ('automatic', 'legacy')",
+  "DROP TABLE IF EXISTS ws_drift_dismissed",
+  "DROP TABLE IF EXISTS ws_project_shape",
+  // Workstreams follow topics, so where a thread was placed and by whom no
+  // longer decides anything.
+  "DROP TABLE IF EXISTS ws_placement",
+  "DELETE FROM ws_trace_link WHERE trace_id IN (SELECT id FROM ws_trace WHERE kind IN ('analysis', 'opening-goal', 'classify', 'regroup', 'route'))",
+  "DELETE FROM ws_trace WHERE kind IN ('analysis', 'opening-goal', 'classify', 'regroup', 'route')",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

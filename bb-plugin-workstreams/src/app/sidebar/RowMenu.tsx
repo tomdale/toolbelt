@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { useDebugMode } from "../debug/debug.ts";
 import { snoozeChoices, type ThreadSnooze } from "../../domain/snooze.ts";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
-import { corpusLabel } from "../../domain/corpus-label.ts";
+import { topicPath } from "../../domain/topic-path.ts";
 import { useSharedServerState } from "../serverState.ts";
 import { isAutomaticTopic } from "../task/TaskIdentity.tsx";
 
@@ -68,11 +68,9 @@ export function RowMenu({
   const currentEntity = assignment?.entityId
     ? (entities.find((e) => e.id === assignment.entityId) ?? null)
     : null;
-  const topicPath = (id: string) =>
-    corpusLabel(id, entities).replace(/: /g, " › ");
-  const currentLabel = currentEntity
-    ? topicPath(currentEntity.id)
-    : "Unclassified";
+  const displayTopicPath = (id: string) =>
+    topicPath(id, entities).replace(/: /g, " › ");
+  const currentLabel = currentEntity ? displayTopicPath(currentEntity.id) : "No topic";
   const isFork = Boolean(assignment?.inheritedFrom);
   const automatic = isAutomaticTopic(assignment);
   return (
@@ -135,7 +133,7 @@ export function RowMenu({
                       entities
                         .slice()
                         .sort((a, b) =>
-                          compareGroupNames(topicPath(a.id), topicPath(b.id)),
+                          compareGroupNames(displayTopicPath(a.id), displayTopicPath(b.id)),
                         )
                         .map((entity) => {
                           const isChosen =
@@ -158,7 +156,7 @@ export function RowMenu({
                               }}
                             >
                               <span className="flex-1 truncate">
-                                {topicPath(entity.id)}
+                                {displayTopicPath(entity.id)}
                               </span>
                               {isChosen ? (
                                 <Icon name="Check" className="ml-2 size-3.5" />

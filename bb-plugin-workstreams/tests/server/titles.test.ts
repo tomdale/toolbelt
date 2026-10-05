@@ -21,25 +21,21 @@ type Entry = {
  * Every analysis infers the next goal in `goals`, which becomes the thread's
  * title. The last one repeats; null infers none.
  */
+const requests: string[] = [];
 async function setup(
   goals: (string | null)[],
   settings?: Record<string, string | boolean>,
 ) {
+  requests.length = 0;
   let call = 0;
   world = await fakeWorld({
     settings,
-    complete: ({ prompt }) => {
-      if (prompt.includes("Classify the most specific")) {
-        return JSON.stringify({ subjectId: null, proposed: null });
-      }
-      return JSON.stringify({
+    complete: () =>
+      JSON.stringify({
         recap: "Working.",
         state: "in_progress",
-        subject: "Alpha",
         goal: goals[Math.min(call++, goals.length - 1)] ?? null,
-        drift: null,
-      });
-    },
+      }),
   });
   return world;
 }
@@ -54,10 +50,15 @@ const settle = async (ms = 6_000) => {
   await vi.advanceTimersByTimeAsync(ms);
   for (let i = 0; i < 40; i++) await Promise.resolve();
 };
-/** Completes one turn for the thread and lets its analysis and retitle run. */
+/**
+ * Completes one turn that followed a new request from you, and lets its
+ * analysis and retitle run.
+ */
 async function turn(w: World, id: string, at: number) {
   const thread = { ...w.threads.get(id)!, latestAttentionAt: at };
   w.threads.set(id, thread);
+  requests.push(`Request ${at}`);
+  w.converse(id, [...requests]);
   await w.harness.behavior.emitThreadEvent("thread.idle", {
     thread,
     lastAssistantText: "Done.",

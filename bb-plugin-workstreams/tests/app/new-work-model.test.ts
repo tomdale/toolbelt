@@ -2,11 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   NewWork,
   identityDisplay,
-  shownSuggestion,
-  suggestionFrom,
   type NewWorkDeps,
 } from "../../src/app/composer/new-work.ts";
-import type { RouteDecision } from "../../src/server/router.ts";
+import type { Preview } from "../../src/server/preview.ts";
 import { DEBOUNCE_MS, SHORT_PAUSE_MS } from "../../src/app/composer/timing.ts";
 
 const base = {
@@ -17,44 +15,24 @@ const base = {
   traceId: "trace_1",
 };
 
-const withFeature: RouteDecision = {
+const withFeature: Preview = {
   ...base,
   id: "d_feature",
-  outcome: "new-thread",
-  sectionId: null,
-  workstream: null,
-  title: "",
-  placement: null,
+  goal: "Invoice layout",
 };
 
-const withProposal: RouteDecision = {
+const withProposal: Preview = {
   ...base,
   id: "d_proposal",
-  outcome: "new-thread",
-  sectionId: null,
-  workstream: null,
   subject: "Export",
   subjectId: null,
   proposal: { name: "Export", description: "CSV export" },
-  title: "",
-  placement: null,
 };
 
-const continueThread: RouteDecision = {
-  ...base,
-  id: "d_thread",
-  outcome: "continue",
-  threadId: "thr_p",
-  threadTitle: "Parser fix",
-  workstream: "Alpha",
-  sectionId: "sec_a",
-};
-
-function setup(route: (prompt: string) => Promise<RouteDecision>) {
+function setup(route: (prompt: string) => Promise<Preview>) {
   const deps = {
     route: vi.fn(route),
     cancelRoute: vi.fn(),
-    sendDraftToThread: vi.fn(async () => {}),
   } satisfies NewWorkDeps;
   const newWork = new NewWork(deps);
   return { deps, newWork };
@@ -63,8 +41,8 @@ function setup(route: (prompt: string) => Promise<RouteDecision>) {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-describe("NewWork model: draft identity purity and automatic suggestion", () => {
-  it("classifies draft text after typing pauses", async () => {
+describe("NewWork model: the draft's topic preview", () => {
+  it("previews draft text after typing pauses", async () => {
     const { deps, newWork } = setup(async () => withFeature);
     newWork.observe("Fix invoice billing layout");
 
@@ -79,26 +57,12 @@ describe("NewWork model: draft identity purity and automatic suggestion", () => 
       label: "Billing",
       provenance: "automatic",
     });
-    expect(snapshot.suggestion).toBeNull(); // No destination suggestion; identity only
-  });
-
-  it("suggests thread continuation when route outcome is continue", async () => {
-    const { deps, newWork } = setup(async () => continueThread);
-    newWork.observe("Carry on with parser");
-    await vi.advanceTimersByTimeAsync(SHORT_PAUSE_MS);
-
-    const snapshot = newWork.snapshot();
-    expect(snapshot.suggestion).toMatchObject({
-      kind: "thread",
-      threadId: "thr_p",
-      title: "Parser fix",
-    });
-    expect(shownSuggestion(snapshot)).not.toBeNull();
+    expect(snapshot.decision?.goal).toBe("Invoice layout");
   });
 
   it("aborts classification in flight when text changes", async () => {
     let resolveRoute!: () => void;
-    const pendingRoute = new Promise<RouteDecision>((resolve) => {
+    const pendingRoute = new Promise<Preview>((resolve) => {
       resolveRoute = () => resolve(withFeature);
     });
     const { deps, newWork } = setup(() => pendingRoute);
@@ -121,7 +85,7 @@ describe("NewWork model: draft identity purity and automatic suggestion", () => 
   });
 });
 
-describe("NewWork model: manual identity selection and manual unresolved", () => {
+describe("NewWork model: picked, inherited, and no topic", () => {
   it("preserves manual identity when typing further", async () => {
     const { newWork } = setup(async () => withFeature);
     newWork.selectIdentity({ entityId: "ent_storage", label: "Storage" });
@@ -149,13 +113,13 @@ describe("NewWork model: manual identity selection and manual unresolved", () =>
     });
   });
 
-  it("persists manual unresolved identity", async () => {
+  it("persists a picked No topic", async () => {
     const { newWork } = setup(async () => withFeature);
     newWork.selectIdentity(null);
     expect(newWork.snapshot().identity).toEqual({
       entityId: null,
       proposal: null,
-      label: "Unresolved",
+      label: "No topic",
       provenance: "manual",
     });
 
@@ -166,7 +130,7 @@ describe("NewWork model: manual identity selection and manual unresolved", () =>
     expect(newWork.snapshot().identity).toEqual({
       entityId: null,
       proposal: null,
-      label: "Unresolved",
+      label: "No topic",
       provenance: "manual",
     });
   });
@@ -191,29 +155,23 @@ describe("NewWork model: manual identity selection and manual unresolved", () =>
   });
 });
 
-describe("NewWork model: Send to", () => {
-  it("sends the draft to the suggested thread once", async () => {
-    const { deps, newWork } = setup(async () => continueThread);
-    newWork.observe("Carry on with this work");
+describe("NewWork model: a workstream's ＋", () => {
+  it("starts with the workstream's topic, which a preview never replaces", async () => {
+    const { newWork } = setup(async () => withFeature);
+    newWork.selectWorkstream("sec_docs", "Docs");
+    expect(newWork.snapshot().identity).toEqual({
+      entityId: null,
+      proposal: null,
+      label: "Docs",
+      provenance: "inherited",
+      sectionId: "sec_docs",
+    });
+    newWork.observe("Add an example");
     await vi.advanceTimersByTimeAsync(SHORT_PAUSE_MS);
-
-    await newWork.accept();
-
-    expect(deps.sendDraftToThread).toHaveBeenCalledWith("thr_p", "trace_1");
-    expect(shownSuggestion(newWork.snapshot())).toBeNull();
-    await newWork.accept();
-    expect(deps.sendDraftToThread).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps the suggestion and reports a failed send", async () => {
-    const { deps, newWork } = setup(async () => continueThread);
-    deps.sendDraftToThread.mockRejectedValueOnce(new Error("send failed"));
-    newWork.observe("Carry on with this work");
-    await vi.advanceTimersByTimeAsync(SHORT_PAUSE_MS);
-
-    await newWork.accept();
-
-    expect(newWork.snapshot().error).toBe("send failed");
-    expect(shownSuggestion(newWork.snapshot())).not.toBeNull();
+    expect(newWork.snapshot().identity?.provenance).toBe("inherited");
+    expect(identityDisplay(newWork.snapshot()).auto).toBe(false);
+    // Emptying the draft keeps it.
+    newWork.observe("");
+    expect(newWork.snapshot().identity?.label).toBe("Docs");
   });
 });

@@ -28,10 +28,12 @@ export const actionSchema = z.enum([
   /** A workstream proposal waiting for a decision (SPEC §9). */
   "proposal",
   "edit-workstream",
-  /** New work placed by the router or a handoff (SPEC §6). */
+  /** A thread started from the New thread composer (SPEC §6). */
   "route",
   /** A thread's title kept current by analysis (SPEC §10.1). */
   "retitle",
+  /** Discovered topics that nothing used any more were removed. */
+  "remove-topic",
 ]);
 export type Action = z.infer<typeof actionSchema>;
 

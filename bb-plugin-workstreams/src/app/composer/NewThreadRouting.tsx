@@ -1,17 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import {
-  useBbNavigate,
-  useComposer,
-  useRpc,
-  useSdk,
-  type NewThreadRequest,
-} from "@get-bb/plugin-sdk/app";
-import type {
-  ComposerDraftSnapshot,
-  ComposerMention,
-} from "@get-bb/plugin-sdk/app";
+import { useComposer, useRpc } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
-import type { RouteDecision } from "../../server/router.ts";
+import type { Preview } from "../../server/preview.ts";
 import {
   NewWork as NewWorkModel,
   NewWorkContext,
@@ -22,65 +12,11 @@ import { NewWorkDebug } from "./NewWorkDebug.tsx";
 import { createPortal } from "react-dom";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { useHostPickerRow } from "./host-picker-row.ts";
-import { SuggestionRow } from "./Suggestion.tsx";
 import { WorkstreamPicker } from "./WorkstreamPicker.tsx";
-
-type PromptInput = NewThreadRequest["input"][number];
-type PromptMention = Extract<PromptInput, { type: "text" }>["mentions"][number];
-type PromptMentionResource = PromptMention["resource"];
-
-function promptInputFromDraft(draft: ComposerDraftSnapshot): PromptInput[] {
-  const leadingWhitespace = draft.text.length - draft.text.trimStart().length;
-  const trailingEnd = draft.text.trimEnd().length;
-  const text = draft.text.slice(leadingWhitespace, trailingEnd);
-  const input: PromptInput[] = [];
-  if (text) {
-    const mentions = draft.mentions.flatMap((mention) => {
-      const from = Math.max(mention.from, leadingWhitespace);
-      const to = Math.min(mention.to, trailingEnd);
-      return from < to
-        ? [
-            {
-              start: from - leadingWhitespace,
-              end: to - leadingWhitespace,
-              resource: promptMentionResource(mention),
-            },
-          ]
-        : [];
-    });
-    input.push({ type: "text", text, mentions });
-  }
-  for (const attachment of draft.attachments) {
-    input.push(
-      attachment.type === "localImage"
-        ? { type: "localImage", path: attachment.path }
-        : {
-            type: "localFile",
-            path: attachment.path,
-            name: attachment.name,
-            sizeBytes: attachment.sizeBytes,
-            ...(attachment.mimeType ? { mimeType: attachment.mimeType } : {}),
-          },
-    );
-  }
-  return input;
-}
-
-function promptMentionResource(
-  mention: ComposerMention,
-): PromptMentionResource {
-  if (mention.kind === "plugin") {
-    const { from: _from, to: _to, provider, id, ...rest } = mention;
-    return { ...rest, kind: "plugin", itemId: `${provider}:${id}` };
-  }
-  const { from: _from, to: _to, ...resource } = mention;
-  return resource as PromptMentionResource;
-}
+import { takeComposerPreset } from "./preset.ts";
 
 export function NewThreadRouting() {
   const rpc = useRpc<RpcContract>();
-  const sdk = useSdk();
-  const navigate = useBbNavigate();
   const composer = useComposer();
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const [checkedRoot, setCheckedRoot] = useState(false);
@@ -105,50 +41,20 @@ export function NewThreadRouting() {
     setCheckedRoot(true);
     setComposerRoot(primary);
     const draftKey = composer.key;
-    const nativeModel = new NewWorkModel(
-      {
-        route: async (prompt, pickedProjectId) =>
-          (await rpc.call("route", {
-            prompt,
-            pickedProjectId,
-            suggest: true,
-            offerNewThread: true,
-            nativeComposer: true,
-            draftKey,
-          })) as RouteDecision,
-        cancelRoute: () => {
-          void rpc.call("routeCancel", { draftKey }).catch(() => {});
-        },
-        sendDraftToThread: async (threadId, traceId) => {
-          const current = composerRef.current;
-          const target = await sdk.threads.get({ threadId });
-          const paths = current.draft.attachments.map(
-            (attachment) => attachment.path,
-          );
-          const sourceProjectId = current.selection?.projectId;
-          if (
-            paths.length &&
-            sourceProjectId &&
-            sourceProjectId !== target.projectId
-          ) {
-            await sdk.projects.attachments.copy({
-              projectId: target.projectId,
-              sourceProjectId,
-              paths,
-            });
-          }
-          const input = promptInputFromDraft(current.draft);
-          if (!input.length) throw new Error("Type a message first.");
-          await rpc.call("sendToThread", {
-            threadId,
-            input: JSON.parse(JSON.stringify(input)) as unknown[],
-            traceId,
-          });
-          current.replace({ text: "", mentions: [], attachments: [] });
-          navigate.toThread(threadId);
-        },
+    const nativeModel = new NewWorkModel({
+      route: async (prompt, pickedProjectId) =>
+        (await rpc.call("preview", {
+          prompt,
+          pickedProjectId,
+          draftKey,
+        })) as Preview,
+      cancelRoute: () => {
+        void rpc.call("previewCancel", { draftKey }).catch(() => {});
       },
-    );
+    });
+    // Opened from a workstream's ＋: the thread starts with its topic.
+    const preset = takeComposerPreset();
+    if (preset) nativeModel.selectWorkstream(preset.sectionId, preset.label);
     nativeModel.observe(composer.text);
     nativeModel.observeSelection(composer.selection);
     setModel(nativeModel);
@@ -157,7 +63,7 @@ export function NewThreadRouting() {
       setModel((current) => (current === nativeModel ? null : current));
       setComposerRoot(null);
     };
-  }, [composer, composer.scope.kind, navigate, root, rpc, sdk]);
+  }, [composer, composer.scope.kind, root, rpc]);
 
   useEffect(() => {
     if (!model) return;
@@ -175,13 +81,7 @@ export function NewThreadRouting() {
   const draftKey = composer.key;
   useEffect(() => {
     if (!model) return;
-    const identity = state.identity
-      ? {
-          entityId: state.identity.entityId,
-          proposal: state.identity.proposal,
-          provenance: state.identity.provenance,
-        }
-      : null;
+    const identity = submittedIdentity(state);
     void Promise.resolve()
       .then(() =>
         rpc.call("draftIdentity", { draftKey, text: state.text, identity }),
@@ -196,11 +96,7 @@ export function NewThreadRouting() {
     // metadata the server's dispatch hook files.
     const current = model ? model.snapshot() : null;
     if (!model || !current) return;
-    if (
-      !current.identity &&
-      !current.decision
-    )
-      return;
+    if (!current.identity && !current.decision) return;
     const primary = root?.closest<HTMLElement>(
       '[data-app-composer-role="primary"]',
     );
@@ -213,14 +109,7 @@ export function NewThreadRouting() {
       event.stopImmediatePropagation();
       void (async () => {
         try {
-          const snapshot = model.snapshot();
-          const identity = snapshot.identity
-            ? {
-                entityId: snapshot.identity.entityId,
-                proposal: snapshot.identity.proposal,
-                provenance: snapshot.identity.provenance,
-              }
-            : null;
+          const identity = submittedIdentity(model.snapshot());
           const experimental_data: Record<string, unknown> = {};
           if (identity) experimental_data.identity = identity;
           await composerRef.current.submit({
@@ -235,13 +124,7 @@ export function NewThreadRouting() {
     };
     form.addEventListener("submit", submit, true);
     return () => form.removeEventListener("submit", submit, true);
-  }, [
-    composer,
-    model,
-    root,
-    state.identity,
-    state.decision,
-  ]);
+  }, [composer, model, root, state.identity, state.decision]);
   // The picker row sits below the prompt box, outside this banner, so on a
   // wide screen the field is portaled into it. A phone's row is full with BB's
   // own project, environment and branch chips, so there the field takes a line
@@ -259,7 +142,7 @@ export function NewThreadRouting() {
           compact ? "sr-only" : "ws-picker-status text-xs text-muted-foreground"
         }
       >
-        {state.classifying ? "Classifying…" : ""}
+        {state.classifying ? "Analyzing…" : ""}
       </span>
     </>
   ) : null;
@@ -281,14 +164,38 @@ export function NewThreadRouting() {
                 {picker}
               </div>
             )}
-            {/* The row also shows the model's error, as in New work. */}
-            <SuggestionRow newWork={model} />
+            {state.error ? (
+              <p
+                key={state.errors}
+                role="alert"
+                className="ws-suggestion-error"
+              >
+                {state.error}
+              </p>
+            ) : null}
             <DebugSection newWork={model} />
           </div>
         </NewWorkContext.Provider>
       ) : null}
     </div>
   );
+}
+
+/** What the server files the thread with: the topic the field shows. */
+function submittedIdentity(state: NewWorkState) {
+  const identity = state.identity;
+  if (!identity) return null;
+  return {
+    entityId: identity.entityId,
+    proposal: identity.proposal,
+    provenance: identity.provenance,
+    ...(identity.sectionId ? { sectionId: identity.sectionId } : {}),
+    // Quick analysis's title travels with its topic, so the server doesn't
+    // ask again for the same text.
+    ...(identity.provenance === "automatic"
+      ? { goal: state.decision?.goal ?? null }
+      : {}),
+  };
 }
 
 /** New work's Debug section, mounted only once the banner is active. */
@@ -305,11 +212,8 @@ const EMPTY_STATE: NewWorkState = {
   text: "",
   identity: null,
   selection: null,
-  suggestion: null,
   decision: null,
   classifying: false,
-  settled: null,
-  accepting: false,
   error: null,
   errors: 0,
   events: [],

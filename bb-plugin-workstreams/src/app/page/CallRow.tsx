@@ -9,30 +9,15 @@ import { ActivityTerm } from "./ActivityTerm.tsx";
 import { ActivityThreadLink } from "./ActivityThreadLink.tsx";
 
 const EVENT: Record<TraceKind, { label: string; description: string }> = {
-  classify: {
-    label: "Subject classification",
+  "quick-analysis": {
+    label: "Quick analysis",
     description:
-      "Identifies a product or feature independently of active navigation.",
+      "The model titled a new thread and chose its topic from one request: a draft in the composer, or the thread's first request. Full analysis of the first finished turn settles both.",
   },
-  regroup: {
-    label: "Active grouping preview",
+  "full-analysis": {
+    label: "Full analysis",
     description:
-      "Proposes active groups from current task counts by product and feature. Apply remains a separate user action.",
-  },
-  analysis: {
-    label: "Thread assessment",
-    description:
-      "The model assessed this thread’s progress, workstream, and possible follow-ups. This is an assessment, not proof that a change was applied.",
-  },
-  "opening-goal": {
-    label: "Opening title",
-    description:
-      "The model named this thread from its opening request, before its first turn finished. The analysis of that turn keeps or replaces the title.",
-  },
-  route: {
-    label: "Destination selection",
-    description:
-      "The model suggested a workstream for a draft or left its destination undecided.",
+      "After a turn ended, the model settled the thread's goal and topic, and its status when the agent didn't report one. This is an assessment, not proof that a change was applied.",
   },
 };
 const STATES: Record<string, { label: string; description: string }> = {
@@ -55,6 +40,11 @@ const STATES: Record<string, { label: string; description: string }> = {
     label: "In progress",
     description:
       "The model judged that the request still has outstanding work. This does not mean an agent is currently running.",
+  },
+  reported: {
+    label: "Reported by the agent",
+    description:
+      "The thread's agent reported how the turn ended, so the model wasn't asked for its status.",
   },
   done: {
     label: "Done",
@@ -88,17 +78,11 @@ function CallResult({ trace }: { trace: TraceSummary }) {
         Completed · No result summary recorded
       </p>
     );
-  // Analysis summaries start with a known lifecycle label. Unknown formats
-  // stay intact under Model result rather than being interpreted as a new state.
+  // Full analysis summaries start with a known status label. Unknown formats
+  // stay intact under Model result rather than being interpreted.
   const [state, ...parts] = trace.summary.split(" · ");
-  const lifecycle = trace.kind === "analysis" ? STATES[state!] : undefined;
-  // Calls recorded before goals became titles say "new title".
-  const suggestions = parts.filter(
-    (part) =>
-      part.startsWith("drift → ") ||
-      part.startsWith("goal ") ||
-      part.startsWith("new title "),
-  );
+  const lifecycle = trace.kind === "full-analysis" ? STATES[state!] : undefined;
+  const suggestions = parts.filter((part) => part.startsWith("goal "));
   const subject = parts
     .filter((part) => !suggestions.includes(part))
     .join(" · ");
@@ -106,9 +90,7 @@ function CallResult({ trace }: { trace: TraceSummary }) {
     return (
       <p className="mt-1 break-words text-xs">
         <span className="text-muted-foreground">Model result: </span>
-        {trace.summary
-          .replace(/(^| · )new: /g, "$1New workstream: ")
-          .replace(/^goal /, "Title: ")}
+        {trace.summary.replace(/(^| · )goal /g, "$1Title: ")}
       </p>
     );
   return (
@@ -119,17 +101,14 @@ function CallResult({ trace }: { trace: TraceSummary }) {
       </span>
       {subject ? (
         <span className="break-words">
-          <span className="text-muted-foreground">Subject: </span>
+          <span className="text-muted-foreground">Topic: </span>
           {subject}
         </span>
       ) : null}
       {suggestions.length ? (
         <p className="w-full break-words">
-          <span className="text-muted-foreground">Suggestions: </span>
-          {suggestions
-            .join(" · ")
-            .replace(/drift → /g, "Different workstream: ")
-            .replace(/(^| · )(?:new title|goal) /g, "$1Title: ")}
+          <span className="text-muted-foreground">Title: </span>
+          {suggestions.join(" · ").replace(/(^| · )goal /g, "$1")}
         </p>
       ) : null}
     </div>
@@ -172,7 +151,7 @@ export function CallRow({ trace }: { trace: TraceSummary }) {
         <div className="mt-1 break-words font-medium text-foreground">
           {trace.label === TRACE_KIND_TITLE[trace.kind] ? (
             <span className="font-normal text-muted-foreground">
-              No specific subject recorded
+              No request text recorded
             </span>
           ) : (
             trace.label

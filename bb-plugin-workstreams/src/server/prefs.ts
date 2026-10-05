@@ -26,13 +26,12 @@ export function migrateLegacyPrefs(values: unknown): Prefs {
     threads: {
       showParentLink: old.showParentThreadLink,
       autoTitle: old.autoTitle,
-      analysisModel: choice(old.model, DEFAULT_MODELS.analysis),
     },
-    newWork: {
-      homeProjectId: old.homeProjectId,
-      suggestionsModel: choice(old.model, DEFAULT_MODELS.suggestions),
+    newWork: { homeProjectId: old.homeProjectId },
+    analysis: {
+      quickModel: choice(old.model, DEFAULT_MODELS.quick),
+      fullModel: choice(old.organizeModel, DEFAULT_MODELS.full),
     },
-    organize: { model: choice(old.organizeModel, DEFAULT_MODELS.organize) },
     advanced: { hostId: old.hostId, debug: old.debug },
   });
 }

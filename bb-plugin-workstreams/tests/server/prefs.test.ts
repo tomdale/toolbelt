@@ -96,24 +96,25 @@ describe("Workstreams prefs", () => {
       },
       threads: {
         autoTitle: false,
-        analysisModel: { kind: "gateway", model: "google/old-model" },
         showParentLink: true,
         showArchiveButton: true,
       },
       newWork: {
         homeProjectId: "project-a",
         suggestions: true,
-        suggestionsModel: { kind: "gateway", model: "google/old-model" },
+      },
+      analysis: {
+        quickModel: { kind: "gateway", model: "google/old-model" },
+        fullModel: { kind: "gateway", model: "openai/old-organize" },
       },
       organize: {
-        model: { kind: "gateway", model: "openai/old-organize" },
         capacity: 6,
         collapseAt: 3,
       },
       advanced: { hostId: "host-a", debug: true },
     });
-    expect(migrateLegacyPrefs({}).organize.model).toEqual(
-      DEFAULT_MODELS.organize,
+    expect(migrateLegacyPrefs({}).analysis.fullModel).toEqual(
+      DEFAULT_MODELS.full,
     );
   });
 
@@ -132,7 +133,7 @@ describe("Workstreams prefs", () => {
       homeProjectId: "project-a",
       debug: true,
     });
-    expect(seeded.threads.analysisModel).toEqual({
+    expect(seeded.analysis.quickModel).toEqual({
       kind: "gateway",
       model: "google/legacy",
     });
@@ -146,13 +147,26 @@ describe("Workstreams prefs", () => {
       showArchived: false,
     });
     expect(
-      seedPrefs(db, { model: "google/new" }).threads.analysisModel,
-    ).toEqual(seeded.threads.analysisModel);
+      seedPrefs(db, { model: "google/new" }).analysis.quickModel,
+    ).toEqual(seeded.analysis.quickModel);
     expect(loadPrefs(db).sidebar).toMatchObject({
       recentLimit: 20,
       showSnoozed: false,
       showArchived: false,
     });
     await world.harness.lifecycle.dispose();
+  });
+
+  it("moves the models of preferences saved before the two analyses", () => {
+    const prefs = parsePrefs({
+      newWork: {
+        suggestionsModel: { kind: "gateway", model: "google/quick" },
+      },
+      organize: { model: { kind: "gateway", model: "openai/full" } },
+    });
+    expect(prefs.analysis).toEqual({
+      quickModel: { kind: "gateway", model: "google/quick" },
+      fullModel: { kind: "gateway", model: "openai/full" },
+    });
   });
 });
