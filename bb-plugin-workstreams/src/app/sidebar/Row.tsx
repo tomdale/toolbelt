@@ -86,6 +86,7 @@ export function Row({
   attention,
   work,
   showStatusSlot = true,
+  showPin = true,
   subtitle,
   snoozeAction,
   showArchive = true,
@@ -110,6 +111,8 @@ export function Row({
    * animated, so titles sit flush left.
    */
   showStatusSlot?: boolean;
+  /** Whether to show the pin indicator in this placement. */
+  showPin?: boolean;
   /** A second line under the title, such as what the thread asks of Tom. */
   subtitle?: string | null;
   /**
@@ -189,7 +192,7 @@ export function Row({
           {recap}
         </span>
       ) : null}
-      {thread.isPinned ? (
+      {thread.isPinned && showPin ? (
         <span
           className="relative inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground"
           role="img"

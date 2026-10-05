@@ -584,6 +584,34 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
+  it("hides the pin icon in Up Next but keeps it in the workstream", async () => {
+    const slot = await mount(
+      [
+        sidebarThread("pinned-ask", {
+          sectionId: "sec_a",
+          title: "Pinned ask",
+          isPinned: true,
+          hasPendingInteraction: true,
+          indicator: "waiting-for-input",
+        }),
+      ],
+      { settings: { showRecent: false } },
+    );
+
+    expect(
+      within(slot.getByRole("region", { name: "Up Next" })).queryByRole(
+        "img",
+        { name: "Pinned" },
+      ),
+    ).toBeNull();
+    expect(
+      within(slot.getByRole("region", { name: "Alpha" })).getByRole("img", {
+        name: "Pinned",
+      }),
+    ).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
   it("shows Up Next and Recent as overlays without removing group rows", async () => {
     const slot = await mount([
       sidebarThread("ask", {
