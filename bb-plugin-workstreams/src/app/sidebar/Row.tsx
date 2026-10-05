@@ -189,6 +189,16 @@ export function Row({
           {recap}
         </span>
       ) : null}
+      {thread.isPinned ? (
+        <span
+          className="relative inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground"
+          role="img"
+          aria-label="Pinned"
+          title="Pinned"
+        >
+          <Icon name="Pin" className="size-3" />
+        </span>
+      ) : null}
       <span
         className={cn(
           "ws-status-slot",

@@ -703,6 +703,29 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
+  it("shows a pinned icon without replacing the native status mark", async () => {
+    const slot = await mount(
+      [
+        sidebarThread("pinned", {
+          sectionId: "sec_a",
+          title: "Pinned task",
+          isPinned: true,
+          isUnread: true,
+        }),
+      ],
+      { settings: { showRecent: false } },
+    );
+    const row = within(
+      slot.getByRole("region", { name: "Alpha" }),
+    )
+      .getByRole("link", { name: "Pinned task" })
+      .closest<HTMLElement>(".ws-row")!;
+
+    expect(within(row).getByRole("img", { name: "Pinned" })).toBeTruthy();
+    expect(row.querySelector(".ws-status-slot .ws-mark")).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
   it("folds the status slot away only when no row in the group has a mark", async () => {
     const slots = (slot: Awaited<ReturnType<typeof mount>>, name: string) =>
       [
