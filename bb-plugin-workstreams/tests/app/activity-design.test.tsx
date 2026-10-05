@@ -80,16 +80,16 @@ it("labels status and topic, explains review on focus, and hides metrics by defa
   expect(
     within(row).getByText("Technical details").closest("details")!.open,
   ).toBe(false);
-  fireEvent.focus(
-    within(row).getByRole("button", { name: "About Ready for your review" }),
-  );
+  const infoButton = within(row).getByRole("button", {
+    name: "About Ready for your review",
+  });
+  expect(infoButton.querySelector("svg")).toBeTruthy();
+  fireEvent.focus(infoButton);
   const tooltip = await within(document.body).findByRole("tooltip");
   expect(tooltip.textContent).toBe(
     "A deliverable is ready for you to review, test, merge, or ship.",
   );
-  fireEvent.blur(
-    within(row).getByRole("button", { name: "About Ready for your review" }),
-  );
+  fireEvent.blur(infoButton);
   fireEvent.click(within(row).getByText("Technical details"));
   expect(within(row).getAllByText("Not reported")).toHaveLength(3);
   expect(within(row).getByText("Duration")).toBeTruthy();

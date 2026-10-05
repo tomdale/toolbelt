@@ -24,12 +24,20 @@ export function ActivityTerm({
               aria-label={`About ${label}`}
               className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring${quiet ? " opacity-0 focus-visible:opacity-100 group-hover/entry:opacity-100" : ""}`}
             >
-              <span
+              <svg
                 aria-hidden="true"
-                className="inline-flex size-3.5 items-center justify-center rounded-full border border-current font-serif text-[10px] leading-none"
+                viewBox="0 0 16 16"
+                fill="none"
+                className="size-4"
               >
-                i
-              </span>
+                <circle cx="8" cy="8" r="6.25" stroke="currentColor" />
+                <path
+                  d="M8 7.25v4M8 4.75h.01"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth="1.5"
+                />
+              </svg>
             </button>
           </Tooltip.Trigger>
           <Tooltip.Portal>
