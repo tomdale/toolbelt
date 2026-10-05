@@ -12,7 +12,13 @@ import type {
 } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import type { RouteDecision } from "../../server/router.ts";
-import { NewWork as NewWorkModel, NewWorkContext } from "./new-work.ts";
+import {
+  NewWork as NewWorkModel,
+  NewWorkContext,
+  type NewWorkState,
+} from "./new-work.ts";
+import { useDebugMode } from "../debug/debug.ts";
+import { NewWorkDebug } from "./NewWorkDebug.tsx";
 import { createPortal } from "react-dom";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { useHostPickerRow } from "./host-picker-row.ts";
@@ -124,23 +130,6 @@ export function NewThreadRouting() {
             traceId,
           });
         },
-        submitWithRoute: (_routeId, _sectionId) => {
-          const snapshot = model ? model.snapshot() : null;
-          const identity = snapshot?.identity
-            ? {
-                entityId: snapshot.identity.entityId,
-                proposal: snapshot.identity.proposal,
-                provenance: snapshot.identity.provenance,
-              }
-            : null;
-          const experimental_data: Record<string, unknown> = {};
-          if (identity) experimental_data.identity = identity;
-          return composerRef.current.submit({
-            experimental_data: Object.keys(experimental_data).length
-              ? (experimental_data as Record<string, unknown> as any)
-              : null,
-          });
-        },
         sendDraftToThread: async (threadId, traceId) => {
           const current = composerRef.current;
           const target = await sdk.threads.get({ threadId });
@@ -194,6 +183,27 @@ export function NewThreadRouting() {
     model?.subscribe ?? emptySubscribe,
     model?.snapshot ?? emptySnapshot,
   );
+  // BB's Enter submits without a form event this banner could intercept, so
+  // the server also learns the draft's identity as it changes and files the
+  // thread whose first message has this text (`ComposedDrafts`).
+  const draftKey = composer.key;
+  useEffect(() => {
+    if (!model) return;
+    const identity = state.identity
+      ? {
+          entityId: state.identity.entityId,
+          proposal: state.identity.proposal,
+          provenance: state.identity.provenance,
+        }
+      : null;
+    void Promise.resolve()
+      .then(() =>
+        rpc.call("draftIdentity", { draftKey, text: state.text, identity }),
+      )
+      .catch(() => {
+        // The submit data or automatic classification still files the thread.
+      });
+  }, [draftKey, model, rpc, state.identity, state.text]);
   useEffect(() => {
     // The host composer submits through BB's own thread creation; the
     // destination the pickers show — picked or automatic — travels as submit
@@ -286,12 +296,9 @@ export function NewThreadRouting() {
                 {picker}
               </div>
             )}
+            {/* The row also shows the model's error, as in New work. */}
             <SuggestionRow newWork={model} />
-            {state.error ? (
-              <p role="alert" className="px-3.5 text-sm text-destructive">
-                {state.error}
-              </p>
-            ) : null}
+            <DebugSection newWork={model} />
           </div>
         </NewWorkContext.Provider>
       ) : null}
@@ -299,25 +306,26 @@ export function NewThreadRouting() {
   );
 }
 
+/** New work's Debug section, mounted only once the banner is active. */
+function DebugSection({ newWork }: { newWork: NewWorkModel }) {
+  return useDebugMode() ? <NewWorkDebug newWork={newWork} /> : null;
+}
+
 function emptySubscribe() {
   return () => {};
 }
 
 const emptySnapshot = () => EMPTY_STATE;
-const EMPTY_STATE = {
+const EMPTY_STATE: NewWorkState = {
   text: "",
-  workstream: null,
   identity: null,
-  pinned: false,
-  pendingNew: null,
   selection: null,
   suggestion: null,
   decision: null,
   classifying: false,
   settled: null,
   accepting: false,
-  acceptedRoute: null,
   error: null,
   errors: 0,
   events: [],
-} as const;
+};

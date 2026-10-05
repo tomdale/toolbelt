@@ -1290,56 +1290,6 @@ export class Router {
   }
 
   /**
-   * Files a thread the native composer just created, per the preview the user
-   * saw. Handles a composer thread only once.
-   */
-  async fileComposed(
-    threadId: string,
-    decision: RouteDecision,
-    identityOverride?: {
-      entityId?: string | null;
-      proposal?: DraftSubjectProposal | null;
-      provenance?: "manual" | "automatic";
-    } | null,
-    parentThreadId?: string | null,
-  ): Promise<void> {
-    const entry = this.decisions.get(decision.id);
-    if (!entry || entry.used) return;
-    entry.used = true;
-
-    this.deps.service.seeThread(threadId, null, parentThreadId ?? null);
-
-    if (!parentThreadId) {
-      const identity =
-        identityOverride !== undefined
-          ? identityOverride
-          : {
-              entityId: decision.subjectId ?? null,
-              proposal: decision.proposal ?? null,
-              provenance: "automatic" as const,
-            };
-
-      if (identity?.proposal) {
-        const entity = this.deps.corpus?.rememberProposal(identity.proposal);
-        if (entity) {
-          this.deps.corpus?.assign(threadId, entity.id, {
-            provenance: identity.provenance ?? "automatic",
-          });
-        }
-      } else if (identity?.entityId) {
-        this.deps.corpus?.assign(threadId, identity.entityId, {
-          provenance: identity.provenance ?? "manual",
-        });
-      }
-    }
-
-    this.deps.inference.link(decision.traceId, {
-      kind: "thread",
-      ref: threadId,
-    });
-  }
-
-  /**
    * Project and environment for new work (SPEC §6 policy, I4: always
    * explicit). Automatic placement uses the project's default source machine;
    * an explicit environment selection is validated and kept as-is.

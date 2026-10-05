@@ -15,9 +15,10 @@ The **Catalog** tab maintains all known products and features in an explicit
 hierarchy with descriptions, aliases, and related tasks, and supports scoped
 create, edit, reparent, and merge operations.
 
-New work is BB's New thread composer with a Product or feature field and a
-Workstream field. When you pause typing, it classifies the draft against the
-Catalog and suggests one home. Suggestions can be disabled in New work
+New work is BB's New thread composer with a Product or feature field, in
+Workstreams' own dialog and in BB's New thread view alike. When you pause
+typing, it classifies the draft against the Catalog, fills the field, and can
+suggest an existing thread to continue. Suggestions can be disabled in New work
 settings; when disabled, typing-pause requests return no suggestion and make no
 model call. Nothing changes until you accept a suggestion or start the thread.
 

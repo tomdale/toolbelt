@@ -15,12 +15,10 @@ import { sectionMembers } from "./cleanup.ts";
 import { WorkstreamMap } from "./map.ts";
 import { Router, type RouteDecision, type Environment } from "./router.ts";
 import { CorpusStore, classificationEvidence } from "./corpus.ts";
+import { ComposedDrafts, type ComposedIdentity } from "./composed-drafts.ts";
 import { corpusLabel } from "../domain/corpus-label.ts";
 import { ancestors, activeHome } from "../domain/regroup.ts";
-import type {
-  CanonicalAssignment,
-  DraftSubjectProposal,
-} from "../domain/corpus.ts";
+import type { CanonicalAssignment } from "../domain/corpus.ts";
 import { rpcContract } from "./contract.ts";
 import { hostContract } from "./inference/contract.ts";
 import { openDatabase } from "./db.ts";
@@ -300,9 +298,38 @@ export default async function plugin(bb: BbPluginApi) {
     model: async () => currentPrefs().newWork.suggestionsModel,
     homeProjectId: async () => currentPrefs().newWork.homeProjectId,
   });
-  // A thread the native composer just created from a previewed prompt is
-  // filed where the preview said: via the banner's submit data, or, for a
-  // plain Enter, by matching the prompt. The hook itself always proceeds.
+  // The Product or feature the New thread banner showed, for threads a plain
+  // Enter creates without the banner's submit data.
+  const drafts = new ComposedDrafts();
+  const journaledStarts = new Set<string>();
+  /** Files a composed thread's identity as New work's `router.start` does. */
+  const fileComposedIdentity = (
+    threadId: string,
+    identity: ComposedIdentity,
+  ) => {
+    if (identity?.proposal) {
+      const entity = corpus.rememberProposal(identity.proposal);
+      corpus.assign(threadId, entity.id, {
+        provenance: identity.provenance ?? "automatic",
+      });
+    } else if (identity?.entityId) {
+      // The draft may name an entity merged or deleted since; the thread
+      // then stays for automatic classification rather than failing.
+      if (!corpus.getById(identity.entityId)) {
+        bb.log.warn(`Composed thread ${threadId} names an unknown subject.`);
+        return;
+      }
+      corpus.assign(threadId, identity.entityId, {
+        provenance: identity.provenance ?? "manual",
+      });
+    } else if (identity?.provenance === "manual") {
+      corpus.clear(threadId);
+    }
+  };
+  // A thread the native composer just created is filed with the identity its
+  // banner showed: from the banner's submit data, or, for a plain Enter, from
+  // the draft the banner last reported with the same text. The hook itself
+  // always proceeds.
   bb.experimental_hooks.on("message.dispatch", async (ctx) => {
     // A thread's first request is the earliest anything can name it. The
     // naming runs apart from this admission and can't fail it.
@@ -329,38 +356,48 @@ export default async function plugin(bb: BbPluginApi) {
         threadId: ctx.thread.id,
       });
       if (metadata.unassignedByRouter === true) return { action: "proceed" };
-      const data =
-        ctx.experimental_submission?.pluginId === bb.pluginId
-          ? (ctx.experimental_submission.data as {
-              identity?: {
-                entityId?: string | null;
-                proposal?: DraftSubjectProposal | null;
-                provenance?: "manual" | "automatic";
-              } | null;
-            } | null)
-          : null;
-      const identity = data?.identity !== undefined ? data.identity : undefined;
+      const ours = ctx.experimental_submission?.pluginId === bb.pluginId;
+      const data = ours
+        ? (ctx.experimental_submission!.data as {
+            identity?: ComposedIdentity;
+          } | null)
+        : null;
+      // Started by a person in BB's New thread view, the counterpart of a
+      // New work start.
+      const composed =
+        ctx.origin === "app" &&
+        ctx.initiator === "user" &&
+        ctx.senderThreadId === null &&
+        !ctx.parentThreadId;
+      let identity: ComposedIdentity | undefined;
+      if (ours) {
+        drafts.consume(ctx.input.text);
+        identity = data?.identity;
+      } else if (composed) {
+        identity = drafts.claim(ctx.thread.id, ctx.input.text)?.identity;
+      }
+      // Passes re-run on drains, restarts and retries; journal a start once.
+      const journal = composed && !journaledStarts.has(ctx.thread.id);
+      if (journal) {
+        journaledStarts.add(ctx.thread.id);
+        if (journaledStarts.size > 200)
+          journaledStarts.delete(journaledStarts.values().next().value!);
+      }
       setTimeout(async () => {
         try {
-          service.seeThread(
-            ctx.thread.id,
-            null,
-            ctx.parentThreadId ?? null,
-          );
-          if (!ctx.parentThreadId && identity !== undefined) {
-            if (identity?.proposal) {
-              const entity = corpus.rememberProposal(identity.proposal);
-              corpus.assign(ctx.thread.id, entity.id, {
-                provenance: identity.provenance ?? "automatic",
-              });
-            } else if (identity?.entityId) {
-              corpus.assign(ctx.thread.id, identity.entityId, {
-                provenance: identity.provenance ?? "manual",
-              });
-            } else if (identity?.provenance === "manual") {
-              corpus.clear(ctx.thread.id);
-            }
-          }
+          if (journal)
+            service.recordCreated(ctx.thread.id, null, "user", {
+              title: ctx.thread.title || "New thread",
+              rationale: "Started from New thread",
+            });
+          else
+            service.seeThread(
+              ctx.thread.id,
+              null,
+              ctx.parentThreadId ?? null,
+            );
+          if (!ctx.parentThreadId && identity !== undefined)
+            fileComposedIdentity(ctx.thread.id, identity);
           triggerCoordinator(10);
         } catch (error: unknown) {
           bb.log.warn(`Filing a composed thread failed: ${String(error)}`);
@@ -692,6 +729,17 @@ export default async function plugin(bb: BbPluginApi) {
         triggerCoordinator(10);
         return result;
       }),
+    draftIdentity: async ({ draftKey, text, identity }) => {
+      const started = drafts.report(draftKey, text, identity);
+      if (!started) return { filed: false };
+      try {
+        fileComposedIdentity(started.threadId, identity);
+        triggerCoordinator(10);
+      } catch (error: unknown) {
+        bb.log.warn(`Filing a composed thread failed: ${String(error)}`);
+      }
+      return { filed: true };
+    },
     sendToThread: ({ threadId, input, traceId }) =>
       userFacing(() =>
         router.send(threadId, "user", {

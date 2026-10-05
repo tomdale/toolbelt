@@ -146,14 +146,18 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
   const applies = false;
   useEffect(() => {
     if (!suggestion && !autoDestination) return;
-    const inDialog = (target: EventTarget | null) => {
-      const scope = row.current?.closest('[role="dialog"]');
+    // The keys act only from this row's own composer: the New work dialog,
+    // or the New thread view's primary composer.
+    const inComposer = (target: EventTarget | null) => {
+      const scope =
+        row.current?.closest('[role="dialog"]') ??
+        row.current?.closest('[data-app-composer-role="primary"]');
       return !!scope && target instanceof Node && scope.contains(target);
     };
     // Capturing runs before the editor's own ⌘⏎ handling, which would start
     // the thread from the pickers as they are.
     const onSubmitKey = (event: KeyboardEvent) => {
-      if (!isSubmitShortcut(event) || !inDialog(event.target)) return;
+      if (!isSubmitShortcut(event) || !inComposer(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
       if (suggestion) void newWork.accept({ submit: true });
@@ -162,7 +166,7 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
     // Bubbling runs after the editor, which claims Tab for its own menus.
     const onApplyKey = (event: KeyboardEvent) => {
       if (!applies || !isApplyShortcut(event) || event.defaultPrevented) return;
-      if (!inEditor(event.target) || !inDialog(event.target)) return;
+      if (!inEditor(event.target) || !inComposer(event.target)) return;
       event.preventDefault();
       void newWork.accept({ submit: false });
     };

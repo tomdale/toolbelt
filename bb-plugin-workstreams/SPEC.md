@@ -217,66 +217,61 @@ thread owns the task and treats the dispatch instruction as fulfilled.
 ## 6. Intake router
 
 One router serves three entry points. BB's native New thread composer remains
-host-owned; Workstreams adds its Workstream field at the start of the native
-composer's picker row (before the project picker) and a suggestion row, and
-otherwise contributes its intake UI inside its own dialog.
+host-owned; Workstreams adds a Product or feature field to it and a
+suggestion row, and New work behaves the same on both of its surfaces.
 
 1. **New work**, on BB's native New thread view and in Workstreams' ＋ New
-   dialog (page and sidebar). Both embed BB's composer — the dialog through
-   `experimental_NewThreadComposer` — with a **Product or feature** field and
-   a **Workstream** field at the start of BB's picker row.
-   The Product or feature field identifies the specific Catalog entity
-   independently of navigation placement. The router runs Catalog classification
-   (`classify`) as typing pauses.
-   The Workstream field starts **Automatic** (✦, the magic tint), or at
-   the workstream whose ＋ opened the dialog, and its search can select an
-   existing workstream or propose a new one by name. While the field is
-   Automatic, each classification moves the pickers to the home it names: an
-   existing workstream fills the field together with its project and environment,
-   a proposed new workstream shows its name (created atomically on thread spawn,
-   with rollback on failure), and a classification that names no workstream
-   withdraws the previous automatic destination. ⏎ starts the thread exactly as
-   the pickers show it, so an untouched Automatic field files the thread where
-   the router said; on the native view the destination travels with the host
-   submit metadata and the server's dispatch hook files it. Any manual change —
-   picking a workstream, choosing No workstream, or changing the project or
-   environment — pins every picker (ordinary muted treatment) and stops the
-   automatic updates; choosing Automatic again unpins. A continue suggestion
-   still changes nothing until accepted, because sending to a thread cannot be
-   undone: it shows under the composer as Send to, and ⌘⏎ (Ctrl+⏎ elsewhere),
-   its Send button, or a click queues the draft there through the composer's
-   own submit, so attachments and mentions travel with it. A suggestion the
-   pickers already match is hidden, and a dismissed one stays hidden. BB gives
-   plugins no slot in its picker row, so the field keeps one anchor element at
-   the row's start and falls back to its own row when the row isn't found.
-   - **Wide screens** keep the two chips in BB's row. BB's own chips never
-     shrink or squeeze only to their icons, so ours give way first: each label
-     ellipsizes (hidden once less than an ellipsis of room remains) down to an
-     icon-wide floor, and nothing of ours can paint over a neighbor.
-   - **Phones** (BB's compact viewport, `max-width: 767px`): BB's row is full
-     with its own chips, so the two fields become one route chip on a line of
-     its own above the prompt box (the New thread banner; above the composer in
-     the New work dialog), and the row is left as BB draws it. The chip reads
-     `Workstream:` and the workstream, carries the Workstream field's tint and
-     pulse markers (✦ and the magic tint while automatic), and is named `Route:
-     Workstream <w>, Product or feature <p>`. Only one variant is ever in the
-     DOM.
-   - **The route sheet.** Tapping the chip opens one sheet (BB's shared bottom
-     drawer, through the plugin's Popover) with two tabs, Workstream and
-     Product or feature, each showing its current value. It always opens on the
-     Workstream tab with empty searches. The selected tab shows the same
-     searchable list as the wide screens' popovers, built from the same option
-     components (`picker-options.tsx`), so picking an entry makes the same
-     `NewWork` calls and closes the sheet. Touch has no tooltip, so the sheet
-     states the classifier's reason for an Automatic destination, and that a
-     proposed workstream is created when the thread starts. The search is
-     `--text-base` (16px, so iOS doesn't zoom), rows are at least 44px, and the
-     sheet keeps one height across tabs.
-   - **The suggestion row on touch** (`hover: none` or a coarse pointer) drops
-     the Tab and ⌘⏎ hints and the separate Apply button: tapping the sentence
-     applies, and Start (Send, for a thread) applies and starts. The sentence
-     clamps to two lines, targets are 44px, and the actions wrap beneath it
-     where they don't fit beside it.
+   work dialog (page and sidebar). Both are BB's own new-thread composer — the
+   dialog embeds it through `experimental_NewThreadComposer`, and the New
+   thread view gets the field from the plugin's `NewThreadRouting` composer
+   banner, which stays inert in any other composer and inside any dialog, so
+   the two never double up. Both surfaces build the same `NewWork` model and
+   render the same field (`WorkstreamPicker.tsx`, `picker-options.tsx`),
+   suggestion row (`Suggestion.tsx`) and, in Debug mode, Debug section
+   (`NewWorkDebug.tsx`).
+   - **Product or feature.** The field identifies the Catalog entity the work
+     concerns, independently of navigation: New work never asks for a
+     destination workstream, and the coordinator derives section placement
+     from active task identities. It starts **Automatic** (✦, the magic
+     tint); each classification as typing pauses fills it with the entity the
+     router names, or a proposed new feature, and a classification that names
+     neither returns it to Automatic. Its searchable list offers Automatic,
+     the Catalog, a new feature proposal for the typed name, and
+     **Unresolved**; any pick is manual and later classifications leave it
+     alone. Choosing Automatic again resumes them. Emptying the draft clears
+     an automatic value and keeps a manual one.
+   - **Starting the thread.** ⏎ starts the thread with the identity the field
+     shows (provenance `manual` or `automatic`; Unresolved is a manual clear).
+     The dialog starts it through `startThread`, which spawns it, files the
+     identity, and journals "Started from New work". On the New thread view
+     BB creates the thread, and the message dispatch hook files the identity
+     on its first message and journals "Started from New thread" once per
+     thread. The banner attaches the identity as submit data when it sees the
+     submit (a click on BB's send button); BB's Enter submits without an event
+     a plugin can intercept, so the banner also reports each draft's text and
+     identity (`draftIdentity`), and the hook files a first message whose
+     text matches a reported draft, in either order of arrival
+     (`ComposedDrafts`). A draft naming an entity merged or deleted since is
+     refused by `startThread`, and left for automatic classification on the
+     New thread view, whose thread already exists.
+   - **Send to.** A continue decision changes nothing until accepted, because
+     sending to a thread cannot be undone: it shows in the suggestion row as Send to
+     with the thread and its workstream, and ⌘⏎ (Ctrl+⏎ elsewhere) from inside
+     that composer, its Send button, or a click queues the draft there and
+     opens the thread. On the New thread view attachments are copied to the
+     target thread's project first. A dismissed suggestion stays hidden. A
+     failed send keeps the draft and shows its error once under the row.
+   - **Placement.** BB gives plugins no slot in its picker row, so the field
+     keeps one anchor element at the row's start and falls back to its own row
+     when the row isn't found. BB's own chips never shrink, so ours gives way
+     first: its label ellipsizes down to an icon-wide floor. On a phone (BB's
+     compact viewport, `max-width: 767px`) BB's row is full, so the field
+     takes a line of its own above the prompt box. The New thread view's
+     banner slot sits above the prompt box, so there the suggestion row and
+     Debug section sit above it too; the dialog puts them below.
+   - **Feedback.** The New thread view also announces "Classifying…" beside
+     the field while a classification runs; both surfaces pulse the
+     suggestion's ✦ while newer text is classified.
    - Product and feature marks use a tag icon declared in the manifest (BB's
      icon set has none, and an unknown name draws a lightning bolt).
 2. **`bb workstreams handoff`**, called by agents (§5).
@@ -285,10 +280,8 @@ otherwise contributes its intake UI inside its own dialog.
 **Inputs.**
 
 - The prompt.
-- Explicit choices: a project the user picked is a strong hint, the value in
-  New work's Workstream field (preset by the ＋ that opened it, picked, or the
-  automatic destination standing in it) is a hint the model prefers when the
-  request fits, and `@thread` or `@section` mentions short-circuit the router.
+- Explicit choices: a project the user picked in the New thread view is a
+  strong hint, and `@thread` or `@section` mentions short-circuit the router.
 - The workstream map (§7).
 - Active task threads (title, workstream, one-line recap, state, age).
 
@@ -382,10 +375,10 @@ without another model call. See
 
 | Change                                                                      | Signal                                                                            | Reaction                                                                                                                                     |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Thread created through New work                                             | RPC call                                                                          | Filed in the workstream the user chose (provenance `user`)                                                                                   |
+| Thread created through New work (dialog or New thread view)                 | `startThread` RPC, or `message.dispatch` on its first message                     | Identity filed as the field showed (§6), journaled as started; the coordinator derives its section                                           |
 | Thread created through `bb workstreams new` or a handoff                    | RPC or CLI call                                                                   | Placed by the router (provenance `router` or `handoff`)                                                                                      |
 | Child created by any source                                                 | `thread.created`                                                                  | No structural change. Analyze it on its first idle.                                                                                          |
-| Top-level thread created elsewhere (BB's native composer, CLI, automations) | `thread.created`, then the first `thread.idle`                                    | Respect its existing section; otherwise leave it Unfiled.                                                                                    |
+| Top-level thread created elsewhere (CLI, automations, other plugins)        | `thread.created`, then the first `thread.idle`                                    | Respect its existing section; otherwise leave it Unfiled.                                                                                    |
 | Visible fork                                                                | `thread.created` with `sourceThreadId`                                            | Preserve the creator's placement; otherwise leave it Unfiled                                                                                 |
 | A thread's first message, while it has no title                             | `message.dispatch` (first message); `thread.active` or the reconciler if missed   | Name it from the request alone while its first turn runs (§10.1). Nothing waits on it.                                                       |
 | User sends a message                                                        | `message.dispatch` (proceeds except for stale recap reminders) or `thread.active` | Mark analysis pending. Clear any inferred "needs decision" and the agent recap.                                                              |
@@ -697,7 +690,8 @@ it.
      opens a side pane with those calls: the thread header, Activity entries,
      the organizing review, generated descriptions, Overview rows, and the
      sidebar row menu.
-   - New work instead adds a collapsed Debug section under the composer. Its
+   - New work instead adds a collapsed Debug section to the composer, on both
+     of its surfaces (§6). Its
      summary names the decision and whether the suggestion shows. Open, it shows
      the result (outcome, confidence, project and environment, the reason), the
      inputs the model was given (the request, the selected workstream, the

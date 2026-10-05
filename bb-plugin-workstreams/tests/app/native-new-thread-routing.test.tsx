@@ -125,6 +125,7 @@ function mount(
     if (options.sendFails) throw new Error("send failed");
     return { threadId: "thread-parser" };
   });
+  const draftIdentity = vi.fn(async () => ({ filed: false }));
 
   const slot = renderSlot(
     {
@@ -189,11 +190,12 @@ function mount(
         routeCancel,
         startThread,
         sendToThread,
+        draftIdentity,
       },
     },
   );
 
-  return { slot, route, startThread, sendToThread };
+  return { slot, route, startThread, sendToThread, draftIdentity };
 }
 
 async function typePrompt(
@@ -357,4 +359,70 @@ it("does not render routing controls or intercept submits when inside a dialog",
     experimental_data: null,
   });
   expect(route).not.toHaveBeenCalled();
+});
+
+it("reports the draft's identity so a plain Enter can be filed", async () => {
+  const { slot, draftIdentity } = mount(identityDecision);
+  await typePrompt(slot, "Fix the parser in Alpha");
+  await screen.findByRole("button", { name: "Product or feature: Alpha" });
+  await waitFor(() =>
+    expect(draftIdentity).toHaveBeenLastCalledWith({
+      draftKey: expect.any(String),
+      text: "Fix the parser in Alpha",
+      identity: { entityId: "ent_alpha", proposal: null, provenance: "automatic" },
+    }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Product or feature: Alpha" }),
+  );
+  fireEvent.click(await screen.findByRole("option", { name: "Unresolved" }));
+  await waitFor(() =>
+    expect(draftIdentity).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        identity: { entityId: null, proposal: null, provenance: "manual" },
+      }),
+    ),
+  );
+});
+
+it("sends to the suggested thread on ⌘⏎, as in New work", async () => {
+  const { slot, sendToThread, startThread } = mount(continuationDecision);
+  await typePrompt(slot, "Also handle CRLF");
+  await screen.findByRole("button", {
+    name: /Accept suggestion: Send to Parser fix/,
+  });
+  fireEvent.keyDown(screen.getByRole("button", { name: "Host submit" }), {
+    key: "Enter",
+    metaKey: true,
+    ctrlKey: true,
+  });
+  await waitFor(() => expect(sendToThread).toHaveBeenCalledTimes(1));
+  expect((sendToThread.mock.calls as any)[0]?.[0]).toMatchObject({
+    threadId: "thread-parser",
+  });
+  expect(startThread).not.toHaveBeenCalled();
+  expect(slot.inspection.composer.submits).toHaveLength(0);
+});
+
+it("ignores ⌘⏎ from outside its composer", async () => {
+  const { slot, sendToThread } = mount(continuationDecision);
+  await typePrompt(slot, "Also handle CRLF");
+  await screen.findByRole("button", {
+    name: /Accept suggestion: Send to Parser fix/,
+  });
+  fireEvent.keyDown(document.body, { key: "Enter", metaKey: true, ctrlKey: true });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(sendToThread).not.toHaveBeenCalled();
+});
+
+it("shows a failed send once", async () => {
+  const { slot } = mount(continuationDecision, { sendFails: true });
+  await typePrompt(slot, "Also handle CRLF");
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: /Accept suggestion: Send to Parser fix/,
+    }),
+  );
+  await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(1));
+  expect(screen.getByRole("alert").textContent).toBe("send failed");
 });

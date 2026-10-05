@@ -17,7 +17,9 @@ against.
     known product or feature from the Catalog, propose a new feature, or explicitly
     mark the task **Unresolved**. New work never asks for a destination workstream;
     submitting creates the thread with its identity, and Workstreams derives its
-    section navigation automatically.
+    section navigation automatically. BB's own **New thread** view gets the same
+    field, suggestions, shortcuts, and Debug section, and files its threads the
+    same way.
   - **Up Next**: a pending approval or question, or a thread whose latest turn
     asks you to decide something. These rows sit at the top in an amber block
     with a slow shimmer, under an always-open header, each naming its
@@ -212,13 +214,11 @@ against.
   substituting another selection. Built-in model choices leave reasoning at the
   provider default. Gateway may translate effort for the serving model, and a
   requested service tier is not a guarantee of the tier served.
-- **Routing**: New work classifies the draft against the Catalog when you pause
-  typing and moves the Automatic pickers to one home: an existing workstream
-  with its project and environment, or a new workstream (created when the
-  thread starts). Enter starts what the pickers show, so an untouched
-  Automatic field files the thread where the router said; a suggested thread
-  waits for an explicit acceptance. Identity selection and section placement are
-  independent.
+- **Routing**: New work, in its dialog or BB's New thread view, classifies the
+  draft against the Catalog when you pause typing and fills the Automatic
+  Product or feature field. Enter starts the thread with what the field shows;
+  a suggested thread to continue waits for an explicit acceptance (⌘⏎, Send,
+  or a click). Identity selection and section placement are independent.
 - **Agent tools**: threads receive question support and recap guidance through
   `bb.agents.configure`, independently of workstream placement or parent links.
   Side chats receive question support without recap enrollment; internal
@@ -302,8 +302,8 @@ A workstream argument is a section id or its name (case-insensitive). `new` and
 ## Development
 
 The package uses the published Plugin SDK pinned in its lockfile. New work
-embeds BB's native composer unchanged and places its Workstream field in BB's
-picker row (see SPEC §6). Build and verify in an isolated task; deploy only from
+embeds BB's native composer unchanged and places its Product or feature field
+in BB's picker row (see SPEC §6). Build and verify in an isolated task; deploy only from
 the canonical checkout.
 
 ```sh

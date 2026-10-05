@@ -475,6 +475,19 @@ export const rpcContract = defineRpcContract({
     }),
   },
   /**
+   * The Product or feature the New thread banner shows for a draft, reported
+   * as the draft changes so the dispatch hook can file the thread a plain
+   * Enter creates (`ComposedDrafts`). Empty text forgets the draft.
+   */
+  draftIdentity: {
+    input: z.object({
+      draftKey: z.string().min(1).max(500),
+      text: z.string().max(20_000),
+      identity: taskIdentitySubmissionSchema.nullable(),
+    }),
+    output: z.object({ filed: z.boolean() }),
+  },
+  /**
    * Queues New work's draft in an existing thread. `traceId` links the
    * routing call that suggested it.
    */
