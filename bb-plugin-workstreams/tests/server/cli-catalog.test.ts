@@ -114,7 +114,7 @@ describe("CLI Catalog commands", () => {
       "Containers,Tubs",
     ]);
     expect(createRes.exitCode).toBe(0);
-    expect(createRes.stdout).toContain('Created product/feature "Bins"');
+    expect(createRes.stdout).toContain('Created topic "Bins"');
 
     const created = corpus.list().find((e) => e.name === "Bins")!;
     expect(created).toBeDefined();

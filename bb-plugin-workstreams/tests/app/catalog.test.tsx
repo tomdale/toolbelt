@@ -156,7 +156,7 @@ describe("Catalog UI & Maintenance", () => {
 
     expect(screen.getByRole("heading", { name: "New topic" })).toBeTruthy();
     fireEvent.change(
-      screen.getByPlaceholderText("e.g. Workstreams, Catalog, Billing"),
+      screen.getByPlaceholderText("e.g. Workstreams, Sidebar, Billing"),
       {
         target: { value: "Settings" },
       },
@@ -202,7 +202,7 @@ describe("Catalog UI & Maintenance", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /New topic/i }));
     fireEvent.change(
-      screen.getByPlaceholderText("e.g. Workstreams, Catalog, Billing"),
+      screen.getByPlaceholderText("e.g. Workstreams, Sidebar, Billing"),
       {
         target: { value: "Lantern" },
       },

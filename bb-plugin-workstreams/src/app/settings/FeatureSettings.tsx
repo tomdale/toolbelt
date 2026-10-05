@@ -288,7 +288,7 @@ export function OrganizeSettings() {
     <SectionRows>
       <ModelField
         label="Organizing model"
-        description="Classifies tasks and structures the catalog when needed."
+        description="Picks each thread's topic and adds topics when needed."
         choice={prefs.organize.model}
         onChange={(model) => update({ organize: { model } })}
       />

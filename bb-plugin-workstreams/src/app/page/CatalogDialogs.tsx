@@ -79,8 +79,7 @@ export function CreateEntityDialog({
               {initialParentId ? "New subtopic" : "New topic"}
             </DialogTitle>
             <DialogDescription>
-              Add a topic to the Catalog. Workstreams can classify threads into
-              it right away.
+              Workstreams can classify threads into this topic right away.
             </DialogDescription>
           </DialogHeader>
 
@@ -101,7 +100,7 @@ export function CreateEntityDialog({
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Workstreams, Catalog, Billing"
+              placeholder="e.g. Workstreams, Sidebar, Billing"
               className="mt-1 h-8 text-xs"
               aria-label="Name *"
               required
@@ -435,7 +434,7 @@ export function MergeEntityDialog({
             <DialogDescription>
               Merge &ldquo;{entity.name}&rdquo; into another topic. Its threads
               and subtopics move to that topic, and &ldquo;{entity.name}&rdquo;
-              is removed from the Catalog.
+              is deleted.
             </DialogDescription>
           </DialogHeader>
 

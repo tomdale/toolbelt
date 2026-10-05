@@ -19,7 +19,7 @@ import {
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 
 /**
- * The Catalog: every topic Workstreams knows about, as a tree. It describes
+ * The Topics tab: every topic Workstreams knows about, as a tree. It describes
  * topics only. Thread counts, workstreams, and classification state belong to
  * the sidebar and the thread's Topic control, never here.
  */
@@ -50,7 +50,7 @@ export function Catalog({ rpc, serverCatalog }: CatalogProps) {
       })
       .catch((err) => {
         setLoadError(
-          err instanceof Error ? err.message : "Couldn't load the Catalog.",
+          err instanceof Error ? err.message : "Couldn't load topics.",
         );
       });
   };
@@ -117,10 +117,10 @@ export function Catalog({ rpc, serverCatalog }: CatalogProps) {
   };
 
   return (
-    <section className="mt-6" aria-label="Catalog">
+    <section className="mt-6" aria-label="Topics">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-sm font-semibold">Catalog</h2>
+          <h2 className="text-sm font-semibold">Topics</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Every topic Workstreams knows about. Each thread gets the most
             specific topic that fits it.
@@ -177,7 +177,7 @@ export function Catalog({ rpc, serverCatalog }: CatalogProps) {
         </div>
       ) : activeCatalog === null ? (
         <p role="status" className="mt-4 text-sm text-muted-foreground">
-          Loading Catalog…
+          Loading topics…
         </p>
       ) : !visible.length ? (
         <p className="mt-4 text-sm text-muted-foreground">

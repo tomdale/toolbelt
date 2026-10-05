@@ -88,12 +88,12 @@ async function mount() {
   );
 }
 
-it("opens the Catalog tab and includes products without current workstreams", async () => {
+it("opens the Topics tab and lists every topic", async () => {
   const slot = await mount();
-  fireEvent.click(slot.getByRole("tab", { name: "Catalog" }));
+  fireEvent.click(slot.getByRole("tab", { name: "Topics" }));
   expect(await slot.findByText("Quiet product")).toBeTruthy();
   expect(
-    slot.getByRole("tab", { name: "Catalog" }).getAttribute("aria-selected"),
+    slot.getByRole("tab", { name: "Topics" }).getAttribute("aria-selected"),
   ).toBe("true");
 });
 

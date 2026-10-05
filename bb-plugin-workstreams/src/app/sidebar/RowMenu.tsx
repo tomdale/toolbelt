@@ -13,6 +13,7 @@ import { snoozeChoices, type ThreadSnooze } from "../../domain/snooze.ts";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
 import { corpusLabel } from "../../domain/corpus-label.ts";
 import { useSharedServerState } from "../serverState.ts";
+import { isAutomaticTopic } from "../task/TaskIdentity.tsx";
 
 export type RowMenuHandlers = {
   rename: (thread: PluginSidebarThread) => void;
@@ -25,7 +26,6 @@ export type RowMenuHandlers = {
   /** Debug mode: opens the thread's model calls. */
   inspect: (thread: PluginSidebarThread) => void;
   assignIdentity?: (thread: PluginSidebarThread, entityId: string) => void;
-  clearIdentity?: (thread: PluginSidebarThread) => void;
   reclassifyIdentity?: (thread: PluginSidebarThread) => void;
 };
 
@@ -62,16 +62,19 @@ export function RowMenu({
   const debug = useDebugMode();
   const { server, rpc, refresh } = useSharedServerState();
 
-  const catalog = server.catalog;
-  const entities = catalog?.entities ?? [];
-  const assignment = catalog?.assignments[thread.id];
+  // Topic submenu: the same choices as the thread header's Topic control.
+  const entities = server.catalog?.entities ?? [];
+  const assignment = server.catalog?.assignments[thread.id] ?? null;
   const currentEntity = assignment?.entityId
     ? (entities.find((e) => e.id === assignment.entityId) ?? null)
     : null;
+  const topicPath = (id: string) =>
+    corpusLabel(id, entities).replace(/: /g, " › ");
   const currentLabel = currentEntity
-    ? corpusLabel(currentEntity.id, entities).replace(/: /g, " › ")
-    : "Unresolved";
-  const isInherited = Boolean(assignment?.inheritedFrom);
+    ? topicPath(currentEntity.id)
+    : "Unclassified";
+  const isFork = Boolean(assignment?.inheritedFrom);
+  const automatic = isAutomaticTopic(assignment);
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
@@ -91,87 +94,84 @@ export function RowMenu({
           ) : null}
           <Separator />
           <ContextMenu.Sub>
-            <SubTrigger>Product or feature</SubTrigger>
+            <SubTrigger>Topic</SubTrigger>
             <ContextMenu.Portal>
               <ContextMenu.SubContent
                 {...portalScope}
                 className="z-50 max-h-96 min-w-56 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
               >
-                <div className="px-2 py-1.5 text-xs text-muted-foreground font-medium">
-                  Current: {currentLabel}
-                  {isInherited ? " (inherited)" : ""}
-                </div>
-                <Separator />
-                <Item
-                  onSelect={() => {
-                    if (handlers.reclassifyIdentity) {
-                      handlers.reclassifyIdentity(thread);
-                    } else {
-                      void rpc
-                        .call("taskReclassify", { threadId: thread.id })
-                        .then(() => refresh());
-                    }
-                  }}
-                >
-                  Reclassify
-                </Item>
-                {currentEntity ? (
-                  <Item
-                    onSelect={() => {
-                      if (handlers.clearIdentity) {
-                        handlers.clearIdentity(thread);
-                      } else {
-                        void rpc
-                          .call("taskClear", { threadId: thread.id })
-                          .then(() => refresh());
-                      }
-                    }}
-                  >
-                    Clear assignment
-                  </Item>
-                ) : null}
-                <Separator />
-                <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                  Assign to
-                </div>
-                {entities.length ? (
-                  entities
-                    .slice()
-                    .sort((a, b) => compareGroupNames(a.name, b.name))
-                    .map((entity) => {
-                      const label = corpusLabel(entity.id, entities).replace(
-                        /: /g,
-                        " › ",
-                      );
-                      const isSelected = entity.id === currentEntity?.id;
-                      return (
-                        <Item
-                          key={entity.id}
-                          disabled={isSelected}
-                          onSelect={() => {
-                            if (handlers.assignIdentity) {
-                              handlers.assignIdentity(thread, entity.id);
-                            } else {
-                              void rpc
-                                .call("taskAssign", {
-                                  threadId: thread.id,
-                                  entityId: entity.id,
-                                })
-                                .then(() => refresh());
-                            }
-                          }}
-                        >
-                          <span className="flex-1 truncate">{label}</span>
-                          {isSelected ? (
-                            <Icon name="Check" className="ml-2 size-3.5" />
-                          ) : null}
-                        </Item>
-                      );
-                    })
-                ) : (
+                {isFork ? (
                   <Item disabled onSelect={() => undefined}>
-                    No catalog entities
+                    <span className="flex-1 truncate">
+                      {currentLabel} (same as parent thread)
+                    </span>
                   </Item>
+                ) : (
+                  <>
+                    <Item
+                      disabled={automatic}
+                      onSelect={() => {
+                        if (handlers.reclassifyIdentity) {
+                          handlers.reclassifyIdentity(thread);
+                        } else {
+                          void rpc
+                            .call("taskReclassify", { threadId: thread.id })
+                            .then(() => refresh());
+                        }
+                      }}
+                    >
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span>Automatic</span>
+                        <span className="truncate text-[11px] text-muted-foreground">
+                          {automatic ? currentLabel : "Let Workstreams choose"}
+                        </span>
+                      </span>
+                      {automatic ? (
+                        <Icon name="Check" className="ml-2 size-3.5" />
+                      ) : null}
+                    </Item>
+                    <Separator />
+                    {entities.length ? (
+                      entities
+                        .slice()
+                        .sort((a, b) =>
+                          compareGroupNames(topicPath(a.id), topicPath(b.id)),
+                        )
+                        .map((entity) => {
+                          const isChosen =
+                            !automatic && entity.id === currentEntity?.id;
+                          return (
+                            <Item
+                              key={entity.id}
+                              disabled={isChosen}
+                              onSelect={() => {
+                                if (handlers.assignIdentity) {
+                                  handlers.assignIdentity(thread, entity.id);
+                                } else {
+                                  void rpc
+                                    .call("taskAssign", {
+                                      threadId: thread.id,
+                                      entityId: entity.id,
+                                    })
+                                    .then(() => refresh());
+                                }
+                              }}
+                            >
+                              <span className="flex-1 truncate">
+                                {topicPath(entity.id)}
+                              </span>
+                              {isChosen ? (
+                                <Icon name="Check" className="ml-2 size-3.5" />
+                              ) : null}
+                            </Item>
+                          );
+                        })
+                    ) : (
+                      <Item disabled onSelect={() => undefined}>
+                        No topics yet
+                      </Item>
+                    )}
+                  </>
                 )}
               </ContextMenu.SubContent>
             </ContextMenu.Portal>

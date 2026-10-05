@@ -254,7 +254,7 @@ export function registerCli(
     defineCli({
       name: "workstreams",
       summary:
-        "Manage workstreams, file threads into them, inspect the Catalog, and read the activity log",
+        "List workstreams and their threads, manage topics, and read the activity log",
       commands: {
         list: cliCommand({
           summary: "List workstreams (native BB sections) with thread counts",
@@ -657,7 +657,7 @@ export function registerCli(
           },
         }),
         "catalog list": cliCommand({
-          summary: "List all known products and features in the Catalog",
+          summary: "List all topics",
           options: {
             json: { type: "boolean", description: "Print JSON" },
           },
@@ -678,7 +678,7 @@ export function registerCli(
               };
             }
             if (entities.length === 0) {
-              return { exitCode: 0, stdout: "Catalog is empty." };
+              return { exitCode: 0, stdout: "No topics yet." };
             }
             const sorted = [...entities].sort((a, b) =>
               corpusLabel(a.id, entities).localeCompare(
@@ -697,11 +697,11 @@ export function registerCli(
           },
         }),
         "catalog show": cliCommand({
-          summary: "Show details of a product or feature in the Catalog",
+          summary: "Show a topic's details",
           positionals: [
             {
               name: "identity",
-              description: "Product/feature name or ID",
+              description: "Topic name or ID",
               required: true,
             },
           ],
@@ -745,11 +745,11 @@ export function registerCli(
           },
         }),
         "catalog create": cliCommand({
-          summary: "Create a new product or feature in the Catalog",
+          summary: "Create a topic",
           positionals: [
             {
               name: "name",
-              description: "Product or feature name",
+              description: "Topic name",
               required: true,
             },
           ],
@@ -760,7 +760,7 @@ export function registerCli(
             },
             parent: {
               type: "string",
-              description: "Parent product/feature name or ID",
+              description: "Parent topic name or ID",
             },
             aliases: {
               type: "string",
@@ -796,7 +796,7 @@ export function registerCli(
               }
               return {
                 exitCode: 0,
-                stdout: `Created product/feature "${entity.name}" (${entity.id}).`,
+                stdout: `Created topic "${entity.name}" (${entity.id}).`,
               };
             } catch (err) {
               throw new PluginCliError(
@@ -807,11 +807,11 @@ export function registerCli(
           },
         }),
         "catalog edit": cliCommand({
-          summary: "Edit a product or feature's name, description, or aliases",
+          summary: "Edit a topic's name, description, or aliases",
           positionals: [
             {
               name: "identity",
-              description: "Product/feature name or ID to edit",
+              description: "Topic name or ID to edit",
               required: true,
             },
           ],
@@ -858,11 +858,11 @@ export function registerCli(
           },
         }),
         "catalog reparent": cliCommand({
-          summary: "Move a product or feature under a new parent in the Catalog",
+          summary: "Move a topic under a different parent",
           positionals: [
             {
               name: "identity",
-              description: "Product/feature name or ID to reparent",
+              description: "Topic name or ID to move",
               required: true,
             },
           ],
@@ -907,16 +907,16 @@ export function registerCli(
         }),
         "catalog merge": cliCommand({
           summary:
-            "Merge a source product/feature into a target, moving tasks and children",
+            "Merge a topic into another, moving its threads and subtopics",
           positionals: [
             {
               name: "source",
-              description: "Source product/feature name or ID",
+              description: "Topic name or ID to merge",
               required: true,
             },
             {
               name: "target",
-              description: "Target product/feature name or ID",
+              description: "Topic name or ID to merge into",
               required: true,
             },
           ],
@@ -1014,7 +1014,7 @@ export function registerCli(
             },
             {
               name: "identity",
-              description: "Product/feature name or ID",
+              description: "Topic name or ID",
               required: true,
             },
           ],
@@ -1073,7 +1073,7 @@ export function registerCli(
         }),
         "task reclassify": cliCommand({
           summary:
-            "Reclassify a thread against the Catalog using the model or an override",
+            "Classify a thread's topic again with the model, or set it directly",
           positionals: [
             {
               name: "thread",

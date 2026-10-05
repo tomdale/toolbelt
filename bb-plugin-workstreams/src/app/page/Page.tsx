@@ -28,16 +28,17 @@ import { InspectButton } from "../debug/InspectButton.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
 import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
 
-type Tab = "overview" | "catalog" | "map" | "activity";
+type Tab = "overview" | "topics" | "map" | "activity";
 const TAB_LABEL: Record<Tab, string> = {
   overview: "Overview",
-  catalog: "Catalog",
+  topics: "Topics",
   map: "Organize",
   activity: "Activity",
 };
 
 /**
- * `subPath` deep links select the map or activity view.
+ * `subPath` deep links select the topics, map, or activity view. `catalog`
+ * is the topics view's former name and still opens it.
  */
 function tabOf(subPath: string): {
   tab: Tab;
@@ -45,7 +46,8 @@ function tabOf(subPath: string): {
   modelCalls?: boolean;
 } {
   const [head, ...rest] = subPath.split("/");
-  if (head === "catalog") return { tab: "catalog", focus: null };
+  if (head === "topics" || head === "catalog")
+    return { tab: "topics", focus: null };
   if (head === "map") return { tab: "map", focus: null };
   if (head === "activity")
     return { tab: "activity", focus: rest.join("/") || null };
@@ -61,7 +63,7 @@ export function WorkstreamsPage({
   const navigate = useBbNavigate();
   const linked = tabOf(subPath);
   const [tab, setTab] = useState<Tab>(linked.tab);
-  const tabs: Tab[] = ["overview", "catalog", "map", "activity"];
+  const tabs: Tab[] = ["overview", "topics", "map", "activity"];
   const [newWork, setNewWork] = useState(false);
   useLayoutEffect(() => setTab(tabOf(subPath).tab), [subPath]);
   const [query, setQuery] = useState("");
@@ -209,7 +211,7 @@ export function WorkstreamsPage({
               </details>
             ) : null}
           </div>
-        ) : tab === "catalog" ? (
+        ) : tab === "topics" ? (
           <Catalog rpc={ws.rpc} serverCatalog={ws.server.catalog} />
         ) : tab === "map" ? (
           <MapTab

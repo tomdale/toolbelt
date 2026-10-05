@@ -498,7 +498,9 @@ describe("thread list", () => {
     const newWork = empty.getByRole("button", { name: "New work in Zeta" });
     expect(newWork.classList.contains("opacity-0")).toBe(false);
     fireEvent.click(newWork);
-    expect(await screen.findByRole("dialog", { name: "New work" })).toBeTruthy();
+    expect(
+      await screen.findByRole("dialog", { name: "New work" }),
+    ).toBeTruthy();
     slot.lifecycle.unmount();
   });
 
@@ -682,7 +684,7 @@ describe("thread list", () => {
     second.lifecycle.unmount();
   });
 
-  it("offers Product or feature submenu in row menu", async () => {
+  it("offers a Topic submenu in the row menu", async () => {
     const slot = await mount(undefined, { settings: { showRecent: false } });
     const link = within(slot.getByRole("region", { name: "Alpha" })).getByRole(
       "link",
@@ -692,7 +694,7 @@ describe("thread list", () => {
     );
     fireEvent.contextMenu(link.closest("li")!);
     const item = await slot.findByRole("menuitem", {
-      name: "Product or feature",
+      name: "Topic",
     });
     expect(item).toBeTruthy();
     slot.lifecycle.unmount();
@@ -1483,7 +1485,7 @@ it("marks the row menu's submenus with a chevron", async () => {
       name: "Root task",
     }),
   );
-  for (const name of ["Product or feature", "Snooze"]) {
+  for (const name of ["Topic", "Snooze"]) {
     const item = await screen.findByRole("menuitem", { name });
     expect(item.getAttribute("aria-haspopup")).toBe("menu");
     expect(item.querySelector('[data-icon="ChevronRight"]')).not.toBeNull();
