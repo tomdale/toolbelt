@@ -507,7 +507,7 @@ export function WorkstreamsThreadList({
           attention={placement === "needs-you"}
           work={ws.work(row.thread)}
           showStatusSlot={showStatusSlot}
-          showPin={placement !== "needs-you"}
+          showPin={placement === "group"}
           subtitle={placement === "needs-you" ? askOf(row) : null}
           snoozeAction={snoozeActionOf(row, placement)}
           showArchive={placement !== "archived"}

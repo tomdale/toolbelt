@@ -532,6 +532,12 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.events.on("thread.archived", ({ thread }) => {
     recaps.onArchived(thread.id);
+    if (thread.pinnedAt !== null)
+      void bb.sdk.threads
+        .unpin({ threadId: thread.id })
+        .catch((error: unknown) =>
+          bb.log.warn(`Unpinning archived thread failed: ${String(error)}`),
+        );
     if (snoozes.clear(thread.id)) notify();
   });
   bb.events.on("interaction.pending", ({ thread, interaction }) => {

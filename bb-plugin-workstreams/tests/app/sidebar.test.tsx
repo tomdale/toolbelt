@@ -584,6 +584,31 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
+  it("shows pin icons only in workstream rows, not in overlays", async () => {
+    const slot = await mount(
+      [
+        sidebarThread("pinned", {
+          sectionId: "sec_a",
+          title: "Pinned task",
+          isPinned: true,
+        }),
+      ],
+      { settings: { showRecent: true } },
+    );
+
+    expect(
+      within(slot.getByRole("region", { name: "Recent" })).queryByRole("img", {
+        name: "Pinned",
+      }),
+    ).toBeNull();
+    expect(
+      within(slot.getByRole("region", { name: "Alpha" })).getByRole("img", {
+        name: "Pinned",
+      }),
+    ).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
   it("hides the pin icon in Up Next but keeps it in the workstream", async () => {
     const slot = await mount(
       [
@@ -599,10 +624,9 @@ describe("thread list", () => {
     );
 
     expect(
-      within(slot.getByRole("region", { name: "Up Next" })).queryByRole(
-        "img",
-        { name: "Pinned" },
-      ),
+      within(slot.getByRole("region", { name: "Up Next" })).queryByRole("img", {
+        name: "Pinned",
+      }),
     ).toBeNull();
     expect(
       within(slot.getByRole("region", { name: "Alpha" })).getByRole("img", {
@@ -743,9 +767,7 @@ describe("thread list", () => {
       ],
       { settings: { showRecent: false } },
     );
-    const row = within(
-      slot.getByRole("region", { name: "Alpha" }),
-    )
+    const row = within(slot.getByRole("region", { name: "Alpha" }))
       .getByRole("link", { name: "Pinned task" })
       .closest<HTMLElement>(".ws-row")!;
 

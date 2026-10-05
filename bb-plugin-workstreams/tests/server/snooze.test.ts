@@ -80,13 +80,25 @@ it("sweeps ended snoozes, marking timed ones unread", async () => {
   expect(w.markedUnread).toEqual(["t1"]);
 });
 
-it("forgets the snooze of an archived thread", async () => {
+it("clears a thread pin and snooze when the thread is archived", async () => {
   const w = await world();
+  w.threads.set("t1", {
+    ...w.threads.get("t1")!,
+    pinnedAt: Date.now(),
+  });
   await w.harness.behavior.callRpc("snooze", { threadId: "t1", until: null });
   await w.harness.behavior.emitThreadEvent("thread.archived", {
     thread: { ...w.threads.get("t1")!, archivedAt: Date.now() },
   } as never);
   expect(await snoozes(w)).toEqual({});
+  expect(w.threads.get("t1")?.pinnedAt).toBeNull();
+
+  const unarchived = { ...w.threads.get("t1")!, archivedAt: null };
+  w.threads.set("t1", unarchived);
+  await w.harness.behavior.emitThreadEvent("thread.unarchived", {
+    thread: unarchived,
+  });
+  expect(w.threads.get("t1")?.pinnedAt).toBeNull();
 });
 
 it("stores Snooze settings, repairs bad values, and returns them in state", async () => {

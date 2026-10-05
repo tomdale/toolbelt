@@ -225,6 +225,12 @@ export async function fakeWorld(
           threads.set(threadId, { ...thread, archivedAt: Date.now() });
           return { id: threadId };
         },
+        unpin: async ({ threadId }: { threadId: string }) => {
+          const thread = threads.get(threadId);
+          if (!thread) throw missing(threadId);
+          threads.set(threadId, { ...thread, pinnedAt: null });
+          return { id: threadId };
+        },
         output: async ({ threadId }: { threadId: string }) => ({
           output: conversations.get(threadId)?.output ?? null,
         }),
