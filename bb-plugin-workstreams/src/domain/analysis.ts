@@ -113,6 +113,13 @@ export type ThreadAnalysis = AnalysisOutput & {
   readonly model: string;
 };
 
+/** The stored result plus a drift target resolved to a section id. */
+export type StoredAnalysis = ThreadAnalysis & {
+  readonly driftSectionId: string | null;
+  /** The debug trace of the call that produced it (SPEC §11.6). */
+  readonly traceId?: string | null;
+};
+
 export function clip(text: string, max: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
   if (flat.length <= max) return flat;

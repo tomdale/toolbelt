@@ -27,9 +27,19 @@ deterministically using `deriveActiveEntityIds` from `domain/regroup.ts`:
 - **Partition by product roots**: Entities are grouped under their top-level Catalog product (`parentId === null`).
 - **Group capacity**: Maximum active tasks per workstream (default: 6). Leaf feature identities above capacity may stand as indivisible leaf groups.
 - **Contraction threshold**: At or below this product task count (default: 3), navigation contracts to the broad product root workstream.
-- **Active count vs. completed retention**: Only active (non-completed) roots drive capacity and expansion pressure. Completed tasks exert 0 expansion pressure and remain navigable under their product root.
+- **Active count vs. completed retention**: Only active (non-completed) roots drive capacity and expansion pressure. Completed tasks exert 0 expansion pressure and remain navigable under their product root. A root is completed when its agent's recap reports the latest turn complete, or, without a recap, when the current analysis says done: the same status rule (`domain/status.ts`) the sidebar uses.
 - **Stability**: Existing active workstream homes are preserved when they continue to satisfy capacity and coverage constraints.
 - **Unresolved tasks**: Tasks with unresolved identities map to Unfiled (`sectionId: null`) and are surfaced in `state.unresolved`.
+
+## Activity
+
+Section changes run in the service's mutation queue, never interleaved with a
+move, retitle, or reconcile. Each pass that creates, renames, or removes a
+workstream or moves a thread records one Activity entry (source automatic)
+listing every change. These entries have no Undo: workstreams follow topics,
+so the next pass would redo whatever an undo reverted. To move a thread,
+change its topic. A move made in BB's own sidebar is recorded as made outside
+Workstreams, and the next pass moves the thread back and records that too.
 
 ## Organize pane
 

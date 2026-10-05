@@ -89,7 +89,10 @@ describe("message.dispatch for the New thread view", () => {
           threads: { id: string }[];
         }[];
       };
-      return entries.filter((e) => e.threads.some((t) => t.id === threadId));
+      // Starts only; the organizer's own filing is a separate entry.
+      return entries.filter(
+        (e) => e.action === "route" && e.threads.some((t) => t.id === threadId),
+      );
     };
     return { w, corpus, feature, hook, dispatch, settle, starts };
   }

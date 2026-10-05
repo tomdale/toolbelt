@@ -72,7 +72,11 @@ describe("keeping thread titles current", () => {
     await rpc(w, "refresh", null);
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     await turn(w, "t1", 100);
-    expect(w.completions.at(-1)!.prompt).toContain(
+    // Analysis also starts an organizer pass, which may classify after it.
+    const analysis = [...w.completions]
+      .reverse()
+      .find((c) => c.prompt.includes("You describe one agent thread"));
+    expect(analysis!.prompt).toContain(
       'Title: none yet (BB shows the placeholder "fix the cache thing…")',
     );
     expect(w.threads.get("t1")?.title).toBe("Fix stale build cache");

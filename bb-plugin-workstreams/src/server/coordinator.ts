@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { buildForest } from "../domain/tree.ts";
-import { isCurrent } from "../domain/analysis.ts";
+import type { Recap } from "../domain/recap.ts";
+import { isDone, workView } from "../domain/status.ts";
 import type { ModelChoice } from "../domain/prefs.ts";
 import type { Analyzer } from "./analyzer.ts";
 import { sectionMembers, type CleanupMember } from "./cleanup.ts";
@@ -17,6 +18,7 @@ import type { CanonicalAssignment, CorpusEntity } from "../domain/corpus.ts";
 import type { Inference } from "./model.ts";
 import { listSections, type InventoryThread } from "./inventory.ts";
 import type { WorkstreamService } from "./service.ts";
+import type { Journal, NewEntry } from "./journal.ts";
 import type {
   LiveOrganization,
   LiveOrganizationCounts,
@@ -30,12 +32,16 @@ export type CoordinatorDeps = {
   service: WorkstreamService;
   corpus: CorpusStore;
   analyzer: Analyzer;
+  /** Agent recaps for each thread's latest turn; they outrank analysis. */
+  recaps?: () => Record<string, Recap>;
   inference: Inference;
   model: () => Promise<ModelChoice>;
   classificationModel?: () => Promise<ModelChoice>;
   requests?: (threadId: string) => Promise<string[]>;
   projects?: () => Promise<{ id: string; name: string }[]>;
   members: (sectionId: string) => Promise<CleanupMember[]>;
+  /** Records each pass's section changes in Activity. */
+  journal?: Journal;
   policy?: () => { capacity: number; collapseAt: number };
   onChange: () => void;
   now?: () => number;
@@ -207,16 +213,13 @@ export class Coordinator {
         .filter((t) => !t.isHidden && !t.isArchived);
 
       const analysis = this.deps.analyzer.all();
+      const recaps = this.deps.recaps?.() ?? {};
       const isCompletedMap = new Map<string, boolean>();
-      for (const root of roots) {
-        const assessment = analysis[root.id];
-        const done = Boolean(
-          assessment &&
-          isCurrent(assessment, root) &&
-          assessment.state === "done",
+      for (const root of roots)
+        isCompletedMap.set(
+          root.id,
+          isDone(workView(root, analysis[root.id], recaps[root.id])),
         );
-        isCompletedMap.set(root.id, done);
-      }
 
       // Check if snapshot is identical to last completed run
       const catalogRev = this.deps.corpus.revision();
@@ -505,8 +508,6 @@ export class Coordinator {
       );
 
       // 3. Sync Native Section Projection
-      const liveSections = await listSections(sdk);
-      const groupBindings = new Map(this.deps.corpus.groups()); // sectionId -> entityId
       const entityToSection = new Map<string, string>();
       const appliedSectionIds = new Map<string, string | null>();
 
@@ -521,130 +522,179 @@ export class Coordinator {
         entities,
       };
 
-      for (const entityId of selectedEntityIds) {
-        const entity = entities.find((e) => e.id === entityId)!;
-        const expectedName = corpusLabel(entityId, entities);
+      // Section changes run in the service's mutation queue, so a move,
+      // retitle, or reconcile never interleaves with them, and whatever
+      // changed is recorded in Activity even when the pass fails partway.
+      const changes = new SyncChanges();
+      await this.deps.service.exclusive(async () => {
+        let failed = false;
+        try {
+          const liveSections = await listSections(sdk);
+          for (const section of liveSections)
+            changes.name(section.id, section.name);
+          const groupBindings = new Map(this.deps.corpus.groups()); // sectionId -> entityId
 
-        // Check if an existing section is already bound to this entityId
-        let section = liveSections.find(
-          (s) => groupBindings.get(s.id) === entityId,
-        );
+          for (const entityId of selectedEntityIds) {
+            const entity = entities.find((e) => e.id === entityId)!;
+            const expectedName = corpusLabel(entityId, entities);
 
-        if (!section) {
-          // Check if an existing section matches the name and is not bound to another active entity
-          const candidate = liveSections.find(
-            (s) =>
-              s.name.toLowerCase() === expectedName.toLowerCase() &&
-              (!groupBindings.has(s.id) ||
-                groupBindings.get(s.id) === entityId ||
-                !selectedEntityIds.includes(groupBindings.get(s.id)!)),
-          );
-          if (candidate) {
-            section = candidate;
-            this.deps.corpus.bindGroup(section.id, entityId);
-            groupBindings.set(section.id, entityId); // Update local map (Finding 4)
-          }
-        }
+            // Check if an existing section is already bound to this entityId
+            let section = liveSections.find(
+              (s) => groupBindings.get(s.id) === entityId,
+            );
 
-        if (!section) {
-          // Create a new native section owned by workstreams (Finding 7)
-          const created = await sdk.threadSections.create({
-            name: expectedName,
-          });
-          section = { id: created.id, name: created.name };
-          const now = this.now();
-          this.deps.db
-            .prepare(
-              `INSERT INTO ws_workstream (section_id, description, description_source, created_by, created_at, updated_at)
+            if (!section) {
+              // Check if an existing section matches the name and is not bound to another active entity
+              const candidate = liveSections.find(
+                (s) =>
+                  s.name.toLowerCase() === expectedName.toLowerCase() &&
+                  (!groupBindings.has(s.id) ||
+                    groupBindings.get(s.id) === entityId ||
+                    !selectedEntityIds.includes(groupBindings.get(s.id)!)),
+              );
+              if (candidate) {
+                section = candidate;
+                this.deps.corpus.bindGroup(section.id, entityId);
+                groupBindings.set(section.id, entityId); // Update local map (Finding 4)
+              }
+            }
+
+            if (!section) {
+              // Create a new native section owned by workstreams (Finding 7)
+              const created = await sdk.threadSections.create({
+                name: expectedName,
+              });
+              section = { id: created.id, name: created.name };
+              changes.created.push(created.id);
+              changes.name(created.id, created.name);
+              const now = this.now();
+              this.deps.db
+                .prepare(
+                  `INSERT INTO ws_workstream (section_id, description, description_source, created_by, created_at, updated_at)
                VALUES (?, NULL, 'generated', 'workstreams', ?, ?)
                ON CONFLICT(section_id) DO UPDATE SET created_by = 'workstreams'`,
-            )
-            .run(created.id, now, now);
-          this.deps.corpus.bindGroup(created.id, entityId);
-          groupBindings.set(created.id, entityId); // Update local map (Finding 4)
-          this.deps.service.seeSection(created.id, created.name);
-        } else if (section.name !== expectedName) {
-          // Rename section if entity name changed
-          await sdk.threadSections.update({
-            id: section.id,
-            name: expectedName,
-          });
-          section = { id: section.id, name: expectedName };
-          this.deps.service.seeSection(section.id, expectedName);
-        }
-
-        entityToSection.set(entityId, section.id);
-      }
-
-      // Update roots' sectionId in BB
-      for (const root of roots) {
-        const assignment = assignments[root.id];
-        let targetSectionId: string | null = null;
-
-        if (
-          assignment &&
-          assignment.status === "assigned" &&
-          assignment.entityId
-        ) {
-          const homeEntityId = activeHome(
-            assignment.entityId,
-            selectedEntityIds,
-            entities,
-          );
-          if (homeEntityId) {
-            targetSectionId = entityToSection.get(homeEntityId) ?? null;
-          }
-        }
-
-        if ((root.sectionId ?? null) !== targetSectionId) {
-          await sdk.threads.update({
-            threadId: root.id,
-            sectionId: targetSectionId,
-          });
-          this.deps.service.place(root.id, targetSectionId, "auto", null);
-          this.deps.service.seeThread(
-            root.id,
-            targetSectionId,
-            root.parentThreadId ?? null,
-            root.title,
-          );
-        }
-        appliedSectionIds.set(root.id, targetSectionId);
-      }
-
-      // Clean up unused empty sections that belonged to Workstreams
-      const activeSectionIds = new Set(entityToSection.values());
-
-      for (const section of liveSections) {
-        // Never delete an active section (Finding 4)
-        if (activeSectionIds.has(section.id)) continue;
-
-        const boundEntityId = groupBindings.get(section.id);
-        if (boundEntityId && !selectedEntityIds.includes(boundEntityId)) {
-          const members = await this.deps.members(section.id);
-          const activeMembers = members.filter((m) => m.archivedAt === null);
-          if (activeMembers.length === 0) {
-            // Check ownership safety policy (Finding 7)
-            const wsRow = this.deps.db
-              .prepare(
-                "SELECT created_by FROM ws_workstream WHERE section_id = ?",
-              )
-              .get(section.id) as { created_by: string } | undefined;
-
-            if (wsRow?.created_by === "workstreams") {
-              await sdk.threadSections.delete({ id: section.id });
-              this.deps.db
-                .prepare("DELETE FROM ws_seen_section WHERE section_id = ?")
-                .run(section.id);
-              this.deps.db
-                .prepare("DELETE FROM ws_workstream WHERE section_id = ?")
-                .run(section.id);
+                )
+                .run(created.id, now, now);
+              this.deps.corpus.bindGroup(created.id, entityId);
+              groupBindings.set(created.id, entityId); // Update local map (Finding 4)
+              this.deps.service.seeSection(created.id, created.name);
+            } else if (section.name !== expectedName) {
+              // Rename section if entity name changed
+              await sdk.threadSections.update({
+                id: section.id,
+                name: expectedName,
+              });
+              changes.renamed.push({
+                id: section.id,
+                from: section.name,
+                to: expectedName,
+              });
+              changes.name(section.id, expectedName);
+              section = { id: section.id, name: expectedName };
+              this.deps.service.seeSection(section.id, expectedName);
             }
-            this.deps.corpus.unbindGroup(section.id);
-            groupBindings.delete(section.id);
+
+            entityToSection.set(entityId, section.id);
           }
+
+          // Update roots' sectionId in BB
+          for (const root of roots) {
+            const assignment = assignments[root.id];
+            let targetSectionId: string | null = null;
+
+            if (
+              assignment &&
+              assignment.status === "assigned" &&
+              assignment.entityId
+            ) {
+              const homeEntityId = activeHome(
+                assignment.entityId,
+                selectedEntityIds,
+                entities,
+              );
+              if (homeEntityId) {
+                targetSectionId = entityToSection.get(homeEntityId) ?? null;
+              }
+            }
+
+            if ((root.sectionId ?? null) !== targetSectionId) {
+              // The snapshot is from the start of the pass; classification may
+              // have taken a while, so write only what still differs.
+              const live = await sdk.threads
+                .get({ threadId: root.id })
+                .catch(() => null);
+              const from = live?.sectionId ?? null;
+              if (
+                live &&
+                live.archivedAt === null &&
+                live.visibility !== "hidden" &&
+                from !== targetSectionId
+              ) {
+                await sdk.threads.update({
+                  threadId: root.id,
+                  sectionId: targetSectionId,
+                });
+                changes.moves.push({
+                  threadId: root.id,
+                  title: root.title,
+                  from,
+                  to: targetSectionId,
+                });
+                this.deps.service.place(root.id, targetSectionId, "auto", null);
+                this.deps.service.seeThread(
+                  root.id,
+                  targetSectionId,
+                  root.parentThreadId ?? null,
+                  root.title,
+                );
+              }
+            }
+            appliedSectionIds.set(root.id, targetSectionId);
+          }
+
+          // Clean up unused empty sections that belonged to Workstreams
+          const activeSectionIds = new Set(entityToSection.values());
+
+          for (const section of liveSections) {
+            // Never delete an active section (Finding 4)
+            if (activeSectionIds.has(section.id)) continue;
+
+            const boundEntityId = groupBindings.get(section.id);
+            if (boundEntityId && !selectedEntityIds.includes(boundEntityId)) {
+              const members = await this.deps.members(section.id);
+              const activeMembers = members.filter(
+                (m) => m.archivedAt === null,
+              );
+              if (activeMembers.length === 0) {
+                // Check ownership safety policy (Finding 7)
+                const wsRow = this.deps.db
+                  .prepare(
+                    "SELECT created_by FROM ws_workstream WHERE section_id = ?",
+                  )
+                  .get(section.id) as { created_by: string } | undefined;
+
+                if (wsRow?.created_by === "workstreams") {
+                  await sdk.threadSections.delete({ id: section.id });
+                  changes.removed.push(section.id);
+                  this.deps.db
+                    .prepare("DELETE FROM ws_seen_section WHERE section_id = ?")
+                    .run(section.id);
+                  this.deps.db
+                    .prepare("DELETE FROM ws_workstream WHERE section_id = ?")
+                    .run(section.id);
+                }
+                this.deps.corpus.unbindGroup(section.id);
+                groupBindings.delete(section.id);
+              }
+            }
+          }
+        } catch (error) {
+          failed = true;
+          throw error;
+        } finally {
+          this.record(changes, failed);
         }
-      }
+      });
 
       // 4. Assemble LiveOrganizationState
       const finalState = this.assembleLiveOrganizationState({
@@ -710,6 +760,16 @@ export class Coordinator {
         progress: null,
       });
     }
+  }
+
+  /**
+   * Records one pass's section changes as one Activity entry. It has no undo:
+   * workstreams follow topics, so the next pass would redo whatever an undo
+   * reverted. Changing a thread's topic is how to move it.
+   */
+  private record(changes: SyncChanges, failed: boolean): void {
+    const entry = changes.entry(failed);
+    if (entry) this.deps.journal?.add(entry);
   }
 
   private assembleLiveOrganizationState(options: {
@@ -850,6 +910,80 @@ export class Coordinator {
         unresolvedRoots: unresolvedTasks.length,
         activeWorkstreams: finalGroups.length,
       },
+    };
+  }
+}
+
+/** What one organizer pass changed in BB, for its Activity entry. */
+class SyncChanges {
+  readonly created: string[] = [];
+  readonly renamed: { id: string; from: string; to: string }[] = [];
+  readonly moves: {
+    threadId: string;
+    title: string;
+    from: string | null;
+    to: string | null;
+  }[] = [];
+  readonly removed: string[] = [];
+  private readonly names = new Map<string, string>();
+
+  /** Remembers a section's name as of this pass. */
+  name(sectionId: string, name: string): void {
+    this.names.set(sectionId, name);
+  }
+
+  private nameOf(sectionId: string | null): string {
+    return sectionId === null
+      ? "Unfiled"
+      : (this.names.get(sectionId) ?? "a deleted workstream");
+  }
+
+  entry(failed: boolean): NewEntry | null {
+    const { created, renamed, moves, removed } = this;
+    if (!created.length && !renamed.length && !moves.length && !removed.length)
+      return null;
+    const count = (n: number, one: string, many: string) =>
+      n === 0 ? null : `${n} ${n === 1 ? one : many}`;
+    const summary = [
+      count(moves.length, "thread moved", "threads moved"),
+      count(created.length, "workstream created", "workstreams created"),
+      count(renamed.length, "workstream renamed", "workstreams renamed"),
+      count(
+        removed.length,
+        "empty workstream removed",
+        "empty workstreams removed",
+      ),
+    ].filter((part): part is string => part !== null);
+    const detail = [
+      ...created.map((id) => `Created ${this.nameOf(id)}`),
+      ...renamed.map((r) => `Renamed ${r.from} to ${r.to}`),
+      ...moves.map(
+        (m) =>
+          `Moved “${m.title}” from ${this.nameOf(m.from)} to ${this.nameOf(m.to)}`,
+      ),
+      ...removed.map(
+        (id) => `Removed ${this.nameOf(id)}, which had no threads`,
+      ),
+      "Workstreams follow topics; change a thread’s topic to move it.",
+      ...(failed
+        ? ["The pass stopped partway; the next one finishes it."]
+        : []),
+    ].join("\n");
+    const touched = new Set<string>([
+      ...created,
+      ...renamed.map((r) => r.id),
+      ...removed,
+      ...moves.flatMap((m) => [m.from, m.to].filter((id) => id !== null)),
+    ]);
+    return {
+      action: "batch",
+      source: "auto",
+      status: failed ? "failed" : "applied",
+      rationale: `Organized by topic: ${summary.join(", ")}`,
+      threads: moves.map((m) => ({ id: m.threadId, name: m.title })),
+      workstreams: [...touched].map((id) => ({ id, name: this.nameOf(id) })),
+      undo: null,
+      detail,
     };
   }
 }

@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
+import { RECAP_TOOL } from "../../src/domain/recap.ts";
 import { fakeWorld } from "./fake-bb.ts";
 import { CorpusStore } from "../../src/server/corpus.ts";
 import { openDatabase } from "../../src/server/db.ts";
@@ -1035,9 +1037,7 @@ describe("automatic update coordinator lifecycle", () => {
       () => {
         const row = w.bb.storage
           .database()
-          .prepare(
-            "SELECT value FROM ws_meta WHERE key = 'live_organization'",
-          )
+          .prepare("SELECT value FROM ws_meta WHERE key = 'live_organization'")
           .get() as { value: string } | undefined;
         const org = row ? JSON.parse(row.value) : null;
         expect(org?.status).toBe("idle");
@@ -1099,9 +1099,7 @@ describe("automatic update coordinator lifecycle", () => {
       () => {
         const row = w.bb.storage
           .database()
-          .prepare(
-            "SELECT value FROM ws_meta WHERE key = 'live_organization'",
-          )
+          .prepare("SELECT value FROM ws_meta WHERE key = 'live_organization'")
           .get() as { value: string } | undefined;
         const org = row ? JSON.parse(row.value) : null;
         expect(org?.status).toBe("idle");
@@ -1121,5 +1119,109 @@ describe("automatic update coordinator lifecycle", () => {
     await new Promise((r) => setTimeout(r, 300));
     // Since evidence didn't change (requests are empty), isFresh prevents re-classifying t-unresolved
     expect(classifyCalls).toBe(callsAfterSettle);
+  });
+});
+
+type Entry = {
+  action: string;
+  source: string;
+  status: string;
+  rationale: string;
+  detail: string | null;
+  undo: unknown;
+  threads: { id: string; name: string }[];
+  workstreams: { id: string; name: string }[];
+};
+
+const organizerEntries = async (w: World): Promise<Entry[]> => {
+  const { entries } = (await w.harness.behavior.callRpc("journal", null)) as {
+    entries: Entry[];
+  };
+  return entries.filter((e) => e.action === "batch" && e.source === "auto");
+};
+
+/** The thread's agent reports `state` for its latest turn. */
+async function report(w: World, threadId: string, state: string) {
+  await w.harness.behavior.resolveAgentConfiguration(
+    makePluginAgentConfigurationContext({
+      thread: { id: threadId, parentThreadId: null },
+    }),
+  );
+  w.turn(threadId);
+  await w.harness.behavior.callAgentTool(
+    RECAP_TOOL,
+    { state, goal: "Shipped the fix", latest: ["Fixed it"] },
+    { threadId },
+  );
+}
+
+describe("organizer status and Activity", () => {
+  it("counts a thread whose agent reported it complete as done", async () => {
+    world = await fakeWorld();
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const lantern = corpus.create("Lantern", "Product");
+    w.addThread("t1", { status: "idle", latestAttentionAt: 500 });
+    w.addThread("t2", { status: "idle", latestAttentionAt: 500 });
+    corpus.assign("t1", lantern.id, { provenance: "manual" });
+    corpus.assign("t2", lantern.id, { provenance: "manual" });
+    await w.harness.behavior.callRpc("refresh", null);
+
+    await report(w, "t1", "complete");
+    const state = await rebuildOrg(w);
+
+    expect(state.counts.completedRoots).toBe(1);
+    expect(state.counts.activeRoots).toBe(1);
+    const member = state.groups[0]!.roots.find((r) => r.id === "t1");
+    expect(member?.completed).toBe(true);
+  });
+
+  it("records each pass's section changes as one automatic entry", async () => {
+    world = await fakeWorld();
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const lantern = corpus.create("Lantern", "Product");
+    w.addThread("t1", { title: "Lantern core fix", sectionId: null });
+    corpus.assign("t1", lantern.id, { provenance: "manual" });
+
+    await rebuildOrg(w);
+    const section = w.sections.find((s) => s.name === "Lantern")!;
+    const [entry, ...rest] = await organizerEntries(w);
+    expect(rest).toHaveLength(0);
+    expect(entry).toMatchObject({
+      status: "applied",
+      rationale: "Organized by topic: 1 thread moved, 1 workstream created",
+      threads: [{ id: "t1", name: "Lantern core fix" }],
+      workstreams: [{ id: section.id, name: "Lantern" }],
+      undo: null,
+    });
+    expect(entry!.detail).toContain(
+      "Moved “Lantern core fix” from Unfiled to Lantern",
+    );
+
+    // A pass that changes nothing records nothing.
+    await rebuildOrg(w);
+    expect(await organizerEntries(w)).toHaveLength(1);
+  });
+
+  it("moves a thread back after a move made outside Workstreams, and says so", async () => {
+    world = await fakeWorld();
+    const w = world;
+    const corpus = new CorpusStore(openDatabase(w.bb));
+    const lantern = corpus.create("Lantern", "Product");
+    w.addThread("t1", { title: "Lantern core fix", sectionId: null });
+    corpus.assign("t1", lantern.id, { provenance: "manual" });
+    await rebuildOrg(w);
+    const home = w.sections.find((s) => s.name === "Lantern")!;
+
+    const elsewhere = w.addSection("Elsewhere");
+    w.threads.set("t1", { ...w.threads.get("t1")!, sectionId: elsewhere.id });
+    await rebuildOrg(w);
+
+    expect(w.threads.get("t1")?.sectionId).toBe(home.id);
+    const [latest] = await organizerEntries(w);
+    expect(latest!.detail).toContain(
+      "Moved “Lantern core fix” from Elsewhere to Lantern",
+    );
   });
 });

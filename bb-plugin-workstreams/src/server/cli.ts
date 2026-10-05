@@ -2,7 +2,6 @@
  * `bb workstreams …` for Tom, scripts, and agents. Output is bounded: lists
  * are capped and titles truncated.
  */
-import { reportedAnalysis } from "../domain/recap.ts";
 import type { AgentRecaps } from "./recap.ts";
 import {
   PluginCliError,
@@ -16,7 +15,8 @@ import {
   type Section,
 } from "../domain/project.ts";
 import { relativeAge } from "../domain/presentation.ts";
-import { isCurrent, needsYou } from "../domain/analysis.ts";
+import { isCurrent } from "../domain/analysis.ts";
+import { needsYou, workView } from "../domain/status.ts";
 import type { Analyzer, StoredAnalysis } from "./analyzer.ts";
 import type { Coordinator } from "./coordinator.ts";
 import type { WorkstreamMap } from "./map.ts";
@@ -219,19 +219,16 @@ export function registerCli(
     const now = Date.now();
     const analyzed = analyzer.all();
     const reported = recaps.all();
-    // The agent's recap of an idle thread outranks analysis, as in the sidebar.
+    // Status follows the shared rule: the agent's recap outranks analysis.
+    const work = new Map(
+      threads.map((thread) => [
+        thread.id,
+        workView(thread, analyzed[thread.id], reported[thread.id]),
+      ]),
+    );
     const analysis: Record<string, StoredAnalysis> = { ...analyzed };
-    for (const thread of threads) {
-      const recap = reported[thread.id];
-      if (recap && thread.status === "idle")
-        analysis[thread.id] = reportedAnalysis(
-          recap,
-          thread,
-          isCurrent(analyzed[thread.id], thread)
-            ? analyzed[thread.id]
-            : undefined,
-        );
-    }
+    for (const [threadId, view] of work)
+      if (view.kind === "current") analysis[threadId] = view.analysis;
     return {
       now,
       sections,
@@ -239,7 +236,7 @@ export function registerCli(
       analysis,
       projection: projectWorkstreams(threads, sections, {
         now,
-        needsYou: (thread) => needsYou(thread, analysis[thread.id]),
+        needsYou: (thread) => needsYou(thread, work.get(thread.id)!),
         order: arrangement.load(),
       }),
     };

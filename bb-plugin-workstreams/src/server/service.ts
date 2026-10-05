@@ -88,6 +88,17 @@ export class WorkstreamService {
     return next;
   }
 
+  /**
+   * Runs `task` in the mutation queue, after every earlier mutation or
+   * reconcile has settled and before any later one starts. The organizer
+   * applies its section changes through this so they never interleave with a
+   * move, a retitle, or a reconcile. `task` must not call another queued
+   * method, which would wait on itself.
+   */
+  exclusive<T>(task: () => Promise<T>): Promise<T> {
+    return this.serial(task);
+  }
+
   state(): {
     workstreams: Record<string, WorkstreamRecord>;
     placements: Record<string, Placement>;

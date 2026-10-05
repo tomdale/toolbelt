@@ -9,7 +9,8 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { isCurrent } from "../domain/analysis.ts";
+import type { Recap } from "../domain/recap.ts";
+import { workView } from "../domain/status.ts";
 import type { ModelChoice } from "../domain/prefs.ts";
 import { relativeAge } from "../domain/presentation.ts";
 import {
@@ -143,6 +144,8 @@ export class Router {
       journal: Journal;
       map: WorkstreamMap;
       analyzer: Analyzer;
+      /** Agent recaps for each thread's latest turn; they outrank analysis. */
+      recaps?: () => Record<string, Recap>;
       inference: Inference;
       model: () => Promise<ModelChoice>;
       homeProjectId: () => Promise<string>;
@@ -227,6 +230,7 @@ export class Router {
       return this.remember(text, constrained, intent);
     };
     const analysis = this.deps.analyzer.all();
+    const recaps = this.deps.recaps?.() ?? {};
     const forest = buildForest(threads);
     const nameOf = new Map(records.map((r) => [r.sectionId, r.name]));
     const now = this.now();
@@ -518,14 +522,19 @@ export class Router {
         aliases: r.aliases,
       })),
       threads: tasks.map((t) => {
-        const a = analysis[t.id];
-        const current = isCurrent(a, t);
+        const work = workView(t, analysis[t.id], recaps[t.id]);
+        const latest =
+          work.kind === "current"
+            ? work.analysis
+            : work.kind === "pending"
+              ? work.previous
+              : null;
         return {
           id: t.id,
           title: t.title,
           workstream: t.sectionId ? (nameOf.get(t.sectionId) ?? null) : null,
-          recap: a?.recap ?? null,
-          state: current ? a.state : null,
+          recap: latest?.recap ?? null,
+          state: work.kind === "current" ? work.analysis.state : null,
           age: relativeAge(t.latestAttentionAt, now),
         };
       }),

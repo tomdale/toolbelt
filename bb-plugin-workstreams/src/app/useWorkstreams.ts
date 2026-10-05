@@ -12,7 +12,8 @@ import type { Placement } from "../server/service.ts";
 import type { MapRecord } from "../server/map.ts";
 import { projectWorkstreams, type Projection } from "../domain/project.ts";
 import { isCurrent } from "../domain/analysis.ts";
-import { reportedAnalysis, type Recap } from "../domain/recap.ts";
+import type { Recap } from "../domain/recap.ts";
+import { needsYou, workView } from "../domain/status.ts";
 import type { ManualOrder } from "../domain/order.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
 import type { CatalogState } from "../domain/corpus.ts";
@@ -55,51 +56,7 @@ export function useServerState() {
   return useSharedServerState();
 }
 
-/**
- * What a row shows of a thread's work: nothing, a pending marker, or the
- * current result. `reported` marks a result the thread's agent reported in
- * its recap rather than one analysis inferred.
- */
-export type WorkView =
-  | { kind: "none" }
-  | { kind: "pending"; previous: StoredAnalysis }
-  | { kind: "current"; analysis: StoredAnalysis; reported: boolean };
-
-/**
- * The agent's recap of an idle thread's latest turn outranks analysis for
- * the work state and the row's one-line summary. Analysis still supplies
- * subject and drift when it is current.
- */
-export function workView(
-  thread: PluginSidebarThread,
-  analysis: StoredAnalysis | undefined,
-  recap?: Recap,
-): WorkView {
-  // A failed turn gets neither; BB's own error mark says enough.
-  if (thread.status === "error") return { kind: "none" };
-  if (recap && thread.status === "idle")
-    return {
-      kind: "current",
-      reported: true,
-      analysis: reportedAnalysis(
-        recap,
-        thread,
-        isCurrent(analysis, thread) ? analysis : undefined,
-      ),
-    };
-  if (!analysis) return { kind: "none" };
-  return isCurrent(analysis, thread)
-    ? { kind: "current", analysis, reported: false }
-    : { kind: "pending", previous: analysis };
-}
-
-/** Needs you: a pending interaction, or a current needs-decision result. */
-function needsYou(thread: PluginSidebarThread, work: WorkView): boolean {
-  return (
-    thread.hasPendingInteraction ||
-    (work.kind === "current" && work.analysis.state === "needs_decision")
-  );
-}
+export { workView, type WorkView } from "../domain/status.ts";
 
 /** Re-renders once a minute so ages and dormancy stay current. */
 export function useNow(intervalMs = 60_000): number {

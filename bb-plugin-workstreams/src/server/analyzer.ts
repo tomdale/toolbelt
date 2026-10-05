@@ -10,7 +10,11 @@
  * through `onResult` and the retitle policy (SPEC §10.1).
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { AnalysisInput, ThreadAnalysis } from "../domain/analysis.ts";
+import type {
+  AnalysisInput,
+  StoredAnalysis,
+  ThreadAnalysis,
+} from "../domain/analysis.ts";
 import type { ModelChoice } from "../domain/prefs.ts";
 import type { Database } from "./db.ts";
 import { displayTitle, type InventoryThread } from "./inventory.ts";
@@ -25,12 +29,7 @@ const CONCURRENCY = 4;
 const RETRY_AFTER_MS = 10 * 60_000;
 const MAX_ATTEMPTS = 3;
 
-/** The stored result plus a drift target resolved to a section id. */
-export type StoredAnalysis = ThreadAnalysis & {
-  readonly driftSectionId: string | null;
-  /** The debug trace of the call that produced it (SPEC §11.6). */
-  readonly traceId?: string | null;
-};
+export type { StoredAnalysis } from "../domain/analysis.ts";
 
 function readResult(json: string): StoredAnalysis | undefined {
   try {

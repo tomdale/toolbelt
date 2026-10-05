@@ -91,8 +91,10 @@ export default async function plugin(bb: BbPluginApi) {
         );
   };
 
+  // Set once the organizer exists; earlier triggers have nothing to start.
+  let organizer: Coordinator | null = null;
   const triggerCoordinator = (debounceMs = 50) => {
-    coordinator.trigger(debounceMs);
+    organizer?.trigger(debounceMs);
   };
 
   const currentPrefs = () => loadPrefs(db);
@@ -219,6 +221,8 @@ export default async function plugin(bb: BbPluginApi) {
     inference,
     onChange: notify,
     onResult: (threadId, result) => {
+      // A finished analysis can change whether the thread counts as done.
+      triggerCoordinator();
       // A goal carried over from before goals were capped can be too long for
       // a title.
       if (result.goal && result.goal.length <= GOAL_MAX)
@@ -251,7 +255,11 @@ export default async function plugin(bb: BbPluginApi) {
     db,
     prefs: () => loadRecapPrefs(db),
     since: () => recapToolSince(db),
-    onChange: notify,
+    onChange: () => {
+      notify();
+      // A reported or cleared recap can change whether the thread is done.
+      triggerCoordinator(200);
+    },
   });
   recapToolSince(db);
   recaps.register();
@@ -272,6 +280,7 @@ export default async function plugin(bb: BbPluginApi) {
     service,
     corpus,
     analyzer,
+    recaps: () => recaps.all(),
     inference,
     model: async () => currentPrefs().organize.model,
     classificationModel: async () => currentPrefs().organize.model,
@@ -282,8 +291,10 @@ export default async function plugin(bb: BbPluginApi) {
     }),
     projects: async () => bb.sdk.projects.list(),
     members: (sectionId) => sectionMembers(bb.sdk, sectionId),
+    journal,
     onChange: notify,
   });
+  organizer = coordinator;
   bb.onDispose(() => coordinator.dispose());
   const router = new Router({
     sdk: () => bb.sdk,
@@ -292,6 +303,7 @@ export default async function plugin(bb: BbPluginApi) {
     journal,
     map,
     analyzer,
+    recaps: () => recaps.all(),
     inference,
     model: async () => currentPrefs().newWork.suggestionsModel,
     homeProjectId: async () => currentPrefs().newWork.homeProjectId,
@@ -389,11 +401,7 @@ export default async function plugin(bb: BbPluginApi) {
               rationale: "Started from New thread",
             });
           else
-            service.seeThread(
-              ctx.thread.id,
-              null,
-              ctx.parentThreadId ?? null,
-            );
+            service.seeThread(ctx.thread.id, null, ctx.parentThreadId ?? null);
           if (!ctx.parentThreadId && identity !== undefined)
             fileComposedIdentity(ctx.thread.id, identity);
           triggerCoordinator(10);
