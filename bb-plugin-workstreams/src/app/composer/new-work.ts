@@ -4,11 +4,7 @@
  * New work never solicits or sets a destination workstream.
  */
 import { createContext } from "react";
-import type {
-  ComposerSelection,
-  NewThreadRequest,
-  PluginComposerApi,
-} from "@get-bb/plugin-sdk/app";
+import type { ComposerSelection } from "@get-bb/plugin-sdk/app";
 import type { RouteDecision } from "../../server/router.ts";
 import type { DraftSubjectProposal } from "../../domain/corpus.ts";
 import { routeDelay } from "./timing.ts";
@@ -78,8 +74,7 @@ export type NewWorkEvent = {
     | "classify"
     | "accept"
     | "dismiss"
-    | "select-identity"
-    | "submit";
+    | "select-identity";
   status: "pending" | "ok" | "failed" | "superseded";
   durationMs: number | null;
   input: unknown;
@@ -104,44 +99,11 @@ export type NewWorkState = {
 };
 
 export type NewWorkDeps = {
-  route(
-    prompt: string,
-    workstreamId: string | null,
-    pickedProjectId?: string | null,
-  ): Promise<RouteDecision>;
+  route(prompt: string, pickedProjectId: string | null): Promise<RouteDecision>;
   cancelRoute(): void;
-  startThread(
-    request: NewThreadRequest,
-    options?: {
-      identity?: {
-        entityId?: string | null;
-        proposal?: DraftSubjectProposal | null;
-        provenance?: "manual" | "automatic";
-      } | null;
-    },
-  ): Promise<{ threadId: string }>;
-  sendToThread(
-    threadId: string,
-    input: NewThreadRequest["input"],
-    traceId: string | null,
-  ): Promise<void>;
-  sendDraftToThread?(threadId: string, traceId: string | null): Promise<void>;
-  submitWithRoute?(
-    routeId: string | null,
-    sectionId?: string | null,
-    options?: {
-      identity?: {
-        entityId?: string | null;
-        proposal?: DraftSubjectProposal | null;
-        provenance?: "manual" | "automatic";
-      } | null;
-    },
-  ): Promise<void>;
+  /** Queues the composer's whole draft in `threadId` and opens it. */
+  sendDraftToThread(threadId: string, traceId: string | null): Promise<void>;
 };
-
-export type SubmitResult =
-  | { kind: "started"; threadId: string }
-  | { kind: "sent"; threadId: string; title: string };
 
 export function identityDisplay(state: NewWorkState): {
   id: string | null;
@@ -215,21 +177,15 @@ const messageOf = (error: unknown) =>
 export class NewWork {
   private state: NewWorkState;
   private listeners = new Set<() => void>();
-  private composer: PluginComposerApi | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private generation = 0;
   private pending = false;
-  private sendTarget: Suggestion | null = null;
   private eventIds = 0;
 
-  constructor(
-    private deps: NewWorkDeps,
-    initialIdentity: IdentityChoice = null,
-    private nativeFlow = false,
-  ) {
+  constructor(private deps: NewWorkDeps) {
     this.state = {
       text: "",
-      identity: initialIdentity,
+      identity: null,
       selection: null,
       suggestion: null,
       decision: null,
@@ -291,10 +247,6 @@ export class NewWork {
         ),
       });
     };
-  }
-
-  attach(composer: PluginComposerApi) {
-    this.composer = composer;
   }
 
   observe(text: string) {
@@ -393,84 +345,25 @@ export class NewWork {
     this.set({ settled: suggestion.key, error: null });
   }
 
-  async accept({ submit }: { submit: boolean }): Promise<void> {
+  /** Sends the draft to the shown suggestion's thread. */
+  async accept(): Promise<void> {
     const suggestion = shownSuggestion(this.state);
-    const composer = this.composer;
-    if (!suggestion || !composer || this.state.accepting) return;
+    if (!suggestion || this.state.accepting) return;
     this.set({ accepting: true, error: null });
-    const finish = this.begin("accept", { suggestion, submit });
+    const finish = this.begin("accept", { suggestion });
     try {
-      if (this.deps.sendDraftToThread) {
-        await this.deps.sendDraftToThread(
-          suggestion.threadId,
-          suggestion.traceId,
-        );
-        this.set({ settled: suggestion.key });
-        finish("ok", { output: "Sent the draft to the suggested thread." });
-        return;
-      }
-      this.sendTarget = suggestion;
-      await composer.submit({ experimental_data: null });
-      finish("ok", { output: "Submitted the draft to the thread." });
+      await this.deps.sendDraftToThread(
+        suggestion.threadId,
+        suggestion.traceId,
+      );
+      this.set({ settled: suggestion.key });
+      finish("ok", { output: "Sent the draft to the suggested thread." });
     } catch (error) {
       finish("failed", { error });
       if (this.state.error === null) this.reportError(error);
     } finally {
-      this.sendTarget = null;
       this.set({ accepting: false });
     }
-  }
-
-  async submit(request: NewThreadRequest): Promise<SubmitResult> {
-    if (this.state.error) this.set({ error: null });
-    const target = this.sendTarget;
-    this.sendTarget = null;
-    this.invalidate();
-
-    const identityPayload = this.state.identity
-      ? {
-          entityId: this.state.identity.entityId,
-          proposal: this.state.identity.proposal,
-          provenance: this.state.identity.provenance,
-        }
-      : null;
-
-    const finish = this.begin(
-      "submit",
-      target
-        ? { sendTo: target.threadId, request }
-        : {
-            identity: identityPayload,
-            request,
-          },
-    );
-    try {
-      if (target) {
-        await this.deps.sendToThread(
-          target.threadId,
-          request.input,
-          target.traceId,
-        );
-        finish("ok", { output: { sentTo: target.threadId } });
-        return {
-          kind: "sent",
-          threadId: target.threadId,
-          title: target.title,
-        };
-      }
-      const options = identityPayload ? { identity: identityPayload } : {};
-      const { threadId } = await this.deps.startThread(request, options);
-
-      finish("ok", { output: { started: threadId } });
-      return { kind: "started", threadId };
-    } catch (error) {
-      finish("failed", { error });
-      throw error;
-    }
-  }
-
-  async submitComposer(): Promise<void> {
-    await this.composer?.submit({ experimental_data: null });
   }
 
   dispose() {
@@ -502,16 +395,9 @@ export class NewWork {
     this.set({ classifying: true });
     const prompt = this.state.text;
     const pickedProjectId = this.state.selection?.projectId ?? null;
-    const finish = this.begin(
-      "classify",
-      this.nativeFlow
-        ? { prompt, pickedProjectId }
-        : { prompt },
-    );
+    const finish = this.begin("classify", { prompt, pickedProjectId });
     try {
-      const decision = this.nativeFlow
-        ? await this.deps.route(prompt, null, pickedProjectId)
-        : await this.deps.route(prompt, null);
+      const decision = await this.deps.route(prompt, pickedProjectId);
       if (mine !== this.generation) {
         finish("superseded", { output: decision });
         return;

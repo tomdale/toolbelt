@@ -11,15 +11,14 @@ against.
 ## What it does
 
 - **Sidebar thread list** (select it under Settings → Appearance → Sidebar):
-  - **＋ New work** opens the composer with a **Product or feature** field in the
-    picker row. The field defaults to **Automatic**: when you pause typing, the
-    classifier suggests the most specific product or feature. You can also pick a
+  - **＋ New work** opens BB's New thread view, where Workstreams adds a
+    **Product or feature** field to the picker row. The field defaults to
+    **Automatic**: when you pause typing, the classifier suggests the most
+    specific product or feature. You can also pick a
     known product or feature from the Catalog, propose a new feature, or explicitly
     mark the task **Unresolved**. New work never asks for a destination workstream;
     submitting creates the thread with its identity, and Workstreams derives its
-    section navigation automatically. BB's own **New thread** view gets the same
-    field, suggestions, shortcuts, and Debug section, and files its threads the
-    same way.
+    section navigation automatically.
   - **Up Next**: a pending approval or question, or a thread whose latest turn
     asks you to decide something. These rows sit at the top in an amber block
     with a slow shimmer, under an always-open header, each naming its
@@ -214,9 +213,9 @@ against.
   substituting another selection. Built-in model choices leave reasoning at the
   provider default. Gateway may translate effort for the serving model, and a
   requested service tier is not a guarantee of the tier served.
-- **Routing**: New work, in its dialog or BB's New thread view, classifies the
-  draft against the Catalog when you pause typing and fills the Automatic
-  Product or feature field. Enter starts the thread with what the field shows;
+- **Routing**: New work, in BB's New thread view, classifies the draft against
+  the Catalog when you pause typing and fills the Automatic Product or feature
+  field. Enter starts the thread with what the field shows;
   a suggested thread to continue waits for an explicit acceptance (⌘⏎, Send,
   or a click). Identity selection and section placement are independent.
 - **Agent tools**: threads receive question support and recap guidance through

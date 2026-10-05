@@ -3,7 +3,7 @@
  * composer with what it takes to judge a suggestion: the result and its
  * placement, the model's reason, the inputs the model was given, the
  * server's notes on each deterministic step, and the exact prompt and raw
- * response. Copy diagnostics adds the dialog's state and activity log.
+ * response. Copy diagnostics adds New work's state and activity log.
  */
 import {
   useEffect,
@@ -305,7 +305,7 @@ export function NewWorkDebug({ newWork }: { newWork: NewWork }) {
           <button
             type="button"
             onClick={() => void copy()}
-            title="Copies the decision, model call, dialog state and activity as JSON"
+            title="Copies the decision, model call, New work state and activity as JSON"
             className={smallButton}
           >
             <Icon

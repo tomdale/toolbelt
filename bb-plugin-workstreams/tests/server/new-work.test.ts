@@ -1,7 +1,7 @@
 /**
  * New work's server side: a suggestion names one likely home (possibly a new
  * workstream) and keeps nothing to execute; accepting or ignoring it goes
- * through `startThread`, `sendToThread` and `createWorkstream`.
+ * through `sendToThread`.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
@@ -250,52 +250,6 @@ describe("Debug mode", () => {
     expect(await suggest(w, "Tidy up the parser")).not.toHaveProperty(
       "explanation",
     );
-  });
-});
-
-describe("startThread", () => {
-  const execution = {
-    projectId: "proj_1",
-    environment: {
-      type: "host",
-      hostId: "host_1",
-      workspace: { type: "unmanaged", path: null },
-    },
-    providerId: "codex",
-    model: "gpt-5",
-    reasoningLevel: "medium",
-    permissionMode: "auto",
-    executionInputSources: {},
-    input: [{ type: "text", text: "Fix the parser", mentions: [] }],
-  };
-
-  it("spawns the composer's request with identity and no destination section", async () => {
-    const { w } = await setup({});
-    const result = (await w.harness.behavior.callRpc("startThread", {
-      identity: {
-        entityId: null,
-        proposal: { name: "Parser", description: "Parser feature" },
-        provenance: "manual",
-      },
-      execution: { ...execution, unexpected: "dropped" },
-    })) as { threadId: string; sectionId: string | null };
-    expect(result).toEqual({ threadId: "spawn1", sectionId: null });
-    expect(w.spawned[0]).toMatchObject({
-      ...execution,
-      sectionId: null,
-    });
-    expect(w.spawned[0]).not.toHaveProperty("unexpected");
-  });
-
-  it("refuses an unknown subject identity", async () => {
-    const { w } = await setup({});
-    await expect(
-      w.harness.behavior.callRpc("startThread", {
-        identity: { entityId: "ent_nonexistent", provenance: "manual" },
-        execution,
-      }),
-    ).rejects.toThrow(/Unknown subject identity/);
-    expect(w.spawned).toHaveLength(0);
   });
 });
 

@@ -109,7 +109,6 @@ async function mount(
     "route",
     "routeCancel",
     "sendToThread",
-    "startThread",
   ];
   const rpc = Object.fromEntries(
     methods.map((method) => [

@@ -118,21 +118,6 @@ export type RouteSource = "router" | "handoff";
 
 const MEMORY_MS = 15 * 60_000;
 
-/** The `NewThreadRequest` fields `start` forwards to `threads.spawn`. */
-const START_FIELDS = [
-  "projectId",
-  "environment",
-  "input",
-  "prompt",
-  "providerId",
-  "model",
-  "reasoningLevel",
-  "permissionMode",
-  "serviceTier",
-  "executionInputSources",
-  "sendAt",
-] as const satisfies readonly (keyof SpawnArgs)[];
-
 const hash = (text: string) =>
   createHash("sha256").update(text.trim()).digest("hex");
 
@@ -1164,60 +1149,6 @@ export class Router {
         : []),
     );
     return { threadId: thread.id, sectionId: actualSectionId };
-  }
-
-  /**
-   * Starts New work's thread with the composer's resolved request and
-   * product/feature identity; section navigation is derived automatically.
-   */
-  async start(options: {
-    identity?: {
-      entityId?: string | null;
-      proposal?: DraftSubjectProposal | null;
-      provenance?: "manual" | "automatic";
-    } | null;
-    execution: SpawnArgs & { projectId: string; environment: Environment };
-  }): Promise<{ threadId: string; sectionId: string | null }> {
-    const identity = options.identity ?? null;
-    const execution = options.execution;
-
-    if (identity?.entityId && !this.deps.corpus?.getById(identity.entityId))
-      throw new UserError("Unknown subject identity.");
-
-    // Only fields BB's new-thread request defines reach spawn.
-    const fields = Object.fromEntries(
-      START_FIELDS.filter((key) => execution[key] !== undefined).map((key) => [
-        key,
-        execution[key],
-      ]),
-    ) as unknown as SpawnArgs;
-
-    const thread = await this.spawnFiled(fields, null, "user");
-    this.deps.service.seeThread(
-      thread.id,
-      null,
-      null,
-      thread.title ?? undefined,
-    );
-
-    if (identity?.proposal) {
-      const entity = this.deps.corpus!.rememberProposal(identity.proposal);
-      this.deps.corpus!.assign(thread.id, entity.id, {
-        provenance: identity.provenance ?? "automatic",
-      });
-    } else if (identity?.entityId) {
-      this.deps.corpus!.assign(thread.id, identity.entityId, {
-        provenance: identity.provenance ?? "manual",
-      });
-    } else if (identity?.provenance === "manual") {
-      this.deps.corpus!.clear(thread.id);
-    }
-
-    this.deps.service.recordCreated(thread.id, null, "user", {
-      title: thread.title || "New thread",
-      rationale: "Started from New work",
-    });
-    return { threadId: thread.id, sectionId: null };
   }
 
   /**

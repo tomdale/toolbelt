@@ -55,7 +55,6 @@ import { NameDialog, type NameRequest } from "./NameDialog.tsx";
 import { Row, hasStatusMark } from "./Row.tsx";
 import { RowMenu, type RowMenuHandlers } from "./RowMenu.tsx";
 import { GroupMenu } from "./GroupMenu.tsx";
-import { NewWorkDialog } from "../composer/NewWork.tsx";
 import { TraceInspector } from "../debug/Inspector.tsx";
 import {
   DropTarget,
@@ -194,7 +193,6 @@ export function WorkstreamsThreadList({
       [section]: { ...current[section], ...change },
     }));
   const [nameRequest, setNameRequest] = useState<NameRequest | null>(null);
-  const [newWork, setNewWork] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAllNeeds, setShowAllNeeds] = useState(false);
   const [showLower, setShowLower] = useState(false);
@@ -715,7 +713,7 @@ export function WorkstreamsThreadList({
     toggle: () =>
       group.prioritized ? toggle(group.id) : lowerToggle(group.id),
     onTogglePriority: () => togglePriority(group),
-    onNewThread: () => setNewWork(true),
+    onNewThread: () => navigate.toCompose({ focusPrompt: true }),
   });
   /** An item that opens and closes with its presence phase. */
   const present = (entry: PresenceEntry<unknown>, children: ReactNode) => (
@@ -842,7 +840,7 @@ export function WorkstreamsThreadList({
         <div className="mx-2 flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setNewWork(true)}
+            onClick={() => navigate.toCompose({ focusPrompt: true })}
             className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-[13px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
           >
             <span aria-hidden="true">＋</span> New work…
@@ -854,10 +852,6 @@ export function WorkstreamsThreadList({
             }
           />
         </div>
-        <NewWorkDialog
-          open={newWork}
-          onClose={() => setNewWork(false)}
-        />
         {error ? (
           <p
             role="alert"

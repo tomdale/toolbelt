@@ -1,15 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  ComposerSelection,
-  NewThreadRequest,
-  PluginComposerApi,
-} from "@get-bb/plugin-sdk/app";
 import {
   NewWork,
   identityDisplay,
   shownSuggestion,
   suggestionFrom,
-  type IdentityChoice,
   type NewWorkDeps,
 } from "../../src/app/composer/new-work.ts";
 import type { RouteDecision } from "../../src/server/router.ts";
@@ -56,38 +50,14 @@ const continueThread: RouteDecision = {
   sectionId: "sec_a",
 };
 
-const request = (text: string): NewThreadRequest => ({
-  projectId: "proj_a",
-  providerId: "codex",
-  model: "gpt-5",
-  reasoningLevel: "medium",
-  permissionMode: "auto",
-  executionInputSources: {},
-  environment: { type: "project-default" },
-  input: [{ type: "text", text, mentions: [] }],
-});
-
-function setup(
-  route: (prompt: string) => Promise<RouteDecision>,
-  initialIdentity: IdentityChoice = null,
-) {
+function setup(route: (prompt: string) => Promise<RouteDecision>) {
   const deps = {
     route: vi.fn(route),
     cancelRoute: vi.fn(),
-    startThread: vi.fn(async () => ({ threadId: "thr_new" })),
-    sendToThread: vi.fn(async () => {}),
+    sendDraftToThread: vi.fn(async () => {}),
   } satisfies NewWorkDeps;
-  const newWork = new NewWork(deps, initialIdentity);
-  const composer = {
-    selection: null as ComposerSelection | null,
-    submit: vi.fn(async () => {
-      await newWork.submit(request(newWork.snapshot().text));
-    }),
-    setSelection: vi.fn(async (selection: ComposerSelection) => selection),
-    focus: vi.fn(),
-  };
-  newWork.attach(composer as unknown as PluginComposerApi);
-  return { deps, newWork, composer };
+  const newWork = new NewWork(deps);
+  return { deps, newWork };
 }
 
 beforeEach(() => vi.useFakeTimers());
@@ -221,51 +191,29 @@ describe("NewWork model: manual identity selection and manual unresolved", () =>
   });
 });
 
-describe("NewWork model: submission contract", () => {
-  it("submits new thread with identity and no destination section", async () => {
-    const { deps, newWork } = setup(async () => withFeature);
-    newWork.observe("Fix billing invoices immediately");
-    await vi.advanceTimersByTimeAsync(SHORT_PAUSE_MS);
-
-    const req = request("Fix billing invoices immediately");
-    const result = await newWork.submit(req);
-
-    expect(result).toEqual({ kind: "started", threadId: "thr_new" });
-    expect(deps.startThread).toHaveBeenCalledWith(req, {
-      identity: {
-        entityId: "ent_billing",
-        proposal: null,
-        provenance: "automatic",
-      },
-    });
-  });
-
-  it("submits manual unresolved with null identity payload", async () => {
-    const { deps, newWork } = setup(async () => withFeature);
-    newWork.selectIdentity(null);
-
-    const req = request("Vague task");
-    await newWork.submit(req);
-
-    expect(deps.startThread).toHaveBeenCalledWith(req, {
-      identity: {
-        entityId: null,
-        proposal: null,
-        provenance: "manual",
-      },
-    });
-  });
-
-  it("sends to existing thread when continuation suggestion is accepted", async () => {
-    const { deps, newWork, composer } = setup(async () => continueThread);
+describe("NewWork model: Send to", () => {
+  it("sends the draft to the suggested thread once", async () => {
+    const { deps, newWork } = setup(async () => continueThread);
     newWork.observe("Carry on with this work");
     await vi.advanceTimersByTimeAsync(SHORT_PAUSE_MS);
 
-    await newWork.accept({ submit: true });
+    await newWork.accept();
 
-    expect(composer.submit).toHaveBeenCalled();
-    expect(deps.sendToThread).toHaveBeenCalledWith("thr_p", [
-      { type: "text", text: "Carry on with this work", mentions: [] },
-    ], "trace_1");
+    expect(deps.sendDraftToThread).toHaveBeenCalledWith("thr_p", "trace_1");
+    expect(shownSuggestion(newWork.snapshot())).toBeNull();
+    await newWork.accept();
+    expect(deps.sendDraftToThread).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the suggestion and reports a failed send", async () => {
+    const { deps, newWork } = setup(async () => continueThread);
+    deps.sendDraftToThread.mockRejectedValueOnce(new Error("send failed"));
+    newWork.observe("Carry on with this work");
+    await vi.advanceTimersByTimeAsync(SHORT_PAUSE_MS);
+
+    await newWork.accept();
+
+    expect(newWork.snapshot().error).toBe("send failed");
+    expect(shownSuggestion(newWork.snapshot())).not.toBeNull();
   });
 });

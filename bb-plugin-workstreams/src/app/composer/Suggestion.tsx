@@ -140,18 +140,15 @@ export function describeSuggestion(
 export function SuggestionRow({ newWork }: { newWork: NewWork }) {
   const state = useSyncExternalStore(newWork.subscribe, newWork.snapshot);
   const suggestion = shownSuggestion(state);
-  const autoDestination = false;
   const projects = useProjects();
   const row = useRef<HTMLDivElement>(null);
   const applies = false;
   useEffect(() => {
-    if (!suggestion && !autoDestination) return;
-    // The keys act only from this row's own composer: the New work dialog,
-    // or the New thread view's primary composer.
+    if (!suggestion) return;
+    // The keys act only from this row's own composer, the New thread view's
+    // primary composer.
     const inComposer = (target: EventTarget | null) => {
-      const scope =
-        row.current?.closest('[role="dialog"]') ??
-        row.current?.closest('[data-app-composer-role="primary"]');
+      const scope = row.current?.closest('[data-app-composer-role="primary"]');
       return !!scope && target instanceof Node && scope.contains(target);
     };
     // Capturing runs before the editor's own ⌘⏎ handling, which would start
@@ -160,15 +157,14 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
       if (!isSubmitShortcut(event) || !inComposer(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
-      if (suggestion) void newWork.accept({ submit: true });
-      else void newWork.submitComposer();
+      void newWork.accept();
     };
     // Bubbling runs after the editor, which claims Tab for its own menus.
     const onApplyKey = (event: KeyboardEvent) => {
       if (!applies || !isApplyShortcut(event) || event.defaultPrevented) return;
       if (!inEditor(event.target) || !inComposer(event.target)) return;
       event.preventDefault();
-      void newWork.accept({ submit: false });
+      void newWork.accept();
     };
     document.addEventListener("keydown", onSubmitKey, true);
     document.addEventListener("keydown", onApplyKey);
@@ -176,7 +172,7 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
       document.removeEventListener("keydown", onSubmitKey, true);
       document.removeEventListener("keydown", onApplyKey);
     };
-  }, [newWork, suggestion, applies, autoDestination]);
+  }, [newWork, suggestion, applies]);
   const mac = macKeyboard();
   const submitKey = mac ? "⌘⏎" : "Ctrl ⏎";
   const submitLabel = suggestion?.kind === "thread" ? "Send" : "Start";
@@ -206,7 +202,7 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
             aria-label={`${applies ? "Apply" : "Accept"} suggestion: ${sentence}`}
             aria-busy={state.accepting || undefined}
             disabled={state.accepting}
-            onClick={() => void newWork.accept({ submit: !applies })}
+            onClick={() => void newWork.accept()}
           >
             <span className="ws-suggestion-spark" aria-hidden>
               ✦
@@ -236,7 +232,7 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
                 aria-keyshortcuts="Tab"
                 title="Fill the pickers without starting (Tab)"
                 disabled={state.accepting}
-                onClick={() => void newWork.accept({ submit: false })}
+                onClick={() => void newWork.accept()}
               >
                 <kbd className="ws-suggestion-kbd">Tab</kbd>
                 Apply
@@ -253,7 +249,7 @@ export function SuggestionRow({ newWork }: { newWork: NewWork }) {
               aria-keyshortcuts={mac ? "Meta+Enter" : "Control+Enter"}
               title={`${applies ? "Apply and start" : "Send there"} (${submitKey})`}
               disabled={state.accepting}
-              onClick={() => void newWork.accept({ submit: true })}
+              onClick={() => void newWork.accept()}
             >
               <kbd className="ws-suggestion-kbd">{submitKey}</kbd>
               {submitLabel}

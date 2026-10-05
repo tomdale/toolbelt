@@ -22,7 +22,6 @@ import { NewWorkDebug } from "./NewWorkDebug.tsx";
 import { createPortal } from "react-dom";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { useHostPickerRow } from "./host-picker-row.ts";
-import { NewWorkBridge } from "./NewWorkBridge.tsx";
 import { SuggestionRow } from "./Suggestion.tsx";
 import { WorkstreamPicker } from "./WorkstreamPicker.tsx";
 
@@ -108,7 +107,7 @@ export function NewThreadRouting() {
     const draftKey = composer.key;
     const nativeModel = new NewWorkModel(
       {
-        route: async (prompt, _workstreamId, pickedProjectId) =>
+        route: async (prompt, pickedProjectId) =>
           (await rpc.call("route", {
             prompt,
             pickedProjectId,
@@ -119,16 +118,6 @@ export function NewThreadRouting() {
           })) as RouteDecision,
         cancelRoute: () => {
           void rpc.call("routeCancel", { draftKey }).catch(() => {});
-        },
-        startThread: () => {
-          throw new Error("The host new-thread composer submits this draft.");
-        },
-        sendToThread: async (threadId, input, traceId) => {
-          await rpc.call("sendToThread", {
-            threadId,
-            input: JSON.parse(JSON.stringify(input)) as unknown[],
-            traceId,
-          });
         },
         sendDraftToThread: async (threadId, traceId) => {
           const current = composerRef.current;
@@ -159,10 +148,7 @@ export function NewThreadRouting() {
           navigate.toThread(threadId);
         },
       },
-      null,
-      true,
     );
-    nativeModel.attach(composer);
     nativeModel.observe(composer.text);
     nativeModel.observeSelection(composer.selection);
     setModel(nativeModel);
@@ -281,7 +267,6 @@ export function NewThreadRouting() {
     <div ref={setRoot}>
       {model ? (
         <NewWorkContext.Provider value={model}>
-          <NewWorkBridge />
           <div className="ws-native-new-thread-routing">
             {pickerRow ? (
               createPortal(picker, pickerRow)

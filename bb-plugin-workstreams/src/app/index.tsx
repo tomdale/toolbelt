@@ -16,7 +16,6 @@ import { ASK_USER_QUESTION_RENDERER_ID } from "../server/questions/contracts.ts"
 import { QuestionHistoryInline } from "./question/QuestionHistory.tsx";
 import { DeliveredQuestionCards } from "./question/DeliveredQuestion.tsx";
 import { NewThreadRouting } from "./composer/NewThreadRouting.tsx";
-import { NewWorkBridge } from "./composer/NewWorkBridge.tsx";
 import { HomeSection } from "./home/HomeSection.tsx";
 import { WorkstreamsPage } from "./page/Page.tsx";
 import {
@@ -77,10 +76,7 @@ export default definePluginApp((app) => {
   app.composer.customize({
     id: "new-work",
     scopes: ["new-thread"],
-    banners: [
-      { id: "routing", chrome: "bare", component: NewThreadRouting },
-      { id: "bridge", chrome: "bare", component: NewWorkBridge },
-    ],
+    banners: [{ id: "routing", chrome: "bare", component: NewThreadRouting }],
   });
   // On phones BB's new-thread view lists recent threads under its composer;
   // this section takes that list's place (src/app/home).

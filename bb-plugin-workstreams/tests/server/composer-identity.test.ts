@@ -15,20 +15,35 @@ afterEach(async () => {
   world = null;
 });
 
-const defaultExecution = {
-  projectId: "proj_1",
-  environment: {
-    type: "host" as const,
-    hostId: "host_1",
-    workspace: { type: "unmanaged" as const, path: null },
+/**
+ * Starts a thread from the New thread view the way BB does: the thread
+ * exists, then its first message reaches the dispatch hook with the banner's
+ * submit data.
+ */
+let composedCount = 0;
+async function compose(
+  w: World,
+  identity: {
+    entityId?: string | null;
+    proposal?: { name: string; description: string } | null;
+    provenance: "manual" | "automatic";
   },
-  providerId: "codex",
-  model: "gpt-5",
-  reasoningLevel: "medium",
-  permissionMode: "auto",
-  executionInputSources: {},
-  input: [{ type: "text" as const, text: "Do task", mentions: [] }],
-};
+): Promise<{ threadId: string }> {
+  const thread = w.addThread(`t-new-${++composedCount}`, {
+    createdAt: Date.now(),
+  });
+  await w.harness.registrations.hooks["message.dispatch"]!(
+    makeMessageDispatchHookContext({
+      thread,
+      input: { text: "Do task" },
+      parentThreadId: null,
+      origin: "app",
+      experimental_submission: { pluginId: "workstreams", data: { identity } },
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  return { threadId: thread.id };
+}
 
 describe("Phase 2 Composer Identity & Navigation Separation", () => {
   it("abandon inactive identity draft -> zero mutations", async () => {
@@ -81,16 +96,10 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
     );
 
     // Submit thread with specific identity "Shelves"
-    const { threadId } = (await w.harness.behavior.callRpc(
-      "startThread",
-      {
-        identity: {
+    const { threadId } = await compose(w, {
           entityId: shelves.id,
           provenance: "manual",
-        },
-        execution: defaultExecution,
-      },
-    )) as { threadId: string; sectionId: string | null };
+        });
 
     const { assignment } = (await w.harness.behavior.callRpc("taskAssignment", {
       threadId,
@@ -110,18 +119,11 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
 
     const feature = corpus.remember("Feature Alpha", "Alpha feature");
 
-    const { threadId: t1, sectionId: s1 } = (await w.harness.behavior.callRpc(
-      "startThread",
-      {
-        identity: {
+    const { threadId: t1 } = await compose(w, {
           entityId: feature.id,
           provenance: "manual",
-        },
-        execution: defaultExecution,
-      },
-    )) as { threadId: string; sectionId: string | null };
+        });
 
-    expect(s1).toBeNull();
     const a1 = (await w.harness.behavior.callRpc("taskAssignment", {
       threadId: t1,
     })) as { assignment: CanonicalAssignment };
@@ -137,14 +139,10 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
 
     const feature = corpus.remember("Manual Feature", "Explicitly selected");
 
-    const { threadId } = (await w.harness.behavior.callRpc("startThread", {
-      sectionId: null,
-      identity: {
+    const { threadId } = await compose(w, {
         entityId: feature.id,
         provenance: "manual",
-      },
-      execution: defaultExecution,
-    })) as { threadId: string };
+      });
 
     const { assignment } = (await w.harness.behavior.callRpc("taskAssignment", {
       threadId,
@@ -166,14 +164,10 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
 
     const feature = corpus.remember("Auto Feature", "Classified feature");
 
-    const { threadId } = (await w.harness.behavior.callRpc("startThread", {
-      sectionId: null,
-      identity: {
+    const { threadId } = await compose(w, {
         entityId: feature.id,
         provenance: "automatic",
-      },
-      execution: defaultExecution,
-    })) as { threadId: string };
+      });
 
     const { assignment } = (await w.harness.behavior.callRpc("taskAssignment", {
       threadId,
@@ -278,44 +272,6 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
     expect(assignment.status).toBe("assigned");
     expect(assignment.entityId).toBe(created!.id);
     expect(assignment.provenance).toBe("automatic");
-  });
-
-  it("failed spawn leaves no unintended Catalog or groups", async () => {
-    world = await fakeWorld({
-      spawn: async () => {
-        throw new Error("Simulated spawn failure: VM out of memory");
-      },
-    });
-    const w = world;
-    const db = openDatabase(w.bb);
-    const corpus = new CorpusStore(db);
-
-    const initialEntities = corpus.list();
-    const initialSections = [...w.sections];
-    const initialGroups = new Map(corpus.groups());
-
-    await expect(
-      w.harness.behavior.callRpc("startThread", {
-        sectionId: null,
-        newWorkstream: {
-          name: "Doomed Section",
-          description: "Should not persist",
-        },
-        identity: {
-          proposal: {
-            name: "Doomed Feature",
-            description: "Should not persist",
-          },
-          provenance: "automatic",
-        },
-        execution: defaultExecution,
-      }),
-    ).rejects.toThrow(/Simulated spawn failure/);
-
-    // Verify zero unintended mutations in Catalog, sections, and groups
-    expect(corpus.list()).toEqual(initialEntities);
-    expect(w.sections).toEqual(initialSections);
-    expect(corpus.groups()).toEqual(initialGroups);
   });
 
   it("search matches ancestry and aliases", () => {
@@ -731,20 +687,17 @@ describe("Phase 2 Composer Identity & Navigation Separation", () => {
     expect(assignment.entityId).toBeNull();
   });
 
-  it("startThread with manual unresolved leaves thread unresolved", async () => {
+  it("manual unresolved from New thread leaves thread unresolved", async () => {
     world = await fakeWorld();
     const w = world;
     const db = openDatabase(w.bb);
     const corpus = new CorpusStore(db);
 
-    const { threadId } = (await w.harness.behavior.callRpc("startThread", {
-      identity: {
+    const { threadId } = await compose(w, {
         entityId: null,
         proposal: null,
         provenance: "manual",
-      },
-      execution: defaultExecution,
-    })) as { threadId: string };
+      });
 
     const assignment = corpus.assignment(threadId);
     expect(assignment.status).toBe("unresolved");

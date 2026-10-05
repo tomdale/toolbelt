@@ -1,7 +1,6 @@
 /**
- * Finds a place for New work's workstream field in BB's own picker row,
- * before the project picker, so the dialog reads like BB's New thread view
- * with one more field.
+ * Finds a place for New work's Product or feature field in BB's own picker
+ * row, before the project picker, so it reads as one more of BB's fields.
  *
  * BB offers plugins no slot in that row. This keeps one anchor element of
  * ours at the start of the row's left group, located by BB's

@@ -877,7 +877,6 @@
  * suggestion itself, because the Workstream field can render inside BB's own
  * picker row, outside any plugin wrapper.
  */
-.ws-new-work,
 .ws-native-new-thread-routing,
 .ws-suggestion,
 [data-ws-workstream-slot],

@@ -218,17 +218,16 @@ thread owns the task and treats the dispatch instruction as fulfilled.
 
 One router serves three entry points. BB's native New thread composer remains
 host-owned; Workstreams adds a Product or feature field to it and a
-suggestion row, and New work behaves the same on both of its surfaces.
+suggestion row.
 
-1. **New work**, on BB's native New thread view and in Workstreams' ＋ New
-   work dialog (page and sidebar). Both are BB's own new-thread composer — the
-   dialog embeds it through `experimental_NewThreadComposer`, and the New
-   thread view gets the field from the plugin's `NewThreadRouting` composer
-   banner, which stays inert in any other composer and inside any dialog, so
-   the two never double up. Both surfaces build the same `NewWork` model and
-   render the same field (`WorkstreamPicker.tsx`, `picker-options.tsx`),
-   suggestion row (`Suggestion.tsx`) and, in Debug mode, Debug section
-   (`NewWorkDebug.tsx`).
+1. **New work**, in BB's native New thread view. Workstreams' ＋ New work
+   buttons (the sidebar's, each workstream's, and the page header's) open
+   that view with its prompt focused (`navigate.toCompose`). The view gets
+   the field from the plugin's `NewThreadRouting` composer banner, which
+   stays inert in any other composer and inside any dialog. The banner builds
+   the `NewWork` model and renders the field (`WorkstreamPicker.tsx`,
+   `picker-options.tsx`), the suggestion row (`Suggestion.tsx`) and, in Debug
+   mode, the Debug section (`NewWorkDebug.tsx`).
    - **Product or feature.** The field identifies the Catalog entity the work
      concerns, independently of navigation: New work never asks for a
      destination workstream, and the coordinator derives section placement
@@ -242,8 +241,6 @@ suggestion row, and New work behaves the same on both of its surfaces.
      an automatic value and keeps a manual one.
    - **Starting the thread.** ⏎ starts the thread with the identity the field
      shows (provenance `manual` or `automatic`; Unresolved is a manual clear).
-     The dialog starts it through `startThread`, which spawns it, files the
-     identity, and journals "Started from New work". On the New thread view
      BB creates the thread, and the message dispatch hook files the identity
      on its first message and journals "Started from New thread" once per
      thread. The banner attaches the identity as submit data when it sees the
@@ -252,14 +249,13 @@ suggestion row, and New work behaves the same on both of its surfaces.
      identity (`draftIdentity`), and the hook files a first message whose
      text matches a reported draft, in either order of arrival
      (`ComposedDrafts`). A draft naming an entity merged or deleted since is
-     refused by `startThread`, and left for automatic classification on the
-     New thread view, whose thread already exists.
+     left for automatic classification, because its thread already exists.
    - **Send to.** A continue decision changes nothing until accepted, because
      sending to a thread cannot be undone: it shows in the suggestion row as Send to
      with the thread and its workstream, and ⌘⏎ (Ctrl+⏎ elsewhere) from inside
      that composer, its Send button, or a click queues the draft there and
-     opens the thread. On the New thread view attachments are copied to the
-     target thread's project first. A dismissed suggestion stays hidden. A
+     opens the thread. Attachments are copied to the target thread's project
+     first. A dismissed suggestion stays hidden. A
      failed send keeps the draft and shows its error once under the row.
    - **Placement.** BB gives plugins no slot in its picker row, so the field
      keeps one anchor element at the row's start and falls back to its own row
@@ -267,11 +263,11 @@ suggestion row, and New work behaves the same on both of its surfaces.
      first: its label ellipsizes down to an icon-wide floor. On a phone (BB's
      compact viewport, `max-width: 767px`) BB's row is full, so the field
      takes a line of its own above the prompt box. The New thread view's
-     banner slot sits above the prompt box, so there the suggestion row and
-     Debug section sit above it too; the dialog puts them below.
-   - **Feedback.** The New thread view also announces "Classifying…" beside
-     the field while a classification runs; both surfaces pulse the
-     suggestion's ✦ while newer text is classified.
+     banner slot sits above the prompt box, so the suggestion row and Debug
+     section sit above it too.
+   - **Feedback.** The banner announces "Classifying…" beside the field while
+     a classification runs, and pulses the suggestion's ✦ while newer text is
+     classified.
    - Product and feature marks use a tag icon declared in the manifest (BB's
      icon set has none, and an unknown name draws a lightning bolt).
 2. **`bb workstreams handoff`**, called by agents (§5).
@@ -375,7 +371,7 @@ without another model call. See
 
 | Change                                                                      | Signal                                                                            | Reaction                                                                                                                                     |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Thread created through New work (dialog or New thread view)                 | `startThread` RPC, or `message.dispatch` on its first message                     | Identity filed as the field showed (§6), journaled as started; the coordinator derives its section                                           |
+| Thread created through New work (BB's New thread view)                      | `message.dispatch` on its first message                                           | Identity filed as the field showed (§6), journaled as started; the coordinator derives its section                                           |
 | Thread created through `bb workstreams new` or a handoff                    | RPC or CLI call                                                                   | Placed by the router (provenance `router` or `handoff`)                                                                                      |
 | Child created by any source                                                 | `thread.created`                                                                  | No structural change. Analyze it on its first idle.                                                                                          |
 | Top-level thread created elsewhere (CLI, automations, other plugins)        | `thread.created`, then the first `thread.idle`                                    | Respect its existing section; otherwise leave it Unfiled.                                                                                    |
@@ -690,8 +686,8 @@ it.
      opens a side pane with those calls: the thread header, Activity entries,
      the organizing review, generated descriptions, Overview rows, and the
      sidebar row menu.
-   - New work instead adds a collapsed Debug section to the composer, on both
-     of its surfaces (§6). Its
+   - New work instead adds a collapsed Debug section to the New thread
+     composer (§6). Its
      summary names the decision and whether the suggestion shows. Open, it shows
      the result (outcome, confidence, project and environment, the reason), the
      inputs the model was given (the request, the selected workstream, the
@@ -700,8 +696,8 @@ it.
      mention short-circuit, the model's raw answer, each rewrite such as an
      unsure answer becoming its first candidate, and where the placement came
      from), and, collapsed, the exact prompt and raw response. Copy diagnostics
-     copies that with the dialog's state and its log of classifications,
-     acceptances, workstream choices and submits as JSON. The Activity log lists
+     copies that with New work's state and its log of classifications,
+     acceptances and identity choices as JSON. The Activity log lists
      each call in place among the changes, with a one-line summary of what the
      model decided (or why it failed) and a "Model calls" filter. Debug-only
      Activity controls filter calls by kind and failures, show the count and

@@ -117,10 +117,6 @@ function mount(
   const Component = options.component ?? RootComposer;
   const route = vi.fn(async () => decision);
   const routeCancel = vi.fn(async () => ({ canceled: true }));
-  const startThread = vi.fn(async () => ({
-    threadId: "thread-started",
-    sectionId: null,
-  }));
   const sendToThread = vi.fn(async () => {
     if (options.sendFails) throw new Error("send failed");
     return { threadId: "thread-parser" };
@@ -188,14 +184,13 @@ function mount(
         }),
         route,
         routeCancel,
-        startThread,
         sendToThread,
         draftIdentity,
       },
     },
   );
 
-  return { slot, route, startThread, sendToThread, draftIdentity };
+  return { slot, route, sendToThread, draftIdentity };
 }
 
 async function typePrompt(
@@ -206,7 +201,7 @@ async function typePrompt(
 }
 
 it("fills the field with the classified identity and submits it through host submit metadata", async () => {
-  const { slot, route, startThread } = mount(identityDecision);
+  const { slot, route } = mount(identityDecision);
   await typePrompt(slot, "Fix the parser in Alpha");
   const field = await screen.findByRole("button", {
     name: "Product or feature: Alpha",
@@ -224,7 +219,6 @@ it("fills the field with the classified identity and submits it through host sub
       },
     },
   });
-  expect(startThread).not.toHaveBeenCalled();
 });
 
 it("places the Product or feature picker in the host picker row", async () => {
@@ -246,7 +240,7 @@ it("leaves an unsure classification out of the host submit metadata", async () =
     subject: null,
     subjectId: null,
   };
-  const { slot, route, startThread } = mount(unsure);
+  const { slot, route } = mount(unsure);
   await typePrompt(slot, "Something vague");
   await waitFor(() => expect(route).toHaveBeenCalledTimes(1));
   expect(
@@ -257,7 +251,6 @@ it("leaves an unsure classification out of the host submit metadata", async () =
   expect(slot.inspection.composer.submits[0]).toEqual({
     experimental_data: null,
   });
-  expect(startThread).not.toHaveBeenCalled();
 });
 
 it("submits manual null identity when selecting Unresolved", async () => {
@@ -312,7 +305,7 @@ it("submits proposal identity when proposing a new feature", async () => {
 });
 
 it("sends an accepted continuation once without starting another thread", async () => {
-  const { slot, route, sendToThread, startThread } =
+  const { slot, route, sendToThread } =
     mount(continuationDecision);
   await typePrompt(slot, "Also handle CRLF");
   fireEvent.click(
@@ -326,7 +319,6 @@ it("sends an accepted continuation once without starting another thread", async 
     input: [{ type: "text", text: "Also handle CRLF", mentions: [] }],
     traceId: "trace-continuation",
   });
-  expect(startThread).not.toHaveBeenCalled();
   expect(slot.inspection.composer.submits).toHaveLength(0);
   expect(route).toHaveBeenCalledTimes(1);
 });
@@ -386,7 +378,7 @@ it("reports the draft's identity so a plain Enter can be filed", async () => {
 });
 
 it("sends to the suggested thread on ⌘⏎, as in New work", async () => {
-  const { slot, sendToThread, startThread } = mount(continuationDecision);
+  const { slot, sendToThread } = mount(continuationDecision);
   await typePrompt(slot, "Also handle CRLF");
   await screen.findByRole("button", {
     name: /Accept suggestion: Send to Parser fix/,
@@ -400,7 +392,6 @@ it("sends to the suggested thread on ⌘⏎, as in New work", async () => {
   expect((sendToThread.mock.calls as any)[0]?.[0]).toMatchObject({
     threadId: "thread-parser",
   });
-  expect(startThread).not.toHaveBeenCalled();
   expect(slot.inspection.composer.submits).toHaveLength(0);
 });
 

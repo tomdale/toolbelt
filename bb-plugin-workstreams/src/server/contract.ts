@@ -398,7 +398,7 @@ export const rpcContract = defineRpcContract({
       /**
        * New work's suggestion: return the single most likely home, which may
        * be a new workstream, and keep nothing to execute later. Accepting it
-       * goes through `startThread`, `sendToThread` and `createWorkstream`.
+       * goes through `sendToThread`.
        */
       suggest: z.boolean().optional(),
       /** Keep this preview available for the native composer dispatch hook. */
@@ -452,25 +452,6 @@ export const rpcContract = defineRpcContract({
     }),
     output: z.object({
       threadId: z.string().nullable(),
-      sectionId: z.string().nullable(),
-    }),
-  },
-  /**
-   * Starts New work's thread with the composer's resolved request and
-   * product/feature identity; section navigation is derived automatically.
-   */
-  startThread: {
-    input: z.object({
-      identity: taskIdentitySubmissionSchema.nullable().optional(),
-      execution: z
-        .object({
-          projectId: z.string().min(1),
-          environment: environmentSchema,
-        })
-        .catchall(z.unknown()),
-    }),
-    output: z.object({
-      threadId: z.string(),
       sectionId: z.string().nullable(),
     }),
   },

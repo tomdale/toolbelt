@@ -23,7 +23,6 @@ import { useWorkstreams, type WorkView } from "../useWorkstreams.ts";
 import { Activity } from "./Activity.tsx";
 import { MapTab } from "./MapTab.tsx";
 import { Catalog } from "./Catalog.tsx";
-import { NewWorkDialog } from "../composer/NewWork.tsx";
 import { InspectButton } from "../debug/InspectButton.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
 import { WorkstreamIcon } from "../WorkstreamIcon.tsx";
@@ -64,7 +63,6 @@ export function WorkstreamsPage({
   const linked = tabOf(subPath);
   const [tab, setTab] = useState<Tab>(linked.tab);
   const tabs: Tab[] = ["overview", "topics", "map", "activity"];
-  const [newWork, setNewWork] = useState(false);
   useLayoutEffect(() => setTab(tabOf(subPath).tab), [subPath]);
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
@@ -139,12 +137,11 @@ export function WorkstreamsPage({
           <span className="flex-1" />
           <button
             type="button"
-            onClick={() => setNewWork(true)}
+            onClick={() => navigate.toCompose({ focusPrompt: true })}
             className={primaryButton}
           >
             New work…
           </button>
-          <NewWorkDialog open={newWork} onClose={() => setNewWork(false)} />
         </header>
         {tab === "overview" ? (
           <div className="mt-6">

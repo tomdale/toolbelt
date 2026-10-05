@@ -13,7 +13,7 @@ import { RecapArchive } from "./archive.ts";
 import { Coordinator } from "./coordinator.ts";
 import { sectionMembers } from "./cleanup.ts";
 import { WorkstreamMap } from "./map.ts";
-import { Router, type RouteDecision, type Environment } from "./router.ts";
+import { Router, type RouteDecision } from "./router.ts";
 import { CorpusStore, classificationEvidence } from "./corpus.ts";
 import { ComposedDrafts, type ComposedIdentity } from "./composed-drafts.ts";
 import { corpusLabel } from "../domain/corpus-label.ts";
@@ -49,8 +49,6 @@ import {
 import { runWorker as completeWithWorker } from "./inference/worker.ts";
 
 export { rpcContract } from "./contract.ts";
-
-type SpawnArgs = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
 
 const RECONCILE_EVERY_MS = 60_000;
 const RECONCILE_DEBOUNCE_MS = 1_500;
@@ -302,7 +300,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Enter creates without the banner's submit data.
   const drafts = new ComposedDrafts();
   const journaledStarts = new Set<string>();
-  /** Files a composed thread's identity as New work's `router.start` does. */
+  /** Files a composed thread's identity from the New thread banner. */
   const fileComposedIdentity = (
     threadId: string,
     identity: ComposedIdentity,
@@ -716,18 +714,6 @@ export default async function plugin(bb: BbPluginApi) {
           >["execution"],
           claim,
         });
-      }),
-    startThread: ({ identity, execution }) =>
-      userFacing(async () => {
-        const result = await router.start({
-          identity,
-          execution: execution as unknown as SpawnArgs & {
-            projectId: string;
-            environment: Environment;
-          },
-        });
-        triggerCoordinator(10);
-        return result;
       }),
     draftIdentity: async ({ draftKey, text, identity }) => {
       const started = drafts.report(draftKey, text, identity);

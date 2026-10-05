@@ -498,9 +498,10 @@ describe("thread list", () => {
     const newWork = empty.getByRole("button", { name: "New work in Zeta" });
     expect(newWork.classList.contains("opacity-0")).toBe(false);
     fireEvent.click(newWork);
-    expect(
-      await screen.findByRole("dialog", { name: "New work" }),
-    ).toBeTruthy();
+    // New work happens in BB's own New thread view.
+    expect(slot.inspection.navigateCalls).toEqual([
+      { method: "toCompose", options: { focusPrompt: true } },
+    ]);
     slot.lifecycle.unmount();
   });
 

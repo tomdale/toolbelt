@@ -1,6 +1,28 @@
 import { afterEach, expect, it } from "vitest";
+import { makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import { fakeWorld } from "./fake-bb.ts";
 let world: Awaited<ReturnType<typeof fakeWorld>> | null = null;
+/** Starts a thread from the New thread view with the banner's identity. */
+async function compose(
+  w: NonNullable<typeof world>,
+  identity: Record<string, unknown>,
+): Promise<{ threadId: string }> {
+  const thread = w.addThread("t-composed", { createdAt: Date.now() });
+  await w.harness.registrations.hooks["message.dispatch"]!(
+    makeMessageDispatchHookContext({
+      thread,
+      input: { text: "Composed" },
+      parentThreadId: null,
+      origin: "app",
+      experimental_submission: {
+        pluginId: "workstreams",
+        data: { identity } as never,
+      },
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  return { threadId: thread.id };
+}
 afterEach(async () => {
   await world?.harness.lifecycle.dispose();
   world = null;
@@ -35,20 +57,9 @@ it("keeps draft discoveries tentative and commits ancestry only on submission", 
     ((await world.harness.behavior.callRpc("catalog", null)) as { entities: unknown[] })
       .entities,
   ).toEqual([]);
-  await world.harness.behavior.callRpc("startThread", {
-    sectionId: null,
-    identity: {
+  await compose(world!, {
       proposal: decision.proposal,
-    },
-    execution: {
-      projectId: "proj_1",
-      environment: {
-        type: "host",
-        hostId: "host_1",
-        workspace: { type: "unmanaged", path: null },
-      },
-    },
-  });
+    });
   const result = (await world.harness.behavior.callRpc("catalog", null)) as {
     entities: { name: string }[];
   };
@@ -97,17 +108,7 @@ it("files a discovery under its existing parent when the classifier restates tha
   };
   expect(decision.outcome).toBe("new-workstream");
   expect(decision.name).toBe("Subagents: Workforest");
-  const { threadId } = (await world.harness.behavior.callRpc("startThread", {
-    identity: { proposal: decision.proposal, provenance: "automatic" },
-    execution: {
-      projectId: "proj_1",
-      environment: {
-        type: "host",
-        hostId: "host_1",
-        workspace: { type: "unmanaged", path: null },
-      },
-    },
-  })) as { threadId: string };
+  const { threadId } = await compose(world!, { proposal: decision.proposal, provenance: "automatic" });
   await world.harness.behavior.callRpc("organization", { action: "rebuild" });
   const catalog = (await world.harness.behavior.callRpc("catalog", null)) as {
     entities: {
