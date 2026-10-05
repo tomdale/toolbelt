@@ -35,7 +35,7 @@ const entries: CorpusEntity[] = [
   {
     id: "retained",
     name: "Quiet Feature",
-    description: "Retained without current workstream",
+    description: "Archive tooling",
     parentId: null,
     aliases: ["ArchiveTool"],
   },
@@ -70,105 +70,68 @@ const catalogState: CatalogState = {
 };
 
 describe("Catalog UI & Maintenance", () => {
-  it("shows all known entries, full paths, aliases, and searches inactive features", async () => {
+  it("shows every topic with its path and aliases, and searches them", async () => {
     const call = vi.fn(async (method: string) => {
       if (method === "catalog") return catalogState;
       return {};
     });
 
-    render(
-      <Catalog
-        rpc={{ call } as never}
-        sections={[
-          {
-            id: "sec_1",
-            name: "Lantern Alpha",
-            createdAt: 1,
-            updatedAt: 1,
-          } as never,
-        ]}
-      />,
-    );
+    render(<Catalog rpc={{ call } as never} />);
 
     expect(await screen.findByText("Shelves")).toBeTruthy();
     expect(screen.getByText("Quiet Feature")).toBeTruthy();
-    expect(
-      screen.getAllByText("Retained (no active workstream)").length,
-    ).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Home: Lantern Alpha (derived)")).toBeTruthy();
+    expect(screen.getByText("Lantern › Shelves")).toBeTruthy();
 
     // Filter by alias "Storage"
-    fireEvent.change(screen.getByLabelText("Search products and features"), {
+    fireEvent.change(screen.getByLabelText("Search topics"), {
       target: { value: "Storage" },
     });
     expect(screen.getByText("Shelves").getAttribute("title")).toBe(
-      "Lantern: Shelves",
+      "Lantern › Shelves",
     );
     expect(screen.getByText("Lantern", { selector: "h3" })).toBeTruthy();
     expect(screen.queryByText("Quiet Feature")).toBeNull();
 
     // Filter by alias "ArchiveTool"
-    fireEvent.change(screen.getByLabelText("Search products and features"), {
+    fireEvent.change(screen.getByLabelText("Search topics"), {
       target: { value: "ArchiveTool" },
     });
     expect(screen.getByText("Quiet Feature")).toBeTruthy();
     expect(screen.queryByText("Shelves")).toBeNull();
 
     // Search unmatched
-    fireEvent.change(screen.getByLabelText("Search products and features"), {
+    fireEvent.change(screen.getByLabelText("Search topics"), {
       target: { value: "nonexistent" },
     });
-    expect(
-      screen.getByText("No matching products or features found"),
-    ).toBeTruthy();
+    expect(screen.getByText("No matching topics")).toBeTruthy();
   });
 
-  it("displays read-only counts separated root/child and navigates to related tasks", async () => {
+  it("shows no thread or workstream state", async () => {
     const call = vi.fn(async (method: string) => {
       if (method === "catalog") return catalogState;
       return {};
     });
-    const toThread = vi.fn();
 
-    render(
-      <Catalog
-        rpc={{ call } as never}
-        threads={[
-          { id: "t-root", displayTitle: "Root Task Alpha" } as never,
-          { id: "t-child", displayTitle: "Child Task Beta" } as never,
-        ]}
-        navigate={{ toThread }}
-      />,
-    );
+    const { container } = render(<Catalog rpc={{ call } as never} />);
+    await screen.findByText("Shelves");
 
-    // Separated read-only counts: 1 root, 1 child
-    expect(await screen.findByText("1 root, 1 child")).toBeTruthy();
-
-    // Click to show related tasks
-    const showTasksBtn = screen.getByRole("button", {
-      name: "Show related tasks",
-    });
-    fireEvent.click(showTasksBtn);
-
-    // Verify task list
-    const rootTaskItem = await screen.findByRole("button", {
-      name: "Root Task Alpha",
-    });
-    const childTaskItem = screen.getByRole("button", {
-      name: "Child Task Beta",
-    });
-    expect(screen.getByText("root task")).toBeTruthy();
-    expect(screen.getByText("child (inherited)")).toBeTruthy();
-
-    // Click to navigate
-    fireEvent.click(rootTaskItem);
-    expect(toThread).toHaveBeenCalledWith("t-root");
-
-    fireEvent.click(childTaskItem);
-    expect(toThread).toHaveBeenCalledWith("t-child");
+    const text = container.textContent ?? "";
+    for (const leak of [
+      "Tasks",
+      "root",
+      "child",
+      "Home:",
+      "derived",
+      "Retained",
+      "workstream",
+      "rev ",
+      "related",
+    ]) {
+      expect(text).not.toContain(leak);
+    }
   });
 
-  it("creates a new entity with parent and aliases", async () => {
+  it("creates a new topic with parent and aliases", async () => {
     const call = vi.fn(async (method: string, args: unknown) => {
       if (method === "catalog") return catalogState;
       if (method === "catalogCreate") {
@@ -189,11 +152,9 @@ describe("Catalog UI & Maintenance", () => {
     expect(await screen.findByText("Lantern")).toBeTruthy();
 
     // Click "New product or feature"
-    fireEvent.click(
-      screen.getByRole("button", { name: /New product or feature/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /New topic/i }));
 
-    expect(screen.getByText("New Product or Feature")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "New topic" })).toBeTruthy();
     fireEvent.change(
       screen.getByPlaceholderText("e.g. Workstreams, Catalog, Billing"),
       {
@@ -201,7 +162,7 @@ describe("Catalog UI & Maintenance", () => {
       },
     );
     fireEvent.change(
-      screen.getByPlaceholderText("What does this product or feature concern?"),
+      screen.getByPlaceholderText("What work belongs in this topic?"),
       {
         target: { value: "User settings" },
       },
@@ -239,9 +200,7 @@ describe("Catalog UI & Maintenance", () => {
     render(<Catalog rpc={{ call } as never} />);
     await screen.findByText("Lantern");
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /New product or feature/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /New topic/i }));
     fireEvent.change(
       screen.getByPlaceholderText("e.g. Workstreams, Catalog, Billing"),
       {
@@ -257,7 +216,7 @@ describe("Catalog UI & Maintenance", () => {
     ).toBeTruthy();
   });
 
-  it("renames an entity through the UI without native rename", async () => {
+  it("renames a topic", async () => {
     const call = vi.fn(async (method: string, args: unknown) => {
       if (method === "catalog") return catalogState;
       if (method === "catalogRename") {
@@ -270,7 +229,7 @@ describe("Catalog UI & Maintenance", () => {
     await screen.findByText("Shelves");
 
     fireEvent.click(screen.getByRole("button", { name: "Rename Shelves" }));
-    expect(screen.getByText("Rename Entity")).toBeTruthy();
+    expect(screen.getByText("Rename topic")).toBeTruthy();
 
     const input = screen.getByRole("textbox", { name: "Name *" });
     fireEvent.change(input, { target: { value: "Storage Shelves" } });
@@ -285,7 +244,7 @@ describe("Catalog UI & Maintenance", () => {
     });
   });
 
-  it("reparents an entity in the hierarchy and handles cycle errors", async () => {
+  it("moves a topic under another parent and handles cycle errors", async () => {
     const call = vi.fn(async (method: string, args: unknown) => {
       if (method === "catalog") return catalogState;
       if (method === "catalogReparent") {
@@ -300,10 +259,10 @@ describe("Catalog UI & Maintenance", () => {
     render(<Catalog rpc={{ call } as never} />);
     await screen.findByText("Lantern");
 
-    fireEvent.click(screen.getByRole("button", { name: "Reparent Lantern" }));
-    expect(screen.getByText("Reparent Entity")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Move Lantern" }));
+    expect(screen.getByText("Move topic")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Reparent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move" }));
 
     await waitFor(() => {
       expect(call).toHaveBeenCalledWith("catalogReparent", {
@@ -313,7 +272,7 @@ describe("Catalog UI & Maintenance", () => {
     });
   });
 
-  it("merges an entity and preserves references", async () => {
+  it("merges a topic and preserves references", async () => {
     const call = vi.fn(async (method: string, args: unknown) => {
       if (method === "catalog") return catalogState;
       if (method === "catalogMerge") {
@@ -330,9 +289,9 @@ describe("Catalog UI & Maintenance", () => {
     await screen.findByText("Shelves");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Merge Shelves into another entity" }),
+      screen.getByRole("button", { name: "Merge Shelves into another topic" }),
     );
-    expect(screen.getByText("Merge Entity")).toBeTruthy();
+    expect(screen.getByText("Merge topic")).toBeTruthy();
 
     // Select target entity
     fireEvent.change(screen.getByRole("combobox"), {
@@ -348,7 +307,7 @@ describe("Catalog UI & Maintenance", () => {
     });
   });
 
-  it("edits metadata (description and aliases)", async () => {
+  it("edits a topic's description and aliases", async () => {
     const call = vi.fn(async (method: string, args: unknown) => {
       if (method === "catalog") return catalogState;
       if (method === "catalogUpdateMetadata") {
@@ -361,7 +320,7 @@ describe("Catalog UI & Maintenance", () => {
     await screen.findByText("Shelves");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Edit metadata for Shelves" }),
+      screen.getByRole("button", { name: "Edit details for Shelves" }),
     );
     expect(screen.getByText("Edit Details: Shelves")).toBeTruthy();
 
@@ -401,8 +360,6 @@ describe("Catalog UI & Maintenance", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Offline");
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(
-      await screen.findByText("No products or features have been recorded yet"),
-    ).toBeTruthy();
+    expect(await screen.findByText("No topics yet")).toBeTruthy();
   });
 });

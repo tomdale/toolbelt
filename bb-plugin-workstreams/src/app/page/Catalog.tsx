@@ -1,18 +1,10 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import type { useRpc } from "@get-bb/plugin-sdk/app";
-import type {
-  PluginSidebarSection,
-  PluginSidebarThread,
-} from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { RpcContract } from "../../server/contract.ts";
-import type {
-  CanonicalAssignment,
-  CatalogState,
-  CorpusEntity,
-} from "../../domain/corpus.ts";
+import type { CatalogState, CorpusEntity } from "../../domain/corpus.ts";
 import { corpusLabel } from "../../domain/corpus-label.ts";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
 import {
@@ -26,28 +18,24 @@ import {
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 
+/**
+ * The Catalog: every topic Workstreams knows about, as a tree. It describes
+ * topics only. Thread counts, workstreams, and classification state belong to
+ * the sidebar and the thread's Topic control, never here.
+ */
 export type CatalogProps = {
   rpc: Rpc;
   serverCatalog?: CatalogState;
-  sections?: readonly PluginSidebarSection[];
-  threads?: readonly PluginSidebarThread[];
-  navigate?: { toThread: (threadId: string) => void };
 };
 
-export function Catalog({
-  rpc,
-  serverCatalog,
-  sections = [],
-  threads = [],
-  navigate,
-}: CatalogProps) {
+const topicPath = (id: string, entities: readonly CorpusEntity[]) =>
+  corpusLabel(id, entities).replace(/: /g, " › ");
+
+export function Catalog({ rpc, serverCatalog }: CatalogProps) {
   const [localCatalog, setLocalCatalog] = useState<CatalogState | null>(null);
   const [query, setQuery] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeDialog, setActiveDialog] = useState<DialogState>(null);
-  const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>(
-    {},
-  );
   const [attempt, setAttempt] = useState(0);
 
   const searchInputId = useId();
@@ -62,7 +50,7 @@ export function Catalog({
       })
       .catch((err) => {
         setLoadError(
-          err instanceof Error ? err.message : "Could not load Catalog",
+          err instanceof Error ? err.message : "Couldn't load the Catalog.",
         );
       });
   };
@@ -79,8 +67,6 @@ export function Catalog({
       : localCatalog;
 
   const entities = activeCatalog?.entities ?? [];
-  const assignments = activeCatalog?.assignments ?? {};
-  const groups = activeCatalog?.groups ?? {};
 
   const visible = useMemo(() => {
     const all = entities;
@@ -116,7 +102,7 @@ export function Catalog({
         .filter((e) => e.parentId === parentId)
         .sort((a, b) => compareGroupNames(a.name, b.name))) {
         if (matches.has(entity.id)) {
-          rows.push({ entity, label: corpusLabel(entity.id, all), depth });
+          rows.push({ entity, label: topicPath(entity.id, all), depth });
         }
         visit(entity.id, depth + 1);
       }
@@ -124,38 +110,6 @@ export function Catalog({
     visit(null, 0);
     return rows;
   }, [entities, query]);
-
-  // Map section IDs to Workstream names for context
-  const workstreamNameBySectionId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const section of sections) {
-      map.set(section.id, section.name);
-    }
-    return map;
-  }, [sections]);
-
-  // Group assignments by entityId with root and child counts separated
-  const assignmentsByEntity = useMemo(() => {
-    const map = new Map<
-      string,
-      { root: CanonicalAssignment[]; child: CanonicalAssignment[] }
-    >();
-    for (const assignment of Object.values(assignments)) {
-      if (!assignment.entityId || assignment.status !== "assigned") continue;
-      const bucket = map.get(assignment.entityId) ?? { root: [], child: [] };
-      if (assignment.inheritedFrom) {
-        bucket.child.push(assignment);
-      } else {
-        bucket.root.push(assignment);
-      }
-      map.set(assignment.entityId, bucket);
-    }
-    return map;
-  }, [assignments]);
-
-  const toggleTasks = (entityId: string) => {
-    setExpandedTasks((prev) => ({ ...prev, [entityId]: !prev[entityId] }));
-  };
 
   const handleActionSuccess = () => {
     setActiveDialog(null);
@@ -166,17 +120,10 @@ export function Catalog({
     <section className="mt-6" aria-label="Catalog">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold">Catalog</h2>
-            {activeCatalog?.revision ? (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                rev {activeCatalog.revision}
-              </span>
-            ) : null}
-          </div>
+          <h2 className="text-sm font-semibold">Catalog</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            All known products and features, including those without a current
-            workstream. Retained inactive identities remain searchable.
+            Every topic Workstreams knows about. Each thread gets the most
+            specific topic that fits it.
           </p>
         </div>
         <Button
@@ -186,7 +133,7 @@ export function Catalog({
           className="mt-2 h-7 text-xs sm:mt-0"
         >
           <Icon name="Plus" className="mr-1 size-3.5" aria-hidden="true" />
-          New product or feature
+          New topic
         </Button>
       </div>
 
@@ -194,8 +141,8 @@ export function Catalog({
         <Input
           id={searchInputId}
           className="h-8 flex-1 text-sm"
-          aria-label="Search products and features"
-          placeholder="Search products and features by name, full path, or alias…"
+          aria-label="Search topics"
+          placeholder="Search topics by name, path, or alias…"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -234,31 +181,11 @@ export function Catalog({
         </p>
       ) : !visible.length ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          {entities.length
-            ? "No matching products or features found"
-            : "No products or features have been recorded yet"}
+          {entities.length ? "No matching topics" : "No topics yet"}
         </p>
       ) : (
         <ul className="mt-4 divide-y divide-border rounded-md border border-border bg-card">
           {visible.map(({ entity, label, depth }) => {
-            const taskCounts = assignmentsByEntity.get(entity.id) ?? {
-              root: [],
-              child: [],
-            };
-            const rootCount = taskCounts.root.length;
-            const childCount = taskCounts.child.length;
-            const totalTasks = rootCount + childCount;
-            const areTasksExpanded = Boolean(expandedTasks[entity.id]);
-
-            // Workstream context from group bindings
-            const boundSectionId = Object.entries(groups).find(
-              ([_, entId]) => entId === entity.id,
-            )?.[0];
-            const boundWorkstreamName = boundSectionId
-              ? (workstreamNameBySectionId.get(boundSectionId) ??
-                boundSectionId)
-              : null;
-
             return (
               <li
                 key={entity.id}
@@ -276,23 +203,9 @@ export function Catalog({
                       </h3>
                       {depth > 0 ? (
                         <span className="text-[11px] text-muted-foreground">
-                          ({label.replace(/: /g, " › ")})
+                          {label}
                         </span>
                       ) : null}
-                      {boundWorkstreamName ? (
-                        <span className="inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
-                          <Icon
-                            name="Folder"
-                            className="size-2.5"
-                            aria-hidden="true"
-                          />
-                          Home: {boundWorkstreamName} (derived)
-                        </span>
-                      ) : (
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          Retained (no active workstream)
-                        </span>
-                      )}
                     </div>
 
                     {entity.description ? (
@@ -307,78 +220,15 @@ export function Catalog({
                         {entity.aliases.join(", ")}
                       </p>
                     ) : null}
-
-                    {/* Related tasks with root / child counts separated */}
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                      <span className="text-muted-foreground">Tasks:</span>
-                      <span className="font-medium text-foreground">
-                        {rootCount} root, {childCount} child
-                      </span>
-
-                      {totalTasks > 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => toggleTasks(entity.id)}
-                          className="text-[11px] text-primary underline hover:text-primary/80"
-                          aria-expanded={areTasksExpanded}
-                        >
-                          {areTasksExpanded
-                            ? "Hide related tasks"
-                            : "Show related tasks"}
-                        </button>
-                      ) : null}
-                    </div>
-
-                    {/* Expandable related tasks navigation list */}
-                    {areTasksExpanded && totalTasks > 0 ? (
-                      <ul
-                        className="mt-2 space-y-1 rounded border border-border bg-background p-2 text-xs"
-                        aria-label={`Tasks related to ${entity.name}`}
-                      >
-                        {[...taskCounts.root, ...taskCounts.child].map(
-                          (assignment) => {
-                            const thread = threads.find(
-                              (t) => t.id === assignment.threadId,
-                            );
-                            const threadTitle =
-                              thread?.displayTitle ??
-                              thread?.title ??
-                              assignment.threadId;
-                            const isChild = Boolean(assignment.inheritedFrom);
-
-                            return (
-                              <li
-                                key={assignment.threadId}
-                                className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-muted"
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    navigate?.toThread(assignment.threadId)
-                                  }
-                                  className="flex-1 truncate text-left text-xs font-medium text-primary hover:underline"
-                                  title={`Open thread: ${threadTitle}`}
-                                >
-                                  {threadTitle}
-                                </button>
-                                <span className="shrink-0 text-[10px] text-muted-foreground">
-                                  {isChild ? "child (inherited)" : "root task"}
-                                </span>
-                              </li>
-                            );
-                          },
-                        )}
-                      </ul>
-                    ) : null}
                   </div>
 
-                  {/* Explicit Catalog Maintenance Actions */}
+                  {/* Topic actions */}
                   <div className="mt-2 flex flex-wrap items-center gap-1 sm:mt-0 sm:shrink-0">
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      aria-label={`Add child feature under ${entity.name}`}
+                      aria-label={`Add subtopic under ${entity.name}`}
                       onClick={() =>
                         setActiveDialog({ kind: "create", parentId: entity.id })
                       }
@@ -389,7 +239,7 @@ export function Catalog({
                         className="size-3 mr-1"
                         aria-hidden="true"
                       />
-                      Add child
+                      Add subtopic
                     </Button>
 
                     <Button
@@ -409,20 +259,20 @@ export function Catalog({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      aria-label={`Reparent ${entity.name}`}
+                      aria-label={`Move ${entity.name}`}
                       onClick={() =>
                         setActiveDialog({ kind: "reparent", entity })
                       }
                       className="h-7 px-2 text-xs"
                     >
-                      Reparent
+                      Move
                     </Button>
 
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      aria-label={`Merge ${entity.name} into another entity`}
+                      aria-label={`Merge ${entity.name} into another topic`}
                       onClick={() => setActiveDialog({ kind: "merge", entity })}
                       className="h-7 px-2 text-xs"
                     >
@@ -433,7 +283,7 @@ export function Catalog({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      aria-label={`Edit metadata for ${entity.name}`}
+                      aria-label={`Edit details for ${entity.name}`}
                       onClick={() =>
                         setActiveDialog({ kind: "metadata", entity })
                       }

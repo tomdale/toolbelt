@@ -63,7 +63,9 @@ export function CreateEntityDialog({
       });
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create entity");
+      setError(
+        err instanceof Error ? err.message : "Couldn't create the topic.",
+      );
       setBusy(false);
     }
   };
@@ -73,10 +75,12 @@ export function CreateEntityDialog({
       <DialogContent className="max-w-md">
         <form onSubmit={handleSubmit} className="space-y-3">
           <DialogHeader>
-            <DialogTitle>New Product or Feature</DialogTitle>
+            <DialogTitle>
+              {initialParentId ? "New subtopic" : "New topic"}
+            </DialogTitle>
             <DialogDescription>
-              Create a new entity in the Catalog. Retained identities remain
-              valid regardless of immediate activity.
+              Add a topic to the Catalog. Workstreams can classify threads into
+              it right away.
             </DialogDescription>
           </DialogHeader>
 
@@ -106,7 +110,7 @@ export function CreateEntityDialog({
 
           <div>
             <label className="text-xs font-medium text-foreground">
-              Parent in hierarchy
+              Parent topic
             </label>
             <select
               value={parentId ?? ""}
@@ -114,9 +118,9 @@ export function CreateEntityDialog({
                 setParentId(e.target.value ? e.target.value : null)
               }
               className="mt-1 flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
-              aria-label="Parent in hierarchy"
+              aria-label="Parent topic"
             >
-              <option value="">None (top-level product)</option>
+              <option value="">None (top level)</option>
               {entities.map((e) => (
                 <option key={e.id} value={e.id}>
                   {corpusLabel(e.id, entities).replace(/: /g, " › ")}
@@ -132,7 +136,7 @@ export function CreateEntityDialog({
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What does this product or feature concern?"
+              placeholder="What work belongs in this topic?"
               rows={2}
               aria-label="Description"
               className="mt-1 w-full rounded-md border border-input bg-transparent p-2 text-xs"
@@ -199,7 +203,9 @@ export function RenameEntityDialog({
       });
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to rename entity");
+      setError(
+        err instanceof Error ? err.message : "Couldn't rename the topic.",
+      );
       setBusy(false);
     }
   };
@@ -209,10 +215,10 @@ export function RenameEntityDialog({
       <DialogContent className="max-w-sm">
         <form onSubmit={handleSubmit} className="space-y-3">
           <DialogHeader>
-            <DialogTitle>Rename Entity</DialogTitle>
+            <DialogTitle>Rename topic</DialogTitle>
             <DialogDescription>
-              Updates the derived product/feature label across existing tasks
-              without moving native workstreams.
+              Threads keep this topic, and workstreams named after it take the
+              new name.
             </DialogDescription>
           </DialogHeader>
 
@@ -303,9 +309,7 @@ export function ReparentEntityDialog({
       });
       onSuccess();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to reparent entity",
-      );
+      setError(err instanceof Error ? err.message : "Couldn't move the topic.");
       setBusy(false);
     }
   };
@@ -315,10 +319,10 @@ export function ReparentEntityDialog({
       <DialogContent className="max-w-md">
         <form onSubmit={handleSubmit} className="space-y-3">
           <DialogHeader>
-            <DialogTitle>Reparent Entity</DialogTitle>
+            <DialogTitle>Move topic</DialogTitle>
             <DialogDescription>
-              Move &ldquo;{entity.name}&rdquo; under a different parent. Updates
-              derived labels without altering native thread placement.
+              Move &ldquo;{entity.name}&rdquo; and its subtopics under a
+              different parent topic. Threads keep their topics.
             </DialogDescription>
           </DialogHeader>
 
@@ -333,7 +337,7 @@ export function ReparentEntityDialog({
 
           <div>
             <label className="text-xs font-medium text-foreground">
-              New parent in hierarchy
+              Parent topic
             </label>
             <select
               value={parentId ?? ""}
@@ -341,9 +345,9 @@ export function ReparentEntityDialog({
                 setParentId(e.target.value ? e.target.value : null)
               }
               className="mt-1 flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
-              aria-label="New parent in hierarchy"
+              aria-label="Parent topic"
             >
-              <option value="">None (top-level product)</option>
+              <option value="">None (top level)</option>
               {validParents.map((e) => (
                 <option key={e.id} value={e.id}>
                   {corpusLabel(e.id, entities).replace(/: /g, " › ")}
@@ -363,7 +367,7 @@ export function ReparentEntityDialog({
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={busy}>
-              {busy ? "Reparenting…" : "Reparent"}
+              {busy ? "Moving…" : "Move"}
             </Button>
           </DialogFooter>
         </form>
@@ -415,7 +419,9 @@ export function MergeEntityDialog({
       });
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to merge entities");
+      setError(
+        err instanceof Error ? err.message : "Couldn't merge the topics.",
+      );
       setBusy(false);
     }
   };
@@ -425,12 +431,11 @@ export function MergeEntityDialog({
       <DialogContent className="max-w-md">
         <form onSubmit={handleSubmit} className="space-y-3">
           <DialogHeader>
-            <DialogTitle>Merge Entity</DialogTitle>
+            <DialogTitle>Merge topic</DialogTitle>
             <DialogDescription>
-              Merge &ldquo;{entity.name}&rdquo; into another entity. All
-              associated tasks will be reassigned to the target, child entities
-              will be reparented, and &ldquo;{entity.name}&rdquo; will be
-              deleted.
+              Merge &ldquo;{entity.name}&rdquo; into another topic. Its threads
+              and subtopics move to that topic, and &ldquo;{entity.name}&rdquo;
+              is removed from the Catalog.
             </DialogDescription>
           </DialogHeader>
 
@@ -445,17 +450,17 @@ export function MergeEntityDialog({
 
           <div>
             <label className="text-xs font-medium text-foreground">
-              Target entity *
+              Merge into *
             </label>
             <select
               value={targetId}
               onChange={(e) => setTargetId(e.target.value)}
               className="mt-1 flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
-              aria-label="Target entity *"
+              aria-label="Merge into *"
               required
             >
               <option value="" disabled>
-                Select target product or feature…
+                Choose a topic…
               </option>
               {validTargets.map((e) => (
                 <option key={e.id} value={e.id}>
@@ -519,7 +524,7 @@ export function EditMetadataDialog({
       onSuccess();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to update metadata",
+        err instanceof Error ? err.message : "Couldn't save the details.",
       );
       setBusy(false);
     }
@@ -532,7 +537,7 @@ export function EditMetadataDialog({
           <DialogHeader>
             <DialogTitle>Edit Details: {entity.name}</DialogTitle>
             <DialogDescription>
-              Update the description and alternative aliases for this identity.
+              Update this topic's description and other names.
             </DialogDescription>
           </DialogHeader>
 

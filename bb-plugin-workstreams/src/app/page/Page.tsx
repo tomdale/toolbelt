@@ -210,13 +210,7 @@ export function WorkstreamsPage({
             ) : null}
           </div>
         ) : tab === "catalog" ? (
-          <Catalog
-            rpc={ws.rpc}
-            serverCatalog={ws.server.catalog}
-            sections={ws.sections}
-            threads={ws.threads}
-            navigate={navigate}
-          />
+          <Catalog rpc={ws.rpc} serverCatalog={ws.server.catalog} />
         ) : tab === "map" ? (
           <MapTab
             rpc={ws.rpc}
