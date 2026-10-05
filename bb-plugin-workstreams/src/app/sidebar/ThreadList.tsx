@@ -837,14 +837,7 @@ export function WorkstreamsThreadList({
   return (
     <DndContext {...contextProps}>
       <div ref={listRef} className="ws-list flex flex-col gap-2 pb-4 pt-1">
-        <div className="mx-2 flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => navigate.toCompose({ focusPrompt: true })}
-            className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-[13px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
-          >
-            <span aria-hidden="true">＋</span> New work…
-          </button>
+        <div className="mx-2 flex items-center justify-end gap-1">
           <SidebarViewOptionsMenu
             sort={groupSort}
             onChange={(groupSort) =>

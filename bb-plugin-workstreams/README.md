@@ -11,11 +11,11 @@ against.
 ## What it does
 
 - **Sidebar thread list** (select it under Settings → Appearance → Sidebar):
-  - **＋ New work** opens BB's New thread view, where Workstreams adds a
-    **Product or feature** field to the picker row. The field defaults to
-    **Automatic**: when you pause typing, the classifier suggests the most
-    specific product or feature. You can also pick a
-    known product or feature from the Catalog, propose a new feature, or explicitly
+  - **New work** happens in BB's New thread view (a workstream's ＋ opens it),
+    where Workstreams adds a **Product or feature** field to the picker row.
+    The field defaults to **Automatic**: when you pause typing, the classifier
+    suggests the most specific product or feature. You can also pick a known
+    product or feature from the Catalog, propose a new feature, or explicitly
     mark the task **Unresolved**. New work never asks for a destination workstream;
     submitting creates the thread with its identity, and Workstreams derives its
     section navigation automatically.

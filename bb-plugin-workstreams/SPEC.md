@@ -220,8 +220,8 @@ One router serves three entry points. BB's native New thread composer remains
 host-owned; Workstreams adds a Product or feature field to it and a
 suggestion row.
 
-1. **New work**, in BB's native New thread view. Workstreams' ＋ New work
-   buttons (the sidebar's, each workstream's, and the page header's) open
+1. **New work**, in BB's native New thread view. Workstreams' New work
+   buttons (each workstream's ＋ and the page header's) open
    that view with its prompt focused (`navigate.toCompose`). The view gets
    the field from the plugin's `NewThreadRouting` composer banner, which
    stays inert in any other composer and inside any dialog. The banner builds
