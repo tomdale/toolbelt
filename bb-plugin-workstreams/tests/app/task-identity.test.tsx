@@ -59,6 +59,16 @@ const catalogState: CatalogState = {
       evidence: "recap analysis",
       inheritedFrom: "t-root",
     },
+    "t-auto": {
+      threadId: "t-auto",
+      entityId: "feat_auth",
+      status: "assigned",
+      provenance: "automatic",
+      label: "Platform: Auth",
+      ancestorIds: ["feat_auth", "prod_platform"],
+      evidence: "recap analysis",
+      inheritedFrom: null,
+    },
     "t-unresolved-in-workstream": {
       threadId: "t-unresolved-in-workstream",
       entityId: null,
@@ -104,6 +114,7 @@ async function mountTaskIdentityHeader(
       parentThreadId: "t-root",
       sectionId: "sec_a",
     }),
+    sidebarThread("t-auto", { title: "Automatic task", sectionId: "sec_a" }),
     sidebarThread("t-unresolved-in-workstream", {
       title: "Task without identity",
       sectionId: "sec_a",
@@ -177,146 +188,106 @@ async function mountTaskIdentityHeader(
   );
 }
 
-describe("Task Identity Context", () => {
-  it("renders compact product/feature path for root task", async () => {
+describe("Topic control", () => {
+  it("shows a topic the user chose", async () => {
     const slot = await mountTaskIdentityHeader("t-root");
     const button = await slot.findByRole("button", {
-      name: "Product or feature: Platform › Auth",
+      name: "Topic: Platform › Auth (chosen by you)",
     });
-    expect(button).toBeTruthy();
-    expect(button.textContent).toContain("Platform › Auth");
-    expect(button.textContent).not.toContain("(inherited)");
+    expect(button.textContent).toBe("Platform › Auth");
+    fireEvent.click(button);
+    const automatic = await screen.findByRole("button", { name: /^Automatic/ });
+    expect(automatic.getAttribute("aria-pressed")).toBe("false");
+    expect(automatic.textContent).toContain("Let Workstreams choose");
+    const chosen = screen.getByRole("button", { name: /^Platform › Auth/ });
+    expect(chosen.getAttribute("aria-pressed")).toBe("true");
     slot.lifecycle.unmount();
   });
 
-  it("inherits root identity for child thread and displays inherited marker", async () => {
-    const slot = await mountTaskIdentityHeader("t-child");
+  it("defaults to Automatic and shows the classifier result below it", async () => {
+    const slot = await mountTaskIdentityHeader("t-auto");
     const button = await slot.findByRole("button", {
-      name: "Product or feature: Platform › Auth",
+      name: "Topic: Platform › Auth (automatic)",
     });
-    expect(button).toBeTruthy();
-    expect(button.textContent).toContain("Platform › Auth");
-    expect(button.textContent).toContain("(inherited)");
-    slot.lifecycle.unmount();
-  });
-
-  it("shows unresolved independently of unfiled status", async () => {
-    // 1. A thread inside a workstream section can have unresolved identity
-    const slot1 = await mountTaskIdentityHeader("t-unresolved-in-workstream");
-    const button1 = await slot1.findByRole("button", {
-      name: "Product or feature: Unresolved",
-    });
-    expect(button1).toBeTruthy();
-    expect(button1.textContent).toContain("Unresolved");
-    expect(button1.className).toContain("ws-task-identity-unresolved");
-    slot1.lifecycle.unmount();
-
-    // 2. An unfiled thread (sectionId === null) can have an assigned identity
-    const slot2 = await mountTaskIdentityHeader("t-assigned-unfiled");
-    const button2 = await slot2.findByRole("button", {
-      name: "Product or feature: Platform › Billing",
-    });
-    expect(button2).toBeTruthy();
-    expect(button2.textContent).toContain("Platform › Billing");
-    slot2.lifecycle.unmount();
-  });
-
-  it("opens popover with details and assigns a new entity without moving thread", async () => {
-    const rpcCalls: { method: string; args: unknown }[] = [];
-    const slot = await mountTaskIdentityHeader("t-root", { rpcCalls });
-
-    const trigger = await slot.findByRole("button", {
-      name: "Product or feature: Platform › Auth",
-    });
-    fireEvent.click(trigger);
-
-    // Popover content is visible
-    expect(await screen.findByText("Product / Feature Identity")).toBeTruthy();
+    fireEvent.click(button);
+    const automatic = await screen.findByRole("button", { name: /^Automatic/ });
+    expect(automatic.getAttribute("aria-pressed")).toBe("true");
+    expect(automatic.textContent).toBe("AutomaticPlatform › Auth");
     expect(
-      screen.getAllByText("Platform › Auth").length,
-    ).toBeGreaterThanOrEqual(1);
-
-    // Search for Billing
-    const searchInput = screen.getByLabelText("Search products and features");
-    fireEvent.change(searchInput, { target: { value: "Billing" } });
-
-    // Select Billing
-    const billingOption = await screen.findByText("Platform › Billing");
-    fireEvent.click(billingOption);
-
-    await waitFor(() => {
-      expect(rpcCalls.some((c) => c.method === "taskAssign")).toBe(true);
-    });
-
-    const call = rpcCalls.find((c) => c.method === "taskAssign")!;
-    expect(call.args).toEqual({
-      threadId: "t-root",
-      entityId: "feat_billing",
-    });
-
+      screen
+        .getByRole("button", { name: /^Platform › Auth/ })
+        .getAttribute("aria-pressed"),
+    ).toBe("false");
     slot.lifecycle.unmount();
   });
 
-  it("clears task assignment without moving thread", async () => {
-    const rpcCalls: { method: string; args: unknown }[] = [];
-    const slot = await mountTaskIdentityHeader("t-root", { rpcCalls });
-
-    const trigger = await slot.findByRole("button", {
-      name: "Product or feature: Platform › Auth",
-    });
-    fireEvent.click(trigger);
-
-    const clearButton = await screen.findByRole("button", { name: "Clear" });
-    fireEvent.click(clearButton);
-
-    await waitFor(() => {
-      expect(rpcCalls.some((c) => c.method === "taskClear")).toBe(true);
-    });
-
-    const call = rpcCalls.find((c) => c.method === "taskClear")!;
-    expect(call.args).toEqual({
-      threadId: "t-root",
-    });
-
-    slot.lifecycle.unmount();
-  });
-
-  it("reclassifies task via model without moving thread", async () => {
-    const rpcCalls: { method: string; args: unknown }[] = [];
-    const slot = await mountTaskIdentityHeader("t-root", { rpcCalls });
-
-    const trigger = await slot.findByRole("button", {
-      name: "Product or feature: Platform › Auth",
-    });
-    fireEvent.click(trigger);
-
-    const reclassifyButton = await screen.findByRole("button", {
-      name: "Reclassify",
-    });
-    fireEvent.click(reclassifyButton);
-
-    await waitFor(() => {
-      expect(rpcCalls.some((c) => c.method === "taskReclassify")).toBe(true);
-    });
-
-    const call = rpcCalls.find((c) => c.method === "taskReclassify")!;
-    expect(call.args).toEqual({
-      threadId: "t-root",
-    });
-
-    slot.lifecycle.unmount();
-  });
-
-  it("verifies moving a thread never rewrites its task identity", async () => {
-    // Starting with thread assigned to feat_billing
-    const slot = await mountTaskIdentityHeader("t-assigned-unfiled");
+  it("shows Unclassified when the classifier found no topic", async () => {
+    const slot = await mountTaskIdentityHeader("t-unresolved-in-workstream");
     const button = await slot.findByRole("button", {
-      name: "Product or feature: Platform › Billing",
+      name: "Topic: Unclassified (automatic)",
     });
-    expect(button.textContent).toContain("Platform › Billing");
+    expect(button.className).toContain("ws-task-identity-unresolved");
+    fireEvent.click(button);
+    const automatic = await screen.findByRole("button", { name: /^Automatic/ });
+    expect(automatic.textContent).toBe("AutomaticUnclassified");
+    slot.lifecycle.unmount();
+  });
 
-    // Native placement is unfiled (sectionId: null). Even when thread is moved to sec_a,
-    // its task identity remains Platform › Billing!
+  it("shows a fork's parent topic without letting it change", async () => {
+    const slot = await mountTaskIdentityHeader("t-child");
+    const button = (await slot.findByRole("button", {
+      name: "Topic: Platform › Auth (same as parent thread)",
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).not.toContain("inherited");
+    slot.lifecycle.unmount();
+  });
+
+  it("picking a topic saves it as the user's choice", async () => {
+    const rpcCalls: { method: string; args: unknown }[] = [];
+    const slot = await mountTaskIdentityHeader("t-auto", { rpcCalls });
+    fireEvent.click(
+      await slot.findByRole("button", { name: /^Topic: Platform › Auth/ }),
+    );
+    fireEvent.change(screen.getByLabelText("Search topics"), {
+      target: { value: "Payments" },
+    });
+    fireEvent.click(await screen.findByText("Platform › Billing"));
+    await waitFor(() => {
+      expect(rpcCalls).toEqual([
+        {
+          method: "taskAssign",
+          args: { threadId: "t-auto", entityId: "feat_billing" },
+        },
+      ]);
+    });
+    slot.lifecycle.unmount();
+  });
+
+  it("choosing Automatic hands the thread back to the classifier", async () => {
+    const rpcCalls: { method: string; args: unknown }[] = [];
+    const slot = await mountTaskIdentityHeader("t-root", { rpcCalls });
+    fireEvent.click(
+      await slot.findByRole("button", { name: /^Topic: Platform › Auth/ }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /^Automatic/ }));
+    await waitFor(() => {
+      expect(rpcCalls).toEqual([
+        { method: "taskReclassify", args: { threadId: "t-root" } },
+      ]);
+    });
+    slot.lifecycle.unmount();
+  });
+
+  it("Automatic can't be chosen again while it's already on", async () => {
+    const slot = await mountTaskIdentityHeader("t-auto");
+    fireEvent.click(
+      await slot.findByRole("button", { name: /^Topic: Platform › Auth/ }),
+    );
+    const automatic = (await screen.findByRole("button", {
+      name: /^Automatic/,
+    })) as HTMLButtonElement;
+    expect(automatic.disabled).toBe(true);
     slot.lifecycle.unmount();
   });
 });

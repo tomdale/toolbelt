@@ -96,7 +96,7 @@ export default definePluginApp((app) => {
   });
   app.slots.experimental_threadHeaderAction({
     id: "task-identity",
-    title: "Product or feature",
+    title: "Topic",
     component: TaskIdentityHeader,
   });
   app.slots.experimental_threadHeaderAction({
