@@ -752,6 +752,30 @@ export function WorkstreamsThreadList({
         {renderBandRows(recentRows, "recent", "recent")}
       </Band>
     ) : null;
+  const hasWorkstreams =
+    pinnedGroups.length +
+      populatedGroups.length +
+      emptyGroups.length +
+      projection.dormant.length +
+      projection.unsorted.total >
+    0;
+  /**
+   * The heading over the workstreams, holding their sort. Not a region:
+   * each workstream below is one.
+   */
+  const workstreamsHeading = hasWorkstreams ? (
+    <div key="workstreams-heading" className="flex items-center gap-1 px-1">
+      <h2 className="flex min-w-0 flex-1 items-center px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        Workstreams
+      </h2>
+      <SidebarViewOptionsMenu
+        sort={groupSort}
+        onChange={(groupSort) =>
+          void savePrefs({ sidebar: { groupSort } }).catch(report)
+        }
+      />
+    </div>
+  ) : null;
   /** Everything below the prioritized workstreams, as one opening block. */
   const lowerBlock = lowerPresence.map((entry) => (
     <div
@@ -837,14 +861,6 @@ export function WorkstreamsThreadList({
   return (
     <DndContext {...contextProps}>
       <div ref={listRef} className="ws-list flex flex-col gap-2 pb-4 pt-1">
-        <div className="mx-2 flex items-center justify-end gap-1">
-          <SidebarViewOptionsMenu
-            sort={groupSort}
-            onChange={(groupSort) =>
-              void savePrefs({ sidebar: { groupSort } }).catch(report)
-            }
-          />
-        </div>
         {error ? (
           <p
             role="alert"
@@ -907,6 +923,7 @@ export function WorkstreamsThreadList({
         ))}
         {tiered
           ? [
+              workstreamsHeading,
               <SortableContext
                 key="pinned"
                 items={pinnedGroups.map((group) => groupKey(group.id))}
@@ -953,7 +970,7 @@ export function WorkstreamsThreadList({
               ...lowerBlock,
               recentBlock,
             ]
-          : [recentBlock, ...lowerBlock]}
+          : [recentBlock, workstreamsHeading, ...lowerBlock]}
         {ws.showArchived &&
         archived.experimental_archived?.status !== "error" &&
         (archivedThreads.length > 0 ||
@@ -1231,8 +1248,8 @@ function SidebarViewOptionsMenu({
       <DropdownMenu.Trigger asChild>
         <button
           type="button"
-          aria-label="Sidebar view options"
-          title="Sidebar view options"
+          aria-label="Sort workstreams"
+          title="Sort workstreams"
           onClick={(event) => event.stopPropagation()}
           className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-50 hover:bg-sidebar-accent hover:text-foreground hover:opacity-100 focus-visible:opacity-100"
         >
@@ -1243,7 +1260,7 @@ function SidebarViewOptionsMenu({
         <DropdownMenu.Content
           align="end"
           sideOffset={4}
-          aria-label="Sidebar view options"
+          aria-label="Sort workstreams"
           className="z-50 min-w-48 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
         >
           <DropdownMenu.Label className="px-2 py-1.5 text-xs text-muted-foreground">

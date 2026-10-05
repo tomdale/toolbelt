@@ -435,12 +435,14 @@ describe("thread list", () => {
         slot.getAllByRole("region").map((r) => r.getAttribute("aria-label")),
       ).toEqual(["Alpha", "Beta", "Unfiled", "Zeta"]),
     );
+    // The sort lives on the heading over the workstreams.
+    expect(slot.getByRole("heading", { name: "Workstreams" })).toBeTruthy();
     fireEvent.pointerDown(
-      slot.getByRole("button", { name: "Sidebar view options" }),
+      slot.getByRole("button", { name: "Sort workstreams" }),
       { button: 0, ctrlKey: false },
     );
     const menu = await screen.findByRole("menu", {
-      name: "Sidebar view options",
+      name: "Sort workstreams",
     });
     expect(within(menu).getByText("Sort workstreams")).toBeTruthy();
     fireEvent.click(
