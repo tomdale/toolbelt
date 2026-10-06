@@ -10,6 +10,8 @@ Workstreams maintains BB threads' goals, topics, status, and activity. A root's 
 - **Organization** deterministically groups topics and syncs native sections after facts change; it makes no model calls. The Organization tab reports current state and agent-report coverage.
 - **Topics** manages the topic tree. **Activity** records changes, outside moves and reversion, and model calls, with undo where supported.
 
+Full analysis also observes product and feature names mentioned in its conversation excerpts, with product associations where supported. Observations accumulate per thread independently of topics, including while Debug mode is off. With Debug mode enabled, open **Observed names** in the thread header to see names, analysis-run counts, and first/last-seen times on hover. These observations persist beyond model-trace retention and are removed when the thread is deleted. Skipped analysis calls add nothing; existing history is not backfilled.
+
 The recap tool's `goal` field remains unchanged for compatibility with running agent sessions.
 
 ## CLI

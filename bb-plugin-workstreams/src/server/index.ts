@@ -772,6 +772,7 @@ export default async function plugin(bb: BbPluginApi) {
         ),
       };
     },
+    observedNames: async ({ threadId }) => analyzer.observedNames(threadId),
     catalog: async () => topics.state(),
     catalogCreate: ({ name, description, parentId, aliases }) =>
       userFacing(async () => {

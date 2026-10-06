@@ -60,6 +60,7 @@ describe("Full analysis", () => {
     });
     expect(parsed).toEqual({
       status: null,
+      names: { products: [], features: [] },
       goal: "Stale build cache",
       topic: null,
     });
@@ -76,10 +77,40 @@ describe("Full analysis", () => {
     expect(
       parseFullAnalysis('{"recap":"Waiting on CI","state":"blocked"}', input),
     ).toEqual({
+      names: { products: [], features: [] },
       status: { recap: "Waiting on CI", state: "blocked", needsYou: null },
       goal: null,
       topic: null,
     });
+  });
+
+  it("observes names in full and status calls without requiring topic classification", () => {
+    const names = {
+      products: ["Lumen"],
+      features: [
+        { name: "Cache", product: "Lumen" },
+        { name: "Export", product: null },
+      ],
+    };
+    for (const mode of ["full", "status"] as const) {
+      const input = { ...base, mode };
+      expect(fullAnalysisPrompt(input)).toContain('"names"');
+      expect(fullAnalysisPrompt(input)).toContain(
+        "including incidental mentions",
+      );
+      expect(
+        parseFullAnalysis(
+          JSON.stringify({ recap: "Done", state: "done", names }),
+          input,
+        ).names,
+      ).toEqual(names);
+      expect(
+        parseFullAnalysis(
+          JSON.stringify({ recap: "Done", names: { products: [123] } }),
+          input,
+        ).names,
+      ).toEqual({ products: [], features: [] });
+    }
   });
 
   it("asks whether scope shifted only for an inherited topic", () => {
@@ -101,10 +132,15 @@ describe("Full analysis", () => {
       topic: { entities, project: null, current: null },
     };
     const answer = (fields: object) =>
-      JSON.stringify({ recap: "Done", state: "done", goal: "Cache", ...fields });
-    expect(parseFullAnalysis(answer({ subjectId: "cache" }), input).topic).toEqual(
-      { subjectId: "cache", proposed: null, scopeShift: false },
-    );
+      JSON.stringify({
+        recap: "Done",
+        state: "done",
+        goal: "Cache",
+        ...fields,
+      });
+    expect(
+      parseFullAnalysis(answer({ subjectId: "cache" }), input).topic,
+    ).toEqual({ subjectId: "cache", proposed: null, scopeShift: false });
     expect(
       parseFullAnalysis(
         answer({
@@ -180,9 +216,9 @@ describe("freshness", () => {
     expect(isCurrent(stored, { status: "idle", latestAttentionAt: 100 })).toBe(
       true,
     );
-    expect(isCurrent(stored, { status: "active", latestAttentionAt: 100 })).toBe(
-      false,
-    );
+    expect(
+      isCurrent(stored, { status: "active", latestAttentionAt: 100 }),
+    ).toBe(false);
     expect(isCurrent(stored, { status: "idle", latestAttentionAt: 101 })).toBe(
       false,
     );

@@ -7,6 +7,7 @@ import { StickyGoalHeader } from "./StickyGoalHeader.tsx";
 import { ArchiveHeaderAction } from "./header/ArchiveHeaderAction.tsx";
 import { ParentThreadLink } from "./header/ParentLink.tsx";
 import { TaskIdentityHeader } from "./header/TaskIdentityHeader.tsx";
+import { ObservedNamesHeader } from "./debug/ObservedNames.tsx";
 import { RecapCard } from "./composer/RecapCard.tsx";
 import {
   QuestionAnchor,
@@ -94,6 +95,11 @@ export default definePluginApp((app) => {
     id: "task-identity",
     title: "Topic",
     component: TaskIdentityHeader,
+  });
+  app.slots.experimental_threadHeaderAction({
+    id: "observed-names",
+    title: "Observed names",
+    component: ObservedNamesHeader,
   });
   app.slots.experimental_threadHeaderAction({
     id: "snooze",

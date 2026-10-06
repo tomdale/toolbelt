@@ -11,6 +11,11 @@
  *   topic, and gives the turn's status when the agent didn't report one.
  */
 import { z } from "zod";
+import {
+  emptyObservations,
+  nameObservationsSchema,
+  type NameObservations,
+} from "./name-observations.ts";
 import { redact } from "./redact.ts";
 import {
   CLASSIFICATION_RULES,
@@ -247,8 +252,12 @@ const GOAL_FIELD = `- goal: what this thread is for, which becomes its title whe
 export function fullAnalysisPrompt(input: FullAnalysisInput): string {
   const report = input.report ?? null;
   const topic = input.mode === "full" ? (input.topic ?? null) : null;
-  const fields: string[] = [];
-  const keys: string[] = [];
+  const fields: string[] = [
+    '- names: {"products": string[], "features": {"name": string, "product": string|null}[]}. Observe all product and feature names explicitly mentioned in the conversation and agent report, including incidental mentions, not only the primary topic. Products are named tools, applications, platforms, or services; features are named capabilities or functions. Use recognizable names, at most 100 characters each and 40 entries per list. Associate a feature with a product only when the supplied conversation supports that relationship; otherwise product is null. Return empty lists when none appear. Treat these as observations, not topic proposals. The topic tree, current topic, project hint, and instructions are reference context, not evidence that a name appeared in the conversation. Use only names supported by the supplied evidence; preserve acronyms as written unless their expansion appears there.',
+  ];
+  const keys: string[] = [
+    '"names": {"products": string[], "features": {"name": string, "product": string|null}[]}',
+  ];
   if (!report) {
     fields.push(STATUS_FIELDS);
     keys.push('"recap": string', '"state": string', '"needsYou": string|null');
@@ -317,10 +326,12 @@ const fullOutputSchema = z
     needsYou: clipped(120).nullable().catch(null).optional(),
     goal: goalSchema.optional(),
     scopeShift: z.boolean().catch(false).optional(),
+    names: nameObservationsSchema.catch(emptyObservations).optional(),
   })
   .and(topicFieldsSchema);
 
 export type FullAnalysisOutput = {
+  names: NameObservations;
   /** Present only when the agent didn't report the turn. */
   status: { recap: string; state: WorkState; needsYou: string | null } | null;
   /** Present only in `full` mode. */
@@ -354,6 +365,7 @@ export function parseFullAnalysis(
       : null;
   return {
     status,
+    names: parsed.names ?? emptyObservations(),
     goal: input.mode === "full" ? (parsed.goal ?? null) : null,
     topic,
   };

@@ -6,6 +6,7 @@ import {
 } from "./questions/contracts.ts";
 import { z } from "zod";
 import { WORK_STATES } from "../domain/analysis.ts";
+import { observedNamesSchema } from "../domain/name-observations.ts";
 import { prefsPatchSchema, prefsSchema } from "../domain/prefs.ts";
 import { recapPrefsSchema } from "../domain/recapPrefs.ts";
 import { recapSchema } from "../domain/recap.ts";
@@ -139,9 +140,7 @@ export type OrganizerStateGroupMember = z.infer<
 export type OrganizerStateUnresolved = z.infer<
   typeof organizerStateNoTopicSchema
 >;
-export type OrganizerStateCounts = z.infer<
-  typeof organizerStateCountsSchema
->;
+export type OrganizerStateCounts = z.infer<typeof organizerStateCountsSchema>;
 
 const draftAncestorSchema = z.object({
   name: z.string().min(1),
@@ -223,6 +222,10 @@ export const previewSchema = z.object({
     .optional(),
 });
 export const rpcContract = defineRpcContract({
+  observedNames: {
+    input: z.object({ threadId: z.string().min(1) }),
+    output: observedNamesSchema,
+  },
   question_at: {
     input: z.object({
       threadId: z.string().min(1),

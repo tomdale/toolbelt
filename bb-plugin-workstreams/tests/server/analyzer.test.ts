@@ -55,6 +55,51 @@ const analyses = (w: World) =>
   );
 
 describe("idle analysis", () => {
+  it("persists observed names across runs without altering manual topics and deletes them with the thread", async () => {
+    let count = 0;
+    const w = await setup(() =>
+      JSON.stringify({
+        recap: "Done",
+        state: "done",
+        goal: "Name experiment",
+        names: {
+          products: count++ === 0 ? ["Lumen"] : ["Lumen", "BB"],
+          features: [{ name: "Cache", product: "Lumen" }],
+        },
+      }),
+    );
+    w.addThread("t1", { status: "idle", latestAttentionAt: 10 });
+    w.converse("t1", ["Fix the Lumen cache"]);
+    await w.harness.behavior.callRpc("refresh", null);
+    const topics = new TopicStore(openDatabase(w.bb));
+    topics.assign("t1", null, { provenance: "manual" });
+    await w.harness.behavior.runCli(["analyze", "t1"]);
+    await w.harness.behavior.runCli(["analyze", "t1"]);
+    const observed = (await w.harness.behavior.callRpc("observedNames", {
+      threadId: "t1",
+    })) as {
+      products: { name: string; runs: number }[];
+      features: { name: string; product: string; runs: number }[];
+    };
+    expect(observed.products).toMatchObject([
+      { name: "BB", runs: 1 },
+      { name: "Lumen", runs: 2 },
+    ]);
+    expect(observed.features).toMatchObject([
+      { name: "Cache", product: "Lumen", runs: 2 },
+    ]);
+    expect(topics.list()).toHaveLength(0);
+    expect(topics.assignment("t1").provenance).toBe("manual");
+    expect(
+      await w.harness.behavior.callRpc("observedNames", { threadId: "other" }),
+    ).toEqual({ products: [], features: [] });
+    await w.harness.behavior.emitThreadEvent("thread.deleted", {
+      thread: w.threads.get("t1")!,
+    });
+    expect(
+      await w.harness.behavior.callRpc("observedNames", { threadId: "t1" }),
+    ).toEqual({ products: [], features: [] });
+  });
   it("analyzes a thread a few seconds after its turn completes", async () => {
     const w = await setup();
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });

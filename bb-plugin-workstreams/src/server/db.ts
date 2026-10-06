@@ -329,6 +329,14 @@ const MIGRATIONS = [
   "DROP TABLE IF EXISTS ws_placement",
   "DELETE FROM ws_trace_link WHERE trace_id IN (SELECT id FROM ws_trace WHERE kind IN ('analysis', 'opening-goal', 'classify', 'regroup', 'route'))",
   "DELETE FROM ws_trace WHERE kind IN ('analysis', 'opening-goal', 'classify', 'regroup', 'route')",
+  `CREATE TABLE ws_name_observation (
+    id INTEGER PRIMARY KEY,
+    thread_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    at INTEGER NOT NULL,
+    names TEXT NOT NULL
+  )`,
+  "CREATE INDEX ws_name_observation_thread ON ws_name_observation(thread_id)",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {
