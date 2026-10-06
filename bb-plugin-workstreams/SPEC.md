@@ -39,7 +39,7 @@ Quick analysis runs on a composer draft to preview a goal and topic. The matchin
 
 At turn end, Full analysis receives requests, the latest reply, prior goal and topic, project context, the topic tree, and an agent report when available. It returns goal, topic, and scope shift. Only without a report does it supply fallback recap, status, and needs-you. Full analysis runs after a substantive new request; a Workstreams status-check turn runs it only if no report was made. Failed turns are marked error without analysis.
 
-Topic application respects source priority: manual never changes; inherited changes only on scope shift; full replaces quick and updates full; quick applies only before a stronger source. Goal retitling follows the title-lock and cooldown policy.
+Topic application respects source priority: manual never changes; inherited changes only on scope shift; full replaces quick and updates full; quick applies only before a stronger source. Goal retitling preserves externally edited titles and applies only current results; accepted title changes have no time-based limit.
 
 Question cards and agent reports precede analysis fallback for status. Agent recap states map complete to done, review to review, and waiting to working. Fresh user input clears the prior recap. Recap reminders remain configurable.
 

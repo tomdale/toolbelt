@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  RETITLE_COOLDOWN_MS,
   observeTitle,
   retitleDecision,
   type TitleRecord,
@@ -77,7 +76,6 @@ describe("retitleDecision", () => {
       suggestion: "New",
       revision: 100,
       basis: "analysis",
-      now: 10 * RETITLE_COOLDOWN_MS,
       ...overrides,
     });
 
@@ -101,9 +99,9 @@ describe("retitleDecision", () => {
     });
   });
 
-  it("rate-limits titled threads but not untitled ones", () => {
-    const recent = { ...fresh, retitledAt: 10 * RETITLE_COOLDOWN_MS - 1 };
-    expect(decide({ record: recent })).toMatchObject({ reason: "cooldown" });
+  it("accepts current suggestions even for recently retitled threads", () => {
+    const recent = { ...fresh, retitledAt: Date.now() };
+    expect(decide({ record: recent })).toEqual({ ok: true });
     expect(
       decide({
         record: { ...recent, observed: null },
@@ -117,14 +115,14 @@ describe("retitleDecision", () => {
       observed: "Old",
       written: "Old",
       locked: false,
-      retitledAt: 10 * RETITLE_COOLDOWN_MS - 60_000,
+      retitledAt: Date.now(),
       provisional: true,
     };
 
-    it("is replaced by the first full analysis whatever the cooldown says", () => {
+    it("can be replaced by current full analysis, as can a settled title", () => {
       expect(
         decide({ record: { ...provisional, provisional: false } }),
-      ).toEqual({ ok: false, reason: "cooldown" });
+      ).toEqual({ ok: true });
       expect(decide({ record: provisional })).toEqual({ ok: true });
     });
 
@@ -207,11 +205,11 @@ describe("retitleDecision", () => {
       });
     });
 
-    it("isn't held to the cooldown or to the thread being idle", () => {
+    it("can name an active thread with a recent title record", () => {
       const recent = {
         ...fresh,
         observed: null,
-        retitledAt: 10 * RETITLE_COOLDOWN_MS - 1,
+        retitledAt: Date.now(),
       };
       expect(opening({ record: recent })).toEqual({ ok: true });
     });

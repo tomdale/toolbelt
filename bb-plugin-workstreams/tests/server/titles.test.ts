@@ -95,7 +95,7 @@ describe("keeping thread titles current", () => {
     expect(w.threads.get("t1")?.title).toBeNull();
   });
 
-  it("retitles a thread whose focus moved, at most once an hour", async () => {
+  it("retitles consecutive turns immediately when the focus changes", async () => {
     // Before setup: the plugin captures Date.now when it loads.
     let now = 1_000_000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
@@ -108,11 +108,8 @@ describe("keeping thread titles current", () => {
     const [entry] = await retitles(w);
     expect(entry?.rationale).toBe("Retitled from Explain build caching");
 
-    now += 30 * 60_000;
+    now += 1;
     await turn(w, "t1", 200);
-    expect(w.threads.get("t1")?.title).toBe("Markdown viewer themes");
-    now += 31 * 60_000;
-    await turn(w, "t1", 300);
     expect(w.threads.get("t1")?.title).toBe("Markdown viewer fonts");
     clock.mockRestore();
   });

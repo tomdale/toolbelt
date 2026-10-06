@@ -22,18 +22,10 @@ export type TitleRecord = {
   readonly retitledAt: number | null;
   /**
    * `written` was inferred from the opening request alone, while the first
-   * turn was still running. The first full analysis may replace it whatever
-   * the cooldown says; after that it is an ordinary Workstreams title.
+   * turn was still running. Full analysis settles it after the first turn.
    */
   readonly provisional: boolean;
 };
-
-/**
- * Titled threads are retitled at most this often, so a thread's name stays
- * recognizable while its focus is settling. Untitled threads are not limited,
- * and neither is a provisional title: it exists to be replaced.
- */
-export const RETITLE_COOLDOWN_MS = 60 * 60_000;
 
 /**
  * Folds one observation of a thread's raw title into its record. A first
@@ -70,7 +62,7 @@ const same = (a: string, b: string) =>
   b.replace(/\s+/g, " ").trim().toLowerCase();
 
 export type RetitleSkip =
-  "no-suggestion" | "unchanged" | "stale" | "locked" | "cooldown" | "titled";
+  "no-suggestion" | "unchanged" | "stale" | "locked" | "titled";
 
 /**
  * What a suggested title was inferred from.
@@ -99,7 +91,6 @@ export function retitleDecision(args: {
   /** The thread revision the suggestion was made for. */
   revision: number;
   basis: RetitleBasis;
-  now: number;
 }): { ok: true } | { ok: false; reason: RetitleSkip } {
   const { record, thread, suggestion } = args;
   if (!suggestion) return { ok: false, reason: "no-suggestion" };
@@ -119,12 +110,5 @@ export function retitleDecision(args: {
   if (thread.status !== "idle" || thread.latestAttentionAt > args.revision)
     return { ok: false, reason: "stale" };
   if (record.locked) return { ok: false, reason: "locked" };
-  if (
-    thread.title !== null &&
-    !record.provisional &&
-    record.retitledAt !== null &&
-    args.now - record.retitledAt < RETITLE_COOLDOWN_MS
-  )
-    return { ok: false, reason: "cooldown" };
   return { ok: true };
 }

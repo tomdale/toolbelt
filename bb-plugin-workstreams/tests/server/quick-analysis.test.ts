@@ -200,7 +200,7 @@ describe("naming a thread from its opening request", () => {
     expect(openingCalls(w)).toHaveLength(1);
   });
 
-  it("is replaced by the first analysis whatever the hour's cooldown says", async () => {
+  it("is settled by the first analysis and updated by later analyses", async () => {
     const w = await setup(
       models({
         opening: ["Fix stale build cache"],
@@ -216,7 +216,6 @@ describe("naming a thread from its opening request", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     await finishTurn(w, "t1", 200);
     await settle(6_000);
-    // Seconds after the provisional title: no cooldown applies to it.
     expect(w.threads.get("t1")?.title).toBe("Speed up the monorepo build");
     expect((await retitles(w)).map((e) => e.rationale)).toEqual([
       "Retitled after the first turn from Fix stale build cache",
@@ -227,13 +226,13 @@ describe("naming a thread from its opening request", () => {
       provisional: 0,
     });
 
-    // From then on it is an ordinary title: at most one change an hour.
+    w.converse("t1", [REQUEST, "Cache the monorepo build"]);
     await finishTurn(w, "t1", 300);
     await settle(6_000);
-    expect(w.threads.get("t1")?.title).toBe("Speed up the monorepo build");
+    expect(w.threads.get("t1")?.title).toBe("Cache the monorepo build");
   });
 
-  it("settles when the first analysis agrees, so the cooldown applies from then on", async () => {
+  it("settles when the first analysis agrees and accepts a later changed goal", async () => {
     const w = await setup(
       models({
         opening: ["Fix stale build cache"],
@@ -250,11 +249,11 @@ describe("naming a thread from its opening request", () => {
     await settle(6_000);
     expect(titleRecord(w, "t1")).toMatchObject({ provisional: 0 });
     expect(await retitles(w)).toHaveLength(1);
-    // Now an ordinary Workstreams title: a different goal waits out the hour.
+    w.converse("t1", [REQUEST, "Cache the monorepo build"]);
     await finishTurn(w, "t1", 300);
     await settle(6_000);
-    expect(w.threads.get("t1")?.title).toBe("Fix stale build cache");
-    expect(await retitles(w)).toHaveLength(1);
+    expect(w.threads.get("t1")?.title).toBe("Cache the monorepo build");
+    expect(await retitles(w)).toHaveLength(2);
   });
 
   it("leaves a title that appeared first alone, whoever wrote it", async () => {

@@ -122,7 +122,6 @@ export class WorkstreamService {
         suggestion,
         revision,
         basis,
-        now: this.now(),
       });
       if (!decision.ok || !suggestion) {
         // The analysis of the first finished turn settles a provisional title
