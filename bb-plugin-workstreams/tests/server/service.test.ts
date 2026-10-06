@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { fakeWorld } from "./fake-bb.ts";
+import { WorkstreamService } from "../../src/server/service.ts";
+import { Journal } from "../../src/server/journal.ts";
 
 type World = Awaited<ReturnType<typeof fakeWorld>>;
 let world: World | null = null;
@@ -32,19 +34,49 @@ const log = async (w: World, external = true) =>
 describe("service: retired manual placement APIs", () => {
   it("rejects removed manual RPC endpoints", async () => {
     const w = await setup();
-    await expect(rpc(w, "moveThread", { threadId: "t1", sectionId: "s1" })).rejects.toThrow(
-      /no rpc method "moveThread"/,
-    );
+    await expect(
+      rpc(w, "moveThread", { threadId: "t1", sectionId: "s1" }),
+    ).rejects.toThrow(/no rpc method "moveThread"/);
     await expect(rpc(w, "createWorkstream", { name: "Test" })).rejects.toThrow(
       /no rpc method "createWorkstream"/,
     );
-    await expect(rpc(w, "renameWorkstream", { sectionId: "s1", name: "Test" })).rejects.toThrow(
-      /no rpc method "renameWorkstream"/,
-    );
-    await expect(rpc(w, "editWorkstream", { sectionId: "s1", description: "D" })).rejects.toThrow(
-      /no rpc method "editWorkstream"/,
-    );
+    await expect(
+      rpc(w, "renameWorkstream", { sectionId: "s1", name: "Test" }),
+    ).rejects.toThrow(/no rpc method "renameWorkstream"/);
+    await expect(
+      rpc(w, "editWorkstream", { sectionId: "s1", description: "D" }),
+    ).rejects.toThrow(/no rpc method "editWorkstream"/);
   });
+});
+
+it("rechecks automatic titling after a queued write is released", async () => {
+  const w = await setup();
+  w.addThread("t1", {
+    title: "Old focus",
+    status: "idle",
+    latestAttentionAt: 10,
+  });
+  let enabled = true;
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const db = w.bb.storage.database();
+  const service = new WorkstreamService(
+    () => w.harness.sdk as never,
+    db,
+    new Journal(db),
+    () => {},
+    Date.now,
+    () => enabled,
+  );
+  const hold = service.exclusive(() => blocked);
+  const retitle = service.retitle("t1", "New focus", 10);
+  enabled = false;
+  release();
+  await hold;
+  expect(await retitle).toEqual({ entry: null, skipped: "disabled" });
+  expect(w.threads.get("t1")?.title).toBe("Old focus");
 });
 
 describe("reconciler", () => {
@@ -131,13 +163,21 @@ describe("sidebar order", () => {
   it("stores workstream and per-group thread order and returns it in state", async () => {
     const w = await setup();
     const empty = await rpc<{ order: unknown }>(w, "state", null);
-    expect(empty.order).toEqual({ workstreams: [], threads: {}, prioritized: [] });
+    expect(empty.order).toEqual({
+      workstreams: [],
+      threads: {},
+      prioritized: [],
+    });
 
     const order = await rpc<{ order: unknown }>(w, "reorder", {
       kind: "workstreams",
       ids: ["b", "a"],
     });
-    expect(order.order).toEqual({ workstreams: ["b", "a"], threads: {}, prioritized: [] });
+    expect(order.order).toEqual({
+      workstreams: ["b", "a"],
+      threads: {},
+      prioritized: [],
+    });
 
     const threadOrder = await rpc<{ order: unknown }>(w, "reorder", {
       kind: "threads",

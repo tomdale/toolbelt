@@ -485,7 +485,7 @@ export class Analyzer {
   }> {
     const sdk = this.deps.sdk();
     const [history, first] = await Promise.all([
-      sdk.threads.promptHistory({ threadId: thread.id, limit: "6" }),
+      sdk.threads.promptHistory({ threadId: thread.id, limit: "12" }),
       sdk.threads.events.list({
         threadId: thread.id,
         types: ["client/turn/requested"],
@@ -496,7 +496,7 @@ export class Analyzer {
     const recent = history
       .map((prompt) => inputText(prompt.input))
       .filter(isUserRequest)
-      .slice(0, 2)
+      .slice(0, 6)
       .reverse();
     const opening = openingOf(first) ?? "";
     const requests = [

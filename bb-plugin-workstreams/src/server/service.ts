@@ -42,6 +42,7 @@ export class WorkstreamService {
     private readonly journal: Journal,
     private readonly onChange: () => void,
     private readonly now: () => number = Date.now,
+    private readonly titlesEnabled: () => boolean = () => true,
   ) {}
 
   /** Runs `task` after every earlier mutation or reconcile has settled. */
@@ -101,6 +102,7 @@ export class WorkstreamService {
     rationale?: string,
   ): Promise<{ entry: JournalEntry | null; skipped: string | null }> {
     return this.serial(async () => {
+      if (!this.titlesEnabled()) return { entry: null, skipped: "disabled" };
       const sdk = this.sdk();
       const thread = await sdk.threads.get({ threadId }).catch(() => null);
       if (
@@ -143,11 +145,11 @@ export class WorkstreamService {
           skipped: decision.ok ? "no-suggestion" : decision.reason,
         };
       }
+      if (!this.titlesEnabled()) return { entry: null, skipped: "disabled" };
       await sdk.threads.update({ threadId, title: suggestion });
       writeTitleRecord(this.db, threadId, {
         observed: suggestion,
         written: suggestion,
-        locked: false,
         retitledAt: this.now(),
         provisional: basis === "opening",
       });
@@ -330,11 +332,10 @@ export class WorkstreamService {
         .catch(() => null);
       if (!thread || thread.title !== step.to) return { done: 0, skipped: 1 };
       await sdk.threads.update({ threadId: step.threadId, title: step.from });
-      // Undoing is the user's decision: the title they went back to stays.
+      // Restore the title history alongside BB; future analysis can rename it.
       writeTitleRecord(this.db, step.threadId, {
         observed: step.from,
         written: null,
-        locked: true,
         retitledAt: null,
         provisional: false,
       });

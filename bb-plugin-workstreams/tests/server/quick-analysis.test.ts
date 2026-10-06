@@ -277,10 +277,10 @@ describe("naming a thread from its opening request", () => {
     }
   });
 
-  it("never touches a locked title", async () => {
+  it("ignores stored title locks when naming an untitled thread", async () => {
     const w = await setup(models({ opening: ["Fix stale build cache"] }));
     newThread(w);
-    // The user undid an earlier automatic title: the thread stays as it is.
+    // Persisted lock values do not control automatic titling.
     w.bb.storage
       .database()
       .prepare(
@@ -290,11 +290,11 @@ describe("naming a thread from its opening request", () => {
     await firstMessage(w);
     await flush();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(openingCalls(w)).toHaveLength(0);
-    expect(w.threads.get("t1")?.title).toBeNull();
+    expect(openingCalls(w)).toHaveLength(1);
+    expect(w.threads.get("t1")?.title).toBe("Fix stale build cache");
   });
 
-  it("stays away once the user undoes it, even after the first analysis", async () => {
+  it("can retitle after an undo when automatic titling remains enabled", async () => {
     const w = await setup(
       models({
         opening: ["Fix stale build cache"],
@@ -312,8 +312,8 @@ describe("naming a thread from its opening request", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     await finishTurn(w, "t1", 200);
     await settle(6_000);
-    expect(w.threads.get("t1")?.title).toBeNull();
-    expect(titleRecord(w, "t1")).toMatchObject({ locked: 1, provisional: 0 });
+    expect(w.threads.get("t1")?.title).toBe("Speed up the monorepo build");
+    expect(titleRecord(w, "t1")).toMatchObject({ locked: 0, provisional: 0 });
   });
 
   it("makes no call when titles are turned off", async () => {

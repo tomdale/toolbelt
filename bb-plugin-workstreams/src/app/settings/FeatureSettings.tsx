@@ -185,7 +185,7 @@ export function ThreadsSettings() {
       />
       <SettingRow
         label="Keep titles current"
-        description="Title each thread with its goal as soon as it starts, and update it as work progresses. A title you change is left alone."
+        description="Title new threads promptly and update titles to follow their current substantive focus. Includes titles you edit; turn this off to keep them fixed."
         control={
           <SettingSwitch
             label="Keep titles current"

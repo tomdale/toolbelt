@@ -39,7 +39,7 @@ Quick analysis runs on a composer draft to preview a goal and topic. The matchin
 
 At turn end, Full analysis receives requests, the latest reply, prior goal and topic, project context, the topic tree, and an agent report when available. It returns goal, topic, and scope shift. Only without a report does it supply fallback recap, status, and needs-you. Full analysis runs after a substantive new request; a Workstreams status-check turn runs it only if no report was made. Failed turns are marked error without analysis.
 
-Topic application respects source priority: manual never changes; inherited changes only on scope shift; full replaces quick and updates full; quick applies only before a stronger source. Goal retitling preserves externally edited titles and applies only current results; accepted title changes have no time-based limit.
+Topic application respects source priority: manual never changes; inherited changes only on scope shift; full replaces quick and updates full; quick applies only before a stronger source. Titles follow the current substantive focus using recent requests and findings. When Keep titles current is enabled, current Full analysis results may replace externally edited titles as well; accepted changes have no time-based limit. Opening analysis only fills empty titles.
 
 Question cards and agent reports precede analysis fallback for status. Agent recap states map complete to done, review to review, and waiting to working. Fresh user input clears the prior recap. Recap reminders remain configurable.
 
@@ -53,7 +53,7 @@ The Organization page shows current organizer state, workstreams, counts, and ag
 
 The BB composer exposes a Topic picker and Quick analysis preview. It has no destination-workstream choice. A selected topic is manual; Automatic uses Quick analysis. A workstream's ＋ seeds its topic.
 
-SQLite stores topics, topic assignments, workstream bindings, analysis, title ownership, agent reports, questions, traces, reconciler snapshots, preferences, and Activity. Migrations retain the established topic-table names and remove obsolete placement, drift, and project-shape state.
+SQLite stores topics, topic assignments, workstream bindings, analysis, title history, agent reports, questions, traces, reconciler snapshots, preferences, and Activity. Migrations retain the established topic-table names and remove obsolete placement, drift, and project-shape state.
 
 `src/domain/` owns classification, status, grouping, and projections. `src/server/quick.ts` performs Quick analysis; `analyzer.ts` performs Full analysis; `topics.ts` persists topics; `organizer.ts` derives membership; `preview.ts` serves composer previews. The app uses the RPC schemas in `contract.ts`; the CLI uses the same services.
 

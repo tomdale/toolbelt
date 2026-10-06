@@ -90,9 +90,9 @@ describe("keeping thread titles current", () => {
 
     await rpc(w, "undo", { entryId: entry!.id });
     expect(w.threads.get("t1")?.title).toBeNull();
-    // Undoing is a decision: later suggestions leave the thread alone.
+    // Undo restores the previous title; automatic titling remains enabled.
     await turn(w, "t1", 200);
-    expect(w.threads.get("t1")?.title).toBeNull();
+    expect(w.threads.get("t1")?.title).toBe("Fix stale build cache");
   });
 
   it("retitles consecutive turns immediately when the focus changes", async () => {
@@ -114,7 +114,7 @@ describe("keeping thread titles current", () => {
     clock.mockRestore();
   });
 
-  it("never overrides a title someone else changed", async () => {
+  it("updates a title someone else changed while automatic titling is enabled", async () => {
     const w = await setup(["Markdown viewer themes"]);
     w.addThread("t1", { title: "Explain build caching" });
     await rpc(w, "refresh", null);
@@ -123,11 +123,11 @@ describe("keeping thread titles current", () => {
     await rpc(w, "refresh", null);
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     await turn(w, "t1", 100);
-    expect(w.threads.get("t1")?.title).toBe("My viewer");
-    expect(await retitles(w)).toEqual([]);
+    expect(w.threads.get("t1")?.title).toBe("Markdown viewer themes");
+    expect(await retitles(w)).toHaveLength(1);
   });
 
-  it("notices a rename at retitle time even before a reconcile", async () => {
+  it("updates an external rename even before a reconcile", async () => {
     // Before setup: the plugin captures Date.now when it loads.
     let now = 1_000_000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
@@ -140,7 +140,7 @@ describe("keeping thread titles current", () => {
     w.threads.set("t1", { ...w.threads.get("t1")!, title: "My viewer" });
     now += 2 * 60 * 60_000;
     await turn(w, "t1", 200);
-    expect(w.threads.get("t1")?.title).toBe("My viewer");
+    expect(w.threads.get("t1")?.title).toBe("Markdown viewer fonts");
     clock.mockRestore();
   });
 

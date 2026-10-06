@@ -55,6 +55,26 @@ const analyses = (w: World) =>
   );
 
 describe("idle analysis", () => {
+  it("supplies preceding substantive requests when the latest follow-ups are procedural", async () => {
+    const w = await setup();
+    w.addThread("t1", { status: "idle", latestAttentionAt: 10 });
+    w.converse("t1", [
+      "Monitor the deployment",
+      "Investigate recurring scheduler schema errors",
+      "Explain the schema migration",
+      "Where is the code?",
+      "Remove change-specific README details",
+    ]);
+    await w.harness.behavior.callRpc("refresh", null);
+    await w.harness.behavior.runCli(["analyze", "t1"]);
+    const prompt = analyses(w).at(-1)!.prompt;
+    expect(prompt).toContain("Investigate recurring scheduler schema errors");
+    expect(prompt).toContain("Explain the schema migration");
+    expect(
+      prompt.indexOf("Investigate recurring scheduler schema errors"),
+    ).toBeLessThan(prompt.indexOf("Remove change-specific README details"));
+    expect(prompt).toContain("Later evidence takes precedence");
+  });
   it("persists observed names across runs without altering manual topics and deletes them with the thread", async () => {
     let count = 0;
     const w = await setup(() =>
@@ -248,7 +268,9 @@ describe("idle analysis", () => {
   it("uses the previous durable goal as input and carries it forward when omitted", async () => {
     let previous: string | null = null;
     const w = await setup(({ prompt }) => {
-      const match = prompt.match(/Previously settled goal: "([^"]+)"/);
+      const match = prompt.match(
+        /Previous title candidate \(context, not authority\): "([^"]+)"/,
+      );
       previous = match?.[1] ?? null;
       return JSON.stringify({
         recap: "Still making progress",
@@ -296,7 +318,7 @@ describe("idle analysis", () => {
       );
     await w2.harness.behavior.runCli(["analyze", "t2"]);
     expect(w2.completions.at(-1)?.prompt).toContain(
-      'Previously settled goal: "Make onboarding easier to complete"',
+      'Previous title candidate (context, not authority): "Make onboarding easier to complete"',
     );
     expect(w2.completions.at(-1)?.prompt).not.toContain("Legacy inferred");
     expect((await state(w2)).analysis.t2?.goal).toBe(

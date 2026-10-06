@@ -80,12 +80,11 @@ describe("adopting stored goals as titles", () => {
     expect(done(world)).toBe("1");
   });
 
-  it("leaves titled, running, hidden, archived and locked threads alone", async () => {
+  it("leaves titled, running, hidden and archived threads alone", async () => {
     world = await fakeWorld();
     writeTitleRecord(world.bb.storage.database(), "locked", {
       observed: "Mine",
       written: null,
-      locked: true,
       retitledAt: null,
       provisional: false,
     });
@@ -106,7 +105,7 @@ describe("adopting stored goals as titles", () => {
         ),
       ),
     );
-    expect(titled.map((t) => t.id)).toEqual(["fresh"]);
+    expect(titled.map((t) => t.id)).toEqual(["locked", "fresh"]);
   });
 
   it("skips a thread with no usable stored goal", async () => {

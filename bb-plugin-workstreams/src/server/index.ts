@@ -68,7 +68,14 @@ export default async function plugin(bb: BbPluginApi) {
   }
   const journal = new Journal(db);
   const notify = () => bb.realtime.publish("changed", {});
-  const service = new WorkstreamService(() => bb.sdk, db, journal, notify);
+  const service = new WorkstreamService(
+    () => bb.sdk,
+    db,
+    journal,
+    notify,
+    Date.now,
+    () => loadPrefs(db).threads.autoTitle,
+  );
   const snoozes = new ThreadSnoozes(db);
   /**
    * Drops snoozes that ended, against the reconciler's fresh thread list.

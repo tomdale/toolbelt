@@ -24,7 +24,6 @@ import type { Database } from "./db.ts";
 import type { InventoryThread } from "./inventory.ts";
 import type { Inference } from "./model.ts";
 import { isUserRequest, openingRequest } from "./requests.ts";
-import { readTitleRecord } from "./titles.ts";
 
 type Sdk = BbPluginApi["sdk"];
 
@@ -217,8 +216,7 @@ export class QuickAnalysis {
       this.inFlight < MAX_IN_FLIGHT &&
       this.deps.enabled() &&
       // A thread whose turn was analyzed is named by its analysis.
-      !this.deps.analyzed(threadId) &&
-      !readTitleRecord(this.deps.db, threadId)?.locked
+      !this.deps.analyzed(threadId)
     );
   }
 

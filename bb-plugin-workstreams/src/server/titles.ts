@@ -1,5 +1,5 @@
 /**
- * Storage for thread title ownership (`ws_title`). The rules live in
+ * Storage for thread title history (`ws_title`). The rules live in
  * `domain/titles.ts`; this module only reads and writes records.
  */
 import type { Database } from "./db.ts";
@@ -26,7 +26,6 @@ export function readTitleRecord(
     ? {
         observed: row.observed,
         written: row.written,
-        locked: row.locked === 1,
         retitledAt: row.retitled_at,
         provisional: row.provisional === 1,
       }
@@ -46,7 +45,7 @@ export function writeTitleRecord(
     threadId,
     record.observed,
     record.written,
-    record.locked ? 1 : 0,
+    0,
     record.retitledAt,
     record.provisional ? 1 : 0,
   );

@@ -7,13 +7,12 @@
  * opening words of its first request, until its next turn is analyzed. This
  * gives each such thread its stored goal now, so every surface shows the same
  * name at once. It goes through the ordinary retitle policy, so a thread that
- * was locked, is running, or has moved on since its analysis is left for its
+ * is running or has moved on since its analysis is left for its
  * next analysis, and each title is a journaled change with Undo.
  */
 import { GOAL_MAX } from "../domain/analysis.ts";
 import { getMeta, setMeta, type Database } from "./db.ts";
 import type { InventoryThread } from "./inventory.ts";
-import { readTitleRecord } from "./titles.ts";
 
 /** The `ws_meta` key that records the pass has been made. */
 export const ADOPTED_KEY = "goal_titles_adopted";
@@ -50,8 +49,7 @@ export async function adoptStoredGoals(deps: {
       thread.ownTitle !== null ||
       thread.status !== "idle" ||
       thread.isHidden ||
-      thread.isArchived ||
-      readTitleRecord(deps.db, thread.id)?.locked
+      thread.isArchived
     )
       continue;
     const stored = deps.analysis(thread.id);
