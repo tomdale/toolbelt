@@ -4,11 +4,11 @@
  * the server, the app, and tests share one definition.
  */
 import { z } from "zod";
-import type {
-  AgentReport,
-  StoredAnalysis,
-  WorkState,
-} from "./analysis.ts";
+import {
+  normalizeRecapFileLinks,
+  recapMarkdownSpans,
+} from "./recapFileLinks.ts";
+import type { AgentReport, StoredAnalysis, WorkState } from "./analysis.ts";
 
 export const RECAP_TOOL = "WorkstreamsRecap";
 
@@ -448,7 +448,7 @@ export function recapMarkdown(recap: Recap): string {
       : recap.state === "waiting"
         ? "Waiting"
         : "Ready for review";
-  return [
+  const markdown = [
     `**${state}** · ${recap.goal}`,
     ...(recap.state === "waiting"
       ? [
@@ -478,6 +478,7 @@ export function recapMarkdown(recap: Recap): string {
   ]
     .filter((part): part is string => part !== null)
     .join("\n");
+  return normalizeRecapFileLinks(markdown);
 }
 
 /** The tool's description, as the agent sees it in its tool list. */
@@ -601,10 +602,9 @@ const TOKEN =
  * a hash; other code spans and link syntax stay whole for Markdown.
  */
 export function recapSegments(text: string): RecapSegment[] {
+  text = normalizeRecapFileLinks(text);
   const segments: RecapSegment[] = [];
   let markdown = "";
-  const protectedSpan =
-    /`[^`]*`|\[[^\]]*\]\([^)]*\)|<https?:\/\/[^>\s]+>|https?:\/\/\S+/g;
   let last = 0;
   const scan = (chunk: string) => {
     let at = 0;
@@ -621,15 +621,15 @@ export function recapSegments(text: string): RecapSegment[] {
     }
     markdown += chunk.slice(at);
   };
-  for (const span of text.matchAll(protectedSpan)) {
+  for (const span of recapMarkdownSpans(text)) {
     scan(text.slice(last, span.index));
-    const sha = /^`\s*([0-9a-f]{7,40})\s*`$/.exec(span[0])?.[1];
+    const sha = /^`\s*([0-9a-f]{7,40})\s*`$/.exec(span.text)?.[1];
     if (sha && /[0-9]/.test(sha) && /[a-f]/.test(sha)) {
       if (markdown) segments.push({ kind: "markdown", text: markdown });
       markdown = "";
       segments.push({ kind: "sha", sha });
-    } else markdown += span[0];
-    last = span.index + span[0].length;
+    } else markdown += span.text;
+    last = span.index + span.text.length;
   }
   scan(text.slice(last));
   if (markdown) segments.push({ kind: "markdown", text: markdown });

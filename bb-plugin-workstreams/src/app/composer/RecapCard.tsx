@@ -210,7 +210,7 @@ function RecapText({
   if (segments.length === 1 && segments[0]!.kind === "markdown")
     return (
       <Markdown
-        content={text}
+        content={segments[0]!.text}
         experimental_document={experimental_document}
         className={`min-w-0 ${typeClass} ${MARKDOWN_CLASS} ${className}`}
       />

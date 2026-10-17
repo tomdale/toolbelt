@@ -3,13 +3,16 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { emptyState, sidebarThread } from "./fixtures.ts";
+import { recapInputSchema, toRecap } from "../../src/domain/recap.ts";
 
 const interactionOverride = vi.hoisted(() => ({
   value: null as boolean | null,
 }));
+const markdownRendering = vi.hoisted(() => ({ enabled: false }));
 vi.mock("@get-bb/plugin-sdk/app", async (importActual) => {
   const actual = await importActual<typeof import("@get-bb/plugin-sdk/app")>();
   const React = await import("react");
+  const { default: ReactMarkdown } = await import("react-markdown");
   return {
     ...actual,
     Markdown: (props: React.ComponentProps<typeof actual.Markdown>) =>
@@ -21,7 +24,10 @@ vi.mock("@get-bb/plugin-sdk/app", async (importActual) => {
           "data-root-path": props.experimental_document?.rootPath,
           "data-target": JSON.stringify(props.experimental_document?.target),
         },
-        React.createElement(actual.Markdown, props),
+        // The SDK harness renders plain text; anchor regressions need BB's parser.
+        markdownRendering.enabled
+          ? React.createElement(ReactMarkdown, { children: props.content })
+          : React.createElement(actual.Markdown, props),
       ),
     experimental_useSidebarThreads: () => {
       const state = actual.experimental_useSidebarThreads();
@@ -60,6 +66,7 @@ vi.mock("../../src/app/composer/useContinuing.ts", async (importActual) => {
 });
 
 afterEach(() => {
+  markdownRendering.enabled = false;
   sendingOverride.value = null;
   interactionOverride.value = null;
   cleanup();
@@ -671,6 +678,110 @@ it("resolves inline recap file links from the thread workspace root", async () =
     path: "__recap__.md",
   });
 });
+
+it.each(["full", "minimal"])(
+  "renders stored Complete recap file paths with spaces as anchors in %s",
+  async (layout) => {
+    markdownRendering.enabled = true;
+    const slot = await mount({
+      layout,
+      recap: {
+        goal: "Wrote [the plan](Documents/Example App/Production Plan.md)",
+        latest: [
+          {
+            text: "Added [production plan](Documents/Example App/Production Plan.md): roadmap",
+            detail:
+              "Read [design notes](/work/docs/Design Notes.md) after abc1234",
+          },
+        ],
+      },
+    });
+    const region = await slot.findByRole("region", { name: "Latest recap" });
+    for (const label of ["the plan", "production plan"])
+      expect(slot.getByRole("link", { name: label }).getAttribute("href")).toBe(
+        "Documents/Example%20App/Production%20Plan.md",
+      );
+    expect(
+      slot.getByRole("link", { name: "design notes" }).getAttribute("href"),
+    ).toBe("/work/docs/Design%20Notes.md");
+    expect(region.textContent).not.toContain("](Documents/");
+    expect(
+      slot.getByRole("button", { name: "Copy commit abc1234" }),
+    ).toBeTruthy();
+    const document = slot
+      .getByRole("link", { name: "production plan" })
+      .closest('[data-testid="recap-markdown-document"]')!;
+    expect(document.getAttribute("data-root-path")).toBe("/work");
+    expect(JSON.parse(document.getAttribute("data-target")!)).toEqual({
+      kind: "workspace",
+      environmentId: "env_1",
+      path: "__recap__.md",
+    });
+  },
+);
+
+it.each(["full", "minimal"])(
+  "renders Review file links without turning their titles into commit chips in %s",
+  async (layout) => {
+    markdownRendering.enabled = true;
+    const slot = await mount({
+      layout,
+      recap: {
+        state: "review",
+        review: [
+          'Inspect [the draft](docs/My Draft.md "Review ) abc1234"), [notes](<docs/My ) abc1234.md>), and `[example](docs/My Draft.md)`',
+        ],
+      },
+    });
+    const link = await slot.findByRole("link", { name: "the draft" });
+    expect(link.getAttribute("href")).toBe("docs/My%20Draft.md");
+    expect(link.getAttribute("title")).toBe("Review ) abc1234");
+    expect(slot.getByRole("link", { name: "notes" }).getAttribute("href")).toBe(
+      "docs/My%20)%20abc1234.md",
+    );
+    expect(
+      slot.queryByRole("button", { name: "Copy commit abc1234" }),
+    ).toBeNull();
+    expect(slot.queryByRole("link", { name: "example" })).toBeNull();
+  },
+);
+
+it.each([
+  {
+    text: "[plan](docs/plan.md (Value < abc1234))",
+    label: "plan",
+    href: "docs/plan.md",
+  },
+  {
+    text: "[the `[` parser abc1234](docs/plan.md)",
+    label: "the [ parser abc1234",
+    href: "docs/plan.md",
+  },
+  {
+    text: String.raw`[plan](docs/My \&amp; Notes.md)`,
+    label: "plan",
+    href: "docs/My%20&amp;%20Notes.md",
+  },
+])(
+  "preserves the target and label of stored $text",
+  async ({ text, label, href }) => {
+    markdownRendering.enabled = true;
+    const recap = toRecap(
+      recapInputSchema.parse({
+        state: "complete",
+        goal: "Wrote the plan",
+        latest: [text],
+      }),
+      { id: "r1", turnId: "turn", at: 1 },
+    );
+    const slot = await mount({ recap });
+    const link = await slot.findByRole("link", { name: label });
+    expect(link.getAttribute("href")).toBe(href);
+    expect(
+      slot.queryByRole("button", { name: "Copy commit abc1234" }),
+    ).toBeNull();
+  },
+);
 
 it("shows UI review steps without artifact links", async () => {
   const slot = await mount({
