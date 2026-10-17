@@ -701,13 +701,10 @@ export default async function plugin(bb: BbPluginApi) {
       const stored = recaps.get(threadId);
       const { capped, corrections } = recaps.capped(threadId);
       const recap = stored?.recap ?? null;
-      // Only visible file links need the environment, and an unreadable one
-      // leaves them as plain text.
+      // Inline Markdown can contain file links even without artifact links.
+      // Visible recaps need the workspace root to resolve those destinations.
       const environment =
-        recap &&
-        !stored?.dismissed &&
-        recap.links.some((link) => link.location.startsWith("/")) &&
-        thread.environmentId
+        recap && !stored?.dismissed && thread.environmentId
           ? await bb.sdk.environments
               .get({ environmentId: thread.environmentId })
               .catch(() => null)

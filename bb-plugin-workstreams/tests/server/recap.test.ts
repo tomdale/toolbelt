@@ -4,7 +4,7 @@ import {
   makePluginAgentConfigurationContext,
   makeQueueEntry,
 } from "@get-bb/plugin-sdk/testing";
-import { RECAP_TOOL } from "../../src/domain/recap.ts";
+import { RECAP_TOOL, type RecapFiles } from "../../src/domain/recap.ts";
 import { fakeWorld } from "./fake-bb.ts";
 import plugin from "../../src/server/index.ts";
 
@@ -58,6 +58,7 @@ async function world(
       waitingCancelled: boolean;
       capped: boolean;
       corrections: number;
+      files: RecapFiles | null;
     }>;
   const corrections = () =>
     w.sent.filter(
@@ -77,6 +78,40 @@ async function world(
     configure,
   };
 }
+
+it("resolves workspace context for an inline file link without artifact links", async () => {
+  const s = await world();
+  s.w.harness.sdk.stub("environments.get", async () => ({
+    id: "env_1",
+    path: "/work",
+    hostId: "host_1",
+  }));
+  s.w.turn("t1");
+  await s.report({
+    ...RECAP,
+    latest: ["Wrote [the plan](docs/Project Plan.md)"],
+  });
+  expect(await s.card()).toMatchObject({
+    recap: { links: [] },
+    files: { environmentId: "env_1", root: "/work", hostId: "host_1" },
+  });
+});
+
+it("keeps the recap available when its workspace cannot be read", async () => {
+  const s = await world();
+  s.w.harness.sdk.stub("environments.get", async () => {
+    throw new Error("Environment unavailable");
+  });
+  s.w.turn("t1");
+  await s.report({
+    ...RECAP,
+    latest: ["Wrote [the plan](docs/Project Plan.md)"],
+  });
+  expect(await s.card()).toMatchObject({
+    recap: { goal: RECAP.goal },
+    files: { environmentId: "env_1", root: null, hostId: null },
+  });
+});
 
 describe("waiting status checks", () => {
   const waiting = {
