@@ -24,6 +24,7 @@ import type { Database } from "./db.ts";
 import type { InventoryThread } from "./inventory.ts";
 import type { Inference } from "./model.ts";
 import { isUserRequest, openingRequest } from "./requests.ts";
+import { threadEvidence } from "./evidence.ts";
 
 type Sdk = BbPluginApi["sdk"];
 
@@ -243,6 +244,8 @@ export class QuickAnalysis {
     const revision = thread.latestAttentionAt ?? thread.updatedAt;
     // The topic tree and project matter only when there's a topic to choose.
     const topics = this.wantsTopic(thread) ? this.deps.topics : undefined;
+    const evidence = threadEvidence({ ...thread, status: undefined });
+    const entities = topics?.entities() ?? [];
     const { value, traceId } = await this.deps.inference.run(
       "quick-analysis",
       {
@@ -251,7 +254,7 @@ export class QuickAnalysis {
           topics && thread.projectId
             ? await topics.project(thread.projectId)
             : null,
-        entities: topics?.entities() ?? [],
+        entities,
       },
       {
         model: await this.deps.model(),
@@ -262,7 +265,24 @@ export class QuickAnalysis {
       },
     );
     if (this.disposed) return;
-    if (topics && this.wantsTopic(thread))
+    const live = await this.deps
+      .sdk()
+      .threads.get({ threadId: thread.id })
+      .catch(() => null);
+    if (
+      !live ||
+      this.disposed ||
+      this.deps.analyzed(thread.id) ||
+      threadEvidence({ ...live, status: undefined }) !== evidence ||
+      (topics && JSON.stringify(topics.entities()) !== JSON.stringify(entities))
+    ) {
+      this.deps.inference.annotate(traceId, {
+        application: "discarded: opening evidence changed",
+        evidenceRevision: revision,
+      });
+      return;
+    }
+    if (topics && this.wantsTopic(live))
       topics.apply(thread.id, value, traceId);
     if (!value.goal) {
       this.deps.inference.annotate(traceId, {

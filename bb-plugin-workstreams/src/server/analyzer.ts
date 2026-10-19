@@ -35,6 +35,7 @@ import type { Database } from "./db.ts";
 import { displayTitle, type InventoryThread } from "./inventory.ts";
 import { modelLabel, type Inference, type OutputOf } from "./model.ts";
 import { inputText, isUserRequest, openingOf } from "./requests.ts";
+import { assignmentEvidence, threadEvidence } from "./evidence.ts";
 
 type Sdk = BbPluginApi["sdk"];
 
@@ -60,6 +61,8 @@ export class Analyzer {
   /** In-flight runs per thread; a manual run can overlap a queued one. */
   private readonly running = new Map<string, number>();
   private inFlight = 0;
+  /** A newer invocation supersedes a slower invocation at the same revision. */
+  private readonly epochs = new Map<string, number>();
   /** Threads whose turn completed again while a run for them was in flight. */
   private readonly rerun = new Set<string>();
   private readonly failures = new Map<
@@ -199,6 +202,7 @@ export class Analyzer {
 
   /** A new turn started: whatever was scheduled would describe the old one. */
   onActive(threadId: string): void {
+    this.epochs.set(threadId, (this.epochs.get(threadId) ?? 0) + 1);
     const timer = this.timers.get(threadId);
     if (timer) clearTimeout(timer);
     this.timers.delete(threadId);
@@ -325,6 +329,8 @@ export class Analyzer {
     this.running.set(threadId, (this.running.get(threadId) ?? 0) + 1);
     this.inFlight++;
     let revision = -1;
+    const epoch = (this.epochs.get(threadId) ?? 0) + 1;
+    this.epochs.set(threadId, epoch);
     try {
       const sdk = this.deps.sdk();
       const thread = await sdk.threads.get({ threadId });
@@ -335,6 +341,13 @@ export class Analyzer {
       )
         return null;
       revision = thread.latestAttentionAt ?? thread.updatedAt;
+      const evidence = threadEvidence(thread);
+      const assignment = this.deps.topics
+        ? assignmentEvidence(this.deps.topics.assignment(threadId))
+        : null;
+      const catalog = this.deps.topics
+        ? JSON.stringify(this.deps.topics.entities())
+        : null;
       const previous = this.get(threadId);
       if (
         !force &&
@@ -422,6 +435,33 @@ export class Analyzer {
         names = output.names;
       }
       if (this.disposed || this.forgotten.has(threadId)) return null;
+      const live = await sdk.threads.get({ threadId }).catch(() => null);
+      if (
+        !live ||
+        this.disposed ||
+        this.forgotten.has(threadId) ||
+        this.epochs.get(threadId) !== epoch ||
+        threadEvidence(live) !== evidence ||
+        (this.deps.topics &&
+          (assignmentEvidence(this.deps.topics.assignment(threadId)) !==
+            assignment ||
+            JSON.stringify(this.deps.topics.entities()) !== catalog))
+      ) {
+        this.deps.inference.annotate(result.traceId, {
+          application:
+            "discarded: thread, assignment, or catalog evidence changed",
+          evidenceRevision: revision,
+        });
+        if (
+          live?.status === "idle" &&
+          !this.disposed &&
+          !this.forgotten.has(threadId)
+        )
+          this.schedule(threadId, DEBOUNCE_MS);
+        return null;
+      }
+      // Application is synchronous after the live check: no newer correction
+      // can interleave with these writes on the event loop.
       if (names)
         this.deps.db
           .prepare(
@@ -454,7 +494,8 @@ export class Analyzer {
         this.lastText.delete(threadId);
       this.lastError = null;
       this.deps.onChange();
-      if (!topicOnly) this.deps.onResult?.(threadId, result);
+      if (stored.changes > 0 && !topicOnly)
+        this.deps.onResult?.(threadId, result);
       return result;
     } catch (error) {
       const previous = this.failures.get(threadId);
