@@ -20,7 +20,6 @@ import { needsYou, workView } from "../domain/status.ts";
 import type { Analyzer, StoredAnalysis } from "./analyzer.ts";
 import type { Coordinator } from "./coordinator.ts";
 import type { WorkstreamMap } from "./map.ts";
-import type { RouteDecision, Router } from "./router.ts";
 import {
   listActiveThreads,
   listSections,
@@ -178,7 +177,6 @@ export function registerCli(
     recaps,
     coordinator,
     map,
-    router,
     traces,
     arrangement,
     corpus,
@@ -198,7 +196,6 @@ export function registerCli(
     recaps: AgentRecaps;
     coordinator: Coordinator;
     map: WorkstreamMap;
-    router: Router;
     traces: TraceStore;
     corpus: CorpusStore;
     inference?: Inference;
@@ -439,74 +436,6 @@ export function registerCli(
               stdout: options.json
                 ? JSON.stringify({ queued, lastError: analyzer.lastError })
                 : message,
-            };
-          },
-        }),
-        handoff: cliCommand({
-          summary:
-            "Transfer a request with explicit user approval to a new thread, a new workstream, or an existing thread",
-          options: {
-            request: {
-              type: "string",
-              stdin: true,
-              required: true,
-              description:
-                "The user's request, verbatim. Prefer --request-stdin with a quoted heredoc",
-            },
-            note: {
-              type: "string",
-              description: "Context for the receiving thread (one line)",
-            },
-            "dry-run": {
-              type: "boolean",
-              description: "Print the route without acting",
-            },
-            json: { type: "boolean", description: "Print JSON" },
-          },
-          async run({ options }, ctx) {
-            const caller = ctx.threadId;
-            if (!caller)
-              throw new PluginCliError(
-                "Run handoff from inside a BB thread (BB_THREAD_ID is not set).",
-                { code: "no_caller" },
-              );
-            const request = options.request.trim();
-            if (!request)
-              throw new PluginCliError("The request is empty.", {
-                code: "empty_request",
-              });
-            if (!options["dry-run"])
-              takeHandoffSlot(caller, await turnOf(bb, caller));
-            const source = await bb.sdk.threads.get({ threadId: caller });
-            const decision = await router
-              .route(request, {
-                // Never back to the caller, or to the thread that handed the
-                // caller its work: a handoff doesn't bounce. Keep a filed
-                // caller's handoff in its workstream.
-                exclude: [caller, ...(await handedOffFrom(bb, caller))],
-                workstreamId: source.sectionId ?? null,
-                about: caller,
-              })
-              .catch(fail);
-            const note = options.note
-              ? ` (${options.note.replace(/\s+/g, " ").slice(0, 200)})`
-              : "";
-            // Plugin-sent messages show as the user's (SPEC §5), so the
-            // receiving thread is told where this came from.
-            const message = `Handed off from @thread:${caller}${note}. You own this task and the user continues here. The dispatch to this receiving thread fulfills any instruction in the original request to start or move the work into another thread. Carry out the remaining task here, retaining its execution preferences. Resolve repository or environment setup as part of the task; transfer ownership again only with a further explicit user request or approval.\n\nOriginal user request (preserved verbatim):\n${request}`;
-            const acted = await actOn(
-              router,
-              decision,
-              request,
-              options["dry-run"],
-              "handoff",
-              { message, spawnedFrom: caller },
-            );
-            return {
-              exitCode: acted.outcome === "unsure" ? 3 : 0,
-              stdout: options.json
-                ? JSON.stringify(acted)
-                : describeOutcome(acted, options["dry-run"]),
             };
           },
         }),
@@ -1124,164 +1053,4 @@ export function registerCli(
       },
     }),
   );
-}
-
-export type Acted = {
-  outcome: RouteDecision["outcome"];
-  threadId: string | null;
-  link: string | null;
-  workstream: string | null;
-  reason: string;
-  candidates?: string[];
-  /**
-   * The routing call's debug trace (`bb workstreams trace <id>`); present
-   * only when Debug mode recorded one.
-   */
-  traceId?: string;
-};
-
-/**
- * The policy for callers that can't preview (scripts, agent handoffs):
- * new threads and workstreams act at once, a continue acts only at high
- * confidence and otherwise starts a thread in that thread's workstream, and
- * unsure changes nothing.
- */
-export async function actOn(
-  router: Router,
-  decision: RouteDecision,
-  prompt: string,
-  dryRun: boolean,
-  source: "router" | "handoff",
-  options: { message?: string; spawnedFrom?: string | null } = {},
-): Promise<Acted> {
-  let final = decision;
-  // Continue only when sure; otherwise start a thread in the target's
-  // workstream (SPEC §5), or change nothing when it has none.
-  if (
-    final.outcome === "continue" &&
-    (final.confidence !== "high" || final.threadId === options.spawnedFrom)
-  ) {
-    router.forget(decision.id);
-    final = final.sectionId
-      ? {
-          ...(await router.route(prompt, {
-            workstreamId: final.sectionId,
-            exclude: options.spawnedFrom ?? null,
-          })),
-          // The routing call that picked the thread still explains this.
-          traceId: final.traceId,
-        }
-      : ({ ...final, outcome: "unsure", candidates: [] } as RouteDecision);
-  }
-  const workstream =
-    final.outcome === "new-thread"
-      ? final.workstream
-      : final.outcome === "new-workstream"
-        ? final.name
-        : final.outcome === "continue"
-          ? final.workstream
-          : null;
-  if (final.outcome === "unsure" || dryRun) {
-    // A previewed route must not file a later thread with the same text.
-    router.forget(decision.id);
-    router.forget(final.id);
-  }
-  if (final.outcome === "unsure")
-    return {
-      outcome: "unsure",
-      threadId: null,
-      link: null,
-      workstream: null,
-      reason: final.reason,
-      ...(final.traceId ? { traceId: final.traceId } : {}),
-      candidates:
-        "candidates" in final
-          ? final.candidates.map((c) =>
-              c.kind === "thread"
-                ? `@thread:${c.threadId} (${c.title})`
-                : `${c.name} (workstream)`,
-            )
-          : [],
-    };
-  const result = dryRun
-    ? { threadId: final.outcome === "continue" ? final.threadId : null }
-    : await router.execute(final, prompt, source, options);
-  return {
-    outcome: final.outcome,
-    threadId: result.threadId,
-    link: result.threadId ? `@thread:${result.threadId}` : null,
-    workstream,
-    reason: final.reason,
-    ...(final.traceId ? { traceId: final.traceId } : {}),
-  };
-}
-
-export function describeOutcome(acted: Acted, dryRun = false): string {
-  if (acted.outcome === "unsure")
-    return [
-      `Not sure where this goes: ${acted.reason}`,
-      ...(acted.candidates ?? []).map((c) => `  - ${c}`),
-      "Nothing was started.",
-    ].join("\n");
-  const verb =
-    acted.outcome === "continue"
-      ? dryRun
-        ? "Would send to"
-        : "Sent to"
-      : acted.outcome === "new-workstream"
-        ? dryRun
-          ? "Would start in new workstream"
-          : "Started in new workstream"
-        : dryRun
-          ? "Would start in"
-          : "Started in";
-  return `${verb} ${acted.outcome === "continue" ? (acted.link ?? "") : (acted.workstream ?? "")}${
-    acted.link && acted.outcome !== "continue" ? `: ${acted.link}` : ""
-  }\n${acted.reason}`;
-}
-
-const HANDOFFS_PER_TURN = 3;
-const handoffs = new Map<string, { turn: number; count: number }>();
-
-/**
- * The caller's current turn: the last completed one, which changes when the
- * turn making these calls completes. If BB can't say, a 15-minute window
- * stands in so the limit can't stick forever.
- */
-async function turnOf(bb: BbPluginApi, threadId: string): Promise<number> {
-  try {
-    const thread = await bb.sdk.threads.get({ threadId });
-    return thread.latestAttentionAt ?? thread.updatedAt;
-  } catch {
-    return -Math.floor(Date.now() / (15 * 60_000));
-  }
-}
-
-/** At most three handoffs per turn per calling thread (SPEC §5). */
-function takeHandoffSlot(caller: string, turn: number): void {
-  const current = handoffs.get(caller);
-  const count = current && current.turn === turn ? current.count : 0;
-  if (count >= HANDOFFS_PER_TURN)
-    throw new PluginCliError(
-      `This thread already handed off ${HANDOFFS_PER_TURN} requests this turn. Ask the user before handing off more.`,
-      { code: "handoff_limit" },
-    );
-  handoffs.set(caller, { turn, count: count + 1 });
-}
-
-/** The thread a handoff came from, per the caller's Workstreams metadata. */
-async function handedOffFrom(
-  bb: BbPluginApi,
-  threadId: string,
-): Promise<string[]> {
-  try {
-    const metadata = (await bb.sdk.threads.getPluginMetadata({ threadId })) as {
-      spawnedFrom?: unknown;
-    };
-    return typeof metadata.spawnedFrom === "string"
-      ? [metadata.spawnedFrom]
-      : [];
-  } catch {
-    return [];
-  }
 }

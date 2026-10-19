@@ -100,7 +100,6 @@ environments.
 | **Membership**        | The **root** thread's `sectionId`. Descendants inherit it, and their own `sectionId` is ignored.                                                                                                                           | BB, plus provenance in plugin state                           |
 | **Task thread**       | A visible, non-archived, top-level thread (no parent). A workstream has any number of them.                                                                                                                                | Derived                                                       |
 | **Delegate**          | A child of a task thread, created for a separable subtask                                                                                                                                                                  | BB `parentThreadId` + `lifecycleOwnerThreadId`                |
-| **Sibling**           | A task thread spun off from another thread for out-of-scope work                                                                                                                                                           | Metadata `spawnedFrom`. This is **not** a parent link.        |
 | **Home project**      | Where work with no code target goes. **Default: none.** Such work goes to BB's personal project ("Don't work in a project") in a fresh personal workspace. The optional `newWork.homeProjectId` preference overrides this. | Plugin preference (optional)                                  |
 | **Unfiled**           | Unsectioned roots awaiting an explicit placement or organizing run.                                                                                                                                                        | Derived                                                       |
 
@@ -119,7 +118,7 @@ environments.
   product/feature identity leaves its section placement unchanged; moving a
   native section preserves its identity.
 - **I4. Explicit moves only.** A filed thread moves only through one of these:
-  - (a) placement at creation, by the router (intake or handoff);
+  - (a) placement at creation, by the router;
   - (b) an explicit move by the user or an agent;
   - (c) Apply on a reviewed organizing preview.
 
@@ -127,7 +126,7 @@ environments.
   (or the opening-request call that names a new thread) can lead to is a
   thread's title, under the retitle policy (§10.1). Every change records its
   provenance:
-  `user | router | handoff | auto | proposal:<id> | bootstrap`.
+  `user | router | auto | proposal:<id> | bootstrap`.
 
 - **I5. Preview revision safety.** Organization previews snapshot `catalogRevision`.
   Any Catalog mutation (entity rename, reparent, merge, task assignment, or clear)
@@ -168,55 +167,13 @@ with native question support use that capability; other providers receive the
 
 Workstream membership and parent links support navigation. Repository
 instructions and execution plugins own checkout guidance and delegation
-behavior. Command details live in `--help` and the generated `plugin-commands`
-skill.
-
-**Handoff:
-`bb workstreams handoff (--request <text> | --request-stdin) [--note <text>] [--dry-run] [--json]`**
-
-- Built with `defineCli`. Agents pass the request on stdin (the option's
-  `stdin: true` form, `--request-stdin`) with a quoted heredoc, because requests
-  are long and the shell would otherwise expand `$(…)` and backticks.
-- The caller is `ctx.threadId` (from `BB_THREAD_ID`). The router (§6) excludes
-  the caller as a target and records the new thread as `spawnedFrom` the caller.
-- Agent handoffs can't use the intake preview, so the policy is:
-  - A filed caller's workstream is the handoff destination; an unfiled caller
-    leaves the destination to the router.
-  - `new-thread` acts immediately (journaled, undoable);
-  - `continue` acts only at high confidence, and otherwise falls back to
-    `new-thread`;
-  - `unsure` makes no change: it prints the candidates and exits with a distinct
-    code, so the agent can ask the user.
-- `--dry-run` prints the route without acting.
-- Output is bounded: `{ outcome, threadId, link, workstream, reason }`.
-- The sent text is prefixed with "Handed off from @thread:‹caller›", because
-  messages the plugin sends are recorded as `initiator: user` with no sender
-  _(spike)_.
-
-**Guards.**
-
-- No handoff back to the caller.
-- At most 3 handoffs per turn, counted server-side per `ctx.threadId`.
-- A handoff spawn retries with backoff while the target's new parent is still
-  `starting`: spawning a child in that window returns HTTP 500 _(spike)_.
-
-**Timing.**
-
-- The CLI works in running sessions right away.
-- The instructions reach a thread when its provider session next starts _(spike:
-  verified on start)_.
-
-**Caveat.** The handoff command needs loopback access from the agent's shell. It
-works on macOS, including Claude's sandbox, but other providers' sandboxes may
-require approval to escalate.
-
-**Scope changes.** A per-turn drift flag (§10) offers organizational placement
-updates. Explicit transfers require a user request or approval; the receiving
-thread owns the task and treats the dispatch instruction as fulfilled.
+behavior. Workstreams does not transfer requests between threads; use BB's
+thread navigation and composer controls when choosing where to work. Command
+details live in `--help` and the generated `plugin-commands` skill.
 
 ## 6. Intake router
 
-One router serves three entry points. BB's native New thread composer remains
+One router serves two entry points. BB's native New thread composer remains
 host-owned; Workstreams adds a Product or feature field to it and a
 suggestion row.
 
@@ -270,8 +227,7 @@ suggestion row.
      classified.
    - Product and feature marks use a tag icon declared in the manifest (BB's
      icon set has none, and an unknown name draws a lightning bolt).
-2. **`bb workstreams handoff`**, called by agents (§5).
-3. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
+2. **`bb workstreams new "<prompt>" [--workstream] [--project]`**, for scripts.
 
 **Inputs.**
 
@@ -372,7 +328,7 @@ without another model call. See
 | Change                                                                      | Signal                                                                            | Reaction                                                                                                                                     |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Thread created through New work (BB's New thread view)                      | `message.dispatch` on its first message                                           | Identity filed as the field showed (§6), journaled as started; the coordinator derives its section                                           |
-| Thread created through `bb workstreams new` or a handoff                    | RPC or CLI call                                                                   | Placed by the router (provenance `router` or `handoff`)                                                                                      |
+| Thread created through `bb workstreams new`                                | RPC or CLI call                                                                   | Placed by the router (provenance `router`)                                                                                                   |
 | Child created by any source                                                 | `thread.created`                                                                  | No structural change. Analyze it on its first idle.                                                                                          |
 | Top-level thread created elsewhere (CLI, automations, other plugins)        | `thread.created`, then the first `thread.idle`                                    | Respect its existing section; otherwise leave it Unfiled.                                                                                    |
 | Visible fork                                                                | `thread.created` with `sourceThreadId`                                            | Preserve the creator's placement; otherwise leave it Unfiled                                                                                 |
@@ -660,7 +616,7 @@ it.
    the newest message, it collapses into the title bar in place of BB's own title when there is room, and otherwise
    stays pinned at the top of the timeline.
 4. **CLI:**
-   `bb workstreams list | show | edit | prioritize | new | handoff | file | log | analyze | rebuild | trace | catalog (list | show | create | edit | reparent | merge) | task (show | assign | clear | reclassify)`,
+   `bb workstreams list | show | edit | prioritize | new | file | log | analyze | rebuild | trace | catalog (list | show | create | edit | reparent | merge) | task (show | assign | clear | reclassify)`,
    built with `defineCli`.
 5. **Activity log** (page tab and `bb workstreams log`):
    - Covers every change and proposal, newest first, grouped by day.
@@ -842,7 +798,7 @@ entry point is a Workstreams header action.
 | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
 | Catalog products and features, task assignments, group bindings, and revision                                                        | Plugin SQLite (`ws_corpus_entity`, `ws_corpus_subject`, `ws_corpus_group`, `ws_meta`) |
 | Workstream map, saved organizing preview, analysis cache, title ownership, journal and Activity log, reconciler cursor, debug traces | Plugin SQLite (`bb.storage.database()`) with migrations                  |
-| Per-thread `{ kind, workstreamAtCreation, spawnedFrom, filedBy, filedAt, filedSectionId }`                                           | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
+| Per-thread `{ kind, workstreamAtCreation, filedBy, filedAt, filedSectionId }`                                                       | Thread plugin metadata, namespace `workstreams`, readable by `configure` |
 | Manual order and prioritized workstreams, thread snoozes, feature-grouped Workstreams preferences, Snooze and Recap settings         | Plugin SQLite, `ws_meta` values                                          |
 | Agent recaps and their reminder budgets (§10.2)                                                                                      | Plugin SQLite, `ws_agent_recap`                                          |
 | Collapse state and UI preferences                                                                                                    | Client local storage                                                     |

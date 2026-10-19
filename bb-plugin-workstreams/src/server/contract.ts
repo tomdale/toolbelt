@@ -749,7 +749,7 @@ export const rpcContract = defineRpcContract({
   drift: {
     input: z.object({
       threadId: z.string().min(1),
-      action: z.enum(["handoff", "move", "dismiss"]),
+      action: z.enum(["move", "dismiss"]),
     }),
     output: z.object({ threadId: z.string().nullable() }),
   },

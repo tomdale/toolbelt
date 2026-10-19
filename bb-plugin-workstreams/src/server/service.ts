@@ -940,8 +940,8 @@ export class WorkstreamService {
   }
 
   /**
-   * Journals a thread the router or a handoff created already filed. Undo
-   * moves it to Unfiled; the thread itself stays.
+   * Journals a thread the router created already filed. Undo moves it to
+   * Unfiled; the thread itself stays.
    */
   recordCreated(
     threadId: string,

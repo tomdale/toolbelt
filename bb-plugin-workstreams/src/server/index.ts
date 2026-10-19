@@ -5,7 +5,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { actOn, registerCli } from "./cli.ts";
+import { registerCli } from "./cli.ts";
 import { GOAL_MAX, isCurrent } from "../domain/analysis.ts";
 import { registerAgentInstructions } from "./agents.ts";
 import { Analyzer } from "./analyzer.ts";
@@ -1034,48 +1034,11 @@ export default async function plugin(bb: BbPluginApi) {
           if (existing) return existing.sectionId;
           return (await service.createWorkstream(name, "user")).sectionId;
         };
-        if (action === "move") {
-          const entry = await service.move(
-            threadId,
-            await sectionFor(),
-            "user",
-          );
-          if (entry)
-            inference.link(analysis.traceId, { kind: "entry", ref: entry.id });
-          dismiss();
-          return { threadId };
-        }
-        // Hand off: the analyzed turn's request goes to the drift target,
-        // under the same policy as `bb workstreams handoff`.
-        const [latest] = await bb.sdk.threads.promptHistory({
-          threadId,
-          limit: "1",
-        });
-        const request = (latest?.input ?? [])
-          .map((part) => ("text" in part ? String(part.text ?? "") : ""))
-          .join("\n")
-          .trim();
-        if (!request) throw new UserError("There's no request to hand off.");
-        const decision = await router.route(request, {
-          exclude: threadId,
-          workstreamId: await sectionFor(),
-        });
-        const acted = await actOn(
-          router,
-          {
-            ...decision,
-            traceId: decision.traceId ?? analysis.traceId ?? null,
-          },
-          request,
-          false,
-          "handoff",
-          {
-            message: `Handed off from @thread:${threadId}. This is now this thread's task; the user continues here, so don't report back there.\n\n${request}`,
-            spawnedFrom: threadId,
-          },
-        );
+        const entry = await service.move(threadId, await sectionFor(), "user");
+        if (entry)
+          inference.link(analysis.traceId, { kind: "entry", ref: entry.id });
         dismiss();
-        return { threadId: acted.threadId };
+        return { threadId };
       }),
     archiveStatus: ({ threadId }) => archives.status(threadId),
     archive: ({ threadId, recapId }) =>
@@ -1186,7 +1149,6 @@ export default async function plugin(bb: BbPluginApi) {
     recaps,
     coordinator,
     map,
-    router,
     traces,
     corpus,
     inference,

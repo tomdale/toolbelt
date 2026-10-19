@@ -10,7 +10,7 @@ export const sourceSchema = z.enum([
   "user",
   "external",
   "router",
-  "handoff",
+  "handoff", // Legacy entries remain readable after request transfer is removed.
   "auto",
   "proposal",
   "bootstrap",
@@ -28,7 +28,7 @@ export const actionSchema = z.enum([
   /** A workstream proposal waiting for a decision (SPEC §9). */
   "proposal",
   "edit-workstream",
-  /** New work placed by the router or a handoff (SPEC §6). */
+  /** New work placed by the router (SPEC §6). */
   "route",
   /** A thread's title kept current by analysis (SPEC §10.1). */
   "retitle",

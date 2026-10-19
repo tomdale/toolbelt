@@ -1,6 +1,6 @@
 /**
  * Routes new work (SPEC §6) for every entry point: the native composer
- * banner, ＋ New, `bb workstreams new`, and `bb workstreams handoff`.
+ * banner, ＋ New, and `bb workstreams new`.
  *
  * `route` decides and never changes anything; `execute` acts on a decision
  * and journals it. Each decision is remembered briefly by id and by prompt, so
@@ -115,7 +115,7 @@ export type RouteClaim = {
   readonly intent: RouteIntent | null;
 };
 
-export type RouteSource = "router" | "handoff";
+export type RouteSource = "router";
 
 const MEMORY_MS = 15 * 60_000;
 
@@ -194,8 +194,6 @@ export class Router {
       explain?: (note: string) => void;
       /** The unsure decision `workstreamId` was picked from; keeps its trace. */
       fromDecisionId?: string | null;
-      /** The thread asking (a handoff's caller), for its debug trace. */
-      about?: string | null;
       /** Aborts the model call; the route then rejects with the reason. */
       signal?: AbortSignal;
     } = {},
@@ -550,9 +548,8 @@ export class Router {
       input,
       {
         model,
-        ...(options.about ? { threadId: options.about } : {}),
         label: text.replace(/\s+/g, " "),
-        links: options.about ? [{ kind: "thread", ref: options.about }] : [],
+        links: [],
         signal: options.signal,
       },
     );
@@ -1010,9 +1007,6 @@ export class Router {
     prompt: string,
     source: RouteSource,
     options: {
-      /** Text actually sent; handoffs prefix their provenance. */
-      message?: string;
-      spawnedFrom?: string | null;
       /** Execution choices from the composer the user saw. */
       execution?: Partial<SpawnArgs>;
       intent?: RouteIntent | null;
@@ -1024,7 +1018,7 @@ export class Router {
       this.claim({ id: decision.id, prompt, intent: options.intent });
     if (!this.claims.delete(claim) || claim.decision.id !== decision.id)
       throw new UserError("That preview expired; route it again.");
-    const text = options.message ?? prompt;
+    const text = prompt;
     if (decision.outcome === "unsure")
       return { threadId: null, sectionId: null };
     if (decision.outcome === "continue")
@@ -1093,12 +1087,11 @@ export class Router {
         } as SpawnArgs,
         actualSectionId,
         source,
-        options.spawnedFrom,
       );
       this.deps.service.seeThread(
         thread.id,
         actualSectionId,
-        options.spawnedFrom ?? null,
+        null,
         thread.title ?? undefined,
       );
     } catch (error) {
@@ -1208,7 +1201,6 @@ export class Router {
     args: SpawnArgs,
     sectionId: string | null,
     source: Source,
-    spawnedFrom?: string | null,
   ) {
     const at = this.now();
     return withRetry(() =>
@@ -1223,7 +1215,6 @@ export class Router {
           filedBy: source,
           filedAt: at,
           filedSectionId: sectionId,
-          ...(spawnedFrom ? { spawnedFrom } : {}),
         },
       } as SpawnArgs),
     );

@@ -269,9 +269,6 @@ bb workstreams show <workstream> [--json]      # threads nested, with where each
 bb workstreams file <thread> <workstream>      # file a root thread; `unfiled` removes it
 bb workstreams edit <workstream> [--description <text>] [--alias <a,b>]
 bb workstreams prioritize <workstream> [--off] # pin it and focus Up Next on it
-bb workstreams handoff --request-stdin [--note <text>] [--dry-run] [--json] <<'EOF'
-<the user's request, verbatim>
-EOF
 bb workstreams analyze [<thread>]              # analyze now, or catch up
 bb workstreams organization [--retry] [--json] # read or retry live organization
 bb workstreams rebuild                         # re-derive workstreams immediately
@@ -295,8 +292,7 @@ bb workstreams task clear <thread-id>          # clear identity (mark unresolved
 bb workstreams task reclassify <thread-id> [--identity <id-or-name>] # classify via model
 ```
 
-A workstream argument is a section id or its name (case-insensitive). `new` and
-`handoff` exit 3 when the router is unsure, printing the candidates.
+A workstream argument is a section id or its name (case-insensitive). `new` exits 3 when the router is unsure, printing the candidates.
 
 ## Development
 

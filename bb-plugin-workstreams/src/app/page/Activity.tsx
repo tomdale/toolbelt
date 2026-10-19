@@ -90,7 +90,7 @@ const SOURCE_LABEL: Record<Entry["source"], string> = {
   user: "you",
   external: "outside Workstreams",
   router: "router",
-  handoff: "handoff",
+  handoff: "handoff", // Legacy activity remains readable after request transfer is removed.
   auto: "automatic",
   proposal: "proposal",
   bootstrap: "bootstrap",
