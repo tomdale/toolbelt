@@ -275,7 +275,7 @@ function QuestionInputBlock({
           />
         </div>
       ) : null}
-      <div className="mt-1.5 space-y-px">
+      <div className={cn("space-y-px", question.details ? "mt-3" : "mt-1.5")}>
         {options.map((option: QuestionOption, index) => {
           const checked = state.selected.includes(option.value);
           return (
