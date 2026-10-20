@@ -127,17 +127,30 @@ describe("Full analysis", () => {
     }
   });
 
-  it("keeps the observed products when the features are malformed", () => {
-    const parsed = parseFullAnalysis(
-      JSON.stringify({
-        recap: "Done",
-        state: "done",
-        names: { products: ["Lumen"], features: ["Cache"] },
+  it("reads a feature written as a bare name, and keeps the products when a feature is malformed", () => {
+    const names = (value: unknown) =>
+      parseFullAnalysis(
+        JSON.stringify({ recap: "Done", state: "done", names: value }),
+        { ...base, mode: "status" },
+      ).names;
+    // Models often write a feature as just its name.
+    expect(
+      names({
+        products: ["Lumen"],
+        features: ["Cache", { name: "Export", product: "Lumen" }],
       }),
-      { ...base, mode: "status" },
-    );
-    expect(parsed.status).toMatchObject({ recap: "Done", state: "done" });
-    expect(parsed.names).toEqual({ products: ["Lumen"], features: [] });
+    ).toEqual({
+      products: ["Lumen"],
+      features: [
+        { name: "Cache", product: null },
+        { name: "Export", product: "Lumen" },
+      ],
+    });
+    // A feature that is neither costs the features, never the products.
+    expect(names({ products: ["Lumen"], features: ["Cache", 5] })).toEqual({
+      products: ["Lumen"],
+      features: [],
+    });
   });
 
   it("asks whether scope shifted only for an inherited topic", () => {

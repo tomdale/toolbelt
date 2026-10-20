@@ -2,14 +2,17 @@ import { z } from "zod";
 
 const name = z.string().trim().min(1).max(100);
 
+// A feature is `{name, product}` or, as models often write it, just its name.
+const feature = z.union([
+  z.object({ name, product: name.nullable() }),
+  name.transform((featureName) => ({ name: featureName, product: null })),
+]);
+
 // Each list falls back on its own: a malformed feature must not discard the
 // products reported beside it.
 export const nameObservationsSchema = z.object({
   products: z.array(name).max(40).catch([]),
-  features: z
-    .array(z.object({ name, product: name.nullable() }))
-    .max(40)
-    .catch([]),
+  features: z.array(feature).max(40).catch([]),
 });
 export type NameObservations = z.infer<typeof nameObservationsSchema>;
 
