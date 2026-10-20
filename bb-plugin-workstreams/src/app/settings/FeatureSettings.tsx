@@ -2,7 +2,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { experimental_useSidebarThreads, useRpc } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import { RECENT_LIMIT, type PrefsPatch } from "../../domain/prefs.ts";
+import { usePrefs } from "../prefs.ts";
 import { ModelField } from "./ModelField.tsx";
+import { SpinnerSettings } from "./SpinnerSettings.tsx";
 import {
   CompactSettingRow,
   SectionRows,
@@ -15,14 +17,20 @@ import {
 
 function useFeaturePrefs() {
   const { prefs, save } = usePrefs();
-  const update = (patch: PrefsPatch) => void save(patch).catch(() => {});
-  return { prefs, update };
+  const [error, setError] = useState<string | null>(null);
+  const update = (patch: PrefsPatch) => {
+    setError(null);
+    void save(patch).catch((cause) => {
+      setError(
+        cause instanceof Error ? cause.message : "Couldn't save setting.",
+      );
+    });
+  };
+  return { prefs, update, error };
 }
 
-import { usePrefs } from "../prefs.ts";
-
 export function SidebarSettings() {
-  const { prefs, update } = useFeaturePrefs();
+  const { prefs, update, error } = useFeaturePrefs();
   if (!prefs) return <Loading />;
   const row = (
     label: string,
@@ -66,6 +74,7 @@ export function SidebarSettings() {
   ] as const;
   return (
     <div className="space-y-4">
+      <SettingsSaveError error={error} />
       <SidebarGroup title="Sections">
         <SectionRows compact>
           {row("Up Next", prefs.sidebar.showForYou, (showForYou) =>
@@ -173,59 +182,62 @@ export function WorkingIndicatorSettings() {
 }
 
 export function ThreadsSettings() {
-  const { prefs, update } = useFeaturePrefs();
+  const { prefs, update, error } = useFeaturePrefs();
   if (!prefs) return <Loading />;
   return (
-    <SectionRows>
-      <ModelField
-        label="Full analysis model"
-        description="When a turn ends after a new request, settles the thread's goal (its title, while Keep titles current is on) and its topic, and its status when the agent didn't report one."
-        choice={prefs.analysis.fullModel}
-        onChange={(fullModel) => update({ analysis: { fullModel } })}
-      />
-      <SettingRow
-        label="Keep titles current"
-        description="Title new threads promptly and update titles to follow their current substantive focus. Includes titles you edit; turn this off to keep them fixed."
-        control={
-          <SettingSwitch
-            label="Keep titles current"
-            checked={prefs.threads.autoTitle}
-            onChange={(autoTitle) => update({ threads: { autoTitle } })}
-          />
-        }
-      />
-      <SettingRow
-        label="Show parent thread link"
-        description="Add a link to the parent thread in child thread headers."
-        control={
-          <SettingSwitch
-            label="Show parent thread link"
-            checked={prefs.threads.showParentLink}
-            onChange={(showParentLink) =>
-              update({ threads: { showParentLink } })
-            }
-          />
-        }
-      />
-      <SettingRow
-        label="Show archive button"
-        description="Add an Archive button to thread headers."
-        control={
-          <SettingSwitch
-            label="Show archive button"
-            checked={prefs.threads.showArchiveButton}
-            onChange={(showArchiveButton) =>
-              update({ threads: { showArchiveButton } })
-            }
-          />
-        }
-      />
-    </SectionRows>
+    <div className="space-y-3">
+      <SettingsSaveError error={error} />
+      <SectionRows>
+        <ModelField
+          label="Full analysis model"
+          description="When a turn ends after a new request, settles the thread's goal (its title, while Keep titles current is on) and its topic, and its status when the agent didn't report one."
+          choice={prefs.analysis.fullModel}
+          onChange={(fullModel) => update({ analysis: { fullModel } })}
+        />
+        <SettingRow
+          label="Keep titles current"
+          description="Title new threads promptly and update titles to follow their current substantive focus. Titles you edit outside Workstreams stay fixed until you clear them."
+          control={
+            <SettingSwitch
+              label="Keep titles current"
+              checked={prefs.threads.autoTitle}
+              onChange={(autoTitle) => update({ threads: { autoTitle } })}
+            />
+          }
+        />
+        <SettingRow
+          label="Show parent thread link"
+          description="Add a link to the parent thread in child thread headers."
+          control={
+            <SettingSwitch
+              label="Show parent thread link"
+              checked={prefs.threads.showParentLink}
+              onChange={(showParentLink) =>
+                update({ threads: { showParentLink } })
+              }
+            />
+          }
+        />
+        <SettingRow
+          label="Show archive button"
+          description="Add an Archive button to thread headers."
+          control={
+            <SettingSwitch
+              label="Show archive button"
+              checked={prefs.threads.showArchiveButton}
+              onChange={(showArchiveButton) =>
+                update({ threads: { showArchiveButton } })
+              }
+            />
+          }
+        />
+      </SectionRows>
+    </div>
   );
 }
 
 export function NewWorkSettings() {
-  const { prefs, update } = useFeaturePrefs();
+  const { prefs, update, error } = useFeaturePrefs();
   const { status, projects } = experimental_useSidebarThreads();
   if (!prefs) return <Loading />;
   const projectOptions = [
@@ -235,89 +247,100 @@ export function NewWorkSettings() {
       .map((project) => ({ value: project.id, label: project.name })),
   ];
   return (
-    <SectionRows>
-      <SettingRow
-        label="Home project"
-        description="Where new work starts when it has no project target."
-        control={
-          <SettingsPicker
-            label="Home project"
-            value={prefs.newWork.homeProjectId}
-            options={projectOptions}
-            placeholder={
-              status === "loading" ? "Loading projects…" : "Choose a project"
-            }
-            onChange={(homeProjectId) => update({ newWork: { homeProjectId } })}
-            disabled={status !== "ready"}
-            className="w-56"
-          />
-        }
-      />
-      <SettingRow
-        label="Suggestions while typing"
-        description="Preview a new thread's topic in the composer as you write, using the Quick analysis model."
-        control={
-          <SettingSwitch
-            label="Suggestions while typing"
-            checked={prefs.newWork.suggestions}
-            onChange={(suggestions) => update({ newWork: { suggestions } })}
-          />
-        }
-      />
-      <ModelField
-        label="Quick analysis model"
-        description="Titles a new thread and picks its topic from its first request, and previews both in the composer as you type."
-        choice={prefs.analysis.quickModel}
-        onChange={(quickModel) => update({ analysis: { quickModel } })}
-      />
-    </SectionRows>
+    <div className="space-y-3">
+      <SettingsSaveError error={error} />
+      <SectionRows>
+        <SettingRow
+          label="Home project"
+          description="Where new work starts when it has no project target."
+          control={
+            <SettingsPicker
+              label="Home project"
+              value={prefs.newWork.homeProjectId}
+              options={projectOptions}
+              placeholder={
+                status === "loading" ? "Loading projects…" : "Choose a project"
+              }
+              onChange={(homeProjectId) =>
+                update({ newWork: { homeProjectId } })
+              }
+              disabled={status !== "ready"}
+              className="w-56"
+            />
+          }
+        />
+        <SettingRow
+          label="Suggestions while typing"
+          description="Preview a new thread's topic in the composer as you write, using the Quick analysis model."
+          control={
+            <SettingSwitch
+              label="Suggestions while typing"
+              checked={prefs.newWork.suggestions}
+              onChange={(suggestions) => update({ newWork: { suggestions } })}
+            />
+          }
+        />
+        <ModelField
+          label="Quick analysis model"
+          description="Titles a new thread and picks its topic from its first request, and previews both in the composer as you type."
+          choice={prefs.analysis.quickModel}
+          onChange={(quickModel) => update({ analysis: { quickModel } })}
+        />
+      </SectionRows>
+    </div>
   );
 }
 
 export function OrganizeSettings() {
-  const { prefs, update } = useFeaturePrefs();
+  const { prefs, update, error } = useFeaturePrefs();
   if (!prefs) return <Loading />;
   return (
-    <SectionRows>
-      <SettingRow
-        label="Group capacity"
-        description="Most active threads per workstream before it splits into its subtopics. A single subtopic may exceed it."
-        control={
-          <Stepper
-            label="Group capacity"
-            value={prefs.organize.capacity}
-            min={2}
-            max={100}
-            onChange={(capacity) =>
-              update({
-                organize: {
-                  capacity,
-                  collapseAt: Math.min(prefs.organize.collapseAt, capacity - 1),
-                },
-              })
-            }
-          />
-        }
-      />
-      <SettingRow
-        label="Contraction threshold"
-        description="A product with this many active threads or fewer gets one workstream for all its topics."
-        control={
-          <Stepper
-            label="Contraction threshold"
-            value={prefs.organize.collapseAt}
-            min={0}
-            max={prefs.organize.capacity - 1}
-            onChange={(collapseAt) => update({ organize: { collapseAt } })}
-          />
-        }
-      />
-    </SectionRows>
+    <div className="space-y-3">
+      <SettingsSaveError error={error} />
+      <SectionRows>
+        <SettingRow
+          label="Group capacity"
+          description="Most active threads per workstream before it splits into its subtopics. A single subtopic may exceed it."
+          control={
+            <Stepper
+              label="Group capacity"
+              value={prefs.organize.capacity}
+              min={2}
+              max={100}
+              onChange={(capacity) =>
+                update({
+                  organize: {
+                    capacity,
+                    collapseAt: Math.min(
+                      prefs.organize.collapseAt,
+                      capacity - 1,
+                    ),
+                  },
+                })
+              }
+            />
+          }
+        />
+        <SettingRow
+          label="Contraction threshold"
+          description="A product with this many active threads or fewer gets one workstream for all its topics."
+          control={
+            <Stepper
+              label="Contraction threshold"
+              value={prefs.organize.collapseAt}
+              min={0}
+              max={prefs.organize.capacity - 1}
+              onChange={(collapseAt) => update({ organize: { collapseAt } })}
+            />
+          }
+        />
+      </SectionRows>
+    </div>
   );
 }
 
 export function AdvancedSettings() {
-  const { prefs, update } = useFeaturePrefs();
+  const { prefs, update, error } = useFeaturePrefs();
   const rpc = useRpc<RpcContract>();
   const [machines, setMachines] = useState<
     { id: string; name: string }[] | null
@@ -345,40 +368,49 @@ export function AdvancedSettings() {
     })) ?? []),
   ];
   return (
-    <SectionRows>
-      {machines && machines.length > 1 ? (
+    <div className="space-y-3">
+      <SettingsSaveError error={error} />
+      <SectionRows>
+        {machines && machines.length > 1 ? (
+          <SettingRow
+            label="Analysis machine"
+            description="Machine whose Pi key is used for AI Gateway calls."
+            control={
+              <SettingsPicker
+                label="Analysis machine"
+                value={prefs.advanced.hostId}
+                options={machineOptions}
+                placeholder="Use any connected machine"
+                onChange={(hostId) => update({ advanced: { hostId } })}
+                className="w-56"
+              />
+            }
+          />
+        ) : null}
         <SettingRow
-          label="Analysis machine"
-          description="Machine whose Pi key is used for AI Gateway calls."
+          label="Debug mode"
+          description="Records prompts, reasoning, and responses with redacted thread excerpts. Kept for 7 days."
           control={
-            <SettingsPicker
-              label="Analysis machine"
-              value={prefs.advanced.hostId}
-              options={machineOptions}
-              placeholder="Use any connected machine"
-              onChange={(hostId) => update({ advanced: { hostId } })}
-              className="w-56"
+            <SettingSwitch
+              label="Debug mode"
+              checked={prefs.advanced.debug}
+              onChange={(debug) => update({ advanced: { debug } })}
             />
           }
         />
-      ) : null}
-      <SettingRow
-        label="Debug mode"
-        description="Records prompts, reasoning, and responses with redacted thread excerpts. Kept for 7 days."
-        control={
-          <SettingSwitch
-            label="Debug mode"
-            checked={prefs.advanced.debug}
-            onChange={(debug) => update({ advanced: { debug } })}
-          />
-        }
-      />
-    </SectionRows>
+      </SectionRows>
+    </div>
   );
+}
+
+function SettingsSaveError({ error }: { error: string | null }) {
+  return error ? (
+    <p role="alert" className="text-sm text-destructive">
+      {error}
+    </p>
+  ) : null;
 }
 
 function Loading() {
   return <p className="text-xs text-muted-foreground">Loading settings…</p>;
 }
-
-import { SpinnerSettings } from "./SpinnerSettings.tsx";

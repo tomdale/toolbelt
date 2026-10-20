@@ -17,6 +17,8 @@ function toLocalInput(time: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+const MAX_SNOOZE_MS = 366 * 24 * 60 * 60 * 1000;
+
 /**
  * Snooze until a date and time the user picks. Opens on tomorrow morning;
  * `onSubmit` receives the wake time.
@@ -25,17 +27,26 @@ export function CustomSnoozeDialog({
   open,
   onClose,
   onSubmit,
+  morningHour,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (until: number) => void;
+  morningHour: number;
 }) {
   const [value, setValue] = useState("");
+  const [openedAt, setOpenedAt] = useState(() => Date.now());
   useEffect(() => {
-    if (open) setValue(toLocalInput(wakeTime("tomorrow", Date.now())!));
-  }, [open]);
+    if (open) {
+      const now = Date.now();
+      setOpenedAt(now);
+      setValue(toLocalInput(wakeTime("tomorrow", now, morningHour)!));
+    }
+  }, [open, morningHour]);
+  const maxUntil = openedAt + MAX_SNOOZE_MS;
   const until = value ? new Date(value).getTime() : NaN;
-  const valid = Number.isFinite(until) && until > Date.now();
+  const valid =
+    Number.isFinite(until) && until > Date.now() && until <= maxUntil;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -43,6 +54,13 @@ export function CustomSnoozeDialog({
     onSubmit(until);
     onClose();
   };
+
+  const message =
+    !Number.isFinite(until) || until <= Date.now()
+      ? "Pick a time in the future."
+      : until > maxUntil
+        ? "Pick a time in the next year."
+        : `Returns to the sidebar ${describeWake(until, Date.now())}.`;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -56,14 +74,11 @@ export function CustomSnoozeDialog({
             autoFocus
             value={value}
             min={toLocalInput(Date.now())}
+            max={toLocalInput(maxUntil)}
             onChange={(event) => setValue(event.target.value)}
             aria-label="Wake time"
           />
-          <p className="text-xs text-muted-foreground">
-            {valid
-              ? `Returns to the sidebar ${describeWake(until, Date.now())}.`
-              : "Pick a time in the future."}
-          </p>
+          <p className="text-xs text-muted-foreground">{message}</p>
           <DialogFooter>
             <Button type="button" variant="ghost" size="sm" onClick={onClose}>
               Cancel

@@ -89,16 +89,25 @@ export function WorkstreamsPage({
     const q = query.trim().toLowerCase();
     if (!q) return groups;
     return groups
-      .map((g) => ({
-        ...g,
-        rows: g.name.toLowerCase().includes(q)
+      .map((g) => {
+        const rows = g.name.toLowerCase().includes(q)
           ? g.rows
           : g.rows.filter((r) =>
               `${r.thread.displayTitle} ${ws.server.analysis[r.thread.id]?.recap ?? ""}`
                 .toLowerCase()
                 .includes(q),
-            ),
-      }))
+            );
+        return {
+          ...g,
+          rows,
+          total: rows.length,
+          needsYou: rows.filter((row) => row.needsYou).length,
+          lastActiveAt: Math.max(
+            0,
+            ...rows.map((row) => row.thread.latestAttentionAt),
+          ),
+        };
+      })
       .filter((g) => g.rows.length > 0);
   }, [projection, query, ws.server.analysis]);
 

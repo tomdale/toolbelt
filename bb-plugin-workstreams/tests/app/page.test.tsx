@@ -128,6 +128,23 @@ it("filters with search", async () => {
   slot.lifecycle.unmount();
 });
 
+it("updates workstream header counts to match filtered rows", async () => {
+  const slot = await mount();
+  fireEvent.change(
+    slot.getByRole("textbox", { name: "Search threads and workstreams" }),
+    {
+      target: { value: "Alpha work" },
+    },
+  );
+  const alpha = slot.getByRole("region", { name: "Alpha" });
+  const header = within(alpha).getByRole("heading", {
+    name: "Alpha",
+  }).parentElement;
+  expect(header?.textContent).toContain("1");
+  expect(header?.textContent).not.toContain("2");
+  slot.lifecycle.unmount();
+});
+
 it("shows the activity log with undo", async () => {
   const slot = await mount();
   fireEvent.click(slot.getByRole("tab", { name: "Activity" }));

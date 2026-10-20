@@ -56,15 +56,18 @@ export function Catalog({ rpc, serverCatalog }: CatalogProps) {
   };
 
   useEffect(() => {
-    if (!serverCatalog || !serverCatalog.entities.length) {
+    if (!serverCatalog || !serverCatalog.entities.length || attempt > 0) {
       load();
     }
   }, [rpc, attempt, serverCatalog]);
 
-  const activeCatalog =
-    serverCatalog && serverCatalog.entities.length
-      ? serverCatalog
-      : localCatalog;
+  const activeCatalog = useMemo(() => {
+    if (!localCatalog) return serverCatalog ?? null;
+    if (!serverCatalog) return localCatalog;
+    return localCatalog.revision >= serverCatalog.revision
+      ? localCatalog
+      : serverCatalog;
+  }, [localCatalog, serverCatalog]);
 
   const entities = activeCatalog?.entities ?? [];
 

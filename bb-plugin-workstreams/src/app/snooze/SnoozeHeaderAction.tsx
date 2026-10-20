@@ -161,6 +161,7 @@ export function SnoozeHeaderAction({
         open={picking}
         onClose={() => setPicking(false)}
         onSubmit={snoozeUntil}
+        morningHour={prefs.morningHour}
       />
     </>
   );

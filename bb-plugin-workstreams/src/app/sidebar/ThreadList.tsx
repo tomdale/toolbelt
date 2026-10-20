@@ -1101,6 +1101,7 @@ export function WorkstreamsThreadList({
           onSubmit={(until) => {
             if (customSnooze) handlers.snooze(customSnooze, until);
           }}
+          morningHour={snoozePrefs.morningHour}
         />
         {inspecting ? (
           <TraceInspector

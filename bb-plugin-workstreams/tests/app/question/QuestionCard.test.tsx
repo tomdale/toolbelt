@@ -71,7 +71,15 @@ function render(
     submit?: (value: unknown) => Promise<void>;
     cancel?: () => Promise<void>;
   } = {},
+  options: { projectId?: string | null } = {},
 ) {
+  const context =
+    options.projectId === null
+      ? { threadId: "thr_test" }
+      : {
+          projectId: options.projectId ?? "project-test",
+          threadId: "thr_test",
+        };
   return renderSlot(
     app.pendingInteractions[0]!,
     {
@@ -87,7 +95,7 @@ function render(
       cancel: handlers.cancel ?? (async () => undefined),
     },
     {
-      context: { projectId: "project-test", threadId: "thr_test" },
+      context,
       sdk: { projects: { attachments: { upload: mockUpload } } },
     },
   );
@@ -298,6 +306,23 @@ describe("question interaction adapter", () => {
     expect(submit.mock.calls[0]?.[0]).toEqual({
       answers: { q0: { selected: [], freeText: "Use our managed service" } },
     });
+  });
+
+  it("limits freeform answers and explains disabled attachments without a project", () => {
+    const slot = render(
+      { questions: [{ ...singleSelect.questions[0]!, options: [] }] },
+      {},
+      { projectId: null },
+    );
+    const answer = slot.getByLabelText(
+      "Database answer",
+    ) as HTMLTextAreaElement;
+    expect(answer.maxLength).toBe(4096);
+    expect(slot.getByText("0/4096")).toBeTruthy();
+    expect(
+      slot.getByRole("button", { name: "Attach files or images" }),
+    ).toHaveProperty("disabled", true);
+    expect(slot.getByText("Attachments need a project.")).toBeTruthy();
   });
 
   it("pastes images and attaches files from the plus control", async () => {

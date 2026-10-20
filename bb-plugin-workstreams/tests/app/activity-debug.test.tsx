@@ -78,7 +78,11 @@ async function page(rpc: Record<string, unknown>) {
 it("filters internal calls, exposes metadata and event internals, and opens the full inspector", async () => {
   const traces = [
     trace("ok"),
-    trace("bad", { kind: "quick-analysis", status: "failed", error: "Offline" }),
+    trace("bad", {
+      kind: "quick-analysis",
+      status: "failed",
+      error: "Offline",
+    }),
     trace("replay", { replayOf: "ok" }),
   ];
   const slot = await page({
@@ -210,10 +214,40 @@ it("ignores a stale trace request after changing the kind filter", async () => {
   );
   await slot.findByText("route-current");
   await act(async () =>
-    resolveFirst({ traces: [trace("route-stale", { kind: "quick-analysis" })] }),
+    resolveFirst({
+      traces: [trace("route-stale", { kind: "quick-analysis" })],
+    }),
   );
   expect(slot.getByText("route-current")).toBeTruthy();
   expect(slot.queryByText("route-stale")).toBeNull();
+});
+
+it("clears hidden debug-only filters when Debug mode turns off", async () => {
+  const slot = await page({
+    traces: () => ({
+      traces: [trace("bad", { status: "failed", error: "Offline" })],
+    }),
+  });
+  await slot.findByText("bad");
+  fireEvent.click(slot.getByRole("checkbox", { name: "Failures only" }));
+  expect(slot.queryByText("Moved a thread")).toBeNull();
+  await slot.behavior.emitRealtime("prefs", {
+    prefs: { advanced: { debug: false } },
+  });
+  await waitFor(() =>
+    expect(slot.queryByRole("checkbox", { name: "Failures only" })).toBeNull(),
+  );
+  expect(slot.getByText("Moved a thread")).toBeTruthy();
+  expect(slot.queryByText("bad")).toBeNull();
+});
+
+it("reports when filters match no activity", async () => {
+  const slot = await page({ traces: () => ({ traces: [] }) });
+  await slot.findByText("Moved a thread");
+  fireEvent.change(slot.getByRole("combobox", { name: "Filter by action" }), {
+    target: { value: "proposal" },
+  });
+  expect(await slot.findByText("No matching activity.")).toBeTruthy();
 });
 
 it("keeps traces and reports a failed clear without losing journal entries", async () => {

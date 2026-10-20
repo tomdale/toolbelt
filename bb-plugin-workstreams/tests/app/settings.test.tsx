@@ -8,7 +8,12 @@ afterEach(cleanup);
 
 async function mount(
   sectionId: string,
-  options: { machines?: { id: string; name: string }[] } = {},
+  options: {
+    machines?: { id: string; name: string }[];
+    setPrefs?: (
+      input: unknown,
+    ) => { prefs: unknown } | Promise<{ prefs: unknown }>;
+  } = {},
 ) {
   let prefs = parsePrefs({});
   const app = await loadPluginApp(() => import("../../src/app/index.tsx"));
@@ -21,6 +26,7 @@ async function mount(
       rpc: {
         prefs: () => ({ prefs }),
         setPrefs: (input: unknown) => {
+          if (options.setPrefs) return options.setPrefs(input);
           prefs = mergePrefs(
             prefs,
             (input as { patch: Parameters<typeof mergePrefs>[1] }).patch,
@@ -204,6 +210,15 @@ it("clamps the Recent stepper to 1–20 and hides it when Recent is off", async 
   ).toBe(true);
 });
 
+it("describes title locking accurately", async () => {
+  const slot = await mount("threads");
+  expect(
+    await slot.findByText(
+      "Title new threads promptly and update titles to follow their current substantive focus. Titles you edit outside Workstreams stay fixed until you clear them.",
+    ),
+  ).toBeTruthy();
+});
+
 it("saves the Titles and parent-link switches", async () => {
   const slot = await mount("threads");
   fireEvent.click(
@@ -226,6 +241,23 @@ it("saves the Titles and parent-link switches", async () => {
     { patch: { threads: { showParentLink: true } } },
   ]);
   expect(slot.getByTestId("bb-provider-model-picker")).toBeTruthy();
+});
+
+it("surfaces settings save failures and reverts optimistic state", async () => {
+  const slot = await mount("threads", {
+    setPrefs: async () => {
+      throw new Error("Save failed");
+    },
+  });
+  const toggle = await slot.findByRole("switch", {
+    name: "Keep titles current",
+  });
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(toggle);
+  await waitFor(() =>
+    expect(slot.getByRole("alert").textContent).toContain("Save failed"),
+  );
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
 });
 
 it("saves the Show archive button switch, on by default", async () => {

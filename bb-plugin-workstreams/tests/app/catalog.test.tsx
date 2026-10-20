@@ -244,6 +244,39 @@ describe("Catalog UI & Maintenance", () => {
     });
   });
 
+  it("prefers a fresher local reload over stale server topics", async () => {
+    let latest = catalogState;
+    const call = vi.fn(async (method: string) => {
+      if (method === "catalog") return latest;
+      if (method === "catalogRename") {
+        latest = {
+          ...catalogState,
+          entities: catalogState.entities.map((entity) =>
+            entity.id === "f" ? { ...entity, name: "Storage Shelves" } : entity,
+          ),
+          revision: catalogState.revision + 1,
+        };
+        return { entity: latest.entities.find((entity) => entity.id === "f") };
+      }
+      return {};
+    });
+
+    render(<Catalog rpc={{ call } as never} serverCatalog={catalogState} />);
+    await screen.findByText("Shelves");
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename Shelves" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Name *" }), {
+      target: { value: "Storage Shelves" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+
+    expect(await screen.findByText("Storage Shelves")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Rename Shelves" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Rename Storage Shelves" }),
+    ).toBeTruthy();
+  });
+
   it("moves a topic under another parent and handles cycle errors", async () => {
     const call = vi.fn(async (method: string, args: unknown) => {
       if (method === "catalog") return catalogState;

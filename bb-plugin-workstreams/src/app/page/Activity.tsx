@@ -157,6 +157,7 @@ export function Activity({
   const [calls, setCalls] = useState<TraceSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const request = useRef(0);
+  const hadDebug = useRef(false);
   const load = useCallback(async () => {
     const generation = ++request.current;
     setError(null);
@@ -202,6 +203,17 @@ export function Activity({
       request.current++;
     };
   }, [load]);
+  useEffect(() => {
+    if (debug) {
+      hadDebug.current = true;
+      return;
+    }
+    if (!hadDebug.current) return;
+    setShowCalls(false);
+    setCallKind("");
+    setFailuresOnly(false);
+    if (action === MODEL_CALLS) setAction("");
+  }, [debug, action]);
 
   const clearTraces = async () => {
     setClearing(true);
@@ -259,6 +271,8 @@ export function Activity({
       trace,
     })),
   ].sort((a, b) => b.at - a.at);
+  const hasAnyVisibleActivity =
+    (entries?.length ?? 0) > 0 || (debug && calls.length > 0);
   const days: { label: string; items: Item[] }[] = [];
   for (const item of items) {
     const label = day(item.at);
@@ -437,7 +451,7 @@ export function Activity({
       ) : null}
       {entries && items.length === 0 ? (
         <p className="mt-10 text-center text-sm text-muted-foreground">
-          No activity yet.
+          {hasAnyVisibleActivity ? "No matching activity." : "No activity yet."}
         </p>
       ) : null}
       {days.map(({ label, items: list }) => (

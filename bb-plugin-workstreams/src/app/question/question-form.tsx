@@ -26,6 +26,7 @@ import {
 
 const OTHER_OPTION_LABEL = "Other…";
 const PREVIEW_MAX_HEIGHT = 220;
+const MAX_FREE_TEXT_LENGTH = 4096;
 
 // A step below the recap card's type scale: a question card carries more
 // lines than a recap, so options stay compact. On a phone (a viewport under
@@ -311,6 +312,7 @@ function QuestionInputBlock({
             aria-label={freeformLabel}
             rows={2}
             value={state.otherText}
+            maxLength={MAX_FREE_TEXT_LENGTH}
             placeholder="Type an answer or paste an image…"
             onChange={(event) => onFreeTextChange(event.target.value)}
             onPaste={(event) => {
@@ -377,25 +379,35 @@ function QuestionInputBlock({
               {attachmentError}
             </p>
           ) : null}
-          <div className="flex items-center justify-between border-t border-border/70 px-2 py-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Attach files or images"
-              disabled={disabled || uploading || !projectId}
-              onClick={() => fileInputRef.current?.click()}
-              className="size-7"
-            >
-              {uploading ? (
-                <Icon name="Spinner" className="size-4 animate-spin" />
-              ) : (
-                <Icon name="Plus" className="size-4" />
-              )}
-            </Button>
-            <span className="text-[11px] text-muted-foreground max-md:pointer-coarse:text-xs">
-              Enter to add · Shift+Enter for a new line
-            </span>
+          <div className="flex items-center justify-between gap-3 border-t border-border/70 px-2 py-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Attach files or images"
+                disabled={disabled || uploading || !projectId}
+                onClick={() => fileInputRef.current?.click()}
+                className="size-7"
+              >
+                {uploading ? (
+                  <Icon name="Spinner" className="size-4 animate-spin" />
+                ) : (
+                  <Icon name="Plus" className="size-4" />
+                )}
+              </Button>
+              {!projectId ? (
+                <span className="text-[11px] text-muted-foreground max-md:pointer-coarse:text-xs">
+                  Attachments need a project.
+                </span>
+              ) : null}
+            </div>
+            <div className="text-right text-[11px] text-muted-foreground max-md:pointer-coarse:text-xs">
+              <div>
+                {state.otherText.length}/{MAX_FREE_TEXT_LENGTH}
+              </div>
+              <div>Enter to add · Shift+Enter for a new line</div>
+            </div>
           </div>
         </div>
       ) : null}
