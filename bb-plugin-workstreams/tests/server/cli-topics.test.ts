@@ -28,8 +28,12 @@ async function setup(options: { onPrompt?: (prompt: string) => void } = {}) {
   const w = world;
   const section = w.addSection("Storage");
   const corpus = new TopicStore(openDatabase(w.bb));
-  const storage = corpus.remember("Storage", "Storage product", null, ["Warehouse"]);
-  const shelves = corpus.remember("Shelves", "Shelves feature", storage.id, ["Racks"]);
+  const storage = corpus.remember("Storage", "Storage product", null, [
+    "Warehouse",
+  ]);
+  const shelves = corpus.remember("Shelves", "Shelves feature", storage.id, [
+    "Racks",
+  ]);
   shelvesId = shelves.id;
   corpus.bindGroup(section.id, storage.id);
   const rootThread = w.addThread("t_root", {
@@ -40,7 +44,10 @@ async function setup(options: { onPrompt?: (prompt: string) => void } = {}) {
     parentThreadId: rootThread.id,
     title: "Child review subtask",
   });
-  corpus.assign(rootThread.id, shelves.id, { provenance: "full", evidence: "ev_1" });
+  corpus.assign(rootThread.id, shelves.id, {
+    provenance: "full",
+    evidence: "ev_1",
+  });
   await w.harness.behavior.callRpc("refresh", null);
   return { w, section, corpus, storage, shelves, rootThread, childThread };
 }
@@ -60,31 +67,50 @@ describe("CLI topics commands", () => {
     expect(listRes.stdout).toContain("[aliases: Racks]");
 
     // JSON output
-    const jsonRes = await w.harness.behavior.runCli(["topics", "list", "--json"]);
+    const jsonRes = await w.harness.behavior.runCli([
+      "topics",
+      "list",
+      "--json",
+    ]);
     expect(jsonRes.exitCode).toBe(0);
     const parsed = JSON.parse(jsonRes.stdout);
     expect(parsed.entities).toHaveLength(2);
-    expect(parsed.entities.map((e: { name: string }) => e.name).sort()).toEqual(["Shelves", "Storage"]);
+    expect(parsed.entities.map((e: { name: string }) => e.name).sort()).toEqual(
+      ["Shelves", "Storage"],
+    );
   });
 
   it("topics show displays full details by name, alias, or ID and supports --json", async () => {
     const { w, storage, shelves, rootThread } = await setup();
 
     // Show by exact name
-    const showName = await w.harness.behavior.runCli(["topics", "show", "Shelves"]);
+    const showName = await w.harness.behavior.runCli([
+      "topics",
+      "show",
+      "Shelves",
+    ]);
     expect(showName.exitCode).toBe(0);
     expect(showName.stdout).toContain("Topic: Storage: Shelves");
     expect(showName.stdout).toContain(`ID:              ${shelves.id}`);
     expect(showName.stdout).toContain("Aliases:         Racks");
-    expect(showName.stdout).toContain("Assigned tasks:  2");
+    expect(showName.stdout).toContain("Assigned threads:  2");
 
     // Show by alias
-    const showAlias = await w.harness.behavior.runCli(["topics", "show", "Warehouse"]);
+    const showAlias = await w.harness.behavior.runCli([
+      "topics",
+      "show",
+      "Warehouse",
+    ]);
     expect(showAlias.exitCode).toBe(0);
     expect(showAlias.stdout).toContain(`ID:              ${storage.id}`);
 
     // Show by ID with --json
-    const showJson = await w.harness.behavior.runCli(["topics", "show", shelves.id, "--json"]);
+    const showJson = await w.harness.behavior.runCli([
+      "topics",
+      "show",
+      shelves.id,
+      "--json",
+    ]);
     expect(showJson.exitCode).toBe(0);
     const parsed = JSON.parse(showJson.stdout);
     expect(parsed.entity.id).toBe(shelves.id);
@@ -92,7 +118,11 @@ describe("CLI topics commands", () => {
     expect(parsed.assignedThreads).toContain(rootThread.id);
 
     // Unknown entity throws clean error
-    const showUnknown = await w.harness.behavior.runCli(["topics", "show", "NonExistent"]);
+    const showUnknown = await w.harness.behavior.runCli([
+      "topics",
+      "show",
+      "NonExistent",
+    ]);
     expect(showUnknown.exitCode).not.toBe(0);
   });
 
@@ -147,12 +177,24 @@ describe("CLI topics commands", () => {
     const { w, corpus, shelves } = await setup();
 
     // Reparent shelves to root
-    const toRoot = await w.harness.behavior.runCli(["topics", "reparent", shelves.id, "--to", "root"]);
+    const toRoot = await w.harness.behavior.runCli([
+      "topics",
+      "reparent",
+      shelves.id,
+      "--to",
+      "root",
+    ]);
     expect(toRoot.exitCode).toBe(0);
     expect(corpus.getById(shelves.id)!.parentId).toBeNull();
 
     // Reparent back to Storage by name
-    const toStorage = await w.harness.behavior.runCli(["topics", "reparent", shelves.id, "--to", "Storage"]);
+    const toStorage = await w.harness.behavior.runCli([
+      "topics",
+      "reparent",
+      shelves.id,
+      "--to",
+      "Storage",
+    ]);
     expect(toStorage.exitCode).toBe(0);
     const storage = corpus.list().find((e) => e.name === "Storage")!;
     expect(corpus.getById(shelves.id)!.parentId).toBe(storage.id);
@@ -181,7 +223,12 @@ describe("CLI topics commands", () => {
 
     // Storage already has alias "Warehouse" in root scope.
     // Shelves is a child of Storage. Let's create an entity with an alias in Shelves' scope.
-    const sibling = corpus.remember("Drawers", "Drawers feature", shelves.parentId, ["Cabinets"]);
+    const sibling = corpus.remember(
+      "Drawers",
+      "Drawers feature",
+      shelves.parentId,
+      ["Cabinets"],
+    );
 
     // Attempting to edit Shelves with a name change AND a conflicting alias with Drawers ("Cabinets")
     const failRes = await w.harness.behavior.runCli([
@@ -216,7 +263,9 @@ describe("CLI topics commands", () => {
     ]);
     expect(createRes.exitCode).toBe(0);
     expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count0);
-    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe(
+      "changed",
+    );
 
     const count1 = w.harness.inspection.realtimeSignals.length;
 
@@ -230,7 +279,9 @@ describe("CLI topics commands", () => {
     ]);
     expect(editRes.exitCode).toBe(0);
     expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count1);
-    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe(
+      "changed",
+    );
 
     const count2 = w.harness.inspection.realtimeSignals.length;
 
@@ -244,7 +295,9 @@ describe("CLI topics commands", () => {
     ]);
     expect(reparentRes.exitCode).toBe(0);
     expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count2);
-    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe(
+      "changed",
+    );
 
     const count3 = w.harness.inspection.realtimeSignals.length;
 
@@ -257,7 +310,9 @@ describe("CLI topics commands", () => {
     ]);
     expect(mergeRes.exitCode).toBe(0);
     expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count3);
-    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe(
+      "changed",
+    );
   });
 });
 
@@ -266,20 +321,45 @@ describe("CLI thread topic commands", () => {
     const { w, rootThread, childThread, shelves } = await setup();
 
     // Root thread show
-    const rootRes = await w.harness.behavior.runCli(["thread", "show", rootThread.id]);
+    const rootRes = await w.harness.behavior.runCli([
+      "thread",
+      "show",
+      rootThread.id,
+    ]);
     expect(rootRes.exitCode).toBe(0);
-    expect(rootRes.stdout).toContain(`Thread:          Root shelves task (@thread:${rootThread.id})`);
+    expect(rootRes.stdout).toContain(
+      `Thread:          Root shelves task (@thread:${rootThread.id})`,
+    );
     expect(rootRes.stdout).toContain("Workstream:      Storage");
     expect(rootRes.stdout).toContain("Topic:           Storage: Shelves");
-    expect(rootRes.stdout).toContain("Source:          settled by Full analysis");
+    expect(rootRes.stdout).toContain(
+      "Source:          settled by Full analysis",
+    );
 
     // Child thread inherits root
-    const childRes = await w.harness.behavior.runCli(["thread", "show", childThread.id]);
+    const childRes = await w.harness.behavior.runCli([
+      "thread",
+      "show",
+      childThread.id,
+    ]);
     expect(childRes.exitCode).toBe(0);
-    expect(childRes.stdout).toContain(`Follows parent:  @thread:${rootThread.id}`);
+    expect(childRes.stdout).toContain(
+      "Source:          follows parent thread's topic",
+    );
+    expect(childRes.stdout).toContain(
+      "Parent source:   settled by Full analysis",
+    );
+    expect(childRes.stdout).toContain(
+      `Follows parent:  @thread:${rootThread.id}`,
+    );
 
     // JSON format
-    const jsonRes = await w.harness.behavior.runCli(["thread", "show", rootThread.id, "--json"]);
+    const jsonRes = await w.harness.behavior.runCli([
+      "thread",
+      "show",
+      rootThread.id,
+      "--json",
+    ]);
     expect(jsonRes.exitCode).toBe(0);
     const parsed = JSON.parse(jsonRes.stdout);
     expect(parsed.threadId).toBe(rootThread.id);
@@ -290,9 +370,16 @@ describe("CLI thread topic commands", () => {
     const { w, corpus, childThread, rootThread, storage } = await setup();
 
     // Assign via child thread -> must mutate root task!
-    const assignRes = await w.harness.behavior.runCli(["thread", "assign", childThread.id, "Storage"]);
+    const assignRes = await w.harness.behavior.runCli([
+      "thread",
+      "assign",
+      childThread.id,
+      "Storage",
+    ]);
     expect(assignRes.exitCode).toBe(0);
-    expect(assignRes.stdout).toContain(`Assigned @thread:${childThread.id} to "Storage"`);
+    expect(assignRes.stdout).toContain(
+      `Assigned @thread:${childThread.id} to "Storage"`,
+    );
 
     const rootAssign = corpus.assignment(rootThread.id);
     expect(rootAssign.entityId).toBe(storage.id);
@@ -306,7 +393,11 @@ describe("CLI thread topic commands", () => {
   it("thread clear clears thread assignment to unresolved and mutates root", async () => {
     const { w, corpus, childThread, rootThread } = await setup();
 
-    const clearRes = await w.harness.behavior.runCli(["thread", "clear", childThread.id]);
+    const clearRes = await w.harness.behavior.runCli([
+      "thread",
+      "clear",
+      childThread.id,
+    ]);
     expect(clearRes.exitCode).toBe(0);
     expect(clearRes.stdout).toContain("has no topic now");
 
@@ -319,9 +410,15 @@ describe("CLI thread topic commands", () => {
     const { w, corpus, rootThread, shelves } = await setup();
     corpus.clear(rootThread.id);
 
-    const reclassifyRes = await w.harness.behavior.runCli(["thread", "reclassify", rootThread.id]);
+    const reclassifyRes = await w.harness.behavior.runCli([
+      "thread",
+      "reclassify",
+      rootThread.id,
+    ]);
     expect(reclassifyRes.exitCode).toBe(0);
-    expect(reclassifyRes.stdout).toContain(`@thread:${rootThread.id}'s topic is now`);
+    expect(reclassifyRes.stdout).toContain(
+      `@thread:${rootThread.id}'s topic is now`,
+    );
 
     const assignment = corpus.assignment(rootThread.id);
     expect(assignment.status).toBe("assigned");
@@ -335,26 +432,45 @@ describe("CLI thread topic commands", () => {
     const count0 = w.harness.inspection.realtimeSignals.length;
 
     // task assign
-    const assignRes = await w.harness.behavior.runCli(["thread", "assign", rootThread.id, storage.id]);
+    const assignRes = await w.harness.behavior.runCli([
+      "thread",
+      "assign",
+      rootThread.id,
+      storage.id,
+    ]);
     expect(assignRes.exitCode).toBe(0);
     expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count0);
-    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe(
+      "changed",
+    );
 
     const count1 = w.harness.inspection.realtimeSignals.length;
 
     // task clear
-    const clearRes = await w.harness.behavior.runCli(["thread", "clear", rootThread.id]);
+    const clearRes = await w.harness.behavior.runCli([
+      "thread",
+      "clear",
+      rootThread.id,
+    ]);
     expect(clearRes.exitCode).toBe(0);
     expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count1);
-    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe(
+      "changed",
+    );
 
     const count2 = w.harness.inspection.realtimeSignals.length;
 
     // task reclassify
-    const reclassRes = await w.harness.behavior.runCli(["thread", "reclassify", rootThread.id]);
+    const reclassRes = await w.harness.behavior.runCli([
+      "thread",
+      "reclassify",
+      rootThread.id,
+    ]);
     expect(reclassRes.exitCode).toBe(0);
     expect(w.harness.inspection.realtimeSignals.length).toBeGreaterThan(count2);
-    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe("changed");
+    expect(w.harness.inspection.realtimeSignals.at(-1)?.channel).toBe(
+      "changed",
+    );
   });
 
   it("thread reclassify on a child settles its root with Full analysis, and organizing asks nothing more", async () => {
@@ -365,10 +481,16 @@ describe("CLI thread topic commands", () => {
     w.converse(rootThread.id, ["Design warehouse shelves distribution"]);
     w.converse(childThread.id, ["Fix minor child button styling"]);
 
-    const reclassRes = await w.harness.behavior.runCli(["thread", "reclassify", childThread.id]);
+    const reclassRes = await w.harness.behavior.runCli([
+      "thread",
+      "reclassify",
+      childThread.id,
+    ]);
     expect(reclassRes.exitCode).toBe(0);
 
-    const analysis = prompts.find((p) => p.includes("You describe one agent thread"))!;
+    const analysis = prompts.find((p) =>
+      p.includes("You describe one agent thread"),
+    )!;
     expect(analysis).toContain("Design warehouse shelves distribution");
     expect(analysis).not.toContain("Fix minor child button styling");
     const childAssign = corpus.assignment(childThread.id);
@@ -391,13 +513,24 @@ describe("CLI thread topic commands", () => {
     expect(readState).toHaveProperty("counts");
 
     // 2. organization rebuild
-    const retryRes = await w.harness.behavior.runCli(["organization", "--rebuild", "--json"]);
+    const retryRes = await w.harness.behavior.runCli([
+      "organization",
+      "--rebuild",
+      "--json",
+    ]);
     expect(retryRes.exitCode).toBe(0);
     const retryState = JSON.parse(retryRes.stdout);
     expect(retryState.status).toBe("idle");
 
     // 3. Removed manual placement commands are not recognized
-    for (const cmd of ["file", "new", "prioritize", "edit", "handoff", "rebuild"]) {
+    for (const cmd of [
+      "file",
+      "new",
+      "prioritize",
+      "edit",
+      "handoff",
+      "rebuild",
+    ]) {
       const res = await w.harness.behavior.runCli([cmd]);
       expect(res.exitCode).not.toBe(0);
     }

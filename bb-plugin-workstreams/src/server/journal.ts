@@ -230,21 +230,44 @@ export class Journal {
   }
 
   list(
-    options: { limit?: number; before?: number; external?: boolean } = {},
+    options: {
+      limit?: number;
+      before?: number;
+      external?: boolean;
+      since?: number;
+    } = {},
   ): JournalEntry[] {
+    return this.window(options).entries;
+  }
+
+  window(
+    options: {
+      limit?: number;
+      before?: number;
+      external?: boolean;
+      since?: number;
+    } = {},
+  ): { entries: JournalEntry[]; hasMore: boolean; limit: number } {
     const limit = Math.min(Math.max(options.limit ?? 100, 1), 500);
     const rows = this.db
       .prepare(
         `SELECT * FROM ws_journal
-         WHERE at < @before AND (@external = 1 OR source <> 'external')
-         ORDER BY at DESC, rowid DESC LIMIT @limit`,
+         WHERE at < @before AND at >= @since
+           AND (@external = 1 OR source <> 'external')
+         ORDER BY at DESC, rowid DESC LIMIT @limitPlusOne`,
       )
       .all({
         before: options.before ?? Number.MAX_SAFE_INTEGER,
+        since: options.since ?? 0,
         external: options.external ? 1 : 0,
-        limit,
+        limitPlusOne: limit + 1,
       }) as Row[];
-    return rows.map(fromRow);
+    const hasMore = rows.length > limit;
+    return {
+      entries: rows.slice(0, limit).map(fromRow),
+      hasMore,
+      limit,
+    };
   }
 
   /** Updates a pending proposal once it is applied, dismissed, or expired. */

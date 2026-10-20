@@ -80,6 +80,14 @@ describe("debug mode off", () => {
     }>(w, "state", null);
     expect(state.analysis.t1?.traceId).toBeNull();
   });
+
+  it("prints the current debug hint from the CLI", async () => {
+    const w = await setup(false);
+    const result = await w.harness.behavior.runCli(["trace"]);
+    expect(result.stdout).toBe(
+      "No model calls recorded. Turn on Debug mode in Workstreams settings to record them.",
+    );
+  });
 });
 
 describe("debug mode on", () => {
@@ -211,6 +219,12 @@ describe("debug mode on", () => {
     expect(shown.stdout).toContain("Full analysis: Alpha parser");
     expect(shown.stdout).toContain("── Reasoning ──");
     expect(shown.stdout).toContain("── Prompt ──");
+  });
+
+  it("distinguishes no traces yet from debug mode being off", async () => {
+    const w = await setup(true);
+    const result = await w.harness.behavior.runCli(["trace"]);
+    expect(result.stdout).toBe("No model calls recorded yet.");
   });
 });
 

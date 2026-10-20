@@ -157,6 +157,134 @@ describe("cli", () => {
     const logged = await cli(["log"]);
     expect(logged.exitCode).toBe(0);
   });
+
+  it("surfaces show truncation in human and JSON output", async () => {
+    const w = await setup();
+    const alpha = w.addSection("Alpha");
+    for (let i = 1; i <= 205; i++) {
+      w.addThread(`t${i}`, {
+        title: `Task ${i}`,
+        sectionId: alpha.id,
+        latestAttentionAt: 1_000 + i,
+      });
+    }
+    const cli = (argv: string[]) => w.harness.behavior.runCli(argv);
+
+    const human = await cli(["show", "alpha"]);
+    expect(human.exitCode).toBe(0);
+    expect(human.stdout).toContain("Alpha — 205 threads (showing first 200)");
+    expect(human.stdout).toContain(
+      "5 more threads omitted by the 200-row CLI limit.",
+    );
+
+    const parsed = JSON.parse((await cli(["show", "alpha", "--json"])).stdout);
+    expect(parsed.count).toBe(205);
+    expect(parsed.shown).toBe(200);
+    expect(parsed.hasMore).toBe(true);
+    expect(parsed.rows).toHaveLength(200);
+  });
+
+  it("filters the activity log before limiting and reports truncation", async () => {
+    const w = await setup();
+    const now = Date.now();
+    const times = [
+      now,
+      now - 60_000,
+      now - 2 * 60_000,
+      now - 3 * 60_000,
+      now - 4 * 60_000,
+      now - 5 * 60_000,
+      now - 6 * 60_000,
+      now - 3 * 60 * 60_000,
+    ];
+    let calls = 0;
+    const journal = new Journal(
+      w.bb.storage.database(),
+      () => times[Math.floor(calls++ / 2)] ?? now - 4 * 60 * 60_000,
+    );
+    for (let i = 0; i < 8; i++) {
+      journal.add({
+        action: "move",
+        source: "auto",
+        rationale: `Entry ${i}`,
+        threads: [],
+        workstreams: [],
+        undo: null,
+      });
+    }
+    const cli = (argv: string[]) => w.harness.behavior.runCli(argv);
+
+    const human = await cli(["log", "--since", "2h", "--limit", "5"]);
+    expect(human.exitCode).toBe(0);
+    expect(human.stdout).toContain(
+      "Showing 5 newest matching entries; older matching entries are omitted by --limit 5.",
+    );
+    expect(human.stdout).not.toContain("Entry 7");
+
+    const parsed = JSON.parse(
+      (await cli(["log", "--since", "2h", "--limit", "5", "--json"])).stdout,
+    );
+    expect(parsed.count).toBe(5);
+    expect(parsed.hasMore).toBe(true);
+    expect(parsed.limit).toBe(5);
+    expect(parsed.entries).toHaveLength(5);
+    expect(
+      parsed.entries.every(
+        (entry: { at: number }) => entry.at >= now - 2 * 60 * 60_000,
+      ),
+    ).toBe(true);
+  });
+
+  it("adds JSON output for undo", async () => {
+    const w = await setup();
+    const now = Date.now();
+    w.addThread("t1", {
+      title: "Old focus",
+      status: "idle",
+      latestAttentionAt: now,
+    });
+    await rpc(w, "refresh", null);
+    await w.bb.sdk.threads.update({ threadId: "t1", title: "New focus" });
+    const entry = new Journal(w.bb.storage.database(), () => now).add({
+      action: "retitle",
+      source: "auto",
+      rationale: "Retitled from Old focus",
+      threads: [{ id: "t1", name: "New focus" }],
+      workstreams: [],
+      undo: {
+        kind: "retitle",
+        threadId: "t1",
+        from: "Old focus",
+        to: "New focus",
+      },
+    });
+    const cli = (argv: string[]) => w.harness.behavior.runCli(argv);
+
+    const result = await cli(["undo", entry.id, "--json"]);
+    const parsed = JSON.parse(result.stdout);
+    expect(result.exitCode).toBe(0);
+    expect(parsed.entry.action).toBe("undo");
+    expect(w.threads.get("t1")?.title).toBe("Old focus");
+  });
+
+  it("labels analyze catch-up errors as global stale state", async () => {
+    const w = await fakeWorld({ complete: () => "not json at all" });
+    world = w;
+    w.addThread("t1", { title: "Alpha parser", status: "idle" });
+    w.converse("t1", ["Fix the parser"]);
+    await rpc(w, "refresh", null);
+    await w.harness.behavior.runCli(["analyze", "t1"]).catch(() => null);
+    const cli = (argv: string[]) => w.harness.behavior.runCli(argv);
+
+    const human = await cli(["analyze"]);
+    expect(human.exitCode).toBe(0);
+    expect(human.stdout).toContain("Most recent analyzer failure anywhere:");
+    expect(human.stdout).not.toContain(" Last error: ");
+
+    const parsed = JSON.parse((await cli(["analyze", "--json"])).stdout);
+    expect(parsed.lastError).toBeTruthy();
+    expect(parsed.lastErrorScope).toBe("global");
+  });
 });
 
 describe("sidebar order", () => {

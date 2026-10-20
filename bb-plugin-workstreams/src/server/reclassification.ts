@@ -69,9 +69,14 @@ export class Reclassification {
             : null;
         plan.rows.push({ ...row, to, error: null });
       } catch (error) {
+        const title = await this.deps
+          .sdk()
+          .threads.get({ threadId })
+          .then((thread) => thread.title?.trim() || threadId)
+          .catch(() => threadId);
         plan.rows.push({
           threadId,
-          title: threadId,
+          title,
           from: current.label,
           to: current.label,
           error: error instanceof Error ? error.message : String(error),

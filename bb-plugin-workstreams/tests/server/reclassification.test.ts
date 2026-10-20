@@ -153,6 +153,35 @@ describe("reviewable topic repairs", () => {
     ]);
     expect(JSON.parse(json.stdout).rows[0].title).toBe(title);
   });
+
+  it("uses the thread title on preview error rows instead of a raw id", async () => {
+    const { w } = await setup();
+    w.addThread("child", {
+      title: "Delegate follow-up",
+      parentThreadId: "t",
+      status: "idle",
+    });
+    await w.harness.behavior.callRpc("refresh", null);
+    const human = await w.harness.behavior.runCli([
+      "topics",
+      "preview",
+      "child",
+    ]);
+    expect(human.stdout).toContain("Delegate follow-up:");
+    expect(human.stdout).not.toContain("child:");
+
+    const json = await w.harness.behavior.runCli([
+      "topics",
+      "preview",
+      "child",
+      "--json",
+    ]);
+    expect(JSON.parse(json.stdout).rows[0]).toMatchObject({
+      threadId: "child",
+      title: "Delegate follow-up",
+      error: "Delegates use their root's topic.",
+    });
+  });
   it("retains a plan after a transient SDK failure so the reviewed result can be retried", async () => {
     const { w, topics, b, preview, apply } = await setup();
     const plan = await preview();

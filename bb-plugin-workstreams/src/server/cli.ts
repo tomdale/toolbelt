@@ -54,6 +54,7 @@ const terminalLine = (text: string) =>
     .replace(/\s+/g, " ")
     .trim();
 const TITLE_MAX = 80;
+const SHOW_LIMIT = 200;
 const clip = (text: string) =>
   text.length <= TITLE_MAX ? text : `${text.slice(0, TITLE_MAX - 1)}…`;
 
@@ -73,7 +74,7 @@ function resolveWorkstream(sections: Section[], arg: string): Section | null {
   );
 }
 
-/** How `thread show` names where a thread's topic came from. */
+/** How `thread show` names where a root thread's topic came from. */
 const TOPIC_SOURCE_LABEL = {
   manual: "set by you",
   inherited: "inherited from where the thread started",
@@ -81,6 +82,16 @@ const TOPIC_SOURCE_LABEL = {
   quick: "Quick analysis's guess from the first request",
   none: "none yet",
 } as const;
+
+function topicSourceLines(assignment: TopicAssignment): string[] {
+  const source = TOPIC_SOURCE_LABEL[assignment.provenance ?? "none"];
+  if (!assignment.inheritedFrom) return [`Source:          ${source}`];
+  return [
+    "Source:          follows parent thread's topic",
+    `Parent source:   ${source}`,
+    `Follows parent:  @thread:${assignment.inheritedFrom}`,
+  ];
+}
 
 function resolveTopic(topics: TopicStore, arg: string): Topic {
   const direct = topics.getById(arg);
@@ -328,13 +339,17 @@ export function registerCli(
                     (g) => g.id === section.id,
                   )!;
                 })();
-            const rows = group.rows.slice(0, 200);
+            const rows = group.rows.slice(0, SHOW_LIMIT);
+            const hasMore = group.rows.length > rows.length;
             if (options.json)
               return {
                 exitCode: 0,
                 stdout: JSON.stringify(
                   {
                     ...groupJson(group, now),
+                    count: group.total,
+                    shown: rows.length,
+                    hasMore,
                     rows: rows.map((r) => ({
                       id: r.thread.id,
                       title: clip(r.thread.title),
@@ -360,8 +375,13 @@ export function registerCli(
             return {
               exitCode: 0,
               stdout: [
-                `${group.name} — ${plural(group.total, "thread")}`,
+                `${group.name} — ${plural(group.total, "thread")}${hasMore ? ` (showing first ${rows.length})` : ""}`,
                 ...lines,
+                ...(hasMore
+                  ? [
+                      `${group.total - rows.length} more threads omitted by the ${SHOW_LIMIT}-row CLI limit.`,
+                    ]
+                  : []),
               ].join("\n"),
             };
           },
@@ -390,15 +410,28 @@ export function registerCli(
           },
           async run({ options }) {
             const cutoff = options.since ? Date.now() - options.since : 0;
-            const entries = journal
-              .list({ limit: options.limit, external: options.external })
-              .filter((e) => e.at >= cutoff);
+            const { entries, hasMore, limit } = journal.window({
+              limit: options.limit,
+              external: options.external,
+              since: cutoff || undefined,
+            });
             return {
               exitCode: 0,
               stdout: options.json
-                ? JSON.stringify({ entries }, null, 2)
+                ? JSON.stringify(
+                    { entries, count: entries.length, hasMore, limit },
+                    null,
+                    2,
+                  )
                 : entries.length
-                  ? entries.map(entryLine).join("\n")
+                  ? [
+                      ...entries.map(entryLine),
+                      ...(hasMore
+                        ? [
+                            `Showing ${entries.length} newest matching entries; older matching entries are omitted by --limit ${limit}.`,
+                          ]
+                        : []),
+                    ].join("\n")
                   : "No activity.",
             };
           },
@@ -446,11 +479,20 @@ export function registerCli(
               };
             }
             const queued = analyzer.catchUp(await listActiveThreads(bb.sdk));
-            const message = `Queued ${plural(queued, "thread")} for analysis.${analyzer.lastError ? ` Last error: ${analyzer.lastError}` : ""}`;
+            const globalLastError = analyzer.lastError;
+            const message = `Queued ${plural(queued, "thread")} for analysis.${globalLastError ? ` Most recent analyzer failure anywhere: ${globalLastError}` : ""}`;
             return {
               exitCode: 0,
               stdout: options.json
-                ? JSON.stringify({ queued, lastError: analyzer.lastError })
+                ? JSON.stringify(
+                    {
+                      queued,
+                      lastError: globalLastError,
+                      lastErrorScope: globalLastError ? "global" : null,
+                    },
+                    null,
+                    2,
+                  )
                 : message,
             };
           },
@@ -559,7 +601,9 @@ export function registerCli(
                 ? json({ traces: list })
                 : list.length
                   ? list.map(traceLine).join("\n")
-                  : "No model calls recorded. Debug mode records them: `bb plugin config workstreams set debug true`.",
+                  : currentPrefs?.().advanced.debug
+                    ? "No model calls recorded yet."
+                    : "No model calls recorded. Turn on Debug mode in Workstreams settings to record them.",
             };
           },
         }),
@@ -572,11 +616,14 @@ export function registerCli(
               required: true,
             },
           ],
-          async run({ positionals }) {
+          options: { json: { type: "boolean", description: "Print JSON" } },
+          async run({ positionals, options }) {
             const entry = await service.undo(positionals.entry).catch(fail);
             return {
               exitCode: 0,
-              stdout: `${entry.rationale}${entry.detail ? ` (${entry.detail})` : ""}`,
+              stdout: options.json
+                ? JSON.stringify({ entry }, null, 2)
+                : `${entry.rationale}${entry.detail ? ` (${entry.detail})` : ""}`,
             };
           },
         }),
@@ -719,7 +766,7 @@ export function registerCli(
               `Description:     ${entity.description || "(none)"}`,
               `Parent:          ${entity.parentId ?? "(root)"}`,
               `Aliases:         ${entity.aliases.length ? entity.aliases.join(", ") : "(none)"}`,
-              `Assigned tasks:  ${assignedThreads.length}`,
+              `Assigned threads:${assignedThreads.length.toString().padStart(3)}`,
             ];
             return { exitCode: 0, stdout: lines.join("\n") };
           },
@@ -978,10 +1025,7 @@ export function registerCli(
               `Thread:          ${clip(thread.title)} (@thread:${thread.id})`,
               `Workstream:      ${sectionName}`,
               `Topic:           ${assignment.label ?? "none"}`,
-              `Source:          ${TOPIC_SOURCE_LABEL[assignment.provenance ?? "none"]}`,
-              ...(assignment.inheritedFrom
-                ? [`Follows parent:  @thread:${assignment.inheritedFrom}`]
-                : []),
+              ...topicSourceLines(assignment),
             ];
             return { exitCode: 0, stdout: lines.join("\n") };
           },
