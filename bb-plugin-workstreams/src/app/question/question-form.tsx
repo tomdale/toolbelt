@@ -61,17 +61,17 @@ const MARKDOWN_CLASS =
 // lines up with the option labels (see OPTION_TEXT_INDENT), bold stays below
 // the question's weight, and headings sit tight to their paragraphs.
 const DETAILS_CLASS =
-  "!text-[length:inherit] !leading-[inherit] [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!mb-1.5 [&_ul]:!mb-1.5 [&_ol]:!mb-1.5 [&_li]:!mb-0.5 [&_ul]:!pl-[26px] [&_ol]:!pl-[26px] [&_li_ul]:!pl-5 [&_li_ol]:!pl-5 [&_strong]:!font-semibold [&_:is(h1,h2,h3,h4,h5,h6)]:!mt-2 [&_:is(h1,h2,h3,h4,h5,h6)]:!mb-1 [&_:last-child]:!mb-0 [&_code]:!rounded [&_code]:!px-[3px] [&_code]:!py-px [&_code]:!text-[0.923em]";
+  "!text-[length:inherit] !leading-[inherit] [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!mb-1.5 [&_ul]:!mb-1.5 [&_ol]:!mb-1.5 [&_li]:!mb-0.5 [&_ul]:!pl-6 [&_ol]:!pl-6 [&_li_ul]:!pl-5 [&_li_ol]:!pl-5 [&_strong]:!font-semibold [&_:is(h1,h2,h3,h4,h5,h6)]:!mt-2 [&_:is(h1,h2,h3,h4,h5,h6)]:!mb-1 [&_:last-child]:!mb-0 [&_code]:!rounded [&_code]:!px-[3px] [&_code]:!py-px [&_code]:!text-[0.923em]";
 // Agents put paths and URLs in option text; wrap them rather than overflow.
 // Footer buttons match the details text size, and reach 44px on a phone.
 const FOOTER_BUTTON_CLASS = "text-[13px] max-md:pointer-coarse:h-11";
 const LABEL_CLASS =
-  "text-[14px] leading-[1.4] max-md:pointer-coarse:text-base [overflow-wrap:anywhere]";
+  "text-[13.5px] leading-[1.4] max-md:pointer-coarse:text-base [overflow-wrap:anywhere]";
 const DESCRIPTION_CLASS =
-  "text-[12.5px] leading-[1.45] max-md:pointer-coarse:text-sm [text-wrap:pretty] [overflow-wrap:anywhere]";
-// The radio (16px, 18px on a phone) plus its 10px gap: where option text
+  "text-[12px] leading-[1.45] max-md:pointer-coarse:text-sm [text-wrap:pretty] [overflow-wrap:anywhere]";
+// The radio (14px, 18px on a phone) plus its 10px gap: where option text
 // starts. Details lists, option previews, and the answer field align to it.
-const OPTION_TEXT_INDENT = "ml-[26px] max-md:pointer-coarse:ml-7";
+const OPTION_TEXT_INDENT = "ml-6 max-md:pointer-coarse:ml-7";
 
 interface QuestionOptionRowProps {
   checked: boolean;
@@ -108,7 +108,7 @@ function QuestionOptionRow({
     >
       <span
         className={cn(
-          "mt-[2px] flex size-4 shrink-0 items-center justify-center border transition-colors duration-150 motion-reduce:transition-none max-md:pointer-coarse:size-[18px]",
+          "mt-[2.5px] flex size-3.5 shrink-0 items-center justify-center border transition-colors duration-150 motion-reduce:transition-none max-md:pointer-coarse:mt-[2px] max-md:pointer-coarse:size-[18px]",
           multiSelect ? "rounded" : "rounded-full",
           checked
             ? "border-amber-600 bg-amber-600 text-white dark:border-amber-400 dark:bg-amber-400 dark:text-amber-950"
@@ -117,7 +117,7 @@ function QuestionOptionRow({
       >
         {checked ? (
           multiSelect ? (
-            <Icon name="Check" className="size-3" aria-hidden />
+            <Icon name="Check" className="size-2.5" aria-hidden />
           ) : (
             <span className="size-1.5 rounded-full bg-current" aria-hidden />
           )
