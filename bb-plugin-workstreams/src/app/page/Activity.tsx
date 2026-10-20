@@ -121,9 +121,9 @@ type Item =
 
 /**
  * The Activity log: every change Workstreams made or observed, and every
- * proposal (SPEC §11.5), with filters by workstream, action, and needs-review.
+ * proposal, with filters by workstream, action, and needs-review.
  * In Debug mode it also lists each model call in place, with what the model
- * decided (SPEC §11.6).
+ * decided.
  */
 export function Activity({
   rpc,
@@ -272,7 +272,14 @@ export function Activity({
     })),
   ].sort((a, b) => b.at - a.at);
   const hasAnyVisibleActivity =
-    (entries?.length ?? 0) > 0 || (debug && calls.length > 0);
+    (entries?.length ?? 0) > 0 ||
+    (debug && calls.length > 0) ||
+    Boolean(
+      workstream ||
+      action ||
+      needsReview ||
+      (debug && (callKind || failuresOnly)),
+    );
   const days: { label: string; items: Item[] }[] = [];
   for (const item of items) {
     const label = day(item.at);

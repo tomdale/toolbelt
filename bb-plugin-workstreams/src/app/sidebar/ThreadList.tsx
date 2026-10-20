@@ -3,7 +3,7 @@
  * workstreams, and the Recent band, then one group per remaining workstream
  * (BB section, in the user's drag-and-drop order, else BB's), Unfiled, a
  * Dormant fold, and a Snoozed fold. Up Next and Recent are overlays: every
- * visible thread appears in exactly one group, or in Snoozed (SPEC I1).
+ * visible thread appears in exactly one group, or in Snoozed (SPEC §1).
  *
  * While a prioritized workstream has a thread in Up Next, Up Next shows only
  * prioritized threads (see `focusNeeds`), and while any workstream is

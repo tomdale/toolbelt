@@ -85,7 +85,8 @@ policies apply to conversation excerpts sent for analysis.
 - Activity debug filters and empty states: `tests/app/activity-debug.test.tsx`.
 - Overview search counts: `tests/app/page.test.tsx`.
 - Setting-save errors and title-lock copy: `tests/app/settings.test.tsx`.
-- Snooze defaults and valid custom dates: `tests/app/snooze-header.test.tsx`.
+- Snooze defaults and valid custom dates:
+  `tests/app/custom-snooze-dialog.test.tsx`.
 - Question answer limits and attachment availability: `tests/app/question/`.
 - Sidebar ordering/drop affordances and shared band preferences:
   `tests/app/drop.test.ts`, `tests/app/sidebar.test.tsx`.

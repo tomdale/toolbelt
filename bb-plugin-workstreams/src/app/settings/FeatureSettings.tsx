@@ -300,7 +300,7 @@ export function OrganizeSettings() {
       <SectionRows>
         <SettingRow
           label="Group capacity"
-          description="Most active threads per workstream before it splits into its subtopics. A single subtopic may exceed it."
+          description="Most visible root threads per workstream, including completed threads, before it splits into subtopics. A single topic may exceed it."
           control={
             <Stepper
               label="Group capacity"
@@ -323,7 +323,7 @@ export function OrganizeSettings() {
         />
         <SettingRow
           label="Contraction threshold"
-          description="A product with this many active threads or fewer gets one workstream for all its topics."
+          description="A top-level topic with this many visible root threads or fewer, including completed threads, gets one workstream for all its subtopics."
           control={
             <Stepper
               label="Contraction threshold"

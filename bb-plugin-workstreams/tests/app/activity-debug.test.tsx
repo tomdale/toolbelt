@@ -75,6 +75,19 @@ async function page(rpc: Record<string, unknown>) {
   );
 }
 
+it("distinguishes an empty server-filtered trace result from an empty log", async () => {
+  const slot = await page({
+    journal: () => ({ entries: [] }),
+    traces: () => ({ traces: [] }),
+  });
+  await slot.findByText("No activity yet.");
+  fireEvent.change(
+    await slot.findByRole("combobox", { name: "Filter by model call kind" }),
+    { target: { value: "quick-analysis" } },
+  );
+  expect(await slot.findByText("No matching activity.")).toBeTruthy();
+});
+
 it("filters internal calls, exposes metadata and event internals, and opens the full inspector", async () => {
   const traces = [
     trace("ok"),
