@@ -30,16 +30,15 @@ const PREVIEW_MAX_HEIGHT = 220;
 const MAX_FREE_TEXT_LENGTH = 4096;
 
 // The card's type scale, largest to smallest: the question (in the card's
-// amber accent, which replaces a separate state label; in the dark theme it is
-// the border's exact color, and the light theme takes a darker amber so it
-// stays legible on the pale card), option labels, details,
+// amber accent, which replaces a separate state label; a lighter amber than
+// the border so it stays legible as text), option labels, details,
 // then option descriptions. On a phone (a viewport under 768px with a coarse
 // pointer) the text follows BB's own rule and takes the next token up: the
 // question is 22px, labels `text-base`, the timeline's size, and the
 // rest `text-sm`. The answer field must be at least 16px or iOS zooms the page
 // when it takes focus.
 const PROMPT_CLASS =
-  "text-[20px] leading-[1.3] text-amber-700 dark:text-amber-400/85 max-md:pointer-coarse:text-[22px] [text-wrap:pretty]";
+  "text-[20px] leading-[1.3] text-amber-700 dark:text-amber-300 max-md:pointer-coarse:text-[22px] [text-wrap:pretty]";
 // The renderer's root sets its own size and color, so the root takes the
 // prompt's here, and code chips stay in the foreground color for legibility.
 const MARKDOWN_CLASS =
