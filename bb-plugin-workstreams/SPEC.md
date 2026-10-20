@@ -79,8 +79,11 @@ display titles. Automatic titling preserves outside title edits until the title
 is cleared. Opening analysis only fills empty titles.
 
 Question cards and agent reports precede analysis fallback for status. Agent
-recap states map complete to done, review to review, and waiting to working.
-Fresh user input clears the prior recap. Recap reminders remain configurable.
+recap states map `complete` to `done`, `review` to `review`, and `waiting` to
+`in_progress` (working). The serialized decision state is `needs_decision`;
+“needs you” is its user-facing description. Runtime `error` is a BB thread
+status, not a stored analysis work state. Fresh user input clears the prior
+recap. Recap reminders remain configurable.
 
 ## 4. Organization
 

@@ -1,4 +1,4 @@
-/** Debug mode (SPEC §11.6): the preference and what an inspector can open. */
+/** Debug mode: the preference and what an inspector can open. */
 import type { TraceLink } from "../../domain/trace.ts";
 import { usePrefs } from "../prefs.ts";
 

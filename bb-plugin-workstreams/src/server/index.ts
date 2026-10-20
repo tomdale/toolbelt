@@ -450,7 +450,7 @@ export default async function plugin(bb: BbPluginApi) {
     thread: { sourceThreadId?: string | null };
     senderThreadId: string | null;
   }): string | null => ctx.thread.sourceThreadId ?? ctx.senderThreadId ?? null;
-  // A new root gets its first topic here (SPEC §6): inherited from the thread
+  // A new root gets its first topic here (SPEC §2): inherited from the thread
   // or workstream it was started from, the one its composer showed, or Quick
   // analysis's from its first request. The hook itself always proceeds.
   bb.experimental_hooks.on("message.dispatch", async (ctx) => {

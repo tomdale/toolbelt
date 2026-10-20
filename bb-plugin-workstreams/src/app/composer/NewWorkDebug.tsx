@@ -1,5 +1,5 @@
 /**
- * The New thread composer's Debug section (SPEC §11.6): a collapsed
+ * The New thread composer's Debug section: a collapsed
  * disclosure under the composer with what it takes to judge a preview: the
  * topic and goal, the reason, what Quick analysis was given, the server's
  * notes on each step, and the exact prompt and raw response. Copy

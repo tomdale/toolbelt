@@ -1,7 +1,7 @@
 /**
  * A thread BB's New thread view creates is filed like a New work start: with
  * the Product or feature its banner showed, even when a plain Enter sent no
- * submit data, and journaled as started (SPEC §6).
+ * submit data, and journaled as started (SPEC §2).
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";

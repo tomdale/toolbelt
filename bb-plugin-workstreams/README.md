@@ -4,6 +4,31 @@ Workstreams keeps open BB threads useful at a glance by maintaining each root
 thread's **goal**, **topic**, **status**, and **activity**, then deriving native
 BB **workstreams** (sections) from topics.
 
+## Install and start
+
+Requires **BB 0.44+** and **Plugin SDK 0.6.5+**. From a retained local checkout:
+
+```sh
+cd bb-plugin-workstreams
+npm ci
+npm run build
+bb plugin install "$PWD" --yes
+```
+
+Path installs load from that directory; do not delete it while installed. In
+Tom's toolbelt checkout, develop in a Workforest task and install only from
+canonical `main` after integration.
+
+1. Open **Settings → Workstreams** and choose the Quick and Full analysis
+   models. The default Gateway models need a connected BB machine with an AI
+   Gateway key; see [model execution](#gateway-vs-provider-worker-models).
+2. Select **Workstreams** as the sidebar thread list and open **Workstreams** in
+   the main navigation to browse the topic tree and organization state.
+3. Start a thread with **Automatic**, or select its **Topic** yourself. To move
+   existing work, change its Topic rather than dragging between sections.
+
+See [ISSUES.md](ISSUES.md) for current limitations and audit dispositions.
+
 ## Core concepts
 
 | Term                 | Meaning                                                                                                                                       |
@@ -62,9 +87,12 @@ phones):
   fewer) to preview a goal and topic. When you send the first request, a
   matching draft preview is reused immediately without a second model call;
   otherwise Quick analysis runs on the sent request.
-- **Explicit workstream mention:** Mentioning `@section:<id>` in a draft
-  resolves immediately to that workstream's bound topic with high confidence and
-  no model call.
+- **Explicit workstream reference:** A draft containing `@section:<id>` resolves
+  to that section's bound topic without a model call when typing suggestions are
+  enabled. For example, `@section:sec_0123456789` uses a native BB section ID,
+  not a topic name or topic ID. Run `bb workstreams list` to find section IDs.
+  Unknown or unbound section IDs fall back to Quick analysis. This is a preview
+  shortcut, not a separate destination-workstream control.
 - **Workstream `＋` button:** Clicking **New work in \<workstream\>** in a
   sidebar group header seeds the composer with that workstream's topic
   (`inherited` provenance).
@@ -152,16 +180,13 @@ state, or organization settings change. It is completely deterministic and makes
 
 Select **Workstreams** as your sidebar thread list to organize threads into:
 
-1. **Up Next:** A sticky amber card at the top of the sidebar showing threads
-   that need your attention (`AskUserQuestion` pending, `needs_decision` state,
-   or unread threads in `done`/`review`), followed by threads with a latest-turn
-   agent recap, newest first.
+1. **Up Next:** A sticky amber card at the top of the sidebar showing root
+   threads that need your attention (`AskUserQuestion` pending, `needs_decision`
+   state, or unread `done`/`review`), followed by roots with a latest-turn agent
+   recap, newest first. Nested delegates do not appear as separate Up Next
+   entries; find them in their workstream's thread tree.
    - Displays up to `5` threads with a **Show N more** / **Show less** toggle;
-     the currently open thread always remains visible.
-   - If a delegate and its parent both need a decision and the parent's turn is
-     newer, the delegate's decision folds into the parent count so one decision
-     is not counted twice (live pending `AskUserQuestion` interactions never
-     fold because only the child thread can answer them).
+     the currently open eligible root always remains visible.
    - **Prioritized focus:** When any prioritized workstream has a thread in Up
      Next, Up Next filters to prioritized workstreams and shows a count of
      remaining items on the **Show lower priority workstreams** toggle.
@@ -339,16 +364,16 @@ Open **Workstreams** in the main navigation panel to access four tabs:
 Threads can be snoozed from the sidebar hover button, the sidebar right-click
 menu, the thread header, or the command palette:
 
-| Preset                                   | Wake rule                                               |
-| ---------------------------------------- | ------------------------------------------------------- |
-| **30 minutes** (`30m`)                   | `30` minutes from now.                                  |
-| **1 hour** (`1h`)                        | `1` hour from now.                                      |
-| **3 hours** (`3h`)                       | `3` hours from now.                                     |
-| **Tomorrow morning** (`tomorrow`)        | Next day at **Mornings start at** (default `9:00 AM`).  |
-| **This weekend** (`weekend`)             | Coming Saturday at **Mornings start at** (never today). |
-| **Next week** (`nextweek` / `next-week`) | Coming Monday at **Mornings start at** (never today).   |
-| **Until it updates** (`activity`)        | Wakes on the thread's next activity (`until: null`).    |
-| **Pick a date and time…**                | Custom future timestamp (up to `366` days out).         |
+| Preset                            | Wake rule                                               |
+| --------------------------------- | ------------------------------------------------------- |
+| **30 minutes** (`30m`)            | `30` minutes from now.                                  |
+| **1 hour** (`1h`)                 | `1` hour from now.                                      |
+| **3 hours** (`3h`)                | `3` hours from now.                                     |
+| **Tomorrow morning** (`tomorrow`) | Next day at **Mornings start at** (default `9:00 AM`).  |
+| **This weekend** (`weekend`)      | Coming Saturday at **Mornings start at** (never today). |
+| **Next week** (`next-week`)       | Coming Monday at **Mornings start at** (never today).   |
+| **Until it updates** (`activity`) | Wakes on the thread's next activity (`until: null`).    |
+| **Pick a date and time…**         | Custom future timestamp (up to `366` days out).         |
 
 - Snoozing a root removes the root and its entire delegate subtree from its
   workstream and from **Up Next** / **Recent**, placing them in the **Snoozed**
@@ -400,14 +425,19 @@ Open **Settings → Workstreams** to configure:
   schema-constrained JSON for Quick analysis, no silent model fallback).
 - **Other BB provider models** run inside a temporary hidden
   `"Workstreams worker"` BB thread (`120 s` timeout, automatically stopped and
-  archived after completion), which takes several seconds longer per call.
+  archived after completion), which takes several seconds longer per call. The
+  released SDK does not expose schema-constrained generation or output-token
+  limits for spawned threads. Responses still pass the same parser, validation,
+  and bounded repair rules, but generation itself is unconstrained. Worker token
+  usage, cost, and reasoning metadata are unavailable (`null` in traces), not
+  evidence that the call was free.
 
 ---
 
 ## CLI reference
 
-Run `bb workstreams --help` or any subcommand below. Every read/mutation command
-(except `undo`) accepts `--json` for machine-readable output.
+Run `bb workstreams --help` or any subcommand below. Every command accepts
+`--json` for machine-readable output.
 
 ### Workstreams, organization, analysis, and activity
 
@@ -428,7 +458,7 @@ bb workstreams analyze [<thread-id>] [--json]
 bb workstreams log [--limit 1..500] [--since <duration, e.g. 90m or 7d>] [--external] [--json]
 
 # Undo a logged activity entry when current BB state still matches
-bb workstreams undo <entry-id>
+bb workstreams undo <entry-id> [--json]
 
 # Inspect recorded Debug-mode model traces (kinds: quick-analysis, full-analysis)
 bb workstreams trace [<trace-id>] [--thread <id>] [--entry <id>] [--kind <kind>] [--limit 1..500] [--json]
@@ -482,8 +512,11 @@ recording and unlocks diagnostic tools across the UI:
   parsed output, token usage, cost, duration, and applied outcome. Common secret
   patterns (`sk-…`, `ghp_…`, `github_pat_…`, `xoxb-…`, `Bearer …`, and
   `api_key`/`token`/`password`/`secret` assignments) are masked before prompts
-  reach a model or trace store. Traces are retained for `7` days or `1,000`
-  records and pruned automatically even after Debug mode is turned off.
+  reach a model or trace store. Redaction is best effort, not a security
+  boundary; do not put secrets in requests or assume diagnostics are safe to
+  share without inspection. Conversation excerpts go to your selected model
+  provider under that provider's policies. Traces are retained for `7` days or
+  `1,000` records and pruned automatically even after Debug mode is turned off.
 - **Thread Inspector:** Click the bug (`Inspect`) button on an Overview row,
   Activity row, or trace entry to open the side-pane inspector. Inspect every
   recorded call for a thread, copy the full trace JSON, or click **Run again**

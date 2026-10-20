@@ -1,6 +1,6 @@
 /**
- * The small inspect button Debug mode adds wherever Workstreams used a model
- * (SPEC §11.6). It renders nothing while Debug mode is off, and opens the
+ * The small inspect button Debug mode adds wherever Workstreams used a model.
+ * It renders nothing while Debug mode is off, and opens the
  * inspector pane for its target.
  */
 import { useRef, useState } from "react";

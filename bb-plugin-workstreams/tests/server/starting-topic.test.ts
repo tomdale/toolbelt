@@ -1,5 +1,5 @@
 /**
- * How a new root gets its first topic and title (SPEC §6): the topic you
+ * How a new root gets its first topic and title (SPEC §2): the topic you
  * picked in the composer, the topic of the workstream whose ＋ opened it, the
  * topic of the thread it was started from, or Quick analysis of its first
  * request, reusing the composer's own preview when the text matches.
