@@ -6,11 +6,11 @@ Offer useful, distinct suggested answers with concise consequences. Put your rec
 
 A dismissed, expired, or failed question is not an answer or approval. Continue only work independent of the missing input, and clearly report what remains blocked. Request credentials through the secure secrets mechanism rather than a question card. Optional follow-up suggestions after completed work are not blocking questions.`;
 
-export const TOOL_DESCRIPTION = `Ask the user for input required to proceed and wait for their answer. Use this tool for blocking clarification, missing user-supplied information, decisions, and approvals. Resolve workspace facts and routine choices with sensible defaults yourself.
+export const TOOL_DESCRIPTION = `Ask the user for input required to proceed and wait for their answer. Use for blocking clarification, missing user-supplied information, decisions, and approvals; resolve workspace facts and routine choices yourself with sensible defaults.
 
-Supply 1-4 questions. Offer up to 4 distinct answers with concise descriptions; use options: [] for a genuinely freeform answer. Every card includes freeform input and supports image and file attachments, so omit an "Other" option. Use the optional always-visible details field for a short proposal list or the few facts the user must see while choosing, in a few short lines; longer explanation belongs in your message text before the call. Option previews are only supplemental and may require selecting an option. Put a recommendation first and append "(Recommended)" to its label. If offering edits, explain that the user should reply with the edits rather than implying the card has an editor. Use multiSelect: true when multiple answers can apply.
+Supply 1-4 questions with up to 4 distinct answers each; use options: [] for a genuinely freeform answer. Cards always include freeform input with image and file attachments, so omit an "Other" option. Use multiSelect: true when several answers can apply.
 
-Optional option previews show concrete artifacts such as UI sketches, code, diagrams, or configurations in a monospace block when selected. Use previews when the user needs to visually compare concrete artifacts; ordinary preference questions need only labels and descriptions. Previews apply only to single-select questions. Request credentials through the secure secrets mechanism.`;
+Option previews show concrete artifacts (UI sketches, code, diagrams, configurations) in a monospace block when selected, for single-select questions only. Use them when the user must visually compare artifacts; ordinary preference questions need only labels and descriptions.`;
 
 export const NOT_UNIQUE_MESSAGE =
   "Question texts must be unique, option labels must be unique within each question";
