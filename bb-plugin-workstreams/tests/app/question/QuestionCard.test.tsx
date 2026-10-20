@@ -238,6 +238,20 @@ describe("question interaction adapter", () => {
     ).toBeTruthy();
   });
 
+  it("restores the line structure of plain-text details for the host renderer", () => {
+    const slot = render({
+      questions: [
+        {
+          ...singleSelect.questions[0]!,
+          details: "What I found:\n• first\n• second",
+        },
+      ],
+    });
+    expect(slot.getAllByTestId("bb-markdown")[1]!.textContent).toBe(
+      "What I found:\n\n- first\n- second",
+    );
+  });
+
   it("passes heading Markdown to the host renderer and keeps the legend readable", () => {
     const prompt =
       "Can you **retry** `vc login` using [the guide](https://example.com)?";

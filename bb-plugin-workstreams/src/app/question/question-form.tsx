@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Markdown, useBbContext, useSdk } from "@get-bb/plugin-sdk/app";
 import { plainText } from "../../domain/recap.ts";
+import { formatQuestionText } from "./question-markdown.ts";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,12 @@ const PROMPT_CLASS =
   "text-[13.5px] leading-[1.4] max-md:pointer-coarse:text-base [text-wrap:pretty]";
 const MARKDOWN_CLASS =
   "text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
+// The host renderer gives every element its own color, size, and margins, as
+// it does for chat messages. Details are context for the choice below them, so
+// they take the options' type size and compact spacing instead; the lists keep
+// the host's bullets and indent.
+const DETAILS_CLASS =
+  "!text-[length:inherit] !leading-[inherit] [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!mb-1.5 [&_ul]:!mb-1.5 [&_ol]:!mb-1.5 [&_li]:!mb-0.5 [&_:last-child]:!mb-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
 const LABEL_CLASS =
   "text-[12.5px] leading-[1.45] max-md:pointer-coarse:text-base";
 const DESCRIPTION_CLASS =
@@ -262,9 +269,12 @@ function QuestionInputBlock({
       {question.details ? (
         <div
           id={`${question.id}-details`}
-          className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1"
+          className="mt-1.5 text-[12.5px] leading-[1.5] max-md:pointer-coarse:text-sm [text-wrap:pretty]"
         >
-          <Markdown content={question.details} />
+          <Markdown
+            content={formatQuestionText(question.details)}
+            className={DETAILS_CLASS}
+          />
         </div>
       ) : null}
       <div className="mt-1.5 space-y-px">

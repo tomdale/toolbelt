@@ -99,7 +99,7 @@ const toolQuestionSchema = z.strictObject({
     .refine(nonBlank, "Details cannot be blank")
     .optional()
     .describe(
-      "Optional always-visible context displayed directly below the question and above its answer options. Put proposal lists and other information the user must see before deciding here, not in an option preview.",
+      "Optional always-visible context displayed directly below the question and above its answer options. Put proposal lists and other information the user must see before deciding here, not in an option preview. Rendered as Markdown: use `-` bullets for lists and a blank line between paragraphs.",
     ),
   header: z
     .string()

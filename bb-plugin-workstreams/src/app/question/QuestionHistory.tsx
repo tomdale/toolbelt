@@ -10,6 +10,7 @@ import type { QuestionHistory } from "../../server/questions/history.ts";
 import { questionResultSchema } from "../../server/questions/history.ts";
 import { buildInteractionPayload } from "../../server/questions/translate.ts";
 import { toolInputSchema } from "../../server/questions/contracts.ts";
+import { formatQuestionText } from "./question-markdown.ts";
 
 export function QuestionHistoryCard({ record }: { record: QuestionHistory }) {
   return (
@@ -25,7 +26,9 @@ export function QuestionHistoryCard({ record }: { record: QuestionHistory }) {
         {record.payload.questions.map((q) => (
           <section key={q.id} className="space-y-2 text-sm">
             <Markdown content={q.prompt} />
-            {q.details ? <Markdown content={q.details} /> : null}
+            {q.details ? (
+              <Markdown content={formatQuestionText(q.details)} />
+            ) : null}
             {q.options.length ? (
               <details className="text-xs text-muted-foreground">
                 <summary className="cursor-pointer">Options offered</summary>
