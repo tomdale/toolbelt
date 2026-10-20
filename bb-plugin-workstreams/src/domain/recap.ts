@@ -489,6 +489,7 @@ export const RECAP_TOOL_DESCRIPTION =
  * contract once; the tool's schema carries the limits.
  */
 export const RECAP_INSTRUCTIONS = `End every turn with ${RECAP_TOOL}, after completing the work you were authorized to do, unless the turn ends with a question card (AskUserQuestion or your provider's own question tool) still awaiting the user's answer. Ask questions only through such a card, never only in your reply.
+The recap call is the last thing in the turn: put every explanation, result, and caveat in your reply before it, and write nothing after it. If the call's result arrives, end the turn without further output.
 Before a complete or review recap, check the current task for concrete blockers and obvious continuations. Include one to three relevant next actions whenever the user can take or request one; \`next\` may be empty only when there is no useful follow-up. If progress requires the user's answer or approval, ask with the question-card tool and end without a recap.
 Recap state describes the responsibilities this thread owns under the user's request. Work continuing elsewhere affects this recap only while this thread owns follow-up.
 state: complete when all work this thread owns is finished; review when a finished result waits on the user to inspect, test, merge, or ship; waiting only while an async task is running whose result this thread needs to resume work it still owns. Keep working while there is authorized work you can do, or use a question card when required user input blocks progress.
