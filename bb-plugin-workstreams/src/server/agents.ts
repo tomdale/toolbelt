@@ -21,13 +21,12 @@ export function registerAgentInstructions(
     const questions = questionConfig(
       context.provider.capabilities.supportsNativeUserQuestion,
     );
-    const instructions = [questions.instructions, recap.instructions]
-      .filter((text): text is string => text !== null)
-      .join("\n\n");
+    // The recap instructions travel with the recap tool, so `configure`'s
+    // instruction budget holds only the question instructions.
     return {
       tools: [...questions.tools, ...recap.tools],
       skills: [],
-      ...(instructions ? { instructions } : {}),
+      instructions: questions.instructions,
     };
   });
 }

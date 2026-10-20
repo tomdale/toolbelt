@@ -133,6 +133,9 @@ export class AgentRecaps {
     this.deps.bb.agents.registerTool({
       name: RECAP_TOOL,
       description: RECAP_TOOL_DESCRIPTION,
+      // Tool instructions have their own budget; sharing `configure`'s with
+      // the question instructions would cut these short.
+      instructions: RECAP_INSTRUCTIONS,
       // A visible row keeps each recap in the thread's timeline. BB renders
       // plugin tool rows itself, so the title is fixed and the recap is the
       // row's output.
@@ -174,9 +177,7 @@ export class AgentRecaps {
     this.deps.db
       .prepare("UPDATE ws_agent_recap SET enrolled = ? WHERE thread_id = ?")
       .run(Number(on), threadId);
-    return on
-      ? { tools: [RECAP_TOOL], instructions: RECAP_INSTRUCTIONS }
-      : { tools: [], instructions: null };
+    return { tools: on ? [RECAP_TOOL] : [] };
   }
 
   /**

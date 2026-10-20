@@ -486,7 +486,10 @@ export const RECAP_TOOL_DESCRIPTION =
 
 /**
  * Instructions for every thread that has the recap tool. They state the
- * contract once; the tool's schema carries the limits.
+ * contract once; the tool's schema carries the limits. They are the tool's
+ * registered instructions, which bb adds whenever a session has the tool and
+ * rejects at registration above 4,096 characters, so the tool fails to
+ * register rather than reaching agents cut short.
  */
 export const RECAP_INSTRUCTIONS = `End every turn with ${RECAP_TOOL}, after completing the work you were authorized to do, unless the turn ends with a question card (AskUserQuestion or your provider's own question tool) still awaiting the user's answer. Ask questions only through such a card, never only in your reply. The recap call is the last thing in the turn: put every explanation, result, and caveat in your reply before it, and write nothing after it, including after its result.
 Before a complete or review recap, check for concrete blockers and obvious continuations. Include one to three relevant next actions whenever the user can take or request one; \`next\` may be empty only when there is no useful follow-up. If progress requires the user's answer or approval, ask with the question card and end without a recap.
