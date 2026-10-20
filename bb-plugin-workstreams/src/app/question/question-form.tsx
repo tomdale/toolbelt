@@ -33,24 +33,22 @@ const MAX_FREE_TEXT_LENGTH = 4096;
 // amber accent, which replaces a separate state label), option labels, details,
 // then option descriptions. On a phone (a viewport under 768px with a coarse
 // pointer) the text follows BB's own rule and takes the next token up: the
-// question is `text-lg`, labels `text-base`, the timeline's size, and the
+// question is `text-xl`, labels `text-base`, the timeline's size, and the
 // rest `text-sm`. The answer field must be at least 16px or iOS zooms the page
 // when it takes focus.
 const PROMPT_CLASS =
-  "text-[16px] leading-[1.35] text-amber-700 dark:text-amber-300 max-md:pointer-coarse:text-lg [text-wrap:pretty]";
+  "text-[18px] leading-[1.3] text-amber-700 dark:text-amber-300 max-md:pointer-coarse:text-xl [text-wrap:pretty]";
 // The renderer's root sets its own size and color, so the root takes the
 // prompt's here, and code chips stay in the foreground color for legibility.
 const MARKDOWN_CLASS =
   "!text-inherit !text-[length:inherit] !leading-[inherit] [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em] [&_code]:!text-foreground";
 // The host renderer gives every element its own color, size, and margins, as
 // it does for chat messages. Details are context for the choice below them, so
-// they sit a step below the question and the option labels: smaller, dimmer,
-// and compactly spaced. The renderer's root and its block-level elements
-// inherit the dimmed color from the wrapper, because each sets
-// `text-foreground` itself; links and code keep their own. The lists keep the
+// they sit a step below the question and the option labels in size and compact
+// spacing, at full brightness so they stay easy to read. The lists keep the
 // host's bullets and indent.
 const DETAILS_CLASS =
-  "!text-inherit !text-[length:inherit] !leading-[inherit] [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!text-inherit [&_ul]:!text-inherit [&_ol]:!text-inherit [&_li]:!text-inherit [&_p]:!mb-1.5 [&_ul]:!mb-1.5 [&_ol]:!mb-1.5 [&_li]:!mb-0.5 [&_:last-child]:!mb-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
+  "!text-[length:inherit] !leading-[inherit] [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!mb-1.5 [&_ul]:!mb-1.5 [&_ol]:!mb-1.5 [&_li]:!mb-0.5 [&_:last-child]:!mb-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
 const LABEL_CLASS = "text-[14px] leading-[1.4] max-md:pointer-coarse:text-base";
 const DESCRIPTION_CLASS =
   "text-[12.5px] leading-[1.45] max-md:pointer-coarse:text-sm [text-wrap:pretty]";
@@ -269,7 +267,7 @@ function QuestionInputBlock({
       {question.details ? (
         <div
           id={`${question.id}-details`}
-          className="mt-2 text-[13px] leading-[1.5] text-foreground/70 max-md:pointer-coarse:text-sm [text-wrap:pretty]"
+          className="mt-2 text-[13px] leading-[1.5] max-md:pointer-coarse:text-sm [text-wrap:pretty]"
         >
           <Markdown
             content={formatQuestionText(question.details)}
