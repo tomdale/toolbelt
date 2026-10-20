@@ -4,6 +4,7 @@ import {
   plainText,
   recapSegments,
   RECAP_TOOL_DESCRIPTION,
+  RECAP_INSTRUCTIONS,
   recapInputSchema,
   recapToolSchema,
   recapMarkdown,
@@ -34,12 +35,28 @@ it("counts only rendered thread mentions as chips for visible length", () => {
 
 it("explains when to keep collaborating instead of reporting a completed turn", () => {
   expect(RECAP_TOOL_DESCRIPTION).toContain(
-    "broader task they asked to do are fully done",
+    "all work this thread owns is finished",
   );
   expect(RECAP_TOOL_DESCRIPTION).toContain("keep collaborating");
   expect(RECAP_TOOL_DESCRIPTION).toContain("question-card tool");
   expect(RECAP_TOOL_DESCRIPTION).toContain("as a substitute for that question");
 });
+
+it.each([RECAP_TOOL_DESCRIPTION, RECAP_INSTRUCTIONS])(
+  "scopes recap state to owned responsibilities in each instruction surface",
+  (instructions) => {
+    expect(instructions).toContain(
+      "responsibilities this thread owns under the user's request",
+    );
+    expect(instructions).toContain("all work this thread owns is finished");
+    expect(instructions).toContain(
+      "Work continuing elsewhere affects this recap only while this thread owns follow-up",
+    );
+    expect(instructions).toContain(
+      "waiting only while an async task is running whose result this thread needs to resume work it still owns",
+    );
+  },
+);
 
 it("advertises named parameters on a concrete root object", () => {
   const schema = recapToolSchema.toJSONSchema({ io: "input" });
