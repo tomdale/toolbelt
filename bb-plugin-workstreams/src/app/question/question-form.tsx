@@ -42,11 +42,12 @@ const MARKDOWN_CLASS =
 // The host renderer gives every element its own color, size, and margins, as
 // it does for chat messages. Details are context for the choice below them, so
 // they sit a step below the question and the option labels: smaller, dimmer,
-// and compactly spaced. The block-level elements inherit the dimmed color from
-// the wrapper; links and code keep their own. The lists keep the host's
-// bullets and indent.
+// and compactly spaced. The renderer's root and its block-level elements
+// inherit the dimmed color from the wrapper, because each sets
+// `text-foreground` itself; links and code keep their own. The lists keep the
+// host's bullets and indent.
 const DETAILS_CLASS =
-  "!text-[length:inherit] !leading-[inherit] [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!text-inherit [&_ul]:!text-inherit [&_ol]:!text-inherit [&_li]:!text-inherit [&_p]:!mb-1.5 [&_ul]:!mb-1.5 [&_ol]:!mb-1.5 [&_li]:!mb-0.5 [&_:last-child]:!mb-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
+  "!text-inherit !text-[length:inherit] !leading-[inherit] [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!text-inherit [&_ul]:!text-inherit [&_ol]:!text-inherit [&_li]:!text-inherit [&_p]:!mb-1.5 [&_ul]:!mb-1.5 [&_ol]:!mb-1.5 [&_li]:!mb-0.5 [&_:last-child]:!mb-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
 const LABEL_CLASS =
   "text-[12.5px] leading-[1.45] max-md:pointer-coarse:text-base";
 const DESCRIPTION_CLASS =
@@ -271,7 +272,7 @@ function QuestionInputBlock({
       {question.details ? (
         <div
           id={`${question.id}-details`}
-          className="mt-1.5 text-[12px] leading-[1.5] text-foreground/80 max-md:pointer-coarse:text-sm [text-wrap:pretty]"
+          className="mt-1.5 text-[12px] leading-[1.5] text-foreground/70 max-md:pointer-coarse:text-sm [text-wrap:pretty]"
         >
           <Markdown
             content={formatQuestionText(question.details)}
