@@ -35,11 +35,11 @@ const MAX_FREE_TEXT_LENGTH = 4096;
 // stays legible on the pale card), option labels, details,
 // then option descriptions. On a phone (a viewport under 768px with a coarse
 // pointer) the text follows BB's own rule and takes the next token up: the
-// question is `text-xl`, labels `text-base`, the timeline's size, and the
+// question is 22px, labels `text-base`, the timeline's size, and the
 // rest `text-sm`. The answer field must be at least 16px or iOS zooms the page
 // when it takes focus.
 const PROMPT_CLASS =
-  "text-[18px] leading-[1.3] text-amber-700 dark:text-amber-500/70 max-md:pointer-coarse:text-xl [text-wrap:pretty]";
+  "text-[20px] leading-[1.3] text-amber-700 dark:text-amber-400/85 max-md:pointer-coarse:text-[22px] [text-wrap:pretty]";
 // The renderer's root sets its own size and color, so the root takes the
 // prompt's here, and code chips stay in the foreground color for legibility.
 const MARKDOWN_CLASS =
