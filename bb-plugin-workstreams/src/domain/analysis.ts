@@ -53,7 +53,7 @@ export const GOAL_MAX = 60;
 /** A request is excerpted to this much for Quick analysis. */
 const QUICK_REQUEST_CHARS = 1500;
 
-/** A stored Full analysis result, keyed to the turn it describes (SPEC I6). */
+/** A stored Full analysis result, keyed to the turn it describes. */
 export type ThreadAnalysis = {
   readonly recap: string;
   readonly state: WorkState;
@@ -76,7 +76,7 @@ export type ThreadAnalysis = {
   readonly requestsKey?: string | null;
 };
 
-/** A stored result plus the debug trace of the call behind it (SPEC §11.6). */
+/** A stored result plus the debug trace of the call behind it. */
 export type StoredAnalysis = ThreadAnalysis & {
   readonly traceId?: string | null;
 };
@@ -535,7 +535,7 @@ export function parseFullAnalysis(
 /**
  * A result describes the thread only while it is idle at the revision that
  * was analyzed. A starting or running turn, or a newer completed one, makes it
- * pending (SPEC I6). A failed turn gets no analysis (SPEC §8), so a thread in
+ * pending. A failed turn gets no analysis (SPEC §3), so a thread in
  * error has no current result either.
  */
 export function isCurrent(

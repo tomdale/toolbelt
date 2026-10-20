@@ -18,7 +18,7 @@ export function archiveIdle(thread: Thread): boolean {
 }
 
 /**
- * Archive from the recap card (SPEC §11.7). A thread qualifies when its
+ * Archive from the recap card. A thread qualifies when its
  * agent's recap for the latest turn is complete or ready for review, and neither it
  * nor any child or lifecycle dependent has outstanding work. Archiving a
  * review recap is the user's acceptance of its result. Workstreams never

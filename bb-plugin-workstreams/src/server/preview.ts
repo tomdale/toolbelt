@@ -1,5 +1,5 @@
 /**
- * The New thread composer's preview of a draft (SPEC §6): the topic and goal
+ * The New thread composer’s preview of a draft (SPEC §2): the topic and goal
  * a new thread would start with, from Quick analysis, or the topic of a
  * workstream the draft mentions. It changes nothing, and it never sends the
  * draft anywhere: the composer creates the thread, and the topic decides its
@@ -27,7 +27,7 @@ export type Preview = {
   proposal?: DraftSubjectProposal | null;
   /** Quick analysis's goal for the thread: its provisional title. */
   goal?: string | null;
-  /** The debug trace of the model call behind it (SPEC §11.6), if any. */
+  /** The debug trace of the model call behind it, if any. */
   traceId: string | null;
   /**
    * How the preview was reached, step by step, and how long it took.

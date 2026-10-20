@@ -1,6 +1,6 @@
 /**
  * Names the threads BB never titled from the goal analysis already stored for
- * them (SPEC §10.1), once.
+ * them (SPEC §3), once.
  *
  * A thread's goal is its title, but a thread analyzed before that was so has a
  * stored goal and no title: its sidebar row shows BB's placeholder, the

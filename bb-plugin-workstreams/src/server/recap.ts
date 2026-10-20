@@ -1,5 +1,5 @@
 /**
- * Agent recaps (SPEC §10.2): the recap tool, its per-thread store, and the
+ * Agent recaps (SPEC §3): the recap tool, its per-thread store, and the
  * bounded corrections that ask an agent for a recap when a turn ends without
  * one.
  *

@@ -1,5 +1,5 @@
 /**
- * The single client-side model for the sidebar and the page (SPEC I8): BB's
+ * The single client-side model for the sidebar and the page: BB's
  * live sidebar threads plus the plugin's own state, run through the shared
  * domain projection.
  */

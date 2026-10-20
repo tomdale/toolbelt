@@ -605,7 +605,7 @@ export const rpcContract = defineRpcContract({
       .nullable(),
     output: z.object({
       entries: z.array(
-        // Debug traces of the model calls behind each entry (SPEC §11.6).
+        // Debug traces of the model calls behind each entry.
         entrySchema.extend({ traceIds: z.array(z.string()) }),
       ),
     }),
@@ -616,7 +616,7 @@ export const rpcContract = defineRpcContract({
   },
   refresh: { input: z.null(), output: z.object({ changed: z.boolean() }) },
   /**
-   * Debug traces (SPEC §11.6), newest first: the given ids, the calls linked
+   * Debug traces, newest first: the given ids, the calls linked
    * to one thread, entry, proposal, workstream, or organizing run, or the
    * latest of every kind.
    */

@@ -1,10 +1,10 @@
 /**
- * The one projection behind the sidebar and the Workstreams page (SPEC I8).
+ * The one projection behind the sidebar and the Workstreams page.
  *
  * A workstream is a native BB section. Threads are grouped the way BB's own
  * sidebar groups them: build the complete parent/child forest first, then file
- * each tree under its root's section (SPEC I2). Every visible, non-archived
- * thread appears in exactly one group row (SPEC I1), or in Snoozed: a snoozed
+ * each tree under its root's section. Every visible, non-archived
+ * thread appears in exactly one group row, or in Snoozed: a snoozed
  * thread leaves its group, with its descendants, until it wakes. Up Next and
  * Recent are overlays that reference the group rows; they never replace them,
  * and never show snoozed threads. Prioritized workstreams lead the groups and
@@ -200,7 +200,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
   }
 
   // A child's question folds into its parent when the parent has a newer
-  // turn that also needs a decision (SPEC §10: timestamps only). A pending
+  // turn that also needs a decision (comparing timestamps only). A pending
   // interaction never folds: only the child can answer it.
   const needsYouVia = new Map<string, T[]>();
   const folded = new Set<string>();

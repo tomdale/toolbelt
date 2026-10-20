@@ -1,5 +1,5 @@
 /**
- * Debug traces (SPEC §11.6). With the `debug` setting on, each model call
+ * Debug traces. With the `debug` setting on, each model call
  * records its prompt, the model's reasoning and raw response, the parsed
  * result, and what Workstreams did with it. Links tie a trace to what it
  * explains (a thread, a journal entry, a proposal, a workstream description,

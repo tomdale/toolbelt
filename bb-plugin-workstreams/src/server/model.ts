@@ -1,7 +1,7 @@
 /**
  * Every model call Workstreams makes, by kind: how the prompt is built from
  * the call's input and how the response is parsed. One definition serves the
- * live call, its debug trace (SPEC §11.6), and a replay from the inspector.
+ * live call, its debug trace, and a replay from the inspector.
  */
 import {
   fullAnalysisPrompt,

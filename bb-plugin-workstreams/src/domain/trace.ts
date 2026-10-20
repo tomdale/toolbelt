@@ -1,5 +1,5 @@
 /**
- * Debug trace shapes (SPEC §11.6), shared by the server that records model
+ * Debug trace shapes, shared by the server that records model
  * calls and the inspector that shows them. Pure, so the app can import it.
  */
 import { z } from "zod";

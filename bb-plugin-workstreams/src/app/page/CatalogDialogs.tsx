@@ -55,6 +55,8 @@ export function CreateEntityDialog({
         .split(",")
         .map((a) => a.trim())
         .filter(Boolean);
+      if (aliases.some((alias) => alias.length > 80))
+        throw new Error("Keep each alias to 80 characters or fewer.");
       await rpc.call("catalogCreate", {
         name: name.trim(),
         description: description.trim(),
@@ -101,6 +103,7 @@ export function CreateEntityDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Workstreams, Sidebar, Billing"
+              maxLength={200}
               className="mt-1 h-8 text-xs"
               aria-label="Name *"
               required
@@ -136,6 +139,7 @@ export function CreateEntityDialog({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What work belongs in this topic?"
+              maxLength={1000}
               rows={2}
               aria-label="Description"
               className="mt-1 w-full rounded-md border border-input bg-transparent p-2 text-xs"
@@ -238,6 +242,7 @@ export function RenameEntityDialog({
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
+              maxLength={200}
               className="mt-1 h-8 text-xs"
               aria-label="Name *"
               required
@@ -515,6 +520,8 @@ export function EditMetadataDialog({
         .split(",")
         .map((a) => a.trim())
         .filter(Boolean);
+      if (aliases.some((alias) => alias.length > 80))
+        throw new Error("Keep each alias to 80 characters or fewer.");
       await rpc.call("catalogUpdateMetadata", {
         entityId: entity.id,
         description: description.trim(),
@@ -556,6 +563,7 @@ export function EditMetadataDialog({
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              maxLength={1000}
               rows={3}
               aria-label="Description"
               className="mt-1 w-full rounded-md border border-input bg-transparent p-2 text-xs"

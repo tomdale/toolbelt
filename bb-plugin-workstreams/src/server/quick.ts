@@ -1,5 +1,5 @@
 /**
- * Quick analysis (SPEC §10.1): a new thread's goal and topic from its first
+ * Quick analysis (SPEC §2): a new thread's goal and topic from its first
  * request, while its first turn is still running, so the thread is titled and
  * filed within seconds instead of after a turn that may take an hour. Full
  * analysis of the first finished turn then settles both.

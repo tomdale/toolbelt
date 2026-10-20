@@ -1,5 +1,5 @@
 /**
- * The workstream view (SPEC §7): one record per native section, keyed by
+ * The workstream view (SPEC §4): one record per native section, keyed by
  * `sectionId`, with the name mirrored from BB. A workstream bound to a topic
  * takes its description and aliases from that topic, so what a workstream is
  * about is written in one place, the Topics tab. A section with no topic

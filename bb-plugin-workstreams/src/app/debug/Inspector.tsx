@@ -1,5 +1,5 @@
 /**
- * The model-call inspector (SPEC §11.6): a side pane listing the recorded
+ * The model-call inspector: a side pane listing the recorded
  * calls behind one surface, with the selected call's parsed result, what
  * Workstreams did with it, the model's reasoning, the raw response, and the
  * exact prompt. "Run again" replays the prompt to show how stable the answer
@@ -114,18 +114,20 @@ function InspectorBody({
   const rpc = useRpc<RpcContract>();
   const [list, setList] = useState<TraceSummary[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const key = JSON.stringify(target);
   useEffect(() => {
     let live = true;
     const ids = traceIdsOf(target);
     setList(null);
+    setTruncated(false);
     setError(null);
     rpc
       .call(
         "traces",
         "link" in target
-          ? { link: target.link, limit: 200 }
+          ? { link: target.link, limit: 201 }
           : { ids: ids!.slice(0, 500), limit: 500 },
       )
       .then(
@@ -134,7 +136,8 @@ function InspectorBody({
           // Given ids keep their order: the first is the decision's own call.
           const ordered = ids
             ? ids.flatMap((id) => traces.filter((t) => t.id === id))
-            : traces;
+            : traces.slice(0, 200);
+          setTruncated(ids ? ids.length > 500 : traces.length > 200);
           setList(ordered);
           setSelected(ordered[0]?.id ?? null);
         },
@@ -162,7 +165,7 @@ function InspectorBody({
           <p className="text-xs text-muted-foreground">
             {list === null
               ? "Loading model calls…"
-              : `${list.length} model call${list.length === 1 ? "" : "s"} recorded in Debug mode`}
+              : `${list.length} model call${list.length === 1 ? "" : "s"} shown${truncated ? " · history truncated; browse Activity for more" : ""}`}
           </p>
         </div>
         <DialogPrimitive.Close className="-mr-1.5 inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">

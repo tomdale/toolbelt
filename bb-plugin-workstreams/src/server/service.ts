@@ -88,7 +88,7 @@ export class WorkstreamService {
 
   /**
    * Applies a title that Workstreams inferred as the thread's goal, under the
-   * retitle policy (SPEC §10.1). `revision` is the thread revision the goal
+   * retitle policy (SPEC §3). `revision` is the thread revision the goal
    * was inferred for, and `basis` says from what: a finished turn's analysis,
    * or the opening request alone while the first turn runs. When the policy
    * declines, nothing changes and `skipped` says why. `rationale` replaces
@@ -440,7 +440,7 @@ export class WorkstreamService {
 
   /**
    * Diffs BB's live state against the last-seen snapshot. BB emits no events
-   * for section moves or section edits (SPEC §3), so this is how Workstreams
+   * for section moves or section edits (SPEC §4), so this is how Workstreams
    * learns about changes made in the built-in sidebar, the CLI, or by agents.
    * The first run only records a baseline.
    */
@@ -537,7 +537,7 @@ export class WorkstreamService {
             }[]
           ).map((r) => [r.thread_id, r]),
         );
-        // Only a root's section decides grouping (SPEC I2), so only root moves
+        // Only a root's section decides grouping (SPEC §1), so only root moves
         // are worth recording.
         const forest = buildForest(threads);
         const isRoot = new Set(forest.roots.map((r) => r.thread.id));
