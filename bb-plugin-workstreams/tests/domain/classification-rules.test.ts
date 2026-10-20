@@ -30,6 +30,9 @@ it("renders the synthetic ownership fixtures in Full analysis and parses their e
     expect(prompt).toContain(
       "Triggering or consuming another capability, or targeting an object, does not establish parentage",
     );
+    expect(prompt).toContain(
+      "a topic beneath a different owner does not fit however closely its description matches",
+    );
     expect(
       parseFullAnalysis(
         JSON.stringify({ goal: "Goal", subjectId: c.expected, proposed: null }),
