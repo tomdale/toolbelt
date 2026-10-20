@@ -18,6 +18,8 @@ function toLocalInput(time: number): string {
 }
 
 const MAX_SNOOZE_MS = 366 * 24 * 60 * 60 * 1000;
+const validWakeTime = (until: number, now: number) =>
+  Number.isFinite(until) && until > now && until <= now + MAX_SNOOZE_MS;
 
 /**
  * Snooze until a date and time the user picks. Opens on tomorrow morning;
@@ -35,22 +37,18 @@ export function CustomSnoozeDialog({
   morningHour: number;
 }) {
   const [value, setValue] = useState("");
-  const [openedAt, setOpenedAt] = useState(() => Date.now());
   useEffect(() => {
-    if (open) {
-      const now = Date.now();
-      setOpenedAt(now);
-      setValue(toLocalInput(wakeTime("tomorrow", now, morningHour)!));
-    }
+    if (open)
+      setValue(toLocalInput(wakeTime("tomorrow", Date.now(), morningHour)!));
   }, [open, morningHour]);
-  const maxUntil = openedAt + MAX_SNOOZE_MS;
+  const now = Date.now();
+  const maxUntil = now + MAX_SNOOZE_MS;
   const until = value ? new Date(value).getTime() : NaN;
-  const valid =
-    Number.isFinite(until) && until > Date.now() && until <= maxUntil;
+  const valid = validWakeTime(until, now);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!valid) return;
+    if (!validWakeTime(until, Date.now())) return;
     onSubmit(until);
     onClose();
   };
