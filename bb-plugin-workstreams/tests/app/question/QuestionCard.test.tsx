@@ -221,6 +221,10 @@ describe("question interaction adapter", () => {
 
     expect(slot.queryByLabelText("Database notes")).toBeNull();
     fireEvent.click(getButtonByText(slot, "Postgres"));
+    const postgres = getButtonByText(slot, "Postgres");
+    expect(
+      postgres.parentElement!.contains(slot.getByLabelText("Database notes")),
+    ).toBe(true);
     fireEvent.change(slot.getByLabelText("Database notes"), {
       target: { value: "  with pgbouncer  " },
     });

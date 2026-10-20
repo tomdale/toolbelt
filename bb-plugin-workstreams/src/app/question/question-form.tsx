@@ -424,6 +424,20 @@ function QuestionInputBlock({
               {checked && option.preview ? (
                 <QuestionOptionPreview preview={option.preview} />
               ) : null}
+              {checked && showNotes ? (
+                <div className={cn("mt-2 mb-1.5", OPTION_TEXT_INDENT)}>
+                  <textarea
+                    aria-label={`${question.shortLabel} notes`}
+                    rows={2}
+                    value={state.notes}
+                    maxLength={MAX_FREE_TEXT_LENGTH}
+                    placeholder="Add notes (optional)…"
+                    onChange={(event) => onNotesChange(event.target.value)}
+                    onKeyDown={advanceOnEnter}
+                    className="block max-h-28 min-h-14 w-full resize-y rounded-lg border border-border bg-background/50 px-3 py-2.5 text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring/50 focus-visible:ring-1 focus-visible:ring-ring/30 max-md:pointer-coarse:text-base"
+                  />
+                </div>
+              ) : null}
             </div>
           );
         })}
@@ -438,20 +452,6 @@ function QuestionInputBlock({
           />
         ) : null}
       </div>
-      {showNotes ? (
-        <div className={cn("mt-2", OPTION_TEXT_INDENT)}>
-          <textarea
-            aria-label={`${question.shortLabel} notes`}
-            rows={2}
-            value={state.notes}
-            maxLength={MAX_FREE_TEXT_LENGTH}
-            placeholder="Add notes (optional)…"
-            onChange={(event) => onNotesChange(event.target.value)}
-            onKeyDown={advanceOnEnter}
-            className="block max-h-28 min-h-14 w-full resize-y rounded-lg border border-border bg-background/50 px-3 py-2.5 text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring/50 focus-visible:ring-1 focus-visible:ring-ring/30 max-md:pointer-coarse:text-base"
-          />
-        </div>
-      ) : null}
       {state.otherSelected ? (
         <div
           className={cn(
