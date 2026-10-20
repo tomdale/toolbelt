@@ -34,6 +34,8 @@ export interface QuestionAnswerState {
   selected: string[];
   otherSelected: boolean;
   otherText: string;
+  /** Optional notes on the chosen option of a single-select question. */
+  notes: string;
   otherAttachments: QuestionAttachment[];
 }
 
@@ -48,6 +50,7 @@ function emptyAnswerState(question: Question): QuestionAnswerState {
     selected: [],
     otherSelected: !questionHasOptions(question),
     otherText: "",
+    notes: "",
     otherAttachments: [],
   };
 }
@@ -110,7 +113,11 @@ function buildQuestionAnswer(
   if (state.otherSelected) {
     return { selected: [], ...freeform };
   }
-  return { selected: validSelectedValues(question, state.selected) };
+  const notes = state.notes.trim();
+  return {
+    selected: validSelectedValues(question, state.selected),
+    ...(notes.length > 0 ? { freeText: notes } : {}),
+  };
 }
 
 export function buildQuestionAnswers(

@@ -215,6 +215,51 @@ describe("question interaction adapter", () => {
     } satisfies InteractionResponse);
   });
 
+  it("offers optional notes once a single-select option is chosen", () => {
+    const submit = vi.fn(async (_value: unknown) => undefined);
+    const slot = render(singleSelect, { submit });
+
+    expect(slot.queryByLabelText("Database notes")).toBeNull();
+    fireEvent.click(getButtonByText(slot, "Postgres"));
+    fireEvent.change(slot.getByLabelText("Database notes"), {
+      target: { value: "  with pgbouncer  " },
+    });
+    fireEvent.click(getButtonByText(slot, "SQLite"));
+    expect(
+      (slot.getByLabelText("Database notes") as HTMLTextAreaElement).value,
+    ).toBe("  with pgbouncer  ");
+    fireEvent.click(getButtonByText(slot, "Submit"));
+
+    expect(submit.mock.calls[0]?.[0]).toEqual({
+      answers: { q0: { selected: ["q0o1"], freeText: "with pgbouncer" } },
+    } satisfies InteractionResponse);
+  });
+
+  it("drops notes when Other becomes the answer and for multi-select", () => {
+    const submit = vi.fn(async (_value: unknown) => undefined);
+    const slot = render(singleSelect, { submit });
+    fireEvent.click(getButtonByText(slot, "Postgres"));
+    fireEvent.change(slot.getByLabelText("Database notes"), {
+      target: { value: "kept for Postgres only" },
+    });
+    fireEvent.click(getButtonByText(slot, "Other…"));
+    expect(slot.queryByLabelText("Database notes")).toBeNull();
+    fireEvent.change(slot.getByLabelText("Database answer"), {
+      target: { value: "DuckDB" },
+    });
+    fireEvent.click(getButtonByText(slot, "Submit"));
+    expect(submit.mock.calls[0]?.[0]).toEqual({
+      answers: { q0: { selected: [], freeText: "DuckDB" } },
+    });
+
+    cleanup();
+    const multi = render({
+      questions: [{ ...singleSelect.questions[0]!, multiSelect: true }],
+    });
+    fireEvent.click(getButtonByText(multi, "Postgres"));
+    expect(multi.queryByLabelText("Database notes")).toBeNull();
+  });
+
   it("shows always-visible details before the answer options", () => {
     const details = "- Old title → New title";
     const slot = render({

@@ -271,6 +271,7 @@ interface QuestionInputBlockProps {
   onToggleOption: (optionValue: string) => void;
   onSelectOther: () => void;
   onFreeTextChange: (value: string) => void;
+  onNotesChange: (value: string) => void;
   onAttachmentsChange: (attachments: QuestionAttachment[]) => void;
   onShortcutSubmit: () => void;
   /** What Enter does in the answer field: go to the next question or submit. */
@@ -288,6 +289,7 @@ function QuestionInputBlock({
   onToggleOption,
   onSelectOther,
   onFreeTextChange,
+  onNotesChange,
   onAttachmentsChange,
   onShortcutSubmit,
   advance,
@@ -324,6 +326,24 @@ function QuestionInputBlock({
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+
+  // Enter in an answer or notes field moves on; Shift+Enter keeps a newline,
+  // and a phone's soft keyboard keeps Enter for the newline.
+  const advanceOnEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      softKeyboard ||
+      event.nativeEvent.isComposing ||
+      event.key !== "Enter" ||
+      event.shiftKey
+    )
+      return;
+    event.preventDefault();
+    onShortcutSubmit();
+  };
+  const showNotes =
+    !question.multiSelect &&
+    !state.otherSelected &&
+    options.some((option) => state.selected.includes(option.value));
 
   // A radio group has one tab stop, on the chosen row (the first when none is
   // chosen); arrow keys move the choice, as they do for native radios.
@@ -418,6 +438,20 @@ function QuestionInputBlock({
           />
         ) : null}
       </div>
+      {showNotes ? (
+        <div className={cn("mt-2", OPTION_TEXT_INDENT)}>
+          <textarea
+            aria-label={`${question.shortLabel} notes`}
+            rows={2}
+            value={state.notes}
+            maxLength={MAX_FREE_TEXT_LENGTH}
+            placeholder="Add notes (optional)…"
+            onChange={(event) => onNotesChange(event.target.value)}
+            onKeyDown={advanceOnEnter}
+            className="block max-h-28 min-h-14 w-full resize-y rounded-lg border border-border bg-background/50 px-3 py-2.5 text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring/50 focus-visible:ring-1 focus-visible:ring-ring/30 max-md:pointer-coarse:text-base"
+          />
+        </div>
+      ) : null}
       {state.otherSelected ? (
         <div
           className={cn(
@@ -449,17 +483,7 @@ function QuestionInputBlock({
                 void attachFiles(files);
               }
             }}
-            onKeyDown={(event) => {
-              if (
-                softKeyboard ||
-                event.nativeEvent.isComposing ||
-                event.key !== "Enter" ||
-                event.shiftKey
-              )
-                return;
-              event.preventDefault();
-              onShortcutSubmit();
-            }}
+            onKeyDown={advanceOnEnter}
             className="block max-h-28 min-h-14 w-full resize-y bg-transparent px-3 py-2.5 text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground max-md:pointer-coarse:text-base"
           />
           {state.otherAttachments.length > 0 ? (
@@ -856,6 +880,12 @@ export function QuestionForm({
             updateQuestionState(currentQuestion, (state) => ({
               ...state,
               otherText: value,
+            }))
+          }
+          onNotesChange={(value) =>
+            updateQuestionState(currentQuestion, (state) => ({
+              ...state,
+              notes: value,
             }))
           }
           onAttachmentsChange={(attachments) =>
