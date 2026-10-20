@@ -556,7 +556,7 @@ function WaitingFooter({
     <div
       className={cn(
         compact ? "-mx-3 -mb-2" : "-mx-4 -mb-3",
-        "relative mt-2 flex min-h-8 items-center gap-1 overflow-hidden rounded-b-[7px] py-1 pl-4 pr-2 text-[11px] text-muted-foreground",
+        "relative mt-2 flex min-h-8 items-center gap-1 overflow-hidden rounded-b-[calc(var(--radius-lg,0.5rem)-1px)] py-1 pl-4 pr-2 text-[11px] text-muted-foreground",
         PHONE_SECONDARY,
         compact && "pl-3",
         ACCENT.waiting.footer,
@@ -1349,7 +1349,7 @@ function CardBody({
         <div
           className={cn(
             compact ? "-mx-3 -mb-2" : "-mx-4 -mb-3",
-            "mt-1.5 flex items-center gap-3 rounded-b-[7px] border-t px-3 py-2",
+            "mt-1.5 flex items-center gap-3 rounded-b-[calc(var(--radius-lg,0.5rem)-1px)] border-t px-3 py-2",
             ACCENT[recap.state].footer,
           )}
         >

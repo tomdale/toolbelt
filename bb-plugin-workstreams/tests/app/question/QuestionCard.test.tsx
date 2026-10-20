@@ -146,7 +146,7 @@ describe("question interaction adapter", () => {
       }),
     ).toBeTruthy();
     expect(
-      getButtonByText(composer, "SQLite").getAttribute("aria-pressed"),
+      getButtonByText(composer, "SQLite").getAttribute("aria-checked"),
     ).toBe("true");
     fireEvent.click(getButtonByText(composer, "Submit"));
     await vi.waitFor(() => expect(recover).toHaveBeenCalledOnce());
@@ -338,7 +338,10 @@ describe("question interaction adapter", () => {
       "Database answer",
     ) as HTMLTextAreaElement;
     expect(answer.maxLength).toBe(4096);
-    expect(slot.getByText("0/4096")).toBeTruthy();
+    // The count appears only as the answer nears its limit.
+    expect(slot.queryByText("0/4096")).toBeNull();
+    fireEvent.change(answer, { target: { value: "x".repeat(3300) } });
+    expect(slot.getByText("3300/4096")).toBeTruthy();
     expect(
       slot.getByRole("button", { name: "Attach files or images" }),
     ).toHaveProperty("disabled", true);
@@ -413,7 +416,7 @@ describe("question interaction adapter", () => {
     expect((await slot.findByRole("alert")).textContent).toContain(
       "Could not send your answer",
     );
-    expect(getButtonByText(slot, "SQLite").getAttribute("aria-pressed")).toBe(
+    expect(getButtonByText(slot, "SQLite").getAttribute("aria-checked")).toBe(
       "true",
     );
     fireEvent.click(getButtonByText(slot, "Submit"));
@@ -474,5 +477,165 @@ describe("question interaction adapter", () => {
     expect(submit.mock.calls[0]?.[0]).toEqual({
       answers: { q0: { selected: ["q0o1"] } },
     });
+  });
+  it("exposes single-select options as one radio group with a single tab stop", () => {
+    const slot = render(singleSelect);
+    const group = slot.getByRole("radiogroup");
+    const rows = Array.from(group.querySelectorAll('[role="radio"]'));
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Postgres"),
+      expect.stringContaining("SQLite"),
+      expect.stringContaining("Other…"),
+    ]);
+    expect(rows.map((row) => row.getAttribute("tabindex"))).toEqual([
+      "0",
+      "-1",
+      "-1",
+    ]);
+    fireEvent.click(getButtonByText(slot, "SQLite"));
+    expect(rows.map((row) => row.getAttribute("tabindex"))).toEqual([
+      "-1",
+      "0",
+      "-1",
+    ]);
+  });
+
+  it("moves the choice with the arrow keys, wrapping around", () => {
+    const slot = render(singleSelect);
+    const postgres = getButtonByText(slot, "Postgres");
+    postgres.focus();
+    fireEvent.keyDown(postgres, { key: "ArrowDown" });
+    expect(getButtonByText(slot, "SQLite").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(document.activeElement).toBe(getButtonByText(slot, "SQLite"));
+    fireEvent.keyDown(getButtonByText(slot, "SQLite"), { key: "ArrowUp" });
+    fireEvent.keyDown(getButtonByText(slot, "Postgres"), { key: "ArrowUp" });
+    expect(getButtonByText(slot, "Other…").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+  });
+
+  it("exposes multi-select options as checkboxes that are all tabbable", () => {
+    const slot = render({
+      questions: [{ ...singleSelect.questions[0]!, multiSelect: true }],
+    });
+    const rows = slot.getAllByRole("checkbox");
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.getAttribute("tabindex") === "0")).toBe(
+      true,
+    );
+  });
+
+  it("shows number hints and binds the digit keys where BB hosts none", () => {
+    const slot = render(singleSelect);
+    expect(
+      Array.from(slot.container.querySelectorAll("kbd")).map(
+        (hint) => hint.textContent,
+      ),
+    ).toEqual(["1", "2", "3"]);
+    const postgres = getButtonByText(slot, "Postgres");
+    fireEvent.keyDown(postgres, { key: "2" });
+    expect(getButtonByText(slot, "SQLite").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    fireEvent.keyDown(postgres, { key: "3" });
+    expect(getButtonByText(slot, "Other…").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    fireEvent.keyDown(postgres, { key: "9" });
+    expect(getButtonByText(slot, "Other…").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+  });
+
+  it("leaves digits to the answer field", () => {
+    const slot = render(singleSelect);
+    fireEvent.click(getButtonByText(slot, "Other…"));
+    const answer = slot.getByRole("textbox", { name: "Database answer" });
+    fireEvent.keyDown(answer, { key: "1" });
+    expect(getButtonByText(slot, "Postgres").getAttribute("aria-checked")).toBe(
+      "false",
+    );
+    expect(getButtonByText(slot, "Other…").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+  });
+
+  it("shows a failed submit in the footer beside the buttons", async () => {
+    const submit = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const slot = render(singleSelect, { submit });
+    fireEvent.click(getButtonByText(slot, "SQLite"));
+    fireEvent.click(getButtonByText(slot, "Submit"));
+    const alert = await slot.findByRole("alert");
+    expect(alert.parentElement?.contains(getButtonByText(slot, "Cancel"))).toBe(
+      true,
+    );
+    expect(alert.parentElement?.contains(getButtonByText(slot, "Submit"))).toBe(
+      true,
+    );
+  });
+
+  it("says what Enter does in the answer field", () => {
+    const first = {
+      ...singleSelect.questions[0]!,
+      options: [],
+    };
+    const slot = render({
+      questions: [
+        first,
+        { ...first, id: "q1", prompt: "Which host?", shortLabel: "Host" },
+      ],
+    });
+    expect(slot.getByText(/Enter for next/)).toBeTruthy();
+    fireEvent.click(getButtonByText(slot, "Host"));
+    expect(slot.getByText(/Enter to submit/)).toBeTruthy();
+  });
+
+  it("fades the edges of a scroll area with content beyond them", () => {
+    const slot = render(singleSelect);
+    const scroller =
+      slot.container.querySelector<HTMLElement>(".overflow-y-auto")!;
+    const metrics = { scrollTop: 0, clientHeight: 200, scrollHeight: 500 };
+    for (const [key, value] of Object.entries(metrics))
+      Object.defineProperty(scroller, key, { configurable: true, value });
+    fireEvent.scroll(scroller);
+    expect(scroller.style.getPropertyValue("--fade-bottom")).toBe("28px");
+    expect(scroller.style.getPropertyValue("--fade-top")).toBe("");
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      value: 300,
+    });
+    fireEvent.scroll(scroller);
+    expect(scroller.style.getPropertyValue("--fade-bottom")).toBe("");
+    expect(scroller.style.getPropertyValue("--fade-top")).toBe("12px");
+  });
+
+  it("keeps Enter for a newline on a phone's soft keyboard", () => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+    const submit = vi.fn(async (_value: unknown) => undefined);
+    const slot = render(
+      { questions: [{ ...singleSelect.questions[0]!, options: [] }] },
+      { submit },
+    );
+    const answer = slot.getByRole("textbox", { name: "Database answer" });
+    fireEvent.change(answer, { target: { value: "SQLite" } });
+    fireEvent.keyDown(answer, { key: "Enter" });
+    expect(submit).not.toHaveBeenCalled();
+    expect(slot.queryByText(/Shift\+Enter/)).toBeNull();
   });
 });

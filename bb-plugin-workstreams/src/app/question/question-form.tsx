@@ -8,12 +8,23 @@ import {
   useQuestionFormHost,
   type QuestionShortcut,
 } from "./question-form-host.tsx";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 import { Markdown, useBbContext, useSdk } from "@get-bb/plugin-sdk/app";
 import { plainText } from "../../domain/recap.ts";
 import { formatQuestionText } from "./question-markdown.ts";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
+import { usePointerCoarse } from "@/components/ui/hooks/use-pointer-coarse";
 import { cn } from "@/lib/utils";
 import {
   answerStateFor,
@@ -42,17 +53,25 @@ const PROMPT_CLASS =
 // The renderer's root sets its own size and color, so the root takes the
 // prompt's here, and code chips stay in the foreground color for legibility.
 const MARKDOWN_CLASS =
-  "!text-inherit !text-[length:inherit] !leading-[inherit] [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em] [&_code]:!text-foreground";
+  "!text-inherit !text-[length:inherit] !leading-[inherit] [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-[3px] [&_code]:!py-px [&_code]:!text-[0.923em] [&_code]:!text-foreground";
 // The host renderer gives every element its own color, size, and margins, as
 // it does for chat messages. Details are context for the choice below them, so
 // they sit a step below the question and the option labels in size and compact
-// spacing, at full brightness so they stay easy to read. The lists keep the
-// host's bullets and indent.
+// spacing, at full brightness so they stay easy to read. Top-level list text
+// lines up with the option labels (see OPTION_TEXT_INDENT), bold stays below
+// the question's weight, and headings sit tight to their paragraphs.
 const DETAILS_CLASS =
-  "!text-[length:inherit] !leading-[inherit] [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!mb-1.5 [&_ul]:!mb-1.5 [&_ol]:!mb-1.5 [&_li]:!mb-0.5 [&_:last-child]:!mb-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
-const LABEL_CLASS = "text-[14px] leading-[1.4] max-md:pointer-coarse:text-base";
+  "!text-[length:inherit] !leading-[inherit] [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!mb-1.5 [&_ul]:!mb-1.5 [&_ol]:!mb-1.5 [&_li]:!mb-0.5 [&_ul]:!pl-[26px] [&_ol]:!pl-[26px] [&_li_ul]:!pl-5 [&_li_ol]:!pl-5 [&_strong]:!font-semibold [&_:is(h1,h2,h3,h4,h5,h6)]:!mt-2 [&_:is(h1,h2,h3,h4,h5,h6)]:!mb-1 [&_:last-child]:!mb-0 [&_code]:!rounded [&_code]:!px-[3px] [&_code]:!py-px [&_code]:!text-[0.923em]";
+// Agents put paths and URLs in option text; wrap them rather than overflow.
+// Footer buttons match the details text size, and reach 44px on a phone.
+const FOOTER_BUTTON_CLASS = "text-[13px] max-md:pointer-coarse:h-11";
+const LABEL_CLASS =
+  "text-[14px] leading-[1.4] max-md:pointer-coarse:text-base [overflow-wrap:anywhere]";
 const DESCRIPTION_CLASS =
-  "text-[12.5px] leading-[1.45] max-md:pointer-coarse:text-sm [text-wrap:pretty]";
+  "text-[12.5px] leading-[1.45] max-md:pointer-coarse:text-sm [text-wrap:pretty] [overflow-wrap:anywhere]";
+// The radio (16px, 18px on a phone) plus its 10px gap: where option text
+// starts. Details lists, option previews, and the answer field align to it.
+const OPTION_TEXT_INDENT = "ml-[26px] max-md:pointer-coarse:ml-7";
 
 interface QuestionOptionRowProps {
   checked: boolean;
@@ -61,6 +80,8 @@ interface QuestionOptionRowProps {
   multiSelect: boolean;
   onSelect: () => void;
   shortcut?: QuestionShortcut;
+  /** Single-select rows form a radio group with one tab stop. */
+  tabStop: boolean;
 }
 
 function QuestionOptionRow({
@@ -70,25 +91,37 @@ function QuestionOptionRow({
   multiSelect,
   onSelect,
   shortcut,
+  tabStop,
 }: QuestionOptionRowProps) {
   return (
     <button
       type="button"
-      aria-pressed={checked}
+      role={multiSelect ? "checkbox" : "radio"}
+      aria-checked={checked}
       aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
+      tabIndex={tabStop ? 0 : -1}
       onClick={onSelect}
-      className="flex w-full cursor-pointer items-start gap-2.5 rounded-md py-1.5 text-left disabled:cursor-default max-md:pointer-coarse:py-2"
+      // The row's padding extends its hover fill and focus outline 8px past
+      // the content edge, while the radio and label stay on it. A phone row
+      // reaches the 44px touch target.
+      className="group -mx-2 flex w-[calc(100%+1rem)] cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-state-hover hover:duration-0 disabled:cursor-default disabled:hover:bg-transparent max-md:pointer-coarse:py-[11px]"
     >
       <span
         className={cn(
-          "mt-[2px] flex size-4 shrink-0 items-center justify-center border max-md:pointer-coarse:size-[18px]",
+          "mt-[2px] flex size-4 shrink-0 items-center justify-center border transition-colors duration-150 motion-reduce:transition-none max-md:pointer-coarse:size-[18px]",
           multiSelect ? "rounded" : "rounded-full",
           checked
             ? "border-amber-600 bg-amber-600 text-white dark:border-amber-400 dark:bg-amber-400 dark:text-amber-950"
-            : "border-foreground/25",
+            : "border-foreground/55 group-hover:border-foreground/80",
         )}
       >
-        {checked ? <Icon name="Check" className="size-3" aria-hidden /> : null}
+        {checked ? (
+          multiSelect ? (
+            <Icon name="Check" className="size-3" aria-hidden />
+          ) : (
+            <span className="size-1.5 rounded-full bg-current" aria-hidden />
+          )
+        ) : null}
       </span>
       <span className="min-w-0 flex-1">
         <span className={cn("block font-medium text-foreground", LABEL_CLASS)}>
@@ -108,7 +141,7 @@ function QuestionOptionRow({
       {shortcut ? (
         <kbd
           aria-hidden="true"
-          className="mt-px shrink-0 text-xs font-medium tabular-nums text-foreground/50 max-md:pointer-coarse:hidden"
+          className="mt-px shrink-0 text-xs font-medium tabular-nums text-muted-foreground max-md:pointer-coarse:hidden"
         >
           {shortcut.label}
         </kbd>
@@ -120,7 +153,10 @@ function QuestionOptionRow({
 function QuestionOptionPreview({ preview }: { preview: string }) {
   return (
     <pre
-      className="mx-2.5 mb-1 mt-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 px-2.5 py-2 font-mono text-[12.5px] leading-relaxed text-foreground max-md:pointer-coarse:text-xs"
+      className={cn(
+        "mb-1 mt-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 px-2.5 py-2 font-mono text-[12.5px] leading-relaxed text-foreground max-md:pointer-coarse:text-xs",
+        OPTION_TEXT_INDENT,
+      )}
       style={{ maxHeight: `${PREVIEW_MAX_HEIGHT}px` }}
     >
       {preview}
@@ -142,8 +178,8 @@ function QuestionTabs({
   questions,
 }: QuestionTabsProps) {
   return (
-    <div className="mb-2 flex shrink-0 items-center gap-2">
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+    <div className="mb-2 flex shrink-0 items-start gap-2">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1.5">
         {questions.map((question, index) => {
           const answered = isQuestionAnswered(
             question,
@@ -155,8 +191,10 @@ function QuestionTabs({
               key={question.id}
               className={cn(
                 "relative inline-flex shrink-0 items-center rounded-full border",
+                // The active pill takes the card frame's stroke, so it reads
+                // as the card's own accent rather than a faint tint.
                 isActive
-                  ? "border-amber-500/50 bg-amber-500/[0.08] text-foreground dark:border-amber-300/40 dark:bg-amber-300/[0.08]"
+                  ? "border-amber-500 bg-amber-500/[0.08] text-foreground dark:border-amber-500/70 dark:bg-amber-300/[0.08]"
                   : "border-border bg-background/60 text-foreground/70 hover:border-foreground/25 hover:text-foreground",
               )}
             >
@@ -165,7 +203,7 @@ function QuestionTabs({
                 onClick={() => onSelect(index)}
                 aria-pressed={isActive}
                 title={plainText(question.prompt)}
-                className="flex min-w-0 items-center gap-1 rounded-full px-2 py-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:pointer-coarse:py-1"
+                className="flex min-w-0 cursor-pointer items-center gap-1 rounded-full px-2 py-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring max-md:pointer-coarse:py-2"
               >
                 {answered ? (
                   <Icon
@@ -175,20 +213,18 @@ function QuestionTabs({
                   />
                 ) : null}
                 <span
-                  className={cn(
-                    "truncate text-[12.5px] font-medium leading-[1.6] max-md:pointer-coarse:text-xs",
-                    answered ? "line-through" : undefined,
-                  )}
+                  className="truncate text-[12.5px] font-medium leading-[1.6] max-md:pointer-coarse:text-xs"
                   style={{ maxWidth: "180px" }}
                 >
                   {question.shortLabel}
                 </span>
+                {answered ? <span className="sr-only">, answered</span> : null}
               </button>
             </div>
           );
         })}
       </div>
-      <span className="shrink-0 text-xs font-medium tabular-nums text-amber-700 dark:text-amber-300 max-md:pointer-coarse:text-xs">
+      <span className="shrink-0 text-xs font-medium leading-6 tabular-nums text-muted-foreground">
         {currentIndex + 1} of {questions.length}
       </span>
     </div>
@@ -204,8 +240,13 @@ interface QuestionInputBlockProps {
   onFreeTextChange: (value: string) => void;
   onAttachmentsChange: (attachments: QuestionAttachment[]) => void;
   onShortcutSubmit: () => void;
+  /** What Enter does in the answer field: go to the next question or submit. */
+  advance: "next" | "submit";
   shortcuts: ReadonlyMap<string, QuestionShortcut>;
 }
+
+/** The character count appears only as the answer nears its limit. */
+const FREE_TEXT_COUNT_THRESHOLD = Math.floor(MAX_FREE_TEXT_LENGTH * 0.8);
 
 function QuestionInputBlock({
   disabled,
@@ -216,9 +257,11 @@ function QuestionInputBlock({
   onFreeTextChange,
   onAttachmentsChange,
   onShortcutSubmit,
+  advance,
   shortcuts,
 }: QuestionInputBlockProps) {
   const options = question.options;
+  const softKeyboard = useIsCompactViewport() && usePointerCoarse();
   const { projectId } = useBbContext();
   const sdk = useSdk();
   const [uploading, setUploading] = useState(false);
@@ -249,6 +292,33 @@ function QuestionInputBlock({
     }
   };
 
+  // A radio group has one tab stop, on the chosen row (the first when none is
+  // chosen); arrow keys move the choice, as they do for native radios.
+  const rowCount =
+    options.length + (question.allowFreeText && options.length > 0 ? 1 : 0);
+  const chosenRow = state.otherSelected
+    ? options.length
+    : options.findIndex((option) => state.selected.includes(option.value));
+  const tabStopIndex = chosenRow >= 0 && chosenRow < rowCount ? chosenRow : 0;
+  const moveRadioSelection = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step =
+      event.key === "ArrowDown" || event.key === "ArrowRight"
+        ? 1
+        : event.key === "ArrowUp" || event.key === "ArrowLeft"
+          ? -1
+          : 0;
+    if (step === 0 || event.altKey || event.ctrlKey || event.metaKey) return;
+    const rows = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+    );
+    const current = rows.indexOf(event.target as HTMLButtonElement);
+    if (current < 0) return;
+    event.preventDefault();
+    const next = rows[(current + step + rows.length) % rows.length]!;
+    next.focus();
+    next.click();
+  };
+
   return (
     <fieldset
       disabled={disabled}
@@ -258,6 +328,7 @@ function QuestionInputBlock({
       <legend className="sr-only">{plainText(question.prompt)}</legend>
       {question.prompt ? (
         <div
+          id={`${question.id}-prompt`}
           role="heading"
           aria-level={2}
           // The question carries the card's extra top spacing, so question
@@ -278,7 +349,12 @@ function QuestionInputBlock({
           />
         </div>
       ) : null}
-      <div className={cn("space-y-px", question.details ? "mt-4" : "mt-1.5")}>
+      <div
+        role={question.multiSelect ? "group" : "radiogroup"}
+        aria-labelledby={`${question.id}-prompt`}
+        onKeyDown={question.multiSelect ? undefined : moveRadioSelection}
+        className={cn("space-y-px", question.details ? "mt-3" : "mt-2")}
+      >
         {options.map((option: QuestionOption, index) => {
           const checked = state.selected.includes(option.value);
           return (
@@ -290,6 +366,7 @@ function QuestionInputBlock({
                 multiSelect={question.multiSelect}
                 onSelect={() => onToggleOption(option.value)}
                 shortcut={shortcuts.get(String(index))}
+                tabStop={question.multiSelect || tabStopIndex === index}
               />
               {checked && option.preview ? (
                 <QuestionOptionPreview preview={option.preview} />
@@ -304,11 +381,17 @@ function QuestionInputBlock({
             multiSelect={question.multiSelect}
             onSelect={onSelectOther}
             shortcut={shortcuts.get(String(options.length))}
+            tabStop={question.multiSelect || tabStopIndex === options.length}
           />
         ) : null}
       </div>
       {state.otherSelected ? (
-        <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/50 focus-within:border-ring/50 focus-within:ring-1 focus-within:ring-ring/30">
+        <div
+          className={cn(
+            "mt-2 overflow-hidden rounded-lg border border-border bg-background/50 focus-within:border-ring/50 focus-within:ring-1 focus-within:ring-ring/30",
+            options.length > 0 && OPTION_TEXT_INDENT,
+          )}
+        >
           <input
             ref={fileInputRef}
             aria-label="Attach files or images"
@@ -335,6 +418,7 @@ function QuestionInputBlock({
             }}
             onKeyDown={(event) => {
               if (
+                softKeyboard ||
                 event.nativeEvent.isComposing ||
                 event.key !== "Enter" ||
                 event.shiftKey
@@ -414,16 +498,81 @@ function QuestionInputBlock({
               ) : null}
             </div>
             <div className="text-right text-xs text-muted-foreground">
-              <div>
-                {state.otherText.length}/{MAX_FREE_TEXT_LENGTH}
-              </div>
-              <div>Enter to add · Shift+Enter for a new line</div>
+              {state.otherText.length >= FREE_TEXT_COUNT_THRESHOLD ? (
+                <div>
+                  {state.otherText.length}/{MAX_FREE_TEXT_LENGTH}
+                </div>
+              ) : null}
+              {softKeyboard ? null : (
+                <div>
+                  {advance === "submit" ? "Enter to submit" : "Enter for next"}{" "}
+                  · Shift+Enter for a new line
+                </div>
+              )}
             </div>
           </div>
         </div>
       ) : null}
     </fieldset>
   );
+}
+
+/** Digit-key shortcuts for 1–9, for a form BB's question host does not serve. */
+const LOCAL_SHORTCUTS: ReadonlyMap<string, QuestionShortcut> = new Map(
+  Array.from({ length: 9 }, (_, index) => [
+    String(index),
+    { label: String(index + 1), ariaKeyshortcuts: String(index + 1) },
+  ]),
+);
+
+function isEditableTarget(target: EventTarget): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+      target.isContentEditable)
+  );
+}
+
+// The scroll area's mask reads these two lengths (0 when an edge has nothing
+// beyond it), so the fade is a class, and the hook only reports the edges.
+const FADE_MASK_CLASS =
+  "[mask-image:linear-gradient(to_bottom,transparent,#000_var(--fade-top,0px),#000_calc(100%_-_var(--fade-bottom,0px)),transparent)]";
+
+/**
+ * Fades the edges of a scroll area that has content beyond them, since the
+ * scrollbar alone is too faint a cue that an option is cut off. A mask fades
+ * the content itself, so it works on any card tint.
+ */
+function useScrollFade(ref: RefObject<HTMLElement | null>) {
+  const [edges, setEdges] = useState({ top: false, bottom: false });
+  const update = useCallback(() => {
+    const node = ref.current;
+    if (!node) return;
+    const top = node.scrollTop > 1;
+    const bottom = node.scrollTop + node.clientHeight < node.scrollHeight - 1;
+    setEdges((current) =>
+      current.top === top && current.bottom === bottom
+        ? current
+        : { top, bottom },
+    );
+  }, [ref]);
+  // Content height changes with the question and with the answer field.
+  useEffect(update);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    for (const child of Array.from(node.children)) observer.observe(child);
+    return () => observer.disconnect();
+  }, [ref, update]);
+  return {
+    onScroll: update,
+    style: {
+      "--fade-top": edges.top ? "12px" : undefined,
+      "--fade-bottom": edges.bottom ? "28px" : undefined,
+    } as CSSProperties,
+  };
 }
 
 export interface QuestionFormProps {
@@ -433,6 +582,8 @@ export interface QuestionFormProps {
   cancelDisabled: boolean;
   onSubmit: (answers: Record<string, QuestionAnswer>) => void;
   onCancel: () => void;
+  /** A failed submit or cancel, shown in the footer beside the buttons. */
+  error?: string | null;
 }
 
 export function QuestionForm({
@@ -442,6 +593,7 @@ export function QuestionForm({
   cancelDisabled,
   onSubmit,
   onCancel,
+  error,
 }: QuestionFormProps) {
   const storageKey = persistenceKey
     ? `ws-question-draft:${persistenceKey}`
@@ -496,7 +648,14 @@ export function QuestionForm({
   }, [storageKey, formState, persistDraft]);
   useEffect(() => () => persistDraft(latestFormState.current), [persistDraft]);
   const formRef = useRef<HTMLDivElement>(null);
-  const { shortcuts, registerChoiceHandler } = useQuestionFormHost();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollFade = useScrollFade(scrollRef);
+  const host = useQuestionFormHost();
+  const { registerChoiceHandler } = host;
+  // A restored question renders outside BB's question host, which then binds
+  // no shortcuts; the form binds the digit keys itself, while focus is inside.
+  const ownsShortcuts = host.shortcuts.size === 0;
+  const shortcuts = ownsShortcuts ? LOCAL_SHORTCUTS : host.shortcuts;
   const totalQuestions = questions.length;
   const currentQuestion = questions[currentIndex] ?? null;
   const isFirst = currentIndex === 0;
@@ -567,9 +726,9 @@ export function QuestionForm({
     setCurrentIndex((index) => Math.min(index + 1, totalQuestions - 1));
   };
 
-  useEffect(() => {
-    if (disabled || currentQuestion === null) return;
-    return registerChoiceHandler((index) => {
+  const applyChoice = useCallback(
+    (index: number): boolean => {
+      if (currentQuestion === null) return false;
       const choice = resolveQuestionShortcutChoice(currentQuestion, index);
       if (!choice) return false;
       if (choice.kind === "option") {
@@ -577,14 +736,14 @@ export function QuestionForm({
         formRef.current?.focus();
       } else handleSelectOther(currentQuestion);
       return true;
-    });
-  }, [
-    disabled,
-    currentQuestion,
-    registerChoiceHandler,
-    handleToggleOption,
-    handleSelectOther,
-  ]);
+    },
+    [currentQuestion, handleToggleOption, handleSelectOther],
+  );
+
+  useEffect(() => {
+    if (disabled) return;
+    return registerChoiceHandler(applyChoice);
+  }, [disabled, registerChoiceHandler, applyChoice]);
 
   if (!currentQuestion) return null;
 
@@ -593,6 +752,20 @@ export function QuestionForm({
       ref={formRef}
       tabIndex={-1}
       onKeyDown={(event) => {
+        if (
+          ownsShortcuts &&
+          !disabled &&
+          /^[1-9]$/.test(event.key) &&
+          !event.shiftKey &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.altKey &&
+          !event.nativeEvent.isComposing &&
+          !isEditableTarget(event.target)
+        ) {
+          if (applyChoice(Number(event.key) - 1)) event.preventDefault();
+          return;
+        }
         if (
           event.target !== event.currentTarget ||
           event.defaultPrevented ||
@@ -619,7 +792,16 @@ export function QuestionForm({
         />
       ) : null}
       <div
-        className="min-h-0 touch-pan-y overflow-y-auto overscroll-contain"
+        ref={scrollRef}
+        // Extends 8px into the card's padding so an option row's hover fill
+        // and focus outline are not clipped; the bottom padding does the same
+        // for the last row's outline.
+        className={cn(
+          "-mx-2 min-h-0 touch-pan-y overflow-y-auto overscroll-contain px-2 pb-1",
+          FADE_MASK_CLASS,
+        )}
+        onScroll={scrollFade.onScroll}
+        style={scrollFade.style}
         onKeyDown={(event) => {
           if (
             event.target !== event.currentTarget &&
@@ -650,28 +832,40 @@ export function QuestionForm({
             }))
           }
           onShortcutSubmit={handleAdvance}
+          advance={isLast ? "submit" : "next"}
           shortcuts={shortcuts}
         />
       </div>
       {/* An edge-to-edge footer strip like the recap card's, offset by the
-          card's px-4 py-3 padding. */}
-      <div className="-mx-4 -mb-3 mt-2.5 flex shrink-0 items-center justify-between gap-2 rounded-b-[7px] border-t border-amber-900/10 bg-amber-500/[0.05] px-3 py-1.5 dark:border-amber-200/15 dark:bg-amber-300/[0.04]">
+          card's px-4 py-3 padding; its controls sit on the content's 16px
+          insets (the ghost Cancel's padding is pulled back to match). */}
+      <div className="-mx-4 -mb-3 mt-1.5 flex shrink-0 items-center justify-between gap-2 rounded-b-[calc(var(--radius-lg,0.5rem)-1px)] border-t border-amber-900/10 bg-amber-500/[0.05] px-4 py-1.5 dark:border-amber-200/15 dark:bg-amber-300/[0.04]">
         <Button
           type="button"
           size="sm"
           variant="ghost"
+          className={cn("-ml-2 px-2", FOOTER_BUTTON_CLASS)}
           disabled={cancelDisabled}
           onClick={onCancel}
         >
           Cancel
         </Button>
+        {error ? (
+          <p
+            role="alert"
+            title={error}
+            className="line-clamp-2 min-w-0 flex-1 text-xs leading-snug text-red-700 dark:text-red-300"
+          >
+            {error}
+          </p>
+        ) : null}
         <div className="flex items-center gap-2">
           {!isFirst ? (
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="bg-background/60"
+              className={cn("bg-background/60", FOOTER_BUTTON_CLASS)}
               disabled={disabled}
               onClick={() => setCurrentIndex((index) => Math.max(index - 1, 0))}
             >
@@ -681,6 +875,7 @@ export function QuestionForm({
           <Button
             type="button"
             size="sm"
+            className={FOOTER_BUTTON_CLASS}
             disabled={disabled || (isLast && !allAnswered)}
             onClick={handleAdvance}
           >
