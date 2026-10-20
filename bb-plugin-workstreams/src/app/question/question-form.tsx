@@ -171,62 +171,95 @@ interface QuestionTabsProps {
   questions: readonly Question[];
 }
 
+/**
+ * Navigation between questions. A wide card shows every label as underline
+ * tabs; a narrow viewport (BB's compact layout, where the labels no longer fit)
+ * shows one dot per question beside the current label.
+ */
 function QuestionTabs({
   currentIndex,
   formState,
   onSelect,
   questions,
 }: QuestionTabsProps) {
-  return (
-    <div className="mb-2 flex shrink-0 items-start gap-2">
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1.5">
-        {questions.map((question, index) => {
-          const answered = isQuestionAnswered(
-            question,
-            answerStateFor(formState, question),
-          );
-          const isActive = index === currentIndex;
-          return (
-            <div
+  const compact = useIsCompactViewport();
+  const steps = questions.map((question, index) => ({
+    question,
+    index,
+    active: index === currentIndex,
+    answered: isQuestionAnswered(question, answerStateFor(formState, question)),
+  }));
+  const current = steps[currentIndex];
+  if (compact)
+    return (
+      <div className="mb-1 flex shrink-0 items-center gap-2.5">
+        <div className="flex items-center">
+          {steps.map(({ question, index, active, answered }) => (
+            <button
               key={question.id}
-              className={cn(
-                "relative inline-flex shrink-0 items-center rounded-full border",
-                // The active pill takes the card frame's stroke, so it reads
-                // as the card's own accent rather than a faint tint.
-                isActive
-                  ? "border-amber-500 bg-amber-500/[0.08] text-foreground dark:border-amber-500/70 dark:bg-amber-300/[0.08]"
-                  : "border-border bg-background/60 text-foreground/70 hover:border-foreground/25 hover:text-foreground",
-              )}
+              type="button"
+              onClick={() => onSelect(index)}
+              aria-current={active ? "step" : undefined}
+              aria-label={`${question.shortLabel}${answered ? ", answered" : ""}`}
+              title={plainText(question.prompt)}
+              className="group flex cursor-pointer items-center px-[3px] py-2.5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring max-md:pointer-coarse:py-[18px]"
             >
-              <button
-                type="button"
-                onClick={() => onSelect(index)}
-                aria-pressed={isActive}
-                title={plainText(question.prompt)}
-                className="flex min-w-0 cursor-pointer items-center gap-1 rounded-full px-2 py-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring max-md:pointer-coarse:py-2"
-              >
-                {answered ? (
-                  <Icon
-                    name="Check"
-                    aria-hidden
-                    className="size-3 shrink-0 text-amber-700 dark:text-amber-300"
-                  />
-                ) : null}
-                <span
-                  className="truncate text-[12.5px] font-medium leading-[1.6] max-md:pointer-coarse:text-xs"
-                  style={{ maxWidth: "180px" }}
-                >
-                  {question.shortLabel}
-                </span>
-                {answered ? <span className="sr-only">, answered</span> : null}
-              </button>
-            </div>
-          );
-        })}
+              <span
+                className={cn(
+                  "block h-[7px] rounded-full transition-all duration-150 motion-reduce:transition-none",
+                  active
+                    ? "w-[18px] bg-amber-600 dark:bg-amber-400"
+                    : answered
+                      ? "w-[7px] bg-amber-600/70 dark:bg-amber-500/70"
+                      : "w-[7px] bg-foreground/20 group-hover:bg-foreground/40",
+                )}
+              />
+            </button>
+          ))}
+        </div>
+        <span className="flex min-w-0 items-center gap-1 text-[13px] font-medium text-foreground">
+          {current?.answered ? (
+            <Icon
+              name="Check"
+              aria-hidden
+              className="size-3 shrink-0 text-amber-700 dark:text-amber-300"
+            />
+          ) : null}
+          <span className="truncate">{current?.question.shortLabel}</span>
+        </span>
+        <span className="ml-auto shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
+          {currentIndex + 1} of {questions.length}
+        </span>
       </div>
-      <span className="shrink-0 text-xs font-medium leading-6 tabular-nums text-muted-foreground">
-        {currentIndex + 1} of {questions.length}
-      </span>
+    );
+  return (
+    <div className="mb-1.5 flex shrink-0 gap-5 border-b border-border">
+      {steps.map(({ question, index, active, answered }) => (
+        <button
+          key={question.id}
+          type="button"
+          onClick={() => onSelect(index)}
+          aria-current={active ? "step" : undefined}
+          title={plainText(question.prompt)}
+          // The active tab's underline overlays the strip's baseline.
+          className={cn(
+            "-mb-px flex min-w-0 max-w-[180px] shrink cursor-pointer items-center gap-1 border-b-2 pb-1.5 pt-0.5 text-[12.5px] font-medium leading-[1.6] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring",
+            active
+              ? "border-amber-600 text-foreground dark:border-amber-400"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {answered ? (
+            <Icon
+              name="Check"
+              aria-hidden
+              className="size-3 shrink-0 text-amber-700 dark:text-amber-300"
+            />
+          ) : null}
+          <span className="truncate">{question.shortLabel}</span>
+          {answered ? <span className="sr-only">, answered</span> : null}
+        </button>
+      ))}
     </div>
   );
 }

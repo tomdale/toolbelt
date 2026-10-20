@@ -638,4 +638,84 @@ describe("question interaction adapter", () => {
     expect(submit).not.toHaveBeenCalled();
     expect(slot.queryByText(/Shift\+Enter/)).toBeNull();
   });
+  describe("question navigation", () => {
+    const second = {
+      id: "q1",
+      prompt: "Which host?",
+      shortLabel: "Hosting",
+      multiSelect: false,
+      allowFreeText: true,
+      options: [
+        { value: "q1o0", label: "Vercel", description: "Managed." },
+        { value: "q1o1", label: "Fly", description: "Machines." },
+      ],
+    };
+    const two = { questions: [singleSelect.questions[0]!, second] };
+    const mockMedia = (matches: boolean) =>
+      Object.defineProperty(window, "matchMedia", {
+        writable: true,
+        value: vi.fn((query: string) => ({
+          matches,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+
+    it("shows every label as underline tabs and moves between questions", () => {
+      const slot = render(two);
+      expect(
+        getButtonByText(slot, "Database").getAttribute("aria-current"),
+      ).toBe("step");
+      expect(
+        getButtonByText(slot, "Hosting").getAttribute("aria-current"),
+      ).toBe(null);
+      expect(slot.queryByText("1 of 2")).toBeNull();
+      fireEvent.click(getButtonByText(slot, "Hosting"));
+      expect(
+        getButtonByText(slot, "Hosting").getAttribute("aria-current"),
+      ).toBe("step");
+      expect(slot.getByText("Vercel")).toBeTruthy();
+    });
+
+    it("announces which tabs are answered", () => {
+      const slot = render(two);
+      fireEvent.click(getButtonByText(slot, "SQLite"));
+      expect(getButtonByText(slot, "Database").textContent).toContain(
+        ", answered",
+      );
+      expect(getButtonByText(slot, "Hosting").textContent).not.toContain(
+        "answered",
+      );
+    });
+
+    it("collapses to dots and the current label in a compact viewport", () => {
+      mockMedia(true);
+      const slot = render(two);
+      const dots = slot
+        .getAllByRole("button")
+        .filter(
+          (button) =>
+            button.hasAttribute("aria-label") &&
+            /^(Database|Hosting)/.test(button.getAttribute("aria-label")!),
+        );
+      expect(dots.map((dot) => dot.getAttribute("aria-label"))).toEqual([
+        "Database",
+        "Hosting",
+      ]);
+      expect(dots[0]!.getAttribute("aria-current")).toBe("step");
+      expect(slot.getByText("1 of 2")).toBeTruthy();
+      fireEvent.click(getButtonByText(slot, "SQLite"));
+      expect(
+        slot.getByRole("button", { name: "Database, answered" }),
+      ).toBeTruthy();
+      fireEvent.click(slot.getByRole("button", { name: "Hosting" }));
+      expect(slot.getByText("2 of 2")).toBeTruthy();
+      expect(slot.getByText("Vercel")).toBeTruthy();
+    });
+  });
 });
