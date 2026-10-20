@@ -2,11 +2,62 @@ import { z } from "zod";
 
 const name = z.string().trim().min(1).max(100);
 
-export const nameObservationsSchema = z.object({
-  products: z.array(name).max(40),
-  features: z.array(z.object({ name, product: name.nullable() })).max(40),
-});
-export type NameObservations = z.infer<typeof nameObservationsSchema>;
+/** Product and feature names a model reported for one analysis run. */
+export type NameObservations = {
+  products: string[];
+  features: { name: string; product: string | null }[];
+};
+
+const NAME_MAX = 100;
+const LIST_MAX = 40;
+
+/**
+ * One reported name, trimmed. An empty, over-long, or non-text name is
+ * dropped rather than clipped: a clipped name is a different name.
+ */
+function reportedName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed && trimmed.length <= NAME_MAX ? trimmed : null;
+}
+
+const record = (value: unknown): Record<string, unknown> | null =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
+/**
+ * Reads the `names` a model returned, keeping every entry that is usable.
+ * Observations are advisory, so a malformed entry costs only itself: one
+ * feature written as a bare string must not discard the products and other
+ * features reported beside it. A feature may be a bare name, or an object
+ * whose missing or unusable `product` reads as null.
+ */
+export function parseNameObservations(raw: unknown): NameObservations {
+  const names = record(raw);
+  if (!names) return emptyObservations();
+  return {
+    products: list(names.products)
+      .map(reportedName)
+      .filter((product): product is string => product !== null)
+      .slice(0, LIST_MAX),
+    features: list(names.features)
+      .flatMap((feature) => {
+        const detail = record(feature);
+        const featureName = reportedName(detail ? detail.name : feature);
+        if (featureName === null) return [];
+        return [
+          {
+            name: featureName,
+            product: detail ? reportedName(detail.product) : null,
+          },
+        ];
+      })
+      .slice(0, LIST_MAX),
+  };
+}
 
 const seen = z.object({
   name,

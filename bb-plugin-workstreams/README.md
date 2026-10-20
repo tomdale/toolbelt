@@ -135,7 +135,10 @@ Full analysis settles:
   in the topic tree) subject to provenance priority
   (`manual > inherited > full > quick`). Every inferred update re-validates live
   thread evidence, assignment state, and topic-tree freshness before writing so
-  superseded runs never overwrite newer state.
+  superseded runs never overwrite newer state. A settled topic is decided again
+  after a new substantive request, or when a definition in the topic's product
+  (its top-level topic and everything below it) changes; edits under other
+  products leave it alone.
 - **Fallback recap and status:** Only when the agent did not call
   `WorkstreamsRecap`, Full analysis supplies a one-line recap, work state
   (`needs_decision`, `review`, `blocked`, `in_progress`, or `done`), and a short
@@ -143,8 +146,9 @@ Full analysis settles:
   `error` without running analysis.
 - **Observed product and feature names:** Accumulates product and feature names
   mentioned in analyzed conversation excerpts and agent recaps per thread,
-  independent of topic assignments. Observations persist across model-trace
-  pruning and are deleted when the thread is deleted.
+  independent of topic assignments. A malformed entry in a model's answer is
+  dropped on its own; the names reported beside it are kept. Observations
+  persist across model-trace pruning and are deleted when the thread is deleted.
 
 ### 3. Deterministic organization
 

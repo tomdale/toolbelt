@@ -16,8 +16,9 @@ export const CLASSIFICATION_VERSION = "topics-v3";
 
 /**
  * The basis of an automatic topic: what it was classified from. Only the
- * user's requests and the project decide a topic, so a retitle never makes a
- * topic stale.
+ * user's requests, the project, the model, and the definitions of the topics
+ * the thread could be moved among decide a topic, so a retitle never makes a
+ * topic stale. `definitions` is `TopicStore.definitionKeyFor`.
  */
 export function topicBasis(input: {
   version?: string;
@@ -39,6 +40,9 @@ export function topicBasis(input: {
     .digest("hex");
 }
 
+const fingerprint = (definitions: readonly Topic[]) =>
+  createHash("sha256").update(JSON.stringify(definitions)).digest("hex");
+
 const readSource = (source: string): AssignmentProvenance =>
   source === "manual" || source === "inherited" || source === "quick"
     ? source
@@ -59,9 +63,32 @@ export class TopicStore {
 
   /** Independent of assignment and native-section projection changes. */
   definitionKey(): string {
-    return createHash("sha256")
-      .update(JSON.stringify(this.list()))
-      .digest("hex");
+    return fingerprint(this.list());
+  }
+
+  /**
+   * Fingerprints the topic definitions a thread's automatic topic depends on,
+   * so that changing them makes asking again worthwhile. A thread depends on
+   * its product: the top-level topic above its own topic, and everything
+   * below it. Renaming, redescribing, adding, or moving a topic there can
+   * change where the thread belongs; the same edit under another product
+   * cannot, and counting it would send every automatic root back to the model
+   * whenever a topic is added anywhere. A thread with no topic could belong
+   * anywhere, so it depends on every definition.
+   *
+   * A thread moved to another product is asked once more, because the key it
+   * was settled under described the product it left.
+   */
+  definitionKeyFor(threadId: string): string {
+    const entities = this.list();
+    const entityId = this.assignment(threadId).entityId;
+    if (!entityId) return fingerprint(entities);
+    const product = topicAncestors(entityId, entities).at(-1);
+    return fingerprint(
+      entities.filter(
+        (entity) => topicAncestors(entity.id, entities).at(-1) === product,
+      ),
+    );
   }
 
   bumpRevision(): number {

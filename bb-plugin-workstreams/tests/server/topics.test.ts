@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/server/db.ts";
@@ -122,6 +123,53 @@ describe("TopicStore", () => {
         )
         .get(),
     ).toBeTruthy();
+  });
+
+  it("keeps a topic you chose before sources were renamed as manual", () => {
+    // Not `store()`, which would already apply every migration.
+    const host = createFakePluginHost({ pluginId: `legacy-${hosts.length}` });
+    hosts.push(host);
+    const migrate = host.bb.storage.migrate.bind(host.bb.storage);
+    const spy = vi
+      .spyOn(host.bb.storage, "migrate")
+      .mockImplementation((db, migrations) => {
+        // Storage as it was before `selected` became `manual`.
+        const boundary = migrations.indexOf(
+          "UPDATE ws_corpus_subject SET source = 'manual' WHERE source = 'selected'",
+        );
+        expect(boundary).toBeGreaterThan(0);
+        return migrate(db, migrations.slice(0, boundary));
+      });
+    const db = openDatabase(host.bb);
+    const entity = new TopicStore(db).create("Alpha", "");
+    const insert = db.prepare(
+      "INSERT INTO ws_corpus_subject(thread_id, entity_id, evidence, source) VALUES (?, ?, ?, ?)",
+    );
+    insert.run("chosen", entity.id, null, "selected");
+    insert.run("cleared", null, null, "selected");
+    insert.run("classified", entity.id, "k", "classified");
+    insert.run("quick", entity.id, null, "quick");
+    spy.mockRestore();
+
+    const corpus = new TopicStore(openDatabase(host.bb));
+    expect(corpus.assignment("chosen")).toMatchObject({
+      entityId: entity.id,
+      provenance: "manual",
+    });
+    expect(corpus.assignment("cleared").provenance).toBe("manual");
+    // Automatic sources keep their priority; only a human choice is promoted.
+    expect(corpus.assignment("classified").provenance).toBe("full");
+    expect(corpus.assignment("quick").provenance).toBe("quick");
+    // Analysis can no longer replace the choice.
+    expect(
+      corpus.applyAnalysis(
+        "chosen",
+        { subjectId: null, proposed: null },
+        "full",
+        "k2",
+      ),
+    ).toBe(false);
+    expect(corpus.assignment("chosen").entityId).toBe(entity.id);
   });
 
   it("resolves aliases and scopes matching names by explicit parent", () => {
@@ -593,6 +641,74 @@ describe("TopicStore", () => {
       entityId: b.id,
       provenance: "full",
     });
+  });
+
+  it("scopes a thread's definition key to its own product", () => {
+    const { corpus } = store();
+    const viewer = corpus.create("Viewer", "Markdown viewer");
+    const themes = corpus.create("Themes", "Color themes", viewer.id);
+    const sync = corpus.create("Sync", "File sync");
+    corpus.assign("t", themes.id, { provenance: "manual" });
+    const key = corpus.definitionKeyFor("t");
+
+    // Changes under another product leave it as it was.
+    corpus.create("Offline", "Offline mode", sync.id);
+    corpus.create("Search", "Full-text search");
+    corpus.edit(sync.id, { description: "Two-way file sync" });
+    corpus.rename(sync.id, "Syncing");
+    expect(corpus.definitionKeyFor("t")).toBe(key);
+    // So do moving the thread within its product and assignment changes.
+    corpus.assign("t", viewer.id, { provenance: "manual" });
+    expect(corpus.definitionKeyFor("t")).toBe(key);
+    // The tree-wide key still sees every change.
+    expect(corpus.definitionKey()).not.toBe(key);
+
+    // Any definition change in its own product, at any depth, changes it.
+    const edits: (() => void)[] = [
+      () => corpus.edit(themes.id, { description: "Dark and light themes" }),
+      () => corpus.edit(viewer.id, { aliases: ["Reader"] }),
+      () => corpus.rename(themes.id, "Palettes"),
+      () => corpus.create("Fonts", "Typefaces", viewer.id),
+      () => corpus.create("Dark", "Dark theme", themes.id),
+      () => corpus.reparent(themes.id, null),
+    ];
+    const seen = new Set([key]);
+    for (const edit of edits) {
+      edit();
+      seen.add(corpus.definitionKeyFor("t"));
+    }
+    expect(seen.size).toBe(edits.length + 1);
+  });
+
+  it("scopes a delegate's definition key to its root's product and an untopiced thread's to every definition", () => {
+    const { host, corpus } = store();
+    const db = host.bb.storage.database();
+    db.prepare(
+      "INSERT INTO ws_seen_thread(thread_id, parent_thread_id) VALUES ('root', NULL), ('child', 'root')",
+    ).run();
+    const a = corpus.create("Alpha", "");
+    const b = corpus.create("Beta", "");
+    corpus.assign("root", a.id, { provenance: "manual" });
+    expect(corpus.definitionKeyFor("child")).toBe(
+      corpus.definitionKeyFor("root"),
+    );
+
+    const before = corpus.definitionKeyFor("none");
+    expect(before).toBe(corpus.definitionKey());
+    corpus.edit(b.id, { description: "Changed" });
+    expect(corpus.definitionKeyFor("none")).not.toBe(before);
+    // An automatic "no topic" is no product either.
+    corpus.applyAnalysis(
+      "decided",
+      { subjectId: null, proposed: null },
+      "full",
+      "k",
+    );
+    expect(corpus.definitionKeyFor("decided")).toBe(corpus.definitionKey());
+    // The tree-wide key keeps its format: reclassification plans store it.
+    expect(corpus.definitionKey()).toBe(
+      createHash("sha256").update(JSON.stringify(corpus.list())).digest("hex"),
+    );
   });
 
   it("inherits a topic only into a thread with none or a quick guess", () => {

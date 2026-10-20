@@ -140,8 +140,11 @@ read-only repair plan using current classification evidence.
 retain unprocessed rows so retries preserve the applied prefix. Plans expire
 after 30 minutes, reject changed catalog definitions, and skip threads with
 newer evidence or manual corrections. Preview and apply preserve titles and
-status. Automatic classification bases include classifier version, catalog
-definitions, and model choice. Catalog definition keys exclude assignment and
+status. Automatic classification bases include classifier version, model choice,
+and the definitions of the thread's product: its top-level topic and everything
+below it, or every definition for a thread with no topic. Changing a definition
+in that product makes the next analysis settle the topic again; changing one
+under another product does not. Definition keys exclude assignment and
 section-binding changes.
 
 The CLI uses `topics`, `thread`, and `organization` vocabulary. See

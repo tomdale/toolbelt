@@ -337,6 +337,10 @@ const MIGRATIONS = [
     names TEXT NOT NULL
   )`,
   "CREATE INDEX ws_name_observation_thread ON ws_name_observation(thread_id)",
+  // Storage from before sources were named `manual`, `inherited`, `full`, and
+  // `quick` recorded a topic you chose as `selected`. It is still your choice:
+  // read as automatic, it would be replaced by the next analysis.
+  "UPDATE ws_corpus_subject SET source = 'manual' WHERE source = 'selected'",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {
