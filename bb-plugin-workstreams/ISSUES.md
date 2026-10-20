@@ -91,7 +91,8 @@ policies apply to conversation excerpts sent for analysis.
 - Sidebar ordering/drop affordances and shared band preferences:
   `tests/app/drop.test.ts`, `tests/app/sidebar.test.tsx`.
 - CLI JSON, bounded output, diagnostics, and topic-repair titles:
-  `tests/server/cli-topics.test.ts`, `tests/server/reclassification.test.ts`.
+  `tests/server/cli-topics.test.ts`, `tests/server/service.test.ts`,
+  `tests/server/trace.test.ts`, `tests/server/reclassification.test.ts`.
 - Shared attention rules and response validation: `tests/domain/status.test.ts`,
   `tests/domain/analysis.test.ts`, `tests/domain/recap.test.ts`.
 - Unknown worker usage: `tests/server/worker.test.ts`.

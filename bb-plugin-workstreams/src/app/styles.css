@@ -658,7 +658,7 @@
   white-space: nowrap;
 }
 
-/* Workstream proposals (SPEC §9): header pill and floating yellow banner. */
+/* Workstream proposal header pill and floating yellow banner. */
 .ws-pill {
   display: inline-flex;
   align-items: center;

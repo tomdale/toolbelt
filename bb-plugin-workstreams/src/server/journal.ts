@@ -1,6 +1,6 @@
 /**
- * The journal records every change Workstreams makes or observes (SPEC I7,
- * §11.5). It backs undo and the Activity log, so each change appears once.
+ * The journal records every change Workstreams makes or observes.
+ * It backs undo and the Activity log, so each change appears once.
  */
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -25,12 +25,12 @@ export const actionSchema = z.enum([
   "undo",
   /** Several changes applied and undone together (bootstrap, proposals). */
   "batch",
-  /** A workstream proposal waiting for a decision (SPEC §9). */
+  /** A retained workstream proposal entry from an earlier plugin version. */
   "proposal",
   "edit-workstream",
-  /** A thread started from the New thread composer (SPEC §6). */
+  /** A thread started from the New thread composer (SPEC §2). */
   "route",
-  /** A thread's title kept current by analysis (SPEC §10.1). */
+  /** A thread's title kept current by analysis (SPEC §3). */
   "retitle",
   /** Discovered topics that nothing used any more were removed. */
   "remove-topic",

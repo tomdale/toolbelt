@@ -16,7 +16,7 @@ import {
 } from "../domain/project.ts";
 import { relativeAge } from "../domain/presentation.ts";
 import { isCurrent } from "../domain/analysis.ts";
-import { needsYou, workView } from "../domain/status.ts";
+import { needsAttention, workView } from "../domain/status.ts";
 import type { Analyzer, StoredAnalysis } from "./analyzer.ts";
 import type { Organizer } from "./organizer.ts";
 import type { WorkstreamMap } from "./map.ts";
@@ -264,7 +264,7 @@ export function registerCli(
       analysis,
       projection: projectWorkstreams(threads, sections, {
         now,
-        needsYou: (thread) => needsYou(thread, work.get(thread.id)!),
+        needsYou: (thread) => needsAttention(thread, work.get(thread.id)!),
         order: arrangement.load(),
       }),
     };

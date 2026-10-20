@@ -464,6 +464,13 @@ bb workstreams undo <entry-id> [--json]
 bb workstreams trace [<trace-id>] [--thread <id>] [--entry <id>] [--kind <kind>] [--limit 1..500] [--json]
 ```
 
+`show` returns at most 200 rows and reports truncation; JSON includes `count`,
+`shown`, and `hasMore`. `log` defaults to 50 entries (maximum 500), applies
+`--since` to the matching query window, and reports whether more matching
+entries remain. Its JSON adds `count`, `limit`, and `hasMore`. `trace` defaults
+to 20 records (maximum 500). These are bounded inspection commands, not full
+history exports.
+
 ### Topic tree management and repair plans
 
 ```sh

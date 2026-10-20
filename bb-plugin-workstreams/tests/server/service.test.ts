@@ -267,6 +267,36 @@ describe("cli", () => {
     expect(w.threads.get("t1")?.title).toBe("Old focus");
   });
 
+  it("counts unread completed roots as needing attention just like the app", async () => {
+    const w = await fakeWorld({
+      complete: () =>
+        JSON.stringify({
+          recap: "Finished",
+          state: "done",
+          goal: "Fix parser",
+          subjectId: null,
+          proposed: null,
+        }),
+    });
+    world = w;
+    w.addThread("t1", { status: "idle", lastReadAt: null });
+    w.converse("t1", ["Fix the parser"]);
+    await rpc(w, "refresh", null);
+    await w.harness.behavior.runCli(["analyze", "t1"]);
+    const result = JSON.parse(
+      (await w.harness.behavior.runCli(["show", "unfiled", "--json"])).stdout,
+    );
+    expect(result.needsYou).toBe(1);
+    expect(result.rows[0].needsYou).toBe(true);
+    const thread = w.threads.get("t1")!;
+    w.threads.set("t1", { ...thread, lastReadAt: thread.latestAttentionAt });
+    const read = JSON.parse(
+      (await w.harness.behavior.runCli(["show", "unfiled", "--json"])).stdout,
+    );
+    expect(read.needsYou).toBe(0);
+    expect(read.rows[0].needsYou).toBe(false);
+  });
+
   it("labels analyze catch-up errors as global stale state", async () => {
     const w = await fakeWorld({ complete: () => "not json at all" });
     world = w;

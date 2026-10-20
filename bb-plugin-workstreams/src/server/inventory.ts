@@ -16,6 +16,7 @@ export type InventoryThread = WorkstreamThread & {
   readonly ownTitle: string | null;
   readonly projectId: string;
   readonly status: string;
+  readonly isUnread: boolean;
   /** Set on forks: the thread this one was forked from. */
   readonly sourceThreadId: string | null;
 };
@@ -45,6 +46,8 @@ export function toInventoryThread(thread: ThreadResponse): InventoryThread {
     isHidden: thread.visibility === "hidden",
     isArchived: thread.archivedAt !== null,
     isPinned: thread.pinnedAt !== null,
+    isUnread:
+      (thread.latestAttentionAt ?? thread.updatedAt) > (thread.lastReadAt ?? 0),
     pinSortKey: null,
     hasPendingInteraction: Boolean(
       (thread as { hasPendingInteraction?: boolean }).hasPendingInteraction,
