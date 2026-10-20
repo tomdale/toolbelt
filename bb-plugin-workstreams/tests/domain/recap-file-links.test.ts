@@ -1,5 +1,8 @@
 import { expect, it } from "vitest";
-import { normalizeRecapFileLinks } from "../../src/domain/recapFileLinks.ts";
+import {
+  normalizeRecapFileLinks,
+  recapHostFileLink,
+} from "../../src/domain/recapFileLinks.ts";
 import {
   recapMarkdown,
   recapSegments,
@@ -62,6 +65,52 @@ it("keeps file links whole around recap thread and commit tokens", () => {
     { kind: "markdown", text: "[plan](docs/My%20abc1234%20Plan.md) after " },
     { kind: "sha", sha: "abc1234" },
   ]);
+});
+
+it.each([
+  [
+    "file:///home/test/.bb/backups/recap/README.md",
+    "/home/test/.bb/backups/recap/README.md",
+  ],
+  ["file:///tmp/My%20Notes.md", "/tmp/My Notes.md"],
+  ["file://localhost/tmp/notes.md", "/tmp/notes.md"],
+  ["file:///work/../notes.md", "/notes.md"],
+  ["file:///work/%2e%2e/notes.md", "/notes.md"],
+  ["file:///tmp/notes%23draft.md", "/tmp/notes#draft.md"],
+])("decodes the host file URL %s", (href, path) => {
+  expect(recapHostFileLink(href)).toEqual({ path, location: null });
+});
+
+it.each([
+  ["file:///tmp/notes.md#L12", 12, 12],
+  ["file:///tmp/notes.md#L12-L15", 12, 15],
+])("keeps a file location in %s", (href, startLine, endLine) => {
+  expect(recapHostFileLink(href)).toEqual({
+    path: "/tmp/notes.md",
+    location: { kind: "range", startLine, endLine },
+  });
+});
+
+it.each([
+  "docs/notes.md",
+  "/work/notes.md",
+  "/threads/thread-id",
+  "https://example.com/notes.md",
+  "//example.com/notes.md",
+  "file://remote/tmp/notes.md",
+  "#notes",
+  "javascript:alert(1)",
+  "file:///tmp/notes%00.md",
+  "file:///tmp/notes%ZZ.md",
+  "file:///tmp/notes.md#L0",
+  "file:///tmp/notes.md#L15-L12",
+  "file:///tmp/notes.md#L99999999999999999999",
+  "file:///tmp/notes.md?query",
+  "file:////remote/notes.md",
+  "file:///",
+  "file:///tmp/",
+])("does not claim non-file or invalid URL %s", (href) => {
+  expect(recapHostFileLink(href)).toBeNull();
 });
 
 it("normalizes links in the recap's timeline Markdown as well as the card", () => {

@@ -70,6 +70,53 @@ export function* recapMarkdownSpans(text: string) {
   }
 }
 
+type RecapHostFileLink = {
+  path: string;
+  location: { kind: "range"; startLine: number; endLine: number } | null;
+};
+
+/** BB's Markdown renderer exposes local anchors as file URLs with #L ranges. */
+export function recapHostFileLink(href: string): RecapHostFileLink | null {
+  let url: URL;
+  let path: string;
+  try {
+    url = new URL(href);
+    if (url.protocol !== "file:" || url.hostname || url.search) return null;
+    path = decodeURIComponent(url.pathname);
+  } catch {
+    return null;
+  }
+  if (
+    !path.startsWith("/") ||
+    path.startsWith("//") ||
+    path.endsWith("/") ||
+    /[\u0000-\u001f?]/.test(path)
+  )
+    return null;
+  const parts: string[] = [];
+  for (const part of path.split("/")) {
+    if (part === "..") parts.pop();
+    else if (part && part !== ".") parts.push(part);
+  }
+  if (!parts.length) return null;
+  let location: RecapHostFileLink["location"] = null;
+  if (url.hash) {
+    const lines = /^#L(\d+)(?:-L?(\d+))?$/.exec(url.hash);
+    if (!lines) return null;
+    const startLine = Number(lines[1]);
+    const endLine = Number(lines[2] ?? startLine);
+    if (
+      !Number.isSafeInteger(startLine) ||
+      !Number.isSafeInteger(endLine) ||
+      startLine < 1 ||
+      endLine < startLine
+    )
+      return null;
+    location = { kind: "range", startLine, endLine };
+  }
+  return { path: "/" + parts.join("/"), location };
+}
+
 /** A code span closes only with a backtick run of the same length. */
 function codeSpanEnd(text: string, start: number) {
   const marker = /^`+/.exec(text.slice(start))![0];

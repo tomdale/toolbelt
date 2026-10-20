@@ -3,12 +3,19 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { emptyState, sidebarThread } from "./fixtures.ts";
-import { recapInputSchema, toRecap } from "../../src/domain/recap.ts";
+import {
+  recapInputSchema,
+  toRecap,
+  type RecapFiles,
+} from "../../src/domain/recap.ts";
 
 const interactionOverride = vi.hoisted(() => ({
   value: null as boolean | null,
 }));
-const markdownRendering = vi.hoisted(() => ({ enabled: false }));
+const markdownRendering = vi.hoisted(() => ({
+  enabled: false,
+  fileUrls: false,
+}));
 vi.mock("@get-bb/plugin-sdk/app", async (importActual) => {
   const actual = await importActual<typeof import("@get-bb/plugin-sdk/app")>();
   const React = await import("react");
@@ -26,7 +33,37 @@ vi.mock("@get-bb/plugin-sdk/app", async (importActual) => {
         },
         // The SDK harness renders plain text; anchor regressions need BB's parser.
         markdownRendering.enabled
-          ? React.createElement(ReactMarkdown, { children: props.content })
+          ? React.createElement(ReactMarkdown, {
+              children: props.content,
+              ...(markdownRendering.fileUrls
+                ? {
+                    // BB emits file URLs for local Markdown anchors. The default
+                    // SDK harness has neither the parser nor this routing step.
+                    urlTransform: (url: string) => url,
+                    components: {
+                      a: ({
+                        href,
+                        children,
+                        title,
+                      }: {
+                        href?: string;
+                        children?: React.ReactNode;
+                        title?: string;
+                      }) =>
+                        React.createElement(
+                          "a",
+                          {
+                            href: href?.startsWith("/")
+                              ? `file://${href}`
+                              : href,
+                            title,
+                          },
+                          children,
+                        ),
+                    },
+                  }
+                : {}),
+            })
           : React.createElement(actual.Markdown, props),
       ),
     experimental_useSidebarThreads: () => {
@@ -67,6 +104,7 @@ vi.mock("../../src/app/composer/useContinuing.ts", async (importActual) => {
 
 afterEach(() => {
   markdownRendering.enabled = false;
+  markdownRendering.fileUrls = false;
   sendingOverride.value = null;
   interactionOverride.value = null;
   cleanup();
@@ -106,6 +144,7 @@ async function mount(
     hashLetters?: string;
     recap?: Record<string, unknown> | null;
     capped?: boolean;
+    files?: RecapFiles | null;
     archivable?: boolean;
     pendingThreadId?: string;
     threads?: ReturnType<typeof sidebarThread>[];
@@ -164,7 +203,10 @@ async function mount(
           waitingCancelled,
           capped: options.capped ?? false,
           corrections: 3,
-          files: { environmentId: "env_1", root: "/work", hostId: "host_1" },
+          files:
+            options.files === undefined
+              ? { environmentId: "env_1", root: "/work", hostId: "host_1" }
+              : options.files,
         }),
         recap_dismiss: () => {
           dismissed = true;
@@ -678,6 +720,113 @@ it("resolves inline recap file links from the thread workspace root", async () =
     path: "__recap__.md",
   });
 });
+
+it.each(["full", "minimal"])(
+  "opens inline out-of-workspace notes through the host in %s",
+  async (layout) => {
+    markdownRendering.enabled = true;
+    markdownRendering.fileUrls = true;
+    const slot = await mount({
+      layout,
+      recap: {
+        goal: "**Saved [backup notes](/home/test/.bb/backups/recap/README.md) safely**",
+        latest: [
+          {
+            text: "Backed up recap data",
+            detail:
+              'Read [restoration `abc1234` notes](/tmp/My Notes.md#L12-L14 "Restore notes")',
+          },
+        ],
+      },
+    });
+    const backup = await slot.findByRole("link", { name: "backup notes" });
+    expect(backup.closest("strong")?.textContent).toBe(
+      "Saved backup notes safely",
+    );
+    fireEvent.click(backup);
+    expect(slot.inspection.navigateCalls).toContainEqual({
+      method: "experimental_openFilePreview",
+      options: {
+        target: {
+          kind: "host",
+          hostId: "host_1",
+          path: "/home/test/.bb/backups/recap/README.md",
+        },
+        location: null,
+      },
+    });
+    const notes = slot.getByRole("link", { name: "restoration abc1234 notes" });
+    expect(notes.getAttribute("title")).toBe("Restore notes");
+    expect(
+      slot.queryByRole("button", { name: "Copy commit abc1234" }),
+    ).toBeNull();
+    fireEvent.click(notes);
+    expect(slot.inspection.navigateCalls).toContainEqual({
+      method: "experimental_openFilePreview",
+      options: {
+        target: { kind: "host", hostId: "host_1", path: "/tmp/My Notes.md" },
+        location: { kind: "range", startLine: 12, endLine: 14 },
+      },
+    });
+  },
+);
+
+it("routes explicit file URLs through the host even when the workspace root is unavailable", async () => {
+  markdownRendering.enabled = true;
+  markdownRendering.fileUrls = true;
+  const slot = await mount({
+    files: { environmentId: "env_1", root: null, hostId: "host_1" },
+    recap: {
+      state: "review",
+      review: ["Inspect [notes](file:///tmp/notes.md)"],
+    },
+  });
+  fireEvent.click(await slot.findByRole("link", { name: "notes" }));
+  expect(slot.inspection.navigateCalls).toContainEqual({
+    method: "experimental_openFilePreview",
+    options: {
+      target: { kind: "host", hostId: "host_1", path: "/tmp/notes.md" },
+      location: null,
+    },
+  });
+});
+
+it.each([
+  {
+    path: "/work/notes.md",
+    files: { environmentId: "env_1", root: "/work", hostId: "host_1" },
+  },
+  {
+    path: "/tmp/notes.md",
+    files: { environmentId: "env_1", root: "/work", hostId: null },
+  },
+  { path: "https://example.com/notes", files: null },
+  { path: "/threads/thread-id", files: null },
+])(
+  "leaves workspace files, missing host identities and other links to the host renderer: $path",
+  async ({ path, files }) => {
+    markdownRendering.enabled = true;
+    markdownRendering.fileUrls = true;
+    const slot = await mount({ files, recap: { goal: `[notes](${path})` } });
+    const link = await slot.findByRole("link", { name: "notes" });
+    link.addEventListener("click", (event) => event.preventDefault());
+    fireEvent.click(link);
+    expect(slot.inspection.navigateCalls).toEqual([]);
+  },
+);
+
+it.each(["metaKey", "ctrlKey", "shiftKey", "altKey"])(
+  "preserves %s clicks on file links",
+  async (modifier) => {
+    markdownRendering.enabled = true;
+    markdownRendering.fileUrls = true;
+    const slot = await mount({ recap: { goal: "[notes](/tmp/notes.md)" } });
+    const link = await slot.findByRole("link", { name: "notes" });
+    link.addEventListener("click", (event) => event.preventDefault());
+    fireEvent.click(link, { [modifier]: true });
+    expect(slot.inspection.navigateCalls).toEqual([]);
+  },
+);
 
 it.each(["full", "minimal"])(
   "renders stored Complete recap file paths with spaces as anchors in %s",

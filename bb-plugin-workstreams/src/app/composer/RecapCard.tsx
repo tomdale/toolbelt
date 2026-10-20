@@ -22,9 +22,11 @@ import {
   useComposer,
   useRealtime,
   useRpc,
+  useBbNavigate,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
+import { recapHostFileLink } from "../../domain/recapFileLinks.ts";
 import { usePendingQuestion } from "../question/pending.ts";
 import {
   fileTarget,
@@ -818,6 +820,7 @@ function RecapSummary({
   /** Room the top line leaves for the corner buttons. */
   clearance: string;
 }) {
+  const navigate = useBbNavigate();
   const compact = layout === "minimal";
   const body = compact ? COMPACT_BODY_CLASS : BODY_CLASS;
   const review = recap.state === "review" && recap.review.length > 0;
@@ -870,41 +873,76 @@ function RecapSummary({
         }
       : undefined;
   return (
-    <MarkdownDocumentContext.Provider value={markdownDocument}>
-      <CompactContext.Provider value={compact}>
-        {/* The top line clears the corner buttons. */}
-        <StateLine recap={recap} clearance={clearance} />
-        <div
-          role="heading"
-          aria-level={2}
-          className={cn(
-            "font-medium tracking-[-0.006em] text-foreground",
-            clearance,
-          )}
-        >
-          <RecapText
-            text={recap.goal}
-            className="w-full max-w-none"
-            typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
-          />
-        </div>
-        {working && recap.waitingAgents?.length ? (
-          <WaitingAgents agents={recap.waitingAgents} />
-        ) : null}
-        {rows ? (
+    <div
+      className="contents"
+      onClickCapture={(event) => {
+        if (
+          event.defaultPrevented ||
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.altKey ||
+          event.shiftKey
+        )
+          return;
+        const anchor =
+          event.target instanceof Element
+            ? event.target.closest("a[href]")
+            : null;
+        if (!anchor || !event.currentTarget.contains(anchor)) return;
+        const link = recapHostFileLink(anchor.getAttribute("href") ?? "");
+        const target = link ? fileTarget(link.path, files) : null;
+        // Markdown's document context handles workspace files, but its host
+        // fallback depends on a timeline context that composer cards lack.
+        if (
+          link &&
+          target?.kind === "host" &&
+          navigate.experimental_openFilePreview({
+            target,
+            location: link.location,
+          })
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
+    >
+      <MarkdownDocumentContext.Provider value={markdownDocument}>
+        <CompactContext.Provider value={compact}>
+          {/* The top line clears the corner buttons. */}
+          <StateLine recap={recap} clearance={clearance} />
           <div
+            role="heading"
+            aria-level={2}
             className={cn(
-              compact ? "mt-0.5" : "mt-1.5",
-              "[&>section+section]:border-t",
-              accent.rules,
-              body,
+              "font-medium tracking-[-0.006em] text-foreground",
+              clearance,
             )}
           >
-            {rows}
+            <RecapText
+              text={recap.goal}
+              className="w-full max-w-none"
+              typeClass={compact ? COMPACT_GOAL_CLASS : GOAL_CLASS}
+            />
           </div>
-        ) : null}
-      </CompactContext.Provider>
-    </MarkdownDocumentContext.Provider>
+          {working && recap.waitingAgents?.length ? (
+            <WaitingAgents agents={recap.waitingAgents} />
+          ) : null}
+          {rows ? (
+            <div
+              className={cn(
+                compact ? "mt-0.5" : "mt-1.5",
+                "[&>section+section]:border-t",
+                accent.rules,
+                body,
+              )}
+            >
+              {rows}
+            </div>
+          ) : null}
+        </CompactContext.Provider>
+      </MarkdownDocumentContext.Provider>
+    </div>
   );
 }
 
