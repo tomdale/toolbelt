@@ -269,7 +269,7 @@ describe("idle analysis", () => {
     let previous: string | null = null;
     const w = await setup(({ prompt }) => {
       const match = prompt.match(
-        /Previous title candidate \(context, not authority\): "([^"]+)"/,
+        /<previous_title_candidate>\n([^\n]+)\n<\/previous_title_candidate>/,
       );
       previous = match?.[1] ?? null;
       return JSON.stringify({
@@ -318,7 +318,7 @@ describe("idle analysis", () => {
       );
     await w2.harness.behavior.runCli(["analyze", "t2"]);
     expect(w2.completions.at(-1)?.prompt).toContain(
-      'Previous title candidate (context, not authority): "Make onboarding easier to complete"',
+      "<previous_title_candidate>\nMake onboarding easier to complete\n</previous_title_candidate>",
     );
     expect(w2.completions.at(-1)?.prompt).not.toContain("Legacy inferred");
     expect((await state(w2)).analysis.t2?.goal).toBe(

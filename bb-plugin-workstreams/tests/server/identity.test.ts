@@ -94,7 +94,7 @@ describe("thread identity trajectories", () => {
     ]);
     w.threads.set("t", { ...w.threads.get("t")!, latestAttentionAt: 20 });
     await w.harness.behavior.runCli(["analyze", "t"]);
-    expect(w.completions.at(-1)?.prompt).toContain("Durable objective:");
+    expect(w.completions.at(-1)?.prompt).toContain("<durable_objective>");
     expect(w.threads.get("t")?.title).toBe("Release pipeline audit");
     phase = 2;
     w.converse("t", [opening, pivot]);

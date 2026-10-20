@@ -237,7 +237,7 @@ export class Inference {
           repair: "one bounded retry",
         });
         const repaired = await this.call(kind, {
-          prompt: `${prompt}\n\nValidation requirement: return a JSON object with the requested fields. subjectId must be exactly an ID in square brackets in the topic tree, never a name, path, or decorated label. Use null when ownership is unsupported.`,
+          prompt: `${prompt}\n\nValidation requirement: return a JSON object with the requested fields. subjectId must be exactly an ID in square brackets in <topic_tree>, never a name, path, or decorated label. Use null when ownership is unsupported.`,
           parse: (text) => spec.parse(text, input),
           input,
           model: options.model,

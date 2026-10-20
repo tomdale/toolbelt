@@ -78,7 +78,7 @@ describe("keeping thread titles current", () => {
       .reverse()
       .find((c) => c.prompt.includes("You describe one agent thread"));
     expect(analysis!.prompt).toContain(
-      'Title: none yet (BB shows the placeholder "fix the cache thing…")',
+      '<title placeholder="true">\nfix the cache thing…\n</title>',
     );
     expect(w.threads.get("t1")?.title).toBe("Fix stale build cache");
     const [entry] = await retitles(w);
