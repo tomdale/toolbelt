@@ -67,6 +67,24 @@ export function needsYou(
   );
 }
 
+/** Up Next also surfaces finished or reviewable turns the user has not read. */
+export function needsAttention(
+  thread: {
+    readonly hasPendingInteraction: boolean;
+    readonly isUnread?: boolean;
+  },
+  work: WorkView,
+): boolean {
+  return (
+    needsYou(thread, work) ||
+    Boolean(
+      thread.isUnread &&
+      work.kind === "current" &&
+      (work.analysis.state === "done" || work.analysis.state === "review"),
+    )
+  );
+}
+
 /**
  * Done: the agent reported its turn complete, or analysis of the current
  * turn found the work finished. Done threads don't count toward a

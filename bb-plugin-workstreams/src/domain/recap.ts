@@ -40,8 +40,7 @@ export function plainText(markdown: string): string {
 
 /** Visible length, with a mention counted as the short chip it renders as. */
 const visibleLength = (markdown: string) =>
-  plainText(markdown).replace(/@(thread|project|section):[\w-]+/g, "@chip")
-    .length;
+  plainText(markdown).replace(/@thread:[\w-]+/g, "@chip").length;
 
 // Tool parameters avoid transforms so BB can describe them as JSON Schema.
 // `max` bounds the visible text; the raw cap leaves room for link targets.

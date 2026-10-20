@@ -36,6 +36,17 @@ const base: FullAnalysisInput = {
 };
 
 describe("Full analysis", () => {
+  it("bounds a decision prompt to the advertised 80 characters", () => {
+    const parsed = parseFullAnalysis(
+      JSON.stringify({
+        recap: "Needs a choice",
+        state: "needs_decision",
+        needsYou: "a".repeat(120),
+      }),
+      base,
+    );
+    expect(parsed.status?.needsYou).toHaveLength(80);
+  });
   it("asks for status, goal, and topic after a new request with no report", () => {
     const prompt = fullAnalysisPrompt({
       ...base,

@@ -22,6 +22,41 @@ const entities: Entity[] = [
   },
 ];
 describe("separated classification and grouping", () => {
+  it("recursively splits deep topics and reaches a valid fixed point", () => {
+    const tree = [
+      ...entities,
+      { id: "leaf", name: "Sync", description: "", parentId: "f", aliases: [] },
+      {
+        id: "other",
+        name: "Sharing",
+        description: "",
+        parentId: "p",
+        aliases: [],
+      },
+    ];
+    for (let p = 0; p <= 8; p += 2)
+      for (let f = 0; f <= 8; f += 2)
+        for (let leaf = 0; leaf <= 8; leaf += 2)
+          for (let other = 0; other <= 4; other += 2) {
+            const counts = { p, f, leaf, other };
+            const input = {
+              entities: tree,
+              counts,
+              active: ["p"],
+              capacity: 6,
+              collapseAt: 3,
+              visibleProductRoots: ["p"],
+            };
+            const selected = deriveActiveEntityIds(input);
+            expect(isGroupingValid(selected, tree, counts, 6, 3, ["p"])).toBe(
+              true,
+            );
+            expect(
+              deriveActiveEntityIds({ ...input, active: selected }).sort(),
+            ).toEqual([...selected].sort());
+          }
+  });
+
   it("keeps coverage, policy validity and a stable fixed point across load combinations", () => {
     const tree = [
       ...entities,

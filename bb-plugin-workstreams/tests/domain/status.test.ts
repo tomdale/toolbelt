@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { StoredAnalysis } from "../../src/domain/analysis.ts";
 import { recapInputSchema, toRecap } from "../../src/domain/recap.ts";
-import { isDone, needsYou, workView } from "../../src/domain/status.ts";
+import {
+  isDone,
+  needsYou,
+  needsAttention,
+  workView,
+} from "../../src/domain/status.ts";
 
 const analysis = (
   state: StoredAnalysis["state"],
@@ -64,6 +69,25 @@ describe("workView", () => {
       kind: "none",
     });
   });
+});
+
+describe("needsAttention", () => {
+  it.each(["done", "review"] as const)(
+    "surfaces unread %s turns without treating them as decisions",
+    (state) => {
+      const thread = { ...idle, hasPendingInteraction: false, isUnread: true };
+      const work = workView(thread, analysis(state));
+      expect(needsAttention(thread, work)).toBe(true);
+      expect(needsYou(thread, work)).toBe(false);
+      expect(needsAttention({ ...thread, isUnread: false }, work)).toBe(false);
+      expect(
+        needsAttention(
+          thread,
+          workView({ ...thread, status: "active" }, analysis(state)),
+        ),
+      ).toBe(false);
+    },
+  );
 });
 
 describe("needsYou", () => {

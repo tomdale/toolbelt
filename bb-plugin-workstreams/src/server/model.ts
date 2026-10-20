@@ -130,8 +130,9 @@ export type Complete = (
   maxTokens?: number,
   context?: { threadId?: string; outputSchema?: Record<string, unknown> },
 ) => Promise<
-  Pick<Completion, "text" | "usage"> &
-    Partial<Pick<Completion, "reasoning" | "stopReason">>
+  Pick<Completion, "text"> & { usage: Completion["usage"] | null } & Partial<
+      Pick<Completion, "reasoning" | "stopReason">
+    >
 >;
 
 /** The trace behind a failed call, when debug mode recorded one. */

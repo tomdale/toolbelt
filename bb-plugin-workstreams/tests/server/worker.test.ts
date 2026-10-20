@@ -29,6 +29,7 @@ it("uses the worker path only when gatewayModel returns null", async () => {
   const db = w.bb.storage.database();
   const { savePrefs } = await import("../../src/server/prefs.ts");
   savePrefs(db, {
+    advanced: { debug: true },
     analysis: {
       fullModel: {
         kind: "provider",
@@ -53,4 +54,8 @@ it("uses the worker path only when gatewayModel returns null", async () => {
       [WORKER_THREAD_MARKER.key]: WORKER_THREAD_MARKER.value,
     },
   });
+  const recorded = await w.harness.behavior.runCli(["trace", "--json"]);
+  const { traces } = JSON.parse(recorded.stdout);
+  expect(traces).toHaveLength(1);
+  expect(traces[0].usage).toBeNull();
 });

@@ -12,6 +12,26 @@ import {
   reportedAnalysis,
 } from "../../src/domain/recap.ts";
 
+it("counts only rendered thread mentions as chips for visible length", () => {
+  const input = {
+    state: "complete",
+    goal: "Finished work",
+    latest: ["Tests passed"],
+  };
+  expect(
+    recapInputSchema.safeParse({ ...input, goal: `@thread:${"a".repeat(90)}` })
+      .success,
+  ).toBe(true);
+  for (const kind of ["project", "section"]) {
+    expect(
+      recapInputSchema.safeParse({
+        ...input,
+        goal: `@${kind}:${"a".repeat(90)}`,
+      }).success,
+    ).toBe(false);
+  }
+});
+
 it("explains when to keep collaborating instead of reporting a completed turn", () => {
   expect(RECAP_TOOL_DESCRIPTION).toContain(
     "broader task they asked to do are fully done",

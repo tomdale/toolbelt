@@ -474,7 +474,7 @@ const fullOutputSchema = z.object({
   // An unknown state must not discard an otherwise good result.
   recap: clipped(RECAP_MAX).optional(),
   state: z.enum(WORK_STATES).catch("in_progress").optional(),
-  needsYou: clipped(120).nullable().catch(null).optional(),
+  needsYou: clipped(80).nullable().catch(null).optional(),
   goal: goalSchema.optional(),
   identity: identityCandidateSchema.nullable().catch(null).optional(),
   scopeShift: z.boolean().catch(false).optional(),

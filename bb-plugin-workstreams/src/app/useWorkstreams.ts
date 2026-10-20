@@ -11,7 +11,7 @@ import {
 import type { MapRecord } from "../server/map.ts";
 import { projectWorkstreams, type Projection } from "../domain/project.ts";
 import type { Recap } from "../domain/recap.ts";
-import { needsYou, workView } from "../domain/status.ts";
+import { needsAttention, workView } from "../domain/status.ts";
 import type { ManualOrder } from "../domain/order.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
 import type { TopicState } from "../domain/topics.ts";
@@ -78,13 +78,7 @@ export function useWorkstreams() {
         now,
         needsYou: (thread) => {
           const work = workView(thread, analysis[thread.id], recaps[thread.id]);
-          return (
-            needsYou(thread, work) ||
-            (thread.isUnread &&
-              work.kind === "current" &&
-              (work.analysis.state === "done" ||
-                work.analysis.state === "review"))
-          );
+          return needsAttention(thread, work);
         },
         order,
         recentLimit: prefs?.sidebar.recentLimit,

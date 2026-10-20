@@ -86,7 +86,7 @@ export async function runWorker(
   projectId: string,
   environmentId: string | undefined,
   signal?: AbortSignal,
-): Promise<Completion> {
+): Promise<Omit<Completion, "usage"> & { usage: null }> {
   if (choice.kind !== "provider")
     throw new Error("Gateway choices must use the direct completion path.");
   if (signal?.aborted) throw signal.reason;
@@ -123,7 +123,8 @@ export async function runWorker(
     });
     return {
       text: output ?? "",
-      usage: { input: 0, output: 0, cost: 0 },
+      // threads.output exposes text only; zero would falsely report a free call.
+      usage: null,
       reasoning: null,
       stopReason: null,
     };
