@@ -1,8 +1,5 @@
-import {
-  focusNeeds,
-  type Projection,
-  type WorkstreamThread,
-} from "./project.ts";
+import type { Projection, WorkstreamThread } from "./project.ts";
+import { selectUpNext } from "./upNext.ts";
 
 /** Follow group order, wrapping at the end without leaving the workstream. */
 export function nextUpNextThreadAfterArchive<T extends WorkstreamThread>(
@@ -10,10 +7,12 @@ export function nextUpNextThreadAfterArchive<T extends WorkstreamThread>(
   threadId: string,
   prioritized: readonly string[] = [],
 ): string | null {
-  const rows = projection.needsYou.filter((row) => row.thread.id !== threadId);
   return (
-    focusNeeds(rows, (id) => id !== null && prioritized.includes(id)).shown[0]
-      ?.thread.id ?? null
+    selectUpNext(projection, {
+      needsYou: projection.needsYou.filter((row) => row.thread.id !== threadId),
+      recaps: {},
+      prioritized: new Set(prioritized),
+    }).rows[0]?.thread.id ?? null
   );
 }
 
@@ -23,10 +22,10 @@ export function nextUpNextThread<T extends WorkstreamThread>(
   threadId: string | null,
   prioritized: readonly string[] = [],
 ): Projection<T>["needsYou"][number] | null {
-  const rows = focusNeeds(
-    projection.needsYou,
-    (id) => id !== null && prioritized.includes(id),
-  ).shown;
+  const { rows } = selectUpNext(projection, {
+    recaps: {},
+    prioritized: new Set(prioritized),
+  });
   if (rows.length === 0) return null;
   const index = threadId
     ? rows.findIndex((row) => row.thread.id === threadId)

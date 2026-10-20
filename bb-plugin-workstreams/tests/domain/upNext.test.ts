@@ -36,6 +36,71 @@ describe("selectUpNext", () => {
     expect(upNext.focus.active).toBe(false);
   });
 
+  it.each([false, true])(
+    "excludes nested waiting and recap threads with a needsYou override of %s",
+    (overrideNeedsYou) => {
+      const projection = projectWorkstreams(
+        [
+          thread("root", { sectionId: "sec_a" }),
+          thread("child-ask", {
+            parentThreadId: "root",
+            hasPendingInteraction: true,
+          }),
+          thread("grandchild-recap", { parentThreadId: "child-ask" }),
+          thread("root-ask", {
+            sectionId: "sec_b",
+            hasPendingInteraction: true,
+          }),
+        ],
+        sections,
+        { now },
+      );
+      const upNext = selectUpNext(projection, {
+        needsYou: overrideNeedsYou ? projection.needsYou : undefined,
+        recaps: { root: {}, "child-ask": {}, "grandchild-recap": {} },
+        prioritized: new Set(["sec_a"]),
+        keep: () => true,
+      });
+      expect(ids(upNext.rows)).toEqual(["root-ask", "root"]);
+      expect(ids(upNext.focus.shown)).toEqual(["root-ask"]);
+      expect(ids(upNext.focus.elsewhere)).toEqual([]);
+      expect(upNext.focus.active).toBe(false);
+      expect(ids(upNext.recapRows)).toEqual(["root"]);
+      expect(projection.rowOf.get("child-ask")?.needsYou).toBe(true);
+    },
+  );
+
+  it.each(["missing", "archived", "hidden"])(
+    "excludes children whose parent is %s even at projection depth zero",
+    (parentState) => {
+      const projection = projectWorkstreams(
+        [
+          ...(parentState === "missing"
+            ? []
+            : [
+                thread("parent", {
+                  isArchived: parentState === "archived",
+                  isHidden: parentState === "hidden",
+                }),
+              ]),
+          thread("orphan-ask", {
+            parentThreadId: "parent",
+            hasPendingInteraction: true,
+          }),
+          thread("orphan-recap", { parentThreadId: "parent" }),
+        ],
+        sections,
+        { now },
+      );
+      expect(projection.rowOf.get("orphan-ask")?.depth).toBe(0);
+      const upNext = selectUpNext(projection, {
+        recaps: { "orphan-ask": {}, "orphan-recap": {} },
+        prioritized: new Set(),
+      });
+      expect(ids(upNext.rows)).toEqual([]);
+    },
+  );
+
   it("keeps snoozed threads out, taking their recaps with them", () => {
     const projection = projectWorkstreams(
       [

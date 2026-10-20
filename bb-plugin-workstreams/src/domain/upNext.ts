@@ -1,9 +1,9 @@
-/**
- * Which rows Up Next lists. The sidebar and the phone Home screen both show
- * the block, so they share this selection: threads waiting on the user (see
- * `focusNeeds` for prioritized focus), then every other thread whose agent
- * left a recap for its latest turn, newest first. Pure, so both surfaces and
- * tests agree on membership and order.
+/*
+ * The sidebar and phone Home screen share Up Next membership and ordering:
+ * top-level threads waiting on the user (see `focusNeeds` for prioritized
+ * focus), then other top-level threads with a recap for their latest turn,
+ * newest first. Parent links determine eligibility even when a parent is
+ * absent from the visible tree.
  */
 import {
   focusNeeds,
@@ -38,7 +38,9 @@ export function selectUpNext<T extends WorkstreamThread>(
   },
 ): UpNextSelection<T> {
   const focus = focusNeeds(
-    options.needsYou ?? projection.needsYou,
+    (options.needsYou ?? projection.needsYou).filter(
+      (row) => !row.thread.parentThreadId,
+    ),
     (id) => id !== null && options.prioritized.has(id),
     options.keep,
   );
@@ -48,7 +50,9 @@ export function selectUpNext<T extends WorkstreamThread>(
     ...projection.dormant,
   ]
     .flatMap((group) => group.rows)
-    .filter((row) => options.recaps[row.thread.id])
+    .filter(
+      (row) => !row.thread.parentThreadId && options.recaps[row.thread.id],
+    )
     .sort(
       (a, b) =>
         b.thread.latestAttentionAt - a.thread.latestAttentionAt ||

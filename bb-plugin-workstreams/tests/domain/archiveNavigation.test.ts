@@ -83,6 +83,53 @@ it("prefers Up Next and cycles through visible Up Next rows", () => {
   );
 });
 
+it("skips nested threads in Up Next navigation and after archiving", () => {
+  const projection = projectWorkstreams(
+    [
+      thread("root", { sectionId: "ws" }),
+      thread("child", {
+        parentThreadId: "root",
+        hasPendingInteraction: true,
+        latestAttentionAt: 400,
+      }),
+      thread("orphan", {
+        parentThreadId: "missing",
+        hasPendingInteraction: true,
+        latestAttentionAt: 300,
+      }),
+      thread("first", {
+        hasPendingInteraction: true,
+        latestAttentionAt: 200,
+      }),
+      thread("second", {
+        hasPendingInteraction: true,
+        latestAttentionAt: 100,
+      }),
+    ],
+    sections,
+    { now: 0 },
+  );
+  expect(nextUpNextThread(projection, null, ["ws"])?.thread.id).toBe("first");
+  expect(nextUpNextThread(projection, "first", ["ws"])?.thread.id).toBe(
+    "second",
+  );
+  expect(nextUpNextThreadAfterArchive(projection, "first", ["ws"])).toBe(
+    "second",
+  );
+  expect(
+    nextUpNextThreadAfterArchive(
+      {
+        ...projection,
+        needsYou: projection.needsYou.filter(
+          (row) => row.thread.id !== "second",
+        ),
+      },
+      "first",
+      ["ws"],
+    ),
+  ).toBeNull();
+});
+
 it("advances within Unfiled", () => {
   const projection = projectWorkstreams(
     [
