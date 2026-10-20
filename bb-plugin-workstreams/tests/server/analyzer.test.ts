@@ -178,60 +178,6 @@ describe("idle analysis", () => {
     expect((await state(w)).analysis.t1?.goal).toBe("Markdown viewer themes");
   });
 
-  it("asks for a settled topic again only when its own product's definitions change", async () => {
-    let topicId = "";
-    const w = await setup(() =>
-      JSON.stringify({
-        recap: "Building the viewer.",
-        state: "in_progress",
-        goal: "Markdown viewer themes",
-        subjectId: topicId,
-        proposed: null,
-      }),
-    );
-    const corpus = new TopicStore(openDatabase(w.bb));
-    topicId = corpus.create("Viewer", "Markdown viewer").id;
-    w.addThread("t1", { latestAttentionAt: 10, status: "idle" });
-    w.converse("t1", ["Add themes to the markdown viewer"]);
-    await w.harness.behavior.callRpc("refresh", null);
-    await w.harness.behavior.runCli(["analyze", "t1"]);
-    expect(corpus.assignment("t1").provenance).toBe("full");
-
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    let revision = 10;
-    // A turn with no new request and no agent report: only status is asked,
-    // unless the topic needs settling again.
-    const nextTurn = async () => {
-      const asked = analyses(w).length;
-      w.threads.set("t1", {
-        ...w.threads.get("t1")!,
-        latestAttentionAt: (revision += 10),
-      });
-      await idle(w, "t1");
-      await settle(6_000);
-      const prompts = analyses(w)
-        .slice(asked)
-        .map((call) => call.prompt);
-      expect(prompts).toHaveLength(1);
-      return prompts[0]!;
-    };
-    expect(await nextTurn()).not.toContain('"subjectId"');
-
-    // Topics under another product cannot move this thread.
-    const sync = corpus.create("Sync", "File sync");
-    corpus.create("Offline", "Offline mode", sync.id);
-    corpus.edit(sync.id, { description: "Two-way file sync" });
-    expect(await nextTurn()).not.toContain('"subjectId"');
-
-    // A subtopic of its own product might fit better.
-    corpus.create("Themes", "Color themes", topicId);
-    expect(await nextTurn()).toContain('"subjectId"');
-    // Settled against the new definitions, it is not asked again.
-    expect(await nextTurn()).not.toContain('"subjectId"');
-    corpus.edit(topicId, { description: "Markdown and HTML viewer" });
-    expect(await nextTurn()).toContain('"subjectId"');
-  });
-
   it("asks nothing when the agent reported a turn with no new request", async () => {
     const w = await setup(() =>
       JSON.stringify({

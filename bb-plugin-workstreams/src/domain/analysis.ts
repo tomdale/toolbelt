@@ -18,7 +18,7 @@ import {
 } from "./identity.ts";
 import {
   emptyObservations,
-  parseNameObservations,
+  nameObservationsSchema,
   type NameObservations,
 } from "./name-observations.ts";
 import { redact } from "./redact.ts";
@@ -478,8 +478,7 @@ const fullOutputSchema = z.object({
   goal: goalSchema.optional(),
   identity: identityCandidateSchema.nullable().catch(null).optional(),
   scopeShift: z.boolean().catch(false).optional(),
-  // Observations are advisory: unusable entries are dropped, never the result.
-  names: z.unknown().transform(parseNameObservations).optional(),
+  names: nameObservationsSchema.catch(emptyObservations).optional(),
 });
 
 export type FullAnalysisOutput = {

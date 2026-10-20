@@ -106,15 +106,8 @@ export class Analyzer {
         entities(): Entity[];
         assignment(threadId: string): TopicAssignment;
         basis(threadId: string): string | null;
-        /**
-         * The basis an automatic topic is settled from. It covers the topic
-         * definitions the thread depends on, so it differs per thread.
-         */
-        basisOf(
-          requests: readonly string[],
-          project: string | null,
-          threadId: string,
-        ): string;
+        /** The basis an automatic topic is settled from. */
+        basisOf(requests: readonly string[], project: string | null): string;
         project(projectId: string): Promise<string | null>;
         apply(
           threadId: string,
@@ -362,7 +355,6 @@ export class Analyzer {
       basis: topics.basisOf(
         context.requests.map((r) => r.text),
         project,
-        threadId,
       ),
       answer: value.topic,
     };
@@ -739,7 +731,6 @@ export class Analyzer {
     const basis = topics.basisOf(
       context.requests.map((r) => r.text),
       project,
-      thread.id,
     );
     if (
       assignment.provenance !== null &&

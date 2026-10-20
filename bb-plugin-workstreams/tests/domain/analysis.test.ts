@@ -127,35 +127,17 @@ describe("Full analysis", () => {
     }
   });
 
-  it("keeps the rest of a result, and its other names, when a name is malformed", () => {
+  it("keeps the observed products when the features are malformed", () => {
     const parsed = parseFullAnalysis(
       JSON.stringify({
         recap: "Done",
         state: "done",
-        names: {
-          products: ["Lumen"],
-          // The prompt asks for objects; a bare string is still a name.
-          features: ["Cache", { name: "Export", product: "Lumen" }, 5],
-        },
+        names: { products: ["Lumen"], features: ["Cache"] },
       }),
       { ...base, mode: "status" },
     );
     expect(parsed.status).toMatchObject({ recap: "Done", state: "done" });
-    expect(parsed.names).toEqual({
-      products: ["Lumen"],
-      features: [
-        { name: "Cache", product: null },
-        { name: "Export", product: "Lumen" },
-      ],
-    });
-    // A wholly unusable `names` is no names, and absent `names` likewise.
-    for (const names of [{ names: "Lumen" }, {}])
-      expect(
-        parseFullAnalysis(JSON.stringify({ recap: "Done", ...names }), {
-          ...base,
-          mode: "status",
-        }).names,
-      ).toEqual({ products: [], features: [] });
+    expect(parsed.names).toEqual({ products: ["Lumen"], features: [] });
   });
 
   it("asks whether scope shifted only for an inherited topic", () => {

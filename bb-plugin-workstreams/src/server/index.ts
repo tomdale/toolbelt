@@ -268,11 +268,11 @@ export default async function plugin(bb: BbPluginApi) {
       entities: () => topics.list(),
       assignment: (threadId) => topics.assignment(threadId),
       basis: (threadId) => topics.basis(threadId),
-      basisOf: (requests, project, threadId) =>
+      basisOf: (requests, project) =>
         topicBasis({
           requests,
           project,
-          definitions: topics.definitionKeyFor(threadId),
+          definitions: topics.definitionKey(),
           model: currentPrefs().analysis.fullModel,
         }),
       project: projectName,
