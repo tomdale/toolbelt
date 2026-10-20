@@ -139,6 +139,8 @@ export function Stepper({
       </button>
       <output
         aria-label={label}
+        aria-live="polite"
+        aria-atomic="true"
         className={cn(
           "text-center text-xs tabular-nums",
           size === "sm" ? "min-w-6" : "min-w-7",

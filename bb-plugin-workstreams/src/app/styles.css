@@ -887,25 +887,6 @@
   );
 }
 
-/*
- * The Workstream field in Automatic mode: ✦ marks the classifier's hand, a
- * destination it has produced shows in its color, and a manual pick keeps
- * the ordinary muted treatment. While a newer draft is classified the spark
- * pulses, as the suggestion's does.
- */
-[data-ws-workstream-control] .ws-spark {
-  color: var(--ws-magic);
-  font-size: 11px;
-  line-height: 1;
-}
-[data-ws-workstream-control][data-ws-auto][data-ws-destination] {
-  color: var(--ws-magic);
-  font-weight: 500;
-}
-[data-ws-workstream-control][data-ws-stale] .ws-spark {
-  animation: ws-spark-pulse 1.2s ease-in-out infinite;
-}
-
 /* The identity field shows classifier-owned values in the same magic color. */
 [data-ws-identity-control][data-ws-auto] {
   color: var(--ws-magic);
@@ -921,12 +902,6 @@
   font-size: 12px;
   color: var(--destructive);
 }
-@keyframes ws-spark-pulse {
-  50% { opacity: 0.35; }
-}
-@media (prefers-reduced-motion: reduce) {
-  [data-ws-workstream-control][data-ws-stale] .ws-spark { animation: none; }
-}
 
 /* A row with children and a status mark shows the disclosure chevron in
    place of the mark while hovered or focused. */
@@ -940,6 +915,14 @@
 .ws-row:hover .ws-has-disclosure > :not(.ws-disclosure),
 .ws-has-disclosure:has(> .ws-disclosure:focus-visible) > :not(.ws-disclosure) {
   opacity: 0;
+}
+@media (pointer: coarse) {
+  .ws-has-disclosure > .ws-disclosure {
+    inset: 50% auto auto 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
 }
 
 /* A question card drawn above the composer (src/app/question/QuestionCard.tsx)

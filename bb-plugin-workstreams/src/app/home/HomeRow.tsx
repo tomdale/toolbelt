@@ -92,6 +92,11 @@ export function HomeRow({
             ) : null}
           </span>
         ) : null}
+        {thread.isPinned ? (
+          <span className="ws-home-pin" role="img" aria-label="Pinned">
+            <Icon name="Pin" className="ws-home-pin-icon" />
+          </span>
+        ) : null}
         <span className="ws-home-text">
           <span className="ws-home-title">
             <ThreadTitle threadId={thread.id} />

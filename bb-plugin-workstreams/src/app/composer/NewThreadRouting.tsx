@@ -2,11 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useComposer, useRpc } from "@get-bb/plugin-sdk/app";
 import type { RpcContract } from "../../server/contract.ts";
 import type { Preview } from "../../server/preview.ts";
-import {
-  NewWork as NewWorkModel,
-  NewWorkContext,
-  type NewWorkState,
-} from "./new-work.ts";
+import { NewWork as NewWorkModel, type NewWorkState } from "./new-work.ts";
 import { useDebugMode } from "../debug/debug.ts";
 import { NewWorkDebug } from "./NewWorkDebug.tsx";
 import { createPortal } from "react-dom";
@@ -149,33 +145,27 @@ export function NewThreadRouting() {
   return checkedRoot && !model ? null : (
     <div ref={setRoot}>
       {model ? (
-        <NewWorkContext.Provider value={model}>
-          <div className="ws-native-new-thread-routing">
-            {pickerRow ? (
-              createPortal(picker, pickerRow)
-            ) : (
-              <div
-                className={
-                  compact
-                    ? "ws-route-strip"
-                    : "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3.5"
-                }
-              >
-                {picker}
-              </div>
-            )}
-            {state.error ? (
-              <p
-                key={state.errors}
-                role="alert"
-                className="ws-suggestion-error"
-              >
-                {state.error}
-              </p>
-            ) : null}
-            <DebugSection newWork={model} />
-          </div>
-        </NewWorkContext.Provider>
+        <div className="ws-native-new-thread-routing">
+          {pickerRow ? (
+            createPortal(picker, pickerRow)
+          ) : (
+            <div
+              className={
+                compact
+                  ? "ws-route-strip"
+                  : "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3.5"
+              }
+            >
+              {picker}
+            </div>
+          )}
+          {state.error ? (
+            <p key={state.errors} role="alert" className="ws-suggestion-error">
+              {state.error}
+            </p>
+          ) : null}
+          <DebugSection newWork={model} />
+        </div>
       ) : null}
     </div>
   );

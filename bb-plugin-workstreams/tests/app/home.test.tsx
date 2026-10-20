@@ -216,6 +216,21 @@ describe("Home screen", () => {
       expect(links(alpha)).toEqual(["Asking task", "Alpha one"]);
     });
 
+    it("shows the pin marker on pinned threads", async () => {
+      const slot = await mountHome({
+        threads: [
+          sidebarThread("pinned", {
+            sectionId: "sec_a",
+            title: "Pinned task",
+            isPinned: true,
+            latestAttentionAt: minutes(5),
+          }),
+        ],
+      });
+      const alpha = await slot.findByRole("region", { name: "Alpha" });
+      expect(within(alpha).getByLabelText("Pinned")).toBeTruthy();
+    });
+
     it("remembers what was opened on this device", async () => {
       const first = await mountHome({ threads: sample() });
       await first.findByRole("region", { name: "Workstreams" });

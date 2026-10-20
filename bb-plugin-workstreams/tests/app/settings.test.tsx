@@ -183,6 +183,11 @@ it("clamps the Recent stepper to 1–20 and hides it when Recent is off", async 
       slot.getByLabelText("threads shown", { selector: "output" }).textContent,
     ).toBe("20"),
   );
+  expect(
+    slot
+      .getByLabelText("threads shown", { selector: "output" })
+      .getAttribute("aria-live"),
+  ).toBe("polite");
   expect(plus).toHaveProperty("disabled", true);
   fireEvent.click(recent);
   await waitFor(() =>

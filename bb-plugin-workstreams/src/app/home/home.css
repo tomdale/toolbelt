@@ -141,6 +141,19 @@ section:has(> [data-bb-plugin-root] > [data-ws-home="hidden"]) {
   align-items: center;
   justify-content: center;
 }
+.ws-home-pin {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+}
+.ws-home-pin-icon {
+  width: 12px;
+  height: 12px;
+}
 /* BB's status glyphs and ours are drawn for 14px slots; a touch list reads
    them a little larger. */
 .ws-home-mark > * {

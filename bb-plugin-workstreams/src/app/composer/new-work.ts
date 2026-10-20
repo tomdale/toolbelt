@@ -3,7 +3,6 @@
  * analysis's preview of it while you type. The topic decides the workstream,
  * so the composer never asks for one.
  */
-import { createContext } from "react";
 import type { ComposerSelection } from "@get-bb/plugin-sdk/app";
 import type { Preview } from "../../server/preview.ts";
 import type { DraftSubjectProposal } from "../../domain/topics.ts";
@@ -77,17 +76,6 @@ export function identityDisplay(state: NewWorkState): {
     auto: true,
     selected: false,
     reason: null,
-  };
-}
-
-export function composerSummary(state: NewWorkState): {
-  topicLabel: string;
-  text: string;
-} {
-  const ident = state.identity ? state.identity.label : "No topic";
-  return {
-    topicLabel: ident,
-    text: `Concerning ${ident}`,
   };
 }
 
@@ -349,5 +337,3 @@ export class NewWork {
     }
   }
 }
-
-export const NewWorkContext = createContext<NewWork | null>(null);

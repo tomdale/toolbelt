@@ -45,8 +45,7 @@ import { UP_NEXT_LIMIT, selectUpNext } from "../../domain/upNext.ts";
 import { useWorkstreams } from "../useWorkstreams.ts";
 import { groupCollapseKey, useCollapsed } from "./useCollapsed.ts";
 import {
-  BAND_OPTIONS_KEY,
-  readBandOptions,
+  useBandOptions,
   type BandId,
   type BandOptions,
   type BandSort,
@@ -55,7 +54,6 @@ import {
 import { NameDialog, type NameRequest } from "./NameDialog.tsx";
 import { Row, hasStatusMark } from "./Row.tsx";
 import { RowMenu, type RowMenuHandlers } from "./RowMenu.tsx";
-import { GroupMenu } from "./GroupMenu.tsx";
 import { TraceInspector } from "../debug/Inspector.tsx";
 import {
   DropTarget,
@@ -175,25 +173,7 @@ export function WorkstreamsThreadList({
   const actions = experimental_useSidebarThreadActions();
   const navigate = useBbNavigate();
   const { isCollapsed, toggle } = useCollapsed();
-  const [bandOptions, setBandOptions] = useState(readBandOptions);
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        BAND_OPTIONS_KEY,
-        JSON.stringify(bandOptions),
-      );
-    } catch {
-      // Section preferences are a convenience; losing them is harmless.
-    }
-  }, [bandOptions]);
-  const updateBandOptions = (
-    section: BandId,
-    change: Partial<BandOptions[BandId]>,
-  ) =>
-    setBandOptions((current) => ({
-      ...current,
-      [section]: { ...current[section], ...change },
-    }));
+  const { bandOptions, updateBandOptions } = useBandOptions();
   const [nameRequest, setNameRequest] = useState<NameRequest | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAllNeeds, setShowAllNeeds] = useState(false);
@@ -466,6 +446,7 @@ export function WorkstreamsThreadList({
   };
   const contextOf = (row: ThreadRow, placement: Placement) => {
     if (placement === "group") return undefined;
+    if (placement === "archived") return workstreamName(row);
     if (placement !== "snoozed") return workstreamName(row);
     const snooze = ws.snoozeOf(row.thread);
     return snooze ? shortWake(snooze.until, now) : undefined;
@@ -487,49 +468,56 @@ export function WorkstreamsThreadList({
     showStatusSlot = true,
     depth = isOverlay(placement) ? 0 : row.depth,
     key = row.thread.id,
-  ) => (
-    <RowMenu
-      key={key}
-      thread={row.thread}
-      isRoot={isRoot(row, placement)}
-      workstreamId={row.workstreamId}
-      sections={sections}
-      handlers={handlers}
-      snooze={ws.snoozeOf(row.thread)}
-      morningHour={snoozePrefs.morningHour}
-      showArchive={placement !== "archived"}
-    >
-      <li ref={handle?.ref} {...handle?.listeners} className="list-none">
-        <Row
-          thread={row.thread}
-          depth={depth}
-          active={row.thread.id === activeThreadId}
-          now={now}
-          context={contextOf(row, placement)}
-          attention={placement === "needs-you"}
-          work={ws.work(row.thread)}
-          showStatusSlot={showStatusSlot}
-          showPin={placement === "group"}
-          subtitle={placement === "needs-you" ? askOf(row) : null}
-          snoozeAction={snoozeActionOf(row, placement)}
-          showArchive={placement !== "archived"}
-          disclosure={
-            placement !== "recent" && descendants.has(row.thread.id)
-              ? {
-                  expanded: !folded(placement, row.thread.id),
-                  toggle: () =>
-                    toggle(
-                      foldKey(placement, row.thread.id),
-                      foldDefault(placement),
-                    ),
-                }
-              : undefined
-          }
-          onNavigate={onNavigate}
-        />
-      </li>
-    </RowMenu>
-  );
+    contextOverride?: string | null,
+  ) => {
+    const context =
+      contextOverride === undefined
+        ? contextOf(row, placement)
+        : (contextOverride ?? undefined);
+    return (
+      <RowMenu
+        key={key}
+        thread={row.thread}
+        isRoot={isRoot(row, placement)}
+        workstreamId={row.workstreamId}
+        sections={sections}
+        handlers={handlers}
+        snooze={ws.snoozeOf(row.thread)}
+        morningHour={snoozePrefs.morningHour}
+        showArchive={placement !== "archived"}
+      >
+        <li ref={handle?.ref} {...handle?.listeners} className="list-none">
+          <Row
+            thread={row.thread}
+            depth={depth}
+            active={row.thread.id === activeThreadId}
+            now={now}
+            context={context}
+            attention={placement === "needs-you"}
+            work={ws.work(row.thread)}
+            showStatusSlot={showStatusSlot}
+            showPin={placement === "group"}
+            subtitle={placement === "needs-you" ? askOf(row) : null}
+            snoozeAction={snoozeActionOf(row, placement)}
+            showArchive={placement !== "archived"}
+            disclosure={
+              placement !== "recent" && descendants.has(row.thread.id)
+                ? {
+                    expanded: !folded(placement, row.thread.id),
+                    toggle: () =>
+                      toggle(
+                        foldKey(placement, row.thread.id),
+                        foldDefault(placement),
+                      ),
+                  }
+                : undefined
+            }
+            onNavigate={onNavigate}
+          />
+        </li>
+      </RowMenu>
+    );
+  };
   /**
    * An overlay row followed, when expanded, by its visible descendants,
    * indented relative to it.
@@ -1059,7 +1047,15 @@ export function WorkstreamsThreadList({
                               bandOptions.archived.sort,
                               ws.snoozeOf,
                             ).map((row) =>
-                              renderRow(row, "archived", undefined, false),
+                              renderRow(
+                                row,
+                                "archived",
+                                undefined,
+                                false,
+                                undefined,
+                                undefined,
+                                null,
+                              ),
                             )}
                           </ul>
                         )}
@@ -1402,7 +1398,6 @@ type GroupProps = {
   group: ThreadGroup;
   collapsed: boolean;
   toggle: () => void;
-  onRename?: () => void;
   onNewThread?: () => void;
   onTogglePriority?: () => void;
   muted?: boolean;
@@ -1421,7 +1416,6 @@ function WorkstreamGroup({
   group,
   collapsed,
   toggle,
-  onRename,
   onNewThread,
   onTogglePriority,
   muted,
@@ -1448,96 +1442,85 @@ function WorkstreamGroup({
         dropTarget && "bg-sidebar-accent/40 ring-1 ring-sidebar-ring",
       )}
     >
-      <GroupMenu
-        onRename={onRename}
-        onNewThread={onNewThread}
-        priority={
-          onTogglePriority
-            ? { prioritized: group.prioritized, toggle: onTogglePriority }
-            : undefined
-        }
+      <div
+        ref={handle?.ref}
+        {...handle?.listeners}
+        className="group/head flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-sidebar-accent/60"
       >
-        <div
-          ref={handle?.ref}
-          {...handle?.listeners}
-          className="group/head flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-sidebar-accent/60"
+        <button
+          type="button"
+          aria-expanded={group.total > 0 ? !collapsed : undefined}
+          onClick={group.total > 0 ? toggle : undefined}
+          className="flex min-w-0 flex-1 items-center gap-1 text-left"
         >
+          {group.total > 0 ? (
+            <Icon
+              name={collapsed ? "ChevronRight" : "ChevronDown"}
+              className="size-3 shrink-0 text-muted-foreground"
+            />
+          ) : null}
+          <WorkstreamName
+            name={group.name}
+            muted={muted}
+            className="text-[13px] font-semibold"
+          />
+        </button>
+        {onTogglePriority ? (
+          // Always shown on a prioritized workstream, where it is also the
+          // priority mark; elsewhere it appears on hover like New work.
           <button
             type="button"
-            aria-expanded={group.total > 0 ? !collapsed : undefined}
-            onClick={group.total > 0 ? toggle : undefined}
-            onDoubleClick={onRename}
-            className="flex min-w-0 flex-1 items-center gap-1 text-left"
+            aria-pressed={group.prioritized}
+            aria-label={
+              group.prioritized
+                ? `Remove priority from ${group.name}`
+                : `Prioritize ${group.name}`
+            }
+            title={group.prioritized ? "Remove priority" : "Prioritize"}
+            onClick={onTogglePriority}
+            className={cn(
+              "rounded p-0.5 hover:text-foreground focus-visible:opacity-100",
+              group.prioritized
+                ? "text-foreground/70"
+                : "text-muted-foreground opacity-0 group-hover/head:opacity-100",
+            )}
           >
-            {group.total > 0 ? (
-              <Icon
-                name={collapsed ? "ChevronRight" : "ChevronDown"}
-                className="size-3 shrink-0 text-muted-foreground"
-              />
-            ) : null}
-            <WorkstreamName
-              name={group.name}
-              muted={muted}
-              className="text-[13px] font-semibold"
-            />
+            <PriorityIcon filled={group.prioritized} className="size-3.5" />
           </button>
-          {onTogglePriority ? (
-            // Always shown on a prioritized workstream, where it is also the
-            // priority mark; elsewhere it appears on hover like New work.
-            <button
-              type="button"
-              aria-pressed={group.prioritized}
-              aria-label={
-                group.prioritized
-                  ? `Remove priority from ${group.name}`
-                  : `Prioritize ${group.name}`
-              }
-              title={group.prioritized ? "Remove priority" : "Prioritize"}
-              onClick={onTogglePriority}
-              className={cn(
-                "rounded p-0.5 hover:text-foreground focus-visible:opacity-100",
-                group.prioritized
-                  ? "text-foreground/70"
-                  : "text-muted-foreground opacity-0 group-hover/head:opacity-100",
-              )}
-            >
-              <PriorityIcon filled={group.prioritized} className="size-3.5" />
-            </button>
-          ) : null}
-          {onNewThread ? (
-            <button
-              type="button"
-              aria-label={`New work in ${group.name}`}
-              title={`New work in ${group.name}`}
-              onClick={onNewThread}
-              className={cn(
-                "rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:opacity-100 group-hover/head:opacity-100",
-                group.total > 0 && "opacity-0",
-              )}
-            >
-              <Icon name="Plus" className="size-3.5" />
-            </button>
-          ) : null}
-          {shows(prefs?.sidebar.waitingCount) && group.needsYou > 0 ? (
-            <span
-              className={cn(
-                "rounded-full px-1.5 text-[11px] font-medium tabular-nums transition-colors duration-300",
-                quietCount
-                  ? "bg-muted-foreground/15 text-muted-foreground"
-                  : "ws-amber-pill",
-              )}
-              title={`${group.needsYou} waiting on you`}
-            >
-              {group.needsYou}
-            </span>
-          ) : null}
-          {shows(prefs?.sidebar.threadCount) && group.total > 0 ? (
-            <span className="text-[11px] tabular-nums text-muted-foreground/70">
-              {group.total}
-            </span>
-          ) : null}
-        </div>
-      </GroupMenu>
+        ) : null}
+        {onNewThread ? (
+          <button
+            type="button"
+            aria-label={`New work in ${group.name}`}
+            title={`New work in ${group.name}`}
+            onClick={onNewThread}
+            className={cn(
+              "rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:opacity-100 group-hover/head:opacity-100",
+              group.total > 0 && "opacity-0",
+            )}
+          >
+            <Icon name="Plus" className="size-3.5" />
+          </button>
+        ) : null}
+        {shows(prefs?.sidebar.waitingCount) && group.needsYou > 0 ? (
+          <span
+            className={cn(
+              "rounded-full px-1.5 text-[11px] font-medium tabular-nums transition-colors duration-300",
+              quietCount
+                ? "bg-muted-foreground/15 text-muted-foreground"
+                : "ws-amber-pill",
+            )}
+            title={`${group.needsYou} waiting on you`}
+          >
+            {group.needsYou}
+          </span>
+        ) : null}
+        {shows(prefs?.sidebar.threadCount) && group.total > 0 ? (
+          <span className="text-[11px] tabular-nums text-muted-foreground/70">
+            {group.total}
+          </span>
+        ) : null}
+      </div>
       {collapsed ? null : <ul className="mt-0.5">{children}</ul>}
     </section>
   );

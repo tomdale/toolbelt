@@ -111,9 +111,11 @@ export function useSidebarDnd({
   const onDragOver = useCallback((event: DragOverEvent) => {
     const active = dataOf(event.active.data.current);
     const over = dataOf(event.over?.data.current);
+    // A thread's workstream follows its topic, so dragging over another
+    // workstream never makes it a valid destination.
     setDropGroupId(
       active?.type === "thread" && over && over.groupId !== active.groupId
-        ? over.groupId
+        ? null
         : null,
     );
   }, []);

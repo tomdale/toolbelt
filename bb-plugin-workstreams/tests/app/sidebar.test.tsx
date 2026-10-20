@@ -332,7 +332,7 @@ describe("thread list", () => {
         }),
         sidebarThread("arch-beta", {
           sectionId: "sec_b",
-          title: "Archived Beta task",
+          title: "Archived task",
           isArchived: true,
           archivedAt: 200,
         }),
@@ -382,7 +382,11 @@ describe("thread list", () => {
     ]);
     const beta = within(slot.getByRole("region", { name: "Archived Beta" }));
     fireEvent.click(beta.getByRole("button", { name: /Beta/ }));
-    expect(groupRows(slot, "Archived Beta")).toEqual(["Archived Beta task"]);
+    expect(groupRows(slot, "Archived Beta")).toEqual(["Archived task"]);
+    const betaRow = within(slot.getByRole("region", { name: "Archived Beta" }))
+      .getByRole("link", { name: "Archived task" })
+      .closest(".ws-row")!;
+    expect(betaRow.textContent).not.toContain("Beta");
     const unsorted = within(
       slot.getByRole("region", { name: "Archived Unfiled" }),
     );
@@ -1361,6 +1365,41 @@ describe("thread list", () => {
       expect(
         slot.inspection.sidebarActionCalls.some((c) => c.method === "open"),
       ).toBe(false);
+      slot.lifecycle.unmount();
+    } finally {
+      restore();
+    }
+  });
+
+  it("does not highlight another workstream when a cross-workstream drop is invalid", async () => {
+    const restore = layoutByRows();
+    try {
+      const slot = await mount(
+        [
+          sidebarThread("alpha", {
+            sectionId: "sec_a",
+            title: "Alpha task",
+            latestAttentionAt: 2,
+          }),
+          sidebarThread("beta", {
+            sectionId: "sec_b",
+            title: "Beta task",
+            latestAttentionAt: 1,
+          }),
+        ],
+        { settings: { showRecent: false } },
+      );
+      const link = slot.container.querySelector<HTMLAnchorElement>(
+        '[data-sidebar-thread-id="alpha"]',
+      )!;
+      const row = link.closest("li")!;
+      fireEvent.mouseDown(row, { button: 0, clientX: 10, clientY: 14 });
+      fireEvent.mouseMove(document, { clientX: 10, clientY: 42 });
+      expect(slot.container.querySelector("[data-drop-target]")).toBeNull();
+      fireEvent.mouseUp(document, { clientX: 10, clientY: 42 });
+      expect(
+        slot.inspection.rpcCalls.find((c) => c.method === "reorder"),
+      ).toBeUndefined();
       slot.lifecycle.unmount();
     } finally {
       restore();
