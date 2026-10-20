@@ -337,7 +337,7 @@ export function WorkstreamsThreadList({
     const plan = planDrop(drop, projection, sections, ws.server.order);
     if (plan.reorder) ws.reorder(plan.reorder).catch(report);
   };
-  const { contextProps, dropGroupId } = useSidebarDnd({
+  const { contextProps } = useSidebarDnd({
     containerRef: listRef,
     onDrop,
   });
@@ -445,8 +445,11 @@ export function WorkstreamsThreadList({
     };
   };
   const contextOf = (row: ThreadRow, placement: Placement) => {
-    if (placement === "group") return undefined;
-    if (placement === "archived") return workstreamName(row);
+    if (
+      placement === "group" ||
+      (placement === "archived" && bandOptions.archived.grouped)
+    )
+      return undefined;
     if (placement !== "snoozed") return workstreamName(row);
     const snooze = ws.snoozeOf(row.thread);
     return snooze ? shortWake(snooze.until, now) : undefined;
@@ -468,56 +471,49 @@ export function WorkstreamsThreadList({
     showStatusSlot = true,
     depth = isOverlay(placement) ? 0 : row.depth,
     key = row.thread.id,
-    contextOverride?: string | null,
-  ) => {
-    const context =
-      contextOverride === undefined
-        ? contextOf(row, placement)
-        : (contextOverride ?? undefined);
-    return (
-      <RowMenu
-        key={key}
-        thread={row.thread}
-        isRoot={isRoot(row, placement)}
-        workstreamId={row.workstreamId}
-        sections={sections}
-        handlers={handlers}
-        snooze={ws.snoozeOf(row.thread)}
-        morningHour={snoozePrefs.morningHour}
-        showArchive={placement !== "archived"}
-      >
-        <li ref={handle?.ref} {...handle?.listeners} className="list-none">
-          <Row
-            thread={row.thread}
-            depth={depth}
-            active={row.thread.id === activeThreadId}
-            now={now}
-            context={context}
-            attention={placement === "needs-you"}
-            work={ws.work(row.thread)}
-            showStatusSlot={showStatusSlot}
-            showPin={placement === "group"}
-            subtitle={placement === "needs-you" ? askOf(row) : null}
-            snoozeAction={snoozeActionOf(row, placement)}
-            showArchive={placement !== "archived"}
-            disclosure={
-              placement !== "recent" && descendants.has(row.thread.id)
-                ? {
-                    expanded: !folded(placement, row.thread.id),
-                    toggle: () =>
-                      toggle(
-                        foldKey(placement, row.thread.id),
-                        foldDefault(placement),
-                      ),
-                  }
-                : undefined
-            }
-            onNavigate={onNavigate}
-          />
-        </li>
-      </RowMenu>
-    );
-  };
+  ) => (
+    <RowMenu
+      key={key}
+      thread={row.thread}
+      isRoot={isRoot(row, placement)}
+      workstreamId={row.workstreamId}
+      sections={sections}
+      handlers={handlers}
+      snooze={ws.snoozeOf(row.thread)}
+      morningHour={snoozePrefs.morningHour}
+      showArchive={placement !== "archived"}
+    >
+      <li ref={handle?.ref} {...handle?.listeners} className="list-none">
+        <Row
+          thread={row.thread}
+          depth={depth}
+          active={row.thread.id === activeThreadId}
+          now={now}
+          context={contextOf(row, placement)}
+          attention={placement === "needs-you"}
+          work={ws.work(row.thread)}
+          showStatusSlot={showStatusSlot}
+          showPin={placement === "group"}
+          subtitle={placement === "needs-you" ? askOf(row) : null}
+          snoozeAction={snoozeActionOf(row, placement)}
+          showArchive={placement !== "archived"}
+          disclosure={
+            placement !== "recent" && descendants.has(row.thread.id)
+              ? {
+                  expanded: !folded(placement, row.thread.id),
+                  toggle: () =>
+                    toggle(
+                      foldKey(placement, row.thread.id),
+                      foldDefault(placement),
+                    ),
+                }
+              : undefined
+          }
+          onNavigate={onNavigate}
+        />
+      </li>
+    </RowMenu>
+  );
   /**
    * An overlay row followed, when expanded, by its visible descendants,
    * indented relative to it.
@@ -646,7 +642,6 @@ export function WorkstreamsThreadList({
           sectionRef={ref}
           style={style}
           handle={handle}
-          dropTarget={dropGroupId === group.id}
         >
           {renderTrees(group)}
         </WorkstreamGroup>
@@ -808,7 +803,6 @@ export function WorkstreamsThreadList({
                 sectionRef={ref}
                 collapsed={lowerCollapsed(projection.unsorted.id)}
                 toggle={() => lowerToggle(projection.unsorted.id)}
-                dropTarget={dropGroupId === projection.unsorted.id}
                 quietCount={focus.active}
                 muted
               >
@@ -1047,15 +1041,7 @@ export function WorkstreamsThreadList({
                               bandOptions.archived.sort,
                               ws.snoozeOf,
                             ).map((row) =>
-                              renderRow(
-                                row,
-                                "archived",
-                                undefined,
-                                false,
-                                undefined,
-                                undefined,
-                                null,
-                              ),
+                              renderRow(row, "archived", undefined, false),
                             )}
                           </ul>
                         )}
@@ -1408,7 +1394,6 @@ type GroupProps = {
   style?: CSSProperties;
   handle?: DragHandle;
   /** A thread from another group is being dragged over this one. */
-  dropTarget?: boolean;
   children: ReactNode;
 };
 
@@ -1423,7 +1408,6 @@ function WorkstreamGroup({
   sectionRef,
   style,
   handle,
-  dropTarget,
   children,
 }: GroupProps) {
   const { prefs } = usePrefs();
@@ -1436,11 +1420,7 @@ function WorkstreamGroup({
       aria-label={group.name}
       data-flip-key={`group:${group.id}`}
       data-prioritized={group.prioritized ? "" : undefined}
-      data-drop-target={dropTarget ? "" : undefined}
-      className={cn(
-        "rounded-md px-1",
-        dropTarget && "bg-sidebar-accent/40 ring-1 ring-sidebar-ring",
-      )}
+      className="rounded-md px-1"
     >
       <div
         ref={handle?.ref}

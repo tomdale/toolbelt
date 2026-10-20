@@ -1,7 +1,7 @@
 /**
  * Drag and drop for the sidebar: workstream headers reorder workstreams, and
- * a root thread's row reorders its whole tree within a group or drops it into
- * another group (a move). Children follow their root and never drag alone.
+ * a root thread's row reorders its whole tree within its topic-derived group.
+ * Children follow their root and never drag alone.
  *
  * Drags use mouse and touch sensors rather than pointer events so BB's
  * split drag, which starts from the row anchor's pointerdown and engages only
@@ -12,7 +12,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
   type CSSProperties,
   type ReactNode,
   type RefObject,
@@ -27,7 +26,6 @@ import {
   type CollisionDetection,
   type DndContextProps,
   type DragEndEvent,
-  type DragOverEvent,
   type DraggableSyntheticListeners,
   type Modifier,
 } from "@dnd-kit/core";
@@ -70,7 +68,7 @@ const collision: CollisionDetection = (args) => {
     activeType === "group"
       ? data?.type === "group" &&
         !!data.pinned === (active?.type === "group" && !!active.pinned)
-      : data !== undefined;
+      : active?.type === "thread" && data?.groupId === active.groupId;
   const hits = pointerWithin({
     ...args,
     droppableContainers: args.droppableContainers.filter((container) =>
@@ -88,9 +86,8 @@ const collision: CollisionDetection = (args) => {
 const verticalOnly: Modifier = ({ transform }) => ({ ...transform, x: 0 });
 
 /**
- * DndContext props for the list, plus the group a thread drag would move
- * into (for highlighting). `containerRef` bounds the list: a drop outside it
- * sideways belongs to BB's split drag, not a reorder.
+ * DndContext props for within-group reordering. `containerRef` bounds the
+ * list: a drop outside it sideways belongs to BB's split drag, not a reorder.
  */
 export function useSidebarDnd({
   containerRef,
@@ -98,31 +95,17 @@ export function useSidebarDnd({
 }: {
   containerRef: RefObject<HTMLElement | null>;
   onDrop: (drop: Drop) => void;
-}): { contextProps: DndContextProps; dropGroupId: string | null } {
+}): { contextProps: DndContextProps } {
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
     useSensor(TouchSensor, {
       activationConstraint: { delay: 250, tolerance: 6 },
     }),
   );
-  const [dropGroupId, setDropGroupId] = useState<string | null>(null);
   const suppressClick = useClickSuppression();
-
-  const onDragOver = useCallback((event: DragOverEvent) => {
-    const active = dataOf(event.active.data.current);
-    const over = dataOf(event.over?.data.current);
-    // A thread's workstream follows its topic, so dragging over another
-    // workstream never makes it a valid destination.
-    setDropGroupId(
-      active?.type === "thread" && over && over.groupId !== active.groupId
-        ? null
-        : null,
-    );
-  }, []);
 
   const onDragEnd = useCallback(
     (event: DragEndEvent) => {
-      setDropGroupId(null);
       suppressClick.end();
       const active = dataOf(event.active.data.current);
       const over = dataOf(event.over?.data.current);
@@ -161,18 +144,13 @@ export function useSidebarDnd({
   );
 
   return {
-    dropGroupId,
     contextProps: {
       sensors,
       collisionDetection: collision,
       modifiers: [verticalOnly],
       onDragStart: suppressClick.begin,
-      onDragOver,
       onDragEnd,
-      onDragCancel: () => {
-        setDropGroupId(null);
-        suppressClick.end();
-      },
+      onDragCancel: suppressClick.end,
     },
   };
 }
