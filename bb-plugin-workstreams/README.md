@@ -126,17 +126,16 @@ state, or organization settings change. It is completely deterministic and makes
 
 - **Capacity and contraction:** Driven by **Group capacity** (default `6`, range
   `2–100`) and **Contraction threshold** (default `3`, range `0` to
-  `capacity − 1`), counting **active roots** (`done` roots stay visible in their
-  workstream without adding expansion pressure):
-  - When a top-level topic's total active roots are at or below the contraction
+  `capacity − 1`), counting **visible, non-archived roots**, including `done`
+  roots:
+  - When a top-level topic's total visible roots are at or below the contraction
     threshold, all of its subtopics contract into the top-level workstream.
-  - When a workstream's active roots exceed capacity, the organizer splits out
-    child topics with the largest active subtrees into their own workstreams
+  - When a workstream's visible roots exceed capacity, the organizer splits out
+    child topics with the largest visible subtrees into their own workstreams
     (`Owner: Capability`).
   - Within capacity, a split is retained only when at least **two** workstreams
-    have active work; a completed-only residual group folds back into the parent
-    workstream.
-  - If the current grouping remains valid under the active-root counts and
+    have visible roots, including completed roots.
+  - If the current grouping remains valid under the visible-root counts and
     thresholds, it stays sticky across turns to avoid unnecessary movement.
 - **Section sync and cleanup:** Creates, renames, or removes Workstreams-owned
   BB sections, moves roots into their derived workstream, logs and reverts
@@ -388,8 +387,8 @@ Open **Settings → Workstreams** to configure:
 | **New threads**       | **Home project**                                   | `Don't work in a project`                   | Default project used for background worker fallback when a thread has no project.                                                                                              |
 | **New threads**       | **Suggestions while typing**                       | `On`                                        | Runs Quick analysis on composer drafts while typing.                                                                                                                           |
 | **New threads**       | **Quick analysis model**                           | `openai/gpt-6-luna-fast` (reasoning `none`) | Model used for composer draft previews and first-send Quick analysis (remains active when typing suggestions are off because first-send analysis still uses it).               |
-| **Organization**      | **Group capacity**                                 | `6` (`2–100`)                               | Active-root threshold before a topic splits into subtopic workstreams. Applies immediately.                                                                                    |
-| **Organization**      | **Contraction threshold**                          | `3` (`0` to `capacity − 1`)                 | Active-root count at or below which subtopic workstreams contract back into their parent product topic. Applies immediately.                                                   |
+| **Organization**      | **Group capacity**                                 | `6` (`2–100`)                               | Visible-root threshold (including done roots) before a topic splits into subtopic workstreams. Applies immediately.                                                            |
+| **Organization**      | **Contraction threshold**                          | `3` (`0` to `capacity − 1`)                 | Visible-root count (including done roots) at or below which subtopic workstreams contract back into their parent product topic. Applies immediately.                           |
 | **Advanced**          | **Analysis machine**                               | Automatic                                   | Enrolled BB machine used for gateway model calls when multiple machines are connected.                                                                                         |
 | **Advanced**          | **Debug mode**                                     | `Off`                                       | Records redacted model traces (`7` days / `1,000` records) and reveals **Observed names**, **Inspect** buttons, composer diagnostics, and Activity model-call rows.            |
 

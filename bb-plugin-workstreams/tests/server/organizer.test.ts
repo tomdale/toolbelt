@@ -151,7 +151,7 @@ describe("automatic update coordinator lifecycle", () => {
     expect(w.sections.some((s) => s.name === "Lantern")).toBe(false);
   });
 
-  it("done and return-to-active: done task has 0 expansion pressure; return-to-active restores pressure", async () => {
+  it("done and return-to-active: completion updates status counts without changing visible load", async () => {
     world = await fakeWorld();
     const w = world;
     const db = openDatabase(w.bb);
@@ -204,7 +204,7 @@ describe("automatic update coordinator lifecycle", () => {
     state = await rebuildOrg(w);
     expect(state.counts.activeRoots).toBe(1);
     expect(state.counts.completedRoots).toBe(3);
-    // Active count (1) <= collapseAt (3), so Shelves contracts into product Lantern
+    // Four visible roots fit within capacity, regardless of completion state.
     expect(state.groups).toHaveLength(1);
     expect(state.groups[0]!.name).toBe("Lantern");
     expect(state.groups[0]!.completedCount).toBe(3);

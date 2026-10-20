@@ -11,6 +11,72 @@ const rebuild = (w: NonNullable<typeof world>) =>
     action: "rebuild",
   }) as Promise<any>;
 describe("grouping regressions", () => {
+  it.each([1, 7])(
+    "includes %i done roots in capacity and contraction thresholds",
+    async (doneCount) => {
+      world = await fakeWorld();
+      const w = world;
+      const db = openDatabase(w.bb);
+      const topics = new TopicStore(db);
+      const p = topics.create("Product", "Product");
+      const f = topics.create("Feature", "Feature", p.id);
+      for (let i = 0; i < 7; i++) {
+        w.addThread(`t${i}`, {
+          status: "idle",
+          latestAttentionAt: 10,
+          archivedAt: i === 6 ? 20 : null,
+        });
+        topics.assign(`t${i}`, i < 3 ? p.id : f.id);
+        if (i >= 7 - doneCount) {
+          db.prepare(
+            "INSERT INTO ws_analysis(thread_id, revision, at, result) VALUES (?,10,10,?)",
+          ).run(
+            `t${i}`,
+            JSON.stringify({
+              revision: 10,
+              state: "done",
+              recap: "Done",
+              goal: null,
+              needsYou: null,
+              at: 10,
+              model: "test",
+            }),
+          );
+        }
+      }
+      const atCapacity = (await rebuild(w)).state;
+      expect(atCapacity.groups).toHaveLength(1);
+      expect(atCapacity.counts.totalRoots).toBe(6);
+
+      w.threads.get("t6")!.archivedAt = null;
+      const expanded = (await rebuild(w)).state;
+      expect(expanded.groups).toHaveLength(2);
+      expect(expanded.counts).toMatchObject({
+        totalRoots: 7,
+        activeRoots: 7 - doneCount,
+        completedRoots: doneCount,
+      });
+      expect(
+        expanded.groups.map((g: { sectionId: string }) => g.sectionId).sort(),
+      ).toEqual(
+        (await rebuild(w)).state.groups
+          .map((g: { sectionId: string }) => g.sectionId)
+          .sort(),
+      );
+
+      // Four visible roots keep the split even if every root is done.
+      for (const i of [0, 1, 3]) w.threads.get(`t${i}`)!.archivedAt = 20;
+      expect((await rebuild(w)).state.groups).toHaveLength(2);
+
+      // Only archiving down to the contraction threshold folds the groups.
+      w.threads.get("t4")!.archivedAt = 20;
+      const contracted = (await rebuild(w)).state;
+      expect(contracted.counts.totalRoots).toBe(3);
+      expect(contracted.groups).toEqual([
+        expect.objectContaining({ name: "Product", totalCount: 3 }),
+      ]);
+    },
+  );
   it("replans when completion changes while projection is fetching a live root", async () => {
     world = await fakeWorld();
     const w = world;
@@ -56,22 +122,32 @@ describe("grouping regressions", () => {
         "organization",
         null,
       )) as any;
-      expect(state.groups).toHaveLength(1);
-      expect(state.groups[0]).toMatchObject({
-        name: "Product",
-        completedCount: 4,
-        activeCount: 0,
-      });
+      expect(state.groups).toHaveLength(2);
+      expect(state.groups).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "Product",
+            completedCount: 2,
+            activeCount: 0,
+          }),
+          expect.objectContaining({
+            name: "Product: Feature",
+            completedCount: 2,
+            activeCount: 0,
+          }),
+        ]),
+      );
     });
     const writes = w.harness.inspection.sdk
       .callsTo("threads.update")
       .map((args) => (args[0] as { sectionId?: string }).sectionId);
     expect(writes).toHaveLength(4);
-    expect(
-      writes.every(
-        (id) => id === w.sections.find((s) => s.name === "Product")!.id,
-      ),
-    ).toBe(true);
+    for (let i = 0; i < 4; i++) {
+      const name = i < 2 ? "Product" : "Product: Feature";
+      expect(w.threads.get(`t${i}`)?.sectionId).toBe(
+        w.sections.find((s) => s.name === name)!.id,
+      );
+    }
   });
   it("applies a policy-only preference change without a forced rebuild", async () => {
     world = await fakeWorld();
@@ -98,7 +174,7 @@ describe("grouping regressions", () => {
       expect(state.groups).toHaveLength(2);
     });
   });
-  it("folds a completed-only parent and four active feature roots into one useful group", async () => {
+  it("counts completed roots when retaining a split above capacity", async () => {
     world = await fakeWorld();
     const w = world;
     const db = openDatabase(w.bb);
@@ -127,14 +203,26 @@ describe("grouping regressions", () => {
         );
     }
     const { state } = await rebuild(w);
-    expect(state.groups).toHaveLength(1);
-    expect(state.groups[0]).toMatchObject({
-      name: "Product",
-      activeCount: 4,
-      completedCount: 4,
-      totalCount: 8,
-      policyReason: expect.stringContaining("4 active"),
-    });
+    expect(state.groups).toHaveLength(2);
+    expect(state.groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Product",
+          activeCount: 0,
+          completedCount: 1,
+          totalCount: 1,
+        }),
+        expect.objectContaining({
+          name: "Product: Feature",
+          activeCount: 4,
+          completedCount: 3,
+          totalCount: 7,
+          policyReason: expect.stringContaining(
+            "7 visible roots drive grouping",
+          ),
+        }),
+      ]),
+    );
   });
   it("replans rather than applying a topic that changed while fetching a live root", async () => {
     world = await fakeWorld();

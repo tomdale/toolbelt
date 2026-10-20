@@ -137,8 +137,8 @@ export function deriveActiveEntityIds(input: RegroupInput): string[] {
         .map((id) => activeHome(id, prevProductActive, productEntities))
         .filter(Boolean),
     );
-    // A completed-only residual group does not make a split useful. Keep a
-    // split within capacity only when at least two groups have active work.
+    // Keep a split within capacity only when at least two groups have
+    // visible roots, including completed roots.
     if (totalProductCount <= capacity && occupiedHomes.size < 2) {
       selected.push(root.id);
       continue;

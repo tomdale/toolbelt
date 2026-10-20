@@ -85,15 +85,14 @@ Fresh user input clears the prior recap. Recap reminders remain configurable.
 ## 4. Organization
 
 The organizer runs after relevant facts or policy settings change. It groups
-topics using active-root counts and capacity, binds BB sections to topics, files
-roots accordingly, records outside moves and reverts them, and prunes unused
-discovered topics. Capacity and contraction settings participate in both
-snapshot fingerprints. A split within capacity remains useful only when at least
-two groups have active work; completed-only residual groups do not retain such a
-split. Completed threads remain navigable without contributing expansion
-pressure. Mutations validate their topic/policy plan, run through the serialized
-service queue, and are journaled. Visual collapse is separate per-client state
-keyed by stable topic identity.
+topics using visible, non-archived root counts and capacity, binds BB sections
+to topics, files roots accordingly, records outside moves and reverts them, and
+prunes unused discovered topics. Capacity and contraction settings participate
+in both snapshot fingerprints. A split within capacity remains useful only when
+at least two groups have visible roots. Completed roots contribute to capacity
+and contraction counts just like other visible roots. Mutations validate their
+topic/policy plan, run through the serialized service queue, and are journaled.
+Visual collapse is separate per-client state keyed by stable topic identity.
 
 The Organization page shows current organizer state, workstreams, counts, and
 agent-report coverage. `bb workstreams organization [--rebuild]` reports or

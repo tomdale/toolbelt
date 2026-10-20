@@ -279,7 +279,6 @@ export class Organizer {
 
       for (const root of roots) {
         const assignment = assignments[root.id];
-        const isCompleted = isCompletedMap.get(root.id) ?? false;
         if (
           assignment &&
           assignment.status === "assigned" &&
@@ -289,10 +288,7 @@ export class Organizer {
           if (rootAncestor) {
             visibleProductRoots.add(rootAncestor);
           }
-          if (!isCompleted) {
-            counts[assignment.entityId] =
-              (counts[assignment.entityId] ?? 0) + 1;
-          }
+          counts[assignment.entityId] = (counts[assignment.entityId] ?? 0) + 1;
         }
       }
 
@@ -759,7 +755,7 @@ export class Organizer {
       .filter((g) => g.totalCount > 0)
       .map((group) => ({
         ...group,
-        policyReason: `${group.activeCount} active roots drive grouping; ${group.completedCount} completed roots remain visible. Capacity ${policy.capacity}, contraction ${policy.collapseAt}. Splits within capacity require active work in at least two groups.`,
+        policyReason: `${group.totalCount} visible roots drive grouping (${group.activeCount} active, ${group.completedCount} completed). Capacity ${policy.capacity}, contraction ${policy.collapseAt}. Splits within capacity require visible roots in at least two groups.`,
       }));
 
     return {
