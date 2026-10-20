@@ -341,6 +341,8 @@ const MIGRATIONS = [
   // `quick` recorded a topic you chose as `selected`. It is still your choice:
   // read as automatic, it would be replaced by the next analysis.
   "UPDATE ws_corpus_subject SET source = 'manual' WHERE source = 'selected'",
+  // `classified` is the earlier name for an automatic topic, which is `full`.
+  "UPDATE ws_corpus_subject SET source = 'full' WHERE source = 'classified'",
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

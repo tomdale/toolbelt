@@ -28,10 +28,10 @@ async function setup(options: { onPrompt?: (prompt: string) => void } = {}) {
   const w = world;
   const section = w.addSection("Storage");
   const corpus = new TopicStore(openDatabase(w.bb));
-  const storage = corpus.remember("Storage", "Storage product", null, [
+  const storage = corpus.create("Storage", "Storage product", null, [
     "Warehouse",
   ]);
-  const shelves = corpus.remember("Shelves", "Shelves feature", storage.id, [
+  const shelves = corpus.create("Shelves", "Shelves feature", storage.id, [
     "Racks",
   ]);
   shelvesId = shelves.id;
@@ -202,7 +202,7 @@ describe("CLI topics commands", () => {
 
   it("topics merge merges source into target and preserves assignments", async () => {
     const { w, corpus, storage, shelves, rootThread } = await setup();
-    const other = corpus.remember("Legacy Shelves", "Old", null, ["OldRacks"]);
+    const other = corpus.create("Legacy Shelves", "Old", null, ["OldRacks"]);
 
     const mergeRes = await w.harness.behavior.runCli([
       "topics",
@@ -223,7 +223,7 @@ describe("CLI topics commands", () => {
 
     // Storage already has alias "Warehouse" in root scope.
     // Shelves is a child of Storage. Let's create an entity with an alias in Shelves' scope.
-    const sibling = corpus.remember(
+    const sibling = corpus.create(
       "Drawers",
       "Drawers feature",
       shelves.parentId,

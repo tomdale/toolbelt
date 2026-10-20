@@ -42,7 +42,7 @@ describe("TopicStore", () => {
   });
   it("records a proposal that restates existing ancestry under that ancestry", () => {
     const { corpus } = store();
-    const subagents = corpus.remember("Subagents", "Background workers");
+    const subagents = corpus.create("Subagents", "Background workers");
     const revision = corpus.revision();
     const workforest = corpus.rememberProposal({
       name: "Workforest",
@@ -80,17 +80,6 @@ describe("TopicStore", () => {
       }),
     ).toThrow(/Unknown topic parent/);
   });
-  it("rejects conflicting aliases on existing identities without changing storage", () => {
-    const { corpus } = store();
-    corpus.remember("Alpha", "first");
-    const beta = corpus.remember("Beta", "second");
-    const before = corpus.list();
-    expect(() => corpus.remember("Alpha", "changed", null, ["Beta"])).toThrow(
-      "alias",
-    );
-    expect(corpus.list()).toEqual(before);
-    expect(corpus.resolve("Beta")?.id).toBe(beta.id);
-  });
   it("adds its migration without breaking already-migrated storage", () => {
     const { host } = store();
     const migrate = host.bb.storage.migrate.bind(host.bb.storage);
@@ -124,7 +113,7 @@ describe("TopicStore", () => {
     ).toBeTruthy();
   });
 
-  it("keeps a topic you chose before sources were renamed as manual", () => {
+  it("renames the topic sources of earlier storage", () => {
     // Not `store()`, which would already apply every migration.
     const host = createFakePluginHost({ pluginId: `legacy-${hosts.length}` });
     hosts.push(host);
@@ -151,6 +140,16 @@ describe("TopicStore", () => {
     spy.mockRestore();
 
     const corpus = new TopicStore(openDatabase(host.bb));
+    expect(
+      db
+        .prepare("SELECT thread_id, source FROM ws_corpus_subject ORDER BY 1")
+        .all(),
+    ).toEqual([
+      { thread_id: "chosen", source: "manual" },
+      { thread_id: "classified", source: "full" },
+      { thread_id: "cleared", source: "manual" },
+      { thread_id: "quick", source: "quick" },
+    ]);
     expect(corpus.assignment("chosen")).toMatchObject({
       entityId: entity.id,
       provenance: "manual",
@@ -173,12 +172,12 @@ describe("TopicStore", () => {
 
   it("resolves aliases and scopes matching names by explicit parent", () => {
     const { corpus } = store();
-    const left = corpus.remember("Platform", "", null);
-    const right = corpus.remember("Commerce", "", null);
-    const leftFeature = corpus.remember("Settings", "left", left.id, [
+    const left = corpus.create("Platform", "", null);
+    const right = corpus.create("Commerce", "", null);
+    const leftFeature = corpus.create("Settings", "left", left.id, [
       "Preferences",
     ]);
-    const rightFeature = corpus.remember("Settings", "right", right.id);
+    const rightFeature = corpus.create("Settings", "right", right.id);
     expect(corpus.resolve(" preferences ", left.id)?.id).toBe(leftFeature.id);
     expect(corpus.resolve("Settings", right.id)?.id).toBe(rightFeature.id);
     expect(corpus.resolve("Settings", null)).toBeNull();
@@ -187,18 +186,16 @@ describe("TopicStore", () => {
   it("rejects unknown parents and invalid cyclic parent updates", () => {
     const { host, corpus } = store();
     const db = openDatabase(host.bb);
-    expect(() => corpus.remember("Orphan", "", "missing")).toThrow(
+    expect(() => corpus.create("Orphan", "", "missing")).toThrow(
       /Unknown topic parent/,
     );
-    const root = corpus.remember("Root", "");
-    const child = corpus.remember("Child", "", root.id);
+    const root = corpus.create("Root", "");
+    const child = corpus.create("Child", "", root.id);
     db.prepare("UPDATE ws_corpus_entity SET parent_id = ? WHERE id = ?").run(
       child.id,
       root.id,
     );
-    expect(() => corpus.remember("Nested", "", root.id)).toThrow(
-      /parent cycle/,
-    );
+    expect(() => corpus.create("Nested", "", root.id)).toThrow(/parent cycle/);
     expect(corpus.list().find((item) => item.id === child.id)?.parentId).toBe(
       root.id,
     );
@@ -209,11 +206,11 @@ describe("TopicStore", () => {
     expect(() => corpus.assign("thread-x", "missing")).toThrow(
       /Unknown topic/,
     );
-    const broad = corpus.remember("Engineering", "");
-    const specific = corpus.remember("Billing migration", "", broad.id);
+    const broad = corpus.create("Engineering", "");
+    const specific = corpus.create("Billing migration", "", broad.id);
     corpus.bindGroup("section-engineering", broad.id);
     corpus.assign("thread-x", specific.id);
-    expect(corpus.subjects()).toEqual(new Map([["thread-x", specific.id]]));
+    expect(corpus.assignment("thread-x").entityId).toBe(specific.id);
   });
 
   it("assignment doesn't move native thread placement", () => {
@@ -223,7 +220,7 @@ describe("TopicStore", () => {
       "INSERT INTO ws_seen_thread(thread_id, section_id, parent_thread_id, title) VALUES ('t1', 'sec-home', NULL, 'Thread 1')",
     ).run();
 
-    const entity = corpus.remember("Feature", "Feature desc");
+    const entity = corpus.create("Feature", "Feature desc");
     const assignment = corpus.assign("t1", entity.id);
 
     expect(assignment.status).toBe("assigned");
@@ -243,7 +240,7 @@ describe("TopicStore", () => {
       "INSERT INTO ws_seen_thread(thread_id, section_id, parent_thread_id, title) VALUES ('t1', 'sec-old', NULL, 'Thread 1')",
     ).run();
 
-    const entity = corpus.remember("Feature", "Feature desc");
+    const entity = corpus.create("Feature", "Feature desc");
     corpus.assign("t1", entity.id);
 
     // Simulate moving thread native section
@@ -258,11 +255,11 @@ describe("TopicStore", () => {
 
   it("merges update references across subjects, groups, and children", () => {
     const { corpus } = store();
-    const source = corpus.remember("OldAlpha", "Old alpha feature", null, [
+    const source = corpus.create("OldAlpha", "Old alpha feature", null, [
       "LegacyAlpha",
     ]);
-    const target = corpus.remember("NewBeta", "New beta feature");
-    const child = corpus.remember("ChildFeature", "Child of alpha", source.id);
+    const target = corpus.create("NewBeta", "New beta feature");
+    const child = corpus.create("ChildFeature", "Child of alpha", source.id);
 
     corpus.assign("t-alpha", source.id);
     corpus.bindGroup("sec-alpha", source.id);
@@ -297,13 +294,9 @@ describe("TopicStore", () => {
 
   it("rejects cycles on reparenting", () => {
     const { corpus } = store();
-    const root = corpus.remember("Root", "Root item");
-    const child = corpus.remember("Child", "Child item", root.id);
-    const grandchild = corpus.remember(
-      "Grandchild",
-      "Grandchild item",
-      child.id,
-    );
+    const root = corpus.create("Root", "Root item");
+    const child = corpus.create("Child", "Child item", root.id);
+    const grandchild = corpus.create("Grandchild", "Grandchild item", child.id);
 
     // Reparent self
     expect(() => corpus.reparent(child.id, child.id)).toThrow(
@@ -321,7 +314,7 @@ describe("TopicStore", () => {
 
   it("keeps manual selections stable across restart and analyses", () => {
     const { host, corpus } = store();
-    const entity = corpus.remember("Billing", "Billing feature");
+    const entity = corpus.create("Billing", "Billing feature");
     corpus.assign("t1", entity.id, { provenance: "manual" });
     expect(
       corpus.applyAnalysis(
@@ -355,8 +348,8 @@ describe("TopicStore", () => {
       "INSERT INTO ws_seen_thread(thread_id, section_id, parent_thread_id, title) VALUES ('t-grandchild', NULL, 't-child', 'Grandchild')",
     ).run();
 
-    const entity1 = corpus.remember("Feature 1", "First feature");
-    const entity2 = corpus.remember("Feature 2", "Second feature");
+    const entity1 = corpus.create("Feature 1", "First feature");
+    const entity2 = corpus.create("Feature 2", "Second feature");
 
     // Assign root
     corpus.assign("t-root", entity1.id);
@@ -385,9 +378,9 @@ describe("TopicStore", () => {
 
   it("validates scoped name and alias collisions on rename and reparent", () => {
     const { corpus } = store();
-    const root = corpus.remember("Root", "");
-    const a = corpus.remember("Alpha", "first", root.id, ["AliasA"]);
-    const b = corpus.remember("Beta", "second", root.id);
+    const root = corpus.create("Root", "");
+    const a = corpus.create("Alpha", "first", root.id, ["AliasA"]);
+    const b = corpus.create("Beta", "second", root.id);
 
     // Renaming to existing name under same parent fails
     expect(() => corpus.rename(b.id, "Alpha")).toThrow(/conflicts/);
@@ -396,8 +389,8 @@ describe("TopicStore", () => {
     expect(() => corpus.rename(b.id, "AliasA")).toThrow(/conflicts/);
 
     // Other parent scope
-    const otherRoot = corpus.remember("OtherRoot", "");
-    const c = corpus.remember("Alpha", "third", otherRoot.id);
+    const otherRoot = corpus.create("OtherRoot", "");
+    const c = corpus.create("Alpha", "third", otherRoot.id);
 
     // Reparenting to root where "Alpha" already exists fails
     expect(() => corpus.reparent(c.id, root.id)).toThrow(/conflicts/);
@@ -405,8 +398,8 @@ describe("TopicStore", () => {
 
   it("updates metadata with validation and bumps revision", () => {
     const { corpus } = store();
-    const root = corpus.remember("Platform", "Base platform");
-    const feature = corpus.remember("Auth", "Initial auth", root.id, ["Login"]);
+    const root = corpus.create("Platform", "Base platform");
+    const feature = corpus.create("Auth", "Initial auth", root.id, ["Login"]);
     const revBefore = corpus.revision();
 
     // Update description and aliases
@@ -425,13 +418,13 @@ describe("TopicStore", () => {
     ).toThrow(/alias must differ from its name/);
 
     // Sibling conflict check
-    corpus.remember("Billing", "Billing feature", root.id, ["Payments"]);
+    corpus.create("Billing", "Billing feature", root.id, ["Payments"]);
     expect(() =>
       corpus.updateMetadata(feature.id, { aliases: ["Payments"] }),
     ).toThrow(/already resolves to an entity/);
   });
 
-  it("enforces strict creation vs discovery remember upsert", () => {
+  it("rejects a duplicate name or a colliding alias on creation", () => {
     const { corpus } = store();
     corpus.create("Alpha", "Initial alpha");
 
@@ -444,11 +437,6 @@ describe("TopicStore", () => {
     expect(() => corpus.create("Beta", "Beta", null, ["Alpha"])).toThrow(
       /already resolves/,
     );
-
-    // Discovery remember upserts description and aliases
-    const updated = corpus.remember("Alpha", "Updated alpha", null, ["A1"]);
-    expect(updated.description).toBe("Updated alpha");
-    expect(updated.aliases).toContain("A1");
   });
 
   it("atomic updateMetadata validates collisions, supports no-op, and updates revision", () => {

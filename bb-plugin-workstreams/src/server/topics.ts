@@ -108,7 +108,11 @@ export class TopicStore {
     return null;
   }
 
-  private rememberInternal(
+  /**
+   * Inserts a topic Workstreams discovered. `rememberProposal` resolves a
+   * proposal against the tree first, so only names the tree lacks reach here.
+   */
+  private insertDiscovered(
     name: string,
     description: string,
     parentId: string | null = null,
@@ -119,37 +123,6 @@ export class TopicStore {
     if (parentId !== null && !this.getById(parentId))
       throw new Error(`Unknown topic parent: ${parentId}`);
     this.assertParentChainAcyclic(parentId);
-
-    const existing = this.resolve(cleanName, parentId);
-    if (existing) {
-      const discoveredAlias =
-        normalize(existing.name) === normalize(cleanName) ? [] : [cleanName];
-      const mergedAliases = cleanAliases([
-        ...existing.aliases,
-        ...discoveredAlias,
-        ...aliases,
-      ]);
-      if (
-        mergedAliases.some((alias) => {
-          const other = this.resolve(alias, parentId);
-          return other && other.id !== existing.id;
-        })
-      )
-        throw new Error(
-          "Topic alias already resolves to another topic in this parent scope",
-        );
-      const nextDescription = description.trim() || existing.description;
-      this.db
-        .prepare(
-          "UPDATE ws_corpus_entity SET description = ?, aliases = ? WHERE id = ?",
-        )
-        .run(nextDescription, JSON.stringify(mergedAliases), existing.id);
-      return {
-        ...existing,
-        description: nextDescription,
-        aliases: mergedAliases,
-      };
-    }
 
     const cleanDescription = description.trim();
     const cleanAliasList = cleanAliases(aliases);
@@ -244,24 +217,6 @@ export class TopicStore {
     })();
   }
 
-  remember(
-    name: string,
-    description: string,
-    parentId: string | null = null,
-    aliases: readonly string[] = [],
-  ): Topic {
-    return this.db.transaction(() => {
-      const entity = this.rememberInternal(
-        name,
-        description,
-        parentId,
-        aliases,
-      );
-      this.bumpRevision();
-      return entity;
-    })();
-  }
-
   /**
    * Records a discovered topic under its deepest existing ancestor, resolved
    * against the Catalog as it is now: it may have changed since the proposal
@@ -277,12 +232,12 @@ export class TopicStore {
       const proposal = resolved.proposed;
       let parent = proposal.parentId ?? null;
       for (const ancestor of proposal.ancestors ?? [])
-        parent = this.rememberInternal(
+        parent = this.insertDiscovered(
           ancestor.name,
           ancestor.description,
           parent,
         ).id;
-      const entity = this.rememberInternal(
+      const entity = this.insertDiscovered(
         proposal.name,
         proposal.description,
         parent,
@@ -695,17 +650,6 @@ export class TopicStore {
       if (removed.length) this.bumpRevision();
       return removed;
     })();
-  }
-
-  subjects(): Map<string, string> {
-    const rows = this.db
-      .prepare(
-        "SELECT thread_id, entity_id FROM ws_corpus_subject WHERE entity_id IS NOT NULL ORDER BY thread_id",
-      )
-      .all() as { thread_id: string; entity_id: string }[];
-    return new Map(
-      rows.map(({ thread_id, entity_id }) => [thread_id, entity_id]),
-    );
   }
 
   edit(
