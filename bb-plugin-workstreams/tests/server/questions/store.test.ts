@@ -150,6 +150,32 @@ describe("durable questions", () => {
     await host.harness.lifecycle.dispose();
   });
 
+  it("dismisses a recovered question without sending a message", async () => {
+    const { host, send, store } = setup();
+    const id = store().open("thread", {
+      questions: [
+        {
+          id: "q0",
+          prompt: "Ship it?",
+          shortLabel: "Ship",
+          options: [],
+          multiSelect: false,
+          allowFreeText: true,
+        },
+      ],
+    });
+    store().interrupted(id);
+    await store().recover("thread", id, null, true);
+    expect(send).not.toHaveBeenCalled();
+    expect(store().pending("thread")).toBeNull();
+    expect((await store().history("thread"))[0]).toMatchObject({
+      id,
+      status: "dismissed",
+      result: null,
+    });
+    await host.harness.lifecycle.dispose();
+  });
+
   it("retains questions on send failure and rejects empty answers", async () => {
     const { host, send, store } = setup();
     const payload = {
@@ -170,20 +196,15 @@ describe("durable questions", () => {
       store().recover("thread", id, { answers: {} }, false),
     ).rejects.toThrow("at least one");
     send.mockRejectedValueOnce(new Error("offline"));
-    await expect(store().recover("thread", id, null, true)).rejects.toThrow(
-      "offline",
-    );
+    await expect(
+      store().recover(
+        "thread",
+        id,
+        { answers: { q0: { selected: [], freeText: "Yes" } } },
+        false,
+      ),
+    ).rejects.toThrow("offline");
     expect(store().pending("thread")?.id).toBe(id);
-    await store().recover("thread", id, null, true);
-    expect(send.mock.calls.at(-1)).toEqual([
-      expect.objectContaining({
-        input: [
-          expect.objectContaining({
-            text: expect.stringContaining("not an answer or approval"),
-          }),
-        ],
-      }),
-    ]);
     await host.harness.lifecycle.dispose();
   });
 });

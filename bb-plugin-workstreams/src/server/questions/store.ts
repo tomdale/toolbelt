@@ -270,9 +270,22 @@ export class QuestionStore {
       throw new Error("This question is no longer pending");
     if (!pending.recoverable)
       throw new Error("Answer the active question card instead");
-    const submitted = dismiss ? null : interactionResponseSchema.parse(value);
+    if (dismiss) {
+      // Dismissal only clears the card. The user's next message reaches the
+      // agent as an ordinary turn, so nothing is sent on their behalf.
+      const dismissed = this.db
+        .prepare(
+          "UPDATE ws_question SET status = 'resolved', result = NULL, outcome = 'dismissed' WHERE id = ? AND status = 'pending'",
+        )
+        .run(id);
+      if (!dismissed.changes)
+        throw new Error("This answer is already being sent");
+      this.live.delete(id);
+      this.bb.realtime.publish("changed", {});
+      return;
+    }
+    const submitted = interactionResponseSchema.parse(value);
     if (
-      submitted &&
       !Object.values(submitted.answers).some(
         (answer) =>
           answer.selected.length > 0 ||
@@ -290,53 +303,47 @@ export class QuestionStore {
       .run(id);
     if (!claim.changes) throw new Error("This answer is already being sent");
     try {
-      const thread = submitted
-        ? await this.bb.sdk.threads.get({ threadId })
-        : null;
-      const answer = submitted
-        ? await copyAnswerAttachments(this.bb, thread!.projectId, submitted)
-        : null;
-      const result = answer ? buildToolResult(pending.payload, answer) : null;
-      if (result && Object.keys(result.answers).length === 0)
+      const thread = await this.bb.sdk.threads.get({ threadId });
+      const answer = await copyAnswerAttachments(
+        this.bb,
+        thread.projectId,
+        submitted,
+      );
+      const result = buildToolResult(pending.payload, answer);
+      if (Object.keys(result.answers).length === 0)
         throw new Error("Please answer at least one question");
-      const images =
-        !dismiss && answer
-          ? await Promise.all(
-              Object.values(answer.answers)
-                .flatMap((entry) => entry.attachments ?? [])
-                .filter(
-                  (attachment) =>
-                    attachment.type === "localImage" &&
-                    !attachment.mimeType?.startsWith("image/svg"),
-                )
-                .map(async (attachment) => {
-                  const content = await this.bb.sdk.projects.attachments.read({
-                    projectId:
-                      attachment.sourceProjectId ?? attachment.projectId,
-                    path: attachment.sourcePath ?? attachment.path,
-                  });
-                  return {
-                    type: "image" as const,
-                    url: `data:${content.mimeType};base64,${Buffer.from(content.bytes).toString("base64")}`,
-                  };
-                }),
-            )
-          : [];
+      const images = await Promise.all(
+        Object.values(answer.answers)
+          .flatMap((entry) => entry.attachments ?? [])
+          .filter(
+            (attachment) =>
+              attachment.type === "localImage" &&
+              !attachment.mimeType?.startsWith("image/svg"),
+          )
+          .map(async (attachment) => {
+            const content = await this.bb.sdk.projects.attachments.read({
+              projectId: attachment.sourceProjectId ?? attachment.projectId,
+              path: attachment.sourcePath ?? attachment.path,
+            });
+            return {
+              type: "image" as const,
+              url: `data:${content.mimeType};base64,${Buffer.from(content.bytes).toString("base64")}`,
+            };
+          }),
+      );
       await this.bb.sdk.threads.send({
         threadId,
         mode: "auto",
         input: [
           {
             type: "text",
-            text: dismiss
-              ? `I dismissed the recovered question: ${pending.payload.questions.map((q) => q.prompt).join("; ")}. This is not an answer or approval. Keep dependent work blocked.`
-              : `My answer to your question (recovered after the question tool was interrupted):\n${JSON.stringify(result)}\nUse this as my answer and resume the work that depended on it.`,
+            text: `My answer to your question (recovered after the question tool was interrupted):\n${JSON.stringify(result)}\nUse this as my answer and resume the work that depended on it.`,
             mentions: [],
           },
           ...images,
         ],
       });
-      this.finish(id, result, dismiss ? "dismissed" : "answered");
+      this.finish(id, result, "answered");
     } catch (error) {
       this.db
         .prepare(
