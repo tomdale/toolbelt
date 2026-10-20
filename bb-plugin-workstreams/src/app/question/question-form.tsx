@@ -260,7 +260,9 @@ function QuestionInputBlock({
         <div
           role="heading"
           aria-level={2}
-          className={cn("font-medium tracking-[-0.006em]", PROMPT_CLASS)}
+          // The question carries the card's extra top spacing, so question
+          // tabs, when shown, sit close to the card's top edge.
+          className={cn("pt-2 font-medium tracking-[-0.006em]", PROMPT_CLASS)}
         >
           <Markdown content={question.prompt} className={MARKDOWN_CLASS} />
         </div>

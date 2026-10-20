@@ -27,7 +27,7 @@ import type { JsonValue } from "@get-bb/plugin-sdk";
 
 /** The recap card's frame (see RecapCard.tsx) in the attention accent. */
 const CARD_CLASS =
-  "@container/question relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-amber-400 bg-amber-50/40 px-4 pb-3 pt-5 text-foreground dark:border-amber-500/70 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(27.9%_0.077_45.635))]";
+  "@container/question relative mx-auto mb-3 w-full min-w-0 max-w-4xl rounded-lg border border-amber-400 bg-amber-50/40 px-4 py-3 text-foreground dark:border-amber-500/70 dark:bg-[color-mix(in_oklab,var(--background)_85%,oklch(27.9%_0.077_45.635))]";
 
 /** Banner anchors by thread; one composer per thread shows banners. */
 const anchors = new Map<string, HTMLElement>();
@@ -100,7 +100,6 @@ export function QuestionAnchor() {
           aria-label="Question needs your answer"
           data-ws-question-card=""
         >
-          <StateLine>Restored after interruption</StateLine>
           <QuestionForm
             key={pending.id}
             persistenceKey={pending.id}
@@ -114,17 +113,6 @@ export function QuestionAnchor() {
         </div>
       ) : null}
     </div>
-  );
-}
-
-function StateLine({ children }: { children: string }) {
-  return (
-    <p
-      role="status"
-      className="mb-0.5 text-xs font-medium leading-[1.6] text-amber-700 dark:text-amber-300"
-    >
-      {children}
-    </p>
   );
 }
 

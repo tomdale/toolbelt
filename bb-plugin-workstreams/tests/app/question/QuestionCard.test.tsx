@@ -140,9 +140,10 @@ describe("question interaction adapter", () => {
         },
       },
     );
-    await composer.findByText("Restored after interruption");
     expect(
-      composer.getByRole("region", { name: "Question needs your answer" }),
+      await composer.findByRole("region", {
+        name: "Question needs your answer",
+      }),
     ).toBeTruthy();
     expect(
       getButtonByText(composer, "SQLite").getAttribute("aria-pressed"),
