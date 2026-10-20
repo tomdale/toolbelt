@@ -140,9 +140,10 @@ describe("question interaction adapter", () => {
         },
       },
     );
-    await composer.findByText(
-      "Needs your answer · Restored after interruption",
-    );
+    await composer.findByText("Restored after interruption");
+    expect(
+      composer.getByRole("region", { name: "Question needs your answer" }),
+    ).toBeTruthy();
     expect(
       getButtonByText(composer, "SQLite").getAttribute("aria-pressed"),
     ).toBe("true");
@@ -302,9 +303,13 @@ describe("question interaction adapter", () => {
     sessionStorage.clear();
   });
 
-  it("shows an awaiting-answer state", () => {
+  it("marks the awaiting-answer state with the question's accent, not a label", () => {
     const slot = render(singleSelect);
-    expect(slot.getByRole("status").textContent).toBe("Needs your answer");
+    expect(slot.queryByRole("status")).toBeNull();
+    expect(slot.queryByText("Needs your answer")).toBeNull();
+    expect(slot.getByRole("heading", { level: 2 }).className).toContain(
+      "text-amber-700",
+    );
   });
 
   it("accepts freeform text in the compact answer field", () => {

@@ -97,10 +97,10 @@ export function QuestionAnchor() {
         <div
           className={CARD_CLASS}
           role="region"
-          aria-label="Question"
+          aria-label="Question needs your answer"
           data-ws-question-card=""
         >
-          <StateLine>Needs your answer · Restored after interruption</StateLine>
+          <StateLine>Restored after interruption</StateLine>
           <QuestionForm
             key={pending.id}
             persistenceKey={pending.id}
@@ -121,7 +121,7 @@ function StateLine({ children }: { children: string }) {
   return (
     <p
       role="status"
-      className="mb-0.5 text-[11px] font-medium leading-[1.6] text-amber-700 dark:text-amber-300 max-md:pointer-coarse:text-xs"
+      className="mb-0.5 text-xs font-medium leading-[1.6] text-amber-700 dark:text-amber-300"
     >
       {children}
     </p>
@@ -150,16 +150,12 @@ export function QuestionInteraction({
       .finally(() => setBusy(false));
   };
   const alert = error ? (
-    <p
-      role="alert"
-      className="mt-2 text-[11px] text-red-700 dark:text-red-300 max-md:pointer-coarse:text-xs"
-    >
+    <p role="alert" className="mt-2 text-xs text-red-700 dark:text-red-300">
       {error}
     </p>
   ) : null;
   const body = parsed.success ? (
     <>
-      <StateLine>Needs your answer</StateLine>
       <QuestionForm
         key={interaction.id}
         persistenceKey={
@@ -187,8 +183,7 @@ export function QuestionInteraction({
     </>
   ) : (
     <>
-      <StateLine>Needs your answer</StateLine>
-      <p className="text-[12.5px] text-muted-foreground max-md:pointer-coarse:text-sm">
+      <p className="text-[14px] text-muted-foreground max-md:pointer-coarse:text-base">
         This question could not be displayed.
       </p>
       {alert}
@@ -212,7 +207,7 @@ export function QuestionInteraction({
         <div
           className={CARD_CLASS}
           role="region"
-          aria-label="Question"
+          aria-label="Question needs your answer"
           data-ws-question-card=""
           // First in the composer stack, like the recap card it replaces.
           style={{ order: -1 }}

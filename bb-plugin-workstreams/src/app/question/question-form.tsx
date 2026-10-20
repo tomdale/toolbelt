@@ -29,16 +29,19 @@ const OTHER_OPTION_LABEL = "Other…";
 const PREVIEW_MAX_HEIGHT = 220;
 const MAX_FREE_TEXT_LENGTH = 4096;
 
-// A step below the recap card's type scale: a question card carries more
-// lines than a recap, so options stay compact. On a phone (a viewport under
-// 768px with a coarse pointer) the text follows BB's own rule instead and takes
-// the next token up, as the recap card does: primary text is `text-base`, the
-// timeline's size, and descriptions `text-sm`. The answer field must be at
-// least 16px or iOS zooms the page when it takes focus.
+// The card's type scale, largest to smallest: the question (in the card's
+// amber accent, which replaces a separate state label), option labels, details,
+// then option descriptions. On a phone (a viewport under 768px with a coarse
+// pointer) the text follows BB's own rule and takes the next token up: the
+// question is `text-lg`, labels `text-base`, the timeline's size, and the
+// rest `text-sm`. The answer field must be at least 16px or iOS zooms the page
+// when it takes focus.
 const PROMPT_CLASS =
-  "text-[13.5px] leading-[1.4] max-md:pointer-coarse:text-base [text-wrap:pretty]";
+  "text-[16px] leading-[1.35] text-amber-700 dark:text-amber-300 max-md:pointer-coarse:text-lg [text-wrap:pretty]";
+// The renderer's root sets its own size and color, so the root takes the
+// prompt's here, and code chips stay in the foreground color for legibility.
 const MARKDOWN_CLASS =
-  "text-inherit [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
+  "!text-inherit !text-[length:inherit] !leading-[inherit] [&_*]:!text-inherit [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!m-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em] [&_code]:!text-foreground";
 // The host renderer gives every element its own color, size, and margins, as
 // it does for chat messages. Details are context for the choice below them, so
 // they sit a step below the question and the option labels: smaller, dimmer,
@@ -48,10 +51,9 @@ const MARKDOWN_CLASS =
 // host's bullets and indent.
 const DETAILS_CLASS =
   "!text-inherit !text-[length:inherit] !leading-[inherit] [&_*]:!text-[length:inherit] [&_*]:!leading-[inherit] [&_p]:!text-inherit [&_ul]:!text-inherit [&_ol]:!text-inherit [&_li]:!text-inherit [&_p]:!mb-1.5 [&_ul]:!mb-1.5 [&_ol]:!mb-1.5 [&_li]:!mb-0.5 [&_:last-child]:!mb-0 [&_code]:!rounded [&_code]:!px-1 [&_code]:!py-px [&_code]:!text-[0.923em]";
-const LABEL_CLASS =
-  "text-[12.5px] leading-[1.45] max-md:pointer-coarse:text-base";
+const LABEL_CLASS = "text-[14px] leading-[1.4] max-md:pointer-coarse:text-base";
 const DESCRIPTION_CLASS =
-  "text-[11.5px] leading-[1.45] max-md:pointer-coarse:text-sm [text-wrap:pretty]";
+  "text-[12.5px] leading-[1.45] max-md:pointer-coarse:text-sm [text-wrap:pretty]";
 
 interface QuestionOptionRowProps {
   checked: boolean;
@@ -76,20 +78,18 @@ function QuestionOptionRow({
       aria-pressed={checked}
       aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
       onClick={onSelect}
-      className="flex w-full cursor-pointer items-start gap-2 rounded-md py-1 text-left disabled:cursor-default max-md:pointer-coarse:py-2"
+      className="flex w-full cursor-pointer items-start gap-2.5 rounded-md py-1.5 text-left disabled:cursor-default max-md:pointer-coarse:py-2"
     >
       <span
         className={cn(
-          "mt-[3px] flex size-3.5 shrink-0 items-center justify-center border max-md:pointer-coarse:size-4",
+          "mt-[2px] flex size-4 shrink-0 items-center justify-center border max-md:pointer-coarse:size-[18px]",
           multiSelect ? "rounded" : "rounded-full",
           checked
             ? "border-amber-600 bg-amber-600 text-white dark:border-amber-400 dark:bg-amber-400 dark:text-amber-950"
             : "border-foreground/25",
         )}
       >
-        {checked ? (
-          <Icon name="Check" className="size-2.5" aria-hidden />
-        ) : null}
+        {checked ? <Icon name="Check" className="size-3" aria-hidden /> : null}
       </span>
       <span className="min-w-0 flex-1">
         <span className={cn("block font-medium text-foreground", LABEL_CLASS)}>
@@ -109,7 +109,7 @@ function QuestionOptionRow({
       {shortcut ? (
         <kbd
           aria-hidden="true"
-          className="mt-px shrink-0 text-[11px] font-medium tabular-nums text-foreground/50 max-md:pointer-coarse:hidden"
+          className="mt-px shrink-0 text-xs font-medium tabular-nums text-foreground/50 max-md:pointer-coarse:hidden"
         >
           {shortcut.label}
         </kbd>
@@ -121,7 +121,7 @@ function QuestionOptionRow({
 function QuestionOptionPreview({ preview }: { preview: string }) {
   return (
     <pre
-      className="mx-2.5 mb-1 mt-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 px-2.5 py-2 font-mono text-[11.5px] leading-relaxed text-foreground max-md:pointer-coarse:text-xs"
+      className="mx-2.5 mb-1 mt-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 px-2.5 py-2 font-mono text-[12.5px] leading-relaxed text-foreground max-md:pointer-coarse:text-xs"
       style={{ maxHeight: `${PREVIEW_MAX_HEIGHT}px` }}
     >
       {preview}
@@ -177,7 +177,7 @@ function QuestionTabs({
                 ) : null}
                 <span
                   className={cn(
-                    "truncate text-[11.5px] font-medium leading-[1.6] max-md:pointer-coarse:text-xs",
+                    "truncate text-[12.5px] font-medium leading-[1.6] max-md:pointer-coarse:text-xs",
                     answered ? "line-through" : undefined,
                   )}
                   style={{ maxWidth: "180px" }}
@@ -189,7 +189,7 @@ function QuestionTabs({
           );
         })}
       </div>
-      <span className="shrink-0 text-[11px] font-medium tabular-nums text-amber-700 dark:text-amber-300 max-md:pointer-coarse:text-xs">
+      <span className="shrink-0 text-xs font-medium tabular-nums text-amber-700 dark:text-amber-300 max-md:pointer-coarse:text-xs">
         {currentIndex + 1} of {questions.length}
       </span>
     </div>
@@ -261,10 +261,7 @@ function QuestionInputBlock({
         <div
           role="heading"
           aria-level={2}
-          className={cn(
-            "font-medium tracking-[-0.006em] text-foreground",
-            PROMPT_CLASS,
-          )}
+          className={cn("font-medium tracking-[-0.006em]", PROMPT_CLASS)}
         >
           <Markdown content={question.prompt} className={MARKDOWN_CLASS} />
         </div>
@@ -272,7 +269,7 @@ function QuestionInputBlock({
       {question.details ? (
         <div
           id={`${question.id}-details`}
-          className="mt-1.5 text-[12px] leading-[1.5] text-foreground/70 max-md:pointer-coarse:text-sm [text-wrap:pretty]"
+          className="mt-2 text-[13px] leading-[1.5] text-foreground/70 max-md:pointer-coarse:text-sm [text-wrap:pretty]"
         >
           <Markdown
             content={formatQuestionText(question.details)}
@@ -345,7 +342,7 @@ function QuestionInputBlock({
               event.preventDefault();
               onShortcutSubmit();
             }}
-            className="block max-h-28 min-h-14 w-full resize-y bg-transparent px-3 py-2.5 text-[12.5px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground max-md:pointer-coarse:text-base"
+            className="block max-h-28 min-h-14 w-full resize-y bg-transparent px-3 py-2.5 text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground max-md:pointer-coarse:text-base"
           />
           {state.otherAttachments.length > 0 ? (
             <ul
@@ -410,12 +407,12 @@ function QuestionInputBlock({
                 )}
               </Button>
               {!projectId ? (
-                <span className="text-[11px] text-muted-foreground max-md:pointer-coarse:text-xs">
+                <span className="text-xs text-muted-foreground">
                   Attachments need a project.
                 </span>
               ) : null}
             </div>
-            <div className="text-right text-[11px] text-muted-foreground max-md:pointer-coarse:text-xs">
+            <div className="text-right text-xs text-muted-foreground">
               <div>
                 {state.otherText.length}/{MAX_FREE_TEXT_LENGTH}
               </div>
@@ -610,7 +607,7 @@ export function QuestionForm({
         event.preventDefault();
         handleAdvance();
       }}
-      className="flex max-h-[min(32rem,60dvh)] min-h-0 flex-col text-foreground focus-visible:outline-none"
+      className="flex max-h-[min(36rem,65dvh)] min-h-0 flex-col text-foreground focus-visible:outline-none"
     >
       {totalQuestions > 1 ? (
         <QuestionTabs
