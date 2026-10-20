@@ -215,7 +215,8 @@ ${project ? `\nThe project the thread runs in:\n${tagged("project", project)}\n`
 The topic tree, where indentation expresses parentage and each topic's ID is in square brackets:
 ${tagged("topic_tree", topicTreeBlock(input.entities))}
 
-Return {"goal": string|null, "subjectId": string|null, "proposed": object|null}:
+Return {"owner": string|null, "goal": string|null, "subjectId": string|null, "proposed": object|null}:
+- owner: the product, platform, or tool the request says the work belongs to, as the request names it; null when it names none, and a tool named only as the means of doing the work is not an owner. Settle this before choosing a topic.
 - goal: what this thread is for, which becomes its title wherever threads are listed. ${GOAL_FORM} null when the request doesn't say what the work is (a greeting, or a bare "continue" or "yes").
 - subjectId / proposed: the most specific supported topic. subjectId copies only the exact identifier inside square brackets in the tree, not its name or path. An execution tool mentioned only as the method for unspecified work does not establish a topic; return both fields null when the work's owner is unknown.
 
@@ -240,6 +241,7 @@ export function quickAnalysisSchema(
     type: "object",
     additionalProperties: false,
     properties: {
+      owner: { type: ["string", "null"] },
       goal: { type: ["string", "null"] },
       subjectId: nullableId,
       proposed: {
@@ -259,7 +261,7 @@ export function quickAnalysisSchema(
         ],
       },
     },
-    required: ["goal", "subjectId", "proposed"],
+    required: ["owner", "goal", "subjectId", "proposed"],
   };
 }
 

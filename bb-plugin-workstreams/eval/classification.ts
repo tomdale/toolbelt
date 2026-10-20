@@ -29,9 +29,12 @@ if (!Number.isInteger(repetitions) || repetitions < 1 || repetitions > 20)
   throw new Error("EVAL_REPETITIONS must be between 1 and 20");
 const cold = process.env.EVAL_COLD === "1";
 const holdout = process.env.EVAL_HOLDOUT === "1";
+const only = process.env.EVAL_ONLY ? new RegExp(process.env.EVAL_ONLY) : null;
 const queue = Array.from({ length: repetitions }, () =>
-  cases.filter(
-    (c) => c.id.startsWith("holdout-") === holdout && !(cold && c.warmOnly),
+  cases.filter((c) =>
+    only
+      ? only.test(c.id)
+      : c.id.startsWith("holdout-") === holdout && !(cold && c.warmOnly),
   ),
 ).flat();
 const results: Record<string, unknown>[] = [];
@@ -91,6 +94,51 @@ try {
           });
           response = completion.text;
           cost = completion.usage.cost;
+          let retried = false;
+          if (kind === "quick" && process.env.EVAL_RETRY === "1") {
+            // EXPERIMENT: one retry when the named owner and the chosen topic disagree.
+            const norm = (x: string) =>
+              x.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+            const first = JSON.parse(response) as {
+              owner?: string | null;
+              subjectId?: string | null;
+              proposed?: { parentId?: string | null } | null;
+            };
+            const owner = first.owner ? norm(first.owner) : null;
+            const owners = owner
+              ? entities.filter(
+                  (e) =>
+                    norm(e.name) === owner ||
+                    e.aliases.some((a) => norm(a) === owner),
+                )
+              : [];
+            const chosen = first.subjectId ?? first.proposed?.parentId ?? null;
+            const inside = (id: string | null, root: string): boolean => {
+              while (id) {
+                if (id === root) return true;
+                id = entities.find((e) => e.id === id)?.parentId ?? null;
+              }
+              return false;
+            };
+            if (
+              owners.length &&
+              chosen &&
+              !owners.some((o) => inside(chosen, o.id))
+            ) {
+              retried = true;
+              const second = await gatewayComplete({
+                apiKey,
+                signal: controller.signal,
+                model,
+                prompt: `${prompt}\n\nYour previous answer was ${response}\nIts topic is not at or beneath ${first.owner}, the owner you named from the request. Answer again with a topic at or beneath that owner, or propose a new topic under it.`,
+                maxTokens: 4096,
+                reasoningLevel,
+                outputSchema: quickAnalysisSchema(quick),
+              });
+              cost = (cost ?? 0) + (second.usage.cost ?? 0);
+              response = second.text;
+            }
+          }
           const parsed =
             kind === "quick"
               ? parseQuickAnalysis(response, quick)
@@ -110,6 +158,7 @@ try {
             expectedPath,
             value,
             response,
+            retried,
             cost,
             durationMs: Date.now() - started,
             ...scoreClassification(
