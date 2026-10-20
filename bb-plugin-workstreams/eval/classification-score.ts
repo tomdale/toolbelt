@@ -1,4 +1,5 @@
 import type { TopicAnswer } from "../src/domain/classify.ts";
+import { resolveProposal } from "../src/domain/topics.ts";
 import type { ClassifyInput } from "./classification-cases.ts";
 type Result = TopicAnswer;
 /** Evaluation-only synonym sets; production routing never uses them. Score baseline and candidate with the same sets. */
@@ -21,7 +22,29 @@ export function scoreClassification(
   input: ClassifyInput,
   expected: string | null,
   cold: boolean,
+  expectNew?: { outside: string },
 ) {
+  if (expectNew) {
+    // Resolved as production resolves it, so a proposal that restates an
+    // existing ancestor is anchored there rather than counted as a new root.
+    const resolved = value.proposed
+      ? resolveProposal(value.proposed, input.entities)
+      : null;
+    let anchor = resolved?.proposed?.parentId ?? null;
+    let inside = false;
+    while (anchor && !inside) {
+      inside = anchor === expectNew.outside;
+      anchor = input.entities.find((e) => e.id === anchor)?.parentId ?? null;
+    }
+    const pass = !value.subjectId && !!resolved?.proposed && !inside;
+    return {
+      owner: pass,
+      capability: pass,
+      hierarchy: pass,
+      exact: pass,
+      pass,
+    };
+  }
   if (!expected) {
     const pass = !value.subjectId && !value.proposed;
     return {

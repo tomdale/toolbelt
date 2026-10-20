@@ -21,6 +21,14 @@ follow-up work, display modes, shared SDK deliverables, infrastructure
 consumers, and unresolved requests. Holdouts test misleading titles and explicit
 ancestry.
 
+The lookalike cases carry their own topic tree, with a pane topic filed under an
+unrelated app whose description fits the request. The request names its owner.
+When the platform's own plugin topic exists beside the pane, it is the expected
+topic. When it does not, the answer is a new topic outside the app's subtree;
+choosing the pane, the app, or no topic fails, and a proposal is anchored as
+production anchors it. These cases test the tree they carry, so cold runs skip
+them.
+
 Warm acceptance requires the expected existing topic. Cold acceptance checks
 owner, capability, and ordered ancestry against evaluation-only synonyms;
 more-specific descendants are permitted. Exact local-name path matching is

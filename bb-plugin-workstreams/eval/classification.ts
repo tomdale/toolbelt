@@ -30,7 +30,9 @@ if (!Number.isInteger(repetitions) || repetitions < 1 || repetitions > 20)
 const cold = process.env.EVAL_COLD === "1";
 const holdout = process.env.EVAL_HOLDOUT === "1";
 const queue = Array.from({ length: repetitions }, () =>
-  cases.filter((c) => c.id.startsWith("holdout-") === holdout),
+  cases.filter(
+    (c) => c.id.startsWith("holdout-") === holdout && !(cold && c.warmOnly),
+  ),
 ).flat();
 const results: Record<string, unknown>[] = [];
 const controller = new AbortController();
@@ -110,7 +112,13 @@ try {
             response,
             cost,
             durationMs: Date.now() - started,
-            ...scoreClassification(value, test.input, test.expected, cold),
+            ...scoreClassification(
+              value,
+              test.input,
+              test.expected,
+              cold,
+              test.expectNew,
+            ),
           });
         } catch (error) {
           results.push({

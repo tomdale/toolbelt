@@ -115,11 +115,19 @@ export const entities = [
     aliases: [],
   },
 ];
-export const cases: {
+type Case = {
   id: string;
   input: ClassifyInput;
   expected: string | null;
-}[] = [
+  /**
+   * No existing topic fits: the answer is a new topic that is not within the
+   * subtree of `outside`.
+   */
+  expectNew?: { outside: string };
+  /** The case tests the topic tree it carries, so it has no cold form. */
+  warmOnly?: boolean;
+};
+const base: Case[] = [
   [
     "review-tool",
     "Review via Prism CLI",
@@ -226,3 +234,100 @@ export const cases: {
     entities,
   },
 }));
+
+/**
+ * A pane topic filed under an unrelated app. Its description fits the request;
+ * its owner does not, and the request names the owner. With the platform's own
+ * plugin topic present, that topic is the answer. Without it, the answer is a
+ * new topic outside the app, not the pane.
+ */
+const lookalike = (spec: {
+  id: string;
+  title: string;
+  request: string;
+  app: [name: string, description: string];
+  pane: [name: string, description: string];
+  plugin?: [name: string, description: string];
+}): Case => {
+  const tree: Entity[] = [
+    ...entities,
+    {
+      id: "app",
+      name: spec.app[0],
+      description: spec.app[1],
+      parentId: null,
+      aliases: [],
+    },
+    {
+      id: "pane",
+      name: spec.pane[0],
+      description: spec.pane[1],
+      parentId: "app",
+      aliases: [],
+    },
+    ...(spec.plugin
+      ? [
+          {
+            id: "plugin",
+            name: spec.plugin[0],
+            description: spec.plugin[1],
+            parentId: "platform",
+            aliases: [],
+          },
+        ]
+      : []),
+  ];
+  return {
+    id: spec.id,
+    warmOnly: true,
+    expected: spec.plugin ? "plugin" : null,
+    ...(spec.plugin ? {} : { expectNew: { outside: "app" } }),
+    input: {
+      prompt: spec.title,
+      project: "Coordination",
+      requests: [spec.request],
+      entities: tree,
+    },
+  };
+};
+const guide = {
+  title: "Guide pop-out button",
+  request:
+    "Harbor guide plugin: add a button to pop the guide out into a new window.",
+  app: ["Pennant", "Desktop GUI application for working with agents"] as [
+    string,
+    string,
+  ],
+  pane: [
+    "Guide pane",
+    "UI pane that displays interactive guides and opens automatically when invoked by agent tools",
+  ] as [string, string],
+  plugin: [
+    "Guide plugin",
+    "Harbor plugin providing guide pane display, routing, and navigation",
+  ] as [string, string],
+};
+const preview = {
+  title: "Detach preview window",
+  request:
+    "Harbor preview plugin: add a shortcut to detach the preview into its own window.",
+  app: ["Atlas", "Desktop workspace app for agent sessions"] as [
+    string,
+    string,
+  ],
+  pane: [
+    "Preview pane",
+    "Pane that renders live previews and opens automatically when invoked by agent tools",
+  ] as [string, string],
+  plugin: [
+    "Preview plugin",
+    "Harbor plugin rendering previews in a pane, with its routes and navigation",
+  ] as [string, string],
+};
+export const cases: Case[] = [
+  ...base,
+  lookalike({ id: "lookalike-missing", ...guide, plugin: undefined }),
+  lookalike({ id: "lookalike-present", ...guide }),
+  lookalike({ id: "holdout-lookalike-missing", ...preview, plugin: undefined }),
+  lookalike({ id: "holdout-lookalike-present", ...preview }),
+];
