@@ -36,12 +36,23 @@ import {
 import type { TraceStore } from "./trace.ts";
 import type { StoredOrder } from "./order.ts";
 import type { TopicStore } from "./topics.ts";
+import type { Reclassification } from "./reclassification.ts";
+import { buildForest } from "../domain/tree.ts";
 import type { Topic, TopicAssignment } from "../domain/topics.ts";
 import { topicPath } from "../domain/topic-path.ts";
 import { activeHome } from "../domain/regroup.ts";
 import type { Prefs } from "../domain/prefs.ts";
 import type { Inference } from "./model.ts";
 
+const terminalLine = (text: string) =>
+  text
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(
+      /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g,
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
 const TITLE_MAX = 80;
 const clip = (text: string) =>
   text.length <= TITLE_MAX ? text : `${text.slice(0, TITLE_MAX - 1)}…`;
@@ -193,6 +204,7 @@ export function registerCli(
     currentPrefs,
     notify,
     reclassifyTask,
+    reclassification,
   }: {
     /** The sidebar's stored order and prioritized workstreams. */
     arrangement: {
@@ -204,6 +216,7 @@ export function registerCli(
     analyzer: Analyzer;
     recaps: AgentRecaps;
     organizer: Organizer;
+    reclassification?: Reclassification;
     map: WorkstreamMap;
     traces: TraceStore;
     topics: TopicStore;
@@ -564,6 +577,62 @@ export function registerCli(
             return {
               exitCode: 0,
               stdout: `${entry.rationale}${entry.detail ? ` (${entry.detail})` : ""}`,
+            };
+          },
+        }),
+        "topics preview": cliCommand({
+          summary:
+            "Preview automatic topic repairs without changing assignments",
+          positionals: [
+            {
+              name: "thread",
+              description:
+                "Root thread id; omit for up to 100 visible roots. For larger sets, preview individual roots",
+            },
+          ],
+          options: { json: { type: "boolean", description: "Print JSON" } },
+          async run({ positionals, options }) {
+            if (!reclassification)
+              throw new Error("Topic repair is unavailable.");
+            const ids = positionals.thread
+              ? [positionals.thread]
+              : buildForest(await listActiveThreads(bb.sdk)).roots.map(
+                  (r) => r.thread.id,
+                );
+            const plan = await reclassification.preview(ids);
+            return {
+              exitCode: 0,
+              stdout: options.json
+                ? JSON.stringify(plan, null, 2)
+                : [
+                    `Preview ${plan.id}; no assignments changed; ${plan.excludedManual} manual choices excluded`,
+                    ...plan.rows.map(
+                      (r) =>
+                        `${terminalLine(r.title)}: ${terminalLine(r.from ?? "Unfiled")} → ${terminalLine(r.to ?? "Unfiled")}${r.error ? ` (${terminalLine(r.error)})` : ""}`,
+                    ),
+                    plan.rows.some((row) => !row.error && row.answer)
+                      ? `Apply with bb workstreams topics apply ${plan.id}`
+                      : "No automatic topic repairs are available to apply",
+                  ].join("\n"),
+            };
+          },
+        }),
+        "topics apply": cliCommand({
+          summary:
+            "Apply a fresh topic-repair preview while preserving corrections",
+          positionals: [
+            { name: "plan", description: "Preview id", required: true },
+          ],
+          options: { json: { type: "boolean", description: "Print JSON" } },
+          async run({ positionals, options }) {
+            if (!reclassification)
+              throw new Error("Topic repair is unavailable.");
+            const result = await reclassification.apply(positionals.plan!);
+            return {
+              exitCode: 0,
+              stdout: options.json
+                ? JSON.stringify(result)
+                : `${result.changed} changed, ${result.skipped} skipped`,
             };
           },
         }),

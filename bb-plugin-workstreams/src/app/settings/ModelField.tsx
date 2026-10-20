@@ -12,7 +12,8 @@ const pickerValue = (
     ? {
         providerId: "pi",
         model: `vercel-ai-gateway/${choice.model}`,
-        reasoningLevel: "none",
+        reasoningLevel: (choice.reasoningLevel ??
+          "none") as ExperimentalProviderModelPickerValue["reasoningLevel"],
       }
     : {
         providerId: choice.providerId,

@@ -2,6 +2,7 @@ import type { TopicAssignment } from "../domain/topics.ts";
 
 /** Facts whose changes invalidate an inference about a thread's current work. */
 export function threadEvidence(thread: {
+  projectId?: string;
   latestAttentionAt?: number | null;
   updatedAt: number;
   status?: string;
@@ -10,6 +11,7 @@ export function threadEvidence(thread: {
   visibility: string;
 }): string {
   return JSON.stringify([
+    thread.projectId ?? null,
     thread.latestAttentionAt ?? thread.updatedAt,
     thread.status,
     thread.parentThreadId ?? null,

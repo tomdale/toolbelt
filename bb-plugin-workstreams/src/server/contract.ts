@@ -5,6 +5,7 @@ import {
   interactionResponseSchema,
 } from "./questions/contracts.ts";
 import { z } from "zod";
+import { objectiveSchema } from "../domain/identity.ts";
 import { WORK_STATES } from "../domain/analysis.ts";
 import { observedNamesSchema } from "../domain/name-observations.ts";
 import { prefsPatchSchema, prefsSchema } from "../domain/prefs.ts";
@@ -30,6 +31,9 @@ const analysisSchema = z.object({
   needsYou: z.string().nullable(),
   // What the thread is for, which is also its title. Older rows predate goals.
   goal: z.string().nullable().default(null),
+  objective: objectiveSchema.nullable().optional(),
+  identityVersion: z.number().optional(),
+  topicError: z.string().optional(),
   revision: z.number(),
   at: z.number(),
   model: z.string(),
@@ -92,6 +96,7 @@ export const organizerStateGroupSchema = z.object({
   sectionId: z.string().nullable(),
   name: z.string(),
   description: z.string(),
+  policyReason: z.string().optional(),
   activeCount: z.number(),
   completedCount: z.number(),
   totalCount: z.number(),
@@ -153,6 +158,35 @@ export const draftSubjectProposalSchema = z.object({
   parentId: z.string().nullable().optional(),
   ancestors: z.array(draftAncestorSchema).nullable().optional(),
 });
+
+export const reclassificationPlanSchema = z.object({
+  id: z.string(),
+  at: z.number(),
+  definitionKey: z.string(),
+  excludedManual: z.number().default(0),
+  rows: z.array(
+    z.object({
+      threadId: z.string(),
+      title: z.string(),
+      from: z.string().nullable(),
+      to: z.string().nullable(),
+      error: z.string().nullable(),
+      evidence: z.string().optional(),
+      projectHint: z.string().nullable().optional(),
+      assignmentKey: z.string().optional(),
+      basis: z.string().optional(),
+      traceId: z.string().nullable().optional(),
+      answer: z
+        .object({
+          subjectId: z.string().nullable(),
+          proposed: draftSubjectProposalSchema.nullable(),
+          scopeShift: z.boolean(),
+        })
+        .optional(),
+    }),
+  ),
+});
+export type ReclassificationPlan = z.infer<typeof reclassificationPlanSchema>;
 
 /**
  * The topic the New thread composer shows for a draft. `automatic` is Quick
@@ -222,6 +256,14 @@ export const previewSchema = z.object({
     .optional(),
 });
 export const rpcContract = defineRpcContract({
+  reclassificationPreview: {
+    input: z.object({ threadIds: z.array(z.string()).min(1).max(100) }),
+    output: reclassificationPlanSchema,
+  },
+  reclassificationApply: {
+    input: z.object({ planId: z.string() }),
+    output: z.object({ changed: z.number(), skipped: z.number() }),
+  },
   observedNames: {
     input: z.object({ threadId: z.string().min(1) }),
     output: observedNamesSchema,

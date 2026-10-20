@@ -12,6 +12,11 @@
  */
 import { z } from "zod";
 import {
+  identityCandidateSchema,
+  type IdentityCandidate,
+  type ThreadObjective,
+} from "./identity.ts";
+import {
   emptyObservations,
   nameObservationsSchema,
   type NameObservations,
@@ -55,6 +60,9 @@ export type ThreadAnalysis = {
   readonly needsYou: string | null;
   /** What the thread is for, which is also its title. */
   readonly goal: string | null;
+  readonly objective?: ThreadObjective | null;
+  readonly identityVersion?: number;
+  readonly topicError?: string;
   /** The thread's `latestAttentionAt` when it was analyzed. */
   readonly revision: number;
   readonly at: number;
@@ -156,23 +164,85 @@ ${topicTreeBlock(input.entities)}
 
 Return {"goal": string|null, "subjectId": string|null, "proposed": object|null}:
 - goal: what this thread is for, which becomes its title wherever threads are listed. ${GOAL_FORM} null when the request doesn't say what the work is (a greeting, or a bare "continue" or "yes").
-- subjectId / proposed: the most specific supported topic.
+- subjectId / proposed: the most specific supported topic. subjectId copies only the exact identifier inside square brackets in the tree, not its name or path. An execution tool mentioned only as the method for unspecified work does not establish a topic; return both fields null when the work's owner is unknown.
 
 ${CLASSIFICATION_RULES}`;
 }
 
-const quickOutputSchema = z
-  .object({ goal: goalSchema.optional().default(null) })
-  .and(topicFieldsSchema);
+/** JSON Schema constrains IDs at generation as well as at application. */
+export function quickAnalysisSchema(
+  input: Pick<QuickAnalysisInput, "entities">,
+): Record<string, unknown> {
+  const nullableId = {
+    type: ["string", "null"],
+    enum: [null, ...input.entities.map((e) => e.id)],
+  };
+  const ancestor = {
+    type: "object",
+    additionalProperties: false,
+    properties: { name: { type: "string" }, description: { type: "string" } },
+    required: ["name", "description"],
+  };
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      goal: { type: ["string", "null"] },
+      subjectId: nullableId,
+      proposed: {
+        anyOf: [
+          { type: "null" },
+          {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              name: { type: "string" },
+              description: { type: "string" },
+              parentId: nullableId,
+              ancestors: { type: "array", items: ancestor },
+            },
+            required: ["name", "description", "parentId", "ancestors"],
+          },
+        ],
+      },
+    },
+    required: ["goal", "subjectId", "proposed"],
+  };
+}
 
-export type QuickAnalysisOutput = { goal: string | null } & TopicAnswer;
+const quickOutputSchema = z.object({
+  goal: goalSchema.optional().default(null),
+});
+
+export type QuickAnalysisOutput = {
+  goal: string | null;
+  topicError?: string;
+} & TopicAnswer;
+
+/** Invalid topic fields cannot invalidate an independent title or status. */
+function checkedTopic(
+  raw: unknown,
+  entities: readonly Entity[],
+): TopicAnswer & { topicError?: string } {
+  try {
+    return parseTopic(topicFieldsSchema.parse(raw), entities);
+  } catch {
+    return {
+      subjectId: null,
+      proposed: null,
+      topicError:
+        "Invalid topic: use an exact supplied ID or a supported proposal",
+    };
+  }
+}
 
 export function parseQuickAnalysis(
   text: string,
   input: Pick<QuickAnalysisInput, "entities">,
 ): QuickAnalysisOutput {
-  const parsed = quickOutputSchema.parse(JSON.parse(stripFence(text)));
-  return { goal: parsed.goal ?? null, ...parseTopic(parsed, input.entities) };
+  const raw: unknown = JSON.parse(stripFence(text));
+  const parsed = quickOutputSchema.parse(raw);
+  return { goal: parsed.goal ?? null, ...checkedTopic(raw, input.entities) };
 }
 
 // Full analysis -----------------------------------------------------------
@@ -204,11 +274,15 @@ export type FullAnalysisInput = {
   readonly title: string;
   /** Previous title candidate, used to resolve the context of follow-ups. */
   readonly previousGoal?: string | null;
+  readonly previousObjective?: ThreadObjective | null;
+  /** Bounded context from an explicitly referenced continuation thread. */
+  readonly continuation?: string | null;
   readonly untitled?: boolean;
   /** Oldest first: the opening request, then the latest ones. */
   readonly requests: readonly {
     readonly text: string;
     readonly initial: boolean;
+    readonly id?: string;
   }[];
   readonly lastAssistantText: string | null;
   /** The agent's own report of this turn; its status needs no inference. */
@@ -232,8 +306,8 @@ export function conversationBlock(
   const cut = (text: string, max: number) => excerpt(redact(text), max);
   const parts = input.requests.map((request) =>
     request.initial
-      ? `[Opening request — historical intent; later requests take precedence]\n${cut(request.text, INITIAL_CHARS)}`
-      : `[User request]\n${cut(request.text, REQUEST_CHARS)}`,
+      ? `[Opening request${request.id ? ` ${request.id}` : ""}]\n${cut(request.text, INITIAL_CHARS)}`
+      : `[User request${request.id ? ` ${request.id}` : ""}]\n${cut(request.text, REQUEST_CHARS)}`,
   );
   parts.push(
     input.lastAssistantText
@@ -247,7 +321,8 @@ const STATUS_FIELDS = `- recap: at most ${RECAP_MAX} characters. Where the work 
 - state: "needs_decision" when the last message asks the user something specific (a question, a choice, permission, "want me to…?") or needs a step only the user can take; closing boilerplate like "let me know" doesn't count. "review" when a finished deliverable waits on the user to review, test, merge, or ship. "blocked" when waiting on something other than the user. "done" only when the thread has reached a natural end: the latest request is fully answered or completed, and there are no outstanding tasks, unfinished implementation, failing tests, pending follow-ups, or work left for the agent or user. An answered question can be done. A completed intermediate step is not done when the broader requested work remains. Otherwise "in_progress".
 - needsYou: when state is "needs_decision", the ask in at most 80 characters; otherwise null.`;
 
-const GOAL_FIELD = `- goal: what this thread is for, which becomes its title wherever threads are listed. ${GOAL_FORM} Describe the thread's current substantive focus using the recent requests, findings, and agent report. Later evidence takes precedence over the opening request, current title, and previous goal. Update the title as work evolves from monitoring to diagnosis, from investigation to a specific fix, or to a different substantive question, even within the same broader objective. Resolve vague follow-ups from the preceding substantive requests and findings: a request to explain a schema error should name the schema investigation, not an earlier deployment task. Routine asks to commit, test, locate code, or adjust documentation retain the substantive focus they support, rather than becoming the title themselves. Reuse the current title only when it accurately identifies that focus. Prefer one coherent focus over a checklist of old and current tasks. If intent is unclear, use the best supported current focus rather than inventing one.`;
+const GOAL_FIELD = `- goal: the title of the thread's overall objective. ${GOAL_FORM} Preserve its identity across diagnosis, implementation, review, testing, and shipping subtasks. Findings clarify the objective; a user direction change can replace it. Distinguish the requested deliverable: an audit or proposal remains an audit or proposal until implementation is requested.
+- identity: {"change":"keep"|"refine"|"pivot", "summary":string, "title":string, "evidenceIds":string[]}. summary describes the durable objective and its scope in at most 1200 characters, independently of the latest task or status. title follows the goal form above and equals goal. Use keep when the current objective still identifies the overall work; carry its summary and title forward. Use refine when new user evidence makes an initially vague objective more precise; cite at least one request ID not already retained in the objective. Use pivot when the user changes the overall direction, supported by the latest user request ID. Cite request IDs supplied in the conversation or retained objective; these identify the evidence, not topics. Establish an objective from the opening request when none exists. Incidental product mentions and agent recap headlines describe evidence or the latest task, not a direction change. A schema investigation supporting deployment readiness, for example, keeps the deployment objective while its recap describes the investigation.`;
 
 export function fullAnalysisPrompt(input: FullAnalysisInput): string {
   const report = input.report ?? null;
@@ -264,7 +339,7 @@ export function fullAnalysisPrompt(input: FullAnalysisInput): string {
   }
   if (input.mode === "full") {
     fields.push(GOAL_FIELD);
-    keys.push('"goal": string|null');
+    keys.push('"goal": string|null', '"identity": object|null');
   }
   if (topic) {
     const current = topic.current;
@@ -311,6 +386,8 @@ ${
     : `Title: ${JSON.stringify(redact(input.title))}`
 }
 ${input.previousGoal ? `Previous title candidate (context, not authority): ${JSON.stringify(redact(input.previousGoal))}` : "No goal has been settled yet."}
+${input.previousObjective ? `Durable objective: ${redact(JSON.stringify(input.previousObjective))}` : "Establish the overall objective from user evidence."}
+${input.continuation ? `Referenced continuation context — historical evidence:\n${excerpt(redact(input.continuation), 1800)}` : ""}
 Conversation, oldest first:
 ${conversationBlock(input)}
 ${reportBlock}${topicBlock}
@@ -318,20 +395,21 @@ Return {${keys.join(", ")}}:
 ${fields.join("\n")}${topic ? `\n\n${CLASSIFICATION_RULES}` : ""}`;
 }
 
-const fullOutputSchema = z
-  .object({
-    // An unknown state must not discard an otherwise good result.
-    recap: clipped(RECAP_MAX).optional(),
-    state: z.enum(WORK_STATES).catch("in_progress").optional(),
-    needsYou: clipped(120).nullable().catch(null).optional(),
-    goal: goalSchema.optional(),
-    scopeShift: z.boolean().catch(false).optional(),
-    names: nameObservationsSchema.catch(emptyObservations).optional(),
-  })
-  .and(topicFieldsSchema);
+const fullOutputSchema = z.object({
+  // An unknown state must not discard an otherwise good result.
+  recap: clipped(RECAP_MAX).optional(),
+  state: z.enum(WORK_STATES).catch("in_progress").optional(),
+  needsYou: clipped(120).nullable().catch(null).optional(),
+  goal: goalSchema.optional(),
+  identity: identityCandidateSchema.nullable().catch(null).optional(),
+  scopeShift: z.boolean().catch(false).optional(),
+  names: nameObservationsSchema.catch(emptyObservations).optional(),
+});
 
 export type FullAnalysisOutput = {
   names: NameObservations;
+  identity: IdentityCandidate | null;
+  topicError?: string;
   /** Present only when the agent didn't report the turn. */
   status: { recap: string; state: WorkState; needsYou: string | null } | null;
   /** Present only in `full` mode. */
@@ -345,7 +423,8 @@ export function parseFullAnalysis(
   text: string,
   input: Pick<FullAnalysisInput, "report" | "mode" | "topic">,
 ): FullAnalysisOutput {
-  const parsed = fullOutputSchema.parse(JSON.parse(stripFence(text)));
+  const raw: unknown = JSON.parse(stripFence(text));
+  const parsed = fullOutputSchema.parse(raw);
   let status: FullAnalysisOutput["status"] = null;
   if (!input.report) {
     if (!parsed.recap) throw new Error("The analysis gave no recap.");
@@ -356,15 +435,22 @@ export function parseFullAnalysis(
       needsYou: state === "needs_decision" ? (parsed.needsYou ?? null) : null,
     };
   }
-  const topic =
+  const checked =
     input.mode === "full" && input.topic
+      ? checkedTopic(raw, input.topic.entities)
+      : null;
+  const topic =
+    checked && !checked.topicError
       ? {
-          ...parseTopic(parsed, input.topic.entities),
+          subjectId: checked.subjectId,
+          proposed: checked.proposed,
           scopeShift: parsed.scopeShift ?? false,
         }
       : null;
   return {
     status,
+    ...(checked?.topicError ? { topicError: checked.topicError } : {}),
+    identity: input.mode === "full" ? (parsed.identity ?? null) : null,
     names: parsed.names ?? emptyObservations(),
     goal: input.mode === "full" ? (parsed.goal ?? null) : null,
     topic,

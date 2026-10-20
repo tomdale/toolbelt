@@ -36,10 +36,13 @@ describe("observeTitle", () => {
       observed: "Generated",
     });
   });
-  it("observes external title changes without disabling updates", () => {
+  it("gives outside edits title ownership", () => {
     const changed = observeTitle(fresh, "Mine");
     expect(changed.observed).toBe("Mine");
-    expect(decide({ record: changed })).toEqual({ ok: true });
+    expect(decide({ record: changed })).toEqual({
+      ok: false,
+      reason: "manual",
+    });
   });
   it("clears provisional status when a title is cleared or changed externally", () => {
     const provisional = { ...fresh, written: "Old", provisional: true };

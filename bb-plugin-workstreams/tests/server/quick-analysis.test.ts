@@ -185,9 +185,11 @@ describe("naming a thread from its opening request", () => {
     await vi.waitFor(() => expect(w.threads.get("t1")?.title).not.toBeNull());
     expect(openingCalls(w)).toHaveLength(1);
     const { prompt, model } = openingCalls(w)[0]!;
-    expect(model).toBe("google/gemini-3.1-flash-lite");
+    expect(model).toBe("openai/gpt-6-luna-fast");
     expect(prompt).toContain(REQUEST);
-    expect(prompt).toContain('Return {"goal": string|null, "subjectId": string|null');
+    expect(prompt).toContain(
+      'Return {"goal": string|null, "subjectId": string|null',
+    );
     expect(prompt).not.toContain("Last assistant");
     expect(prompt).not.toContain("Zebracorn");
     // BB re-runs the hook for a queued message, a retry, and a restart; the
@@ -351,7 +353,9 @@ describe("naming a thread from its opening request", () => {
       );
       newThread(w);
       expect(await firstMessage(w)).toEqual({ action: "proceed" });
-      await vi.waitFor(() => expect(openingCalls(w)).toHaveLength(1));
+      await vi.waitFor(() =>
+        expect(openingCalls(w)).toHaveLength(bad === "not json" ? 2 : 1),
+      );
       await flush();
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(w.threads.get("t1")?.title).toBeNull();

@@ -70,6 +70,33 @@ it("keeps unconfigured requests on Messages without forcing thinking", async () 
   expect(body).not.toHaveProperty("reasoning_effort");
 });
 
+it("sends a strict output contract for schema-constrained classification", async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "{}" } }] }),
+      ),
+    );
+  vi.stubGlobal("fetch", fetch);
+  const schema = {
+    type: "object",
+    properties: { subjectId: { enum: [null, "product"] } },
+  };
+  await gatewayComplete({
+    prompt: "classify",
+    model: "openai/test",
+    apiKey: "test",
+    outputSchema: schema,
+  });
+  expect(JSON.parse(fetch.mock.calls[0]![1].body)).toMatchObject({
+    response_format: {
+      type: "json_schema",
+      json_schema: { strict: true, schema },
+    },
+  });
+});
+
 it("rejects unsupported controls rather than silently dropping them", async () => {
   const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);

@@ -43,7 +43,7 @@ import {
 import { arrangeGroups } from "../../domain/groups.ts";
 import { UP_NEXT_LIMIT, selectUpNext } from "../../domain/upNext.ts";
 import { useWorkstreams } from "../useWorkstreams.ts";
-import { useCollapsed } from "./useCollapsed.ts";
+import { groupCollapseKey, useCollapsed } from "./useCollapsed.ts";
 import {
   BAND_OPTIONS_KEY,
   readBandOptions,
@@ -693,13 +693,22 @@ export function WorkstreamsThreadList({
     String,
     wasTiered.current === tiered,
   );
+  const groupStateKey = (id: string) =>
+    groupCollapseKey(id, ws.server.catalog?.groups[id]);
+  const groupCollapsed = (id: string, byDefault = false) =>
+    isCollapsed(groupStateKey(id), isCollapsed(id, byDefault));
+  const toggleGroup = (id: string, byDefault = false) =>
+    toggle(groupStateKey(id), groupCollapsed(id, byDefault));
   const lowerCollapsed = (id: string, byDefault = false) =>
-    tiered ? !lowerExpanded.has(id) : isCollapsed(id, byDefault);
+    tiered
+      ? !lowerExpanded.has(groupStateKey(id))
+      : groupCollapsed(id, byDefault);
   const lowerToggle = (id: string, byDefault = false) => {
-    if (!tiered) return toggle(id, byDefault);
+    if (!tiered) return toggleGroup(id, byDefault);
+    const key = groupStateKey(id);
     setLowerExpanded((current) => {
       const next = new Set(current);
-      if (!next.delete(id)) next.add(id);
+      if (!next.delete(key)) next.add(key);
       return next;
     });
   };
@@ -711,10 +720,10 @@ export function WorkstreamsThreadList({
     group: ThreadGroup,
   ): Omit<GroupProps, "group" | "children"> => ({
     collapsed: group.prioritized
-      ? isCollapsed(group.id)
+      ? groupCollapsed(group.id)
       : lowerCollapsed(group.id),
     toggle: () =>
-      group.prioritized ? toggle(group.id) : lowerToggle(group.id),
+      group.prioritized ? toggleGroup(group.id) : lowerToggle(group.id),
     onTogglePriority: () => togglePriority(group),
     // The new thread starts with this workstream's topic.
     onNewThread: () => {
@@ -843,8 +852,8 @@ export function WorkstreamsThreadList({
               {projection.dormant.map((group) => (
                 <li key={group.id} className="list-none">
                   {renderSortableGroup(group, {
-                    collapsed: isCollapsed(group.id, true),
-                    toggle: () => toggle(group.id, true),
+                    collapsed: groupCollapsed(group.id, true),
+                    toggle: () => toggleGroup(group.id, true),
                     onTogglePriority: () => togglePriority(group),
                     muted: true,
                   })}

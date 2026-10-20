@@ -1,14 +1,15 @@
 /**
- * Thread title history and the retitle policy. Full analysis can replace any
- * current title while automatic titling is enabled; opening analysis only
- * fills an empty title. Freshness checks prevent older turns from naming
- * newer work.
+ * Thread title history and the retitle policy. Full analysis projects the
+ * accepted objective while automatic titling is enabled; opening analysis
+ * fills an empty title. Outside edits retain title ownership until cleared.
  */
 
 /** What Workstreams knows about one thread's title. */
 export type TitleRecord = {
   /** The raw title (`null` when untitled) as last observed. */
   readonly observed: string | null;
+  /** An outside edit owns a nonempty title until it is cleared. */
+  readonly locked?: boolean;
   /** The title Workstreams last wrote, if any. */
   readonly written: string | null;
   /** When Workstreams last retitled the thread. */
@@ -37,11 +38,13 @@ export function observeTitle(
       provisional: false,
     };
   if (raw === record.observed) return record;
-  if (raw === null) return { ...record, observed: null, provisional: false };
+  if (raw === null)
+    return { ...record, observed: null, locked: false, provisional: false };
   const renamedElsewhere = record.observed !== null && raw !== record.written;
   return {
     ...record,
     observed: raw,
+    locked: record.locked || renamedElsewhere,
     provisional: record.provisional && !renamedElsewhere,
   };
 }
@@ -50,7 +53,8 @@ const same = (a: string, b: string) =>
   a.replace(/\s+/g, " ").trim().toLowerCase() ===
   b.replace(/\s+/g, " ").trim().toLowerCase();
 
-export type RetitleSkip = "no-suggestion" | "unchanged" | "stale" | "titled";
+export type RetitleSkip =
+  "no-suggestion" | "unchanged" | "stale" | "titled" | "manual";
 
 /**
  * What a suggested title was inferred from.
@@ -93,6 +97,8 @@ export function retitleDecision(args: {
     if (thread.title !== null) return { ok: false, reason: "titled" };
     return { ok: true };
   }
+  if (args.record.locked && thread.title !== null)
+    return { ok: false, reason: "manual" };
   // A newer or running turn may have moved the focus again.
   if (thread.status !== "idle" || thread.latestAttentionAt > args.revision)
     return { ok: false, reason: "stale" };

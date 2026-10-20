@@ -25,6 +25,7 @@ export function readTitleRecord(
   return row
     ? {
         observed: row.observed,
+        locked: row.locked === 1,
         written: row.written,
         retitledAt: row.retitled_at,
         provisional: row.provisional === 1,
@@ -45,7 +46,7 @@ export function writeTitleRecord(
     threadId,
     record.observed,
     record.written,
-    0,
+    record.locked ? 1 : 0,
     record.retitledAt,
     record.provisional ? 1 : 0,
   );

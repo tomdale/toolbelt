@@ -25,6 +25,13 @@ export function inputText(input: unknown): string {
 export const isUserRequest = (text: string) =>
   text.length > 0 && !text.startsWith(SYSTEM_PREFIX);
 
+/** Control-only replies advance work without redefining its objective. */
+export const isSubstantiveRequest = (text: string) =>
+  isUserRequest(text) &&
+  !/^(?:continue|keep going|go ahead|proceed|yes|yep|ok(?:ay)?|thanks|thank you)[.!\s]*$/i.test(
+    text.trim(),
+  );
+
 /** The first user request among a thread's `client/turn/requested` events. */
 export function openingOf(
   requested: readonly { data?: unknown }[],

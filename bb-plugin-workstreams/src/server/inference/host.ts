@@ -17,7 +17,7 @@ export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
     complete: async (
-      { prompt, model, maxTokens, reasoningLevel, serviceTier },
+      { prompt, model, maxTokens, reasoningLevel, serviceTier, outputSchema },
       ctx,
     ) => {
       const apiKey = await gatewayKey();
@@ -34,6 +34,7 @@ export default experimental_defineHostEntry({
           model,
           maxTokens,
           reasoningLevel,
+          outputSchema,
           serviceTier,
           apiKey,
           signal,

@@ -132,7 +132,7 @@ export class QuickAnalysis {
     if (!titled && !this.wantsTopic(thread)) return;
     this.tried.add(thread.id);
     const revision = thread.latestAttentionAt ?? thread.updatedAt;
-    if (this.wantsTopic(thread))
+    if (this.wantsTopic(thread) && !preset.topicError)
       this.deps.topics?.apply(thread.id, preset, null);
     if (preset.goal && titled)
       void this.deps
@@ -246,14 +246,15 @@ export class QuickAnalysis {
     const topics = this.wantsTopic(thread) ? this.deps.topics : undefined;
     const evidence = threadEvidence({ ...thread, status: undefined });
     const entities = topics?.entities() ?? [];
+    const project =
+      topics && thread.projectId
+        ? await topics.project(thread.projectId)
+        : null;
     const { value, traceId } = await this.deps.inference.run(
       "quick-analysis",
       {
         request,
-        project:
-          topics && thread.projectId
-            ? await topics.project(thread.projectId)
-            : null,
+        project,
         entities,
       },
       {
@@ -265,12 +266,19 @@ export class QuickAnalysis {
       },
     );
     if (this.disposed) return;
+    const projectIsCurrent =
+      !topics ||
+      !thread.projectId ||
+      (await topics.project(thread.projectId)) === project;
     const live = await this.deps
       .sdk()
       .threads.get({ threadId: thread.id })
       .catch(() => null);
     if (
       !live ||
+      live.status === "idle" ||
+      live.status === "error" ||
+      !projectIsCurrent ||
       this.disposed ||
       this.deps.analyzed(thread.id) ||
       threadEvidence({ ...live, status: undefined }) !== evidence ||
@@ -282,7 +290,7 @@ export class QuickAnalysis {
       });
       return;
     }
-    if (topics && this.wantsTopic(live))
+    if (topics && this.wantsTopic(live) && !value.topicError)
       topics.apply(thread.id, value, traceId);
     if (!value.goal) {
       this.deps.inference.annotate(traceId, {

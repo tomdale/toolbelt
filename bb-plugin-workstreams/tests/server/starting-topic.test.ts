@@ -46,6 +46,7 @@ async function setup() {
   ) => {
     const created = w.addThread(threadId, {
       title: null,
+      status: "starting",
       createdAt: Date.now(),
       ...thread,
     });

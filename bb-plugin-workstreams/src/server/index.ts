@@ -11,6 +11,7 @@ import { registerAgentInstructions } from "./agents.ts";
 import { Analyzer } from "./analyzer.ts";
 import { RecapArchive } from "./archive.ts";
 import { Organizer } from "./organizer.ts";
+import { Reclassification } from "./reclassification.ts";
 import { sectionMembers } from "./cleanup.ts";
 import { WorkstreamMap } from "./map.ts";
 import { ComposerPreview, type Preview } from "./preview.ts";
@@ -164,9 +165,14 @@ export default async function plugin(bb: BbPluginApi) {
             prompt,
             model: direct,
             ...(maxTokens ? { maxTokens } : {}),
+            ...(context?.outputSchema
+              ? { outputSchema: context.outputSchema }
+              : {}),
+            ...(choice.reasoningLevel
+              ? { reasoningLevel: choice.reasoningLevel }
+              : {}),
             ...(choice.kind === "provider"
               ? {
-                  reasoningLevel: choice.reasoningLevel,
                   ...(choice.serviceTier
                     ? { serviceTier: choice.serviceTier }
                     : {}),
@@ -262,7 +268,13 @@ export default async function plugin(bb: BbPluginApi) {
       entities: () => topics.list(),
       assignment: (threadId) => topics.assignment(threadId),
       basis: (threadId) => topics.basis(threadId),
-      basisOf: (requests, project) => topicBasis({ requests, project }),
+      basisOf: (requests, project) =>
+        topicBasis({
+          requests,
+          project,
+          definitions: topics.definitionKey(),
+          model: currentPrefs().analysis.fullModel,
+        }),
       project: projectName,
       apply: (threadId, answer, basis, traceId) =>
         applyTopic(threadId, answer, "full", basis, traceId),
@@ -329,6 +341,7 @@ export default async function plugin(bb: BbPluginApi) {
   registerQuestionTool(bb, questions);
   registerAgentInstructions(bb, recaps);
   const organizerInstance = new Organizer({
+    sdk: () => bb.sdk,
     db,
     service,
     topics,
@@ -344,6 +357,31 @@ export default async function plugin(bb: BbPluginApi) {
   });
   organizer = organizerInstance;
   bb.onDispose(() => organizerInstance.dispose());
+  const reclassification = new Reclassification({
+    db,
+    sdk: () => bb.sdk,
+    topics,
+    analyzer,
+    onChange: (row) => {
+      try {
+        journal.add({
+          action: "batch",
+          source: "user",
+          rationale: "Applied reviewed topic repair",
+          threads: [{ id: row.threadId, name: row.title }],
+          workstreams: [],
+          undo: null,
+          detail: `${row.from ?? "Unfiled"} → ${row.to ?? "Unfiled"}`,
+        });
+        inference.annotate(row.traceId, {
+          topic: "applied from reviewed preview",
+        });
+      } finally {
+        notify();
+        triggerOrganizer();
+      }
+    },
+  });
   const previewer = new ComposerPreview({
     sdk: () => bb.sdk,
     topics,
@@ -776,6 +814,9 @@ export default async function plugin(bb: BbPluginApi) {
         ),
       };
     },
+    reclassificationPreview: async ({ threadIds }) =>
+      reclassification.preview(threadIds),
+    reclassificationApply: async ({ planId }) => reclassification.apply(planId),
     observedNames: async ({ threadId }) => analyzer.observedNames(threadId),
     catalog: async () => topics.state(),
     catalogCreate: ({ name, description, parentId, aliases }) =>
@@ -879,6 +920,7 @@ export default async function plugin(bb: BbPluginApi) {
     prefs: async () => ({ prefs: currentPrefs() }),
     setPrefs: async ({ patch }) => {
       const prefs = savePrefs(db, patch);
+      if (patch.organize) triggerOrganizer(0);
       bb.realtime.publish("prefs", { prefs });
       notify();
       return { prefs };
@@ -962,6 +1004,7 @@ export default async function plugin(bb: BbPluginApi) {
     analyzer,
     recaps,
     organizer: organizerInstance,
+    reclassification,
     map,
     traces,
     topics,

@@ -9,6 +9,7 @@ export const hostContract = defineRpcContract({
       .object({
         prompt: z.string().max(320_000),
         reasoningLevel: z.string().min(1).max(50).optional(),
+        outputSchema: z.record(z.string(), z.unknown()).optional(),
         serviceTier: z.string().min(1).max(50).optional(),
         maxTokens: z.number().int().min(1024).max(32768).optional(),
         model: z

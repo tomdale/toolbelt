@@ -7,11 +7,8 @@ import type { Analyzer } from "./analyzer.ts";
 import type { CleanupMember } from "./cleanup.ts";
 import { getMeta, setMeta, type Database } from "./db.ts";
 import type { TopicStore } from "./topics.ts";
-import {
-  activeHome,
-  ancestors,
-  deriveActiveEntityIds,
-} from "../domain/regroup.ts";
+import { activeHome, deriveActiveEntityIds } from "../domain/regroup.ts";
+import { assignmentEvidence } from "./evidence.ts";
 import { topicPath } from "../domain/topic-path.ts";
 import type { TopicAssignment, Topic } from "../domain/topics.ts";
 import { listSections, type InventoryThread } from "./inventory.ts";
@@ -21,11 +18,11 @@ import type {
   OrganizerState,
   OrganizerStateCounts,
   OrganizerStateGroup,
-  OrganizerStateGroupMember,
   OrganizerStateUnresolved,
 } from "./contract.ts";
 
 export type OrganizerDeps = {
+  sdk: () => BbPluginApi["sdk"];
   db: Database;
   service: WorkstreamService;
   topics: TopicStore;
@@ -41,6 +38,7 @@ export type OrganizerDeps = {
 };
 
 const KEY = "live_organization";
+class SupersededPlan extends Error {}
 
 const DEFAULT_COUNTS: OrganizerStateCounts = {
   activeRoots: 0,
@@ -62,6 +60,7 @@ const DEFAULT_STATE: OrganizerState = {
 
 export class Organizer {
   private running = false;
+  private factRevision = 0;
   private rerunQueued = false;
   private disposed = false;
   private controller: AbortController | null = null;
@@ -120,6 +119,7 @@ export class Organizer {
 
   trigger(debounceMs = 50): void {
     if (this.disposed) return;
+    this.factRevision++;
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
@@ -175,14 +175,58 @@ export class Organizer {
     return runPromise;
   }
 
+  private policy() {
+    return this.deps.policy?.() ?? { capacity: 6, collapseAt: 3 };
+  }
+
+  private completed(roots: readonly InventoryThread[]): Map<string, boolean> {
+    const analysis = this.deps.analyzer.all();
+    const recaps = this.deps.recaps?.() ?? {};
+    const current = new Map(
+      this.deps.service.threads().map((thread) => [thread.id, thread]),
+    );
+    return new Map(
+      roots.map((root) => [
+        root.id,
+        isDone(
+          workView(
+            current.get(root.id) ?? root,
+            analysis[root.id],
+            recaps[root.id],
+          ),
+        ),
+      ]),
+    );
+  }
+
+  private fingerprint(
+    roots: readonly InventoryThread[],
+    completed: ReadonlyMap<string, boolean>,
+    projected?: ReadonlyMap<string, string | null>,
+  ): string {
+    return createHash("sha256")
+      .update(
+        JSON.stringify({
+          catalogRevision: this.deps.topics.revision(),
+          policy: this.policy(),
+          roots: roots.map((root) => [
+            root.id,
+            root.title,
+            projected?.has(root.id) ? projected.get(root.id) : root.sectionId,
+            completed.get(root.id),
+            assignmentEvidence(this.deps.topics.assignment(root.id)),
+          ]),
+        }),
+      )
+      .digest("hex");
+  }
+
   private async executePass(
     signal: AbortSignal,
     isForced = false,
   ): Promise<OrganizerState> {
     const currentState = this.state();
-    const sdk = (
-      this.deps.service as unknown as { sdk: () => BbPluginApi["sdk"] }
-    ).sdk();
+    const sdk = this.deps.sdk();
 
     let passContext: {
       roots: InventoryThread[];
@@ -205,33 +249,11 @@ export class Organizer {
         .map((r) => r.thread)
         .filter((t) => !t.isHidden && !t.isArchived);
 
-      const analysis = this.deps.analyzer.all();
-      const recaps = this.deps.recaps?.() ?? {};
-      const isCompletedMap = new Map<string, boolean>();
-      for (const root of roots)
-        isCompletedMap.set(
-          root.id,
-          isDone(workView(root, analysis[root.id], recaps[root.id])),
-        );
+      const factRevision = this.factRevision;
+      const isCompletedMap = this.completed(roots);
 
       // Check if snapshot is identical to last completed run
-      const catalogRev = this.deps.topics.revision();
-      const snapshotHash = createHash("sha256")
-        .update(
-          JSON.stringify({
-            catalogRev,
-            roots: roots.map((r) => [
-              r.id,
-              r.title,
-              r.sectionId,
-              isCompletedMap.get(r.id),
-              this.deps.topics.assignment(r.id).entityId,
-              this.deps.topics.assignment(r.id).status,
-              this.deps.topics.assignment(r.id).provenance,
-            ]),
-          }),
-        )
-        .digest("hex");
+      const snapshotHash = this.fingerprint(roots, isCompletedMap);
 
       if (
         !isForced &&
@@ -274,14 +296,11 @@ export class Organizer {
         }
       }
 
+      const bindings = new Set(this.deps.topics.groups().values());
       const currentActive = entities
-        .filter((e) => {
-          const groups = this.deps.topics.groups();
-          return Array.from(groups.values()).includes(e.id);
-        })
+        .filter((e) => bindings.has(e.id))
         .map((e) => e.id);
-
-      const policy = this.deps.policy?.() ?? { capacity: 6, collapseAt: 3 };
+      const policy = this.policy();
       const rawSelectedEntityIds = deriveActiveEntityIds({
         entities,
         counts,
@@ -329,6 +348,31 @@ export class Organizer {
         entities,
       };
 
+      const planEvidence = JSON.stringify({
+        entities,
+        policy,
+        completed: [...isCompletedMap],
+        assignments: roots.map((root) =>
+          assignmentEvidence(assignments[root.id]!),
+        ),
+      });
+      const assertCurrent = () => {
+        if (
+          signal.aborted ||
+          this.disposed ||
+          this.factRevision !== factRevision ||
+          JSON.stringify({
+            entities: this.deps.topics.list(),
+            policy: this.policy(),
+            completed: [...this.completed(roots)],
+            assignments: roots.map((root) =>
+              assignmentEvidence(this.deps.topics.assignment(root.id)),
+            ),
+          }) !== planEvidence
+        )
+          throw new SupersededPlan();
+      };
+
       // Section changes run in the service's mutation queue, so a move,
       // retitle, or reconcile never interleaves with them, and whatever
       // changed is recorded in Activity even when the pass fails partway.
@@ -340,8 +384,9 @@ export class Organizer {
           for (const section of liveSections)
             changes.name(section.id, section.name);
           const groupBindings = new Map(this.deps.topics.groups()); // sectionId -> entityId
-
+          assertCurrent();
           for (const entityId of selectedEntityIds) {
+            assertCurrent();
             const entity = entities.find((e) => e.id === entityId)!;
             const expectedName = topicPath(entityId, entities);
 
@@ -362,12 +407,12 @@ export class Organizer {
               if (candidate) {
                 section = candidate;
                 this.deps.topics.bindGroup(section.id, entityId);
-                groupBindings.set(section.id, entityId); // Update local map (Finding 4)
+                groupBindings.set(section.id, entityId);
               }
             }
 
             if (!section) {
-              // Create a new native section owned by workstreams (Finding 7)
+              // Ownership permits cleanup when the projection no longer uses this section.
               const created = await sdk.threadSections.create({
                 name: expectedName,
               });
@@ -383,7 +428,7 @@ export class Organizer {
                 )
                 .run(created.id, now, now);
               this.deps.topics.bindGroup(created.id, entityId);
-              groupBindings.set(created.id, entityId); // Update local map (Finding 4)
+              groupBindings.set(created.id, entityId);
               this.deps.service.seeSection(created.id, created.name);
             } else if (section.name !== expectedName) {
               // Rename section if entity name changed
@@ -406,6 +451,7 @@ export class Organizer {
 
           // Update roots' sectionId in BB
           for (const root of roots) {
+            assertCurrent();
             const assignment = assignments[root.id];
             let targetSectionId: string | null = null;
 
@@ -437,6 +483,7 @@ export class Organizer {
                 live.visibility !== "hidden" &&
                 from !== targetSectionId
               ) {
+                assertCurrent();
                 await sdk.threads.update({
                   threadId: root.id,
                   sectionId: targetSectionId,
@@ -462,7 +509,7 @@ export class Organizer {
           const activeSectionIds = new Set(entityToSection.values());
 
           for (const section of liveSections) {
-            // Never delete an active section (Finding 4)
+            // Selected sections retain their bindings.
             if (activeSectionIds.has(section.id)) continue;
 
             const boundEntityId = groupBindings.get(section.id);
@@ -472,7 +519,8 @@ export class Organizer {
                 (m) => m.archivedAt === null,
               );
               if (activeMembers.length === 0) {
-                // Check ownership safety policy (Finding 7)
+                assertCurrent();
+                // Only sections created by Workstreams may be deleted.
                 const wsRow = this.deps.db
                   .prepare(
                     "SELECT created_by FROM ws_workstream WHERE section_id = ?",
@@ -534,31 +582,23 @@ export class Organizer {
 
       setMeta(this.deps.db, "bootstrapped", "1");
 
-      // Post-sync fingerprint using appliedSectionIds (Finding 6)
-      const postSyncSnapshotHash = createHash("sha256")
-        .update(
-          JSON.stringify({
-            catalogRev: this.deps.topics.revision(),
-            roots: roots.map((r) => [
-              r.id,
-              r.title,
-              appliedSectionIds.get(r.id) ?? r.sectionId,
-              isCompletedMap.get(r.id),
-              this.deps.topics.assignment(r.id).entityId,
-              this.deps.topics.assignment(r.id).status,
-              this.deps.topics.assignment(r.id).provenance,
-            ]),
-          }),
-        )
-        .digest("hex");
-      this.lastSyncedHash = postSyncSnapshotHash;
+      this.lastSyncedHash = this.fingerprint(
+        roots,
+        isCompletedMap,
+        appliedSectionIds,
+      );
 
       return this.save(finalState);
     } catch (err) {
       if (signal.aborted || this.disposed) return this.state();
+      if (err instanceof SupersededPlan) {
+        this.lastSyncedHash = null;
+        this.rerunQueued = true;
+        return this.state();
+      }
       const errMsg = err instanceof Error ? err.message : String(err);
 
-      // Finding 9: Partial mutation state truth
+      // Report the applied prefix rather than claiming the whole plan succeeded.
       if (passContext && passContext.selectedEntityIds.length > 0) {
         const failedState = this.assembleOrganizerState({
           status: "failed",
@@ -714,9 +754,13 @@ export class Organizer {
       }
     }
 
-    const finalGroups = Array.from(groupsMap.values()).filter(
-      (g) => g.totalCount > 0,
-    );
+    const policy = this.policy();
+    const finalGroups = Array.from(groupsMap.values())
+      .filter((g) => g.totalCount > 0)
+      .map((group) => ({
+        ...group,
+        policyReason: `${group.activeCount} active roots drive grouping; ${group.completedCount} completed roots remain visible. Capacity ${policy.capacity}, contraction ${policy.collapseAt}. Splits within capacity require active work in at least two groups.`,
+      }));
 
     return {
       status,

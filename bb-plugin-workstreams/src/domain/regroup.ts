@@ -13,7 +13,8 @@ export type RegroupInput = {
 export const ancestors = topicAncestors;
 export function activeHome(id: string, active: string[], entities: Entity[]) {
   return (
-    topicAncestors(id, entities).find((parent) => active.includes(parent)) ?? null
+    topicAncestors(id, entities).find((parent) => active.includes(parent)) ??
+    null
   );
 }
 
@@ -64,9 +65,8 @@ export function isGroupingValid(
     for (const [root, count] of totals) {
       if (
         count <= collapseAt &&
-        (activeIds.filter(
-          (id) => ancestors(id, entities).at(-1) === root,
-        ).length !== 1 ||
+        (activeIds.filter((id) => ancestors(id, entities).at(-1) === root)
+          .length !== 1 ||
           !activeIds.includes(root))
       ) {
         return false;
@@ -82,8 +82,14 @@ export function isGroupingValid(
  * and concurrent independent task counts according to policy.
  */
 export function deriveActiveEntityIds(input: RegroupInput): string[] {
-  const { entities, counts, active, capacity, collapseAt, visibleProductRoots } =
-    input;
+  const {
+    entities,
+    counts,
+    active,
+    capacity,
+    collapseAt,
+    visibleProductRoots,
+  } = input;
 
   const positiveCounts: Record<string, number> = {};
   for (const [id, count] of Object.entries(counts)) {
@@ -125,8 +131,20 @@ export function deriveActiveEntityIds(input: RegroupInput): string[] {
       continue;
     }
 
-    // Preserve existing active groups for this product if they meet all policy rules
     const prevProductActive = active.filter((id) => productEntityIds.has(id));
+    const occupiedHomes = new Set(
+      Object.keys(productCounts)
+        .map((id) => activeHome(id, prevProductActive, productEntities))
+        .filter(Boolean),
+    );
+    // A completed-only residual group does not make a split useful. Keep a
+    // split within capacity only when at least two groups have active work.
+    if (totalProductCount <= capacity && occupiedHomes.size < 2) {
+      selected.push(root.id);
+      continue;
+    }
+
+    // Preserve useful existing groups that satisfy capacity and contraction.
     if (
       prevProductActive.length > 0 &&
       isGroupingValid(
@@ -139,7 +157,10 @@ export function deriveActiveEntityIds(input: RegroupInput): string[] {
       )
     ) {
       selected.push(...prevProductActive);
-      if (visibleProductRoots?.includes(root.id) && !selected.includes(root.id)) {
+      if (
+        visibleProductRoots?.includes(root.id) &&
+        !selected.includes(root.id)
+      ) {
         selected.push(root.id);
       }
       continue;

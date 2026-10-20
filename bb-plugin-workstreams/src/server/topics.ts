@@ -12,7 +12,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { getMeta, setMeta, type Database } from "./db.ts";
 
 /** Bump to settle every thread's topic again with changed classification rules. */
-export const CLASSIFICATION_VERSION = "topics-v2";
+export const CLASSIFICATION_VERSION = "topics-v3";
 
 /**
  * The basis of an automatic topic: what it was classified from. Only the
@@ -23,6 +23,8 @@ export function topicBasis(input: {
   version?: string;
   requests?: readonly unknown[];
   project?: string | null;
+  definitions?: string;
+  model?: unknown;
 }): string {
   return createHash("sha256")
     .update(
@@ -30,6 +32,8 @@ export function topicBasis(input: {
         version: input.version ?? CLASSIFICATION_VERSION,
         requests: input.requests ?? [],
         project: input.project ?? null,
+        definitions: input.definitions ?? null,
+        model: input.model ?? null,
       }),
     )
     .digest("hex");
@@ -51,6 +55,13 @@ export class TopicStore {
   revision(): number {
     const raw = getMeta(this.db, "catalog_revision");
     return raw ? parseInt(raw, 10) || 1 : 1;
+  }
+
+  /** Independent of assignment and native-section projection changes. */
+  definitionKey(): string {
+    return createHash("sha256")
+      .update(JSON.stringify(this.list()))
+      .digest("hex");
   }
 
   bumpRevision(): number {
@@ -282,8 +293,7 @@ export class TopicStore {
   }
 
   private bindGroupWithoutRevision(sectionId: string, entityId: string): void {
-    if (!this.getById(entityId))
-      throw new Error(`Unknown topic: ${entityId}`);
+    if (!this.getById(entityId)) throw new Error(`Unknown topic: ${entityId}`);
     this.db
       .prepare(
         "INSERT INTO ws_corpus_group(section_id, entity_id) VALUES (?, ?) ON CONFLICT(section_id) DO UPDATE SET entity_id = excluded.entity_id",
@@ -292,8 +302,7 @@ export class TopicStore {
   }
 
   bindGroup(sectionId: string, entityId: string): void {
-    if (!this.getById(entityId))
-      throw new Error(`Unknown topic: ${entityId}`);
+    if (!this.getById(entityId)) throw new Error(`Unknown topic: ${entityId}`);
     const existing = this.groups().get(sectionId);
     if (existing === entityId) return;
     this.bindGroupWithoutRevision(sectionId, entityId);

@@ -18,8 +18,8 @@ type Entry = {
 };
 
 /**
- * Every analysis infers the next goal in `goals`, which becomes the thread's
- * title. The last one repeats; null infers none.
+ * Responses without an identity transition can establish an objective and
+ * retain it on later turns. The last response repeats.
  */
 const requests: string[] = [];
 async function setup(
@@ -95,7 +95,7 @@ describe("keeping thread titles current", () => {
     expect(w.threads.get("t1")?.title).toBe("Fix stale build cache");
   });
 
-  it("retitles consecutive turns immediately when the focus changes", async () => {
+  it("keeps the objective when later responses suggest a subtask title", async () => {
     // Before setup: the plugin captures Date.now when it loads.
     let now = 1_000_000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
@@ -110,11 +110,12 @@ describe("keeping thread titles current", () => {
 
     now += 1;
     await turn(w, "t1", 200);
-    expect(w.threads.get("t1")?.title).toBe("Markdown viewer fonts");
+    expect(w.threads.get("t1")?.title).toBe("Markdown viewer themes");
+    expect(await retitles(w)).toHaveLength(1);
     clock.mockRestore();
   });
 
-  it("updates a title someone else changed while automatic titling is enabled", async () => {
+  it("preserves an outside edit while automatic titling is enabled", async () => {
     const w = await setup(["Markdown viewer themes"]);
     w.addThread("t1", { title: "Explain build caching" });
     await rpc(w, "refresh", null);
@@ -123,11 +124,11 @@ describe("keeping thread titles current", () => {
     await rpc(w, "refresh", null);
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     await turn(w, "t1", 100);
-    expect(w.threads.get("t1")?.title).toBe("Markdown viewer themes");
-    expect(await retitles(w)).toHaveLength(1);
+    expect(w.threads.get("t1")?.title).toBe("My viewer");
+    expect(await retitles(w)).toHaveLength(0);
   });
 
-  it("updates an external rename even before a reconcile", async () => {
+  it("preserves an outside edit even before a reconcile", async () => {
     // Before setup: the plugin captures Date.now when it loads.
     let now = 1_000_000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
@@ -140,7 +141,7 @@ describe("keeping thread titles current", () => {
     w.threads.set("t1", { ...w.threads.get("t1")!, title: "My viewer" });
     now += 2 * 60 * 60_000;
     await turn(w, "t1", 200);
-    expect(w.threads.get("t1")?.title).toBe("Markdown viewer fonts");
+    expect(w.threads.get("t1")?.title).toBe("My viewer");
     clock.mockRestore();
   });
 

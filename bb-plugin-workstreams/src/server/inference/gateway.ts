@@ -112,8 +112,10 @@ export async function gatewayComplete(request: {
   disableThinking?: boolean;
   maxTokens?: number;
   reasoningLevel?: string;
+  outputSchema?: Record<string, unknown>;
   serviceTier?: string;
 }): Promise<Completion> {
+  const chat = Boolean(request.reasoningLevel || request.outputSchema);
   const effort = request.reasoningLevel;
   if (
     effort &&
@@ -136,25 +138,37 @@ export async function gatewayComplete(request: {
       ? { providerOptions: { gateway: { serviceTier: request.serviceTier } } }
       : {};
   const res = await fetch(
-    effort ? "https://ai-gateway.vercel.sh/v1/chat/completions" : GATEWAY_URL,
+    chat ? "https://ai-gateway.vercel.sh/v1/chat/completions" : GATEWAY_URL,
     {
       method: "POST",
       signal: request.signal,
       headers: {
         "content-type": "application/json",
-        ...(effort
+        ...(chat
           ? { Authorization: `Bearer ${request.apiKey}` }
           : { "anthropic-version": "2023-06-01", "x-api-key": request.apiKey }),
       },
       body: JSON.stringify({
         model: request.model,
-        ...(effort
+        ...(chat
           ? {
               messages: [
                 { role: "system", content: SYSTEM_PROMPT },
                 { role: "user", content: request.prompt },
               ],
-              reasoning_effort: effort,
+              ...(effort ? { reasoning_effort: effort } : {}),
+              ...(request.outputSchema
+                ? {
+                    response_format: {
+                      type: "json_schema",
+                      json_schema: {
+                        name: "thread_identity",
+                        strict: true,
+                        schema: request.outputSchema,
+                      },
+                    },
+                  }
+                : {}),
             }
           : {
               system: SYSTEM_PROMPT,
@@ -169,7 +183,7 @@ export async function gatewayComplete(request: {
     },
   );
   if (!res.ok) throw new Error(`AI Gateway returned ${res.status}.`);
-  if (effort) {
+  if (chat) {
     const body = chatResponse.parse(await res.json());
     const answer = body.choices[0]!;
     return {

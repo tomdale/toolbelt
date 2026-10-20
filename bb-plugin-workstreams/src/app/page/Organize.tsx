@@ -23,6 +23,7 @@ import { ghostButton, primaryButton, secondaryButton } from "./controls.ts";
 import { TaskIdentity } from "../task/TaskIdentity.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
 import { TAG_ICON } from "../workstream-icon.ts";
+import { Reclassification } from "./Reclassification.tsx";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 
@@ -158,6 +159,18 @@ export function Organize({
         />
       ) : null}
 
+      {state ? (
+        <Reclassification
+          rpc={rpc}
+          threadIds={[
+            ...state.groups.flatMap((group) =>
+              group.roots.map((root) => root.id),
+            ),
+            ...state.unresolved.map((root) => root.id),
+          ]}
+          onApplied={() => void read()}
+        />
+      ) : null}
       {!working ? children : null}
     </section>
   );
@@ -438,6 +451,11 @@ function GroupCard({
           {group.description ? (
             <p className="mt-1 text-xs text-muted-foreground">
               {group.description}
+            </p>
+          ) : null}
+          {group.policyReason ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {group.policyReason}
             </p>
           ) : null}
         </div>

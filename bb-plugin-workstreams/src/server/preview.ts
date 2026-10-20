@@ -88,10 +88,12 @@ export class ComposerPreview {
     );
     return {
       id: randomUUID(),
-      confidence: label ? "high" : "low",
-      reason: label
-        ? "Chosen from the draft by Quick analysis."
-        : "The draft doesn't say clearly enough what it's about.",
+      confidence: label ? "medium" : "low",
+      reason: value.topicError
+        ? "Topic validation failed; the draft remains unclassified."
+        : label
+          ? "Suggested from the draft by Quick analysis."
+          : "No primary topic is supported by this draft.",
       subject: label,
       subjectId: value.subjectId,
       proposal: value.proposed,

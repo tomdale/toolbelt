@@ -34,8 +34,14 @@ import type { ModelChoice } from "../domain/prefs.ts";
 import type { Database } from "./db.ts";
 import { displayTitle, type InventoryThread } from "./inventory.ts";
 import { modelLabel, type Inference, type OutputOf } from "./model.ts";
-import { inputText, isUserRequest, openingOf } from "./requests.ts";
+import { inputText, isSubstantiveRequest, openingOf } from "./requests.ts";
+import {
+  IDENTITY_VERSION,
+  settleIdentity,
+  type ThreadObjective,
+} from "../domain/identity.ts";
 import { assignmentEvidence, threadEvidence } from "./evidence.ts";
+import { redact } from "../domain/redact.ts";
 
 type Sdk = BbPluginApi["sdk"];
 
@@ -239,6 +245,7 @@ export class Analyzer {
           {
             revision: row.revision,
             needsGoalBackfill: !result || !Object.hasOwn(result, "goal"),
+            needsTopicRetry: Boolean(result?.topicError),
           },
         ] as const;
       }),
@@ -258,6 +265,7 @@ export class Analyzer {
         previous &&
         previous.revision >= thread.latestAttentionAt &&
         !previous.needsGoalBackfill &&
+        !previous.needsTopicRetry &&
         !untopiced
       )
         continue;
@@ -286,6 +294,70 @@ export class Analyzer {
    */
   async analyzeNow(threadId: string): Promise<StoredAnalysis | null> {
     return this.run(threadId, true);
+  }
+
+  /** A classifier preview shares production evidence and parsing but writes no facts. */
+  async previewTopic(threadId: string) {
+    const sdk = this.deps.sdk();
+    const thread = await sdk.threads.get({ threadId });
+    const topics = this.deps.topics;
+    if (!topics || thread.archivedAt !== null || thread.visibility === "hidden")
+      throw new Error("That thread is unavailable for classification.");
+    const evidence = threadEvidence(thread);
+    const assignment = topics.assignment(threadId);
+    if (assignment.provenance === "manual")
+      throw new Error("Manual topics are preserved.");
+    const assignmentKey = assignmentEvidence(assignment);
+    const context = await this.context(thread);
+    const project = await topics.project(thread.projectId);
+    const input: FullAnalysisInput = {
+      title: displayTitle(thread),
+      previousGoal: this.get(threadId)?.goal ?? null,
+      previousObjective: this.get(threadId)?.objective ?? null,
+      continuation: await this.continuation(thread, context.requests),
+      requests: context.requests,
+      lastAssistantText: context.lastAssistantText,
+      report: this.deps.report?.(threadId)?.report ?? null,
+      mode: "full",
+      topic: {
+        entities: topics.entities(),
+        project,
+        current: {
+          id: assignment.entityId,
+          label: assignment.label,
+          inherited: assignment.provenance === "inherited",
+        },
+      },
+    };
+    const { value, traceId } = await this.deps.inference.run(
+      "full-analysis",
+      input,
+      {
+        model: await this.deps.model(),
+        threadId,
+        label: `Topic preview: ${input.title}`,
+        links: [{ kind: "thread", ref: threadId }],
+      },
+    );
+    this.deps.inference.annotate(traceId, {
+      application: "preview only: no facts changed",
+    });
+    if (!value.topic || value.topicError)
+      throw new Error(value.topicError ?? "No topic result.");
+    return {
+      threadId,
+      title: input.title,
+      from: assignment.label,
+      evidence,
+      assignmentKey,
+      traceId,
+      projectHint: project,
+      basis: topics.basisOf(
+        context.requests.map((r) => r.text),
+        project,
+      ),
+      answer: value.topic,
+    };
   }
 
   private schedule(threadId: string, delay: number): void {
@@ -354,6 +426,7 @@ export class Analyzer {
         previous &&
         previous.revision >= revision &&
         Object.hasOwn(previous, "goal") &&
+        !previous.topicError &&
         !this.settleTopic.has(threadId)
       )
         return previous;
@@ -376,6 +449,7 @@ export class Analyzer {
       let result: StoredAnalysis;
       let topicAnswer: FullAnalysisOutputTopic = null;
       let names: NameObservations | null = null;
+      let identityDecision = "kept: no substantive request";
       if (!full && reported && previous) {
         // Nothing new to settle, and the agent said how the turn ended.
         result = {
@@ -390,6 +464,10 @@ export class Analyzer {
         const input: FullAnalysisInput = {
           title: displayTitle(thread),
           previousGoal: previous?.goal ?? null,
+          previousObjective: previous?.objective ?? null,
+          continuation: full
+            ? await this.continuation(thread, context.requests)
+            : null,
           untitled: !thread.title,
           requests: context.requests,
           lastAssistantText: context.lastAssistantText,
@@ -413,15 +491,36 @@ export class Analyzer {
           `Analyzed ${threadId}: context ${asked - started} ms, model ${this.now() - asked} ms`,
         );
         const status = reported?.status ?? output.status!;
+        const identity = settleIdentity({
+          previous: previous?.objective ?? null,
+          candidate: output.identity,
+          requestIds: context.requests.flatMap((r) => (r.id ? [r.id] : [])),
+        });
+        identityDecision = identity.decision;
+        // An older response contract can establish a provisional objective;
+        // subsequent changes require an explicit identity transition.
+        const objective: ThreadObjective | null =
+          identity.objective ??
+          (!previous?.objective && output.goal && context.requests[0]?.id
+            ? {
+                summary: redact(context.requests[0].text).slice(0, 1200),
+                title: output.goal,
+                evidenceIds: [context.requests[0].id],
+              }
+            : null);
         result = {
           ...status,
           goal: topicOnly
             ? (previous?.goal ?? null)
             : full
-              ? (output.goal ??
+              ? (objective?.title ??
+                output.goal ??
                 previous?.goal ??
                 (input.untitled ? null : input.title))
               : (previous?.goal ?? null),
+          objective: topicOnly ? (previous?.objective ?? null) : objective,
+          identityVersion: IDENTITY_VERSION,
+          ...(output.topicError ? { topicError: output.topicError } : {}),
           reported: reported !== null,
           requestsKey: full
             ? context.requestsKey
@@ -435,9 +534,15 @@ export class Analyzer {
         names = output.names;
       }
       if (this.disposed || this.forgotten.has(threadId)) return null;
+      const projectIsCurrent =
+        !topic ||
+        !this.deps.topics ||
+        (await this.deps.topics.project(thread.projectId)) ===
+          topic.question.project;
       const live = await sdk.threads.get({ threadId }).catch(() => null);
       if (
         !live ||
+        !projectIsCurrent ||
         this.disposed ||
         this.forgotten.has(threadId) ||
         this.epochs.get(threadId) !== epoch ||
@@ -479,7 +584,11 @@ export class Analyzer {
       this.deps.inference.annotate(
         result.traceId,
         stored.changes > 0
-          ? { storedForRevision: revision }
+          ? {
+              storedForRevision: revision,
+              identity: identityDecision,
+              evidenceRevision: revision,
+            }
           : { stored: "no: a newer turn's analysis was already stored" },
       );
       if (stored.changes > 0 && topicAnswer && topic)
@@ -489,7 +598,16 @@ export class Analyzer {
           topic.basis,
           result.traceId ?? null,
         );
-      this.failures.delete(threadId);
+      if (result.topicError) {
+        const failed = this.failures.get(threadId);
+        const count = failed?.revision === revision ? failed.count + 1 : 1;
+        this.failures.set(threadId, { revision, count, at: this.now() });
+        this.deps.inference.annotate(result.traceId, {
+          topic: "not applied: invalid topic; bounded backoff retry",
+        });
+        if (count < MAX_ATTEMPTS)
+          this.schedule(threadId, RETRY_AFTER_MS * 2 ** (count - 1));
+      } else this.failures.delete(threadId);
       if ((this.lastText.get(threadId)?.revision ?? Infinity) <= revision)
         this.lastText.delete(threadId);
       this.lastError = null;
@@ -536,16 +654,20 @@ export class Analyzer {
     ]);
     const recent = history
       .map((prompt) => inputText(prompt.input))
-      .filter(isUserRequest)
+      .filter(isSubstantiveRequest)
       .slice(0, 6)
       .reverse();
-    const opening = openingOf(first) ?? "";
+    const firstRequest = openingOf(first) ?? "";
+    const opening = isSubstantiveRequest(firstRequest) ? firstRequest : "";
     const requests = [
       ...(opening && !recent.includes(opening)
         ? [{ text: opening, initial: true }]
         : []),
-      ...recent.map((text) => ({ text, initial: false })),
-    ];
+      ...recent.map((text) => ({ text, initial: text === opening })),
+    ].map((request) => ({
+      ...request,
+      id: `r:${createHash("sha256").update(request.text).digest("hex").slice(0, 16)}`,
+    }));
     // The idle event's text describes its own turn only; otherwise read the
     // latest output.
     const cached = this.lastText.get(thread.id);
@@ -563,6 +685,33 @@ export class Analyzer {
         .digest("hex"),
       lastAssistantText,
     };
+  }
+
+  /** Continuations retain bounded intent, not an entire foreign transcript. */
+  private async continuation(
+    thread: Awaited<ReturnType<Sdk["threads"]["get"]>>,
+    requests: FullAnalysisInput["requests"],
+  ): Promise<string | null> {
+    const referenced =
+      [...requests]
+        .reverse()
+        .map((request) => request.text.match(/@thread:([\w-]+)/)?.[1])
+        .find(Boolean) ?? thread.sourceThreadId;
+    if (!referenced || referenced === thread.id) return null;
+    const stored = this.get(referenced);
+    if (stored?.objective) return stored.objective.summary;
+    try {
+      const sdk = this.deps.sdk();
+      const first = await sdk.threads.events.list({
+        threadId: referenced,
+        types: ["client/turn/requested"],
+        order: "asc",
+        limit: "4",
+      });
+      return openingOf(first)?.slice(0, 1800) ?? stored?.goal ?? null;
+    } catch {
+      return stored?.goal ?? null;
+    }
   }
 
   /**

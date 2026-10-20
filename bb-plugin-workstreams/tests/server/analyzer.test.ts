@@ -73,7 +73,7 @@ describe("idle analysis", () => {
     expect(
       prompt.indexOf("Investigate recurring scheduler schema errors"),
     ).toBeLessThan(prompt.indexOf("Remove change-specific README details"));
-    expect(prompt).toContain("Later evidence takes precedence");
+    expect(prompt).toContain("Preserve its identity across diagnosis");
   });
   it("persists observed names across runs without altering manual topics and deletes them with the thread", async () => {
     let count = 0;

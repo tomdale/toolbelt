@@ -20,6 +20,7 @@ export const modelChoiceSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("gateway"),
     model: z.string().min(1).max(200),
+    reasoningLevel: z.string().min(1).max(50).optional(),
   }),
   z.object({
     kind: z.literal("provider"),
@@ -48,7 +49,11 @@ export function gatewayModel(choice: ModelChoice): string | null {
 /** Eval-tested defaults (see SPEC.md and eval/). */
 export const DEFAULT_MODELS = {
   /** Quick analysis: a draft or first request, while you wait. */
-  quick: { kind: "gateway", model: "google/gemini-3.1-flash-lite" },
+  quick: {
+    kind: "gateway",
+    model: "openai/gpt-6-luna-fast",
+    reasoningLevel: "none",
+  },
   /** Full analysis: the settled goal, topic, and status at a turn's end. */
   full: { kind: "gateway", model: "openai/gpt-6-sol-fast" },
 } as const satisfies Record<string, ModelChoice>;
@@ -177,7 +182,7 @@ export function parsePrefs(raw: unknown): Prefs {
       fullModel: field("organize", "model"),
     };
   }
-  return prefsSchema.parse(
+  const parsed = prefsSchema.parse(
     Object.fromEntries(
       groupNames.map((g) => {
         const v = groups[g];
@@ -185,6 +190,11 @@ export function parsePrefs(raw: unknown): Prefs {
       }),
     ),
   );
+  parsed.organize.collapseAt = Math.min(
+    parsed.organize.collapseAt,
+    parsed.organize.capacity - 1,
+  );
+  return parsed;
 }
 
 /** Applies `patch` group by group, then re-parses so values stay in range. */

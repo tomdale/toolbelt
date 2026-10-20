@@ -22,6 +22,34 @@ const entities: Entity[] = [
   },
 ];
 describe("separated classification and grouping", () => {
+  it("keeps coverage, policy validity and a stable fixed point across load combinations", () => {
+    const tree = [
+      ...entities,
+      { id: "g", name: "Other", description: "", parentId: "p", aliases: [] },
+    ];
+    for (let p = 0; p <= 8; p++)
+      for (let f = 0; f <= 8; f++)
+        for (let g = 0; g <= 4; g++) {
+          const counts = { p, f, g };
+          for (const active of [["p"], ["p", "f", "g"]]) {
+            const input = {
+              entities: tree,
+              counts,
+              active,
+              capacity: 6,
+              collapseAt: 3,
+              visibleProductRoots: ["p"],
+            };
+            const selected = deriveActiveEntityIds(input);
+            expect(isGroupingValid(selected, tree, counts, 6, 3, ["p"])).toBe(
+              true,
+            );
+            expect(
+              deriveActiveEntityIds({ ...input, active: selected }).sort(),
+            ).toEqual([...selected].sort());
+          }
+        }
+  });
   it("homes a topic at its nearest active ancestor", () => {
     expect(activeHome("f", ["p"], entities)).toBe("p");
     expect(activeHome("f", ["p", "f"], entities)).toBe("f");
@@ -101,10 +129,34 @@ describe("separated classification and grouping", () => {
 
     // Multi-product workspaces: does not throw Unknown corpus identity when counts span products
     const multiEntities: Entity[] = [
-      { id: "p1", name: "Product 1", description: "", parentId: null, aliases: [] },
-      { id: "f1", name: "Feature 1", description: "", parentId: "p1", aliases: [] },
-      { id: "p2", name: "Product 2", description: "", parentId: null, aliases: [] },
-      { id: "f2", name: "Feature 2", description: "", parentId: "p2", aliases: [] },
+      {
+        id: "p1",
+        name: "Product 1",
+        description: "",
+        parentId: null,
+        aliases: [],
+      },
+      {
+        id: "f1",
+        name: "Feature 1",
+        description: "",
+        parentId: "p1",
+        aliases: [],
+      },
+      {
+        id: "p2",
+        name: "Product 2",
+        description: "",
+        parentId: null,
+        aliases: [],
+      },
+      {
+        id: "f2",
+        name: "Feature 2",
+        description: "",
+        parentId: "p2",
+        aliases: [],
+      },
     ];
     const multi = deriveActiveEntityIds({
       entities: multiEntities,

@@ -8,6 +8,7 @@ import {
   parseFullAnalysis,
   parseQuickAnalysis,
   quickAnalysisPrompt,
+  quickAnalysisSchema,
   type FullAnalysisInput,
   type QuickAnalysisInput,
 } from "../domain/analysis.ts";
@@ -95,6 +96,7 @@ export function summarize(
       const q = value as OutputOf<"quick-analysis">;
       return [
         q.goal ? `goal “${q.goal}”` : "no goal",
+        q.topicError ? "invalid topic (valid title retained)" : null,
         topicOf(q, (input as QuickAnalysisInput).entities),
       ]
         .filter(Boolean)
@@ -105,6 +107,8 @@ export function summarize(
       return [
         a.status ? a.status.state.replace("_", " ") : "reported",
         a.goal ? `goal “${a.goal}”` : null,
+        a.identity ? `identity ${a.identity.change}` : null,
+        a.topicError ? "invalid topic (other fields retained)" : null,
         a.topic
           ? `${topicOf(a.topic, (input as FullAnalysisInput).topic?.entities)}${a.topic.scopeShift ? " (scope shift)" : ""}`
           : null,
@@ -124,7 +128,7 @@ export type Complete = (
   choice: ModelChoice,
   signal?: AbortSignal,
   maxTokens?: number,
-  context?: { threadId?: string },
+  context?: { threadId?: string; outputSchema?: Record<string, unknown> },
 ) => Promise<
   Pick<Completion, "text" | "usage"> &
     Partial<Pick<Completion, "reasoning" | "stopReason">>
@@ -196,8 +200,10 @@ export class Inference {
     },
   ): Promise<{ value: OutputOf<K>; traceId: string | null }> {
     const spec = MODEL_CALLS[kind] as unknown as Spec;
-    const result = await this.call(kind, {
-      prompt: spec.prompt(input),
+    const prompt = spec.prompt(input);
+    const started = this.now();
+    let result = await this.call(kind, {
+      prompt,
       parse: (text) => spec.parse(text, input),
       input,
       model: options.model,
@@ -208,7 +214,54 @@ export class Inference {
       record: await this.deps.debug(),
       signal: options.signal,
       timeoutMs: options.timeoutMs,
+      outputSchema:
+        kind === "quick-analysis"
+          ? quickAnalysisSchema(input as QuickAnalysisInput)
+          : undefined,
     });
+    const topicError = result.ok
+      ? (result.value as { topicError?: string }).topicError
+      : undefined;
+    if (
+      kind === "quick-analysis" &&
+      ((!result.ok && result.invalid) || topicError) &&
+      !options.signal?.aborted
+    ) {
+      const remaining =
+        options.timeoutMs === undefined
+          ? undefined
+          : options.timeoutMs - (this.now() - started);
+      if (remaining === undefined || remaining > 100) {
+        this.annotate(result.traceId, {
+          validation: topicError ?? "Invalid response",
+          repair: "one bounded retry",
+        });
+        const repaired = await this.call(kind, {
+          prompt: `${prompt}\n\nValidation requirement: return a JSON object with the requested fields. subjectId must be exactly an ID in square brackets in the topic tree, never a name, path, or decorated label. Use null when ownership is unsupported.`,
+          parse: (text) => spec.parse(text, input),
+          input,
+          model: options.model,
+          outputSchema: quickAnalysisSchema(input as QuickAnalysisInput),
+          threadId: options.threadId,
+          label: options.label ?? TRACE_KIND_TITLE[kind],
+          links: options.links ?? [],
+          replayOf: result.traceId,
+          record: await this.deps.debug(),
+          signal: options.signal,
+          timeoutMs: remaining,
+        });
+        if (repaired.ok) {
+          const firstGoal = result.ok
+            ? (result.value as OutputOf<"quick-analysis">).goal
+            : null;
+          const value = repaired.value as OutputOf<"quick-analysis">;
+          result = {
+            ...repaired,
+            value: { ...value, goal: value.goal ?? firstGoal },
+          };
+        } else if (!result.ok) result = repaired;
+      }
+    }
     if (!result.ok) throw withTrace(result.error, result.traceId);
     return { value: result.value as OutputOf<K>, traceId: result.traceId };
   }
@@ -310,10 +363,11 @@ export class Inference {
       record: boolean;
       signal?: AbortSignal;
       timeoutMs?: number;
+      outputSchema?: Record<string, unknown>;
     },
   ): Promise<
     | { ok: true; value: unknown; traceId: string | null }
-    | { ok: false; error: unknown; traceId: string | null }
+    | { ok: false; error: unknown; traceId: string | null; invalid?: boolean }
   > {
     const started = this.now();
     const record = (
@@ -341,10 +395,7 @@ export class Inference {
                   gatewayModel(request.model) !== null
                     ? PROVIDER
                     : `bb-provider:${request.model.providerId}`,
-                thinking:
-                  request.model.kind === "provider"
-                    ? request.model.reasoningLevel
-                    : THINKING,
+                thinking: request.model.reasoningLevel ?? THINKING,
                 system: SYSTEM_PROMPT,
                 prompt: request.prompt,
                 input: boundedJson(request.input),
@@ -390,7 +441,12 @@ export class Inference {
         request.model,
         signal,
         undefined,
-        request.threadId ? { threadId: request.threadId } : undefined,
+        {
+          ...(request.threadId ? { threadId: request.threadId } : {}),
+          ...(request.outputSchema
+            ? { outputSchema: request.outputSchema }
+            : {}),
+        },
       );
     } catch (error) {
       if (request.signal?.aborted) throw request.signal.reason;
@@ -414,13 +470,23 @@ export class Inference {
       return {
         ok: false,
         error,
+        invalid: true,
         traceId: record("invalid", { completion, error }),
       };
     }
     return {
       ok: true,
       value,
-      traceId: record("ok", { completion, parsed: value }),
+      traceId: record(
+        (value as { topicError?: string }).topicError ? "invalid" : "ok",
+        {
+          completion,
+          parsed: value,
+          ...((value as { topicError?: string }).topicError
+            ? { error: (value as { topicError: string }).topicError }
+            : {}),
+        },
+      ),
     };
   }
 }

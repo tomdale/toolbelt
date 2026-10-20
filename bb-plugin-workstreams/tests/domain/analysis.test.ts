@@ -7,6 +7,7 @@ import {
   parseFullAnalysis,
   parseQuickAnalysis,
   quickAnalysisPrompt,
+  quickAnalysisSchema,
   type FullAnalysisInput,
 } from "../../src/domain/analysis.ts";
 
@@ -60,6 +61,7 @@ describe("Full analysis", () => {
     });
     expect(parsed).toEqual({
       status: null,
+      identity: null,
       names: { products: [], features: [] },
       goal: "Stale build cache",
       topic: null,
@@ -77,6 +79,7 @@ describe("Full analysis", () => {
     expect(
       parseFullAnalysis('{"recap":"Waiting on CI","state":"blocked"}', input),
     ).toEqual({
+      identity: null,
       names: { products: [], features: [] },
       status: { recap: "Waiting on CI", state: "blocked", needsYou: null },
       goal: null,
@@ -149,9 +152,14 @@ describe("Full analysis", () => {
         input,
       ).topic,
     ).toEqual({ subjectId: "cache", proposed: null, scopeShift: false });
-    expect(() =>
+    expect(
       parseFullAnalysis(answer({ subjectId: "invented" }), input),
-    ).toThrow();
+    ).toMatchObject({
+      goal: "Cache",
+      status: { state: "done" },
+      topic: null,
+      topicError: expect.any(String),
+    });
   });
 
   it("clips the recap, keeps an ask only for a decision, and drops a long goal", () => {
@@ -206,6 +214,28 @@ describe("Quick analysis", () => {
       goal: null,
       subjectId: null,
       proposed: null,
+    });
+  });
+});
+
+describe("strict Quick output schema", () => {
+  it("types nullable IDs explicitly and limits them to known IDs", () => {
+    const nullableId = {
+      type: ["string", "null"],
+      enum: [null, "lumen", "cache"],
+    };
+    expect(quickAnalysisSchema({ entities })).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        subjectId: nullableId,
+        proposed: {
+          anyOf: [
+            { type: "null" },
+            { type: "object", properties: { parentId: nullableId } },
+          ],
+        },
+      },
     });
   });
 });
