@@ -18,7 +18,9 @@ Workstreams keeps open BB threads' topics, goals, statuses, and activity current
 
 **No topic**: A root whose assignment names no topic. _Avoid_: unresolved, unclassified
 
-**Workstream**: A BB section bound to one topic. _Avoid_: group, home, navigation group
+**Workstream**: A BB section bound to one topic. Workstreams nest by topic in the sidebar and Home. _Avoid_: group, home, navigation group
+
+**Subgroup**: A workstream drawn inside the group of a broader topic it shares with another workstream; a shared topic without its own workstream is drawn as a header with no threads. _Avoid_: child workstream, nested section
 
 **Unfiled**: Roots without a topic and therefore without a workstream. _Avoid_: unsorted
 

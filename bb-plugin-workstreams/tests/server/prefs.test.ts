@@ -107,10 +107,7 @@ describe("Workstreams prefs", () => {
         quickModel: { kind: "gateway", model: "google/old-model" },
         fullModel: { kind: "gateway", model: "openai/old-organize" },
       },
-      organize: {
-        capacity: 6,
-        collapseAt: 3,
-      },
+      organize: { collapseAt: 3 },
       advanced: { hostId: "host-a", debug: true },
     });
     expect(migrateLegacyPrefs({}).analysis.fullModel).toEqual(
@@ -146,9 +143,9 @@ describe("Workstreams prefs", () => {
       showSnoozed: false,
       showArchived: false,
     });
-    expect(
-      seedPrefs(db, { model: "google/new" }).analysis.quickModel,
-    ).toEqual(seeded.analysis.quickModel);
+    expect(seedPrefs(db, { model: "google/new" }).analysis.quickModel).toEqual(
+      seeded.analysis.quickModel,
+    );
     expect(loadPrefs(db).sidebar).toMatchObject({
       recentLimit: 20,
       showSnoozed: false,

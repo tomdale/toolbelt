@@ -50,7 +50,7 @@ export function NewThreadRouting() {
     });
     // Opened from a workstream's ＋: the thread starts with its topic.
     const preset = takeComposerPreset();
-    if (preset) nativeModel.selectWorkstream(preset.sectionId, preset.label);
+    if (preset) nativeModel.selectWorkstream(preset.target, preset.label);
     nativeModel.observe(composer.text);
     nativeModel.observeSelection(composer.selection);
     setModel(nativeModel);

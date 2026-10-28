@@ -13,6 +13,7 @@ import {
   type Section,
   type WorkstreamThread,
 } from "../../domain/project.ts";
+import { nestGroups, type WorkstreamTopics } from "../../domain/groups.ts";
 import type { ReorderChange } from "../useWorkstreams.ts";
 import type { Drop } from "./dnd.tsx";
 
@@ -29,19 +30,38 @@ export function planDrop<T extends WorkstreamThread>(
   projection: Projection<T>,
   sections: readonly Section[],
   order: ManualOrder,
+  topics?: WorkstreamTopics,
 ): DropPlan {
   if (drop.kind === "group") {
-    const ids = applyOrder(
+    // Headers drag top-level groups, which may stand for several sections
+    // or for a shared topic with none. The stored order stays a list of
+    // sections: each group's sections move together, keeping their order.
+    const ordered = applyOrder(
       sections,
       order.workstreams,
       (s) => s.id,
       "last",
-    ).map((s) => s.id);
-    const from = ids.indexOf(drop.groupId);
-    const to = ids.indexOf(drop.overGroupId);
+    );
+    const nodes = nestGroups(
+      ordered.map((section) => ({
+        id: section.id,
+        name: section.name,
+        rows: [],
+        total: 0,
+        needsYou: 0,
+        lastActiveAt: 0,
+        prioritized: false,
+      })),
+      topics,
+    );
+    const from = nodes.findIndex((node) => node.id === drop.groupId);
+    const to = nodes.findIndex((node) => node.id === drop.overGroupId);
     if (from < 0 || to < 0 || from === to) return { reorder: null };
     return {
-      reorder: { kind: "workstreams", ids: arrayMove(ids, from, to) },
+      reorder: {
+        kind: "workstreams",
+        ids: arrayMove(nodes, from, to).flatMap((node) => node.sectionIds),
+      },
     };
   }
 

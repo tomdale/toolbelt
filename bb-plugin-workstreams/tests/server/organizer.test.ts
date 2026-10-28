@@ -204,9 +204,10 @@ describe("automatic update coordinator lifecycle", () => {
     state = await rebuildOrg(w);
     expect(state.counts.activeRoots).toBe(1);
     expect(state.counts.completedRoots).toBe(3);
-    // Four visible roots fit within capacity, regardless of completion state.
+    // Four visible roots on one topic stay its one workstream, regardless of
+    // completion state.
     expect(state.groups).toHaveLength(1);
-    expect(state.groups[0]!.name).toBe("Lantern");
+    expect(state.groups[0]!.name).toBe("Lantern: Shelves");
     expect(state.groups[0]!.completedCount).toBe(3);
     expect(state.groups[0]!.activeCount).toBe(1);
 
@@ -525,7 +526,7 @@ describe("automatic update coordinator lifecycle", () => {
     const f2 = corpus.create("UI", "UI feature", prod.id);
     const f3 = corpus.create("Docs", "Docs feature", prod.id);
 
-    // 4 active tasks in Core, 4 active tasks in UI (exceeds capacity 6)
+    // 4 active tasks in Core, 4 active tasks in UI (above the threshold)
     for (let i = 1; i <= 4; i++) {
       w.addThread(`core-${i}`, { title: `Core task ${i}` });
       corpus.assign(`core-${i}`, f1.id, { provenance: "manual" });
@@ -567,11 +568,11 @@ describe("automatic update coordinator lifecycle", () => {
     expect(doneRootThread?.sectionId).not.toBeNull();
     expect(doneDocsThread?.sectionId).not.toBeNull();
 
-    // The group holding done-root must be Lantern
+    // Each completed root keeps its own topic's workstream.
     const lanternGroup = state.groups.find((g) => g.name === "Lantern");
-    expect(lanternGroup).toBeDefined();
     expect(lanternGroup?.roots.some((r) => r.id === "done-root")).toBe(true);
-    expect(lanternGroup?.roots.some((r) => r.id === "done-docs")).toBe(true);
+    const docsGroup = state.groups.find((g) => g.name === "Lantern: Docs");
+    expect(docsGroup?.roots.some((r) => r.id === "done-docs")).toBe(true);
   });
 
   it("section safety: adopted external user-created section is not deleted when empty", async () => {
@@ -658,7 +659,10 @@ describe("automatic update coordinator lifecycle", () => {
     const corpus = new TopicStore(openDatabase(w.bb));
     const lantern = corpus.create("Lantern", "Product");
     const compass = corpus.create("Compass", "Navigation product");
-    const t1 = w.addThread("t1", { title: "Lantern core fix", sectionId: null });
+    const t1 = w.addThread("t1", {
+      title: "Lantern core fix",
+      sectionId: null,
+    });
     await w.harness.behavior.emitThreadEvent("thread.created", { thread: t1 });
 
     await w.harness.behavior.callRpc("taskAssign", {

@@ -299,37 +299,14 @@ export function OrganizeSettings() {
       <SettingsSaveError error={error} />
       <SectionRows>
         <SettingRow
-          label="Group capacity"
-          description="Most visible root threads per workstream, including completed threads, before it splits into subtopics. A single topic may exceed it."
-          control={
-            <Stepper
-              label="Group capacity"
-              value={prefs.organize.capacity}
-              min={2}
-              max={100}
-              onChange={(capacity) =>
-                update({
-                  organize: {
-                    capacity,
-                    collapseAt: Math.min(
-                      prefs.organize.collapseAt,
-                      capacity - 1,
-                    ),
-                  },
-                })
-              }
-            />
-          }
-        />
-        <SettingRow
           label="Contraction threshold"
-          description="A top-level topic with this many visible root threads or fewer, including completed threads, gets one workstream for all its subtopics."
+          description="A top-level topic with this many visible root threads or fewer, including completed threads, gets one workstream for all its subtopics. A larger one gets a subgroup for each subtopic with threads."
           control={
             <Stepper
               label="Contraction threshold"
               value={prefs.organize.collapseAt}
               min={0}
-              max={prefs.organize.capacity - 1}
+              max={99}
               onChange={(collapseAt) => update({ organize: { collapseAt } })}
             />
           }

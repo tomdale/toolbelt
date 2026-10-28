@@ -1,216 +1,47 @@
 import { describe, expect, it } from "vitest";
 import type { Entity } from "../../src/domain/classify.ts";
-import {
-  activeHome,
-  deriveActiveEntityIds,
-  isGroupingValid,
-} from "../../src/domain/regroup.ts";
+import { activeHome, deriveActiveEntityIds } from "../../src/domain/regroup.ts";
+
 const entities: Entity[] = [
-  {
-    id: "p",
-    name: "Lantern",
-    description: "Product",
-    parentId: null,
-    aliases: [],
-  },
-  {
-    id: "f",
-    name: "Shared shelves",
-    description: "Feature",
-    parentId: "p",
-    aliases: ["Shelves"],
-  },
+  { id: "p", name: "Lantern", description: "", parentId: null, aliases: [] },
+  { id: "f", name: "Shelves", description: "", parentId: "p", aliases: [] },
+  { id: "leaf", name: "Sync", description: "", parentId: "f", aliases: [] },
+  { id: "g", name: "Sharing", description: "", parentId: "p", aliases: [] },
+  { id: "q", name: "Quarry", description: "", parentId: null, aliases: [] },
+  { id: "qa", name: "Auth", description: "", parentId: "q", aliases: [] },
 ];
-describe("separated classification and grouping", () => {
-  it("recursively splits deep topics and reaches a valid fixed point", () => {
-    const tree = [
-      ...entities,
-      { id: "leaf", name: "Sync", description: "", parentId: "f", aliases: [] },
-      {
-        id: "other",
-        name: "Sharing",
-        description: "",
-        parentId: "p",
-        aliases: [],
-      },
-    ];
-    for (let p = 0; p <= 8; p += 2)
-      for (let f = 0; f <= 8; f += 2)
-        for (let leaf = 0; leaf <= 8; leaf += 2)
-          for (let other = 0; other <= 4; other += 2) {
-            const counts = { p, f, leaf, other };
-            const input = {
-              entities: tree,
-              counts,
-              active: ["p"],
-              capacity: 6,
-              collapseAt: 3,
-              visibleProductRoots: ["p"],
-            };
-            const selected = deriveActiveEntityIds(input);
-            expect(isGroupingValid(selected, tree, counts, 6, 3, ["p"])).toBe(
-              true,
-            );
-            expect(
-              deriveActiveEntityIds({ ...input, active: selected }).sort(),
-            ).toEqual([...selected].sort());
-          }
+const derive = (counts: Record<string, number>, collapseAt = 3) =>
+  deriveActiveEntityIds({ entities, counts, collapseAt }).sort();
+
+describe("deriveActiveEntityIds", () => {
+  it("gives a small product one workstream for all its topics", () => {
+    expect(derive({ f: 1, leaf: 1, g: 1 })).toEqual(["p"]);
+    expect(derive({ leaf: 3 })).toEqual(["p"]);
   });
 
-  it("keeps coverage, policy validity and a stable fixed point across load combinations", () => {
-    const tree = [
-      ...entities,
-      { id: "g", name: "Other", description: "", parentId: "p", aliases: [] },
-    ];
-    for (let p = 0; p <= 8; p++)
-      for (let f = 0; f <= 8; f++)
-        for (let g = 0; g <= 4; g++) {
-          const counts = { p, f, g };
-          for (const active of [["p"], ["p", "f", "g"]]) {
-            const input = {
-              entities: tree,
-              counts,
-              active,
-              capacity: 6,
-              collapseAt: 3,
-              visibleProductRoots: ["p"],
-            };
-            const selected = deriveActiveEntityIds(input);
-            expect(isGroupingValid(selected, tree, counts, 6, 3, ["p"])).toBe(
-              true,
-            );
-            expect(
-              deriveActiveEntityIds({ ...input, active: selected }).sort(),
-            ).toEqual([...selected].sort());
-          }
-        }
+  it("gives a larger product a workstream for every topic with threads", () => {
+    expect(derive({ p: 1, leaf: 1, g: 2 })).toEqual(["g", "leaf", "p"]);
+    expect(derive({ f: 2, leaf: 1, g: 1 })).toEqual(["f", "g", "leaf"]);
+    // One topic holding everything is one workstream.
+    expect(derive({ g: 9 })).toEqual(["g"]);
   });
+
+  it("decides each product separately", () => {
+    expect(derive({ f: 2, g: 2, qa: 1 })).toEqual(["f", "g", "q"]);
+  });
+
+  it("leaves products and topics with no visible roots out", () => {
+    expect(derive({ f: 0, g: 0 })).toEqual([]);
+    expect(derive({ f: 4, g: 0 })).toEqual(["f"]);
+  });
+
+  it("splits every product with threads when the threshold is zero", () => {
+    expect(derive({ leaf: 1, qa: 1 }, 0)).toEqual(["leaf", "qa"]);
+  });
+
   it("homes a topic at its nearest active ancestor", () => {
-    expect(activeHome("f", ["p"], entities)).toBe("p");
-    expect(activeHome("f", ["p", "f"], entities)).toBe("f");
-  });
-  it("validates exact loads, contractions and indivisible overflow", () => {
-    const valid = (ids: string[], counts: Record<string, number>) =>
-      isGroupingValid(ids, entities, counts, 6, 3);
-    expect(valid(["p"], { p: 3, f: 4 })).toBe(false);
-    expect(valid(["p", "f"], { p: 3, f: 4 })).toBe(true);
-    expect(valid(["f"], { f: 2 })).toBe(false);
-    expect(valid(["f"], { f: 8 })).toBe(true);
-    expect(valid(["p", "f"], { f: 8 })).toBe(false);
-  });
-
-  it("deterministically derives active groups enforcing capacity, contraction, and stability", () => {
-    // Sparse count contracts to product root
-    const sparse = deriveActiveEntityIds({
-      entities,
-      counts: { f: 2 },
-      active: ["f"],
-      capacity: 6,
-      collapseAt: 3,
-    });
-    expect(sparse).toEqual(["p"]);
-
-    // Exceeding capacity extracts feature cluster
-    const split = deriveActiveEntityIds({
-      entities,
-      counts: { p: 3, f: 4 },
-      active: ["p"],
-      capacity: 6,
-      collapseAt: 3,
-    });
-    expect(split.sort()).toEqual(["f", "p"]);
-    expect(isGroupingValid(split, entities, { p: 3, f: 4 }, 6, 3)).toBe(true);
-
-    // Indivisible overflow keeps single overflow group and drops empty root
-    const overflow = deriveActiveEntityIds({
-      entities,
-      counts: { f: 8 },
-      active: ["p"],
-      capacity: 6,
-      collapseAt: 3,
-    });
-    expect(overflow).toEqual(["f"]);
-
-    // Stability: preserves valid active groups when load is within capacity
-    const stable = deriveActiveEntityIds({
-      entities,
-      counts: { p: 2, f: 3 },
-      active: ["f", "p"],
-      capacity: 6,
-      collapseAt: 3,
-    });
-    expect(stable.sort()).toEqual(["f", "p"]);
-
-    // Empty product with visible retention returns product root
-    const retained = deriveActiveEntityIds({
-      entities,
-      counts: {},
-      active: [],
-      capacity: 6,
-      collapseAt: 3,
-      visibleProductRoots: ["p"],
-    });
-    expect(retained).toEqual(["p"]);
-
-    // Completely empty product without retention returns no groups
-    const empty = deriveActiveEntityIds({
-      entities,
-      counts: {},
-      active: [],
-      capacity: 6,
-      collapseAt: 3,
-    });
-    expect(empty).toEqual([]);
-
-    // Multi-product workspaces: does not throw Unknown corpus identity when counts span products
-    const multiEntities: Entity[] = [
-      {
-        id: "p1",
-        name: "Product 1",
-        description: "",
-        parentId: null,
-        aliases: [],
-      },
-      {
-        id: "f1",
-        name: "Feature 1",
-        description: "",
-        parentId: "p1",
-        aliases: [],
-      },
-      {
-        id: "p2",
-        name: "Product 2",
-        description: "",
-        parentId: null,
-        aliases: [],
-      },
-      {
-        id: "f2",
-        name: "Feature 2",
-        description: "",
-        parentId: "p2",
-        aliases: [],
-      },
-    ];
-    const multi = deriveActiveEntityIds({
-      entities: multiEntities,
-      counts: { f1: 4, f2: 4 },
-      active: [],
-      capacity: 6,
-      collapseAt: 3,
-    });
-    expect(multi.sort()).toEqual(["p1", "p2"]);
-
-    // Completed retention on sibling expansion: product root retained when visibleProductRoots specified
-    const retainedOnExpansion = deriveActiveEntityIds({
-      entities,
-      counts: { f: 8 },
-      active: ["p"],
-      capacity: 6,
-      collapseAt: 3,
-      visibleProductRoots: ["p"],
-    });
-    expect(retainedOnExpansion.sort()).toEqual(["f", "p"]);
+    expect(activeHome("leaf", ["p"], entities)).toBe("p");
+    expect(activeHome("leaf", ["p", "f"], entities)).toBe("f");
+    expect(activeHome("leaf", ["g"], entities)).toBeNull();
   });
 });

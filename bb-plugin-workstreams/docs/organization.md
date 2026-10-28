@@ -10,8 +10,8 @@ The organizer is deterministic and makes no model calls. After relevant fact or
 lifecycle changes it:
 
 1. Reads visible, non-archived roots, stored topic assignments, and statuses.
-2. Chooses workstream topics according to visible-root counts, capacity,
-   collapse threshold, and existing valid bindings.
+2. Chooses workstream topics from visible-root counts and the contraction
+   threshold.
 3. Creates, renames, or removes topic-bound sections and files roots to match.
 4. Logs outside section changes, then restores topic-derived membership.
 5. Prunes discovered topics that have no assigned roots, workstream, or child
@@ -19,19 +19,27 @@ lifecycle changes it:
 
 A pass fingerprints both policy and facts, validates its topic/policy plan
 before mutations, and uses the service's serial queue so reconciliation and
-section mutations cannot interleave. Superseded plans schedule a fresh pass.
-Capacity and contraction changes trigger organization immediately. Every
-visible, non-archived root counts toward capacity, including completed roots.
-Within capacity, a split is retained only when at least two groups have visible
-roots. A previously contracted group stays contracted until capacity requires
-splitting; completion alone does not change its grouping. Persistent collapse
-preferences use stable topic IDs and synchronize mounted surfaces and windows
-independently of automatic grouping. In the tiered sidebar (any workstream
-focused), revealing and expanding the other workstreams is temporary per-view
-state; hiding and revealing that block starts it collapsed. Each pass that
-changes sections or membership is recorded as one Activity entry. Topic edits
-and assignments are recorded too. Undo is available where it can preserve the
-topic-only rule; the organizer restores derived membership when a later pass
+section mutations cannot interleave. Superseded plans schedule a fresh pass. A
+product (a root topic) whose visible roots are at or below the contraction
+threshold gets one workstream. A larger product gets a workstream for every
+topic with a visible root. Every visible, non-archived root counts, including
+completed roots, so completion alone never regroups, and the same counts always
+give the same workstreams. Contraction changes trigger organization immediately.
+
+BB sections are flat; the sidebar and phone Home nest them by topic. A product's
+workstreams form one top-level group headed by the most specific topic they
+share, and each workstream sits under the nearest topic it shares with another,
+named relative to it. A shared topic with no workstream becomes a header without
+threads of its own. A group lists its own threads, then its subgroups. Focus,
+Dormant, and manual order apply to the top-level group: focus names every
+section in it, and dragging its header moves its sections together. Persistent
+collapse preferences use stable topic IDs and synchronize mounted surfaces and
+windows independently of automatic grouping. In the tiered sidebar (any
+workstream focused), revealing and expanding the other workstreams is temporary
+per-view state; hiding and revealing that block starts it collapsed. Each pass
+that changes sections or membership is recorded as one Activity entry. Topic
+edits and assignments are recorded too. Undo is available where it can preserve
+the topic-only rule; the organizer restores derived membership when a later pass
 runs.
 
 ## Starting topics
@@ -40,7 +48,12 @@ A root spawned from another thread inherits that thread's topic. A root started
 from a workstream's ＋ inherits the bound topic. Otherwise Quick analysis of the
 first request supplies a topic or leaves the root Unfiled. Explicit composer
 choices have manual priority. Automatic Full analysis may replace an inherited
-topic only when it reports a scope shift. Explicit user approval of a repair
+topic only when it reports a scope shift or settles a topic beneath it.
+
+Classification prefers the most specific capability. Work on one capability of a
+product or platform files under that capability, which Full analysis proposes as
+a new subtopic when none exists; work on the whole product, or whose capability
+is unclear, stays with the broader topic. Explicit user approval of a repair
 plan can also correct an inherited assignment; that correction has Full
 provenance and remains eligible for future automatic updates.
 
@@ -71,8 +84,8 @@ previous preview.
 ## Observability
 
 The Organization page reports organizer state, active and completed counts,
-visible-root grouping pressure, capacity and contraction policy, and
-agent-report coverage. `bb workstreams organization` reads current state;
+visible-root counts, the contraction policy, and agent-report coverage.
+`bb workstreams organization` reads current state;
 `bb workstreams organization --rebuild` runs a fresh pass. `bb workstreams log`
 shows Activity, including a sidebar move and its automatic reversion.
 

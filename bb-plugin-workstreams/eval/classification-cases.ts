@@ -120,10 +120,10 @@ type Case = {
   input: ClassifyInput;
   expected: string | null;
   /**
-   * No existing topic fits: the answer is a new topic that is not within the
-   * subtree of `outside`.
+   * No existing topic fits: the answer is a new topic, not within the subtree
+   * of `outside` when that is set, and beneath `inside` when that is set.
    */
-  expectNew?: { outside: string };
+  expectNew?: { outside?: string; inside?: string };
   /** The case tests the topic tree it carries, so it has no cold form. */
   warmOnly?: boolean;
 };
@@ -324,8 +324,65 @@ const preview = {
     "Harbor plugin rendering previews in a pane, with its routes and navigation",
   ] as [string, string],
 };
+/**
+ * Work on one capability of a broad topic. With no topic for that capability,
+ * the answer is a new topic beneath the broad one; work on the whole, or on a
+ * task that names no capability, stays with the broad topic.
+ */
+const specific = (
+  id: string,
+  title: string,
+  request: string,
+  expected: { topic: string } | { inside: string },
+): Case => ({
+  id,
+  ...("topic" in expected
+    ? { expected: expected.topic }
+    : {
+        expected: null,
+        expectNew: { inside: expected.inside },
+        warmOnly: true,
+      }),
+  input: {
+    prompt: title,
+    project: "Coordination",
+    requests: [request],
+    entities,
+  },
+});
+
 export const cases: Case[] = [
   ...base,
+  specific(
+    "specific-new",
+    "Automation run history",
+    "Add a run history view to Beacon automations where users browse past runs, what triggered them, and their results.",
+    { inside: "jobs" },
+  ),
+  specific(
+    "specific-whole",
+    "Automations MVP",
+    "Write the MVP design for Beacon automations: which triggers, actions, and limits ship first.",
+    { topic: "jobs" },
+  ),
+  specific(
+    "specific-task",
+    "Fix PR 482 checks",
+    "Fix the failing lint check on Beacon automations PR 482.",
+    { topic: "jobs" },
+  ),
+  specific(
+    "specific-product-new",
+    "Enterprise sign-in",
+    "Add single sign-on to Beacon so enterprise workspaces sign in through their identity provider.",
+    { inside: "agent" },
+  ),
+  specific(
+    "holdout-specific-new",
+    "Settings audit log",
+    "Add an audit log to Beacon where admins review who changed assistant settings and when.",
+    { inside: "agent" },
+  ),
   lookalike({ id: "lookalike-missing", ...guide, plugin: undefined }),
   lookalike({ id: "lookalike-present", ...guide }),
   lookalike({ id: "holdout-lookalike-missing", ...preview, plugin: undefined }),

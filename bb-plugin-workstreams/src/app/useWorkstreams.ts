@@ -16,6 +16,7 @@ import type { ManualOrder } from "../domain/order.ts";
 import { RECENT_LIMIT } from "../domain/prefs.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
 import type { TopicState } from "../domain/topics.ts";
+import type { WorkstreamTopics } from "../domain/groups.ts";
 import {
   isSnoozed,
   type SnoozePrefs,
@@ -72,7 +73,15 @@ export function useWorkstreams() {
   const now = useNow();
   const { rpc, server, refresh, reorder, setSnooze } = useServerState();
 
-  const { analysis, recaps, order, snoozes } = server;
+  const { analysis, recaps, order, snoozes, catalog } = server;
+  /** What nests the workstreams (see `nestGroups`). */
+  const topics: WorkstreamTopics | undefined = useMemo(
+    () =>
+      catalog
+        ? { entities: catalog.entities, bindings: catalog.groups }
+        : undefined,
+    [catalog],
+  );
   const projection: Projection<PluginSidebarThread> = useMemo(
     () =>
       projectWorkstreams(threads, sections, {
@@ -101,6 +110,7 @@ export function useWorkstreams() {
   return {
     status,
     projection,
+    topics,
     threads,
     sections,
     projects,

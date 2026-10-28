@@ -95,6 +95,7 @@ function HomeScreen({ placement }: { placement: Exclude<Placement, "wide"> }) {
         groupSort,
         showUpNext: ws.showForYou,
         showSnoozed: ws.showSnoozed,
+        topics: ws.topics,
       }),
     [
       projection,
@@ -103,6 +104,7 @@ function HomeScreen({ placement }: { placement: Exclude<Placement, "wide"> }) {
       groupSort,
       ws.showForYou,
       ws.showSnoozed,
+      ws.topics,
     ],
   );
   // Preferences and plugin state arrive after the first frame, and drawing

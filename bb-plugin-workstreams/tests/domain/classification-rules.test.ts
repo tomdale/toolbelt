@@ -8,7 +8,7 @@ import {
 import { parseTopic, topicFieldsSchema } from "../../src/domain/classify.ts";
 
 it("renders the synthetic ownership fixtures in Full analysis and parses their expected topics", () => {
-  expect(cases).toHaveLength(20);
+  expect(cases).toHaveLength(25);
   for (const c of cases) {
     const input: FullAnalysisInput = {
       title: c.input.prompt,

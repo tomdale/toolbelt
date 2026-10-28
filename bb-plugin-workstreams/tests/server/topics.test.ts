@@ -203,9 +203,7 @@ describe("TopicStore", () => {
 
   it("rejects assignment to unknown entities and retains specific subjects under broad placement", () => {
     const { corpus } = store();
-    expect(() => corpus.assign("thread-x", "missing")).toThrow(
-      /Unknown topic/,
-    );
+    expect(() => corpus.assign("thread-x", "missing")).toThrow(/Unknown topic/);
     const broad = corpus.create("Engineering", "");
     const specific = corpus.create("Billing migration", "", broad.id);
     corpus.bindGroup("section-engineering", broad.id);
@@ -594,7 +592,6 @@ describe("TopicStore", () => {
     expect(corpus.revision()).toBeGreaterThan(rev1);
   });
 
-
   it("applies analyses under the source priority", () => {
     const { corpus } = store();
     const a = corpus.create("Alpha", "");
@@ -628,6 +625,51 @@ describe("TopicStore", () => {
       entityId: b.id,
       provenance: "full",
     });
+  });
+
+  it("lets Full analysis narrow an inherited topic without a scope shift", () => {
+    const { corpus } = store();
+    const product = corpus.create("Product", "");
+    const feature = corpus.create("Feature", "", product.id);
+    const other = corpus.create("Other", "");
+    const answer = (
+      subjectId: string | null,
+      proposed: { name: string; parentId: string | null } | null = null,
+    ) => ({
+      subjectId,
+      proposed: proposed ? { ...proposed, description: "" } : null,
+      scopeShift: false,
+    });
+    corpus.assign("i", product.id, { provenance: "inherited" });
+    // A sibling or the same topic is no narrowing.
+    expect(corpus.applyAnalysis("i", answer(other.id), "full", "k1")).toBe(
+      false,
+    );
+    expect(corpus.applyAnalysis("i", answer(product.id), "full", "k2")).toBe(
+      false,
+    );
+    // An existing descendant narrows it, and Quick analysis never does.
+    expect(corpus.applyAnalysis("i", answer(feature.id), "quick", null)).toBe(
+      false,
+    );
+    expect(corpus.applyAnalysis("i", answer(feature.id), "full", "k3")).toBe(
+      true,
+    );
+    expect(corpus.assignment("i")).toMatchObject({
+      entityId: feature.id,
+      provenance: "full",
+    });
+    // So does a new topic proposed beneath it.
+    corpus.assign("j", product.id, { provenance: "inherited" });
+    expect(
+      corpus.applyAnalysis(
+        "j",
+        answer(null, { name: "CLI commands", parentId: feature.id }),
+        "full",
+        "k4",
+      ),
+    ).toBe(true);
+    expect(corpus.assignment("j").label).toBe("Product: Feature: CLI commands");
   });
 
   it("inherits a topic only into a thread with none or a quick guess", () => {

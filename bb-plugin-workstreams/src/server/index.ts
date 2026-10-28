@@ -347,10 +347,7 @@ export default async function plugin(bb: BbPluginApi) {
     topics,
     analyzer,
     recaps: () => recaps.all(),
-    policy: () => ({
-      capacity: currentPrefs().organize.capacity,
-      collapseAt: currentPrefs().organize.collapseAt,
-    }),
+    policy: () => ({ collapseAt: currentPrefs().organize.collapseAt }),
     members: (sectionId) => sectionMembers(bb.sdk, sectionId),
     journal,
     onChange: notify,

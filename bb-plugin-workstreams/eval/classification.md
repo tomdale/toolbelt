@@ -21,6 +21,11 @@ follow-up work, display modes, shared SDK deliverables, infrastructure
 consumers, and unresolved requests. Holdouts test misleading titles and explicit
 ancestry.
 
+The specificity cases test work on one capability of a broad topic with no topic
+for that capability: the answer is a new topic beneath the broad one. Work on
+the broad topic as a whole, or a task naming no capability, keeps the broad
+topic. The new-topic cases test the tree they carry, so cold runs skip them.
+
 The lookalike cases carry their own topic tree, with a pane topic filed under an
 unrelated app whose description fits the request. The request names its owner.
 When the platform's own plugin topic exists beside the pane, it is the expected

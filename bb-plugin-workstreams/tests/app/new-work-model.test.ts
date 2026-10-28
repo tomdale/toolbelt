@@ -158,7 +158,7 @@ describe("NewWork model: picked, inherited, and no topic", () => {
 describe("NewWork model: a workstream's ＋", () => {
   it("starts with the workstream's topic, which a preview never replaces", async () => {
     const { newWork } = setup(async () => withFeature);
-    newWork.selectWorkstream("sec_docs", "Docs");
+    newWork.selectWorkstream({ sectionId: "sec_docs" }, "Docs");
     expect(newWork.snapshot().identity).toEqual({
       entityId: null,
       proposal: null,

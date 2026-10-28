@@ -116,7 +116,10 @@ const GROUPS = {
     fullModel: [modelChoiceSchema, DEFAULT_MODELS.full],
   },
   organize: {
-    capacity: [z.number().int().min(2).max(100), 6],
+    /**
+     * A product with this many visible roots or fewer gets one workstream;
+     * a larger one gets a workstream for each topic with threads.
+     */
     collapseAt: [z.number().int().min(0).max(99), 3],
   },
   advanced: {
@@ -189,10 +192,6 @@ export function parsePrefs(raw: unknown): Prefs {
         return [g, v && typeof v === "object" ? v : {}];
       }),
     ),
-  );
-  parsed.organize.collapseAt = Math.min(
-    parsed.organize.collapseAt,
-    parsed.organize.capacity - 1,
   );
   return parsed;
 }

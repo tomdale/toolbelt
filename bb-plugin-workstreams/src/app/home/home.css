@@ -402,6 +402,21 @@ section:has(> [data-bb-plugin-root] > [data-ws-home="hidden"]) {
 .ws-home-group[data-muted] .ws-home-group-name {
   color: var(--muted-foreground);
 }
+/* A subgroup sits inside its workstream: indented, without a divider, and
+   scrolling with it rather than sticking. */
+.ws-home-group[data-nested] {
+  border-top: none;
+  padding-left: 16px;
+}
+.ws-home-group[data-nested] > .ws-home-group-head {
+  position: static;
+}
+.ws-home-group[data-nested] > .ws-home-group-head > button {
+  min-height: 40px;
+}
+.ws-home-group[data-nested] > .ws-home-group-head .ws-home-group-name {
+  font-weight: 500;
+}
 .ws-home-counts {
   display: flex;
   flex: none;

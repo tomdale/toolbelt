@@ -22,7 +22,7 @@ export function scoreClassification(
   input: ClassifyInput,
   expected: string | null,
   cold: boolean,
-  expectNew?: { outside: string },
+  expectNew?: { outside?: string; inside?: string },
 ) {
   if (expectNew) {
     // Resolved as production resolves it, so a proposal that restates an
@@ -30,13 +30,17 @@ export function scoreClassification(
     const resolved = value.proposed
       ? resolveProposal(value.proposed, input.entities)
       : null;
+    const ancestry: string[] = [];
     let anchor = resolved?.proposed?.parentId ?? null;
-    let inside = false;
-    while (anchor && !inside) {
-      inside = anchor === expectNew.outside;
+    while (anchor && !ancestry.includes(anchor)) {
+      ancestry.push(anchor);
       anchor = input.entities.find((e) => e.id === anchor)?.parentId ?? null;
     }
-    const pass = !value.subjectId && !!resolved?.proposed && !inside;
+    const pass =
+      !value.subjectId &&
+      !!resolved?.proposed &&
+      !(expectNew.outside && ancestry.includes(expectNew.outside)) &&
+      !(expectNew.inside && !ancestry.includes(expectNew.inside));
     return {
       owner: pass,
       capability: pass,

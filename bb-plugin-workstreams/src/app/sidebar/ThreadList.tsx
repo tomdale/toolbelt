@@ -5,6 +5,9 @@
  * Dormant fold, and a Snoozed fold. Up Next and Recent are overlays: every
  * visible thread appears in exactly one group, or in Snoozed (SPEC §1).
  *
+ * Workstreams nest by topic (see `nestGroups`): a group lists its own
+ * threads, then its subgroups, each indented one step.
+ *
  * Up Next's rows come from `selectUpNext`, including its focus on the
  * focused workstreams; while any workstream is focused, the rest hide behind
  * a toggle below the focused ones. Focused workstreams are stored as
@@ -12,6 +15,7 @@
  * the user, and rows open and close rather than pop (see `motion.ts`).
  */
 import {
+  Fragment,
   useLayoutEffect,
   useRef,
   useState,
@@ -35,11 +39,14 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
   UNFILED_NAME,
-  UNSORTED_ID,
   type Group,
   type Row as RowModel,
 } from "../../domain/project.ts";
-import { arrangeGroups } from "../../domain/groups.ts";
+import {
+  arrangeGroups,
+  focusedSections,
+  type WorkstreamNode,
+} from "../../domain/groups.ts";
 import {
   holdInPlace,
   selectRecent,
@@ -82,6 +89,7 @@ import { FocusIcon } from "./FocusIcon.tsx";
 import { usePrefs } from "../prefs.ts";
 
 type ThreadGroup = Group<PluginSidebarThread>;
+type ThreadNode = WorkstreamNode<PluginSidebarThread>;
 type ThreadRow = RowModel<PluginSidebarThread>;
 /** Where a row is drawn: its workstream group, or one of the overlays. */
 type Placement = "group" | "needs-you" | "recent" | "snoozed" | "archived";
@@ -194,7 +202,21 @@ export function WorkstreamsThreadList({
   const { projection, sections, now } = ws;
   const nameOf = new Map(sections.map((s) => [s.id, s.name]));
   const prioritizedIds = ws.server.order.prioritized;
-  const prioritized = new Set(prioritizedIds.filter((id) => nameOf.has(id)));
+  const groupSort = prefs?.sidebar.groupSort ?? "alphabetical";
+  // Unfiled, a group only while it has threads, sits between the populated
+  // workstreams and the empty ones. With any workstream focused, the rest
+  // (with Unfiled and Dormant) sit hidden behind a toggle below the focused
+  // ones.
+  const arrangement = arrangeGroups(projection, groupSort, ws.topics);
+  const {
+    pinned: pinnedGroups,
+    populated: populatedGroups,
+    empty: emptyGroups,
+    dormant: dormantGroups,
+    tiered,
+    hasLower,
+  } = arrangement;
+  const prioritized = focusedSections(arrangement, new Set(prioritizedIds));
 
   // Up Next re-sorts live, except the open thread's row: it holds the place
   // where the user found it (or where it first appeared while open), so
@@ -304,12 +326,16 @@ export function WorkstreamsThreadList({
 
   const listRef = useRef<HTMLDivElement>(null);
   const captureLayout = useFlip(listRef, [...prioritized].sort().join(" "));
-  const toggleFocus = (group: ThreadGroup) => {
+  /** Focus covers a whole top-level group, so it names every section in it. */
+  const toggleFocus = (group: ThreadNode) => {
     setError(null);
     captureLayout(`group:${group.id}`);
     const ids = group.prioritized
-      ? prioritizedIds.filter((id) => id !== group.id)
-      : [...prioritizedIds, group.id];
+      ? prioritizedIds.filter((id) => !group.sectionIds.includes(id))
+      : [
+          ...prioritizedIds,
+          ...group.sectionIds.filter((id) => !prioritizedIds.includes(id)),
+        ];
     ws.reorder({ kind: "prioritized", ids }).catch(report);
   };
 
@@ -317,7 +343,13 @@ export function WorkstreamsThreadList({
     setError(cause instanceof Error ? cause.message : String(cause));
   const onDrop = (drop: Drop) => {
     setError(null);
-    const plan = planDrop(drop, projection, sections, ws.server.order);
+    const plan = planDrop(
+      drop,
+      projection,
+      sections,
+      ws.server.order,
+      ws.topics,
+    );
     if (plan.reorder) ws.reorder(plan.reorder).catch(report);
   };
   const { contextProps } = useSidebarDnd({
@@ -593,8 +625,53 @@ export function WorkstreamsThreadList({
       </SortableContext>
     );
   };
+  /** The new thread starts with this workstream's topic. */
+  const newThreadIn = (group: ThreadNode) => () => {
+    setComposerPreset(
+      group.hasSection ? { sectionId: group.id } : { topicId: group.topicId! },
+      group.label,
+    );
+    navigate.toCompose({ focusPrompt: true });
+  };
+  /**
+   * A group's own threads, then its subgroups. Subgroups fold on their own
+   * and take thread drops, but reorder and focus only with their top-level
+   * group.
+   */
+  const renderGroupBody = (group: ThreadNode): ReactNode => [
+    <Fragment key="trees">{renderTrees(group)}</Fragment>,
+    ...group.subgroups.map((sub) => {
+      const render = (ref?: (element: HTMLElement | null) => void) => (
+        <WorkstreamGroup
+          group={sub}
+          nested
+          sectionRef={ref}
+          collapsed={groupCollapsed(sub.id, false, sub.topicId)}
+          toggle={() => toggleGroup(sub.id, false, sub.topicId)}
+          onNewThread={newThreadIn(sub)}
+          quietCount={focus.active && !sub.prioritized}
+        >
+          {renderGroupBody(sub)}
+        </WorkstreamGroup>
+      );
+      return (
+        <li key={sub.id} className="list-none">
+          {sub.hasSection ? (
+            <DropTarget
+              id={groupKey(sub.id)}
+              data={{ type: "target", groupId: sub.id }}
+            >
+              {render}
+            </DropTarget>
+          ) : (
+            render()
+          )}
+        </li>
+      );
+    }),
+  ];
   const renderSortableGroup = (
-    group: ThreadGroup,
+    group: ThreadNode,
     props: Omit<GroupProps, "group" | "children">,
   ) => (
     <Sortable
@@ -611,24 +688,12 @@ export function WorkstreamsThreadList({
           style={style}
           handle={handle}
         >
-          {renderTrees(group)}
+          {renderGroupBody(group)}
         </WorkstreamGroup>
       )}
     </Sortable>
   );
 
-  const groupSort = prefs?.sidebar.groupSort ?? "alphabetical";
-  // Unfiled, a group only while it has threads, sits between the populated
-  // workstreams and the empty ones. With any workstream focused, the rest
-  // (with Unfiled and Dormant) sit hidden behind a toggle below the focused
-  // ones.
-  const {
-    pinned: pinnedGroups,
-    populated: populatedGroups,
-    empty: emptyGroups,
-    tiered,
-    hasLower,
-  } = arrangeGroups(projection, groupSort);
   if (!tiered && (showLower || lowerExpanded.size > 0)) {
     setShowLower(false);
     setLowerExpanded(new Set());
@@ -644,19 +709,38 @@ export function WorkstreamsThreadList({
     String,
     wasTiered.current === tiered,
   );
-  const groupStateKey = (id: string) =>
-    groupCollapseKey(id, ws.server.catalog?.groups[id]);
-  const groupCollapsed = (id: string, byDefault = false) =>
-    isCollapsed(groupStateKey(id), isCollapsed(id, byDefault));
-  const toggleGroup = (id: string, byDefault = false) =>
-    toggle(groupStateKey(id), groupCollapsed(id, byDefault));
-  const lowerCollapsed = (id: string, byDefault = false) =>
+  /**
+   * Collapse state follows the group's topic; a shared topic's header has
+   * no section to look the topic up by, so it passes its own.
+   */
+  const groupStateKey = (id: string, topicId?: string | null) =>
+    groupCollapseKey(id, topicId ?? ws.server.catalog?.groups[id]);
+  const groupCollapsed = (
+    id: string,
+    byDefault = false,
+    topicId?: string | null,
+  ) => isCollapsed(groupStateKey(id, topicId), isCollapsed(id, byDefault));
+  const toggleGroup = (
+    id: string,
+    byDefault = false,
+    topicId?: string | null,
+  ) =>
+    toggle(groupStateKey(id, topicId), groupCollapsed(id, byDefault, topicId));
+  const lowerCollapsed = (
+    id: string,
+    byDefault = false,
+    topicId?: string | null,
+  ) =>
     tiered
-      ? !lowerExpanded.has(groupStateKey(id))
-      : groupCollapsed(id, byDefault);
-  const lowerToggle = (id: string, byDefault = false) => {
-    if (!tiered) return toggleGroup(id, byDefault);
-    const key = groupStateKey(id);
+      ? !lowerExpanded.has(groupStateKey(id, topicId))
+      : groupCollapsed(id, byDefault, topicId);
+  const lowerToggle = (
+    id: string,
+    byDefault = false,
+    topicId?: string | null,
+  ) => {
+    if (!tiered) return toggleGroup(id, byDefault, topicId);
+    const key = groupStateKey(id, topicId);
     setLowerExpanded((current) => {
       const next = new Set(current);
       if (!next.delete(key)) next.add(key);
@@ -668,19 +752,17 @@ export function WorkstreamsThreadList({
     setShowLower(!showLower);
   };
   const activeGroupProps = (
-    group: ThreadGroup,
+    group: ThreadNode,
   ): Omit<GroupProps, "group" | "children"> => ({
     collapsed: group.prioritized
-      ? groupCollapsed(group.id)
-      : lowerCollapsed(group.id),
+      ? groupCollapsed(group.id, false, group.topicId)
+      : lowerCollapsed(group.id, false, group.topicId),
     toggle: () =>
-      group.prioritized ? toggleGroup(group.id) : lowerToggle(group.id),
+      group.prioritized
+        ? toggleGroup(group.id, false, group.topicId)
+        : lowerToggle(group.id, false, group.topicId),
     onToggleFocus: () => toggleFocus(group),
-    // The new thread starts with this workstream's topic.
-    onNewThread: () => {
-      if (group.id !== UNSORTED_ID) setComposerPreset(group.id, group.name);
-      navigate.toCompose({ focusPrompt: true });
-    },
+    onNewThread: newThreadIn(group),
   });
   /** An item that opens and closes with its presence phase. */
   const present = (entry: PresenceEntry<unknown>, children: ReactNode) => (
@@ -714,7 +796,7 @@ export function WorkstreamsThreadList({
     pinnedGroups.length +
       populatedGroups.length +
       emptyGroups.length +
-      projection.dormant.length +
+      dormantGroups.length +
       projection.unsorted.total >
     0;
   /**
@@ -778,23 +860,23 @@ export function WorkstreamsThreadList({
             renderSortableGroup(group, activeGroupProps(group)),
           )}
         </SortableContext>
-        {projection.dormant.length > 0 ? (
+        {dormantGroups.length > 0 ? (
           <Band
             title="Dormant"
             flipKey="dormant"
-            count={projection.dormant.length}
+            count={dormantGroups.length}
             collapsed={lowerCollapsed("__dormant", true)}
             toggle={() => lowerToggle("__dormant", true)}
           >
             <SortableContext
-              items={projection.dormant.map((group) => groupKey(group.id))}
+              items={dormantGroups.map((group) => groupKey(group.id))}
               strategy={verticalListSortingStrategy}
             >
-              {projection.dormant.map((group) => (
+              {dormantGroups.map((group) => (
                 <li key={group.id} className="list-none">
                   {renderSortableGroup(group, {
-                    collapsed: groupCollapsed(group.id, true),
-                    toggle: () => toggleGroup(group.id, true),
+                    collapsed: groupCollapsed(group.id, true, group.topicId),
+                    toggle: () => toggleGroup(group.id, true, group.topicId),
                     onToggleFocus: () => toggleFocus(group),
                     muted: true,
                   })}
@@ -1322,7 +1404,9 @@ function BandOptionsMenu({
 }
 
 type GroupProps = {
-  group: ThreadGroup;
+  group: ThreadGroup | ThreadNode;
+  /** A subgroup, drawn smaller with its contents indented under its name. */
+  nested?: boolean;
   collapsed: boolean;
   toggle: () => void;
   onNewThread?: () => void;
@@ -1340,6 +1424,7 @@ type GroupProps = {
 
 function WorkstreamGroup({
   group,
+  nested = false,
   collapsed,
   toggle,
   onNewThread,
@@ -1361,7 +1446,7 @@ function WorkstreamGroup({
       aria-label={group.name}
       data-flip-key={`group:${group.id}`}
       data-prioritized={group.prioritized ? "" : undefined}
-      className="rounded-md px-1"
+      className={cn("rounded-md", !nested && "px-1")}
     >
       <div
         ref={handle?.ref}
@@ -1381,9 +1466,11 @@ function WorkstreamGroup({
             />
           ) : null}
           <WorkstreamName
-            name={group.name}
+            name={"label" in group ? group.label : group.name}
             muted={muted}
-            className="text-[13px] font-semibold"
+            className={
+              nested ? "text-[12px] font-medium" : "text-[13px] font-semibold"
+            }
           />
         </button>
         {onToggleFocus ? (
@@ -1442,7 +1529,9 @@ function WorkstreamGroup({
           </span>
         ) : null}
       </div>
-      {collapsed ? null : <ul className="mt-0.5">{children}</ul>}
+      {collapsed ? null : (
+        <ul className={cn("mt-0.5", nested && "pl-4")}>{children}</ul>
+      )}
     </section>
   );
 }

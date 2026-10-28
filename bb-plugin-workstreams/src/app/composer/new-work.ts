@@ -7,12 +7,13 @@ import type { ComposerSelection } from "@get-bb/plugin-sdk/app";
 import type { Preview } from "../../server/preview.ts";
 import type { DraftSubjectProposal } from "../../domain/topics.ts";
 import { routeDelay } from "./timing.ts";
+import type { WorkstreamTarget } from "./preset.ts";
 
 /**
  * The topic the field shows: one you picked, Quick analysis's preview
  * (`automatic`), or the topic of the workstream whose ＋ opened the composer
- * (`inherited`, by `sectionId`). Previews never replace a picked or
- * inherited topic.
+ * (`inherited`, by `sectionId`, or by topic for a shared-topic header).
+ * Previews never replace a picked or inherited topic.
  */
 export type IdentityChoice = {
   entityId: string | null;
@@ -212,19 +213,23 @@ export class NewWork {
   }
 
   /** Starts the thread with the topic of the workstream whose ＋ opened it. */
-  selectWorkstream(sectionId: string, label: string) {
+  /**
+   * Starts with a workstream's topic, named by its section, or directly for
+   * a shared-topic header, which has no section.
+   */
+  selectWorkstream(target: WorkstreamTarget, label: string) {
     this.begin("select-identity", {
       from: this.state.identity,
-      to: { sectionId, label },
+      to: { ...target, label },
       provenance: "inherited",
     })("ok");
     this.set({
       identity: {
-        entityId: null,
+        entityId: target.topicId ?? null,
         proposal: null,
         label,
         provenance: "inherited",
-        sectionId,
+        ...(target.sectionId ? { sectionId: target.sectionId } : {}),
       },
       error: null,
     });

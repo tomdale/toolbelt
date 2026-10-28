@@ -32,7 +32,7 @@ export type OrganizerDeps = {
   members: (sectionId: string) => Promise<CleanupMember[]>;
   /** Records each pass's section changes in Activity. */
   journal?: Journal;
-  policy?: () => { capacity: number; collapseAt: number };
+  policy?: () => { collapseAt: number };
   onChange: () => void;
   now?: () => number;
 };
@@ -176,7 +176,7 @@ export class Organizer {
   }
 
   private policy() {
-    return this.deps.policy?.() ?? { capacity: 6, collapseAt: 3 };
+    return this.deps.policy?.() ?? { collapseAt: 3 };
   }
 
   private completed(roots: readonly InventoryThread[]): Map<string, boolean> {
@@ -275,35 +275,21 @@ export class Organizer {
       const assignments = this.deps.topics.assignments();
 
       const counts: Record<string, number> = {};
-      const visibleProductRoots = new Set<string>();
-
       for (const root of roots) {
         const assignment = assignments[root.id];
         if (
           assignment &&
           assignment.status === "assigned" &&
           assignment.entityId
-        ) {
-          const rootAncestor = assignment.ancestorIds.at(-1);
-          if (rootAncestor) {
-            visibleProductRoots.add(rootAncestor);
-          }
+        )
           counts[assignment.entityId] = (counts[assignment.entityId] ?? 0) + 1;
-        }
       }
 
-      const bindings = new Set(this.deps.topics.groups().values());
-      const currentActive = entities
-        .filter((e) => bindings.has(e.id))
-        .map((e) => e.id);
       const policy = this.policy();
       const rawSelectedEntityIds = deriveActiveEntityIds({
         entities,
         counts,
-        active: currentActive,
-        capacity: policy.capacity,
         collapseAt: policy.collapseAt,
-        visibleProductRoots: Array.from(visibleProductRoots),
       });
 
       // Filter to only groups that receive tasks (active or completed retention)
@@ -755,7 +741,7 @@ export class Organizer {
       .filter((g) => g.totalCount > 0)
       .map((group) => ({
         ...group,
-        policyReason: `${group.totalCount} visible roots drive grouping (${group.activeCount} active, ${group.completedCount} completed). Capacity ${policy.capacity}, contraction ${policy.collapseAt}. Splits within capacity require visible roots in at least two groups.`,
+        policyReason: `${group.totalCount} visible roots filed here (${group.activeCount} active, ${group.completedCount} completed). A product with more than ${policy.collapseAt} visible roots gets a workstream for each topic with threads; a smaller one gets one workstream.`,
       }));
 
     return {

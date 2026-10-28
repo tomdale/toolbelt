@@ -94,7 +94,13 @@ function mount(
   decision: Preview,
   options: {
     component?: typeof RootComposer;
-    entities?: { id: string; name: string; description: string; parentId: string | null; aliases: string[] }[];
+    entities?: {
+      id: string;
+      name: string;
+      description: string;
+      parentId: string | null;
+      aliases: string[];
+    }[];
   } = {},
 ) {
   const Component = options.component ?? RootComposer;
@@ -110,16 +116,24 @@ function mount(
     {
       sdk: {
         projects: {
-          list: vi.fn(async () => [{ id: "project-alpha", name: "Alpha", kind: "directory" }]),
+          list: vi.fn(async () => [
+            { id: "project-alpha", name: "Alpha", kind: "directory" },
+          ]),
         },
         threads: {
-          get: vi.fn(async () => ({ id: "thread-parser", projectId: "project-alpha" })),
+          get: vi.fn(async () => ({
+            id: "thread-parser",
+            projectId: "project-alpha",
+          })),
         },
       } as never,
       composer: {
         scope: { kind: "new-thread", projectId: "project-alpha" },
         text: "",
-        selection: { projectId: "project-alpha", environment: { type: "project-default" } },
+        selection: {
+          projectId: "project-alpha",
+          environment: { type: "project-default" },
+        },
       } as never,
       rpc: {
         prefs: () => ({
@@ -221,9 +235,7 @@ it("leaves a preview with no topic out of the host submit metadata", async () =>
   const { slot, route } = mount(unsure);
   await typePrompt(slot, "Something vague");
   await waitFor(() => expect(route).toHaveBeenCalledTimes(1));
-  expect(
-    screen.getByRole("button", { name: "Topic: Automatic" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Topic: Automatic" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
   await waitFor(() => expect(slot.inspection.composer.submits).toHaveLength(1));
   expect(slot.inspection.composer.submits[0]).toEqual({
@@ -234,9 +246,7 @@ it("leaves a preview with no topic out of the host submit metadata", async () =>
 it("submits a picked No topic when selecting it", async () => {
   const { slot } = mount(identityDecision);
   await typePrompt(slot, "Some unresolvable request");
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Topic: Alpha" }),
-  );
+  fireEvent.click(await screen.findByRole("button", { name: "Topic: Alpha" }));
   fireEvent.click(await screen.findByRole("option", { name: "No topic" }));
   await screen.findByRole("button", { name: "Topic: No topic" });
   fireEvent.click(screen.getByRole("button", { name: "Host submit" }));
@@ -309,9 +319,7 @@ it("reports the draft's identity so a plain Enter can be filed", async () => {
       },
     }),
   );
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Topic: Alpha" }),
-  );
+  fireEvent.click(await screen.findByRole("button", { name: "Topic: Alpha" }));
   fireEvent.click(await screen.findByRole("option", { name: "No topic" }));
   await waitFor(() =>
     expect(draftIdentity).toHaveBeenLastCalledWith(
@@ -322,9 +330,8 @@ it("reports the draft's identity so a plain Enter can be filed", async () => {
   );
 });
 
-
 it("starts with the topic of the workstream whose ＋ opened it", async () => {
-  setComposerPreset("section-docs", "Docs");
+  setComposerPreset({ sectionId: "section-docs" }, "Docs");
   const { slot } = mount(identityDecision);
   await typePrompt(slot, "Add an example");
   const field = await screen.findByRole("button", { name: "Topic: Docs" });

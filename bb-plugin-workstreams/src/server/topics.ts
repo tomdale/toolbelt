@@ -12,7 +12,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { getMeta, setMeta, type Database } from "./db.ts";
 
 /** Bump to settle every thread's topic again with changed classification rules. */
-export const CLASSIFICATION_VERSION = "topics-v3";
+export const CLASSIFICATION_VERSION = "topics-v4";
 
 /**
  * The basis of an automatic topic: what it was classified from. Only the
@@ -516,9 +516,10 @@ export class TopicStore {
   /**
    * Applies an analysis's topic under the source priority (see
    * `AssignmentProvenance`): your topic is never replaced, an inherited one
-   * only by Full analysis on a scope shift, and Quick analysis only fills a
-   * thread that has no topic yet or replaces its own earlier guess. Returns
-   * whether the assignment changed.
+   * only by Full analysis on a scope shift or with a more specific topic
+   * beneath it, and Quick analysis only fills a thread that has no topic yet
+   * or replaces its own earlier guess. Returns whether the assignment
+   * changed.
    */
   applyAnalysis(
     threadId: string,
@@ -541,7 +542,13 @@ export class TopicStore {
         | undefined;
       const current = row ? readSource(row.source) : null;
       if (current === "manual") return false;
-      if (current === "inherited" && !(kind === "full" && answer.scopeShift)) {
+      if (
+        current === "inherited" &&
+        !(
+          kind === "full" &&
+          (answer.scopeShift || this.narrows(answer, row?.entity_id ?? null))
+        )
+      ) {
         // Settled from these requests: a later turn without a new request
         // has nothing to reconsider.
         if (kind === "full" && basis && row?.evidence !== basis)
@@ -582,6 +589,31 @@ export class TopicStore {
       if (changed) this.bumpRevision();
       return changed;
     })();
+  }
+
+  /**
+   * Whether an answer names a topic strictly beneath `entityId`: an existing
+   * descendant, or a proposal anchored at it or below it.
+   */
+  private narrows(
+    answer: { subjectId: string | null; proposed: DraftSubjectProposal | null },
+    entityId: string | null,
+  ): boolean {
+    if (!entityId) return false;
+    const entities = this.list();
+    const known = new Set(entities.map((entity) => entity.id));
+    if (answer.subjectId)
+      return (
+        answer.subjectId !== entityId &&
+        known.has(answer.subjectId) &&
+        topicAncestors(answer.subjectId, entities).includes(entityId)
+      );
+    const anchor = answer.proposed?.parentId;
+    return (
+      !!anchor &&
+      known.has(anchor) &&
+      topicAncestors(anchor, entities).includes(entityId)
+    );
   }
 
   /**

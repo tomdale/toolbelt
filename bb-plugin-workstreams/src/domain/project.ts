@@ -60,6 +60,11 @@ export type Projection<T extends WorkstreamThread> = {
    * order, else BB's section order.
    */
   readonly groups: readonly Group<T>[];
+  /**
+   * Every workstream in the manual order, else BB's section order, before
+   * focus, emptiness, and dormancy split them into `groups` and `dormant`.
+   */
+  readonly all: readonly Group<T>[];
   readonly unsorted: Group<T>;
   /** Workstreams with no visible threads, or none active within the window. */
   readonly dormant: readonly Group<T>[];
@@ -239,6 +244,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
   const groups: Group<T>[] = [];
   const empty: Group<T>[] = [];
   const dormant: Group<T>[] = [];
+  const allGroups: Group<T>[] = [];
   const orderedSections = applyOrder(
     sections,
     options.order?.workstreams,
@@ -247,6 +253,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
   );
   for (const section of orderedSections) {
     const g = group(section.id, section.name);
+    allGroups.push(g);
     const quiet = options.now - g.lastActiveAt > dormantAfterMs;
     if (g.prioritized) pinned.push(g);
     else if (g.total === 0) empty.push(g);
@@ -285,6 +292,7 @@ export function projectWorkstreams<T extends WorkstreamThread>(
   return {
     needsYou: needsYouRows,
     groups: [...pinned, ...groups],
+    all: allGroups,
     unsorted: group(UNSORTED_ID, UNFILED_NAME),
     dormant,
     snoozed,

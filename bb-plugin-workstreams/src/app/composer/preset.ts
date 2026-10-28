@@ -7,18 +7,28 @@
  */
 const PRESET_TTL_MS = 10_000;
 
-let preset: { sectionId: string; label: string; at: number } | null = null;
+/**
+ * A workstream's section, or the topic of a shared-topic header, which no
+ * section backs (see `nestGroups`).
+ */
+export type WorkstreamTarget =
+  | { sectionId: string; topicId?: undefined }
+  | { topicId: string; sectionId?: undefined };
 
-export function setComposerPreset(sectionId: string, label: string): void {
-  preset = { sectionId, label, at: Date.now() };
+type Preset = { target: WorkstreamTarget; label: string };
+
+let preset: (Preset & { at: number }) | null = null;
+
+export function setComposerPreset(
+  target: WorkstreamTarget,
+  label: string,
+): void {
+  preset = { target, label, at: Date.now() };
 }
 
-export function takeComposerPreset(): {
-  sectionId: string;
-  label: string;
-} | null {
+export function takeComposerPreset(): Preset | null {
   const current = preset;
   preset = null;
   if (!current || Date.now() - current.at > PRESET_TTL_MS) return null;
-  return { sectionId: current.sectionId, label: current.label };
+  return { target: current.target, label: current.label };
 }

@@ -430,3 +430,52 @@ describe("home.css", () => {
     );
   });
 });
+
+describe("planHome with topics", () => {
+  it("nests workstreams and focuses a whole top-level group", () => {
+    const nested = [
+      { id: "sec_p", name: "Product" },
+      { id: "sec_f", name: "Product: Feature" },
+      { id: "sec_o", name: "Other" },
+    ];
+    const projection = projectWorkstreams(
+      [
+        thread("p1", { sectionId: "sec_p", latestAttentionAt: now }),
+        thread("ask", {
+          sectionId: "sec_f",
+          hasPendingInteraction: true,
+          latestAttentionAt: now,
+        }),
+        thread("away", {
+          sectionId: "sec_o",
+          hasPendingInteraction: true,
+          latestAttentionAt: now,
+        }),
+      ],
+      nested,
+      {
+        now,
+        order: { workstreams: [], threads: {}, prioritized: ["sec_p"] },
+      },
+    );
+    const plan = planHome(projection, {
+      ...baseOptions,
+      prioritized: new Set(["sec_p"]),
+      topics: {
+        entities: [
+          { id: "p", name: "Product", parentId: null },
+          { id: "f", name: "Feature", parentId: "p" },
+          { id: "o", name: "Other", parentId: null },
+        ],
+        bindings: { sec_p: "p", sec_f: "f", sec_o: "o" },
+      },
+    });
+    expect(plan.pinned.map((group) => group.name)).toEqual(["Product"]);
+    expect(plan.pinned[0]!.subgroups.map((group) => group.label)).toEqual([
+      "Feature",
+    ]);
+    // The subgroup's thread counts as focused; the other workstream's doesn't.
+    expect(ids(plan.upNext!.rows)).toEqual(["ask", "p1"]);
+    expect(plan.focus).toEqual({ active: true, elsewhere: 1 });
+  });
+});

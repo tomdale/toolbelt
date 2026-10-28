@@ -43,14 +43,9 @@ policies apply to conversation excerpts sent for analysis.
 
 ## Audit findings that are not defects
 
-- **Deep-topic regrouping:** `deriveProductGroups` revisits newly activated
-  children in its outer loop; the claimed unprocessed over-capacity child was
-  not reproducible. `tests/domain/adaptive.test.ts` checks deep-tree capacity,
-  coverage, and fixed points across load combinations.
-- **Within-capacity split stickiness:** Keeping a contracted root contracted
-  until capacity requires a split is intentional. Valid existing multi-group
-  splits can remain. Completed roots count toward capacity just like other
-  visible roots; see `tests/server/grouping-regressions.test.ts`.
+- **Completed roots in grouping:** Completed roots count toward the contraction
+  threshold just like other visible roots, so finishing work never regroups a
+  product; see `tests/server/grouping-regressions.test.ts`.
 - **Nested Up Next / archive destinations:** Up Next contains only roots, so
   delegates cannot become separate archive destinations in that band. See
   `tests/domain/upNext.test.ts` and `tests/domain/archiveNavigation.test.ts`.

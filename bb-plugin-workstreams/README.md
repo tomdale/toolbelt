@@ -61,8 +61,9 @@ See [ISSUES.md](ISSUES.md) for current limitations and audit dispositions.
    - `manual` (chosen by you in the composer, thread header, sidebar,
      Organization tab, or CLI) is never overwritten by automatic analysis.
    - `inherited` (from a parent/source thread or a workstream's **＋** button)
-     changes automatically only when Full analysis reports a scope shift, or
-     when you explicitly apply a reviewed topic-repair plan.
+     changes automatically only when Full analysis reports a scope shift or
+     settles a more specific topic beneath it, or when you explicitly apply a
+     reviewed topic-repair plan.
    - `full` (settled by Full analysis at turn end) replaces `quick` and updates
      prior `full` assignments.
    - `quick` (initial guess from Quick analysis) fills only threads without a
@@ -133,9 +134,13 @@ Full analysis settles:
   until cleared.
 - **Topic assignment:** Settles the root's topic (or proposes a new topic path
   in the topic tree) subject to provenance priority
-  (`manual > inherited > full > quick`). Every inferred update re-validates live
-  thread evidence, assignment state, and topic-tree freshness before writing so
-  superseded runs never overwrite newer state.
+  (`manual > inherited > full > quick`). Classification chooses the most
+  specific capability the work concerns: work on one capability of a product or
+  platform files under that capability's topic, which Full analysis proposes as
+  a new subtopic when none exists. Work on the whole product, or work whose
+  capability is unclear, stays with the broader topic. Every inferred update
+  re-validates live thread evidence, assignment state, and topic-tree freshness
+  before writing so superseded runs never overwrite newer state.
 - **Fallback recap and status:** Only when the agent did not call
   `WorkstreamsRecap`, Full analysis supplies a one-line recap, work state
   (`needs_decision`, `review`, `blocked`, `in_progress`, or `done`), and a short
@@ -152,19 +157,14 @@ The **Organizer** runs automatically after topic assignments, thread lifecycle
 state, or organization settings change. It is completely deterministic and makes
 **no model calls**:
 
-- **Capacity and contraction:** Driven by **Group capacity** (default `6`, range
-  `2–100`) and **Contraction threshold** (default `3`, range `0` to
-  `capacity − 1`), counting **visible, non-archived roots**, including `done`
-  roots:
-  - When a top-level topic's total visible roots are at or below the contraction
-    threshold, all of its subtopics contract into the top-level workstream.
-  - When a workstream's visible roots exceed capacity, the organizer splits out
-    child topics with the largest visible subtrees into their own workstreams
-    (`Owner: Capability`).
-  - Within capacity, a split is retained only when at least **two** workstreams
-    have visible roots, including completed roots.
-  - If the current grouping remains valid under the visible-root counts and
-    thresholds, it stays sticky across turns to avoid unnecessary movement.
+- **Contraction:** Driven by **Contraction threshold** (default `3`, range
+  `0–99`), counting **visible, non-archived roots**, including `done` roots:
+  - When a top-level topic's total visible roots are at or below the threshold,
+    it gets one workstream for all of its subtopics.
+  - Above the threshold, every topic with a visible root gets its own workstream
+    (`Owner: Capability`), and the sidebar nests those workstreams by topic.
+  - The same counts always give the same workstreams; completion alone never
+    regroups, because done roots count too.
 - **Section sync and cleanup:** Creates, renames, or removes Workstreams-owned
   BB sections, moves roots into their derived workstream, logs and reverts
   outside section moves, and prunes unused, childless discovered topics.
@@ -207,12 +207,20 @@ Select **Workstreams** as your sidebar thread list to organize threads into:
      **Show other workstreams** toggle.
 
 2. **Workstreams (focused and other tiers):**
+   - **Nesting:** Workstreams nest by topic. A product's workstreams form one
+     group headed by the most specific topic they share; each more specific
+     workstream is a subgroup under the topic it shares with another, with its
+     name shown below its parent's (**Beacon Automations** → **Alert
+     Investigations**). A shared topic with no workstream of its own appears as
+     a header with no threads of its own. A group lists its own threads first,
+     then its subgroups, which collapse independently. Focus, ordering, and
+     Dormant apply to a top-level group as a whole.
    - Click the **Focus** button (viewfinder icon) on any workstream header to
      pin it to the top tier. When at least one workstream is focused, the other
      workstreams, **Unfiled**, and **Dormant** collapse behind **Show/Hide other
      workstreams**.
-   - Click **New work in \<workstream\>** (`＋`) on a header to open the
-     composer pre-seeded with that workstream's topic.
+   - Click **New work in \<workstream\>** (`＋`) on a header or subgroup header
+     to open the composer pre-seeded with that topic.
    - Use the **Sort workstreams** menu to order workstreams by **Name A–Z**,
      **Recent activity**, or **Manual order** (drag headers within their tier).
    - Drag root threads within a workstream to set manual thread order (newly
@@ -431,8 +439,7 @@ Open **Settings → Workstreams** to configure:
 | **New threads**       | **Home project**                                   | `Don't work in a project`                   | Default project used for background worker fallback when a thread has no project.                                                                                              |
 | **New threads**       | **Suggestions while typing**                       | `On`                                        | Runs Quick analysis on composer drafts while typing.                                                                                                                           |
 | **New threads**       | **Quick analysis model**                           | `openai/gpt-6-luna-fast` (reasoning `none`) | Model used for composer draft previews and first-send Quick analysis (remains active when typing suggestions are off because first-send analysis still uses it).               |
-| **Organization**      | **Group capacity**                                 | `6` (`2–100`)                               | Visible-root threshold (including done roots) before a topic splits into subtopic workstreams. Applies immediately.                                                            |
-| **Organization**      | **Contraction threshold**                          | `3` (`0` to `capacity − 1`)                 | Visible-root count (including done roots) at or below which subtopic workstreams contract back into their parent product topic. Applies immediately.                           |
+| **Organization**      | **Contraction threshold**                          | `3` (`0–99`)                                | Visible-root count (including done roots) at or below which a top-level topic gets one workstream; above it, each topic with threads gets its own. Applies immediately.        |
 | **Advanced**          | **Analysis machine**                               | Automatic                                   | Enrolled BB machine used for gateway model calls when multiple machines are connected.                                                                                         |
 | **Advanced**          | **Debug mode**                                     | `Off`                                       | Records redacted model traces (`7` days / `1,000` records) and reveals **Observed names**, **Inspect** buttons, composer diagnostics, and Activity model-call rows.            |
 

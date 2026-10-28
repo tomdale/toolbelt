@@ -7,7 +7,13 @@
  * Home is a place to pick a thread, so workstreams with no threads are left
  * out (the New work picker still offers them), and so is the Archived fold.
  */
-import { arrangeGroups, type GroupSort } from "../../domain/groups.ts";
+import {
+  arrangeGroups,
+  focusedSections,
+  type GroupSort,
+  type WorkstreamNode,
+  type WorkstreamTopics,
+} from "../../domain/groups.ts";
 import type { ManualOrder } from "../../domain/order.ts";
 import type {
   Group,
@@ -33,13 +39,13 @@ export type HomePlan<T extends WorkstreamThread> = {
     readonly elsewhere: number;
   };
   /** Focused workstreams with threads, in the chosen order. */
-  readonly pinned: readonly Group<T>[];
+  readonly pinned: readonly WorkstreamNode<T>[];
   /** The other workstreams with threads, in the chosen order. */
-  readonly populated: readonly Group<T>[];
+  readonly populated: readonly WorkstreamNode<T>[];
   /** Threads in no workstream; null while there are none. */
   readonly unfiled: Group<T> | null;
   /** Workstreams quiet for 30 days. */
-  readonly dormant: readonly Group<T>[];
+  readonly dormant: readonly WorkstreamNode<T>[];
   /**
    * Some focused workstream has threads to show above the rest, which then
    * hide behind a toggle. A focused workstream with no active threads (all
@@ -68,22 +74,25 @@ export function planHome<T extends UpNextThread>(
   projection: Projection<T>,
   options: {
     kindOf: (thread: T) => UpNextKind;
+    /** Focused section ids (`ManualOrder.prioritized`). */
     prioritized: ReadonlySet<string>;
     groupSort: GroupSort;
     showUpNext: boolean;
     showSnoozed: boolean;
+    /** What nests the workstreams; without it each stands alone. */
+    topics?: WorkstreamTopics;
   },
 ): HomePlan<T> {
+  const arranged = arrangeGroups(projection, options.groupSort, options.topics);
   const selection = selectUpNext(projection, {
     kindOf: options.kindOf,
-    prioritized: options.prioritized,
+    prioritized: focusedSections(arranged, options.prioritized),
   });
   const upNext =
     options.showUpNext && selection.rows.length > 0
       ? { rows: selection.rows }
       : null;
-  const arranged = arrangeGroups(projection, options.groupSort);
-  const populated = (groups: readonly Group<T>[]) =>
+  const populated = (groups: readonly WorkstreamNode<T>[]) =>
     groups.filter((group) => group.total > 0);
   const pinned = populated(arranged.pinned);
   const others = populated(arranged.populated);

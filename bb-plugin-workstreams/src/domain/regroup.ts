@@ -2,16 +2,24 @@ import type { Entity } from "./classify.ts";
 import { topicAncestors } from "./topics.ts";
 
 export type RegroupInput = {
-  entities: Entity[];
-  counts: Record<string, number>;
-  active: string[];
-  capacity: number;
+  entities: readonly Entity[];
+  /** Visible roots assigned to each topic, completed ones included. */
+  counts: Readonly<Record<string, number>>;
+  /**
+   * Products whose visible roots or more fall at or below it contract into
+   * one workstream for the whole product.
+   */
   collapseAt: number;
-  /** Product root entity IDs that have visible threads (e.g. completed) even if active count is 0. */
-  visibleProductRoots?: string[];
 };
+
 export const ancestors = topicAncestors;
-export function activeHome(id: string, active: string[], entities: Entity[]) {
+
+/** The workstream topic a topic's roots file under: its nearest active self-or-ancestor. */
+export function activeHome(
+  id: string,
+  active: readonly string[],
+  entities: readonly { id: string; parentId: string | null }[],
+) {
   return (
     topicAncestors(id, entities).find((parent) => active.includes(parent)) ??
     null
@@ -19,247 +27,32 @@ export function activeHome(id: string, active: string[], entities: Entity[]) {
 }
 
 /**
- * Checks whether an active grouping satisfies all policy rules:
- * - Every positive subject has a home in activeIds
- * - Every activeId receives at least one task (no empty groups)
- * - Every activeId respects capacity, unless it is an indivisible exact overflow group
- * - If collapseAt is specified, any product whose total is <= collapseAt must be contracted into its root
- */
-export function isGroupingValid(
-  activeIds: string[],
-  entities: Entity[],
-  counts: Record<string, number>,
-  capacity: number,
-  collapseAt?: number,
-  visibleProductRoots?: string[],
-): boolean {
-  if (activeIds.length === 0) return false;
-  if (new Set(activeIds).size !== activeIds.length) return false;
-
-  const members = new Map<string, [string, number][]>(
-    activeIds.map((id) => [id, []]),
-  );
-  const totals = new Map<string, number>();
-
-  for (const [id, count] of Object.entries(counts)) {
-    if (!Number.isInteger(count) || count <= 0) continue;
-    const path = ancestors(id, entities);
-    const root = path.at(-1)!;
-    totals.set(root, (totals.get(root) ?? 0) + count);
-    const home = activeHome(id, activeIds, entities);
-    if (!home || !members.has(home)) return false;
-    members.get(home)!.push([id, count]);
-  }
-
-  for (const [id, group] of members) {
-    if (!group.length) {
-      if (visibleProductRoots?.includes(id)) continue;
-      return false;
-    }
-    const load = group.reduce((sum, [, n]) => sum + n, 0);
-    const isIndivisible = group.length === 1 && group[0]![0] === id;
-    if (load > capacity && !isIndivisible) return false;
-  }
-
-  if (collapseAt !== undefined) {
-    for (const [root, count] of totals) {
-      if (
-        count <= collapseAt &&
-        (activeIds.filter((id) => ancestors(id, entities).at(-1) === root)
-          .length !== 1 ||
-          !activeIds.includes(root))
-      ) {
-        return false;
-      }
-    }
-  }
-
-  return true;
-}
-
-/**
- * Deterministically derives active navigation groups from known product/feature identities
- * and concurrent independent task counts according to policy.
+ * The topics that get a workstream. A product (a root topic) with visible
+ * roots at or below `collapseAt` gets one workstream, its own; a larger one
+ * gets a workstream for every topic that has a visible root, which the
+ * sidebar nests by topic (see `nestGroups`). Deterministic and history-free:
+ * the same counts always give the same workstreams.
  */
 export function deriveActiveEntityIds(input: RegroupInput): string[] {
-  const {
-    entities,
-    counts,
-    active,
-    capacity,
-    collapseAt,
-    visibleProductRoots,
-  } = input;
-
-  const positiveCounts: Record<string, number> = {};
+  const { entities, counts, collapseAt } = input;
+  const byProduct = new Map<string, string[]>();
   for (const [id, count] of Object.entries(counts)) {
-    if (count > 0) {
-      positiveCounts[id] = count;
-    }
+    if (!Number.isInteger(count) || count <= 0) continue;
+    const product = ancestors(id, entities).at(-1)!;
+    byProduct.set(product, [...(byProduct.get(product) ?? []), id]);
   }
-
-  const productRoots = entities.filter((e) => e.parentId === null);
   const selected: string[] = [];
-
-  for (const root of productRoots) {
-    const productEntities = entities.filter(
-      (e) => ancestors(e.id, entities).at(-1) === root.id,
-    );
-    const productEntityIds = new Set(productEntities.map((e) => e.id));
-
-    // Partition counts for this product
-    const productCounts: Record<string, number> = {};
-    let totalProductCount = 0;
-    for (const [id, count] of Object.entries(positiveCounts)) {
-      if (productEntityIds.has(id)) {
-        productCounts[id] = count;
-        totalProductCount += count;
-      }
-    }
-
-    // Empty products have no groups, unless retained for visible threads (completed retention)
-    if (totalProductCount === 0) {
-      if (visibleProductRoots?.includes(root.id)) {
-        selected.push(root.id);
-      }
-      continue;
-    }
-
-    // Contract sparse activity into product root
-    if (totalProductCount <= collapseAt) {
-      selected.push(root.id);
-      continue;
-    }
-
-    const prevProductActive = active.filter((id) => productEntityIds.has(id));
-    const occupiedHomes = new Set(
-      Object.keys(productCounts)
-        .map((id) => activeHome(id, prevProductActive, productEntities))
-        .filter(Boolean),
-    );
-    // Keep a split within capacity only when at least two groups have
-    // visible roots, including completed roots.
-    if (totalProductCount <= capacity && occupiedHomes.size < 2) {
-      selected.push(root.id);
-      continue;
-    }
-
-    // Preserve useful existing groups that satisfy capacity and contraction.
-    if (
-      prevProductActive.length > 0 &&
-      isGroupingValid(
-        prevProductActive,
-        productEntities,
-        productCounts,
-        capacity,
-        collapseAt,
-        visibleProductRoots,
-      )
-    ) {
-      selected.push(...prevProductActive);
-      if (
-        visibleProductRoots?.includes(root.id) &&
-        !selected.includes(root.id)
-      ) {
-        selected.push(root.id);
-      }
-      continue;
-    }
-
-    // Derive minimal useful groups for this product
-    const derived = deriveProductGroups(
-      root.id,
-      productEntities,
-      productCounts,
-      capacity,
-    );
-    selected.push(...derived);
-    if (visibleProductRoots?.includes(root.id) && !selected.includes(root.id)) {
-      selected.push(root.id);
-    }
+  for (const root of entities.filter((entity) => entity.parentId === null)) {
+    const topics = byProduct.get(root.id);
+    if (!topics) continue;
+    const total = topics.reduce((sum, id) => sum + counts[id]!, 0);
+    if (total <= collapseAt) selected.push(root.id);
+    else
+      selected.push(
+        ...entities
+          .filter((entity) => topics.includes(entity.id))
+          .map((entity) => entity.id),
+      );
   }
-
   return selected;
-}
-
-function deriveProductGroups(
-  rootId: string,
-  entities: Entity[],
-  counts: Record<string, number>,
-  capacity: number,
-): string[] {
-  if (isGroupingValid([rootId], entities, counts, capacity)) {
-    return [rootId];
-  }
-
-  const activeSet = new Set<string>([rootId]);
-
-  function subtreeCount(id: string): number {
-    let sum = counts[id] ?? 0;
-    for (const child of entities.filter((e) => e.parentId === id)) {
-      sum += subtreeCount(child.id);
-    }
-    return sum;
-  }
-
-  function getLoads() {
-    const loads = new Map<
-      string,
-      { total: number; subjects: [string, number][] }
-    >();
-    for (const id of activeSet) {
-      loads.set(id, { total: 0, subjects: [] });
-    }
-    for (const [id, count] of Object.entries(counts)) {
-      const home = activeHome(id, Array.from(activeSet), entities);
-      if (home && loads.has(home)) {
-        const entry = loads.get(home)!;
-        entry.total += count;
-        entry.subjects.push([id, count]);
-      }
-    }
-    return loads;
-  }
-
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const loads = getLoads();
-
-    for (const [groupId, loadInfo] of loads) {
-      const isIndivisible =
-        loadInfo.subjects.length === 1 && loadInfo.subjects[0]![0] === groupId;
-      if (loadInfo.total > capacity && !isIndivisible) {
-        const children = entities
-          .filter((e) => e.parentId === groupId)
-          .map((e) => ({ id: e.id, count: subtreeCount(e.id) }))
-          .filter((c) => c.count > 0)
-          .sort((a, b) => b.count - a.count);
-
-        if (children.length > 0) {
-          for (const child of children) {
-            if (!activeSet.has(child.id)) {
-              activeSet.add(child.id);
-              changed = true;
-              const currentLoads = getLoads();
-              if ((currentLoads.get(groupId)?.total ?? 0) <= capacity) {
-                break;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    const afterLoads = getLoads();
-    for (const [groupId, loadInfo] of afterLoads) {
-      if (loadInfo.total === 0) {
-        activeSet.delete(groupId);
-        changed = true;
-      }
-    }
-  }
-
-  const result = Array.from(activeSet);
-  return result.length > 0 ? result : [rootId];
 }

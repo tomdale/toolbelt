@@ -11,8 +11,8 @@ const rebuild = (w: NonNullable<typeof world>) =>
     action: "rebuild",
   }) as Promise<any>;
 describe("grouping regressions", () => {
-  it.each([1, 7])(
-    "includes %i done roots in capacity and contraction thresholds",
+  it.each([1, 4])(
+    "counts %i done roots toward the contraction threshold",
     async (doneCount) => {
       world = await fakeWorld();
       const w = world;
@@ -20,14 +20,14 @@ describe("grouping regressions", () => {
       const topics = new TopicStore(db);
       const p = topics.create("Product", "Product");
       const f = topics.create("Feature", "Feature", p.id);
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0; i < 4; i++) {
         w.addThread(`t${i}`, {
           status: "idle",
           latestAttentionAt: 10,
-          archivedAt: i === 6 ? 20 : null,
+          archivedAt: i === 3 ? 20 : null,
         });
-        topics.assign(`t${i}`, i < 3 ? p.id : f.id);
-        if (i >= 7 - doneCount) {
+        topics.assign(`t${i}`, i < 2 ? p.id : f.id);
+        if (i >= 4 - doneCount) {
           db.prepare(
             "INSERT INTO ws_analysis(thread_id, revision, at, result) VALUES (?,10,10,?)",
           ).run(
@@ -44,16 +44,19 @@ describe("grouping regressions", () => {
           );
         }
       }
-      const atCapacity = (await rebuild(w)).state;
-      expect(atCapacity.groups).toHaveLength(1);
-      expect(atCapacity.counts.totalRoots).toBe(6);
+      const atThreshold = (await rebuild(w)).state;
+      expect(atThreshold.counts.totalRoots).toBe(3);
+      expect(atThreshold.groups).toEqual([
+        expect.objectContaining({ name: "Product", totalCount: 3 }),
+      ]);
 
-      w.threads.get("t6")!.archivedAt = null;
+      // A fourth visible root splits the product, whether or not it's done.
+      w.threads.get("t3")!.archivedAt = null;
       const expanded = (await rebuild(w)).state;
       expect(expanded.groups).toHaveLength(2);
       expect(expanded.counts).toMatchObject({
-        totalRoots: 7,
-        activeRoots: 7 - doneCount,
+        totalRoots: 4,
+        activeRoots: 4 - doneCount,
         completedRoots: doneCount,
       });
       expect(
@@ -64,12 +67,8 @@ describe("grouping regressions", () => {
           .sort(),
       );
 
-      // Four visible roots keep the split even if every root is done.
-      for (const i of [0, 1, 3]) w.threads.get(`t${i}`)!.archivedAt = 20;
-      expect((await rebuild(w)).state.groups).toHaveLength(2);
-
-      // Only archiving down to the contraction threshold folds the groups.
-      w.threads.get("t4")!.archivedAt = 20;
+      // Archiving back to the threshold folds the groups again.
+      w.threads.get("t0")!.archivedAt = 20;
       const contracted = (await rebuild(w)).state;
       expect(contracted.counts.totalRoots).toBe(3);
       expect(contracted.groups).toEqual([
@@ -114,7 +113,7 @@ describe("grouping regressions", () => {
       },
     );
     await w.harness.behavior.callRpc("setPrefs", {
-      patch: { organize: { capacity: 2, collapseAt: 1 } },
+      patch: { organize: { collapseAt: 1 } },
     });
     await rebuild(w);
     await vi.waitFor(async () => {
@@ -156,7 +155,7 @@ describe("grouping regressions", () => {
     const p = topics.create("Product", "Product");
     const f = topics.create("Feature", "Feature", p.id);
     await w.harness.behavior.callRpc("setPrefs", {
-      patch: { organize: { capacity: 6, collapseAt: 1 } },
+      patch: { organize: { collapseAt: 4 } },
     });
     for (let i = 0; i < 4; i++) {
       w.addThread(`t${i}`);
@@ -164,7 +163,7 @@ describe("grouping regressions", () => {
     }
     expect((await rebuild(w)).state.groups).toHaveLength(1);
     await w.harness.behavior.callRpc("setPrefs", {
-      patch: { organize: { capacity: 2 } },
+      patch: { organize: { collapseAt: 3 } },
     });
     await vi.waitFor(async () => {
       const { state } = (await w.harness.behavior.callRpc(
@@ -174,7 +173,7 @@ describe("grouping regressions", () => {
       expect(state.groups).toHaveLength(2);
     });
   });
-  it("counts completed roots when retaining a split above capacity", async () => {
+  it("counts completed roots in each workstream of a split product", async () => {
     world = await fakeWorld();
     const w = world;
     const db = openDatabase(w.bb);
@@ -217,9 +216,7 @@ describe("grouping regressions", () => {
           activeCount: 4,
           completedCount: 3,
           totalCount: 7,
-          policyReason: expect.stringContaining(
-            "7 visible roots drive grouping",
-          ),
+          policyReason: expect.stringContaining("7 visible roots filed here"),
         }),
       ]),
     );

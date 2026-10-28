@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { UNSORTED_ID, type Group, type Row } from "../../domain/project.ts";
+import type { WorkstreamNode } from "../../domain/groups.ts";
 import { shortWake, type ThreadSnooze } from "../../domain/snooze.ts";
 import { workstreamHue } from "../../domain/workstreamHue.ts";
 import { WorkstreamName } from "../WorkstreamName.tsx";
@@ -195,7 +196,10 @@ export function WorkstreamGroups({
   );
 }
 
-/** A workstream: a header that opens and closes its threads. */
+/**
+ * A workstream: a header that opens and closes its threads, then its
+ * subgroups (see `nestGroups`), which start open and fold on their own.
+ */
 function GroupSection({
   group,
   open,
@@ -203,15 +207,19 @@ function GroupSection({
   muted,
   quietCount,
   env,
+  nested = false,
 }: {
-  group: Group<Thread>;
+  group: Group<Thread> | WorkstreamNode<Thread>;
   open: boolean;
   onToggle: () => void;
   muted: boolean;
   quietCount: boolean;
   env: HomeEnv;
+  /** A subgroup: indented, without a dot, and not sticky. */
+  nested?: boolean;
 }) {
   const isUnfiled = group.id === UNSORTED_ID;
+  const subgroups = "subgroups" in group ? group.subgroups : [];
   const rows = open
     ? unfoldedRows(
         group.rows,
@@ -233,11 +241,12 @@ function GroupSection({
       data-open={open || undefined}
       data-muted={muted || undefined}
       data-prioritized={group.prioritized || undefined}
+      data-nested={nested || undefined}
     >
       <h3 className="ws-home-group-head">
         <button type="button" aria-expanded={open} onClick={onToggle}>
           <Icon name="ChevronRight" className="ws-home-chevron" aria-hidden />
-          {isUnfiled ? (
+          {nested ? null : isUnfiled ? (
             <span className="ws-home-dot ws-home-dot-none" aria-hidden="true" />
           ) : (
             <span
@@ -249,11 +258,11 @@ function GroupSection({
             />
           )}
           <WorkstreamName
-            name={group.name}
+            name={"label" in group ? group.label : group.name}
             muted={muted}
             className="ws-home-group-name"
           />
-          {group.prioritized ? (
+          {group.prioritized && !nested ? (
             <>
               <FocusIcon filled className="ws-home-flag-icon" />
               <span className="sr-only">, focused</span>
@@ -313,6 +322,20 @@ function GroupSection({
           })}
         </ul>
       ) : null}
+      {open
+        ? subgroups.map((sub) => (
+            <GroupSection
+              key={sub.id}
+              group={sub}
+              open={env.isOpen(groupKey(sub.id), true)}
+              onToggle={() => env.toggle(groupKey(sub.id), true)}
+              muted={muted}
+              quietCount={quietCount}
+              env={env}
+              nested
+            />
+          ))
+        : null}
     </section>
   );
 }

@@ -52,6 +52,18 @@ async function mount(
       { until: number | null; attentionAt: number; at: number }
     >;
     snoozePrefs?: Record<string, unknown>;
+    sections?: ReturnType<typeof section>[];
+    /** The topic tree and section bindings that nest workstreams. */
+    catalog?: {
+      entities: {
+        id: string;
+        name: string;
+        description: string;
+        parentId: string | null;
+        aliases: string[];
+      }[];
+      groups: Record<string, string>;
+    };
     archived?: {
       status: "loading" | "ready" | "error";
       hasNextPage: boolean;
@@ -89,7 +101,7 @@ async function mount(
     sidebarThreads: {
       status: "ready",
       threads,
-      sections,
+      sections: options.sections ?? sections,
       projects: [],
       experimental_archived: options.archived ?? null,
     },
@@ -142,6 +154,15 @@ async function mount(
         },
         snoozes: { ...snoozes },
         snoozePrefs: options.snoozePrefs ?? {},
+        ...(options.catalog
+          ? {
+              catalog: {
+                ...options.catalog,
+                assignments: {},
+                revision: 1,
+              },
+            }
+          : {}),
       }),
       moveThread: () => ({ entry: null }),
       snooze: (raw: unknown) => {
@@ -198,7 +219,6 @@ async function mount(
             },
             organize: {
               model: { kind: "gateway", model: "openai/gpt-6-sol-fast" },
-              capacity: 6,
               collapseAt: 3,
             },
             advanced: { hostId: "", debug: false },
@@ -232,6 +252,13 @@ async function mount(
       ),
   };
 }
+
+/**
+ * dnd-kit stops every click on the document until 50 ms after a drag ends,
+ * so a drag test waits it out rather than swallow the next test's clicks.
+ */
+const dragGuardRemoved = () =>
+  new Promise((resolve) => setTimeout(resolve, 60));
 
 const groupRows = (slot: Awaited<ReturnType<typeof mount>>, name: string) =>
   within(slot.getByRole("region", { name }))
@@ -1431,6 +1458,7 @@ describe("thread list", () => {
       expect(
         slot.inspection.sidebarActionCalls.some((c) => c.method === "open"),
       ).toBe(false);
+      await dragGuardRemoved();
       slot.lifecycle.unmount();
     } finally {
       restore();
@@ -1466,6 +1494,7 @@ describe("thread list", () => {
       expect(
         slot.inspection.rpcCalls.find((c) => c.method === "reorder"),
       ).toBeUndefined();
+      await dragGuardRemoved();
       slot.lifecycle.unmount();
     } finally {
       restore();
@@ -1493,6 +1522,129 @@ function layoutByRows(): () => void {
     Element.prototype.getBoundingClientRect = original;
   };
 }
+
+describe("nested workstreams", () => {
+  const topic = (id: string, name: string, parentId: string | null) => ({
+    id,
+    name,
+    description: "",
+    parentId,
+    aliases: [],
+  });
+  const catalog = {
+    entities: [
+      topic("va", "Beacon", null),
+      topic("auto", "Automations", "va"),
+      topic("alerts", "Alert Investigations", "auto"),
+      topic("cli", "CLI", "auto"),
+    ],
+    groups: {
+      sec_auto: "auto",
+      sec_alerts: "alerts",
+      sec_cli: "cli",
+    },
+  };
+  const nestedSections = [
+    section("sec_auto", "Beacon: Automations"),
+    section("sec_alerts", "Beacon: Automations: Alert Investigations"),
+    section("sec_cli", "Beacon: Automations: CLI"),
+  ];
+  const nestedThreads = () => [
+    sidebarThread("mvp", { sectionId: "sec_auto", title: "Design MVP" }),
+    sidebarThread("rebase", {
+      sectionId: "sec_alerts",
+      title: "Rebase alerts PR",
+    }),
+    sidebarThread("commands", {
+      sectionId: "sec_cli",
+      title: "Design CLI commands",
+    }),
+  ];
+  const options = {
+    activeThreadId: null,
+    sections: nestedSections,
+    catalog,
+    settings: { showRecent: false, showForYou: false },
+  };
+
+  it("draws a topic's workstreams as subgroups of its group", async () => {
+    const slot = await mount(nestedThreads(), options);
+    // The catalog arrives after the first frame, which draws flat groups.
+    const top = () => slot.getByRole("region", { name: "Beacon: Automations" });
+    const alerts = () =>
+      within(top()).getByRole("region", {
+        name: "Beacon: Automations: Alert Investigations",
+      });
+    await waitFor(() => alerts());
+    // One top-level group, holding its own thread and both subgroups.
+    expect(
+      slot
+        .getAllByRole("region")
+        .filter((region) => !region.parentElement?.closest("section"))
+        .map((region) => region.getAttribute("aria-label")),
+    ).toEqual(["Beacon: Automations"]);
+    expect(within(alerts()).getByText("Alert Investigations")).toBeTruthy();
+    expect(groupRows(slot, "Beacon: Automations")).toEqual([
+      "Design MVP",
+      "Rebase alerts PR",
+      "Design CLI commands",
+    ]);
+    // Collapsing a subgroup leaves its parent's other threads showing.
+    fireEvent.click(
+      within(alerts()).getByRole("button", { name: "Alert Investigations" }),
+    );
+    await waitFor(() =>
+      expect(groupRows(slot, "Beacon: Automations")).toEqual([
+        "Design MVP",
+        "Design CLI commands",
+      ]),
+    );
+    slot.lifecycle.unmount();
+  });
+
+  it("heads sibling workstreams with their shared topic when it has none", async () => {
+    const slot = await mount(
+      nestedThreads().filter((thread) => thread.id !== "mvp"),
+      { ...options, sections: nestedSections.slice(1) },
+    );
+    await waitFor(() =>
+      expect(
+        within(slot.getByRole("region", { name: "Beacon: Automations" }))
+          .getAllByRole("region")
+          .map((region) => region.getAttribute("aria-label")),
+      ).toEqual([
+        "Beacon: Automations: Alert Investigations",
+        "Beacon: Automations: CLI",
+      ]),
+    );
+    slot.lifecycle.unmount();
+  });
+
+  it("focuses a top-level group with all its subgroups", async () => {
+    const slot = await mount(nestedThreads(), options);
+    await waitFor(() =>
+      within(
+        slot.getByRole("region", { name: "Beacon: Automations" }),
+      ).getByRole("region", { name: "Beacon: Automations: CLI" }),
+    );
+    fireEvent.click(
+      slot.getByRole("button", { name: "Focus on Beacon: Automations" }),
+    );
+    await waitFor(() =>
+      expect(
+        slot.getByRole("button", {
+          name: "Stop focusing on Beacon: Automations",
+        }),
+      ).toBeTruthy(),
+    );
+    expect(
+      slot.queryByRole("button", {
+        name: "Focus on Beacon: Automations: CLI",
+      }),
+    ).toBeNull();
+    slot.lifecycle.unmount();
+  });
+});
 
 describe("snoozing", () => {
   const later = () => Date.now() + 3_600_000;

@@ -14,7 +14,7 @@ behavior.
 | **Delegate**         | A child thread created for separable work; it uses its root's topic and workstream           | BB parent link                            |
 | **Topic**            | An entry in the topic tree, representing a product or capability                             | SQLite topic tables                       |
 | **Topic assignment** | A root's topic or no topic, with its source and automatic-classification basis               | SQLite topic fact                         |
-| **Workstream**       | A BB section bound to a topic                                                                | BB section and SQLite binding             |
+| **Workstream**       | A BB section bound to a topic; workstreams nest by topic in the sidebar and Home             | BB section and SQLite binding             |
 | **Unfiled**          | Roots without a topic and therefore without a workstream                                     | Derived                                   |
 | **Objective**        | Durable user intent, scope, and supporting request IDs                                       | Stored analysis identity                  |
 | **Goal/title**       | Concise display name for the accepted objective                                              | BB title and title metadata               |
@@ -32,8 +32,9 @@ Invariants:
    settles the goal and topic at turn end and fills recap/status/needs-you only
    when the agent did not report.
 5. Topic sources have priority `manual` > `inherited` > `full` > `quick` for
-   automatic updates. An inherited topic changes on a Full-analysis scope shift
-   or an explicitly user-approved repair; manual assignments stay protected.
+   automatic updates. An inherited topic changes on a Full-analysis scope shift,
+   a Full-analysis topic beneath it, or an explicitly user-approved repair;
+   manual assignments stay protected.
 6. Automatic changes and observed outside changes are recorded in Activity, with
    undo where supported.
 7. The bound topic supplies a workstream's name, description, and aliases.
@@ -61,13 +62,20 @@ fallback recap, status, and needs-you. Full analysis runs after a substantive
 new request; a Workstreams status-check turn runs it only if no report was made.
 Failed turns are marked error without analysis.
 
+Classification chooses the most specific topic covering the work. A broad topic
+(a product or platform spanning several capabilities) holds work on it as a
+whole and work whose capability is unclear; work on one of its capabilities
+belongs to that capability's topic, which Full analysis proposes when it does
+not exist. A single-capability topic holds its own fixes and small additions.
+
 Automatic topic application respects source priority: manual never changes;
-inherited changes only on scope shift; full replaces quick and updates full;
-quick applies only before a stronger source. Explicit user approval of a repair
-plan authorizes a correction to an inherited automatic assignment even without a
-model-reported scope shift; the corrected assignment then has Full provenance.
-Every inferred mutation validates live thread evidence, assignment, and catalog
-freshness. Superseded results change no analysis, observations, or topic facts.
+inherited changes only on scope shift or to a topic beneath it; full replaces
+quick and updates full; quick applies only before a stronger source. Explicit
+user approval of a repair plan authorizes a correction to an inherited automatic
+assignment even without a model-reported scope shift; the corrected assignment
+then has Full provenance. Every inferred mutation validates live thread
+evidence, assignment, and catalog freshness. Superseded results change no
+analysis, observations, or topic facts.
 
 Full analysis carries a durable objective separately from the latest task,
 recap, and status. An identity candidate keeps the objective, refines it from
@@ -87,15 +95,23 @@ recap. Recap reminders remain configurable.
 
 ## 4. Organization
 
-The organizer runs after relevant facts or policy settings change. It groups
-topics using visible, non-archived root counts and capacity, binds BB sections
-to topics, files roots accordingly, records outside moves and reverts them, and
-prunes unused discovered topics. Capacity and contraction settings participate
-in both snapshot fingerprints. A split within capacity remains useful only when
-at least two groups have visible roots. Completed roots contribute to capacity
-and contraction counts just like other visible roots. Mutations validate their
-topic/policy plan, run through the serialized service queue, and are journaled.
-Visual collapse is separate per-client state keyed by stable topic identity.
+The organizer runs after relevant facts or policy settings change. A product
+whose visible, non-archived roots are at or below the contraction threshold gets
+one workstream; a larger product gets a workstream for every topic with a
+visible root. The organizer binds BB sections to those topics, files roots
+accordingly, records outside moves and reverts them, and prunes unused
+discovered topics. The contraction setting participates in both snapshot
+fingerprints. Completed roots count just like other visible roots. Mutations
+validate their topic/policy plan, run through the serialized service queue, and
+are journaled. Visual collapse is separate per-client state keyed by stable
+topic identity.
+
+BB keeps sections flat, so the sidebar and Home nest them by topic: a product's
+workstreams form one top-level group headed by the most specific topic they
+share, and each workstream sits under the nearest topic it shares with another.
+A shared topic without a workstream becomes a header with no threads of its own.
+Focus covers a top-level group's sections; dragging a header moves them
+together.
 
 The Organization page shows current organizer state, workstreams, counts, and
 agent-report coverage. `bb workstreams organization [--rebuild]` reports or
@@ -123,7 +139,7 @@ analysis; `topics.ts` persists topics; `organizer.ts` derives membership;
 
 Quick analysis and Full analysis have separate model settings. The Quick
 analysis model remains available when typing suggestions are disabled because
-first-send analysis still uses it. Capacity and collapse threshold configure
+first-send analysis still uses it. The contraction threshold configures
 grouping; existing title, sidebar, recap, snooze, and display preferences
 remain.
 
