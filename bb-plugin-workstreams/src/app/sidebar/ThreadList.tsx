@@ -86,6 +86,7 @@ import {
   type PresenceEntry,
 } from "./motion.ts";
 import { FocusIcon } from "./FocusIcon.tsx";
+import { Hint } from "../Hint.tsx";
 import { usePrefs } from "../prefs.ts";
 
 type ThreadGroup = Group<PluginSidebarThread>;
@@ -925,12 +926,15 @@ export function WorkstreamsThreadList({
                 markless={!needsMarks}
                 badge={
                   focus.active ? (
-                    <span
-                      title="Showing focused workstreams"
-                      className="inline-flex"
-                    >
-                      <FocusIcon className="size-3" />
-                    </span>
+                    <Hint label="Showing focused workstreams">
+                      <span
+                        role="img"
+                        aria-label="Showing focused workstreams"
+                        className="inline-flex"
+                      >
+                        <FocusIcon className="size-3" />
+                      </span>
+                    </Hint>
                   ) : null
                 }
               >
@@ -1476,39 +1480,41 @@ function WorkstreamGroup({
         {onToggleFocus ? (
           // Always shown on a focused workstream, where it is also the focus
           // mark; elsewhere it appears on hover like New work.
-          <button
-            type="button"
-            aria-pressed={group.prioritized}
-            aria-label={
-              group.prioritized
-                ? `Stop focusing on ${group.name}`
-                : `Focus on ${group.name}`
-            }
-            title={group.prioritized ? "Stop focusing" : "Focus"}
-            onClick={onToggleFocus}
-            className={cn(
-              "rounded p-0.5 hover:text-foreground focus-visible:opacity-100",
-              group.prioritized
-                ? "text-foreground/70"
-                : "text-muted-foreground opacity-0 group-hover/head:opacity-100",
-            )}
-          >
-            <FocusIcon filled={group.prioritized} className="size-3.5" />
-          </button>
+          <Hint label={group.prioritized ? "Stop focusing" : "Focus"}>
+            <button
+              type="button"
+              aria-pressed={group.prioritized}
+              aria-label={
+                group.prioritized
+                  ? `Stop focusing on ${group.name}`
+                  : `Focus on ${group.name}`
+              }
+              onClick={onToggleFocus}
+              className={cn(
+                "rounded p-0.5 hover:text-foreground focus-visible:opacity-100",
+                group.prioritized
+                  ? "text-foreground/70"
+                  : "text-muted-foreground opacity-0 group-hover/head:opacity-100",
+              )}
+            >
+              <FocusIcon filled={group.prioritized} className="size-3.5" />
+            </button>
+          </Hint>
         ) : null}
         {onNewThread ? (
-          <button
-            type="button"
-            aria-label={`New work in ${group.name}`}
-            title={`New work in ${group.name}`}
-            onClick={onNewThread}
-            className={cn(
-              "rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:opacity-100 group-hover/head:opacity-100",
-              group.total > 0 && "opacity-0",
-            )}
-          >
-            <Icon name="Plus" className="size-3.5" />
-          </button>
+          <Hint label={`New work in ${group.name}`}>
+            <button
+              type="button"
+              aria-label={`New work in ${group.name}`}
+              onClick={onNewThread}
+              className={cn(
+                "rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:opacity-100 group-hover/head:opacity-100",
+                group.total > 0 && "opacity-0",
+              )}
+            >
+              <Icon name="Plus" className="size-3.5" />
+            </button>
+          </Hint>
         ) : null}
         {shows(prefs?.sidebar.waitingCount) && group.needsYou > 0 ? (
           <span

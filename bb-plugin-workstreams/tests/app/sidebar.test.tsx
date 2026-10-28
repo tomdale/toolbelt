@@ -1992,7 +1992,6 @@ describe("focused workstreams", () => {
     await waitFor(() => expect(regions(slot)).toEqual(["Beta"]));
     const off = slot.getByRole("button", { name: "Stop focusing on Beta" });
     expect(off.getAttribute("aria-pressed")).toBe("true");
-    expect(off.title).toBe("Stop focusing");
     // The click stays on the button: the group doesn't collapse.
     expect(groupRows(slot, "Beta")).toEqual(["Beta task"]);
     fireEvent.click(off);
@@ -2002,6 +2001,50 @@ describe("focused workstreams", () => {
     expect(slot.queryByRole("button", { name: "Focus on Unfiled" })).toBeNull();
     slot.lifecycle.unmount();
   });
+
+  it.each([
+    ["Focus on Alpha", "Focus"],
+    ["New work in Alpha", "New work in Alpha"],
+  ])("names the header's %s button in a tooltip", async (name, label) => {
+    const slot = await mount(
+      [sidebarThread("a1", { sectionId: "sec_a", title: "Alpha task" })],
+      { activeThreadId: null, settings: { showForYou: false } },
+    );
+    fireEvent.pointerMove(await slot.findByRole("button", { name }), {
+      pointerType: "mouse",
+    });
+    const tooltip = await screen.findByRole("tooltip", {}, { timeout: 2000 });
+    expect(tooltip.textContent).toBe(label);
+    slot.lifecycle.unmount();
+  });
+
+  it.each([
+    ["button", "Stop focusing on Zeta", "Stop focusing"],
+    ["img", "Showing focused workstreams", "Showing focused workstreams"],
+  ] as const)(
+    "names the focused %s %s in a tooltip",
+    async (role, name, label) => {
+      const slot = await mount(
+        [
+          sidebarThread("z1", {
+            sectionId: "sec_z",
+            title: "Ask z1",
+            hasPendingInteraction: true,
+          }),
+        ],
+        {
+          activeThreadId: null,
+          order: { workstreams: [], threads: {}, prioritized: ["sec_z"] },
+        },
+      );
+      fireEvent.pointerMove(await slot.findByRole(role, { name }), {
+        pointerType: "mouse",
+      });
+      const tooltip = await screen.findByRole("tooltip", {}, { timeout: 2000 });
+      expect(tooltip.textContent).toBe(label);
+      slot.lifecycle.unmount();
+    },
+  );
 
   it("shows only focused workstreams' threads in Up Next while one is blocked on you", async () => {
     const recaps = {
@@ -2039,7 +2082,9 @@ describe("focused workstreams", () => {
       expect(groupRows(slot, "Up Next")).toEqual(["Ask z1", "Zeta quiet"]),
     );
     const band = slot.getByRole("region", { name: "Up Next" });
-    expect(within(band).getByTitle("Showing focused workstreams")).toBeTruthy();
+    expect(
+      within(band).getByRole("img", { name: "Showing focused workstreams" }),
+    ).toBeTruthy();
     // The threads blocked on you that Up Next leaves out are counted on the
     // toggle, and wait in their workstreams with a neutral count.
     fireEvent.click(
@@ -2086,8 +2131,9 @@ describe("focused workstreams", () => {
       ]),
     );
     expect(
-      within(unfocused.getByRole("region", { name: "Up Next" })).queryByTitle(
-        "Showing focused workstreams",
+      within(unfocused.getByRole("region", { name: "Up Next" })).queryByRole(
+        "img",
+        { name: "Showing focused workstreams" },
       ),
     ).toBeNull();
     expect(
