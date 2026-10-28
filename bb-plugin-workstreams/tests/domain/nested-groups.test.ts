@@ -233,6 +233,26 @@ describe("arrangeGroups with topics", () => {
     ]);
   });
 
+  it("leaves out a subgroup with no threads to show", () => {
+    const projection = projectWorkstreams(
+      [
+        thread("a1", { sectionId: "sec_auto", latestAttentionAt: now }),
+        thread("i1", { sectionId: "sec_alerts", latestAttentionAt: now }),
+      ],
+      sections,
+      {
+        now,
+        snoozedUntil: (t) => (t.id === "i1" ? now + DAY_MS : undefined),
+      },
+    );
+    const arranged = arrangeGroups(projection, "alphabetical", bindings);
+    expect(outline(arranged.populated)).toEqual(["Beacon: Automations (1)"]);
+    // Focus still covers the hidden subgroup's section.
+    expect([...focusedSections(arranged, new Set(["sec_auto"]))]).toContain(
+      "sec_alerts",
+    );
+  });
+
   it("sorts subgroups by their own labels", () => {
     const projection = projectWorkstreams(
       [

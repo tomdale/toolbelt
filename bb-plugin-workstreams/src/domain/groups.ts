@@ -71,13 +71,24 @@ export function sortGroups<G extends Group<WorkstreamThread>>(
   );
 }
 
+/**
+ * Sorts each level of the tree. A subgroup with no threads to show (all of
+ * them snoozed, say) is left out; an empty top-level group still shows, so
+ * its New work action stays within reach.
+ */
 function sortTree<T extends WorkstreamThread>(
   nodes: readonly WorkstreamNode<T>[],
   sort: GroupSort,
 ): WorkstreamNode<T>[] {
   return sortGroups(nodes, sort).map((node) =>
     node.subgroups.length > 0
-      ? { ...node, subgroups: sortTree(node.subgroups, sort) }
+      ? {
+          ...node,
+          subgroups: sortTree(
+            node.subgroups.filter((sub) => sub.total > 0),
+            sort,
+          ),
+        }
       : node,
   );
 }

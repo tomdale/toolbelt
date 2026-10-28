@@ -213,8 +213,9 @@ Select **Workstreams** as your sidebar thread list to organize threads into:
      name shown below its parent's (**Beacon Automations** → **Alert
      Investigations**). A shared topic with no workstream of its own appears as
      a header with no threads of its own. A group lists its own threads first,
-     then its subgroups, which collapse independently. Focus, ordering, and
-     Dormant apply to a top-level group as a whole.
+     then its subgroups, which collapse independently; a subgroup whose threads
+     are all snoozed is left out. Focus, ordering, and Dormant apply to a
+     top-level group as a whole.
    - Click the **Focus** button (viewfinder icon) on any workstream header to
      pin it to the top tier. When at least one workstream is focused, the other
      workstreams, **Unfiled**, and **Dormant** collapse behind **Show/Hide other

@@ -30,17 +30,18 @@ BB sections are flat; the sidebar and phone Home nest them by topic. A product's
 workstreams form one top-level group headed by the most specific topic they
 share, and each workstream sits under the nearest topic it shares with another,
 named relative to it. A shared topic with no workstream becomes a header without
-threads of its own. A group lists its own threads, then its subgroups. Focus,
-Dormant, and manual order apply to the top-level group: focus names every
-section in it, and dragging its header moves its sections together. Persistent
-collapse preferences use stable topic IDs and synchronize mounted surfaces and
-windows independently of automatic grouping. In the tiered sidebar (any
-workstream focused), revealing and expanding the other workstreams is temporary
-per-view state; hiding and revealing that block starts it collapsed. Each pass
-that changes sections or membership is recorded as one Activity entry. Topic
-edits and assignments are recorded too. Undo is available where it can preserve
-the topic-only rule; the organizer restores derived membership when a later pass
-runs.
+threads of its own. A group lists its own threads, then its subgroups; a
+subgroup with nothing to show, such as one whose threads are all snoozed, is
+left out. Focus, Dormant, and manual order apply to the top-level group: focus
+names every section in it, and dragging its header moves its sections together.
+Persistent collapse preferences use stable topic IDs and synchronize mounted
+surfaces and windows independently of automatic grouping. In the tiered sidebar
+(any workstream focused), revealing and expanding the other workstreams is
+temporary per-view state; hiding and revealing that block starts it collapsed.
+Each pass that changes sections or membership is recorded as one Activity entry.
+Topic edits and assignments are recorded too. Undo is available where it can
+preserve the topic-only rule; the organizer restores derived membership when a
+later pass runs.
 
 ## Starting topics
 
