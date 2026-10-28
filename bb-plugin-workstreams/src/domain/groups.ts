@@ -1,9 +1,10 @@
 /**
  * How the workstream groups are arranged below Up Next, shared by the sidebar
- * and the phone Home screen: prioritized groups lead, the rest follow in the
- * chosen order with populated ones before empty ones, and Unfiled and Dormant
- * sit beside them. While any workstream is prioritized the rest are "lower
- * priority" and hide behind a toggle. Pure, so both surfaces agree.
+ * and the phone Home screen: focused groups (stored as `prioritized`) lead,
+ * the rest follow in the chosen order with populated ones before empty ones,
+ * and Unfiled and Dormant sit beside them. While any workstream is focused
+ * the rest hide behind a "Show other workstreams" toggle. Pure, so both
+ * surfaces agree.
  */
 import type { Group, Projection, WorkstreamThread } from "./project.ts";
 
@@ -24,7 +25,7 @@ export function sortGroups<T extends WorkstreamThread>(
 }
 
 export type GroupArrangement<T extends WorkstreamThread> = {
-  /** Prioritized workstreams, which pin below Up Next. */
+  /** Focused workstreams, which pin below Up Next. */
   readonly pinned: readonly Group<T>[];
   /** Every other active workstream: populated ones, then empty ones. */
   readonly other: readonly Group<T>[];
@@ -34,9 +35,9 @@ export type GroupArrangement<T extends WorkstreamThread> = {
   readonly dormant: readonly Group<T>[];
   /** The virtual group of threads in no workstream. */
   readonly unfiled: Group<T>;
-  /** Some workstream is prioritized, so the rest are lower priority. */
+  /** Some workstream is focused, so the rest hide behind a toggle. */
   readonly tiered: boolean;
-  /** There is anything below the prioritized groups to reveal. */
+  /** There is anything below the focused groups to reveal. */
   readonly hasLower: boolean;
 };
 

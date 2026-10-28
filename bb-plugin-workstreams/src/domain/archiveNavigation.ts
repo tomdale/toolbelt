@@ -1,29 +1,39 @@
-import type { Projection, WorkstreamThread } from "./project.ts";
-import { selectUpNext } from "./upNext.ts";
+import type { Projection, Row, WorkstreamThread } from "./project.ts";
+import type { UpNextKind } from "./status.ts";
+import { selectUpNext, type UpNextThread } from "./upNext.ts";
 
-/** Follow group order, wrapping at the end without leaving the workstream. */
-export function nextUpNextThreadAfterArchive<T extends WorkstreamThread>(
+/**
+ * Where to go once `threadId` is archived: the top of Up Next when that
+ * thread is blocked on the user or unread. Otherwise null, and the caller
+ * stays in the workstream (see `nextThreadAfterArchive`) rather than jump to
+ * a read thread that wants nothing.
+ */
+export function nextUpNextThreadAfterArchive<T extends UpNextThread>(
   projection: Projection<T>,
   threadId: string,
+  kindOf: (thread: T) => UpNextKind,
   prioritized: readonly string[] = [],
 ): string | null {
-  return (
-    selectUpNext(projection, {
-      needsYou: projection.needsYou.filter((row) => row.thread.id !== threadId),
-      recaps: {},
-      prioritized: new Set(prioritized),
-    }).rows[0]?.thread.id ?? null
-  );
+  const top = selectUpNext(projection, {
+    kindOf,
+    prioritized: new Set(prioritized),
+    exclude: (thread) => thread.id === threadId,
+  }).rows[0]?.thread;
+  return top && (top.isUnread || kindOf(top) !== "other") ? top.id : null;
 }
 
-/** Advance through visible Up Next rows, starting at the top when unselected. */
-export function nextUpNextThread<T extends WorkstreamThread>(
+/**
+ * The Up Next row after `threadId`, wrapping to the top. A thread Up Next
+ * doesn't list (nothing open, or one that just left) starts at the top.
+ */
+export function nextUpNextThread<T extends UpNextThread>(
   projection: Projection<T>,
   threadId: string | null,
+  kindOf: (thread: T) => UpNextKind,
   prioritized: readonly string[] = [],
-): Projection<T>["needsYou"][number] | null {
+): Row<T> | null {
   const { rows } = selectUpNext(projection, {
-    recaps: {},
+    kindOf,
     prioritized: new Set(prioritized),
   });
   if (rows.length === 0) return null;
@@ -35,6 +45,7 @@ export function nextUpNextThread<T extends WorkstreamThread>(
   return rows[(index + 1) % rows.length] ?? null;
 }
 
+/** Follow group order, wrapping at the end without leaving the workstream. */
 export function nextThreadAfterArchive<T extends WorkstreamThread>(
   projection: Projection<T>,
   threadId: string,

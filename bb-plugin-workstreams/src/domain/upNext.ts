@@ -1,69 +1,165 @@
-/*
- * The sidebar and phone Home screen share Up Next membership and ordering:
- * top-level threads waiting on the user (see `focusNeeds` for prioritized
- * focus), then other top-level threads with a recap for their latest turn,
- * newest first. Parent links determine eligibility even when a parent is
- * absent from the visible tree.
+/**
+ * Up Next's membership and order, shared by the sidebar, the phone Home
+ * screen, and the next-Up-Next command so they always list the same threads.
+ *
+ * Every top-level thread that is in a group (not archived, hidden, or
+ * snoozed) is a candidate. A question or a review is blocked on the user;
+ * anything else (done, working, waiting on something else, failed) is not.
+ * While a focused workstream has a thread blocked on the user, only focused
+ * workstreams' threads are candidates; the threads blocked on the user
+ * elsewhere wait outside Up Next.
+ *
+ * Candidates rank by tier, then by latest attention (BB's turn-end time,
+ * the one unread compares against), newest first:
+ *
+ * 1. unread questions  2. unread reviews  3. read questions
+ * 4. read reviews      5. other unread    6. other read
+ *
+ * The list then trims from the least urgent end: threads not blocked on the
+ * user leave, read before unread, until {@link UP_NEXT_LIMIT} remain; read
+ * blocked threads leave until {@link UP_NEXT_MAX} remain; and past that,
+ * only the most recently active {@link UP_NEXT_MAX} stay, whatever their
+ * tier. So Up Next always holds a few threads, grows only for threads
+ * blocked on the user, and stays short enough to act on.
+ *
+ * Nested threads never appear on their own (BB doesn't mark a delegate
+ * unread when its turn ends); they show under their root's row. Parent
+ * links decide this even when the parent is absent from the visible tree.
  */
-import {
-  focusNeeds,
-  type Projection,
-  type Row,
-  type WorkstreamThread,
-} from "./project.ts";
+import type { Projection, Row, WorkstreamThread } from "./project.ts";
+import type { UpNextKind } from "./status.ts";
 
-/** Up Next shows this many rows until the user asks for the rest. */
+/** Up Next trims threads not blocked on the user down to this many rows. */
 export const UP_NEXT_LIMIT = 5;
+/** Up Next never lists more than this many rows. */
+export const UP_NEXT_MAX = 10;
+
+export type UpNextThread = WorkstreamThread & { readonly isUnread: boolean };
 
 export type UpNextSelection<T extends WorkstreamThread> = {
-  /** Prioritized focus, applied to the threads waiting on the user. */
-  readonly focus: ReturnType<typeof focusNeeds<T>>;
-  /** Threads with a recap for their latest turn that join the waiting ones. */
-  readonly recapRows: readonly Row<T>[];
-  /** Every row Up Next lists, in order, before the row limit. */
+  /** Up Next's rows, most urgent first. */
   readonly rows: readonly Row<T>[];
+  /** Up Next lists only focused workstreams' threads. */
+  readonly focused: boolean;
+  /** Threads blocked on the user that focus left out, most urgent first. */
+  readonly elsewhere: readonly Row<T>[];
 };
 
-export function selectUpNext<T extends WorkstreamThread>(
+/** Tier rank, 0 most urgent; see the module comment. */
+function tierOf(kind: UpNextKind, unread: boolean): number {
+  if (kind === "other") return unread ? 4 : 5;
+  return (unread ? 0 : 2) + (kind === "review" ? 1 : 0);
+}
+
+const byAttention = (a: Row<WorkstreamThread>, b: Row<WorkstreamThread>) =>
+  b.thread.latestAttentionAt - a.thread.latestAttentionAt ||
+  a.thread.id.localeCompare(b.thread.id);
+
+export function selectUpNext<T extends UpNextThread>(
   projection: Projection<T>,
   options: {
-    /** Threads waiting on the user; defaults to the projection's. */
-    needsYou?: readonly Row<T>[];
-    /** The thread ids that have a recap for their latest turn. */
-    recaps: Readonly<Record<string, unknown>>;
-    /** Prioritized workstream ids (section ids that still exist). */
-    prioritized: ReadonlySet<string>;
-    /** Rows focus must not take away, such as the thread the user has open. */
-    keep?: (row: Row<T>) => boolean;
+    /** What each thread is blocked on the user for (see `upNextKind`). */
+    kindOf: (thread: T) => UpNextKind;
+    /** Focused workstream ids (`ManualOrder.prioritized`); none, no focus. */
+    prioritized?: ReadonlySet<string>;
+    /** Threads to leave out before ranking, such as one being archived. */
+    exclude?: (thread: T) => boolean;
   },
 ): UpNextSelection<T> {
-  const focus = focusNeeds(
-    (options.needsYou ?? projection.needsYou).filter(
-      (row) => !row.thread.parentThreadId,
-    ),
-    (id) => id !== null && options.prioritized.has(id),
-    options.keep,
-  );
-  const recapRows = [
+  const ranked = [
     ...projection.groups,
     projection.unsorted,
     ...projection.dormant,
   ]
     .flatMap((group) => group.rows)
     .filter(
-      (row) => !row.thread.parentThreadId && options.recaps[row.thread.id],
+      (row) => !row.thread.parentThreadId && !options.exclude?.(row.thread),
     )
-    .sort(
-      (a, b) =>
-        b.thread.latestAttentionAt - a.thread.latestAttentionAt ||
-        a.thread.id.localeCompare(b.thread.id),
-    )
-    .filter(
-      (row) =>
-        (!focus.active ||
-          (row.workstreamId !== null &&
-            options.prioritized.has(row.workstreamId))) &&
-        !focus.shown.some((shown) => shown.thread.id === row.thread.id),
+    .map((row) => {
+      const kind = options.kindOf(row.thread);
+      return {
+        row,
+        onYou: kind !== "other",
+        unread: row.thread.isUnread,
+        tier: tierOf(kind, row.thread.isUnread),
+        prioritized:
+          row.workstreamId !== null &&
+          (options.prioritized?.has(row.workstreamId) ?? false),
+      };
+    })
+    .sort((a, b) => a.tier - b.tier || byAttention(a.row, b.row));
+
+  const focused = ranked.some((entry) => entry.prioritized && entry.onYou);
+  let shown = focused ? ranked.filter((entry) => entry.prioritized) : ranked;
+  /** Drops `removable` entries from the least urgent end until `target`. */
+  const trim = (
+    target: number,
+    removable: (entry: (typeof ranked)[number]) => boolean,
+  ) => {
+    let excess = shown.length - target;
+    if (excess <= 0) return;
+    const kept: typeof ranked = [];
+    for (const entry of [...shown].reverse()) {
+      if (excess > 0 && removable(entry)) excess -= 1;
+      else kept.push(entry);
+    }
+    shown = kept.reverse();
+  };
+  trim(UP_NEXT_LIMIT, (entry) => !entry.onYou && !entry.unread);
+  trim(UP_NEXT_LIMIT, (entry) => !entry.onYou);
+  trim(UP_NEXT_MAX, (entry) => entry.onYou && !entry.unread);
+  if (shown.length > UP_NEXT_MAX) {
+    const newest = new Set(
+      shown
+        .map((entry) => entry.row)
+        .sort(byAttention)
+        .slice(0, UP_NEXT_MAX),
     );
-  return { focus, recapRows, rows: [...focus.shown, ...recapRows] };
+    shown = shown.filter((entry) => newest.has(entry.row));
+  }
+  return {
+    rows: shown.map((entry) => entry.row),
+    focused,
+    elsewhere: focused
+      ? ranked
+          .filter((entry) => !entry.prioritized && entry.onYou)
+          .map((entry) => entry.row)
+      : [],
+  };
+}
+
+/**
+ * Recent: the most recently active threads at the top of their trees that
+ * Up Next doesn't show, newest first, so Recent carries on where Up Next
+ * stops and the two never repeat a thread. `shown` is what Up Next draws,
+ * including any row it holds in place.
+ */
+export function selectRecent<T extends WorkstreamThread>(
+  projection: Projection<T>,
+  shown: readonly Row<T>[],
+  limit: number,
+): Row<T>[] {
+  const inUpNext = new Set(shown.map((row) => row.thread.id));
+  return [...projection.groups, projection.unsorted, ...projection.dormant]
+    .flatMap((group) => group.rows)
+    .filter((row) => row.depth === 0 && !inUpNext.has(row.thread.id))
+    .sort(byAttention)
+    .slice(0, limit);
+}
+
+/**
+ * `rows` with `held` at `index` (or last, when the list has shrunk), moved
+ * there if the rows already list it. The sidebar holds the open thread's
+ * row where the user found it, so reading it never moves the row out from
+ * under them; a negative index or no row holds nothing.
+ */
+export function holdInPlace<T extends WorkstreamThread>(
+  rows: readonly Row<T>[],
+  held: Row<T> | undefined,
+  index: number,
+): Row<T>[] {
+  if (!held || index < 0) return [...rows];
+  const rest = rows.filter((row) => row.thread.id !== held.thread.id);
+  rest.splice(Math.min(index, rest.length), 0, held);
+  return rest;
 }

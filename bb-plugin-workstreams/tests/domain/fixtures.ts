@@ -1,6 +1,9 @@
 import type { WorkstreamThread } from "../../src/domain/project.ts";
 
-export type TestThread = WorkstreamThread & { title: string };
+export type TestThread = WorkstreamThread & {
+  title: string;
+  isUnread: boolean;
+};
 
 let clock = 1_000_000;
 
@@ -19,6 +22,7 @@ export function thread(
     isPinned: false,
     pinSortKey: null,
     hasPendingInteraction: false,
+    isUnread: false,
     latestAttentionAt: clock,
     createdAt: clock,
     ...overrides,

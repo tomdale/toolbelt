@@ -22,6 +22,12 @@ Workstreams keeps open BB threads' topics, goals, statuses, and activity current
 
 **Unfiled**: Roots without a topic and therefore without a workstream. _Avoid_: unsorted
 
+**Focus**: The workstreams the user chose to work on now. They lead the sidebar with the rest behind a toggle, and while one has a thread blocked on the user, Up Next lists only focused workstreams' threads. Stored as `prioritized`. _Avoid_: prioritize, priority, lower priority
+
+**Up Next**: The short, ranked list of roots most worth the user's attention, shared by the sidebar, phone Home, and the next-Up-Next command (see `src/domain/upNext.ts`). _Avoid_: For You, needs you (for the list)
+
+**Blocked on you**: A thread with a question for the user (a pending question card or approval, or a needs-you status) or a turn ready for review. Distinct from the **blocked** status, which means blocked on something else.
+
 **Organizer**: The deterministic process that syncs topic-derived workstreams and membership. _Avoid_: coordinator, regroup
 
 **Organization**: The page tab showing organizer state. _Avoid_: Organize tab

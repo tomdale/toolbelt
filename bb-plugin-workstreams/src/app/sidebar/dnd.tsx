@@ -34,7 +34,7 @@ import { CSS } from "@dnd-kit/utilities";
 
 /** What each draggable or droppable is. `groupId` is a section id or "unsorted". */
 export type DragData =
-  /** `pinned`: a prioritized workstream, which reorders only among its tier. */
+  /** `pinned`: a focused workstream, which reorders only among its tier. */
   | { type: "group"; groupId: string; pinned?: boolean }
   | { type: "thread"; threadId: string; groupId: string }
   /** A group that takes thread drops but does not itself reorder (Unfiled). */
@@ -57,7 +57,7 @@ const dataOf = (value: unknown) => value as DragData | undefined;
 
 /**
  * Threads land on rows first, then on a group; workstreams land only on
- * workstreams in their own tier (prioritized or not). Only what is under the
+ * workstreams in their own tier (focused or not). Only what is under the
  * pointer counts, so releasing over a band or outside the list changes
  * nothing.
  */

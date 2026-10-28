@@ -1,16 +1,14 @@
-import { useState } from "react";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import type { Row } from "../../domain/project.ts";
-import { UP_NEXT_LIMIT } from "../../domain/upNext.ts";
 import type { WorkView } from "../useWorkstreams.ts";
 import { hasStatusMark } from "../sidebar/Row.tsx";
-import { PriorityIcon } from "../sidebar/PriorityIcon.tsx";
+import { FocusIcon } from "../sidebar/FocusIcon.tsx";
 import { HomeRow } from "./HomeRow.tsx";
 
 /**
- * Up Next on Home: the threads that need the user, in the sidebar's amber
- * block. Five rows show, with Show more for the rest. Each row names its
- * workstream in the workstream's hue.
+ * Up Next on Home: the rows `selectUpNext` chose, in the sidebar's amber
+ * block, every one of them (the selection already keeps the list short).
+ * Each row names its workstream in the workstream's hue.
  */
 export function UpNextBlock({
   rows,
@@ -21,7 +19,7 @@ export function UpNextBlock({
   showAge,
 }: {
   rows: readonly Row<PluginSidebarThread>[];
-  /** Prioritized focus left other workstreams' threads out. */
+  /** Focus left other workstreams' threads out. */
   focused: boolean;
   work: (thread: PluginSidebarThread) => WorkView;
   workstreamOf: (
@@ -30,10 +28,7 @@ export function UpNextBlock({
   now: number;
   showAge: boolean;
 }) {
-  const [showAll, setShowAll] = useState(false);
-  const shown = showAll ? rows : rows.slice(0, UP_NEXT_LIMIT);
-  const more = rows.length - UP_NEXT_LIMIT;
-  const marks = shown.some((row) =>
+  const marks = rows.some((row) =>
     hasStatusMark(row.thread, work(row.thread), true),
   );
   return (
@@ -43,10 +38,10 @@ export function UpNextBlock({
         {focused ? (
           <span
             role="img"
-            aria-label="Showing prioritized workstreams"
+            aria-label="Showing focused workstreams"
             className="ws-home-flag"
           >
-            <PriorityIcon className="ws-home-flag-icon" />
+            <FocusIcon className="ws-home-flag-icon" />
           </span>
         ) : null}
         {rows.length > 1 ? (
@@ -57,7 +52,7 @@ export function UpNextBlock({
         ) : null}
       </h2>
       <ul className="ws-home-rows" role="list">
-        {shown.map((row) => {
+        {rows.map((row) => {
           const analysis = work(row.thread);
           return (
             <HomeRow
@@ -76,16 +71,6 @@ export function UpNextBlock({
           );
         })}
       </ul>
-      {more > 0 ? (
-        <button
-          type="button"
-          className="ws-home-more ws-amber-text"
-          aria-expanded={showAll}
-          onClick={() => setShowAll(!showAll)}
-        >
-          {showAll ? "Show less" : `Show ${more} more`}
-        </button>
-      ) : null}
     </section>
   );
 }

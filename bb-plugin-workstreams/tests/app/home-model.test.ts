@@ -18,6 +18,9 @@ import {
 import { DAY_MS, projectWorkstreams } from "../../src/domain/project.ts";
 import { thread } from "../domain/fixtures.ts";
 
+const kindOf = (thread: { hasPendingInteraction: boolean }) =>
+  thread.hasPendingInteraction ? ("question" as const) : ("other" as const);
+
 const now = 100 * DAY_MS;
 const sections = [
   { id: "sec_a", name: "Alpha" },
@@ -25,7 +28,7 @@ const sections = [
   { id: "sec_empty", name: "Empty" },
 ];
 const baseOptions = {
-  recaps: {},
+  kindOf,
   prioritized: new Set<string>(),
   groupSort: "alphabetical" as const,
   showUpNext: true,
@@ -80,7 +83,7 @@ describe("planHome", () => {
     ).toBe(true);
   });
 
-  it("tiers prioritized workstreams above the rest, which are lower priority", () => {
+  it("tiers focused workstreams above the rest, which hide behind a toggle", () => {
     const projection = projectWorkstreams(
       [
         thread("a1", { sectionId: "sec_a", latestAttentionAt: now }),
@@ -103,7 +106,7 @@ describe("planHome", () => {
     expect(startsOpen(plan, plan.populated[0]!)).toBe(false);
   });
 
-  it("reports what Up Next left out under prioritized focus", () => {
+  it("reports what Up Next left out under focus", () => {
     const projection = projectWorkstreams(
       [
         thread("pinned", {
@@ -111,10 +114,18 @@ describe("planHome", () => {
           hasPendingInteraction: true,
           latestAttentionAt: now - 1,
         }),
+        thread("pinned-quiet", {
+          sectionId: "sec_a",
+          latestAttentionAt: now - 3,
+        }),
         thread("elsewhere", {
           sectionId: "sec_b",
           hasPendingInteraction: true,
           latestAttentionAt: now - 2,
+        }),
+        thread("elsewhere-quiet", {
+          sectionId: "sec_b",
+          latestAttentionAt: now,
         }),
       ],
       sections,
@@ -124,8 +135,27 @@ describe("planHome", () => {
       ...baseOptions,
       prioritized: new Set(["sec_a"]),
     });
-    expect(ids(plan.upNext!.rows)).toEqual(["pinned"]);
+    expect(ids(plan.upNext!.rows)).toEqual(["pinned", "pinned-quiet"]);
     expect(plan.focus).toEqual({ active: true, elsewhere: 1 });
+  });
+
+  it("lists every thread in Up Next while there are few", () => {
+    const projection = projectWorkstreams(
+      [
+        thread("a1", { sectionId: "sec_a", latestAttentionAt: now - 1 }),
+        thread("ask", {
+          sectionId: "sec_b",
+          hasPendingInteraction: true,
+          latestAttentionAt: now - 9,
+        }),
+      ],
+      sections,
+      { now },
+    );
+    expect(ids(planHome(projection, baseOptions).upNext!.rows)).toEqual([
+      "ask",
+      "a1",
+    ]);
   });
 
   it("keeps the focus bookkeeping when Up Next is switched off", () => {
@@ -389,7 +419,6 @@ describe("home.css", () => {
       ".ws-home-link",
       ".ws-home-group-head > button",
       ".ws-home-lower-toggle",
-      ".ws-home-more",
       ".ws-home-text-button",
     ])
       expect(declarations(selector), selector).toMatch(

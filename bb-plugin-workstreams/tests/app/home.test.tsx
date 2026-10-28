@@ -72,15 +72,21 @@ describe("Home screen", () => {
   });
 
   describe("Up Next", () => {
-    it("lists what needs the user with its workstream, what it asks, and its age", async () => {
+    it("lists what needs the user first, with its workstream, what it asks, and its age", async () => {
       const slot = await mountHome({
         threads: sample(),
         analysis: { a1: decisionFor(0, "Ship it?") },
       });
-      // The analysis is stale for any thread whose revision differs.
+      // The analysis is stale for any thread whose revision differs, so only
+      // the open question ranks ahead; with few threads, every one is listed.
       const band = await slot.findByRole("region", { name: "Up Next" });
-      expect(links(band)).toEqual(["Asking task"]);
-      const row = within(band).getByRole("link");
+      expect(links(band)).toEqual([
+        "Asking task",
+        "Alpha one",
+        "Beta one",
+        "Loose task",
+      ]);
+      const row = within(band).getAllByRole("link")[0]!;
       expect(row.getAttribute("href")).toBe("/projects/proj_1/threads/ask");
       expect(row.textContent).toContain("Alpha");
       expect(row.textContent).toContain("3m");
@@ -109,7 +115,7 @@ describe("Home screen", () => {
       expect(within(band).queryByRole("img")).toBeNull();
     });
 
-    it("adds threads whose agent left a recap, after the ones waiting", async () => {
+    it("ranks unread finished work after questions and before read threads", async () => {
       const slot = await mountHome({
         threads: [
           ...sample(),
@@ -123,36 +129,47 @@ describe("Home screen", () => {
         recaps: { done: recapOf("complete") },
       });
       const band = await slot.findByRole("region", { name: "Up Next" });
-      expect(links(band)).toEqual(["Asking task", "Finished work"]);
+      expect(links(band)).toEqual([
+        "Asking task",
+        "Finished work",
+        "Alpha one",
+        "Beta one",
+        "Loose task",
+      ]);
       // A row's name is what it shows: mark, title, workstream, age.
       expect(
         within(band).getByRole("link", {
           name: /Finished, unread.*Finished work.*Beta.*10 minutes ago/,
         }),
       ).toBeTruthy();
-      expect(within(band).getByText("2")).toBeTruthy();
+      expect(within(band).getByText("5")).toBeTruthy();
     });
 
-    it("caps the block at five rows with a way to show the rest", async () => {
+    it("trims to five threads, growing only for threads blocked on the user", async () => {
       const ids = ["a", "b", "c", "d", "e", "f", "g"];
-      const slot = await mountHome({
-        threads: ids.map((id, index) =>
+      const make = (asks: boolean) =>
+        ids.map((id, index) =>
           sidebarThread(id, {
             sectionId: "sec_a",
-            title: `Ask ${id}`,
-            hasPendingInteraction: true,
+            title: `Thread ${id}`,
+            hasPendingInteraction: asks,
             latestAttentionAt: 100 + index,
           }),
-        ),
-      });
-      const band = await slot.findByRole("region", { name: "Up Next" });
-      expect(within(band).getAllByRole("link")).toHaveLength(5);
-      fireEvent.click(
-        within(band).getByRole("button", { name: "Show 2 more" }),
-      );
+        );
+      const quiet = await mountHome({ threads: make(false) });
+      const quietBand = await quiet.findByRole("region", { name: "Up Next" });
+      expect(links(quietBand)).toEqual([
+        "Thread g",
+        "Thread f",
+        "Thread e",
+        "Thread d",
+        "Thread c",
+      ]);
+      quiet.lifecycle.unmount();
+      const asking = await mountHome({ threads: make(true) });
+      const band = await asking.findByRole("region", { name: "Up Next" });
       expect(within(band).getAllByRole("link")).toHaveLength(7);
-      fireEvent.click(within(band).getByRole("button", { name: "Show less" }));
-      expect(within(band).getAllByRole("link")).toHaveLength(5);
+      expect(within(band).queryByRole("button", { name: /^Show/ })).toBeNull();
     });
 
     it("leaves snoozed threads out of the block and every group", async () => {
@@ -164,7 +181,7 @@ describe("Home screen", () => {
         },
       });
       await slot.findByRole("region", { name: "Workstreams" });
-      expect(slot.queryByRole("region", { name: "Up Next" })).toBeNull();
+      expect(links(region(slot, "Up Next"))).not.toContain("Asking task");
       open(slot, /^Alpha/);
       expect(links(region(slot, "Alpha"))).toEqual(["Alpha one"]);
       open(slot, /^Snoozed/);
@@ -308,7 +325,7 @@ describe("Home screen", () => {
       expect(links(alpha)).toEqual(["Manager", "Delegate"]);
     });
 
-    it("pins a prioritized workstream open and hides the rest behind a toggle", async () => {
+    it("pins a focused workstream open and hides the rest behind a toggle", async () => {
       const slot = await mountHome({
         threads: [
           sidebarThread("zask", {
@@ -333,17 +350,17 @@ describe("Home screen", () => {
         order: { prioritized: ["sec_z"] },
       });
       const band = await slot.findByRole("region", { name: "Up Next" });
-      // Focus: only the prioritized workstream's waiting thread shows.
-      expect(links(band)).toEqual(["Zeta asks"]);
+      // Focus: only the focused workstream's threads show.
+      expect(links(band)).toEqual(["Zeta asks", "Zeta quiet"]);
       expect(
         within(band).getByRole("img", {
-          name: "Showing prioritized workstreams",
+          name: "Showing focused workstreams",
         }),
       ).toBeTruthy();
       expect(regionNames(slot)).toEqual(["Up Next", "Workstreams", "Zeta"]);
       expect(links(region(slot, "Zeta"))).toEqual(["Zeta asks", "Zeta quiet"]);
       const toggle = slot.getByRole("button", {
-        name: /Show lower priority workstreams/,
+        name: /Show other workstreams/,
       });
       // What Up Next left out stays counted, so nothing waits unseen.
       expect(toggle.textContent).toContain("1");
@@ -358,7 +375,7 @@ describe("Home screen", () => {
       // Revealed workstreams start closed.
       expect(links(region(slot, "Alpha"))).toEqual([]);
       fireEvent.click(
-        slot.getByRole("button", { name: "Hide lower priority workstreams" }),
+        slot.getByRole("button", { name: "Hide other workstreams" }),
       );
       expect(regionNames(slot)).toEqual(["Up Next", "Workstreams", "Zeta"]);
     });
@@ -380,14 +397,14 @@ describe("Home screen", () => {
       ];
       const byName = await mountHome({ threads });
       await byName.findByRole("region", { name: "Workstreams" });
-      expect(regionNames(byName).slice(1)).toEqual(["Alpha", "Beta", "Zeta"]);
+      expect(regionNames(byName).slice(2)).toEqual(["Alpha", "Beta", "Zeta"]);
       byName.lifecycle.unmount();
       const byActivity = await mountHome({
         threads,
         prefs: { groupSort: "activity" },
       });
       await byActivity.findByRole("region", { name: "Workstreams" });
-      expect(regionNames(byActivity).slice(1)).toEqual([
+      expect(regionNames(byActivity).slice(2)).toEqual([
         "Zeta",
         "Beta",
         "Alpha",
@@ -401,7 +418,7 @@ describe("Home screen", () => {
         ],
       });
       await slot.findByRole("region", { name: "Workstreams" });
-      expect(regionNames(slot)).toEqual(["Workstreams", "Alpha"]);
+      expect(regionNames(slot)).toEqual(["Up Next", "Workstreams", "Alpha"]);
     });
 
     it("tucks quiet workstreams into a closed Dormant fold", async () => {
@@ -416,7 +433,12 @@ describe("Home screen", () => {
         ],
       });
       await slot.findByRole("region", { name: "Workstreams" });
-      expect(regionNames(slot)).toEqual(["Workstreams", "Alpha", "Dormant"]);
+      expect(regionNames(slot)).toEqual([
+        "Up Next",
+        "Workstreams",
+        "Alpha",
+        "Dormant",
+      ]);
       expect(slot.queryByRole("region", { name: "Beta" })).toBeNull();
       open(slot, /^Dormant/);
       open(slot, /^Beta/);
@@ -655,7 +677,7 @@ describe("Home screen first frame", () => {
   });
 });
 
-describe("Home screen with a prioritized workstream", () => {
+describe("Home screen with a focused workstream", () => {
   const zeta = (id: string, title: string, overrides = {}) =>
     sidebarThread(id, {
       sectionId: "sec_z",
@@ -664,7 +686,7 @@ describe("Home screen with a prioritized workstream", () => {
       ...overrides,
     });
 
-  it("pins nothing, and hides nothing, while the prioritized workstream has no active threads", async () => {
+  it("pins nothing, and hides nothing, while the focused workstream has no active threads", async () => {
     const until = Date.now() + 3_600_000;
     const slot = await mountHome({
       threads: [
@@ -677,13 +699,14 @@ describe("Home screen with a prioritized workstream", () => {
     });
     await slot.findAllByRole("region", { name: "Workstreams" });
     expect(regionNames(slot)).toEqual([
+      "Up Next",
       "Workstreams",
       "Alpha",
       "Beta",
       "Snoozed",
     ]);
     expect(
-      slot.queryByRole("button", { name: /lower priority workstreams/ }),
+      slot.queryByRole("button", { name: /other workstreams/ }),
     ).toBeNull();
   });
 
@@ -705,7 +728,7 @@ describe("Home screen with a prioritized workstream", () => {
     expect(slot.queryByRole("region", { name: "Up Next" })).toBeNull();
     // What focus left out is still counted on the toggle...
     const toggle = slot.getByRole("button", {
-      name: /Show lower priority workstreams/,
+      name: /Show other workstreams/,
     });
     expect(toggle.textContent).toContain("1");
     fireEvent.click(toggle);
@@ -739,7 +762,7 @@ describe("Home screen accessibility", () => {
     ).toBeTruthy();
   });
 
-  it("states a closed header's counts in words and says when a workstream is prioritized", async () => {
+  it("states a closed header's counts in words and says when a workstream is focused", async () => {
     const slot = await mountHome({
       threads: [
         sidebarThread("a1", {
@@ -758,11 +781,9 @@ describe("Home screen accessibility", () => {
       order: { prioritized: ["sec_z"] },
     });
     await slot.findAllByRole("region", { name: "Workstreams" });
-    expect(
-      slot.getByRole("button", { name: /^Zeta, prioritized/ }),
-    ).toBeTruthy();
+    expect(slot.getByRole("button", { name: /^Zeta, focused/ })).toBeTruthy();
     fireEvent.click(
-      slot.getByRole("button", { name: /Show lower priority workstreams/ }),
+      slot.getByRole("button", { name: /Show other workstreams/ }),
     );
     expect(
       slot.getByRole("button", {

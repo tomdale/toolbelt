@@ -141,7 +141,7 @@ export default definePluginApp((app) => {
     id: "sidebar",
     title: "Workstreams",
     description:
-      "Threads grouped by workstream (BB section), with Up Next, prioritized workstreams, and Recent at the top.",
+      "Threads grouped by workstream (BB section), with Up Next, focused workstreams, and Recent at the top.",
     component: WorkstreamsThreadList,
   });
   app.slots.settingsSection({

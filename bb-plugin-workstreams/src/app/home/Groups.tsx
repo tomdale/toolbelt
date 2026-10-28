@@ -7,7 +7,7 @@ import { workstreamHue } from "../../domain/workstreamHue.ts";
 import { WorkstreamName } from "../WorkstreamName.tsx";
 import type { WorkView } from "../useWorkstreams.ts";
 import { hasStatusMark } from "../sidebar/Row.tsx";
-import { PriorityIcon } from "../sidebar/PriorityIcon.tsx";
+import { FocusIcon } from "../sidebar/FocusIcon.tsx";
 import { HomeRow } from "./HomeRow.tsx";
 import {
   descendantCount,
@@ -41,10 +41,10 @@ const showsCount = (when: CountWhen, collapsed: boolean) =>
   when === "always" || (when === "collapsed" && collapsed);
 
 /**
- * Everything below Up Next: the workstreams that have threads, prioritized
+ * Everything below Up Next: the workstreams that have threads, focused
  * ones first, then the rest, Unfiled, a Dormant fold, and a Snoozed fold.
- * While a workstream is prioritized the rest wait behind a toggle, as in the
- * sidebar. Groups start closed except prioritized ones (see `startsOpen`), and
+ * While a workstream is focused the rest wait behind a toggle, as in the
+ * sidebar. Groups start closed except focused ones (see `startsOpen`), and
  * Expand all opens every group at once.
  */
 export function WorkstreamGroups({
@@ -55,8 +55,8 @@ export function WorkstreamGroups({
   env: HomeEnv;
 }) {
   const [showLower, setShowLower] = useState(false);
-  // Without a prioritized workstream there is no toggle, and the next time one
-  // is prioritized the rest start hidden again.
+  // Without a focused workstream there is no toggle, and the next time one
+  // is focused the rest start hidden again.
   useEffect(() => {
     if (!plan.tiered) setShowLower(false);
   }, [plan.tiered]);
@@ -118,8 +118,8 @@ export function WorkstreamGroups({
             >
               <span>
                 {showLower
-                  ? "Hide lower priority workstreams"
-                  : "Show lower priority workstreams"}
+                  ? "Hide other workstreams"
+                  : "Show other workstreams"}
               </span>
               {!showLower && plan.focus.elsewhere > 0 ? (
                 <span className="ws-home-pill ws-home-pill-quiet">
@@ -255,8 +255,8 @@ function GroupSection({
           />
           {group.prioritized ? (
             <>
-              <PriorityIcon filled className="ws-home-flag-icon" />
-              <span className="sr-only">, prioritized</span>
+              <FocusIcon filled className="ws-home-flag-icon" />
+              <span className="sr-only">, focused</span>
             </>
           ) : null}
           <span className="ws-home-counts">

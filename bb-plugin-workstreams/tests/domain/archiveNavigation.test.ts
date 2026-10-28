@@ -54,6 +54,9 @@ it("does not select hidden, archived, snoozed threads or the archived subtree", 
   expect(nextThreadAfterArchive(projection, "first")).toBeNull();
 });
 
+const kindOf = (thread: { hasPendingInteraction: boolean }) =>
+  thread.hasPendingInteraction ? ("question" as const) : ("other" as const);
+
 it("prefers Up Next and cycles through visible Up Next rows", () => {
   const projection = projectWorkstreams(
     [
@@ -68,27 +71,81 @@ it("prefers Up Next and cycles through visible Up Next rows", () => {
         hasPendingInteraction: true,
         latestAttentionAt: 100,
       }),
+      thread("quiet", { sectionId: "ws", latestAttentionAt: 900 }),
     ],
     sections,
     { now: 0 },
   );
-  expect(nextUpNextThreadAfterArchive(projection, "archived")).toBe(
+  expect(nextUpNextThreadAfterArchive(projection, "archived", kindOf)).toBe(
     "waiting-first",
   );
-  expect(nextUpNextThread(projection, "waiting-first")?.thread.id).toBe(
-    "waiting-second",
-  );
-  expect(nextUpNextThread(projection, "waiting-second")?.thread.id).toBe(
+  expect(nextUpNextThread(projection, null, kindOf)?.thread.id).toBe(
     "archived",
   );
+  expect(nextUpNextThread(projection, "waiting-first", kindOf)?.thread.id).toBe(
+    "waiting-second",
+  );
+  // Threads not blocked on you follow, then the list wraps.
+  expect(
+    nextUpNextThread(projection, "waiting-second", kindOf)?.thread.id,
+  ).toBe("quiet");
+  expect(nextUpNextThread(projection, "quiet", kindOf)?.thread.id).toBe(
+    "archived",
+  );
+});
+
+it("leaves the archive destination to the workstream when nothing at the top of Up Next wants you", () => {
+  const projection = projectWorkstreams(
+    [
+      thread("archived", { sectionId: "ws", latestAttentionAt: 300 }),
+      thread("read", { latestAttentionAt: 200 }),
+      thread("unread", { isUnread: true, latestAttentionAt: 100 }),
+    ],
+    sections,
+    { now: 0 },
+  );
+  expect(nextUpNextThreadAfterArchive(projection, "archived", kindOf)).toBe(
+    "unread",
+  );
+  expect(
+    nextUpNextThreadAfterArchive(
+      projectWorkstreams(
+        [thread("archived", { sectionId: "ws" }), thread("read")],
+        sections,
+        { now: 0 },
+      ),
+      "archived",
+      kindOf,
+    ),
+  ).toBeNull();
+});
+
+it("starts at the top for a thread Up Next doesn't list", () => {
+  const projection = projectWorkstreams(
+    [
+      thread("ask", { hasPendingInteraction: true, latestAttentionAt: 1 }),
+      ...Array.from({ length: 6 }, (_, i) =>
+        thread(`quiet${i}`, { latestAttentionAt: 100 - i }),
+      ),
+    ],
+    sections,
+    { now: 0 },
+  );
+  expect(nextUpNextThread(projection, "quiet5", kindOf)?.thread.id).toBe("ask");
+  expect(
+    nextUpNextThread(
+      projectWorkstreams([thread("only")], sections, { now: 0 }),
+      "only",
+      kindOf,
+    ),
+  ).toBeNull();
 });
 
 it("skips nested threads in Up Next navigation and after archiving", () => {
   const projection = projectWorkstreams(
     [
-      thread("root", { sectionId: "ws" }),
       thread("child", {
-        parentThreadId: "root",
+        parentThreadId: "first",
         hasPendingInteraction: true,
         latestAttentionAt: 400,
       }),
@@ -109,25 +166,49 @@ it("skips nested threads in Up Next navigation and after archiving", () => {
     sections,
     { now: 0 },
   );
-  expect(nextUpNextThread(projection, null, ["ws"])?.thread.id).toBe("first");
-  expect(nextUpNextThread(projection, "first", ["ws"])?.thread.id).toBe(
+  expect(nextUpNextThread(projection, null, kindOf)?.thread.id).toBe("first");
+  expect(nextUpNextThread(projection, "first", kindOf)?.thread.id).toBe(
     "second",
   );
-  expect(nextUpNextThreadAfterArchive(projection, "first", ["ws"])).toBe(
+  expect(nextUpNextThreadAfterArchive(projection, "first", kindOf)).toBe(
     "second",
   );
   expect(
     nextUpNextThreadAfterArchive(
-      {
-        ...projection,
-        needsYou: projection.needsYou.filter(
-          (row) => row.thread.id !== "second",
-        ),
-      },
+      projectWorkstreams(
+        [thread("first"), thread("child", { parentThreadId: "first" })],
+        sections,
+        { now: 0 },
+      ),
       "first",
-      ["ws"],
+      kindOf,
     ),
   ).toBeNull();
+});
+
+it("follows focus on prioritized workstreams", () => {
+  const projection = projectWorkstreams(
+    [
+      thread("elsewhere", {
+        hasPendingInteraction: true,
+        latestAttentionAt: 9,
+      }),
+      thread("focused", {
+        sectionId: "ws",
+        hasPendingInteraction: true,
+        latestAttentionAt: 1,
+      }),
+    ],
+    sections,
+    { now: 0 },
+  );
+  expect(nextUpNextThread(projection, null, kindOf, ["ws"])?.thread.id).toBe(
+    "focused",
+  );
+  expect(nextUpNextThread(projection, "focused", kindOf, ["ws"])).toBeNull();
+  expect(
+    nextUpNextThreadAfterArchive(projection, "focused", kindOf, ["ws"]),
+  ).toBe("elsewhere");
 });
 
 it("advances within Unfiled", () => {

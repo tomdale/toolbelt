@@ -6,9 +6,9 @@
  * each tree under its root's section. Every visible, non-archived
  * thread appears in exactly one group row, or in Snoozed: a snoozed
  * thread leaves its group, with its descendants, until it wakes. Up Next and
- * Recent are overlays that reference the group rows; they never replace them,
- * and never show snoozed threads. Prioritized workstreams lead the groups and
- * never go dormant.
+ * Recent (see `upNext.ts`) are overlays that reference the group rows; they
+ * never replace them, and never show snoozed threads. Focused workstreams
+ * (`prioritized`) lead the groups and never go dormant.
  */
 import { applyOrder, type ManualOrder } from "./order.ts";
 import {
@@ -49,15 +49,14 @@ export type Group<T extends WorkstreamThread> = {
   readonly needsYou: number;
   /** Latest attention time across the group's threads; 0 when empty. */
   readonly lastActiveAt: number;
-  /** The user prioritized this workstream (never Unfiled). */
+  /** The user focused on this workstream (never Unfiled). */
   readonly prioritized: boolean;
 };
 
 export type Projection<T extends WorkstreamThread> = {
   readonly needsYou: readonly Row<T>[];
-  readonly recent: readonly Row<T>[];
   /**
-   * Active workstreams: prioritized ones first, each tier in the manual
+   * Active workstreams: focused ones first, each tier in the manual
    * order, else BB's section order.
    */
   readonly groups: readonly Group<T>[];
@@ -91,13 +90,12 @@ export const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type ProjectionOptions<T extends WorkstreamThread> = {
   readonly now: number;
-  readonly recentLimit?: number;
   readonly dormantAfterMs?: number;
   /** Whether a thread needs Tom. Defaults to a live pending interaction. */
   readonly needsYou?: (thread: T) => boolean;
   /**
    * The user's drag-and-drop order for workstreams and root threads, and the
-   * prioritized workstreams.
+   * focused workstreams.
    */
   readonly order?: ManualOrder;
   /**
@@ -130,7 +128,6 @@ export function projectWorkstreams<T extends WorkstreamThread>(
   sections: readonly Section[],
   options: ProjectionOptions<T>,
 ): Projection<T> {
-  const recentLimit = options.recentLimit ?? 5;
   const dormantAfterMs = options.dormantAfterMs ?? 30 * DAY_MS;
   const needsYou =
     options.needsYou ?? ((thread: T) => thread.hasPendingInteraction);
@@ -263,10 +260,6 @@ export function projectWorkstreams<T extends WorkstreamThread>(
     a.thread.id.localeCompare(b.thread.id);
   const all = [...rowOf.values()];
   const needsYouRows = all.filter(counts).sort(byAttention);
-  const recent = all
-    .filter((row) => row.depth === 0 && !row.needsYou)
-    .sort(byAttention)
-    .slice(0, recentLimit);
 
   const wakeRank = (node: TreeNode<T>) =>
     wakeOf(node.thread) ?? Number.POSITIVE_INFINITY;
@@ -291,7 +284,6 @@ export function projectWorkstreams<T extends WorkstreamThread>(
 
   return {
     needsYou: needsYouRows,
-    recent,
     groups: [...pinned, ...groups],
     unsorted: group(UNSORTED_ID, UNFILED_NAME),
     dormant,
@@ -299,33 +291,6 @@ export function projectWorkstreams<T extends WorkstreamThread>(
     rowOf,
     needsYouVia,
   };
-}
-
-/**
- * Up Next split by priority. While any prioritized workstream has a thread in
- * Up Next, `shown` holds only those, plus each row `keep` names, and
- * `elsewhere` the rest, which Up Next leaves out; otherwise every row is
- * shown. `keep` lets the sidebar
- * hold the row the user has open so focus never pulls it out from under them.
- * Both lists keep the incoming order.
- */
-export function focusNeeds<T extends WorkstreamThread>(
-  rows: readonly Row<T>[],
-  isPrioritized: (workstreamId: string | null) => boolean,
-  keep: (row: Row<T>) => boolean = () => false,
-): {
-  readonly active: boolean;
-  readonly shown: readonly Row<T>[];
-  readonly elsewhere: readonly Row<T>[];
-} {
-  const focused = (row: Row<T>) => isPrioritized(row.workstreamId);
-  if (!rows.some(focused))
-    return { active: false, shown: [...rows], elsewhere: [] };
-  const shown: Row<T>[] = [];
-  const elsewhere: Row<T>[] = [];
-  for (const row of rows)
-    (focused(row) || keep(row) ? shown : elsewhere).push(row);
-  return { active: true, shown, elsewhere };
 }
 
 /** Page order: most needs-you first, then most recent attention. */

@@ -26,12 +26,13 @@ Within capacity, a split is retained only when at least two groups have visible
 roots. A previously contracted group stays contracted until capacity requires
 splitting; completion alone does not change its grouping. Persistent collapse
 preferences use stable topic IDs and synchronize mounted surfaces and windows
-independently of automatic grouping. In the tiered sidebar, lower-priority
-reveal and expansion are temporary per-view state; hiding and revealing that
-block starts it collapsed. Each pass that changes sections or membership is
-recorded as one Activity entry. Topic edits and assignments are recorded too.
-Undo is available where it can preserve the topic-only rule; the organizer
-restores derived membership when a later pass runs.
+independently of automatic grouping. In the tiered sidebar (any workstream
+focused), revealing and expanding the other workstreams is temporary per-view
+state; hiding and revealing that block starts it collapsed. Each pass that
+changes sections or membership is recorded as one Activity entry. Topic edits
+and assignments are recorded too. Undo is available where it can preserve the
+topic-only rule; the organizer restores derived membership when a later pass
+runs.
 
 ## Starting topics
 

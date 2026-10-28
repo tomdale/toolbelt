@@ -77,6 +77,7 @@ export function useArchiveSuggestion(
       nextUpNextThreadAfterArchive(
         projection,
         threadId,
+        ws.upNextKind,
         ws.server.order.prioritized,
       ) ?? nextThreadAfterArchive(projection, threadId);
     try {

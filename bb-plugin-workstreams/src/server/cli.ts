@@ -301,7 +301,7 @@ export function registerCli(
                 ),
               };
             const line = (g: ReturnType<typeof groupJson>) =>
-              `${g.name.padEnd(36)} ${plural(g.threads, "thread").padStart(11)}${g.needsYou ? ` · ${g.needsYou} up next` : ""}${g.lastActive ? ` · ${g.lastActive}` : ""}${g.prioritized ? " · prioritized" : ""}  (${g.id})`;
+              `${g.name.padEnd(36)} ${plural(g.threads, "thread").padStart(11)}${g.needsYou ? ` · ${g.needsYou} up next` : ""}${g.lastActive ? ` · ${g.lastActive}` : ""}${g.prioritized ? " · focused" : ""}  (${g.id})`;
             const lines = [
               ...active.map(line),
               line(unsorted),

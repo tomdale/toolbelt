@@ -4,7 +4,6 @@ import {
   DAY_MS,
   UNSORTED_ID,
   projectWorkstreams,
-  focusNeeds,
   rankGroups,
   type Group,
 } from "../../src/domain/project.ts";
@@ -132,7 +131,7 @@ describe("projectWorkstreams", () => {
     expect(rowIds(p.groups[0]!)).toEqual(["pin", "new", "c1", "c2", "old"]);
   });
 
-  it("overlays Needs you and Recent without removing rows from groups", () => {
+  it("lists threads needing you without removing rows from groups", () => {
     const p = projectWorkstreams(
       [
         thread("ask", {
@@ -140,45 +139,14 @@ describe("projectWorkstreams", () => {
           hasPendingInteraction: true,
           latestAttentionAt: now,
         }),
-        ...Array.from({ length: 7 }, (_, i) =>
-          thread(`r${i}`, { sectionId: "sec_b", latestAttentionAt: now - i }),
-        ),
+        thread("quiet", { sectionId: "sec_b", latestAttentionAt: now - 1 }),
       ],
       sections,
       { now },
     );
     expect(p.needsYou.map((r) => r.thread.id)).toEqual(["ask"]);
-    expect(p.recent.map((r) => r.thread.id)).toEqual([
-      "r0",
-      "r1",
-      "r2",
-      "r3",
-      "r4",
-    ]);
     expect(p.groups[0]?.needsYou).toBe(1);
     expect(rowIds(p.groups[0]!)).toContain("ask");
-  });
-
-  it("limits Recent to top-level threads before applying its limit", () => {
-    const p = projectWorkstreams(
-      [
-        thread("root", { sectionId: "sec_a", latestAttentionAt: now - 10 }),
-        thread("child", {
-          parentThreadId: "root",
-          latestAttentionAt: now,
-        }),
-        ...Array.from({ length: 5 }, (_, i) =>
-          thread(`other${i}`, { latestAttentionAt: now - 20 - i }),
-        ),
-      ],
-      sections,
-      { now, recentLimit: 3 },
-    );
-    expect(p.recent.map((row) => row.thread.id)).toEqual([
-      "root",
-      "other0",
-      "other1",
-    ]);
   });
 
   it("accepts a custom needs-you predicate", () => {
@@ -328,12 +296,11 @@ describe("snoozed threads", () => {
   const ids = (rows: readonly { thread: { id: string } }[]) =>
     rows.map((r) => r.thread.id);
 
-  it("moves a snoozed thread out of its group, Up Next, and Recent", () => {
+  it("moves a snoozed thread out of its group and Needs you", () => {
     const p = project({ asks: now + 1000, beta: null });
     expect(rowIds(p.groups[0]!)).toEqual(["root", "kid", "grandkid"]);
     expect(p.groups[0]!.needsYou).toBe(0);
     expect(p.needsYou).toEqual([]);
-    expect(ids(p.recent)).not.toContain("beta");
     expect(p.groups.find((g) => g.id === "sec_b")?.total).toBe(0);
     expect(p.dormant).toEqual([]);
     expect(ids(p.snoozed)).toEqual(["asks", "beta"]);
@@ -398,36 +365,5 @@ describe("prioritized workstreams", () => {
     ]);
     expect(p.dormant).toEqual([]);
     expect(p.unsorted.prioritized).toBe(false);
-  });
-
-  it("focuses Up Next on prioritized rows only while one is waiting", () => {
-    const p = projectWorkstreams(threads, all, {
-      now,
-      needsYou: () => true,
-      order: order(["sec_b"]),
-    });
-    const isPrioritized = (id: string | null) => id === "sec_b";
-    const ids = (rows: readonly { thread: { id: string } }[]) =>
-      rows.map((r) => r.thread.id);
-    const focus = focusNeeds(p.needsYou, isPrioritized);
-    expect(focus.active).toBe(true);
-    expect(ids(focus.shown)).toEqual(["b1"]);
-    expect(ids(focus.elsewhere)).toEqual(["a1", "old"]);
-
-    // The open thread stays where it is.
-    const kept = focusNeeds(
-      p.needsYou,
-      isPrioritized,
-      (r) => r.thread.id === "a1",
-    );
-    expect(ids(kept.shown)).toEqual(["a1", "b1"]);
-    expect(ids(kept.elsewhere)).toEqual(["old"]);
-
-    const unfocused = focusNeeds(
-      p.needsYou.filter((r) => r.workstreamId !== "sec_b"),
-      isPrioritized,
-    );
-    expect(unfocused.active).toBe(false);
-    expect(ids(unfocused.shown)).toEqual(["a1", "old"]);
   });
 });

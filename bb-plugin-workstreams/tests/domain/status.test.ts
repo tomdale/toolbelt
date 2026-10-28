@@ -5,6 +5,7 @@ import {
   isDone,
   needsYou,
   needsAttention,
+  upNextKind,
   workView,
 } from "../../src/domain/status.ts";
 
@@ -110,5 +111,58 @@ describe("needsYou", () => {
   it("clears an inferred ask once the agent reports the turn", () => {
     const view = workView(idle, analysis("needs_decision"), recap("review"));
     expect(needsYou({ hasPendingInteraction: false }, view)).toBe(false);
+  });
+});
+
+describe("upNextKind", () => {
+  const quiet = { hasPendingInteraction: false };
+  const asking = { hasPendingInteraction: true };
+
+  it("is a question for a pending interaction or a needed decision", () => {
+    expect(upNextKind(asking, workView(idle, analysis("review")))).toBe(
+      "question",
+    );
+    expect(upNextKind(quiet, workView(idle, analysis("needs_decision")))).toBe(
+      "question",
+    );
+  });
+
+  it("is a review for a reported or inferred review", () => {
+    expect(upNextKind(quiet, workView(idle, undefined, recap("review")))).toBe(
+      "review",
+    );
+    expect(upNextKind(quiet, workView(idle, analysis("review")))).toBe(
+      "review",
+    );
+  });
+
+  it("is other for done, working, blocked, stale, and failed turns", () => {
+    expect(
+      upNextKind(quiet, workView(idle, undefined, recap("complete"))),
+    ).toBe("other");
+    expect(upNextKind(quiet, workView(idle, undefined, recap("waiting")))).toBe(
+      "other",
+    );
+    expect(upNextKind(quiet, workView(idle, analysis("blocked")))).toBe(
+      "other",
+    );
+    expect(
+      upNextKind(
+        quiet,
+        workView(
+          { status: "active", latestAttentionAt: 200 },
+          analysis("review"),
+        ),
+      ),
+    ).toBe("other");
+    expect(
+      upNextKind(
+        quiet,
+        workView(
+          { status: "error", latestAttentionAt: 100 },
+          analysis("review"),
+        ),
+      ),
+    ).toBe("other");
   });
 });

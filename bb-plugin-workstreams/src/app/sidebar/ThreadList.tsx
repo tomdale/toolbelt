@@ -1,18 +1,17 @@
 /**
- * The Workstreams sidebar thread list: the Up Next section, the prioritized
+ * The Workstreams sidebar thread list: the Up Next section, the focused
  * workstreams, and the Recent band, then one group per remaining workstream
  * (BB section, in the user's drag-and-drop order, else BB's), Unfiled, a
  * Dormant fold, and a Snoozed fold. Up Next and Recent are overlays: every
  * visible thread appears in exactly one group, or in Snoozed (SPEC §1).
  *
- * While a prioritized workstream has a thread in Up Next, Up Next shows only
- * prioritized threads (see `focusNeeds`), and while any workstream is
- * prioritized, the rest hide behind a toggle below the prioritized ones. Changes the user didn't make never
- * pull the open thread's row away, and rows open and close rather than pop
- * (see `motion.ts`).
+ * Up Next's rows come from `selectUpNext`, including its focus on the
+ * focused workstreams; while any workstream is focused, the rest hide behind
+ * a toggle below the focused ones. Focused workstreams are stored as
+ * `prioritized`. Up Next never moves the open thread's row out from under
+ * the user, and rows open and close rather than pop (see `motion.ts`).
  */
 import {
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -41,7 +40,11 @@ import {
   type Row as RowModel,
 } from "../../domain/project.ts";
 import { arrangeGroups } from "../../domain/groups.ts";
-import { UP_NEXT_LIMIT, selectUpNext } from "../../domain/upNext.ts";
+import {
+  holdInPlace,
+  selectRecent,
+  selectUpNext,
+} from "../../domain/upNext.ts";
 import { useWorkstreams } from "../useWorkstreams.ts";
 import { groupCollapseKey, useCollapsed } from "./useCollapsed.ts";
 import {
@@ -75,7 +78,7 @@ import {
   usePresence,
   type PresenceEntry,
 } from "./motion.ts";
-import { PriorityIcon } from "./PriorityIcon.tsx";
+import { FocusIcon } from "./FocusIcon.tsx";
 import { usePrefs } from "../prefs.ts";
 
 type ThreadGroup = Group<PluginSidebarThread>;
@@ -176,9 +179,8 @@ export function WorkstreamsThreadList({
   const { bandOptions, updateBandOptions } = useBandOptions();
   const [nameRequest, setNameRequest] = useState<NameRequest | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showAllNeeds, setShowAllNeeds] = useState(false);
   const [showLower, setShowLower] = useState(false);
-  // Lower-priority workstreams the user expanded since revealing them. Not
+  // Other workstreams the user expanded since revealing them. Not
   // persisted: each reveal starts with every one collapsed.
   const [lowerExpanded, setLowerExpanded] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -190,75 +192,56 @@ export function WorkstreamsThreadList({
     null,
   );
   const { projection, sections, now } = ws;
-  const previousNeedsYou = useRef(projection.needsYou);
-  useEffect(() => {
-    previousNeedsYou.current = projection.needsYou;
-  }, [projection.needsYou]);
-  const [forYouSelection, setForYouSelection] = useState({
-    threadId: activeThreadId,
-    index: -1,
-  });
-  const selectedIndex = projection.needsYou.findIndex(
-    (row) => row.thread.id === activeThreadId,
-  );
-  const selection =
-    forYouSelection.threadId !== activeThreadId
-      ? {
-          threadId: activeThreadId,
-          index:
-            selectedIndex >= 0
-              ? selectedIndex
-              : previousNeedsYou.current.findIndex(
-                  (row) => row.thread.id === activeThreadId,
-                ),
-        }
-      : forYouSelection.index < 0 && selectedIndex >= 0
-        ? { ...forYouSelection, index: selectedIndex }
-        : forYouSelection;
-  if (selection !== forYouSelection) setForYouSelection(selection);
-
-  // Keep a selected Up Next row in place after read/status updates. Resolve
-  // it from live groups so its contents stay current; snoozed, hidden, and
-  // archived threads still leave the list when explicitly put away.
-  const forYouRows = [...projection.needsYou];
-  if (selection.index >= 0 && selectedIndex < 0) {
-    const selectedRow = [
-      ...projection.groups,
-      projection.unsorted,
-      ...projection.dormant,
-    ]
-      .flatMap((group) => group.rows)
-      .find((row) => row.thread.id === activeThreadId);
-    if (selectedRow) forYouRows.splice(selection.index, 0, selectedRow);
-  }
   const nameOf = new Map(sections.map((s) => [s.id, s.name]));
   const prioritizedIds = ws.server.order.prioritized;
   const prioritized = new Set(prioritizedIds.filter((id) => nameOf.has(id)));
 
-  // Focus Up Next on the prioritized workstreams. The open thread keeps its
-  // row if Up Next was showing it, so a prioritized thread arriving never
-  // takes the row out from under the user; it leaves once they move on.
-  const shownBefore = useRef<ReadonlySet<string>>(new Set());
-  const {
-    focus,
-    recapRows,
-    rows: shownNeedsRows,
-  } = selectUpNext(projection, {
-    needsYou: forYouRows,
-    recaps: ws.server.recaps,
+  // Up Next re-sorts live, except the open thread's row: it holds the place
+  // where the user found it (or where it first appeared while open), so
+  // reading or answering it, or focus arriving, never moves the row out from
+  // under them. It moves or leaves once they open another thread. Resolved
+  // from live groups, so a thread the user snoozes, hides, or archives still
+  // leaves.
+  const upNext = selectUpNext(projection, {
+    kindOf: ws.upNextKind,
     prioritized,
-    keep: (row) =>
-      row.thread.id === activeThreadId &&
-      shownBefore.current.has(row.thread.id),
   });
-  const recentRows = projection.recent.filter(
-    (row) =>
-      !forYouRows.some((kept) => kept.thread.id === row.thread.id) &&
-      !recapRows.some((kept) => kept.thread.id === row.thread.id),
+  const shownBefore = useRef<readonly string[]>([]);
+  const [hold, setHold] = useState({ threadId: activeThreadId, index: -1 });
+  const ranked = upNext.rows.findIndex(
+    (row) => row.thread.id === activeThreadId,
   );
+  const held =
+    hold.threadId !== activeThreadId
+      ? {
+          threadId: activeThreadId,
+          index: activeThreadId
+            ? shownBefore.current.indexOf(activeThreadId)
+            : -1,
+        }
+      : hold;
+  const settledHold =
+    held.index < 0 && ranked >= 0 ? { ...held, index: ranked } : held;
+  if (settledHold !== hold) setHold(settledHold);
+  const openRow = activeThreadId
+    ? [...projection.groups, projection.unsorted, ...projection.dormant]
+        .flatMap((group) => group.rows)
+        .find((row) => row.thread.id === activeThreadId)
+    : undefined;
+  const shownNeedsRows = holdInPlace(upNext.rows, openRow, settledHold.index);
   useLayoutEffect(() => {
-    shownBefore.current = new Set(focus.shown.map((row) => row.thread.id));
+    shownBefore.current = shownNeedsRows.map((row) => row.thread.id);
   });
+  const focus = {
+    active: upNext.focused,
+    // What focus left out, less a row Up Next holds open.
+    elsewhere: upNext.elsewhere.filter((row) => !shownNeedsRows.includes(row)),
+  };
+  const recentRows = selectRecent(
+    projection,
+    ws.showForYou ? shownNeedsRows : [],
+    ws.recentLimit,
+  );
   const archivedThreads = ws.showArchived
     ? archived.threads.filter((thread) => thread.isArchived && !thread.isHidden)
     : [];
@@ -321,7 +304,7 @@ export function WorkstreamsThreadList({
 
   const listRef = useRef<HTMLDivElement>(null);
   const captureLayout = useFlip(listRef, [...prioritized].sort().join(" "));
-  const togglePriority = (group: ThreadGroup) => {
+  const toggleFocus = (group: ThreadGroup) => {
     setError(null);
     captureLayout(`group:${group.id}`);
     const ids = group.prioritized
@@ -384,26 +367,11 @@ export function WorkstreamsThreadList({
           placement === "needs-you",
         ),
     );
-  // The open thread's row stays visible when newer rows push it past the
-  // limit.
-  const needsRows = showAllNeeds
-    ? shownNeedsRows
-    : shownNeedsRows.filter(
-        (row, index) =>
-          index < NEEDS_YOU_LIMIT || row.thread.id === activeThreadId,
-      );
-  const moreNeeds = shownNeedsRows.length - needsRows.length;
-  const needsMarks = anyMark(needsRows, "needs-you");
+  const needsMarks = anyMark(shownNeedsRows, "needs-you");
   const rowKey = (row: ThreadRow) => row.thread.id;
   const showBand = ws.showForYou && shownNeedsRows.length > 0;
   const bandPresence = usePresence(showBand ? ["band"] : [], String);
-  const needsPresence = usePresence(needsRows, rowKey);
-  const needsControls = usePresence(
-    (showAllNeeds ? shownNeedsRows.length > NEEDS_YOU_LIMIT : moreNeeds > 0)
-      ? ["more"]
-      : [],
-    String,
-  );
+  const needsPresence = usePresence(shownNeedsRows, rowKey);
   /**
    * The row's hover snooze button and the menu beside it. In Snoozed, a
    * thread with its own snooze wakes; a descendant that is only there with
@@ -651,9 +619,9 @@ export function WorkstreamsThreadList({
 
   const groupSort = prefs?.sidebar.groupSort ?? "alphabetical";
   // Unfiled, a group only while it has threads, sits between the populated
-  // workstreams and the empty ones. With any workstream prioritized, the rest
-  // (with Unfiled and Dormant) sit hidden behind a toggle below the
-  // prioritized ones.
+  // workstreams and the empty ones. With any workstream focused, the rest
+  // (with Unfiled and Dormant) sit hidden behind a toggle below the focused
+  // ones.
   const {
     pinned: pinnedGroups,
     populated: populatedGroups,
@@ -669,7 +637,7 @@ export function WorkstreamsThreadList({
   useLayoutEffect(() => {
     wasTiered.current = tiered;
   });
-  // Entering or leaving tiers rearranges the whole list, which the priority
+  // Entering or leaving tiers rearranges the whole list, which the focus
   // glide covers; only the toggle opens and closes the hidden block.
   const lowerPresence = usePresence(
     hasLower && (!tiered || showLower) ? ["lower"] : [],
@@ -707,7 +675,7 @@ export function WorkstreamsThreadList({
       : lowerCollapsed(group.id),
     toggle: () =>
       group.prioritized ? toggleGroup(group.id) : lowerToggle(group.id),
-    onTogglePriority: () => togglePriority(group),
+    onToggleFocus: () => toggleFocus(group),
     // The new thread starts with this workstream's topic.
     onNewThread: () => {
       if (group.id !== UNSORTED_ID) setComposerPreset(group.id, group.name);
@@ -724,15 +692,6 @@ export function WorkstreamsThreadList({
       <ul>{children}</ul>
     </li>
   );
-  // Left edge matches the row titles: 26px with the status slot, 14px when
-  // the rows fold it away (see styles.css).
-  const bandControlClass = (tone: string) =>
-    cn(
-      "w-full cursor-pointer rounded-md py-0.5 pr-2 text-left text-[12px] transition-[padding] duration-[180ms] ease-out hover:bg-sidebar-accent/60 motion-reduce:transition-none",
-      tone,
-      needsMarks ? "pl-[26px]" : "pl-[14px]",
-    );
-
   const recentBlock =
     ws.showRecent && recentRows.length > 0 ? (
       <Band
@@ -775,7 +734,7 @@ export function WorkstreamsThreadList({
       />
     </div>
   ) : null;
-  /** Everything below the prioritized workstreams, as one opening block. */
+  /** Everything below the focused workstreams, as one opening block. */
   const lowerBlock = lowerPresence.map((entry) => (
     <div
       key="lower"
@@ -836,7 +795,7 @@ export function WorkstreamsThreadList({
                   {renderSortableGroup(group, {
                     collapsed: groupCollapsed(group.id, true),
                     toggle: () => toggleGroup(group.id, true),
-                    onTogglePriority: () => togglePriority(group),
+                    onToggleFocus: () => toggleFocus(group),
                     muted: true,
                   })}
                 </li>
@@ -885,10 +844,10 @@ export function WorkstreamsThreadList({
                 badge={
                   focus.active ? (
                     <span
-                      title="Showing prioritized workstreams"
+                      title="Showing focused workstreams"
                       className="inline-flex"
                     >
-                      <PriorityIcon className="size-3" />
+                      <FocusIcon className="size-3" />
                     </span>
                   ) : null
                 }
@@ -897,22 +856,6 @@ export function WorkstreamsThreadList({
                   present(
                     entry,
                     renderOverlayTree(entry.item, "needs-you", needsMarks),
-                  ),
-                )}
-                {needsControls.map((entry) =>
-                  present(
-                    entry,
-                    <li>
-                      <button
-                        type="button"
-                        onClick={() => setShowAllNeeds((all) => !all)}
-                        className={bandControlClass("ws-amber-text")}
-                      >
-                        {showAllNeeds
-                          ? "Show less"
-                          : `Show ${Math.max(1, moreNeeds)} more`}
-                      </button>
-                    </li>,
                   ),
                 )}
               </Band>
@@ -945,8 +888,8 @@ export function WorkstreamsThreadList({
                     >
                       <span className="underline-offset-2 group-hover/lower:underline">
                         {showLower
-                          ? "Hide lower priority workstreams"
-                          : "Show lower priority workstreams"}
+                          ? "Hide other workstreams"
+                          : "Show other workstreams"}
                       </span>
                       {!showLower && focus.elsewhere.length > 0 ? (
                         // What Up Next left out, so nothing waits unseen.
@@ -1116,11 +1059,8 @@ export function WorkstreamsThreadList({
   );
 }
 
-/** The section of threads waiting on the user. */
+/** The band of threads most worth the user's attention (see `selectUpNext`). */
 export const UP_NEXT = "Up Next";
-
-/** Up Next shows this many rows until the user asks for the rest. */
-const NEEDS_YOU_LIMIT = UP_NEXT_LIMIT;
 
 /**
  * An overlay band. A plain band collapses from its header. A boxed band is an
@@ -1154,7 +1094,7 @@ function Band({
   collapsed?: boolean;
   toggle?: () => void;
   menu?: ReactNode;
-  /** Glides the band when a priority change moves it (see `useFlip`). */
+  /** Glides the band when a focus change moves it (see `useFlip`). */
   flipKey?: string;
   children: ReactNode;
 }) {
@@ -1386,7 +1326,7 @@ type GroupProps = {
   collapsed: boolean;
   toggle: () => void;
   onNewThread?: () => void;
-  onTogglePriority?: () => void;
+  onToggleFocus?: () => void;
   muted?: boolean;
   /** Up Next is focused elsewhere, so the waiting count recedes. */
   quietCount?: boolean;
@@ -1403,7 +1343,7 @@ function WorkstreamGroup({
   collapsed,
   toggle,
   onNewThread,
-  onTogglePriority,
+  onToggleFocus,
   muted,
   quietCount,
   sectionRef,
@@ -1446,19 +1386,19 @@ function WorkstreamGroup({
             className="text-[13px] font-semibold"
           />
         </button>
-        {onTogglePriority ? (
-          // Always shown on a prioritized workstream, where it is also the
-          // priority mark; elsewhere it appears on hover like New work.
+        {onToggleFocus ? (
+          // Always shown on a focused workstream, where it is also the focus
+          // mark; elsewhere it appears on hover like New work.
           <button
             type="button"
             aria-pressed={group.prioritized}
             aria-label={
               group.prioritized
-                ? `Remove priority from ${group.name}`
-                : `Prioritize ${group.name}`
+                ? `Stop focusing on ${group.name}`
+                : `Focus on ${group.name}`
             }
-            title={group.prioritized ? "Remove priority" : "Prioritize"}
-            onClick={onTogglePriority}
+            title={group.prioritized ? "Stop focusing" : "Focus"}
+            onClick={onToggleFocus}
             className={cn(
               "rounded p-0.5 hover:text-foreground focus-visible:opacity-100",
               group.prioritized
@@ -1466,7 +1406,7 @@ function WorkstreamGroup({
                 : "text-muted-foreground opacity-0 group-hover/head:opacity-100",
             )}
           >
-            <PriorityIcon filled={group.prioritized} className="size-3.5" />
+            <FocusIcon filled={group.prioritized} className="size-3.5" />
           </button>
         ) : null}
         {onNewThread ? (

@@ -11,8 +11,9 @@ import {
 import type { MapRecord } from "../server/map.ts";
 import { projectWorkstreams, type Projection } from "../domain/project.ts";
 import type { Recap } from "../domain/recap.ts";
-import { needsAttention, workView } from "../domain/status.ts";
+import { needsAttention, upNextKind, workView } from "../domain/status.ts";
 import type { ManualOrder } from "../domain/order.ts";
+import { RECENT_LIMIT } from "../domain/prefs.ts";
 import type { StoredAnalysis } from "../server/analyzer.ts";
 import type { TopicState } from "../domain/topics.ts";
 import {
@@ -81,22 +82,21 @@ export function useWorkstreams() {
           return needsAttention(thread, work);
         },
         order,
-        recentLimit: prefs?.sidebar.recentLimit,
         snoozedUntil: (thread) => {
           const snooze = snoozes[thread.id];
           return isSnoozed(snooze, thread, now) ? snooze!.until : undefined;
         },
       }),
-    [
-      threads,
-      sections,
-      now,
-      analysis,
-      recaps,
-      order,
-      snoozes,
-      prefs?.sidebar.recentLimit,
-    ],
+    [threads, sections, now, analysis, recaps, order, snoozes],
+  );
+  /** What Up Next ranks each thread by (see `selectUpNext`). */
+  const kindOf = useCallback(
+    (thread: PluginSidebarThread) =>
+      upNextKind(
+        thread,
+        workView(thread, analysis[thread.id], recaps[thread.id]),
+      ),
+    [analysis, recaps],
   );
   return {
     status,
@@ -107,6 +107,7 @@ export function useWorkstreams() {
     server,
     work: (thread: PluginSidebarThread) =>
       workView(thread, analysis[thread.id], recaps[thread.id]),
+    upNextKind: kindOf,
     now,
     rpc,
     refresh,
@@ -119,6 +120,7 @@ export function useWorkstreams() {
     snoozePrefs: server.snoozePrefs,
     showForYou: prefs?.sidebar.showForYou ?? true,
     showRecent: prefs?.sidebar.showRecent ?? true,
+    recentLimit: prefs?.sidebar.recentLimit ?? RECENT_LIMIT.fallback,
     showSnoozed: prefs?.sidebar.showSnoozed ?? true,
     showArchived: prefs?.sidebar.showArchived ?? true,
     showParentThreadLink: prefs?.threads.showParentLink ?? false,

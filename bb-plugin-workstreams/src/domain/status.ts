@@ -86,6 +86,24 @@ export function needsAttention(
 }
 
 /**
+ * What a thread is waiting on the user for, as Up Next ranks it: an answer
+ * (a pending question or approval, or a turn that ended needing a decision),
+ * a review of its latest turn, or nothing. A thread asking a question is a
+ * `question` even when its latest turn is also ready for review.
+ */
+export type UpNextKind = "question" | "review" | "other";
+
+export function upNextKind(
+  thread: { readonly hasPendingInteraction: boolean },
+  work: WorkView,
+): UpNextKind {
+  if (needsYou(thread, work)) return "question";
+  return work.kind === "current" && work.analysis.state === "review"
+    ? "review"
+    : "other";
+}
+
+/**
  * Done: the agent reported its turn complete, or analysis of the current
  * turn found the work finished. Done threads don't count toward a
  * workstream's active load.

@@ -15,23 +15,24 @@ import type {
   Row,
   WorkstreamThread,
 } from "../../domain/project.ts";
-import { selectUpNext } from "../../domain/upNext.ts";
+import type { UpNextKind } from "../../domain/status.ts";
+import { selectUpNext, type UpNextThread } from "../../domain/upNext.ts";
 
 export type HomePlan<T extends WorkstreamThread> = {
-  /** Up Next after prioritized focus, before the row limit; null when none. */
+  /** Up Next's rows (see `selectUpNext`); null when none. */
   readonly upNext: { readonly rows: readonly Row<T>[] } | null;
   /**
-   * Prioritized focus, which holds whether or not Up Next shows: while a
-   * prioritized workstream has a thread waiting, other workstreams' waiting
-   * threads stay out of Up Next, and their count rides on the lower-priority
-   * toggle.
+   * Focus, which holds whether or not Up Next shows: while a focused
+   * workstream has a thread blocked on the user, Up Next lists only focused
+   * workstreams' threads, and the count of those blocked elsewhere rides on
+   * the other-workstreams toggle.
    */
   readonly focus: {
     readonly active: boolean;
-    /** How many waiting threads focus left out. */
+    /** How many threads blocked on the user focus left out. */
     readonly elsewhere: number;
   };
-  /** Prioritized workstreams with threads, in the chosen order. */
+  /** Focused workstreams with threads, in the chosen order. */
   readonly pinned: readonly Group<T>[];
   /** The other workstreams with threads, in the chosen order. */
   readonly populated: readonly Group<T>[];
@@ -40,12 +41,12 @@ export type HomePlan<T extends WorkstreamThread> = {
   /** Workstreams quiet for 30 days. */
   readonly dormant: readonly Group<T>[];
   /**
-   * Some prioritized workstream has threads to show above the rest, which are
-   * then lower priority. A prioritized workstream with no active threads (all
+   * Some focused workstream has threads to show above the rest, which then
+   * hide behind a toggle. A focused workstream with no active threads (all
    * snoozed, say) pins nothing, so it tiers nothing.
    */
   readonly tiered: boolean;
-  /** Anything remains below the prioritized workstreams. */
+  /** Anything remains below the focused workstreams. */
   readonly hasLower: boolean;
   readonly snoozed: readonly Row<T>[];
   /** Workstreams (and Unfiled) with threads, outside Dormant. */
@@ -54,7 +55,7 @@ export type HomePlan<T extends WorkstreamThread> = {
   readonly isEmpty: boolean;
 };
 
-/** The prioritized workstreams that still exist. */
+/** The focused workstreams that still exist. */
 export function prioritizedSet(
   order: ManualOrder,
   sections: readonly { readonly id: string }[],
@@ -63,10 +64,10 @@ export function prioritizedSet(
   return new Set(order.prioritized.filter((id) => known.has(id)));
 }
 
-export function planHome<T extends WorkstreamThread>(
+export function planHome<T extends UpNextThread>(
   projection: Projection<T>,
   options: {
-    recaps: Readonly<Record<string, unknown>>;
+    kindOf: (thread: T) => UpNextKind;
     prioritized: ReadonlySet<string>;
     groupSort: GroupSort;
     showUpNext: boolean;
@@ -74,7 +75,7 @@ export function planHome<T extends WorkstreamThread>(
   },
 ): HomePlan<T> {
   const selection = selectUpNext(projection, {
-    recaps: options.recaps,
+    kindOf: options.kindOf,
     prioritized: options.prioritized,
   });
   const upNext =
@@ -93,8 +94,8 @@ export function planHome<T extends WorkstreamThread>(
   return {
     upNext,
     focus: {
-      active: selection.focus.active,
-      elsewhere: selection.focus.elsewhere.length,
+      active: selection.focused,
+      elsewhere: selection.elsewhere.length,
     },
     pinned,
     populated: others,
@@ -113,7 +114,7 @@ export function planHome<T extends WorkstreamThread>(
 }
 
 /**
- * Whether a workstream starts expanded. Prioritized ones do, as does the only
+ * Whether a workstream starts expanded. Focused ones do, as does the only
  * workstream there is, so a first look is never a lone closed header; the rest
  * start closed so the screen reads as an index of the work in flight.
  */

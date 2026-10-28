@@ -90,7 +90,7 @@ function HomeScreen({ placement }: { placement: Exclude<Placement, "wide"> }) {
   const plan = useMemo(
     () =>
       planHome(projection, {
-        recaps: server.recaps,
+        kindOf: ws.upNextKind,
         prioritized,
         groupSort,
         showUpNext: ws.showForYou,
@@ -98,7 +98,7 @@ function HomeScreen({ placement }: { placement: Exclude<Placement, "wide"> }) {
       }),
     [
       projection,
-      server.recaps,
+      ws.upNextKind,
       prioritized,
       groupSort,
       ws.showForYou,

@@ -180,21 +180,37 @@ state, or organization settings change. It is completely deterministic and makes
 
 Select **Workstreams** as your sidebar thread list to organize threads into:
 
-1. **Up Next:** A sticky amber card at the top of the sidebar showing root
-   threads that need your attention (`AskUserQuestion` pending, `needs_decision`
-   state, or unread `done`/`review`), followed by roots with a latest-turn agent
-   recap, newest first. Nested delegates do not appear as separate Up Next
+1. **Up Next:** A sticky amber card at the top of the sidebar with the few root
+   threads most worth your attention. Every root that isn't archived or snoozed
+   is a candidate. A thread with a question for you (`AskUserQuestion` or
+   approval pending, or a `needs_decision` status) or a turn ready for review is
+   _blocked on you_; anything else (complete, waiting, working, failed) is not.
+   Candidates rank in six tiers, each newest first by latest turn end:
+   1. Unread questions
+   2. Unread reviews
+   3. Read questions
+   4. Read reviews
+   5. Other unread threads
+   6. Other read threads
+
+   Up Next then trims from the bottom: threads not blocked on you leave (read
+   before unread) until `5` remain; read blocked threads leave until `10`
+   remain; past that, only the `10` most recently active stay, whatever their
+   tier. So Up Next always shows a few threads, grows only for threads blocked
+   on you, and never lists more than `10`. It re-ranks as recaps, read state,
+   and activity change. The thread you have open keeps its row and place until
+   you open another thread. Nested delegates do not appear as separate Up Next
    entries; find them in their workstream's thread tree.
-   - Displays up to `5` threads with a **Show N more** / **Show less** toggle;
-     the currently open eligible root always remains visible.
-   - **Prioritized focus:** When any prioritized workstream has a thread in Up
-     Next, Up Next filters to prioritized workstreams and shows a count of
-     remaining items on the **Show lower priority workstreams** toggle.
-2. **Workstreams (prioritized and standard tiers):**
-   - Click the **Prioritize** flag on any workstream header to pin it to the top
-     tier. When at least one workstream is prioritized, non-prioritized
-     workstreams, **Unfiled**, and **Dormant** collapse behind **Show/Hide lower
-     priority workstreams**.
+   - **Focus:** While a focused workstream has a thread blocked on you, Up Next
+     applies these rules to focused workstreams' threads only, marks its header
+     with the focus icon, and counts the threads blocked on you elsewhere on the
+     **Show other workstreams** toggle.
+
+2. **Workstreams (focused and other tiers):**
+   - Click the **Focus** button (viewfinder icon) on any workstream header to
+     pin it to the top tier. When at least one workstream is focused, the other
+     workstreams, **Unfiled**, and **Dormant** collapse behind **Show/Hide other
+     workstreams**.
    - Click **New work in \<workstream\>** (`＋`) on a header to open the
      composer pre-seeded with that workstream's topic.
    - Use the **Sort workstreams** menu to order workstreams by **Name A–Z**,
@@ -203,11 +219,12 @@ Select **Workstreams** as your sidebar thread list to organize threads into:
      created roots appear at the top of their workstream; newly created
      workstreams appear at the bottom).
 3. **Unfiled:** Roots with no topic assignment.
-4. **Dormant:** Non-prioritized workstreams with no activity in the last `30`
-   days and nothing waiting on you.
+4. **Dormant:** Unfocused workstreams with no activity in the last `30` days and
+   nothing waiting on you.
 5. **Recent, Snoozed, and Archived bands:**
    - **Recent** lists the most recently active root threads (`1–20`, default
-     `5`) that are not already in Up Next or snoozed.
+     `5`) that Up Next isn't showing, so it carries on where Up Next stops.
+     Snoozed threads stay out.
    - **Snoozed** lists snoozed threads ordered by soonest wake time (or
      `On update`), carrying their delegate subtrees with them while snoozed.
    - **Archived** paginates archived threads via BB's archive list.
@@ -237,7 +254,7 @@ enabled), Workstreams replaces BB's flat Recent list on the Home screen with:
 - The **Up Next** card at the top.
 - **Workstreams** sections with deterministic hue dots, waiting/total badges, an
   **Expand all / Collapse all** toggle, and per-parent delegate fold controls.
-  Prioritized workstreams (or a single active workstream) start expanded.
+  Focused workstreams (or a single active workstream) start expanded.
 - A collapsible **Snoozed** section at the bottom.
 
 ### Thread view and header
@@ -270,6 +287,8 @@ of each turn using `WorkstreamsRecap`, rendered as a card above the composer:
   - **Complete** (emerald): Shows the turn's goal, completed `latest` bullets,
     optional follow-up action buttons, and an **Archive** suggestion when the
     thread and all of its delegates, goals, and todos are finished and idle.
+    Archiving opens the top Up Next thread when it is blocked on you or unread,
+    and otherwise the next thread in the same workstream.
   - **Ready for Review** (sky): Adds numbered **Review** steps (`1–3`) and up to
     `8` clickable **Links** (HTTPS URLs or absolute workspace/host file paths,
     including paths with spaces).
@@ -350,7 +369,7 @@ Open **Workstreams** in the main navigation panel to access four tabs:
 
 | Command / Shortcut                                              | Where                             | Action                                                                                          |
 | --------------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `Workstreams: next Up Next thread` (`Cmd+Alt+J` / `Ctrl+Alt+J`) | Global command palette / shortcut | Opens the next thread in Up Next (wrapping through focused items).                              |
+| `Workstreams: next Up Next thread` (`Cmd+Alt+J` / `Ctrl+Alt+J`) | Global command palette / shortcut | Opens the next thread in Up Next, wrapping to the top.                                          |
 | `Workstreams: snooze this thread`                               | Command palette (active thread)   | Snoozes the current thread using your configured **Click to snooze** default preset.            |
 | `Workstreams: wake this snoozed thread`                         | Command palette (snoozed thread)  | Wakes the current snoozed thread immediately.                                                   |
 | `/`                                                             | Workstreams page                  | Switches to the **Overview** tab and focuses the search box.                                    |

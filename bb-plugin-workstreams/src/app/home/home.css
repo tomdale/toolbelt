@@ -314,17 +314,6 @@ section:has(> [data-bb-plugin-root] > [data-ws-home="hidden"]) {
   border-top-left-radius: 0;
   border-top-right-radius: 0;
 }
-.ws-home-more {
-  display: flex;
-  width: 100%;
-  min-height: 44px;
-  align-items: center;
-  padding: 0 10px;
-  border-radius: 10px;
-  text-align: left;
-  font-size: var(--text-xs, 0.75rem);
-  line-height: var(--text-xs--line-height, 1rem);
-}
 
 /* Workstreams */
 .ws-home-groups {
