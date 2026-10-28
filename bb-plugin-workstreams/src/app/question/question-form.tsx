@@ -11,6 +11,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -147,6 +148,51 @@ function QuestionOptionRow({
         </kbd>
       ) : null}
     </button>
+  );
+}
+
+interface QuestionNotesFieldProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+}
+
+/**
+ * A one-line notes field under the chosen option. It grows with its text up to
+ * the same cap as the answer field, then scrolls. The type matches the option
+ * labels (and reaches 16px on a phone, below which iOS zooms on focus).
+ */
+function QuestionNotesField({
+  label,
+  value,
+  onChange,
+  onKeyDown,
+}: QuestionNotesFieldProps) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${node.scrollHeight}px`;
+  }, [value]);
+  return (
+    <div className={cn("mb-1.5 mt-1", OPTION_TEXT_INDENT)}>
+      <textarea
+        ref={ref}
+        aria-label={label}
+        rows={1}
+        value={value}
+        maxLength={MAX_FREE_TEXT_LENGTH}
+        placeholder="Add notes (optional)…"
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
+        className={cn(
+          "block max-h-28 w-full resize-none rounded-md border border-border bg-background/50 px-2.5 py-1.5 text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring/50 focus-visible:ring-1 focus-visible:ring-ring/30",
+          LABEL_CLASS,
+        )}
+      />
+    </div>
   );
 }
 
@@ -425,18 +471,12 @@ function QuestionInputBlock({
                 <QuestionOptionPreview preview={option.preview} />
               ) : null}
               {checked && showNotes ? (
-                <div className={cn("mt-2 mb-1.5", OPTION_TEXT_INDENT)}>
-                  <textarea
-                    aria-label={`${question.shortLabel} notes`}
-                    rows={2}
-                    value={state.notes}
-                    maxLength={MAX_FREE_TEXT_LENGTH}
-                    placeholder="Add notes (optional)…"
-                    onChange={(event) => onNotesChange(event.target.value)}
-                    onKeyDown={advanceOnEnter}
-                    className="block max-h-28 min-h-14 w-full resize-y rounded-lg border border-border bg-background/50 px-3 py-2.5 text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring/50 focus-visible:ring-1 focus-visible:ring-ring/30 max-md:pointer-coarse:text-base"
-                  />
-                </div>
+                <QuestionNotesField
+                  label={`${question.shortLabel} notes`}
+                  value={state.notes}
+                  onChange={onNotesChange}
+                  onKeyDown={advanceOnEnter}
+                />
               ) : null}
             </div>
           );
