@@ -14,21 +14,15 @@ import { compareGroupNames } from "../../domain/group-name-order.ts";
 import { topicPath } from "../../domain/topic-path.ts";
 import { useSharedServerState } from "../serverState.ts";
 import { isAutomaticTopic } from "../task/TaskIdentity.tsx";
-import type { SnoozeDraftKind } from "../snooze/RuleFields.tsx";
-import {
-  SnoozeMenuItems,
-  SubLabel,
-  snoozeMenuContentClass,
-  type MenuKit,
-} from "../snooze/SnoozeMenuItems.tsx";
+import { SnoozeMenuItems, type MenuKit } from "../snooze/SnoozeMenuItems.tsx";
 
 export type RowMenuHandlers = {
   rename: (thread: PluginSidebarThread) => void;
   openParent: (thread: PluginSidebarThread) => void;
   /** Snoozes until a time, or (null) until the thread's next activity. */
   snooze: (thread: PluginSidebarThread, until: number | null) => void;
-  /** Opens the Custom snooze dialog on `kind`. */
-  customSnooze: (thread: PluginSidebarThread, kind: SnoozeDraftKind) => void;
+  /** Opens the Custom… snooze dialog. */
+  customSnooze: (thread: PluginSidebarThread) => void;
   wake: (thread: PluginSidebarThread) => void;
   /** Debug mode: opens the thread's model calls. */
   inspect: (thread: PluginSidebarThread) => void;
@@ -223,7 +217,7 @@ export function RowMenu({
                   prefs={snoozePrefs}
                   snooze={snooze}
                   onSnooze={(until) => handlers.snooze(thread, until)}
-                  onCustom={(kind) => handlers.customSnooze(thread, kind)}
+                  onCustom={() => handlers.customSnooze(thread)}
                 />
               </ContextMenu.SubContent>
             </ContextMenu.Portal>
@@ -260,7 +254,7 @@ export function HeaderMenu({
     /** Names the batch: "Snooze 3 threads". */
     label: string;
     snooze: (until: number | null) => void;
-    custom: (kind: SnoozeDraftKind) => void;
+    custom: () => void;
   };
   children: ReactNode;
 }) {
@@ -368,28 +362,4 @@ const contextMenuKit: MenuKit = {
     </ContextMenu.Label>
   ),
   Separator,
-  Sub: function ContextSub({ label, children }) {
-    const portalScope = usePortalScopeProps();
-    return (
-      <ContextMenu.Sub>
-        <ContextMenu.SubTrigger
-          className={cn(
-            itemClass,
-            "data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
-          )}
-        >
-          <SubLabel>{label}</SubLabel>
-        </ContextMenu.SubTrigger>
-        <ContextMenu.Portal>
-          <ContextMenu.SubContent
-            {...portalScope}
-            collisionPadding={8}
-            className={snoozeMenuContentClass}
-          >
-            {children}
-          </ContextMenu.SubContent>
-        </ContextMenu.Portal>
-      </ContextMenu.Sub>
-    );
-  },
 };

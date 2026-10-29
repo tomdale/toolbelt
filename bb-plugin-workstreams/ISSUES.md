@@ -64,7 +64,7 @@ policies apply to conversation excerpts sent for analysis.
   “New threads” names a settings section while “New work…” is an action. These
   are not separate features or state values.
 - **Snooze dates:** A weekday rule is always a future day: Saturday at 9 AM
-  chosen on a Saturday means next Saturday. Use a Today rule or Custom for the
+  chosen on a Saturday means next Saturday. Use a Today rule or Custom… for the
   current day.
 - **Activity compatibility values:** Old proposal action/link kinds remain
   readable because retained Activity rows and traces can still use them.

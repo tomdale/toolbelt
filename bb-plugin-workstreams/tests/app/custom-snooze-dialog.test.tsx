@@ -33,13 +33,9 @@ describe("CustomSnoozeDialog", () => {
   it("snoozes for a duration or until a time, judged on submit", () => {
     const onSubmit = vi.fn();
     const { rerender } = render(
-      <CustomSnoozeDialog
-        open
-        kind="duration"
-        onClose={() => undefined}
-        onSubmit={onSubmit}
-      />,
+      <CustomSnoozeDialog open onClose={() => undefined} onSubmit={onSubmit} />,
     );
+    fireEvent.click(screen.getByRole("radio", { name: "Duration" }));
     fireEvent.change(screen.getByLabelText("Amount"), {
       target: { value: "45" },
     });
@@ -56,19 +52,14 @@ describe("CustomSnoozeDialog", () => {
     rerender(
       <CustomSnoozeDialog
         open={false}
-        kind="time"
         onClose={() => undefined}
         onSubmit={onSubmit}
       />,
     );
     rerender(
-      <CustomSnoozeDialog
-        open
-        kind="time"
-        onClose={() => undefined}
-        onSubmit={onSubmit}
-      />,
+      <CustomSnoozeDialog open onClose={() => undefined} onSubmit={onSubmit} />,
     );
+    fireEvent.click(screen.getByRole("radio", { name: "Time" }));
     fireEvent.change(screen.getByLabelText("Day"), {
       target: { value: "workday" },
     });
@@ -86,11 +77,11 @@ describe("CustomSnoozeDialog", () => {
     render(
       <CustomSnoozeDialog
         open
-        kind="duration"
         onClose={() => undefined}
         onSubmit={() => undefined}
       />,
     );
+    fireEvent.click(screen.getByRole("radio", { name: "Duration" }));
     fireEvent.change(screen.getByLabelText("Amount"), {
       target: { value: "0" },
     });

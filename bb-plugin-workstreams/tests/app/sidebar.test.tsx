@@ -1992,7 +1992,7 @@ describe("snoozing a workstream row", () => {
     ).toEqual([
       expect.stringMatching(/^30 minutes\(default\)/),
       "Until it updates",
-      "Custom",
+      "Custom…",
     ]);
     fireEvent.click(
       within(menu).getByRole("menuitem", { name: "Until it updates" }),
@@ -2086,7 +2086,7 @@ describe("snoozing a workstream row", () => {
     expect(items(submenu)).toEqual([
       expect.stringMatching(/^3 hours\(default\)/),
       expect.stringMatching(/^Until it updates/),
-      "Custom",
+      "Custom…",
     ]);
     fireEvent.click(
       within(submenu).getByRole("menuitem", { name: /^Until it updates/ }),
@@ -2182,7 +2182,7 @@ describe("row hover buttons", () => {
     ).toEqual([
       expect.stringMatching(/^30 minutes/),
       expect.stringMatching(/^This weekend/),
-      "Custom",
+      "Custom…",
     ]);
     fireEvent.click(
       within(menu).getByRole("menuitem", { name: /^30 minutes/ }),
@@ -2252,7 +2252,7 @@ describe("row hover buttons", () => {
     slot.lifecycle.unmount();
   });
 
-  it("opens Custom as a submenu, from the pointer or the keyboard", async () => {
+  it("opens the Custom… dialog from the hover menu and snoozes until an update", async () => {
     const slot = await mount(undefined, {
       settings: { showRecent: false },
       snoozePrefs: snoozeSettings(thirtyMinutes),
@@ -2261,61 +2261,24 @@ describe("row hover buttons", () => {
     button.focus();
     fireEvent.keyDown(button, { key: "ArrowDown" });
     const menu = await screen.findByRole("menu");
-    const custom = within(menu).getByRole("menuitem", { name: "Custom" });
-    // Arrow keys move among the menu's own items, ending on Custom.
+    const custom = within(menu).getByRole("menuitem", { name: "Custom…" });
+    // Arrow keys move among the menu's items, ending on Custom….
     fireEvent.keyDown(menu, { key: "End" });
     expect(document.activeElement).toBe(custom);
-    fireEvent.keyDown(custom, { key: "ArrowRight" });
-    const submenu = await screen.findByRole("menu", { name: "Custom" });
-    expect(custom.getAttribute("aria-expanded")).toBe("true");
-    const items = within(submenu).getAllByRole("menuitem");
-    expect(items.map((item) => item.textContent)).toEqual([
-      "Duration…",
-      "Time…",
-      "Date…",
-      "Until it updates",
-    ]);
-    await waitFor(() => expect(document.activeElement).toBe(items[0]));
-    fireEvent.keyDown(items[0]!, { key: "ArrowUp" });
-    expect(document.activeElement).toBe(items[3]);
-    // ArrowLeft closes only the submenu and returns to its item.
-    fireEvent.keyDown(items[3]!, { key: "ArrowLeft" });
-    expect(screen.queryByRole("menu", { name: "Custom" })).toBeNull();
-    expect(document.activeElement).toBe(custom);
-    expect(screen.getByRole("menu")).toBe(menu);
-
-    // Clicking Custom opens it without closing the menu; choosing a kind
-    // closes both and opens the dialog on it.
     fireEvent.click(custom);
-    const reopened = await screen.findByRole("menu", { name: "Custom" });
-    fireEvent.click(within(reopened).getByRole("menuitem", { name: "Date…" }));
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByLabelText("Wake time")).toBeTruthy();
-    slot.lifecycle.unmount();
-  });
-
-  it("opens Custom on hover and snoozes until an update from it", async () => {
-    const slot = await mount(undefined, {
-      settings: { showRecent: false },
-      snoozePrefs: snoozeSettings(thirtyMinutes),
-    });
-    const button = snoozeButton(await rowOf(slot));
-    fireEvent.pointerEnter(button, { pointerType: "mouse" });
-    const menu = await screen.findByRole("menu", {}, { timeout: 2000 });
-    const custom = within(menu).getByRole("menuitem", { name: "Custom" });
-    fireEvent.pointerEnter(custom.parentElement!, { pointerType: "mouse" });
-    const submenu = await screen.findByRole("menu", { name: "Custom" });
-    fireEvent.click(
-      within(submenu).getByRole("menuitem", { name: "Until it updates" }),
+    fireEvent.click(within(dialog).getByRole("radio", { name: "On update" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Snooze" }));
+    await waitFor(() =>
+      expect(
+        slot.inspection.rpcCalls.find((c) => c.method === "snooze")?.input,
+      ).toMatchObject({ threadIds: ["root"], until: null }),
     );
-    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
-    const call = slot.inspection.rpcCalls.find((c) => c.method === "snooze")!;
-    expect(call.input).toMatchObject({ threadIds: ["root"], until: null });
     slot.lifecycle.unmount();
   });
 
-  it("offers the presets and Custom in the right-click Snooze menu", async () => {
+  it("offers the presets and Custom… in the right-click Snooze menu", async () => {
     const slot = await mount(undefined, {
       settings: { showRecent: false },
       snoozePrefs: snoozeSettings(threeHours, weekend),
@@ -2339,7 +2302,7 @@ describe("row hover buttons", () => {
     ).toEqual([
       expect.stringMatching(/^3 hours\(default\)/),
       expect.stringMatching(/^This weekend/),
-      "Custom",
+      "Custom…",
     ]);
     slot.lifecycle.unmount();
   });

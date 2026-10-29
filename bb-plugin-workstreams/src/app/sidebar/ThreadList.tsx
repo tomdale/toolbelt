@@ -84,7 +84,6 @@ import {
 import { snoozeThreads, wakeThreads } from "../snooze/actions.ts";
 import { CustomSnoozeDialog } from "../snooze/CustomSnoozeDialog.tsx";
 import { SnoozeMenuItems, plainMenuKit } from "../snooze/SnoozeMenuItems.tsx";
-import type { SnoozeDraftKind } from "../snooze/RuleFields.tsx";
 import { SnoozeIcon } from "../snooze/icons.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
 import {
@@ -116,8 +115,6 @@ type SnoozeRequest = {
   readonly threads: readonly PluginSidebarThread[];
   readonly subject?: string;
 };
-/** A Custom snooze in progress: whom it snoozes, and the kind it opened on. */
-type CustomSnoozeRequest = SnoozeRequest & { readonly kind: SnoozeDraftKind };
 /** A workstream row's snooze button (see `WorkstreamGroup`). */
 type GroupSnooze = {
   /** Names the batch: "Snooze 3 threads". */
@@ -129,8 +126,8 @@ type GroupSnooze = {
   menu: ReactNode;
   /** Snoozes the batch until a time, or (null) each until it updates. */
   snooze: (until: number | null) => void;
-  /** Opens the Custom snooze dialog on `kind` for the batch. */
-  custom: (kind: SnoozeDraftKind) => void;
+  /** Opens the Custom… snooze dialog for the batch. */
+  custom: () => void;
 };
 
 const groupKey = (id: string) => `ws:${id}`;
@@ -236,9 +233,7 @@ export function WorkstreamsThreadList({
   const [inspecting, setInspecting] = useState<PluginSidebarThread | null>(
     null,
   );
-  const [customSnooze, setCustomSnooze] = useState<CustomSnoozeRequest | null>(
-    null,
-  );
+  const [customSnooze, setCustomSnooze] = useState<SnoozeRequest | null>(null);
   const { projection, sections, now } = ws;
   const nameOf = new Map(sections.map((s) => [s.id, s.name]));
   const prioritizedIds = ws.server.order.prioritized;
@@ -423,8 +418,7 @@ export function WorkstreamsThreadList({
     },
     inspect: (thread) => setInspecting(thread),
     snooze: (thread, until) => applySnooze({ threads: [thread] }, until),
-    customSnooze: (thread, kind) =>
-      setCustomSnooze({ threads: [thread], kind }),
+    customSnooze: (thread) => setCustomSnooze({ threads: [thread] }),
     wake: (thread) => wakeThreads(ws.setSnoozes, [thread]),
   };
   const snoozePrefs = ws.snoozePrefs;
@@ -436,7 +430,7 @@ export function WorkstreamsThreadList({
   /**
    * A workstream row's snooze button, while the row lists threads: it
    * snoozes every one of them (see `groupRoots`) with the default preset,
-   * and its menu offers every preset and Custom.
+   * and its menu offers every preset and Custom….
    */
   const groupSnoozeOf = (
     group: ThreadGroup | ThreadNode,
@@ -448,8 +442,7 @@ export function WorkstreamsThreadList({
       subject: `${count} in ${group.name}`,
     };
     const snooze = (until: number | null) => applySnooze(request, until);
-    const custom = (kind: SnoozeDraftKind) =>
-      setCustomSnooze({ ...request, kind });
+    const custom = () => setCustomSnooze(request);
     return {
       label: `Snooze ${count}`,
       title: `Snooze ${request.subject} ${defaultWakeText}`,
@@ -514,7 +507,7 @@ export function WorkstreamsThreadList({
         snooze={snooze}
         onSnooze={(until) => handlers.snooze(row.thread, until)}
         onWake={() => handlers.wake(row.thread)}
-        onCustom={(kind) => handlers.customSnooze(row.thread, kind)}
+        onCustom={() => handlers.customSnooze(row.thread)}
       />
     );
     if (placement !== "snoozed")
@@ -1241,7 +1234,6 @@ export function WorkstreamsThreadList({
         />
         <CustomSnoozeDialog
           open={customSnooze !== null}
-          kind={customSnooze?.kind}
           onClose={() => setCustomSnooze(null)}
           onSubmit={(until) => {
             if (customSnooze) applySnooze(customSnooze, until);

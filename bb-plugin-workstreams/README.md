@@ -302,7 +302,7 @@ enabled), Workstreams replaces BB's flat Recent list on the Home screen with:
     features observed across Full analysis runs for the thread, with run counts
     and first/last-seen timestamps on hover.
   - **Snooze:** Split button on desktop (one-click default snooze + chevron menu
-    for all presets and **Custom**) or menu button on phones; shows **Snoozed
+    for all presets and **Custom…**) or menu button on phones; shows **Snoozed
     \<time\>** with a **Wake now** option while snoozed.
   - **Archive** (on by default): Archives the current thread through BB's
     archive flow.
@@ -412,7 +412,7 @@ Open **Workstreams** in the main navigation panel to access four tabs:
 Threads can be snoozed from the sidebar hover button, the sidebar right-click
 menu, the thread header, or the command palette, and a whole workstream's
 threads at once from its sidebar header. Every snooze menu lists your presets in
-order, then **Custom**; clicking a snooze button uses the default preset.
+order, then **Custom…**; clicking a snooze button uses the default preset.
 
 You keep between `1` and `6` presets in **Settings → Workstreams → Snooze**.
 Each preset has an optional label (an empty label names it by its rule) and one
@@ -427,10 +427,10 @@ rule, which resolves to a wake time at the moment you choose it:
 The defaults are **1 hour**, **Tomorrow morning** (tomorrow at `9 AM`, the
 default), **Next week** (Monday at `9 AM`), and **Until it updates**.
 
-**Custom** opens a submenu for a one-off snooze with the same rules
-(**Duration…**, **Time…**, **Until it updates**) plus **Date…**, which picks any
-date and time up to `366` days out. Editing a preset never moves a thread that
-is already snoozed: a snooze stores only its wake time.
+**Custom…** opens a dialog for a one-off snooze. It offers the same rules
+(**Duration**, **Time**, **On update**) plus **Date**, which it opens on and
+which picks any date and time up to `366` days out. Editing a preset never moves
+a thread that is already snoozed: a snooze stores only its wake time.
 
 - Snoozing a root removes the root and its entire delegate subtree from its
   workstream and from **Up Next** / **Recent**, placing them in the **Snoozed**
@@ -463,7 +463,7 @@ Open **Settings → Workstreams** to configure:
 | **Recap**             | **Reminders**                                      | `3` (`0–10`)                                | Maximum turn-end reminders sent when an enrolled agent omits a recap (`0` disables reminders).                                                                                 |
 | **Recap**             | **Layout**                                         | `Full` (`Full` / `Compact`)                 | Card layout on desktop (`Compact` is always used on phones), with a live preview carousel.                                                                                     |
 | **Recap**             | **Commit hash colors**                             | Theme default                               | Custom `#rrggbb` colors for commit-hash digits and letters, with **Reset**.                                                                                                    |
-| **Snooze**            | **Presets**                                        | `4` presets, **Tomorrow morning** default   | `1–6` presets every snooze menu lists before **Custom**: add, edit, delete, drag to reorder, and choose the **Default** a click uses.                                          |
+| **Snooze**            | **Presets**                                        | `4` presets, **Tomorrow morning** default   | `1–6` presets every snooze menu lists before **Custom…**: add, edit, delete, drag to reorder, and choose the **Default** a click uses.                                         |
 | **New threads**       | **Home project**                                   | `Don't work in a project`                   | Default project used for background worker fallback when a thread has no project.                                                                                              |
 | **New threads**       | **Suggestions while typing**                       | `On`                                        | Runs Quick analysis on composer drafts while typing.                                                                                                                           |
 | **New threads**       | **Quick analysis model**                           | `openai/gpt-6-luna-fast` (reasoning `none`) | Model used for composer draft previews and first-send Quick analysis (remains active when typing suggestions are off because first-send analysis still uses it).               |

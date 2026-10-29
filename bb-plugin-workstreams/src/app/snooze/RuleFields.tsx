@@ -1,6 +1,6 @@
 /**
  * The fields that define a snooze, shared by the preset editor in settings
- * and the Custom dialog, so an ad hoc snooze offers the same choices as a
+ * and the Custom… dialog, so an ad hoc snooze offers the same choices as a
  * preset. The form edits a draft that keeps every kind's fields, so
  * switching kinds and back loses nothing, and validates it only when read.
  */
@@ -20,7 +20,7 @@ import {
 } from "../../domain/snooze.ts";
 import { SegmentedControl } from "../settings/ui.tsx";
 
-/** A rule kind, or a one-off date and time (Custom only). */
+/** A rule kind, or a one-off date and time (Custom… only). */
 export type SnoozeDraftKind = SnoozeRuleKind | "date";
 
 export type SnoozeDraft = {

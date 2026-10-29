@@ -1,12 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { installTestPluginRuntime } from "@get-bb/plugin-sdk/testing/app";
 import {
   SnoozeMenuItems,
@@ -62,24 +56,22 @@ it("works out a preset's wake time when it is chosen", () => {
   );
 });
 
-it("hands focus back to Custom when the pointer leaves its open submenu", () => {
-  menu();
-  const custom = screen.getByRole("menuitem", { name: "Custom" });
-  const wrapper = custom.parentElement!;
-  custom.focus();
-  // Opened by hover, then entered from the keyboard.
-  fireEvent.pointerEnter(wrapper, { pointerType: "mouse" });
-  act(() => void vi.advanceTimersByTime(150));
-  fireEvent.keyDown(custom, { key: "ArrowRight" });
-  const submenu = screen.getByRole("menu", { name: "Custom" });
-  expect(submenu.contains(document.activeElement)).toBe(true);
-  fireEvent.pointerLeave(wrapper, { pointerType: "mouse" });
-  act(() => void vi.advanceTimersByTime(300));
-  expect(screen.queryByRole("menu", { name: "Custom" })).toBeNull();
-  expect(document.activeElement).toBe(custom);
-  // Hovering again opens it without taking focus.
-  fireEvent.pointerEnter(wrapper, { pointerType: "mouse" });
-  act(() => void vi.advanceTimersByTime(150));
-  expect(screen.getByRole("menu", { name: "Custom" })).toBeTruthy();
-  expect(document.activeElement).toBe(custom);
+it("ends with Custom…, which opens the dialog rather than a submenu", () => {
+  const onCustom = vi.fn();
+  render(
+    <div role="menu" aria-label="Snooze">
+      <SnoozeMenuItems
+        kit={plainMenuKit}
+        now={Date.now()}
+        prefs={prefs}
+        onSnooze={() => undefined}
+        onCustom={onCustom}
+      />
+    </div>,
+  );
+  const custom = screen.getAllByRole("menuitem").at(-1)!;
+  expect(custom.textContent).toBe("Custom…");
+  expect(custom.hasAttribute("aria-haspopup")).toBe(false);
+  fireEvent.click(custom);
+  expect(onCustom).toHaveBeenCalledOnce();
 });

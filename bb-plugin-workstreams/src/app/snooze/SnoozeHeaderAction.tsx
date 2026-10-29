@@ -1,7 +1,7 @@
 /**
  * Snooze in the thread header: a split button whose face snoozes with the
  * default preset (the Snooze settings section) and whose arrow lists every
- * preset and Custom. A snoozed thread shows when it wakes instead, with Wake now in its
+ * preset and Custom…. A snoozed thread shows when it wakes instead, with Wake now in its
  * menu. BB's own thread menu takes no plugin items, so this is the header's
  * snooze entry point, alongside the command palette.
  */
@@ -24,7 +24,6 @@ import {
 import { useNow, useServerState } from "../useWorkstreams.ts";
 import { snoozeThreads, wakeThreads } from "./actions.ts";
 import { CustomSnoozeDialog } from "./CustomSnoozeDialog.tsx";
-import type { SnoozeDraftKind } from "./RuleFields.tsx";
 import { SnoozeIcon } from "./icons.tsx";
 import { SnoozeMenuItems, snoozeMenuContentClass } from "./SnoozeMenuItems.tsx";
 import { Hint } from "../Hint.tsx";
@@ -47,7 +46,7 @@ export function SnoozeHeaderAction({
     experimental_lifecycles: ["active"],
   });
   const portalScope = usePortalScopeProps();
-  const [custom, setCustom] = useState<SnoozeDraftKind | null>(null);
+  const [custom, setCustom] = useState(false);
   const thread = threads.find((t) => t.id === threadId);
   const prefs = server.snoozePrefs;
   const preset = defaultPreset(prefs);
@@ -93,7 +92,7 @@ export function SnoozeHeaderAction({
           snooze={snooze}
           onSnooze={snoozeUntil}
           onWake={wake}
-          onCustom={setCustom}
+          onCustom={() => setCustom(true)}
         />
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
@@ -159,9 +158,8 @@ export function SnoozeHeaderAction({
         </div>
       )}
       <CustomSnoozeDialog
-        open={custom !== null}
-        kind={custom ?? undefined}
-        onClose={() => setCustom(null)}
+        open={custom}
+        onClose={() => setCustom(false)}
         onSubmit={snoozeUntil}
       />
     </>
