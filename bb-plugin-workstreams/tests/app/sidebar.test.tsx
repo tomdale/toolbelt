@@ -939,6 +939,47 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
+  it("leaves running threads out of Up Next until their turn ends", async () => {
+    const threads = [
+      sidebarThread("running", {
+        title: "Running",
+        status: "active",
+        indicator: "runtime",
+        latestAttentionAt: Date.now() - 1_000,
+      }),
+      sidebarThread("asking", {
+        title: "Asking",
+        status: "active",
+        hasPendingInteraction: true,
+        latestAttentionAt: Date.now() - 2_000,
+      }),
+      sidebarThread("done", {
+        title: "Done",
+        latestAttentionAt: Date.now() - 3_000,
+      }),
+    ];
+    const slot = await mount(threads, {
+      activeThreadId: null,
+      settings: { showRecent: false },
+    });
+    await waitFor(() =>
+      expect(groupRows(slot, "Up Next")).toEqual(["Asking", "Done"]),
+    );
+    // When the turn ends, BB marks the thread unread and it comes back.
+    threads[0] = {
+      ...threads[0]!,
+      status: "idle",
+      indicator: "none",
+      isUnread: true,
+      latestAttentionAt: Date.now(),
+    };
+    slot.selectThread(null);
+    await waitFor(() =>
+      expect(groupRows(slot, "Up Next")).toEqual(["Asking", "Running", "Done"]),
+    );
+    slot.lifecycle.unmount();
+  });
+
   it("offers no Show more for trimmed read threads not blocked on you", async () => {
     const slot = await mount(
       [1, 2, 3, 4, 5, 6, 7].map((n) =>

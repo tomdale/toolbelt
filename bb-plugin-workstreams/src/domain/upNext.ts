@@ -3,13 +3,14 @@
  * screen, and the next-Up-Next command so they always list the same threads.
  *
  * Every top-level thread that is in a group (not archived, hidden, or
- * snoozed) is a candidate. A question or a review is blocked on the user;
- * anything else (done, working, waiting on something else, failed) is not.
- * A review or a needed decision whose turn ended more than
- * {@link UP_NEXT_STALE_AFTER_MS} ago has gone stale and ranks as neither (see
- * `agedKind`). While a focused workstream has a thread blocked on the user,
- * only focused workstreams' threads are candidates; the threads blocked on
- * the user elsewhere wait outside Up Next.
+ * snoozed) is a candidate, except one whose turn is underway and asks
+ * nothing of the user (see `isRunning`). A question or a review is blocked
+ * on the user; anything else (done, waiting on something else, failed) is
+ * not. A review or a needed decision whose turn ended more than
+ * {@link UP_NEXT_STALE_AFTER_MS} ago has gone stale and ranks as neither
+ * (see `agedKind`). While a focused workstream has a thread blocked on the
+ * user, only focused workstreams' threads are candidates; the threads
+ * blocked on the user elsewhere wait outside Up Next.
  *
  * Candidates rank by tier, then by latest attention (BB's turn-end time,
  * the one unread compares against), newest first:
@@ -44,7 +45,31 @@ export const UP_NEXT_MAX = 10;
 /** How long a finished turn's review or decision stays blocked on the user. */
 export const UP_NEXT_STALE_AFTER_MS = 7 * DAY_MS;
 
-export type UpNextThread = WorkstreamThread & { readonly isUnread: boolean };
+export type UpNextThread = WorkstreamThread & {
+  readonly isUnread: boolean;
+  /** BB's execution status; unknown values count as idle. */
+  readonly status: string;
+};
+
+/** BB's statuses for a turn underway, from queued to winding down. */
+const RUNNING_STATUSES: ReadonlySet<string> = new Set([
+  "pending",
+  "starting",
+  "active",
+  "stopping",
+]);
+
+/**
+ * The thread's turn is underway and asks nothing of the user, so Up Next
+ * leaves it out: there is nothing to act on yet, and it returns, unread,
+ * when the turn ends. A pending question card or approval keeps a running
+ * thread in, since the agent is waiting on the user.
+ */
+export function isRunning(
+  thread: Pick<UpNextThread, "status" | "hasPendingInteraction">,
+): boolean {
+  return RUNNING_STATUSES.has(thread.status) && !thread.hasPendingInteraction;
+}
 
 /** What Up Next ranks by; every caller that wants Up Next's rows passes it. */
 export type UpNextOptions<T extends UpNextThread> = {
@@ -114,7 +139,10 @@ export function selectUpNext<T extends UpNextThread>(
   ]
     .flatMap((group) => group.rows)
     .filter(
-      (row) => !row.thread.parentThreadId && !options.exclude?.(row.thread),
+      (row) =>
+        !row.thread.parentThreadId &&
+        !isRunning(row.thread) &&
+        !options.exclude?.(row.thread),
     )
     .map((row) => {
       const kind = agedKind(

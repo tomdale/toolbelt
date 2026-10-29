@@ -187,6 +187,34 @@ describe("selectUpNext", () => {
     ).toEqual(["qu1"]);
   });
 
+  it.each(["pending", "starting", "active", "stopping"])(
+    "leaves out a %s thread that asks nothing of you",
+    (status) => {
+      expect(
+        upNext([t("or1", 1), t("or2", 9, { status }), t("ou1", 2, { status })]),
+      ).toEqual(["or1"]);
+    },
+  );
+
+  it("keeps a running thread with a pending question card or approval", () => {
+    expect(
+      upNext([
+        t("or1", 9),
+        t("qr1", 1, { status: "active", hasPendingInteraction: true }),
+      ]),
+    ).toEqual(["qr1", "or1"]);
+  });
+
+  it("keeps idle and failed threads, and treats an unknown status as idle", () => {
+    expect(
+      upNext([
+        t("or1", 3, { status: "error" }),
+        t("or2", 2, { status: "idle" }),
+        t("or3", 1, { status: "someday" }),
+      ]),
+    ).toEqual(["or1", "or2", "or3"]);
+  });
+
   it("lists only top-level threads, even when a parent is missing", () => {
     expect(
       upNext([
