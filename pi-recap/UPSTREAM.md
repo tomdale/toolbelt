@@ -17,4 +17,5 @@ This package is a fork of `@zhcsyncer/pi-recap`.
 - The recap widget and error widget render inside a rounded border instead of
   a `RECAP` label prefix; the progress widget reads `Generating...`.
 - `/recap-hide` clears the current recap widget.
+- tmux name sync reads inherited automatic-rename settings using `show-options`.
 - Package metadata names `@tomdale/pi-recap` and points at this repository.

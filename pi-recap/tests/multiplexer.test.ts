@@ -98,7 +98,8 @@ function createTmuxRunner() {
 		if (args[0] === "display-message" && args.at(-1) === "#{window_name}") {
 			return { stdout: `${currentName}\n` };
 		}
-		if (args[0] === "show-window-options") {
+		if (args[0] === "show-options") {
+			assert.deepEqual(args, ["show-options", "-Awv", "-t", "@7", "automatic-rename"]);
 			return { stdout: `${automaticRename}\n` };
 		}
 		if (args[0] === "set-window-option") {

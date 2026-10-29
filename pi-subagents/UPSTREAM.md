@@ -9,3 +9,4 @@ A patched copy of [`@tintinweb/pi-subagents`](https://github.com/tintinweb/pi-su
     and orchestration to native BB threads and workflows.
   - Subagents are denied pi-dynamic-workflows' `workflow` and
     `workflow_control` tools.
+  - Host-provided Pi and TypeBox packages are declared as peers.
