@@ -114,7 +114,7 @@ describe("Todos editor agent context", () => {
 		const output = formatTodoStateForAgent(state());
 		expect(output).toContain("complete snapshot");
 		expect(output).toContain("1. Alpha [id=#1; status=pending]");
-		expect(output).toContain("└─ 1.1. Alpha child [id=#2; status=pending; parentId=#1]");
+		expect(output).toContain("└─ 1.1 Alpha child [id=#2; status=pending; parentId=#1]");
 		expect(output).toContain('2. Beta [id=#3; status=in_progress; description="Detailed beta"]');
 		expect(output).toContain("3. Gamma [id=#4; status=completed]");
 	});

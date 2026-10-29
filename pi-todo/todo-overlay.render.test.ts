@@ -85,7 +85,7 @@ describe("TodoOverlay — heading", () => {
 });
 
 describe("TodoOverlay — natural-order rendering (no overflow)", () => {
-	it("renders one line per visible task plus heading, last row uses '└─'", async () => {
+	it("renders one numbered line per visible task plus heading", async () => {
 		const { widget } = await setup([
 			{ action: "create", subject: "a" },
 			{ action: "create", subject: "b" },
@@ -93,9 +93,9 @@ describe("TodoOverlay — natural-order rendering (no overflow)", () => {
 		]);
 		const lines = widget.render(200);
 		expect(lines).toHaveLength(4); // heading + 3
-		expect(lines[1]).toContain("○ 1 a");
-		expect(lines[2]).toContain("○ 2 b");
-		expect(lines[3]).toContain("○ 3 c");
+		expect(lines[1]).toContain("○ 1. a");
+		expect(lines[2]).toContain("○ 2. b");
+		expect(lines[3]).toContain("○ 3. c");
 	});
 
 	it("omits deleted tasks from the rendered output", async () => {
@@ -162,7 +162,7 @@ describe("TodoOverlay — per-task formatting", () => {
 });
 
 describe("TodoOverlay — task id display", () => {
-	it("pads task IDs to align subjects in a related group", async () => {
+	it("numbers root tasks by display order", async () => {
 		const { widget } = await setup([
 			{ action: "create", subject: "root" },
 			{ action: "create", subject: "child", parentId: 1 },
@@ -176,12 +176,12 @@ describe("TodoOverlay — task id display", () => {
 			{ action: "create", subject: "another root" },
 		]);
 		const lines = widget.render(200);
-		expect(lines.find((line) => line.includes("root"))).toContain("1 root");
-		expect(lines.find((line) => line.includes("another root"))).toContain("3 another root");
-		expect(lines.find((line) => line.includes("two-digit root"))).toContain("2 two-digit root");
+		expect(lines.find((line) => line.includes("root"))).toContain("1. root");
+		expect(lines.find((line) => line.includes("another root"))).toContain("3. another root");
+		expect(lines.find((line) => line.includes("two-digit root"))).toContain("2. two-digit root");
 	});
 
-	it("honors showTaskIds: never and always", async () => {
+	it("renders display numbering without persistent IDs for simple tasks", async () => {
 		writeConfigFile(JSON.stringify({ showTaskIds: "never" }));
 		let result = await setup([
 			{ action: "create", subject: "root" },
@@ -191,7 +191,7 @@ describe("TodoOverlay — task id display", () => {
 		removeConfigFile();
 		writeConfigFile(JSON.stringify({ showTaskIds: "always" }));
 		result = await setup([{ action: "create", subject: "root" }]);
-		expect(result.widget.render(200).join("\n")).toContain("1 root");
+		expect(result.widget.render(200).join("\n")).toContain("1. root");
 	});
 });
 
@@ -205,14 +205,14 @@ describe("TodoOverlay — showIds gate", () => {
 		expect(out).not.toMatch(/#\d/);
 	});
 
-	it("shows #id prefix and '⛓' dep suffix when any task has blockedBy", async () => {
+	it("shows display numbering and a dependency suffix when a task is blocked", async () => {
 		const { widget } = await setup([
 			{ action: "create", subject: "base" },
 			{ action: "create", subject: "follow-up", blockedBy: [1] },
 		]);
 		const out = widget.render(200).join("\n");
 		expect(out).toContain("⛓ #1");
-		expect(out).toContain("2 follow-up");
+		expect(out).toContain("2. follow-up");
 		expect(out).toContain("⛓");
 	});
 });
@@ -296,7 +296,7 @@ describe("TodoOverlay — overflow collapse", () => {
 		const lines = widget.render(200);
 		expect(lines).toHaveLength(12);
 		expect(lines[lines.length - 1]).not.toContain("+");
-		expect(lines[lines.length - 1]).toContain("○ 11 t11");
+		expect(lines[lines.length - 1]).toContain("○ 11. t11");
 	});
 
 	it("follows Pi's tool-output expansion mode and renders every task", async () => {
@@ -314,7 +314,7 @@ describe("TodoOverlay — overflow collapse", () => {
 		expect(expanded).toHaveLength(7); // heading + 6 rows of 3 tasks
 		expect(expanded.join("\n")).toContain("t17");
 		expect(expanded.join("\n")).not.toContain(" more");
-		expect(expanded.some((line) => line.includes("○ 17 t17"))).toBe(true);
+		expect(expanded.some((line) => line.includes("○ 17. t17"))).toBe(true);
 
 		toolsExpanded = false;
 		expect(widget.render(60).join("\n")).toContain("+7 more");

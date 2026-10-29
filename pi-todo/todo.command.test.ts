@@ -132,6 +132,6 @@ describe("/todos command", () => {
 			}),
 			{ deliverAs: "nextTurn" },
 		);
-		expect(sendMessage.mock.calls[0]?.[0].content).toContain("└─ 1.1. Child [id=#2; status=pending; parentId=#1]");
+		expect(sendMessage.mock.calls[0]?.[0].content).toContain("└─ 1.1 Child [id=#2; status=pending; parentId=#1]");
 	});
 });
