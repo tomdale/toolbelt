@@ -10,6 +10,7 @@ import {
 import { installTestPluginRuntime } from "@get-bb/plugin-sdk/testing/app";
 import { Catalog } from "../../src/app/page/Catalog.tsx";
 import type { TopicState, Topic } from "../../src/domain/topics.ts";
+import { chooseOption } from "./select.ts";
 
 beforeEach(() => {
   installTestPluginRuntime();
@@ -327,9 +328,10 @@ describe("Catalog UI & Maintenance", () => {
     expect(screen.getByText("Merge topic")).toBeTruthy();
 
     // Select target entity
-    fireEvent.change(screen.getByRole("combobox"), {
-      target: { value: "retained" },
-    });
+    chooseOption(
+      screen.getByRole("combobox", { name: "Merge into *" }),
+      "Quiet Feature",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Merge" }));
 
     await waitFor(() => {

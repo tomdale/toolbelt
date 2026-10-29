@@ -6,6 +6,7 @@
  */
 import { useEffect, useId, useRef } from "react";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   MAX_SNOOZE_AMOUNT,
   MAX_SNOOZE_MS,
@@ -20,6 +21,7 @@ import {
   type SnoozeUnit,
 } from "../../domain/snooze.ts";
 import { SegmentedControl } from "../settings/ui.tsx";
+import { SelectField } from "../SelectField.tsx";
 
 /** A rule kind, or a one-off date and time (Custom… only). */
 export type SnoozeDraftKind = SnoozeRuleKind | "date";
@@ -128,8 +130,11 @@ const KIND_LABELS: Readonly<Record<SnoozeDraftKind, string>> = {
 /** Weekdays from Monday, the order a week reads in. */
 const WEEK_ORDER = [...WEEKDAYS.slice(1), WEEKDAYS[0]];
 
-const selectClass =
-  "flex h-8 rounded-md border border-input bg-transparent px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+/** Day choices before the weekdays, nearest first. */
+const RELATIVE_DAYS = ["today", "tomorrow", "workday"] as const;
+
+/** Sized to sit beside the 32px inputs. */
+const selectClass = "h-8 w-auto";
 
 export function SnoozeRuleFields({
   draft,
@@ -171,27 +176,31 @@ export function SnoozeRuleFields({
   );
   if (picker === "radios")
     return (
-      <div role="radiogroup" aria-label="Snooze kind" className="space-y-2">
+      <RadioGroup
+        aria-label="Snooze kind"
+        value={draft.kind}
+        onValueChange={(kind) => set({ kind: kind as SnoozeDraftKind })}
+        className="gap-2.5"
+      >
         {kinds.map((kind) => (
           <div key={kind} className="space-y-1.5">
-            <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name={name}
-                value={kind}
-                checked={draft.kind === kind}
-                onChange={() => set({ kind })}
-                className="cursor-pointer accent-foreground"
-              />
-              {KIND_LABELS[kind]}
-            </label>
+            <div className="flex items-center gap-2">
+              <RadioGroupItem id={`${name}-${kind}`} value={kind} />
+              <label
+                htmlFor={`${name}-${kind}`}
+                className="cursor-pointer text-sm"
+              >
+                {KIND_LABELS[kind]}
+              </label>
+            </div>
             {draft.kind === kind && kind !== "activity" ? (
               <div className="pl-6">{fields}</div>
             ) : null}
           </div>
         ))}
-      </div>
+      </RadioGroup>
     );
+
   return (
     <div className="space-y-2">
       {kinds.length > 1 ? (
@@ -234,39 +243,30 @@ function KindFields({
         aria-label="Amount"
         className="h-8 w-20 text-sm"
       />
-      <select
+      <SelectField
+        label="Unit"
         value={draft.unit}
-        onChange={(event) => set({ unit: event.target.value as SnoozeUnit })}
-        aria-label="Unit"
+        options={SNOOZE_UNITS.map((unit) => ({
+          value: unit,
+          label: UNIT_LABELS[unit].toLowerCase(),
+        }))}
+        onChange={(unit) => set({ unit })}
         className={selectClass}
-      >
-        {SNOOZE_UNITS.map((unit) => (
-          <option key={unit} value={unit}>
-            {UNIT_LABELS[unit].toLowerCase()}
-          </option>
-        ))}
-      </select>
+      />
     </div>
   ) : draft.kind === "time" ? (
     <div className="flex items-center gap-2">
-      <select
+      <SelectField<SnoozeDay>
+        label="Day"
         autoFocus={autoFocus}
         value={draft.day}
-        onChange={(event) => set({ day: event.target.value as SnoozeDay })}
-        aria-label="Day"
+        options={[...RELATIVE_DAYS, ...WEEK_ORDER].map((day) => ({
+          value: day,
+          label: dayLabel(day),
+        }))}
+        onChange={(day) => set({ day })}
         className={selectClass}
-      >
-        {(["today", "tomorrow", "workday"] as const).map((day) => (
-          <option key={day} value={day}>
-            {dayLabel(day)}
-          </option>
-        ))}
-        {WEEK_ORDER.map((day) => (
-          <option key={day} value={day}>
-            {dayLabel(day)}
-          </option>
-        ))}
-      </select>
+      />
       <span className="text-sm text-muted-foreground">at</span>
       <Input
         type="time"

@@ -20,6 +20,10 @@ import { CallRow } from "./CallRow.tsx";
 import { ActivityTerm } from "./ActivityTerm.tsx";
 import { ActivityThreadLink } from "./ActivityThreadLink.tsx";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
+import { SelectField } from "../SelectField.tsx";
+
+/** The filter row's compact selects, sized to their chosen option. */
+const filterSelectClass = "h-7 w-auto px-2 text-xs";
 
 const TRACE_PAGE = 100;
 
@@ -295,43 +299,40 @@ export function Activity({
         aria-label="Activity filters"
         className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground"
       >
-        <select
-          aria-label="Filter by workstream"
+        <SelectField
+          label="Filter by workstream"
           value={workstream}
-          onChange={(event) => setWorkstream(event.target.value)}
-          className="h-7 rounded-md border border-input bg-transparent px-1"
-        >
-          <option value="">All workstreams</option>
-          {[...sections]
-            .sort((a, b) => compareGroupNames(a.name, b.name))
-            .map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-        </select>
-        <select
-          aria-label="Filter by action"
+          options={[
+            { value: "", label: "All workstreams" },
+            ...[...sections]
+              .sort((a, b) => compareGroupNames(a.name, b.name))
+              .map((s) => ({ value: s.id, label: s.name })),
+          ]}
+          onChange={setWorkstream}
+          className={filterSelectClass}
+        />
+        <SelectField
+          label="Filter by action"
           value={action}
-          onChange={(event) => {
-            setAction(event.target.value);
+          options={[
+            { value: "", label: "All actions" },
+            ...Object.entries(ACTION_LABEL).map(([value, label]) => ({
+              value,
+              label,
+            })),
+            ...(debug ? [{ value: MODEL_CALLS, label: "Model calls" }] : []),
+          ]}
+          onChange={(next) => {
+            setAction(next);
             setCallKind("");
             setFailuresOnly(false);
-            if (event.target.value === MODEL_CALLS) {
+            if (next === MODEL_CALLS) {
               setShowCalls(true);
               setNeedsReview(false);
             }
           }}
-          className="h-7 rounded-md border border-input bg-transparent px-1"
-        >
-          <option value="">All actions</option>
-          {Object.entries(ACTION_LABEL).map(([key, label]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-          {debug ? <option value={MODEL_CALLS}>Model calls</option> : null}
-        </select>
+          className={filterSelectClass}
+        />
         <label className="flex items-center gap-1.5">
           <input
             type="checkbox"
@@ -380,25 +381,25 @@ export function Activity({
             description="AI assessments appear alongside applied changes. An assessment may suggest a change without applying it. Expand Technical details for measurements and the full prompt. Traces are kept for 7 days, up to 1,000 records."
           />
           <div className="mt-2 grid grid-cols-1 items-center gap-3 sm:flex sm:flex-wrap">
-            <select
-              aria-label="Filter by model call kind"
+            <SelectField<TraceKind | "">
+              label="Filter by model call kind"
               value={callKind}
-              onChange={(event) => {
-                setCallKind(event.target.value as TraceKind | "");
+              options={[
+                { value: "", label: "All model call kinds" },
+                ...TRACE_KINDS.map((kind) => ({
+                  value: kind,
+                  label: TRACE_KIND_TITLE[kind],
+                })),
+              ]}
+              onChange={(next) => {
+                setCallKind(next);
                 setTraceLimit(TRACE_PAGE);
                 setShowCalls(true);
                 setAction(MODEL_CALLS);
                 setNeedsReview(false);
               }}
-              className="h-7 rounded-md border border-input bg-transparent px-1"
-            >
-              <option value="">All model call kinds</option>
-              {TRACE_KINDS.map((kind) => (
-                <option key={kind} value={kind}>
-                  {TRACE_KIND_TITLE[kind]}
-                </option>
-              ))}
-            </select>
+              className={filterSelectClass}
+            />
             <label className="flex items-center gap-1.5">
               <input
                 type="checkbox"

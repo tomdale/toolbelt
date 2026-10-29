@@ -35,3 +35,17 @@ if (typeof globalThis.localStorage?.clear !== "function") {
       value: storage,
     });
 }
+
+// Radix Select scrolls its chosen option into view and captures the
+// pointer, and Radix RadioGroup measures its items; jsdom implements none
+// of these.
+if (typeof Element !== "undefined") {
+  Element.prototype.scrollIntoView ??= () => {};
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.releasePointerCapture ??= () => {};
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}

@@ -10,6 +10,7 @@ import {
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { emptyState, sidebarThread } from "./fixtures.ts";
 import { DEFAULT_SNOOZE_PREFS } from "../../src/domain/snooze.ts";
+import { chooseOption } from "./select.ts";
 
 afterEach(cleanup);
 
@@ -92,17 +93,16 @@ it("offers every preset and Custom… from the arrow", async () => {
   ]);
   fireEvent.click(within(menu).getByRole("menuitem", { name: "Custom…" }));
   const dialog = await screen.findByRole("dialog");
-  expect(within(dialog).getByRole("radio", { name: "Date" })).toHaveProperty(
-    "checked",
-    true,
-  );
+  expect(
+    within(dialog)
+      .getByRole("radio", { name: "Date" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
   fireEvent.click(within(dialog).getByRole("radio", { name: "Duration" }));
   fireEvent.change(within(dialog).getByLabelText("Amount"), {
     target: { value: "20" },
   });
-  fireEvent.change(within(dialog).getByLabelText("Unit"), {
-    target: { value: "minutes" },
-  });
+  chooseOption(within(dialog).getByLabelText("Unit"), "minutes");
   const before = Date.now();
   fireEvent.click(within(dialog).getByRole("button", { name: "Snooze" }));
   await waitFor(() =>

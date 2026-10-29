@@ -14,6 +14,10 @@ import type { RpcContract } from "../../server/contract.ts";
 import type { Topic } from "../../domain/topics.ts";
 import { topicAncestors } from "../../domain/topics.ts";
 import { topicPath } from "../../domain/topic-path.ts";
+import { SelectField } from "../SelectField.tsx";
+
+/** A dialog field's select, as tall as its inputs. */
+const dialogSelectClass = "mt-1 h-8 text-xs";
 
 type Rpc = ReturnType<typeof useRpc<RpcContract>>;
 
@@ -114,21 +118,19 @@ export function CreateEntityDialog({
             <label className="text-xs font-medium text-foreground">
               Parent topic
             </label>
-            <select
+            <SelectField
+              label="Parent topic"
               value={parentId ?? ""}
-              onChange={(e) =>
-                setParentId(e.target.value ? e.target.value : null)
-              }
-              className="mt-1 flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
-              aria-label="Parent topic"
-            >
-              <option value="">None (top level)</option>
-              {entities.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {topicPath(e.id, entities).replace(/: /g, " › ")}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "", label: "None (top level)" },
+                ...entities.map((e) => ({
+                  value: e.id,
+                  label: topicPath(e.id, entities).replace(/: /g, " › "),
+                })),
+              ]}
+              onChange={(next) => setParentId(next || null)}
+              className={dialogSelectClass}
+            />
           </div>
 
           <div>
@@ -343,21 +345,19 @@ export function ReparentEntityDialog({
             <label className="text-xs font-medium text-foreground">
               Parent topic
             </label>
-            <select
+            <SelectField
+              label="Parent topic"
               value={parentId ?? ""}
-              onChange={(e) =>
-                setParentId(e.target.value ? e.target.value : null)
-              }
-              className="mt-1 flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
-              aria-label="Parent topic"
-            >
-              <option value="">None (top level)</option>
-              {validParents.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {topicPath(e.id, entities).replace(/: /g, " › ")}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "", label: "None (top level)" },
+                ...validParents.map((e) => ({
+                  value: e.id,
+                  label: topicPath(e.id, entities).replace(/: /g, " › "),
+                })),
+              ]}
+              onChange={(next) => setParentId(next || null)}
+              className={dialogSelectClass}
+            />
           </div>
 
           <DialogFooter>
@@ -456,22 +456,17 @@ export function MergeEntityDialog({
             <label className="text-xs font-medium text-foreground">
               Merge into *
             </label>
-            <select
+            <SelectField
+              label="Merge into *"
               value={targetId}
-              onChange={(e) => setTargetId(e.target.value)}
-              className="mt-1 flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
-              aria-label="Merge into *"
-              required
-            >
-              <option value="" disabled>
-                Choose a topic…
-              </option>
-              {validTargets.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {topicPath(e.id, entities).replace(/: /g, " › ")}
-                </option>
-              ))}
-            </select>
+              placeholder="Choose a topic…"
+              options={validTargets.map((e) => ({
+                value: e.id,
+                label: topicPath(e.id, entities).replace(/: /g, " › "),
+              }))}
+              onChange={setTargetId}
+              className={dialogSelectClass}
+            />
           </div>
 
           <DialogFooter>

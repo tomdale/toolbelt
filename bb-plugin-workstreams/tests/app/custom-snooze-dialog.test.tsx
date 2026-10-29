@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { installTestPluginRuntime } from "@get-bb/plugin-sdk/testing/app";
 import { CustomSnoozeDialog } from "../../src/app/snooze/CustomSnoozeDialog.tsx";
+import { chooseOption } from "./select.ts";
 
 describe("CustomSnoozeDialog", () => {
   beforeEach(() => {
@@ -48,10 +49,11 @@ describe("CustomSnoozeDialog", () => {
     expect(
       within(kinds)
         .getAllByRole("radio")
-        .map((radio) => radio.closest("label")!.textContent),
+        .map((radio) => radio.parentElement!.textContent),
     ).toEqual(["Duration", "Time", "Date", "On update"]);
+    // Each radio sits in a row with its label; its fields follow the row.
     const fieldsUnder = (kind: string) =>
-      screen.getByRole("radio", { name: kind }).closest("label")!
+      screen.getByRole("radio", { name: kind }).parentElement!
         .nextElementSibling;
     // Date is chosen on open, its field under it and focused.
     const wake = screen.getByLabelText("Wake time");
@@ -83,9 +85,7 @@ describe("CustomSnoozeDialog", () => {
     fireEvent.change(screen.getByLabelText("Amount"), {
       target: { value: "45" },
     });
-    fireEvent.change(screen.getByLabelText("Unit"), {
-      target: { value: "minutes" },
-    });
+    chooseOption(screen.getByLabelText("Unit"), "minutes");
     expect(screen.getByText(/^Until 7:15/)).toBeTruthy();
     vi.setSystemTime(new Date("2025-01-15T18:40:00"));
     fireEvent.click(screen.getByRole("button", { name: "Snooze" }));
@@ -104,9 +104,7 @@ describe("CustomSnoozeDialog", () => {
       <CustomSnoozeDialog open onClose={() => undefined} onSubmit={onSubmit} />,
     );
     fireEvent.click(screen.getByRole("radio", { name: "Time" }));
-    fireEvent.change(screen.getByLabelText("Day"), {
-      target: { value: "workday" },
-    });
+    chooseOption(screen.getByLabelText("Day"), "Next workday");
     fireEvent.change(screen.getByLabelText("Time of day"), {
       target: { value: "08:30" },
     });
@@ -130,9 +128,7 @@ describe("CustomSnoozeDialog", () => {
       target: { value: "0" },
     });
     expect(screen.getByText("Enter an amount.")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Unit"), {
-      target: { value: "days" },
-    });
+    chooseOption(screen.getByLabelText("Unit"), "days");
     fireEvent.change(screen.getByLabelText("Amount"), {
       target: { value: "400" },
     });

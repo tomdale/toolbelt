@@ -14,6 +14,7 @@ import {
   type SnoozePreset,
   type SnoozePrefs,
 } from "../../src/domain/snooze.ts";
+import { chooseOption } from "./select.ts";
 
 afterEach(cleanup);
 
@@ -82,9 +83,7 @@ it("adds a preset with its own label", async () => {
   fireEvent.click(await slot.findByRole("button", { name: "Add preset" }));
   const dialog = await screen.findByRole("dialog");
   fireEvent.click(within(dialog).getByRole("radio", { name: "Time" }));
-  fireEvent.change(within(dialog).getByLabelText("Day"), {
-    target: { value: "today" },
-  });
+  chooseOption(within(dialog).getByLabelText("Day"), "Today");
   fireEvent.change(within(dialog).getByLabelText("Time of day"), {
     target: { value: "18:00" },
   });

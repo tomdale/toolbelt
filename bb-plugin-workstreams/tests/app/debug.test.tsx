@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { emptyState, section, sidebarThread } from "./fixtures.ts";
+import { chooseOption } from "./select.ts";
 
 beforeEach(() => window.localStorage.clear());
 afterEach(cleanup);
@@ -185,9 +186,10 @@ it("lists model calls in the Activity log in Debug mode", async () => {
   ).toBeTruthy();
 
   // "Model calls" in the action filter shows only calls.
-  fireEvent.change(on.getByRole("combobox", { name: "Filter by action" }), {
-    target: { value: "model-call" },
-  });
+  chooseOption(
+    on.getByRole("combobox", { name: "Filter by action" }),
+    "Model calls",
+  );
   await waitFor(() =>
     expect(on.queryByText("Moved from Unfiled to Beta")).toBeNull(),
   );

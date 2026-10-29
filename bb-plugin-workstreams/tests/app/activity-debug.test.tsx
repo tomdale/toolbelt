@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { emptyState } from "./fixtures.ts";
+import { chooseOption } from "./select.ts";
 
 afterEach(cleanup);
 
@@ -81,9 +82,9 @@ it("distinguishes an empty server-filtered trace result from an empty log", asyn
     traces: () => ({ traces: [] }),
   });
   await slot.findByText("No activity yet.");
-  fireEvent.change(
+  chooseOption(
     await slot.findByRole("combobox", { name: "Filter by model call kind" }),
-    { target: { value: "quick-analysis" } },
+    "Quick analysis",
   );
   expect(await slot.findByText("No matching activity.")).toBeTruthy();
 });
@@ -161,27 +162,30 @@ it("filters internal calls, exposes metadata and event internals, and opens the 
   expect(slot.queryByText("ok")).toBeNull();
   expect(slot.getByText("bad")).toBeTruthy();
   expect(slot.getByText("1 model calls shown · $0.0100")).toBeTruthy();
-  fireEvent.change(
+  chooseOption(
     slot.getByRole("combobox", { name: "Filter by model call kind" }),
-    { target: { value: "quick-analysis" } },
+    "Quick analysis",
   );
   expect(await slot.findByText("bad")).toBeTruthy();
-  fireEvent.change(slot.getByRole("combobox", { name: "Filter by action" }), {
-    target: { value: "move" },
-  });
+  chooseOption(
+    slot.getByRole("combobox", { name: "Filter by action" }),
+    "Move",
+  );
   expect(await slot.findByText("Moved a thread")).toBeTruthy();
   expect(slot.queryByText("bad")).toBeNull();
-  fireEvent.change(slot.getByRole("combobox", { name: "Filter by action" }), {
-    target: { value: "model-call" },
-  });
+  chooseOption(
+    slot.getByRole("combobox", { name: "Filter by action" }),
+    "Model calls",
+  );
   fireEvent.click(slot.getByRole("checkbox", { name: "Needs review" }));
   expect(
     slot.getByRole("combobox", { name: "Filter by action" }),
   ).toHaveProperty("value", "");
   expect(slot.queryByText("bad")).toBeNull();
-  fireEvent.change(slot.getByRole("combobox", { name: "Filter by action" }), {
-    target: { value: "model-call" },
-  });
+  chooseOption(
+    slot.getByRole("combobox", { name: "Filter by action" }),
+    "Model calls",
+  );
   expect(slot.getByText("bad")).toBeTruthy();
 });
 
@@ -221,9 +225,9 @@ it("ignores a stale trace request after changing the kind filter", async () => {
   );
   const slot = await page({ traces });
   await waitFor(() => expect(traces).toHaveBeenCalledTimes(1));
-  fireEvent.change(
+  chooseOption(
     slot.getByRole("combobox", { name: "Filter by model call kind" }),
-    { target: { value: "quick-analysis" } },
+    "Quick analysis",
   );
   await slot.findByText("route-current");
   await act(async () =>
@@ -257,9 +261,10 @@ it("clears hidden debug-only filters when Debug mode turns off", async () => {
 it("reports when filters match no activity", async () => {
   const slot = await page({ traces: () => ({ traces: [] }) });
   await slot.findByText("Moved a thread");
-  fireEvent.change(slot.getByRole("combobox", { name: "Filter by action" }), {
-    target: { value: "proposal" },
-  });
+  chooseOption(
+    slot.getByRole("combobox", { name: "Filter by action" }),
+    "Proposal",
+  );
   expect(await slot.findByText("No matching activity.")).toBeTruthy();
 });
 
