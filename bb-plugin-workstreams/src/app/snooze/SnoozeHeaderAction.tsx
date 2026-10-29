@@ -1,7 +1,7 @@
 /**
  * Snooze in the thread header: a split button whose face snoozes with the
  * default preset (the Snooze settings section) and whose arrow lists every
- * preset and Custom…. A snoozed thread shows when it wakes instead, with Wake now in its
+ * preset and Custom. A snoozed thread shows when it wakes instead, with Wake now in its
  * menu. BB's own thread menu takes no plugin items, so this is the header's
  * snooze entry point, alongside the command palette.
  */

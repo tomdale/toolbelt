@@ -16,7 +16,7 @@ import {
   type SnoozeDraftKind,
 } from "./RuleFields.tsx";
 
-/** What Custom… offers: every preset kind, and a one-off date and time. */
+/** What Custom offers: every preset kind, and a one-off date and time. */
 export const CUSTOM_SNOOZE_KINDS: readonly SnoozeDraftKind[] = [
   "duration",
   "time",
@@ -25,7 +25,7 @@ export const CUSTOM_SNOOZE_KINDS: readonly SnoozeDraftKind[] = [
 ];
 
 /**
- * A one-off snooze from a snooze menu's Custom… submenu, with the same
+ * A one-off snooze from a snooze menu's Custom submenu, with the same
  * choices a preset has plus a date and time. Opens on `kind`; `onSubmit`
  * receives the wake time, judged when the user submits.
  */

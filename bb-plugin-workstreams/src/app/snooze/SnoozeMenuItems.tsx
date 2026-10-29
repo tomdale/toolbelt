@@ -20,17 +20,17 @@ import {
 } from "../../domain/snooze.ts";
 import type { SnoozeDraftKind } from "./RuleFields.tsx";
 
-/** The Custom… submenu: each kind a preset can have, and a one-off date. */
+/** The Custom submenu: each kind a preset can have, and a one-off date. */
 const CUSTOM_ITEMS: readonly { kind: SnoozeDraftKind; label: string }[] = [
-  { kind: "duration", label: "For a duration…" },
-  { kind: "time", label: "At a time…" },
-  { kind: "date", label: "On a date…" },
+  { kind: "duration", label: "Duration…" },
+  { kind: "time", label: "Time…" },
+  { kind: "date", label: "Date…" },
   { kind: "activity", label: "Until it updates" },
 ];
 
 /**
  * The snooze choices in a menu: every preset with when it would wake, the
- * Custom… submenu, and, for a snoozed thread, its wake time and Wake now.
+ * Custom submenu, and, for a snoozed thread, its wake time and Wake now.
  * Shared by the thread header's dropdown, the sidebar's hover menus, and the
  * row's right-click menu, which draw items with different primitives (`kit`).
  *
@@ -60,7 +60,7 @@ export function SnoozeMenuItems({
   snooze?: ThreadSnooze;
   onSnooze: (until: number | null) => void;
   onWake?: () => void;
-  /** Opens the Custom… dialog on a kind that needs details. */
+  /** Opens the Custom dialog on a kind that needs details. */
   onCustom: (kind: SnoozeDraftKind) => void;
 }) {
   const { Item: MenuItem, Label, Separator, Sub } = kit;
@@ -95,7 +95,7 @@ export function SnoozeMenuItems({
         </MenuItem>
       ))}
       <Separator />
-      <Sub label="Custom…">
+      <Sub label="Custom">
         {CUSTOM_ITEMS.map(({ kind, label }) => (
           <MenuItem
             key={kind}

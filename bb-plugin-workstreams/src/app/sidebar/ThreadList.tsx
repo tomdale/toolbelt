@@ -116,7 +116,7 @@ type SnoozeRequest = {
   readonly threads: readonly PluginSidebarThread[];
   readonly subject?: string;
 };
-/** A Custom… snooze in progress: whom it snoozes, and the kind it opened on. */
+/** A Custom snooze in progress: whom it snoozes, and the kind it opened on. */
 type CustomSnoozeRequest = SnoozeRequest & { readonly kind: SnoozeDraftKind };
 /** A workstream row's snooze button (see `WorkstreamGroup`). */
 type GroupSnooze = {
@@ -129,7 +129,7 @@ type GroupSnooze = {
   menu: ReactNode;
   /** Snoozes the batch until a time, or (null) each until it updates. */
   snooze: (until: number | null) => void;
-  /** Opens the Custom… snooze dialog on `kind` for the batch. */
+  /** Opens the Custom snooze dialog on `kind` for the batch. */
   custom: (kind: SnoozeDraftKind) => void;
 };
 
@@ -436,7 +436,7 @@ export function WorkstreamsThreadList({
   /**
    * A workstream row's snooze button, while the row lists threads: it
    * snoozes every one of them (see `groupRoots`) with the default preset,
-   * and its menu offers every preset and Custom….
+   * and its menu offers every preset and Custom.
    */
   const groupSnoozeOf = (
     group: ThreadGroup | ThreadNode,

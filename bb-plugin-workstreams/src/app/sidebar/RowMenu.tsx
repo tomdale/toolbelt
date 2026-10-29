@@ -27,7 +27,7 @@ export type RowMenuHandlers = {
   openParent: (thread: PluginSidebarThread) => void;
   /** Snoozes until a time, or (null) until the thread's next activity. */
   snooze: (thread: PluginSidebarThread, until: number | null) => void;
-  /** Opens the Custom… snooze dialog on `kind`. */
+  /** Opens the Custom snooze dialog on `kind`. */
   customSnooze: (thread: PluginSidebarThread, kind: SnoozeDraftKind) => void;
   wake: (thread: PluginSidebarThread) => void;
   /** Debug mode: opens the thread's model calls. */

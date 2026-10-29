@@ -73,7 +73,7 @@ it("snoozes with the default choice in one click", async () => {
   slot.lifecycle.unmount();
 });
 
-it("offers every preset and Custom… from the arrow", async () => {
+it("offers every preset and Custom from the arrow", async () => {
   const slot = await mount();
   const arrow = await slot.findByRole("button", { name: "Snooze options" });
   fireEvent.pointerDown(arrow, { button: 0, ctrlKey: false });
@@ -88,15 +88,13 @@ it("offers every preset and Custom… from the arrow", async () => {
     expect.stringMatching(/^Tomorrow morning/),
     expect.stringMatching(/^Next week\(default\)/),
     "Until it updates",
-    "Custom…",
+    "Custom",
   ]);
-  const custom = within(menu).getByRole("menuitem", { name: "Custom…" });
+  const custom = within(menu).getByRole("menuitem", { name: "Custom" });
   expect(custom.getAttribute("aria-haspopup")).toBe("menu");
   fireEvent.keyDown(custom, { key: "ArrowRight" });
-  const submenu = await screen.findByRole("menu", { name: "Custom…" });
-  fireEvent.click(
-    within(submenu).getByRole("menuitem", { name: "For a duration…" }),
-  );
+  const submenu = await screen.findByRole("menu", { name: "Custom" });
+  fireEvent.click(within(submenu).getByRole("menuitem", { name: "Duration…" }));
   const dialog = await screen.findByRole("dialog");
   expect(
     within(dialog).getByRole("radio", { name: "Duration" }),
