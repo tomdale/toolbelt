@@ -74,12 +74,10 @@ export function useArchiveSuggestion(
     setBusy(true);
     setError(null);
     const nextThreadId =
-      nextUpNextThreadAfterArchive(
-        projection,
-        threadId,
-        ws.upNextKind,
-        ws.server.order.prioritized,
-      ) ?? nextThreadAfterArchive(projection, threadId);
+      nextUpNextThreadAfterArchive(projection, threadId, {
+        ...ws.upNextOptions,
+        prioritized: new Set(ws.server.order.prioritized),
+      }) ?? nextThreadAfterArchive(projection, threadId);
     try {
       await rpc.call("archive", { threadId, recapId });
       if (nextThreadId) actions.open(nextThreadId);

@@ -56,6 +56,12 @@ it("does not select hidden, archived, snoozed threads or the archived subtree", 
 
 const kindOf = (thread: { hasPendingInteraction: boolean }) =>
   thread.hasPendingInteraction ? ("question" as const) : ("other" as const);
+/** Up Next options; open questions never age, so the clock doesn't matter. */
+const upNext = (prioritized: string[] = []) => ({
+  kindOf,
+  now: 0,
+  prioritized: new Set(prioritized),
+});
 
 it("prefers Up Next and cycles through visible Up Next rows", () => {
   const projection = projectWorkstreams(
@@ -76,20 +82,20 @@ it("prefers Up Next and cycles through visible Up Next rows", () => {
     sections,
     { now: 0 },
   );
-  expect(nextUpNextThreadAfterArchive(projection, "archived", kindOf)).toBe(
+  expect(nextUpNextThreadAfterArchive(projection, "archived", upNext())).toBe(
     "waiting-first",
   );
-  expect(nextUpNextThread(projection, null, kindOf)?.thread.id).toBe(
+  expect(nextUpNextThread(projection, null, upNext())?.thread.id).toBe(
     "archived",
   );
-  expect(nextUpNextThread(projection, "waiting-first", kindOf)?.thread.id).toBe(
-    "waiting-second",
-  );
+  expect(
+    nextUpNextThread(projection, "waiting-first", upNext())?.thread.id,
+  ).toBe("waiting-second");
   // Threads not blocked on you follow, then the list wraps.
   expect(
-    nextUpNextThread(projection, "waiting-second", kindOf)?.thread.id,
+    nextUpNextThread(projection, "waiting-second", upNext())?.thread.id,
   ).toBe("quiet");
-  expect(nextUpNextThread(projection, "quiet", kindOf)?.thread.id).toBe(
+  expect(nextUpNextThread(projection, "quiet", upNext())?.thread.id).toBe(
     "archived",
   );
 });
@@ -104,7 +110,7 @@ it("leaves the archive destination to the workstream when nothing at the top of 
     sections,
     { now: 0 },
   );
-  expect(nextUpNextThreadAfterArchive(projection, "archived", kindOf)).toBe(
+  expect(nextUpNextThreadAfterArchive(projection, "archived", upNext())).toBe(
     "unread",
   );
   expect(
@@ -115,7 +121,7 @@ it("leaves the archive destination to the workstream when nothing at the top of 
         { now: 0 },
       ),
       "archived",
-      kindOf,
+      upNext(),
     ),
   ).toBeNull();
 });
@@ -131,12 +137,14 @@ it("starts at the top for a thread Up Next doesn't list", () => {
     sections,
     { now: 0 },
   );
-  expect(nextUpNextThread(projection, "quiet5", kindOf)?.thread.id).toBe("ask");
+  expect(nextUpNextThread(projection, "quiet5", upNext())?.thread.id).toBe(
+    "ask",
+  );
   expect(
     nextUpNextThread(
       projectWorkstreams([thread("only")], sections, { now: 0 }),
       "only",
-      kindOf,
+      upNext(),
     ),
   ).toBeNull();
 });
@@ -166,11 +174,11 @@ it("skips nested threads in Up Next navigation and after archiving", () => {
     sections,
     { now: 0 },
   );
-  expect(nextUpNextThread(projection, null, kindOf)?.thread.id).toBe("first");
-  expect(nextUpNextThread(projection, "first", kindOf)?.thread.id).toBe(
+  expect(nextUpNextThread(projection, null, upNext())?.thread.id).toBe("first");
+  expect(nextUpNextThread(projection, "first", upNext())?.thread.id).toBe(
     "second",
   );
-  expect(nextUpNextThreadAfterArchive(projection, "first", kindOf)).toBe(
+  expect(nextUpNextThreadAfterArchive(projection, "first", upNext())).toBe(
     "second",
   );
   expect(
@@ -181,7 +189,7 @@ it("skips nested threads in Up Next navigation and after archiving", () => {
         { now: 0 },
       ),
       "first",
-      kindOf,
+      upNext(),
     ),
   ).toBeNull();
 });
@@ -202,12 +210,12 @@ it("follows focus on prioritized workstreams", () => {
     sections,
     { now: 0 },
   );
-  expect(nextUpNextThread(projection, null, kindOf, ["ws"])?.thread.id).toBe(
+  expect(nextUpNextThread(projection, null, upNext(["ws"]))?.thread.id).toBe(
     "focused",
   );
-  expect(nextUpNextThread(projection, "focused", kindOf, ["ws"])).toBeNull();
+  expect(nextUpNextThread(projection, "focused", upNext(["ws"]))).toBeNull();
   expect(
-    nextUpNextThreadAfterArchive(projection, "focused", kindOf, ["ws"]),
+    nextUpNextThreadAfterArchive(projection, "focused", upNext(["ws"])),
   ).toBe("elsewhere");
 });
 

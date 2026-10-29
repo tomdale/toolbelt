@@ -3,7 +3,7 @@
  * live sidebar threads plus the plugin's own state, run through the shared
  * domain projection.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   experimental_useSidebarThreads,
   type PluginSidebarThread,
@@ -104,14 +104,20 @@ export function useWorkstreams() {
       }),
     [threads, sections, now, analysis, recaps, order, snoozes],
   );
-  /** What Up Next ranks each thread by (see `selectUpNext`). */
-  const kindOf = useCallback(
-    (thread: PluginSidebarThread) =>
-      upNextKind(
-        thread,
-        workView(thread, analysis[thread.id], recaps[thread.id]),
-      ),
-    [analysis, recaps],
+  /**
+   * What Up Next ranks threads by (see `selectUpNext`), less the focused
+   * workstreams, which each surface resolves for itself.
+   */
+  const upNextOptions = useMemo(
+    () => ({
+      kindOf: (thread: PluginSidebarThread) =>
+        upNextKind(
+          thread,
+          workView(thread, analysis[thread.id], recaps[thread.id]),
+        ),
+      now,
+    }),
+    [analysis, recaps, now],
   );
   return {
     status,
@@ -123,7 +129,7 @@ export function useWorkstreams() {
     server,
     work: (thread: PluginSidebarThread) =>
       workView(thread, analysis[thread.id], recaps[thread.id]),
-    upNextKind: kindOf,
+    upNextOptions,
     now,
     rpc,
     refresh,

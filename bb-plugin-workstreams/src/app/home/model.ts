@@ -21,8 +21,11 @@ import type {
   Row,
   WorkstreamThread,
 } from "../../domain/project.ts";
-import type { UpNextKind } from "../../domain/status.ts";
-import { selectUpNext, type UpNextThread } from "../../domain/upNext.ts";
+import {
+  selectUpNext,
+  type UpNextOptions,
+  type UpNextThread,
+} from "../../domain/upNext.ts";
 
 export type HomePlan<T extends WorkstreamThread> = {
   /** Up Next's rows (see `selectUpNext`); null when none. */
@@ -72,8 +75,7 @@ export function prioritizedSet(
 
 export function planHome<T extends UpNextThread>(
   projection: Projection<T>,
-  options: {
-    kindOf: (thread: T) => UpNextKind;
+  options: UpNextOptions<T> & {
     /** Focused section ids (`ManualOrder.prioritized`). */
     prioritized: ReadonlySet<string>;
     groupSort: GroupSort;
@@ -86,6 +88,7 @@ export function planHome<T extends UpNextThread>(
   const arranged = arrangeGroups(projection, options.groupSort, options.topics);
   const selection = selectUpNext(projection, {
     kindOf: options.kindOf,
+    now: options.now,
     prioritized: focusedSections(arranged, options.prioritized),
   });
   const upNext =

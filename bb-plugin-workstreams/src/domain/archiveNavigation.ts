@@ -1,6 +1,10 @@
 import type { Projection, Row, WorkstreamThread } from "./project.ts";
-import type { UpNextKind } from "./status.ts";
-import { selectUpNext, type UpNextThread } from "./upNext.ts";
+import {
+  agedKind,
+  selectUpNext,
+  type UpNextOptions,
+  type UpNextThread,
+} from "./upNext.ts";
 
 /**
  * Where to go once `threadId` is archived: the top of Up Next when that
@@ -11,15 +15,16 @@ import { selectUpNext, type UpNextThread } from "./upNext.ts";
 export function nextUpNextThreadAfterArchive<T extends UpNextThread>(
   projection: Projection<T>,
   threadId: string,
-  kindOf: (thread: T) => UpNextKind,
-  prioritized: readonly string[] = [],
+  options: UpNextOptions<T>,
 ): string | null {
   const top = selectUpNext(projection, {
-    kindOf,
-    prioritized: new Set(prioritized),
+    ...options,
     exclude: (thread) => thread.id === threadId,
   }).rows[0]?.thread;
-  return top && (top.isUnread || kindOf(top) !== "other") ? top.id : null;
+  if (!top) return null;
+  const wanted =
+    top.isUnread || agedKind(top, options.kindOf(top), options.now) !== "other";
+  return wanted ? top.id : null;
 }
 
 /**
@@ -29,13 +34,9 @@ export function nextUpNextThreadAfterArchive<T extends UpNextThread>(
 export function nextUpNextThread<T extends UpNextThread>(
   projection: Projection<T>,
   threadId: string | null,
-  kindOf: (thread: T) => UpNextKind,
-  prioritized: readonly string[] = [],
+  options: UpNextOptions<T>,
 ): Row<T> | null {
-  const { rows } = selectUpNext(projection, {
-    kindOf,
-    prioritized: new Set(prioritized),
-  });
+  const { rows } = selectUpNext(projection, options);
   if (rows.length === 0) return null;
   const index = threadId
     ? rows.findIndex((row) => row.thread.id === threadId)

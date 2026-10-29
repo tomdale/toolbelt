@@ -185,6 +185,8 @@ Select **Workstreams** as your sidebar thread list to organize threads into:
    is a candidate. A thread with a question for you (`AskUserQuestion` or
    approval pending, or a `needs_decision` status) or a turn ready for review is
    _blocked on you_; anything else (complete, waiting, working, failed) is not.
+   A review or decision whose turn ended more than `7` days ago ages out and
+   counts as not blocked; a pending question card or approval never ages out.
    Candidates rank in six tiers, each newest first by latest turn end:
    1. Unread questions
    2. Unread reviews

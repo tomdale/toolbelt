@@ -29,6 +29,7 @@ const sections = [
 ];
 const baseOptions = {
   kindOf,
+  now,
   prioritized: new Set<string>(),
   groupSort: "alphabetical" as const,
   showUpNext: true,

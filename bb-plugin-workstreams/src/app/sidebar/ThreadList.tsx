@@ -252,7 +252,7 @@ export function WorkstreamsThreadList({
   // from live groups, so a thread the user snoozes, hides, or archives still
   // leaves.
   const upNext = selectUpNext(projection, {
-    kindOf: ws.upNextKind,
+    ...ws.upNextOptions,
     prioritized,
   });
   const shownBefore = useRef<readonly string[]>([]);

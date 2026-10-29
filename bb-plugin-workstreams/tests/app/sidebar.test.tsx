@@ -895,12 +895,13 @@ describe("thread list", () => {
 
   it("lists up to ten threads blocked on you, newest first, with nothing to expand", async () => {
     const at = Date.now();
+    const base = at - 60_000;
     const ids = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"];
     const slot = await mount(
       ids.map((id, index) =>
         sidebarThread(id, {
           title: `Ask ${id}`,
-          latestAttentionAt: 100 + index,
+          latestAttentionAt: base + index,
         }),
       ),
       {
@@ -914,7 +915,7 @@ describe("thread list", () => {
               subject: null,
               drift: null,
               driftSectionId: null,
-              revision: 100 + index,
+              revision: base + index,
               at,
               model: "m",
             },
@@ -946,12 +947,19 @@ describe("thread list", () => {
       at,
       model: "m",
     });
+    const base = at - 60_000;
     const slot = await mount(
       [
-        sidebarThread("fresh", { title: "Fresh ask", latestAttentionAt: 100 }),
-        sidebarThread("stale", { title: "Stale ask", latestAttentionAt: 200 }),
+        sidebarThread("fresh", {
+          title: "Fresh ask",
+          latestAttentionAt: base + 100,
+        }),
+        sidebarThread("stale", {
+          title: "Stale ask",
+          latestAttentionAt: base + 200,
+        }),
       ],
-      { analysis: { fresh: result(100), stale: result(150) } },
+      { analysis: { fresh: result(base + 100), stale: result(base + 150) } },
     );
     const band = await slot.findByRole("region", { name: "Up Next" });
     // The section implies the decision, so its rows leave the mark out. The
@@ -992,18 +1000,18 @@ describe("thread list", () => {
         sidebarThread("complete", {
           title: "Complete",
           isUnread: true,
-          latestAttentionAt: 100,
+          latestAttentionAt: at - 3_000,
         }),
         sidebarThread("review", {
           title: "Review",
           isUnread: true,
-          latestAttentionAt: 101,
+          latestAttentionAt: at - 2_000,
         }),
         sidebarThread("question", {
           title: "Question",
           hasPendingInteraction: true,
           isUnread: false,
-          latestAttentionAt: 102,
+          latestAttentionAt: at - 1_000,
         }),
       ],
       { recaps: { complete: recap("complete"), review: recap("review") } },
@@ -1018,6 +1026,43 @@ describe("thread list", () => {
       "Question",
       "Complete, Complete",
     ]);
+    slot.lifecycle.unmount();
+  });
+
+  it("ranks a review left for over a week with the threads not blocked on you", async () => {
+    const slot = await mount(
+      [
+        sidebarThread("stale", {
+          title: "Stale review",
+          latestAttentionAt: Date.now() - 8 * 24 * 3_600_000,
+        }),
+        sidebarThread("fresh", {
+          title: "Fresh",
+          latestAttentionAt: Date.now() - 1_000,
+        }),
+      ],
+      {
+        activeThreadId: null,
+        recaps: {
+          stale: {
+            id: "r-stale",
+            turnId: "turn",
+            at: Date.now(),
+            state: "review",
+            goal: "Shipping",
+            latest: ["Reported review"],
+            review: ["Try it"],
+            links: [],
+          },
+        },
+      },
+    );
+    await waitFor(() =>
+      expect(groupRows(slot, "Up Next")).toEqual([
+        "Fresh",
+        "Stale review, Ready for your review",
+      ]),
+    );
     slot.lifecycle.unmount();
   });
 

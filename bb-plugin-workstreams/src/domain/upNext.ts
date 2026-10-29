@@ -5,9 +5,11 @@
  * Every top-level thread that is in a group (not archived, hidden, or
  * snoozed) is a candidate. A question or a review is blocked on the user;
  * anything else (done, working, waiting on something else, failed) is not.
- * While a focused workstream has a thread blocked on the user, only focused
- * workstreams' threads are candidates; the threads blocked on the user
- * elsewhere wait outside Up Next.
+ * A review or a needed decision whose turn ended more than
+ * {@link UP_NEXT_STALE_AFTER_MS} ago has gone stale and ranks as neither (see
+ * `agedKind`). While a focused workstream has a thread blocked on the user,
+ * only focused workstreams' threads are candidates; the threads blocked on
+ * the user elsewhere wait outside Up Next.
  *
  * Candidates rank by tier, then by latest attention (BB's turn-end time,
  * the one unread compares against), newest first:
@@ -26,15 +28,51 @@
  * unread when its turn ends); they show under their root's row. Parent
  * links decide this even when the parent is absent from the visible tree.
  */
-import type { Projection, Row, WorkstreamThread } from "./project.ts";
+import {
+  DAY_MS,
+  type Projection,
+  type Row,
+  type WorkstreamThread,
+} from "./project.ts";
 import type { UpNextKind } from "./status.ts";
 
 /** Up Next trims threads not blocked on the user down to this many rows. */
 export const UP_NEXT_LIMIT = 5;
 /** Up Next never lists more than this many rows. */
 export const UP_NEXT_MAX = 10;
+/** How long a finished turn's review or decision stays blocked on the user. */
+export const UP_NEXT_STALE_AFTER_MS = 7 * DAY_MS;
 
 export type UpNextThread = WorkstreamThread & { readonly isUnread: boolean };
+
+/** What Up Next ranks by; every caller that wants Up Next's rows passes it. */
+export type UpNextOptions<T extends UpNextThread> = {
+  /** What each thread is blocked on the user for (see `upNextKind`). */
+  readonly kindOf: (thread: T) => UpNextKind;
+  /** The current time, for aging out stale threads (see `agedKind`). */
+  readonly now: number;
+  /** Focused workstream ids (`ManualOrder.prioritized`); none, no focus. */
+  readonly prioritized?: ReadonlySet<string>;
+};
+
+/**
+ * `kind` once age is counted: a review or needed decision whose turn ended
+ * (its latest attention) more than {@link UP_NEXT_STALE_AFTER_MS} before
+ * `now` ranks as `other`, keeping its read state. A pending question card or
+ * approval never ages: the agent is waiting right now, and latest attention
+ * dates the previous turn's end, not the question.
+ */
+export function agedKind(
+  thread: Pick<UpNextThread, "hasPendingInteraction" | "latestAttentionAt">,
+  kind: UpNextKind,
+  now: number,
+): UpNextKind {
+  return kind !== "other" &&
+    !thread.hasPendingInteraction &&
+    now - thread.latestAttentionAt > UP_NEXT_STALE_AFTER_MS
+    ? "other"
+    : kind;
+}
 
 export type UpNextSelection<T extends WorkstreamThread> = {
   /** Up Next's rows, most urgent first. */
@@ -57,13 +95,9 @@ const byAttention = (a: Row<WorkstreamThread>, b: Row<WorkstreamThread>) =>
 
 export function selectUpNext<T extends UpNextThread>(
   projection: Projection<T>,
-  options: {
-    /** What each thread is blocked on the user for (see `upNextKind`). */
-    kindOf: (thread: T) => UpNextKind;
-    /** Focused workstream ids (`ManualOrder.prioritized`); none, no focus. */
-    prioritized?: ReadonlySet<string>;
+  options: UpNextOptions<T> & {
     /** Threads to leave out before ranking, such as one being archived. */
-    exclude?: (thread: T) => boolean;
+    readonly exclude?: (thread: T) => boolean;
   },
 ): UpNextSelection<T> {
   const ranked = [
@@ -76,7 +110,11 @@ export function selectUpNext<T extends UpNextThread>(
       (row) => !row.thread.parentThreadId && !options.exclude?.(row.thread),
     )
     .map((row) => {
-      const kind = options.kindOf(row.thread);
+      const kind = agedKind(
+        row.thread,
+        options.kindOf(row.thread),
+        options.now,
+      );
       return {
         row,
         onYou: kind !== "other",

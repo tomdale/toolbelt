@@ -5,29 +5,27 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { nextUpNextThread } from "../../domain/archiveNavigation.ts";
 import type { Projection } from "../../domain/project.ts";
-import type { UpNextKind } from "../../domain/status.ts";
+import type { UpNextOptions } from "../../domain/upNext.ts";
 import { useWorkstreams } from "../useWorkstreams.ts";
 
 let current: {
   projection: Projection<PluginSidebarThread>;
-  kindOf: (thread: PluginSidebarThread) => UpNextKind;
-  prioritized: readonly string[];
+  upNext: UpNextOptions<PluginSidebarThread>;
   open: (threadId: string) => void;
 } | null = null;
 
 /** The app-wide command reads the live projection and uses BB's sidebar flow. */
 export function NextUpCommandBridge(): null {
-  const { projection, upNextKind, server } = useWorkstreams();
+  const { projection, upNextOptions, server } = useWorkstreams();
   const actions = experimental_useSidebarThreadActions();
   const prioritized = server.order.prioritized;
   const bridge = useMemo(
     () => ({
       projection,
-      kindOf: upNextKind,
-      prioritized,
+      upNext: { ...upNextOptions, prioritized: new Set(prioritized) },
       open: (threadId: string) => actions.open(threadId),
     }),
-    [projection, upNextKind, prioritized, actions],
+    [projection, upNextOptions, prioritized, actions],
   );
   current = bridge;
   useEffect(() => {
@@ -40,12 +38,7 @@ export function NextUpCommandBridge(): null {
 
 export function openNextUpThread(threadId: string | null): void {
   const next = current
-    ? nextUpNextThread(
-        current.projection,
-        threadId,
-        current.kindOf,
-        current.prioritized,
-      )?.thread.id
+    ? nextUpNextThread(current.projection, threadId, current.upNext)?.thread.id
     : null;
   if (next) current?.open(next);
 }

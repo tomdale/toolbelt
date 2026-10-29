@@ -4,6 +4,8 @@ import type { UpNextKind } from "../../src/domain/status.ts";
 import {
   UP_NEXT_LIMIT,
   UP_NEXT_MAX,
+  UP_NEXT_STALE_AFTER_MS,
+  agedKind,
   holdInPlace,
   selectRecent,
   selectUpNext,
@@ -11,6 +13,11 @@ import {
 import { thread, type TestThread } from "./fixtures.ts";
 
 const now = 100 * DAY_MS;
+/**
+ * Up Next's clock for threads made with `t`: moments after their turns, so
+ * none has aged out.
+ */
+const clock = 10_000;
 const sections = [
   { id: "sec_a", name: "Alpha" },
   { id: "sec_b", name: "Beta" },
@@ -45,7 +52,8 @@ function upNext(
     snoozedUntil: options.snoozedUntil,
   });
   return ids(
-    selectUpNext(projection, { kindOf, exclude: options.exclude }).rows,
+    selectUpNext(projection, { kindOf, now: clock, exclude: options.exclude })
+      .rows,
   );
 }
 
@@ -202,7 +210,7 @@ describe("selectUpNext", () => {
       { now },
     );
     expect(projection.dormant.map((group) => group.id)).toEqual(["sec_b"]);
-    expect(ids(selectUpNext(projection, { kindOf }).rows)).toEqual([
+    expect(ids(selectUpNext(projection, { kindOf, now: clock }).rows)).toEqual([
       "qu1",
       "ru1",
     ]);
@@ -222,6 +230,7 @@ describe("selectUpNext", () => {
     );
     const focused = selectUpNext(projection, {
       kindOf,
+      now: clock,
       prioritized: new Set(["sec_b"]),
     });
     expect(focused.focused).toBe(true);
@@ -241,11 +250,84 @@ describe("selectUpNext", () => {
     );
     const selection = selectUpNext(projection, {
       kindOf,
+      now: clock,
       prioritized: new Set(["sec_b"]),
     });
     expect(selection.focused).toBe(false);
     expect(ids(selection.rows)).toEqual(["qr1", "ou1"]);
     expect(selection.elsewhere).toEqual([]);
+  });
+
+  describe("aging out", () => {
+    const stale = now - 8 * DAY_MS;
+    const select = (
+      threads: readonly TestThread[],
+      prioritized?: ReadonlySet<string>,
+    ) =>
+      selectUpNext(projectWorkstreams(threads, sections, { now }), {
+        kindOf,
+        now,
+        prioritized,
+      });
+
+    it("ranks a stale review or decision with the threads not blocked on you, keeping its read state", () => {
+      expect(
+        ids(
+          select([
+            t("ru1", stale),
+            t("rr1", stale),
+            // Analysis's needed decision, not a live question card.
+            t("qr1", stale - DAY_MS),
+            t("ou1", now - 1),
+            t("rr2", now - 2),
+          ]).rows,
+        ),
+      ).toEqual(["rr2", "ou1", "ru1", "rr1", "qr1"]);
+    });
+
+    it("never ages a pending question card or approval", () => {
+      expect(
+        ids(
+          select([
+            t("qr1", now - 30 * DAY_MS, { hasPendingInteraction: true }),
+            t("ou1", now - 1),
+          ]).rows,
+        ),
+      ).toEqual(["qr1", "ou1"]);
+    });
+
+    it("lets go of more than ten stale threads without a recency cut", () => {
+      const threads = [
+        ...Array.from({ length: 12 }, (_, i) => t(`ru${i}`, stale - i)),
+        t("qu1", now - 1),
+      ];
+      // Once stale, they're trimmed as threads not blocked on you.
+      expect(ids(select(threads).rows)).toEqual([
+        "qu1",
+        "ru0",
+        "ru1",
+        "ru2",
+        "ru3",
+      ]);
+    });
+
+    it("doesn't focus on a workstream whose only blocked thread is stale", () => {
+      const selection = select(
+        [t("rr1", stale, { sectionId: "sec_b" }), t("qu1", now - 1)],
+        new Set(["sec_b"]),
+      );
+      expect(selection.focused).toBe(false);
+      expect(ids(selection.rows)).toEqual(["qu1", "rr1"]);
+    });
+
+    it("ages a thread once more than the window has passed since its turn", () => {
+      const quiet = { hasPendingInteraction: false, latestAttentionAt: 0 };
+      expect(agedKind(quiet, "review", UP_NEXT_STALE_AFTER_MS)).toBe("review");
+      expect(agedKind(quiet, "question", UP_NEXT_STALE_AFTER_MS + 1)).toBe(
+        "other",
+      );
+      expect(UP_NEXT_STALE_AFTER_MS).toBe(7 * DAY_MS);
+    });
   });
 
   it("trims to five and caps at ten", () => {
@@ -265,7 +347,7 @@ describe("selectRecent", () => {
       now,
       snoozedUntil: (thread) => (thread.id === "snoozed" ? null : undefined),
     });
-    const shown = selectUpNext(projection, { kindOf }).rows;
+    const shown = selectUpNext(projection, { kindOf, now: clock }).rows;
     expect(ids(shown)).toEqual(["qu1", "or0", "or1", "or2", "or3"]);
     expect(ids(selectRecent(projection, shown, 3))).toEqual([
       "or4",
