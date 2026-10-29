@@ -7,81 +7,78 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { describeWake, wakeTime } from "../../domain/snooze.ts";
+import { describeWake } from "../../domain/snooze.ts";
+import {
+  SnoozeRuleFields,
+  draftOf,
+  resolveDraft,
+  type SnoozeDraft,
+  type SnoozeDraftKind,
+} from "./RuleFields.tsx";
 
-/** A `datetime-local` value (local time, minutes precision). */
-function toLocalInput(time: number): string {
-  const d = new Date(time);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-const MAX_SNOOZE_MS = 366 * 24 * 60 * 60 * 1000;
-const validWakeTime = (until: number, now: number) =>
-  Number.isFinite(until) && until > now && until <= now + MAX_SNOOZE_MS;
+/** What Custom… offers: every preset kind, and a one-off date and time. */
+export const CUSTOM_SNOOZE_KINDS: readonly SnoozeDraftKind[] = [
+  "duration",
+  "time",
+  "date",
+  "activity",
+];
 
 /**
- * Snooze until a date and time the user picks. Opens on tomorrow morning;
- * `onSubmit` receives the wake time.
+ * A one-off snooze from a snooze menu's Custom… submenu, with the same
+ * choices a preset has plus a date and time. Opens on `kind`; `onSubmit`
+ * receives the wake time, judged when the user submits.
  */
 export function CustomSnoozeDialog({
   open,
+  kind = "date",
   onClose,
   onSubmit,
-  morningHour,
 }: {
   open: boolean;
+  kind?: SnoozeDraftKind;
   onClose: () => void;
-  onSubmit: (until: number) => void;
-  morningHour: number;
+  onSubmit: (until: number | null) => void;
 }) {
-  const [value, setValue] = useState("");
+  const [draft, setDraft] = useState<SnoozeDraft>(() =>
+    draftOf(undefined, Date.now(), kind),
+  );
   useEffect(() => {
-    if (open)
-      setValue(toLocalInput(wakeTime("tomorrow", Date.now(), morningHour)!));
-  }, [open, morningHour]);
-  const now = Date.now();
-  const maxUntil = now + MAX_SNOOZE_MS;
-  const until = value ? new Date(value).getTime() : NaN;
-  const valid = validWakeTime(until, now);
+    if (open) setDraft(draftOf(undefined, Date.now(), kind));
+  }, [open, kind]);
+  const result = resolveDraft(draft, Date.now());
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!validWakeTime(until, Date.now())) return;
-    onSubmit(until);
+    const final = resolveDraft(draft, Date.now());
+    if (!final.ok) return;
+    onSubmit(final.until);
     onClose();
   };
-
-  const message =
-    !Number.isFinite(until) || until <= Date.now()
-      ? "Pick a time in the future."
-      : until > maxUntil
-        ? "Pick a time in the next year."
-        : `Returns to the sidebar ${describeWake(until, Date.now())}.`;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="max-w-sm">
         <form onSubmit={submit} className="space-y-3">
           <DialogHeader>
-            <DialogTitle>Snooze until…</DialogTitle>
+            <DialogTitle>Snooze…</DialogTitle>
           </DialogHeader>
-          <Input
-            type="datetime-local"
+          <SnoozeRuleFields
+            draft={draft}
+            onChange={setDraft}
+            kinds={CUSTOM_SNOOZE_KINDS}
             autoFocus
-            value={value}
-            min={toLocalInput(Date.now())}
-            max={toLocalInput(maxUntil)}
-            onChange={(event) => setValue(event.target.value)}
-            aria-label="Wake time"
           />
-          <p className="text-xs text-muted-foreground">{message}</p>
+          <p className="text-xs text-muted-foreground" aria-live="polite">
+            {result.ok
+              ? `Returns to the sidebar ${describeWake(result.until, Date.now())}.`
+              : result.message}
+          </p>
           <DialogFooter>
             <Button type="button" variant="ghost" size="sm" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" size="sm" disabled={!valid}>
+            <Button type="submit" size="sm" disabled={!result.ok}>
               Snooze
             </Button>
           </DialogFooter>

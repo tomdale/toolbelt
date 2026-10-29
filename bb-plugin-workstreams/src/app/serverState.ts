@@ -6,6 +6,7 @@ import {
   DEFAULT_SNOOZE_PREFS,
   parseSnoozePrefs,
   type SnoozePrefs,
+  type SnoozePrefsPatch,
 } from "../domain/snooze.ts";
 import type { ServerState, ReorderChange } from "./useWorkstreams.ts";
 
@@ -40,7 +41,7 @@ class ServerStore {
   private mutationVersion = 0;
   private mutationNeedsReconcile = false;
   private pendingReorders = new Map<number, ReorderChange>();
-  private pendingPrefs = new Map<number, Partial<SnoozePrefs>>();
+  private pendingPrefs = new Map<number, SnoozePrefsPatch>();
   private latestReorderResponse = 0;
   private latestPrefsResponse = 0;
 
@@ -95,6 +96,7 @@ class ServerStore {
             order: normalizeOrder(state.order),
             snoozePrefs: parseSnoozePrefs(state.snoozePrefs),
             ready: true,
+            loaded: true,
           });
           this.pendingReorders.clear();
           this.pendingPrefs.clear();
@@ -213,7 +215,7 @@ class ServerStore {
   };
 
   /** Saves Snooze settings for every consumer with immediate local feedback. */
-  saveSnoozePrefs = async (patch: Partial<SnoozePrefs>): Promise<void> => {
+  saveSnoozePrefs = async (patch: SnoozePrefsPatch): Promise<void> => {
     const mutationVersion = this.beginMutation();
     this.pendingPrefs.set(mutationVersion, patch);
     this.publish({

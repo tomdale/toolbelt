@@ -1,7 +1,7 @@
 /**
  * Snooze in the thread header: a split button whose face snoozes with the
- * default choice (the Snooze settings section) and whose arrow lists every
- * choice. A snoozed thread shows when it wakes instead, with Wake now in its
+ * default preset (the Snooze settings section) and whose arrow lists every
+ * preset and Custom…. A snoozed thread shows when it wakes instead, with Wake now in its
  * menu. BB's own thread menu takes no plugin items, so this is the header's
  * snooze entry point, alongside the command palette.
  */
@@ -15,6 +15,7 @@ import { Icon } from "@/components/ui/icon";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 import { cn } from "@/lib/utils";
 import {
+  defaultPreset,
   describeWake,
   isSnoozed,
   shortWake,
@@ -23,6 +24,7 @@ import {
 import { useNow, useServerState } from "../useWorkstreams.ts";
 import { snoozeThreads, wakeThreads } from "./actions.ts";
 import { CustomSnoozeDialog } from "./CustomSnoozeDialog.tsx";
+import type { SnoozeDraftKind } from "./RuleFields.tsx";
 import { SnoozeIcon } from "./icons.tsx";
 import { SnoozeMenuItems, snoozeMenuContentClass } from "./SnoozeMenuItems.tsx";
 import { Hint } from "../Hint.tsx";
@@ -45,10 +47,10 @@ export function SnoozeHeaderAction({
     experimental_lifecycles: ["active"],
   });
   const portalScope = usePortalScopeProps();
-  const [picking, setPicking] = useState(false);
+  const [custom, setCustom] = useState<SnoozeDraftKind | null>(null);
   const thread = threads.find((t) => t.id === threadId);
   const prefs = server.snoozePrefs;
-  const preset = prefs.default;
+  const preset = defaultPreset(prefs);
   const now = useNow();
   const stored = server.snoozes[threadId];
   const snooze = thread && isSnoozed(stored, thread, now) ? stored : undefined;
@@ -57,8 +59,7 @@ export function SnoozeHeaderAction({
     if (thread)
       snoozeThreads(setSnoozes, [thread], until, { previous: () => snooze });
   };
-  const snoozeDefault = () =>
-    snoozeUntil(wakeTime(preset, Date.now(), prefs.morningHour));
+  const snoozeDefault = () => snoozeUntil(wakeTime(preset.rule, Date.now()));
   const wake = () => {
     if (thread) wakeThreads(setSnoozes, [thread]);
   };
@@ -77,7 +78,7 @@ export function SnoozeHeaderAction({
   // to snooze them out of.
   if (!thread) return null;
 
-  const defaultTitle = `Snooze ${describeWake(wakeTime(preset, now, prefs.morningHour), now)}`;
+  const defaultTitle = `Snooze ${describeWake(wakeTime(preset.rule, now), now)}`;
   const menu = (
     <DropdownMenu.Portal>
       <DropdownMenu.Content
@@ -88,12 +89,11 @@ export function SnoozeHeaderAction({
       >
         <SnoozeMenuItems
           now={now}
-          preset={preset}
-          morningHour={prefs.morningHour}
+          prefs={prefs}
           snooze={snooze}
           onSnooze={snoozeUntil}
           onWake={wake}
-          onPick={() => setPicking(true)}
+          onCustom={setCustom}
         />
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
@@ -159,10 +159,10 @@ export function SnoozeHeaderAction({
         </div>
       )}
       <CustomSnoozeDialog
-        open={picking}
-        onClose={() => setPicking(false)}
+        open={custom !== null}
+        kind={custom ?? undefined}
+        onClose={() => setCustom(null)}
         onSubmit={snoozeUntil}
-        morningHour={prefs.morningHour}
       />
     </>
   );

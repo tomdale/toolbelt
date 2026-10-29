@@ -224,10 +224,10 @@ Select **Workstreams** as your sidebar thread list to organize threads into:
      to open the composer pre-seeded with that topic.
    - Click **Snooze** (alarm-clock icon) on a header or subgroup header to
      snooze every thread it lists with your default preset, subgroups included
-     and whether or not it is collapsed; rest the pointer on it for the
-     quick-snooze menu. Each root thread is snoozed with its delegate subtree,
-     as if snoozed from its own row, and **Undo** in the confirmation wakes them
-     all. The button appears only while the header lists threads.
+     and whether or not it is collapsed; rest the pointer on it for the snooze
+     menu. Each root thread is snoozed with its delegate subtree, as if snoozed
+     from its own row, and **Undo** in the confirmation wakes them all. The
+     button appears only while the header lists threads.
    - Use the **Sort workstreams** menu to order workstreams by **Name A–Z**,
      **Recent activity**, or **Manual order** (drag headers within their tier).
    - Drag root threads within a workstream to set manual thread order (newly
@@ -253,9 +253,9 @@ Select **Workstreams** as your sidebar thread list to organize threads into:
   glyphs (`◆` Needs your decision, `◇` Ready for your review, `⏸︎` Blocked on
   something else, `✓` Complete from agent recap, `↻` Waiting from agent recap).
 - **Hover actions:** **Archive** and **Snooze** (click to snooze with your
-  default preset; rest the pointer for `350 ms` to open the quick-snooze menu,
-  or click **Wake now** on a snoozed row). Thread rows and workstream headers
-  share one set of buttons: they appear while the row is hovered, holds keyboard
+  default preset; rest the pointer for `350 ms` to open the snooze menu, or
+  click **Wake now** on a snoozed row). Thread rows and workstream headers share
+  one set of buttons: they appear while the row is hovered, holds keyboard
   focus, or has a menu open, take no room otherwise, and come in one order
   everywhere: **Focus**, **New work**, **Archive**, then **Snooze** or **Wake
   now** last. A focused workstream's **Focus** mark and an empty workstream's
@@ -295,8 +295,8 @@ enabled), Workstreams replaces BB's flat Recent list on the Home screen with:
     features observed across Full analysis runs for the thread, with run counts
     and first/last-seen timestamps on hover.
   - **Snooze:** Split button on desktop (one-click default snooze + chevron menu
-    for all presets and **Pick a date and time…**) or menu button on phones;
-    shows **Snoozed \<time\>** with a **Wake now** option while snoozed.
+    for all presets and **Custom…**) or menu button on phones; shows **Snoozed
+    \<time\>** with a **Wake now** option while snoozed.
   - **Archive** (on by default): Archives the current thread through BB's
     archive flow.
 
@@ -404,18 +404,26 @@ Open **Workstreams** in the main navigation panel to access four tabs:
 
 Threads can be snoozed from the sidebar hover button, the sidebar right-click
 menu, the thread header, or the command palette, and a whole workstream's
-threads at once from its sidebar header:
+threads at once from its sidebar header. Every snooze menu lists your presets in
+order, then **Custom…**; clicking a snooze button uses the default preset.
 
-| Preset                            | Wake rule                                               |
-| --------------------------------- | ------------------------------------------------------- |
-| **30 minutes** (`30m`)            | `30` minutes from now.                                  |
-| **1 hour** (`1h`)                 | `1` hour from now.                                      |
-| **3 hours** (`3h`)                | `3` hours from now.                                     |
-| **Tomorrow morning** (`tomorrow`) | Next day at **Mornings start at** (default `9:00 AM`).  |
-| **This weekend** (`weekend`)      | Coming Saturday at **Mornings start at** (never today). |
-| **Next week** (`next-week`)       | Coming Monday at **Mornings start at** (never today).   |
-| **Until it updates** (`activity`) | Wakes on the thread's next activity (`until: null`).    |
-| **Pick a date and time…**         | Custom future timestamp (up to `366` days out).         |
+You keep between `1` and `6` presets in **Settings → Workstreams → Snooze**.
+Each preset has an optional label (an empty label names it by its rule) and one
+rule, which resolves to a wake time at the moment you choose it:
+
+| Rule          | Wakes                                                                                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Duration**  | That many minutes or hours from now (up to `999`), or that many days from now at the same clock time (up to `365`).                                                            |
+| **Time**      | At a clock time on **Today** (tomorrow once that time has passed), **Tomorrow**, **Next workday** (Friday through Sunday wake on Monday), or the coming weekday (never today). |
+| **On update** | On the thread's next activity (`until: null`).                                                                                                                                 |
+
+The defaults are **1 hour**, **Tomorrow morning** (tomorrow at `9 AM`, the
+default), **Next week** (Monday at `9 AM`), and **Until it updates**.
+
+**Custom…** opens a submenu for a one-off snooze with the same rules (**For a
+duration…**, **At a time…**, **Until it updates**) plus **On a date…**, which
+picks any date and time up to `366` days out. Editing a preset never moves a
+thread that is already snoozed: a snooze stores only its wake time.
 
 - Snoozing a root removes the root and its entire delegate subtree from its
   workstream and from **Up Next** / **Recent**, placing them in the **Snoozed**
@@ -448,9 +456,7 @@ Open **Settings → Workstreams** to configure:
 | **Recap**             | **Reminders**                                      | `3` (`0–10`)                                | Maximum turn-end reminders sent when an enrolled agent omits a recap (`0` disables reminders).                                                                                 |
 | **Recap**             | **Layout**                                         | `Full` (`Full` / `Compact`)                 | Card layout on desktop (`Compact` is always used on phones), with a live preview carousel.                                                                                     |
 | **Recap**             | **Commit hash colors**                             | Theme default                               | Custom `#rrggbb` colors for commit-hash digits and letters, with **Reset**.                                                                                                    |
-| **Snooze**            | **Click to snooze**                                | `Tomorrow morning`                          | Default preset triggered by clicking the snooze button face.                                                                                                                   |
-| **Snooze**            | **Hover menu**                                     | `1h`, `tomorrow`, `next-week`, `activity`   | Up to `4` quick presets shown when hovering the sidebar snooze button (`Pick a date and time…` is always included).                                                            |
-| **Snooze**            | **Mornings start at**                              | `9 AM` (`5 AM–12 PM`)                       | Wake hour for `Tomorrow morning`, `This weekend`, and `Next week`.                                                                                                             |
+| **Snooze**            | **Presets**                                        | `4` presets, **Tomorrow morning** default   | `1–6` presets every snooze menu lists before **Custom…**: add, edit, delete, drag to reorder, and choose the **Default** a click uses.                                         |
 | **New threads**       | **Home project**                                   | `Don't work in a project`                   | Default project used for background worker fallback when a thread has no project.                                                                                              |
 | **New threads**       | **Suggestions while typing**                       | `On`                                        | Runs Quick analysis on composer drafts while typing.                                                                                                                           |
 | **New threads**       | **Quick analysis model**                           | `openai/gpt-6-luna-fast` (reasoning `none`) | Model used for composer draft previews and first-send Quick analysis (remains active when typing suggestions are off because first-send analysis still uses it).               |

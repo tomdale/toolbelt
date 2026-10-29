@@ -506,7 +506,7 @@ export const rpcContract = defineRpcContract({
       order: orderSchema,
       /** Snoozed threads, by id (see domain/snooze.ts). */
       snoozes: z.record(z.string(), snoozeSchema).default({}),
-      /** What a click snoozes for, the hover menu's choices, and morning. */
+      /** The snooze presets every menu lists, and which one a click uses. */
       snoozePrefs: snoozePrefsSchema,
       catalog: catalogStateSchema.default({
         entities: [],

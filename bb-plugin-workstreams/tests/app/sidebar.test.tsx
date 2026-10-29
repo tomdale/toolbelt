@@ -13,6 +13,33 @@ import {
   type PluginThreadListProps,
 } from "@get-bb/plugin-sdk/app";
 import { emptyState, section, sidebarThread } from "./fixtures.ts";
+import type { SnoozePreset } from "../../src/domain/snooze.ts";
+
+/** Snooze settings listing these presets, the first of them the default. */
+const snoozeSettings = (...presets: SnoozePreset[]) => ({
+  presets,
+  default: presets[0]!.id,
+});
+const threeHours: SnoozePreset = {
+  id: "3h",
+  label: "",
+  rule: { kind: "duration", amount: 3, unit: "hours" },
+};
+const thirtyMinutes: SnoozePreset = {
+  id: "30m",
+  label: "",
+  rule: { kind: "duration", amount: 30, unit: "minutes" },
+};
+const untilUpdate: SnoozePreset = {
+  id: "activity",
+  label: "",
+  rule: { kind: "activity" },
+};
+const weekend: SnoozePreset = {
+  id: "weekend",
+  label: "This weekend",
+  rule: { kind: "time", day: "saturday", hour: 9, minute: 0 },
+};
 
 beforeEach(() => window.localStorage.clear());
 afterEach(cleanup);
@@ -1774,7 +1801,7 @@ describe("snoozing", () => {
   it("snoozes with the default choice from the row's hover button", async () => {
     const slot = await mount(threads(), {
       settings: { showRecent: false },
-      snoozePrefs: { default: "3h" },
+      snoozePrefs: snoozeSettings(threeHours, untilUpdate),
     });
     const alpha = await waitFor(() =>
       slot.getByRole("region", { name: "Alpha" }),
@@ -1842,7 +1869,7 @@ describe("snoozing a workstream row", () => {
   it("snoozes every thread the row lists with the default choice", async () => {
     const slot = await mount(threads(), {
       settings: { showRecent: false, showForYou: false },
-      snoozePrefs: { default: "3h" },
+      snoozePrefs: snoozeSettings(threeHours, untilUpdate),
     });
     const alpha = await waitFor(() =>
       slot.getByRole("region", { name: "Alpha" }),
@@ -1878,10 +1905,10 @@ describe("snoozing a workstream row", () => {
     slot.lifecycle.unmount();
   });
 
-  it("offers the quick choices under a heading naming the batch", async () => {
+  it("offers the presets under a heading naming the batch", async () => {
     const slot = await mount(threads(), {
       settings: { showRecent: false, showForYou: false },
-      snoozePrefs: { quick: ["30m", "activity"] },
+      snoozePrefs: snoozeSettings(thirtyMinutes, untilUpdate),
     });
     const alpha = await waitFor(() =>
       slot.getByRole("region", { name: "Alpha" }),
@@ -1897,9 +1924,9 @@ describe("snoozing a workstream row", () => {
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
     ).toEqual([
-      expect.stringMatching(/^30 minutes/),
+      expect.stringMatching(/^30 minutes\(default\)/),
       "Until it updates",
-      "Pick a date and time…",
+      "Custom…",
     ]);
     fireEvent.click(
       within(menu).getByRole("menuitem", { name: "Until it updates" }),
@@ -1994,10 +2021,10 @@ describe("row hover buttons", () => {
   const snoozeButton = (row: HTMLElement) =>
     within(row).getByRole("button", { name: /^Snooze until/ });
 
-  it("opens the quick choices when the pointer rests on the snooze button", async () => {
+  it("opens the presets when the pointer rests on the snooze button", async () => {
     const slot = await mount(undefined, {
       settings: { showRecent: false },
-      snoozePrefs: { quick: ["30m", "weekend"] },
+      snoozePrefs: snoozeSettings(thirtyMinutes, weekend),
     });
     const button = snoozeButton(await rowOf(slot));
     fireEvent.pointerEnter(button, { pointerType: "mouse" });
@@ -2010,7 +2037,7 @@ describe("row hover buttons", () => {
     ).toEqual([
       expect.stringMatching(/^30 minutes/),
       expect.stringMatching(/^This weekend/),
-      "Pick a date and time…",
+      "Custom…",
     ]);
     fireEvent.click(
       within(menu).getByRole("menuitem", { name: /^30 minutes/ }),
@@ -2077,6 +2104,100 @@ describe("row hover buttons", () => {
         true,
       ),
     );
+    slot.lifecycle.unmount();
+  });
+
+  it("opens Custom… as a submenu, from the pointer or the keyboard", async () => {
+    const slot = await mount(undefined, {
+      settings: { showRecent: false },
+      snoozePrefs: snoozeSettings(thirtyMinutes),
+    });
+    const button = snoozeButton(await rowOf(slot));
+    button.focus();
+    fireEvent.keyDown(button, { key: "ArrowDown" });
+    const menu = await screen.findByRole("menu");
+    const custom = within(menu).getByRole("menuitem", { name: "Custom…" });
+    // Arrow keys move among the menu's own items, ending on Custom….
+    fireEvent.keyDown(menu, { key: "End" });
+    expect(document.activeElement).toBe(custom);
+    fireEvent.keyDown(custom, { key: "ArrowRight" });
+    const submenu = await screen.findByRole("menu", { name: "Custom…" });
+    expect(custom.getAttribute("aria-expanded")).toBe("true");
+    const items = within(submenu).getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "For a duration…",
+      "At a time…",
+      "On a date…",
+      "Until it updates",
+    ]);
+    await waitFor(() => expect(document.activeElement).toBe(items[0]));
+    fireEvent.keyDown(items[0]!, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(items[3]);
+    // ArrowLeft closes only the submenu and returns to its item.
+    fireEvent.keyDown(items[3]!, { key: "ArrowLeft" });
+    expect(screen.queryByRole("menu", { name: "Custom…" })).toBeNull();
+    expect(document.activeElement).toBe(custom);
+    expect(screen.getByRole("menu")).toBe(menu);
+
+    // Clicking Custom… opens it without closing the menu; choosing a kind
+    // closes both and opens the dialog on it.
+    fireEvent.click(custom);
+    const reopened = await screen.findByRole("menu", { name: "Custom…" });
+    fireEvent.click(
+      within(reopened).getByRole("menuitem", { name: "On a date…" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("Wake time")).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
+  it("opens Custom… on hover and snoozes until an update from it", async () => {
+    const slot = await mount(undefined, {
+      settings: { showRecent: false },
+      snoozePrefs: snoozeSettings(thirtyMinutes),
+    });
+    const button = snoozeButton(await rowOf(slot));
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    const menu = await screen.findByRole("menu", {}, { timeout: 2000 });
+    const custom = within(menu).getByRole("menuitem", { name: "Custom…" });
+    fireEvent.pointerEnter(custom.parentElement!, { pointerType: "mouse" });
+    const submenu = await screen.findByRole("menu", { name: "Custom…" });
+    fireEvent.click(
+      within(submenu).getByRole("menuitem", { name: "Until it updates" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    const call = slot.inspection.rpcCalls.find((c) => c.method === "snooze")!;
+    expect(call.input).toMatchObject({ threadIds: ["root"], until: null });
+    slot.lifecycle.unmount();
+  });
+
+  it("offers the presets and Custom… in the right-click Snooze menu", async () => {
+    const slot = await mount(undefined, {
+      settings: { showRecent: false },
+      snoozePrefs: snoozeSettings(threeHours, weekend),
+    });
+    fireEvent.contextMenu(
+      within(slot.getByRole("region", { name: "Alpha" })).getByRole("link", {
+        name: "Root task",
+      }),
+    );
+    const trigger = await screen.findByRole("menuitem", { name: "Snooze" });
+    fireEvent.keyDown(trigger, { key: "ArrowRight" });
+    const submenu = await waitFor(() => {
+      const menus = screen.getAllByRole("menu");
+      expect(menus.length).toBeGreaterThan(1);
+      return menus.at(-1)!;
+    });
+    expect(
+      within(submenu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      expect.stringMatching(/^3 hours\(default\)/),
+      expect.stringMatching(/^This weekend/),
+      "Custom…",
+    ]);
     slot.lifecycle.unmount();
   });
 

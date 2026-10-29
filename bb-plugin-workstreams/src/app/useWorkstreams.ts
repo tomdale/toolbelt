@@ -32,6 +32,12 @@ export type ServerState = {
    * server holds; surfaces that would draw a wrong first frame wait for it.
    */
   ready?: boolean;
+  /**
+   * A read of plugin state has succeeded, so the fields hold what the server
+   * stored rather than empty defaults. Editors that save whole values, such
+   * as the snooze preset list, wait for it so a default can't replace them.
+   */
+  loaded?: boolean;
   workstreams: Record<string, MapRecord>;
   analysis: Record<string, StoredAnalysis>;
   /** Agent recaps for each thread's latest turn. */

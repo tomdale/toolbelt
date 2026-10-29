@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from "vitest";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { emptyState, sidebarThread } from "./fixtures.ts";
+import { DEFAULT_SNOOZE_PREFS } from "../../src/domain/snooze.ts";
 
 afterEach(cleanup);
 
@@ -28,7 +35,7 @@ async function mount({
         state: () => ({
           ...emptyState(),
           snoozes: { ...currentSnoozes },
-          snoozePrefs: { default: "next-week" },
+          snoozePrefs: { ...DEFAULT_SNOOZE_PREFS, default: "next-week" },
         }),
         snooze: (raw: unknown) => {
           const until = (raw as { until: number | null }).until;
@@ -66,23 +73,51 @@ it("snoozes with the default choice in one click", async () => {
   slot.lifecycle.unmount();
 });
 
-it("offers every choice from the arrow", async () => {
+it("offers every preset and Custom… from the arrow", async () => {
   const slot = await mount();
   const arrow = await slot.findByRole("button", { name: "Snooze options" });
   fireEvent.pointerDown(arrow, { button: 0, ctrlKey: false });
   // The menu is portalled out of the slot.
   const menu = await screen.findByRole("menu", { name: "Snooze options" });
-  for (const label of [
-    "30 minutes",
-    "1 hour",
-    "3 hours",
-    "Tomorrow morning",
-    "This weekend",
-    "Next week",
+  expect(
+    within(menu)
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent),
+  ).toEqual([
+    expect.stringMatching(/^1 hour/),
+    expect.stringMatching(/^Tomorrow morning/),
+    expect.stringMatching(/^Next week\(default\)/),
     "Until it updates",
-    "Pick a date and time…",
-  ])
-    expect(menu.textContent).toContain(label);
+    "Custom…",
+  ]);
+  const custom = within(menu).getByRole("menuitem", { name: "Custom…" });
+  expect(custom.getAttribute("aria-haspopup")).toBe("menu");
+  fireEvent.keyDown(custom, { key: "ArrowRight" });
+  const submenu = await screen.findByRole("menu", { name: "Custom…" });
+  fireEvent.click(
+    within(submenu).getByRole("menuitem", { name: "For a duration…" }),
+  );
+  const dialog = await screen.findByRole("dialog");
+  expect(
+    within(dialog).getByRole("radio", { name: "Duration" }),
+  ).toHaveProperty("checked", true);
+  fireEvent.change(within(dialog).getByLabelText("Amount"), {
+    target: { value: "20" },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Unit"), {
+    target: { value: "minutes" },
+  });
+  const before = Date.now();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Snooze" }));
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls.some((c) => c.method === "snooze")).toBe(
+      true,
+    ),
+  );
+  const { until } = slot.inspection.rpcCalls.find((c) => c.method === "snooze")!
+    .input as { until: number };
+  expect(until - before).toBeGreaterThanOrEqual(20 * 60_000);
+  expect(until - before).toBeLessThan(20 * 60_000 + 5_000);
   slot.lifecycle.unmount();
 });
 

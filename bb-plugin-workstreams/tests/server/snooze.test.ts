@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import { fakeWorld } from "./fake-bb.ts";
+import { DEFAULT_SNOOZE_PREFS } from "../../src/domain/snooze.ts";
 
 const worlds: Awaited<ReturnType<typeof fakeWorld>>[] = [];
 afterEach(async () => {
@@ -66,10 +67,18 @@ it("snoozes a batch together, leaving out threads that are archived or gone", as
 
 it("refuses wake times in the past or over a year out", async () => {
   const w = await world();
-  for (const until of [Date.now() - 1, Date.now() + 400 * 86_400_000])
-    await expect(
-      w.harness.behavior.callRpc("snooze", { threadIds: ["t1"], until }),
-    ).rejects.toThrow(/next year/);
+  await expect(
+    w.harness.behavior.callRpc("snooze", {
+      threadIds: ["t1"],
+      until: Date.now() - 1,
+    }),
+  ).rejects.toThrow("Pick a time in the future.");
+  await expect(
+    w.harness.behavior.callRpc("snooze", {
+      threadIds: ["t1"],
+      until: Date.now() + 400 * 86_400_000,
+    }),
+  ).rejects.toThrow("Pick a time in the next year.");
 });
 
 it("wakes a snoozed thread when the user sends it a message", async () => {
@@ -139,7 +148,7 @@ it("clears a thread pin and snooze when the thread is archived", async () => {
   expect(w.threads.get("t1")?.pinnedAt).toBeNull();
 });
 
-it("stores Snooze settings, repairs bad values, and returns them in state", async () => {
+it("stores snooze presets, rejects bad changes, and returns them in state", async () => {
   const w = await world();
   const state = async () =>
     (
@@ -147,30 +156,41 @@ it("stores Snooze settings, repairs bad values, and returns them in state", asyn
         snoozePrefs: unknown;
       }
     ).snoozePrefs;
-  expect(await state()).toEqual({
-    default: "tomorrow",
-    quick: ["1h", "tomorrow", "next-week", "activity"],
-    morningHour: 9,
-  });
+  expect(await state()).toEqual(DEFAULT_SNOOZE_PREFS);
+  const presets = [
+    {
+      id: "evening",
+      label: "This evening",
+      rule: { kind: "time", day: "today", hour: 18, minute: 0 },
+    },
+    {
+      id: "nap",
+      label: "",
+      rule: { kind: "duration", amount: 20, unit: "minutes" },
+    },
+  ];
   const { prefs } = (await w.harness.behavior.callRpc("setSnoozePrefs", {
-    patch: { default: "3h", quick: ["activity", "30m"], morningHour: 7 },
+    patch: { presets, default: "nap" },
   })) as { prefs: unknown };
-  expect(prefs).toEqual({
-    default: "3h",
-    quick: ["30m", "activity"],
-    morningHour: 7,
-  });
+  expect(prefs).toEqual({ presets, default: "nap" });
+  // Dropping the default preset moves the default to the first.
   await w.harness.behavior.callRpc("setSnoozePrefs", {
-    patch: { morningHour: 11 },
+    patch: { presets: presets.slice(0, 1) },
   });
   expect(await state()).toEqual({
-    default: "3h",
-    quick: ["30m", "activity"],
-    morningHour: 11,
+    presets: presets.slice(0, 1),
+    default: "evening",
   });
   await expect(
     w.harness.behavior.callRpc("setSnoozePrefs", {
       patch: { default: "someday" },
     }),
+  ).rejects.toThrow("That snooze preset no longer exists.");
+  await expect(
+    w.harness.behavior.callRpc("setSnoozePrefs", { patch: { presets: [] } }),
   ).rejects.toThrow();
+  expect(await state()).toEqual({
+    presets: presets.slice(0, 1),
+    default: "evening",
+  });
 });

@@ -7,9 +7,11 @@ import {
   isSnoozed,
   parseSnoozePrefs,
   type SnoozePrefs,
+  type SnoozePrefsPatch,
   type ThreadSnooze,
 } from "../domain/snooze.ts";
 import { getMeta, setMeta, type Database } from "./db.ts";
+import { UserError } from "./service.ts";
 
 const KEY = "thread-snoozes";
 const PREFS_KEY = "snooze-prefs";
@@ -22,12 +24,21 @@ export function loadSnoozePrefs(db: Database): SnoozePrefs {
   }
 }
 
-/** Merges `patch` into the stored preferences, dropping invalid values. */
+/**
+ * Merges `patch` into the stored preferences. A new default must name one of
+ * the presets; a preset list that drops the default moves it to the first.
+ */
 export function saveSnoozePrefs(
   db: Database,
-  patch: Partial<SnoozePrefs>,
+  patch: SnoozePrefsPatch,
 ): SnoozePrefs {
-  const saved = parseSnoozePrefs({ ...loadSnoozePrefs(db), ...patch });
+  const merged = { ...loadSnoozePrefs(db), ...patch };
+  if (
+    patch.default !== undefined &&
+    !merged.presets.some((preset) => preset.id === patch.default)
+  )
+    throw new UserError("That snooze preset no longer exists.");
+  const saved = parseSnoozePrefs(merged);
   setMeta(db, PREFS_KEY, JSON.stringify(saved));
   return saved;
 }

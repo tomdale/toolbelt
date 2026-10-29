@@ -8,6 +8,10 @@ import {
   type ServerState,
 } from "../../src/app/useWorkstreams.ts";
 import { ServerStateRealtime } from "../../src/app/serverState.ts";
+import { DEFAULT_SNOOZE_PREFS } from "../../src/domain/snooze.ts";
+
+/** The default presets without the first, so "1h" is gone. */
+const trimmedPresets = DEFAULT_SNOOZE_PREFS.presets.slice(1);
 
 const realtime = vi.hoisted(() => ({ active: new Set<object>() }));
 vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
@@ -49,11 +53,7 @@ function state(revision = 1): ServerState {
     lastReconciledAt: revision,
     order: { workstreams: [], threads: {}, prioritized: [] },
     snoozes: {},
-    snoozePrefs: {
-      default: "tomorrow",
-      quick: ["1h", "tomorrow", "next-week", "activity"],
-      morningHour: 9,
-    },
+    snoozePrefs: DEFAULT_SNOOZE_PREFS,
   };
 }
 
@@ -229,12 +229,14 @@ describe("shared server state", () => {
     await waitFor(() =>
       expect(consumers.get(0)!.server.bootstrapped).toBe(true),
     );
-    const first = consumers.get(0)!.saveSnoozePrefs({ morningHour: 8 });
-    const second = consumers.get(0)!.saveSnoozePrefs({ morningHour: 10 });
-    secondWrite.resolve({ prefs: { ...state().snoozePrefs, morningHour: 10 } });
-    firstWrite.resolve({ prefs: { ...state().snoozePrefs, morningHour: 8 } });
+    const first = consumers.get(0)!.saveSnoozePrefs({ default: "1h" });
+    const second = consumers.get(0)!.saveSnoozePrefs({ default: "activity" });
+    secondWrite.resolve({
+      prefs: { ...state().snoozePrefs, default: "activity" },
+    });
+    firstWrite.resolve({ prefs: { ...state().snoozePrefs, default: "1h" } });
     await Promise.all([first, second]);
-    expect(consumers.get(0)!.server.snoozePrefs.morningHour).toBe(10);
+    expect(consumers.get(0)!.server.snoozePrefs.default).toBe("activity");
   });
 
   it("re-reads a realtime change consumed during an active mutation", async () => {
@@ -282,7 +284,7 @@ describe("shared server state", () => {
       .mockImplementationOnce(() => recovery.promise)
       .mockResolvedValueOnce({
         ...state(2),
-        snoozePrefs: { ...state().snoozePrefs, morningHour: 6 },
+        snoozePrefs: { ...state().snoozePrefs, default: "next-week" },
       });
     const { consumers } = mount({
       read,
@@ -291,19 +293,20 @@ describe("shared server state", () => {
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     let pending!: Promise<void>;
     act(() => {
-      pending = consumers.get(0)!.saveSnoozePrefs({ morningHour: 22 });
+      pending = consumers.get(0)!.saveSnoozePrefs({ default: "gone" });
     });
-    // Preference parsing clamps invalid hours before the RPC starts.
-    expect(consumers.get(0)!.server.snoozePrefs.morningHour).toBe(12);
+    // Preference parsing moves a default naming no preset to the first
+    // before the RPC starts.
+    expect(consumers.get(0)!.server.snoozePrefs.default).toBe("1h");
     write.reject(failure);
     await expect(pending).rejects.toBe(failure);
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
     recovery.resolve({
       ...state(2),
-      snoozePrefs: { ...state().snoozePrefs, morningHour: 6 },
+      snoozePrefs: { ...state().snoozePrefs, default: "next-week" },
     });
     await waitFor(() =>
-      expect(consumers.get(0)!.server.snoozePrefs.morningHour).toBe(6),
+      expect(consumers.get(0)!.server.snoozePrefs.default).toBe("next-week"),
     );
   });
 
@@ -434,7 +437,7 @@ describe("shared server state", () => {
   it("publishes successful preference normalization to every consumer", async () => {
     const response = deferred<{ prefs: ServerState["snoozePrefs"] }>();
     const recovery = deferred<ServerState>();
-    const normalized = { ...state().snoozePrefs, morningHour: 7 };
+    const normalized = { ...state().snoozePrefs, default: "activity" };
     const read = vi.fn(async () => state(1));
     const { consumers } = mount({
       read,
@@ -443,12 +446,12 @@ describe("shared server state", () => {
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     let pending!: Promise<void>;
     act(() => {
-      pending = consumers.get(0)!.saveSnoozePrefs({ morningHour: 9 });
+      pending = consumers.get(0)!.saveSnoozePrefs({ default: "next-week" });
     });
     response.resolve({ prefs: normalized });
     await pending;
     for (const value of consumers.values())
-      expect(value.server.snoozePrefs.morningHour).toBe(7);
+      expect(value.server.snoozePrefs.default).toBe("activity");
     read.mockImplementationOnce(() => recovery.promise);
     const refresh = consumers.get(0)!.refresh();
     await waitFor(() =>
@@ -457,7 +460,7 @@ describe("shared server state", () => {
     recovery.resolve({ ...state(6), snoozePrefs: normalized });
     await refresh;
     for (const value of consumers.values())
-      expect(value.server.snoozePrefs.morningHour).toBe(7);
+      expect(value.server.snoozePrefs.default).toBe("activity");
   });
 
   it("preserves an older pending preference on an independent field", async () => {
@@ -474,23 +477,21 @@ describe("shared server state", () => {
     let second!: Promise<void>;
     act(() => {
       first = consumers.get(0)!.saveSnoozePrefs({ default: "activity" });
-      second = consumers.get(1)!.saveSnoozePrefs({ morningHour: 7 });
+      second = consumers.get(1)!.saveSnoozePrefs({ presets: trimmedPresets });
     });
     await act(async () => {
-      newer.resolve({ prefs: { ...state().snoozePrefs, morningHour: 7 } });
+      newer.resolve({
+        prefs: { ...state().snoozePrefs, presets: trimmedPresets },
+      });
       await second;
     });
     for (const value of consumers.values()) {
       expect(value.server.snoozePrefs.default).toBe("activity");
-      expect(value.server.snoozePrefs.morningHour).toBe(7);
+      expect(value.server.snoozePrefs.presets).toEqual(trimmedPresets);
     }
     committed = {
       ...state(2),
-      snoozePrefs: {
-        ...state().snoozePrefs,
-        default: "activity",
-        morningHour: 7,
-      },
+      snoozePrefs: { presets: trimmedPresets, default: "activity" },
     };
     await act(async () => {
       older.resolve({ prefs: committed.snoozePrefs });

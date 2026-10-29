@@ -45,6 +45,7 @@ import {
   saveSnoozePrefs,
   type StoredSnoozes,
 } from "./snooze.ts";
+import { MAX_SNOOZE_MS } from "../domain/snooze.ts";
 import { hasPrefs, loadPrefs, savePrefs, seedPrefs } from "./prefs.ts";
 import { gatewayModel, type ModelChoice } from "../domain/prefs.ts";
 import { runWorker as completeWithWorker } from "./inference/worker.ts";
@@ -53,9 +54,6 @@ export { rpcContract } from "./contract.ts";
 
 const RECONCILE_EVERY_MS = 60_000;
 const RECONCILE_DEBOUNCE_MS = 1_500;
-
-/** The furthest out a snooze can wake. */
-const MAX_SNOOZE_MS = 366 * 24 * 60 * 60 * 1000;
 
 export default async function plugin(bb: BbPluginApi) {
   const db = openDatabase(bb);
@@ -888,15 +886,18 @@ export default async function plugin(bb: BbPluginApi) {
       snoozePrefs: loadSnoozePrefs(db),
       catalog: topics.state(),
     }),
-    setSnoozePrefs: async ({ patch }) => {
-      const prefs = saveSnoozePrefs(db, patch);
-      notify();
-      return { prefs };
-    },
+    setSnoozePrefs: ({ patch }) =>
+      userFacing(async () => {
+        const prefs = saveSnoozePrefs(db, patch);
+        notify();
+        return { prefs };
+      }),
     snooze: ({ threadIds, until }) =>
       userFacing(async () => {
         const now = Date.now();
-        if (until !== null && (until <= now || until > now + MAX_SNOOZE_MS))
+        if (until !== null && until <= now)
+          throw new UserError("Pick a time in the future.");
+        if (until !== null && until > now + MAX_SNOOZE_MS)
           throw new UserError("Pick a time in the next year.");
         // A batch comes from a sidebar row, which can list a thread that was
         // archived or deleted a moment ago; that one is left out.

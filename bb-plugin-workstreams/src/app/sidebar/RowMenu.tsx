@@ -9,19 +9,26 @@ import { Icon } from "@/components/ui/icon";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 import { cn } from "@/lib/utils";
 import { useDebugMode } from "../debug/debug.ts";
-import { snoozeChoices, type ThreadSnooze } from "../../domain/snooze.ts";
+import type { SnoozePrefs, ThreadSnooze } from "../../domain/snooze.ts";
 import { compareGroupNames } from "../../domain/group-name-order.ts";
 import { topicPath } from "../../domain/topic-path.ts";
 import { useSharedServerState } from "../serverState.ts";
 import { isAutomaticTopic } from "../task/TaskIdentity.tsx";
+import type { SnoozeDraftKind } from "../snooze/RuleFields.tsx";
+import {
+  SnoozeMenuItems,
+  SubLabel,
+  snoozeMenuContentClass,
+  type MenuKit,
+} from "../snooze/SnoozeMenuItems.tsx";
 
 export type RowMenuHandlers = {
   rename: (thread: PluginSidebarThread) => void;
   openParent: (thread: PluginSidebarThread) => void;
   /** Snoozes until a time, or (null) until the thread's next activity. */
   snooze: (thread: PluginSidebarThread, until: number | null) => void;
-  /** Opens the date-and-time picker. */
-  customSnooze: (thread: PluginSidebarThread) => void;
+  /** Opens the Custom… snooze dialog on `kind`. */
+  customSnooze: (thread: PluginSidebarThread, kind: SnoozeDraftKind) => void;
   wake: (thread: PluginSidebarThread) => void;
   /** Debug mode: opens the thread's model calls. */
   inspect: (thread: PluginSidebarThread) => void;
@@ -41,7 +48,7 @@ export function RowMenu({
   sections,
   handlers,
   snooze,
-  morningHour,
+  snoozePrefs,
   showArchive = true,
   children,
 }: {
@@ -52,8 +59,8 @@ export function RowMenu({
   handlers: RowMenuHandlers;
   /** The thread's snooze, while it holds. */
   snooze?: ThreadSnooze;
-  /** When "morning" choices wake (the Snooze settings). */
-  morningHour: number;
+  /** The snooze presets to offer (the Snooze settings). */
+  snoozePrefs: SnoozePrefs;
   showArchive?: boolean;
   children: ReactNode;
 }) {
@@ -204,23 +211,14 @@ export function RowMenu({
                 {...portalScope}
                 className="z-50 min-w-56 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
               >
-                {snoozeChoices(Date.now(), { morningHour }).map((choice) => (
-                  <Item
-                    key={choice.id}
-                    onSelect={() => handlers.snooze(thread, choice.until)}
-                  >
-                    <span className="flex-1">{choice.label}</span>
-                    {choice.hint ? (
-                      <span className="ml-4 text-xs text-muted-foreground">
-                        {choice.hint}
-                      </span>
-                    ) : null}
-                  </Item>
-                ))}
-                <Separator />
-                <Item onSelect={() => handlers.customSnooze(thread)}>
-                  Pick a date and time…
-                </Item>
+                <SnoozeMenuItems
+                  kit={contextMenuKit}
+                  now={Date.now()}
+                  prefs={snoozePrefs}
+                  snooze={snooze}
+                  onSnooze={(until) => handlers.snooze(thread, until)}
+                  onCustom={(kind) => handlers.customSnooze(thread, kind)}
+                />
               </ContextMenu.SubContent>
             </ContextMenu.Portal>
           </ContextMenu.Sub>
@@ -286,3 +284,38 @@ function SubTrigger({ children }: { children: ReactNode }) {
 function Separator() {
   return <ContextMenu.Separator className="my-1 h-px bg-border" />;
 }
+
+/** Snooze menu items inside this right-click menu (see `SnoozeMenuItems`). */
+const contextMenuKit: MenuKit = {
+  Item: ({ onSelect, children }) => <Item onSelect={onSelect}>{children}</Item>,
+  Label: ({ children }) => (
+    <ContextMenu.Label className="px-2 py-1.5 text-xs text-muted-foreground">
+      {children}
+    </ContextMenu.Label>
+  ),
+  Separator,
+  Sub: function ContextSub({ label, children }) {
+    const portalScope = usePortalScopeProps();
+    return (
+      <ContextMenu.Sub>
+        <ContextMenu.SubTrigger
+          className={cn(
+            itemClass,
+            "data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
+          )}
+        >
+          <SubLabel>{label}</SubLabel>
+        </ContextMenu.SubTrigger>
+        <ContextMenu.Portal>
+          <ContextMenu.SubContent
+            {...portalScope}
+            collisionPadding={8}
+            className={snoozeMenuContentClass}
+          >
+            {children}
+          </ContextMenu.SubContent>
+        </ContextMenu.Portal>
+      </ContextMenu.Sub>
+    );
+  },
+};

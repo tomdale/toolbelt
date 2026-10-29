@@ -63,9 +63,9 @@ policies apply to conversation excerpts sent for analysis.
 - **Short labels:** “On update” is the compact version of “Until it updates”;
   “New threads” names a settings section while “New work…” is an action. These
   are not separate features or state values.
-- **Snooze dates:** Weekend and next-week presets are always future days.
-  Choosing This weekend on Saturday means next Saturday; use a custom time for
-  the current day.
+- **Snooze dates:** A weekday rule is always a future day: Saturday at 9 AM
+  chosen on a Saturday means next Saturday. Use a Today rule or Custom… for the
+  current day.
 - **Activity compatibility values:** Old proposal action/link kinds remain
   readable because retained Activity rows and traces can still use them.
 - **Retitle enablement checks:** Re-checking title settings after awaited SDK
@@ -80,8 +80,9 @@ policies apply to conversation excerpts sent for analysis.
 - Activity debug filters and empty states: `tests/app/activity-debug.test.tsx`.
 - Overview search counts: `tests/app/page.test.tsx`.
 - Setting-save errors and title-lock copy: `tests/app/settings.test.tsx`.
-- Snooze defaults and valid custom dates:
-  `tests/app/custom-snooze-dialog.test.tsx`.
+- Snooze rules, preset repair, and valid custom snoozes:
+  `tests/domain/snooze.test.ts`, `tests/app/custom-snooze-dialog.test.tsx`,
+  `tests/app/snooze-settings.test.tsx`.
 - Question answer limits and attachment availability: `tests/app/question/`.
 - Sidebar ordering/drop affordances and shared band preferences:
   `tests/app/drop.test.ts`, `tests/app/sidebar.test.tsx`.

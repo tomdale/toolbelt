@@ -17,6 +17,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 import { cn } from "@/lib/utils";
 import { Hint } from "../Hint.tsx";
+import { ownMenuItems } from "../snooze/SnoozeMenuItems.tsx";
 
 /** How long the pointer rests on the button before its menu opens. */
 export const MENU_OPEN_DELAY_MS = 350;
@@ -125,9 +126,11 @@ export function HoverAction({
  * keyboard, Enter runs `onClick` and ArrowDown opens the menu.
  *
  * `menu` is a list of `role="menuitem"` buttons (see `plainMenuKit`);
- * choosing one closes the menu. A hover-opened menu leaves focus where it
- * was, say in the composer, when it opens and closes. A keyboard-opened one
- * moves focus to its first item and back to the button on close.
+ * choosing one closes the menu, except an item that opens a submenu. A
+ * hover-opened menu leaves focus where it was, say in the composer, when it
+ * opens and closes. A keyboard-opened one moves focus to its first item and
+ * back to the button on close. Escape closes the menu, or only the submenu
+ * that has focus.
  */
 export function HoverMenuButton({
   label,
@@ -210,14 +213,21 @@ export function HoverMenuButton({
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             if (byKeyboard.current)
-              menuItems(event.currentTarget as HTMLElement)[0]?.focus();
+              ownMenuItems(event.currentTarget as HTMLElement)[0]?.focus();
           }}
           // `close` returns focus itself, only for a keyboard-opened menu.
           onCloseAutoFocus={(event) => event.preventDefault()}
+          // A focused submenu handles Escape itself, closing only itself.
+          onEscapeKeyDown={(event) => {
+            if (document.activeElement?.closest("[data-submenu]"))
+              event.preventDefault();
+          }}
           onKeyDown={moveFocus}
           onClick={(event) => {
-            if ((event.target as HTMLElement).closest('[role="menuitem"]'))
-              close();
+            const item = (event.target as HTMLElement).closest(
+              '[role="menuitem"]',
+            );
+            if (item && !item.hasAttribute("aria-haspopup")) close();
           }}
         >
           {menu}
@@ -227,13 +237,9 @@ export function HoverMenuButton({
   );
 }
 
-const menuItems = (root: HTMLElement) => [
-  ...root.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-];
-
-/** Arrow keys, Home, and End move between a menu's items. */
+/** Arrow keys, Home, and End move between a menu's own items. */
 function moveFocus(event: KeyboardEvent<HTMLElement>) {
-  const items = menuItems(event.currentTarget);
+  const items = ownMenuItems(event.currentTarget);
   if (!items.length) return;
   const at = items.indexOf(document.activeElement as HTMLElement);
   const next =
