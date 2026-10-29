@@ -166,17 +166,20 @@ async function mount(
       }),
       moveThread: () => ({ entry: null }),
       snooze: (raw: unknown) => {
-        const { threadId, until } = raw as {
-          threadId: string;
+        const { threadIds, until } = raw as {
+          threadIds: string[];
           until: number | null;
         };
-        snoozes[threadId] = { until, attentionAt: 0, at: Date.now() };
-        return { snooze: snoozes[threadId] };
+        for (const threadId of threadIds)
+          snoozes[threadId] = { until, attentionAt: 0, at: Date.now() };
+        return {
+          snoozes: Object.fromEntries(threadIds.map((id) => [id, snoozes[id]])),
+        };
       },
       unsnooze: (raw: unknown) => {
-        const { threadId } = raw as { threadId: string };
-        const woke = threadId in snoozes;
-        delete snoozes[threadId];
+        const { threadIds } = raw as { threadIds: string[] };
+        const woke = threadIds.filter((id) => id in snoozes);
+        for (const threadId of woke) delete snoozes[threadId];
         return { woke };
       },
       spinner: () => ({
@@ -1620,6 +1623,40 @@ describe("nested workstreams", () => {
     slot.lifecycle.unmount();
   });
 
+  it("snoozes a top-level group with its subgroups, and a subgroup alone", async () => {
+    const slot = await mount(nestedThreads(), options);
+    const top = () => slot.getByRole("region", { name: "Beacon: Automations" });
+    await waitFor(() =>
+      within(top()).getByRole("region", { name: "Beacon: Automations: CLI" }),
+    );
+    fireEvent.click(
+      within(top()).getByRole("button", {
+        name: /^Snooze 1 thread in Beacon: Automations: CLI until/,
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        within(top()).queryByRole("region", {
+          name: "Beacon: Automations: CLI",
+        }),
+      ).toBeNull(),
+    );
+    fireEvent.click(
+      within(top()).getByRole("button", {
+        name: /^Snooze 2 threads in Beacon: Automations until/,
+      }),
+    );
+    await waitFor(() =>
+      expect(within(top()).queryAllByRole("link")).toEqual([]),
+    );
+    expect(
+      slot.inspection.rpcCalls
+        .filter((call) => call.method === "snooze")
+        .map((call) => [...(call.input as { threadIds: string[] }).threadIds]),
+    ).toEqual([["commands"], ["mvp", "rebase"]]);
+    slot.lifecycle.unmount();
+  });
+
   it("focuses a top-level group with all its subgroups", async () => {
     const slot = await mount(nestedThreads(), options);
     await waitFor(() =>
@@ -1752,8 +1789,8 @@ describe("snoozing", () => {
       expect(groupRows(slot, "Alpha")).toEqual(["Napping task"]),
     );
     const call = slot.inspection.rpcCalls.find((c) => c.method === "snooze")!;
-    const input = call.input as { threadId: string; until: number };
-    expect(input.threadId).toBe("ask");
+    const input = call.input as { threadIds: string[]; until: number };
+    expect(input.threadIds).toEqual(["ask"]);
     expect(input.until - before).toBeGreaterThanOrEqual(3 * 3_600_000);
     expect(input.until - before).toBeLessThan(3 * 3_600_000 + 5_000);
     slot.lifecycle.unmount();
@@ -1780,9 +1817,122 @@ describe("snoozing", () => {
       slot.inspection.rpcCalls.some(
         (call) =>
           call.method === "unsnooze" &&
-          (call.input as { threadId?: string }).threadId === "nap",
+          (call.input as { threadIds: string[] }).threadIds.includes("nap"),
       ),
     ).toBe(true);
+    slot.lifecycle.unmount();
+  });
+});
+
+describe("snoozing a workstream row", () => {
+  const threads = () => [
+    sidebarThread("ask", { sectionId: "sec_a", title: "Asking task" }),
+    sidebarThread("nap", { sectionId: "sec_a", title: "Napping task" }),
+    sidebarThread("nap-child", {
+      parentThreadId: "nap",
+      title: "Nap child task",
+    }),
+    sidebarThread("other", { sectionId: "sec_b", title: "Other task" }),
+  ];
+  const snoozeCalls = (slot: Awaited<ReturnType<typeof mount>>) =>
+    slot.inspection.rpcCalls
+      .filter((call) => call.method === "snooze")
+      .map((call) => call.input as { threadIds: string[]; until: number });
+
+  it("snoozes every thread the row lists with the default choice", async () => {
+    const slot = await mount(threads(), {
+      settings: { showRecent: false, showForYou: false },
+      snoozePrefs: { default: "3h" },
+    });
+    const alpha = await waitFor(() =>
+      slot.getByRole("region", { name: "Alpha" }),
+    );
+    // A folded parent's child still counts: it leaves with its parent.
+    fireEvent.click(
+      within(alpha).getByRole("button", { name: "Hide child threads" }),
+    );
+    expect(groupRows(slot, "Alpha")).toEqual(["Asking task", "Napping task"]);
+    const before = Date.now();
+    fireEvent.click(
+      within(alpha).getByRole("button", {
+        name: /^Snooze 3 threads in Alpha until (?:tomorrow, )?\d/,
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        within(slot.getByRole("region", { name: "Alpha" })).queryAllByRole(
+          "link",
+        ),
+      ).toEqual([]),
+    );
+    const [call, ...rest] = snoozeCalls(slot);
+    expect(rest).toEqual([]);
+    // Roots only; each takes its children along and wakes with them.
+    expect([...call!.threadIds].sort()).toEqual(["ask", "nap"]);
+    expect(call!.until - before).toBeGreaterThanOrEqual(3 * 3_600_000);
+    expect(call!.until - before).toBeLessThan(3 * 3_600_000 + 5_000);
+    expect(groupRows(slot, "Beta")).toEqual(["Other task"]);
+    expect(
+      slot.getByRole("button", { name: /^Snoozed\d*$/ }).textContent,
+    ).toContain("2");
+    slot.lifecycle.unmount();
+  });
+
+  it("offers the quick choices under a heading naming the batch", async () => {
+    const slot = await mount(threads(), {
+      settings: { showRecent: false, showForYou: false },
+      snoozePrefs: { quick: ["30m", "activity"] },
+    });
+    const alpha = await waitFor(() =>
+      slot.getByRole("region", { name: "Alpha" }),
+    );
+    const button = within(alpha).getByRole("button", {
+      name: /^Snooze 3 threads in Alpha/,
+    });
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    const menu = await screen.findByRole("menu", {}, { timeout: 2000 });
+    expect(within(menu).getByText("Snooze 3 threads")).toBeTruthy();
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      expect.stringMatching(/^30 minutes/),
+      "Until it updates",
+      "Pick a date and time…",
+    ]);
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: "Until it updates" }),
+    );
+    await waitFor(() => expect(snoozeCalls(slot)).toHaveLength(1));
+    expect(snoozeCalls(slot)[0]).toMatchObject({ until: null });
+    expect([...snoozeCalls(slot)[0]!.threadIds].sort()).toEqual(["ask", "nap"]);
+    slot.lifecycle.unmount();
+  });
+
+  it("snoozes Unfiled, and has no button on a workstream with no threads", async () => {
+    const slot = await mount(
+      [...threads(), sidebarThread("loose", { title: "Loose task" })],
+      { settings: { showRecent: false, showForYou: false } },
+    );
+    const zeta = await waitFor(() =>
+      slot.getByRole("region", { name: "Zeta" }),
+    );
+    expect(within(zeta).queryByRole("button", { name: /^Snooze/ })).toBeNull();
+    fireEvent.click(
+      within(slot.getByRole("region", { name: "Unfiled" })).getByRole(
+        "button",
+        { name: /^Snooze 1 thread in Unfiled until/ },
+      ),
+    );
+    await waitFor(() =>
+      expect(snoozeCalls(slot)).toEqual([
+        expect.objectContaining({ threadIds: ["loose"] }),
+      ]),
+    );
+    await waitFor(() =>
+      expect(slot.queryByRole("region", { name: "Unfiled" })).toBeNull(),
+    );
     slot.lifecycle.unmount();
   });
 });
@@ -1867,7 +2017,7 @@ describe("row hover buttons", () => {
     );
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     const call = slot.inspection.rpcCalls.find((c) => c.method === "snooze")!;
-    expect(call.input).toMatchObject({ threadId: "root" });
+    expect(call.input).toMatchObject({ threadIds: ["root"] });
     slot.lifecycle.unmount();
   });
 

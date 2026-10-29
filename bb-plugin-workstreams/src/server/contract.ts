@@ -227,6 +227,9 @@ const spinnerSchema = z.object({
   secondary: z.union([spinnerColorSchema, z.enum(["auto", "none"])]),
 });
 
+/** The threads one snooze or wake call takes, up to a sidebar row's worth. */
+const snoozeIds = z.array(z.string().min(1)).min(1).max(500);
+
 const snoozeSchema = z.object({
   until: z.number().nullable(),
   attentionAt: z.number(),
@@ -529,25 +532,27 @@ export const rpcContract = defineRpcContract({
     }),
   },
   /**
-   * Snoozes a thread until a time, or (`until: null`) until its next
-   * activity. Snoozing again replaces the earlier snooze.
+   * Snoozes threads until a time, or (`until: null`) each until its next
+   * activity, with one change notification. Snoozing again replaces the
+   * earlier snooze. A thread that is archived or gone is skipped; the call
+   * fails only when none of them can be snoozed. Returns the snoozes stored.
    */
   snooze: {
     input: z.object({
-      threadId: z.string().min(1),
+      threadIds: snoozeIds,
       until: z.number().int().positive().nullable(),
     }),
-    output: z.object({ snooze: snoozeSchema }),
+    output: z.object({ snoozes: z.record(z.string(), snoozeSchema) }),
   },
   /** Saves the Snooze settings section's changes and tells every client. */
   setSnoozePrefs: {
     input: z.object({ patch: snoozePrefsPatchSchema }),
     output: z.object({ prefs: snoozePrefsSchema }),
   },
-  /** Wakes a snoozed thread now. */
+  /** Wakes snoozed threads now; returns the ones that were snoozed. */
   unsnooze: {
-    input: z.object({ threadId: z.string().min(1) }),
-    output: z.object({ woke: z.boolean() }),
+    input: z.object({ threadIds: snoozeIds }),
+    output: z.object({ woke: z.array(z.string()) }),
   },
   /**
    * Stores the sidebar's arrangement: every workstream top to bottom, the

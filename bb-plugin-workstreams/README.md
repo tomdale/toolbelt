@@ -222,6 +222,12 @@ Select **Workstreams** as your sidebar thread list to organize threads into:
      workstreams**.
    - Click **New work in \<workstream\>** (`＋`) on a header or subgroup header
      to open the composer pre-seeded with that topic.
+   - Click **Snooze** (alarm-clock icon) on a header or subgroup header to
+     snooze every thread it lists with your default preset, subgroups included
+     and whether or not it is collapsed; rest the pointer on it for the
+     quick-snooze menu. Each root thread is snoozed with its delegate subtree,
+     as if snoozed from its own row, and **Undo** in the confirmation wakes them
+     all. The button appears only while the header lists threads.
    - Use the **Sort workstreams** menu to order workstreams by **Name A–Z**,
      **Recent activity**, or **Manual order** (drag headers within their tier).
    - Drag root threads within a workstream to set manual thread order (newly
@@ -390,7 +396,8 @@ Open **Workstreams** in the main navigation panel to access four tabs:
 ## Snooze presets and wake behavior
 
 Threads can be snoozed from the sidebar hover button, the sidebar right-click
-menu, the thread header, or the command palette:
+menu, the thread header, or the command palette, and a whole workstream's
+threads at once from its sidebar header:
 
 | Preset                            | Wake rule                                               |
 | --------------------------------- | ------------------------------------------------------- |

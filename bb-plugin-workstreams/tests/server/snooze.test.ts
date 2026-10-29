@@ -23,29 +23,61 @@ const snoozes = async (w: Awaited<ReturnType<typeof world>>) =>
 it("stores snoozes with the thread's attention at the time", async () => {
   const w = await world();
   const until = Date.now() + 60_000;
-  await w.harness.behavior.callRpc("snooze", { threadId: "t1", until });
-  await w.harness.behavior.callRpc("snooze", { threadId: "t2", until: null });
+  await w.harness.behavior.callRpc("snooze", { threadIds: ["t1"], until });
+  await w.harness.behavior.callRpc("snooze", {
+    threadIds: ["t2"],
+    until: null,
+  });
   expect(await snoozes(w)).toMatchObject({
     t1: { until, attentionAt: 500 },
     t2: { until: null, attentionAt: 700 },
   });
   expect(
-    await w.harness.behavior.callRpc("unsnooze", { threadId: "t1" }),
-  ).toEqual({ woke: true });
+    await w.harness.behavior.callRpc("unsnooze", { threadIds: ["t1"] }),
+  ).toEqual({ woke: ["t1"] });
   expect(Object.keys(await snoozes(w))).toEqual(["t2"]);
+});
+
+it("snoozes a batch together, leaving out threads that are archived or gone", async () => {
+  const w = await world();
+  w.addThread("t3", { latestAttentionAt: 900, archivedAt: Date.now() });
+  const until = Date.now() + 60_000;
+  const published = w.harness.inspection.realtimeSignals.length;
+  const result = (await w.harness.behavior.callRpc("snooze", {
+    threadIds: ["t1", "t2", "t3", "gone"],
+    until,
+  })) as { snoozes: Record<string, unknown> };
+  expect(Object.keys(result.snoozes)).toEqual(["t1", "t2"]);
+  expect(await snoozes(w)).toMatchObject({
+    t1: { until, attentionAt: 500 },
+    t2: { until, attentionAt: 700 },
+  });
+  expect(w.harness.inspection.realtimeSignals.length - published).toBe(1);
+  await expect(
+    w.harness.behavior.callRpc("snooze", { threadIds: ["t3", "gone"], until }),
+  ).rejects.toThrow("Only active threads can be snoozed.");
+  expect(
+    await w.harness.behavior.callRpc("unsnooze", {
+      threadIds: ["t1", "t2", "t3"],
+    }),
+  ).toEqual({ woke: ["t1", "t2"] });
+  expect(await snoozes(w)).toEqual({});
 });
 
 it("refuses wake times in the past or over a year out", async () => {
   const w = await world();
   for (const until of [Date.now() - 1, Date.now() + 400 * 86_400_000])
     await expect(
-      w.harness.behavior.callRpc("snooze", { threadId: "t1", until }),
+      w.harness.behavior.callRpc("snooze", { threadIds: ["t1"], until }),
     ).rejects.toThrow(/next year/);
 });
 
 it("wakes a snoozed thread when the user sends it a message", async () => {
   const w = await world();
-  await w.harness.behavior.callRpc("snooze", { threadId: "t1", until: null });
+  await w.harness.behavior.callRpc("snooze", {
+    threadIds: ["t1"],
+    until: null,
+  });
   const hook = w.harness.registrations.hooks["message.dispatch"]!;
   await hook(
     makeMessageDispatchHookContext({
@@ -68,10 +100,13 @@ it("wakes a snoozed thread when the user sends it a message", async () => {
 it("sweeps ended snoozes, marking timed ones unread", async () => {
   const w = await world();
   await w.harness.behavior.callRpc("snooze", {
-    threadId: "t1",
+    threadIds: ["t1"],
     until: Date.now() + 30,
   });
-  await w.harness.behavior.callRpc("snooze", { threadId: "t2", until: null });
+  await w.harness.behavior.callRpc("snooze", {
+    threadIds: ["t2"],
+    until: null,
+  });
   await new Promise((resolve) => setTimeout(resolve, 40));
   // t2 had new activity; t1's time came.
   w.threads.set("t2", { ...w.threads.get("t2")!, latestAttentionAt: 900 });
@@ -86,7 +121,10 @@ it("clears a thread pin and snooze when the thread is archived", async () => {
     ...w.threads.get("t1")!,
     pinnedAt: Date.now(),
   });
-  await w.harness.behavior.callRpc("snooze", { threadId: "t1", until: null });
+  await w.harness.behavior.callRpc("snooze", {
+    threadIds: ["t1"],
+    until: null,
+  });
   await w.harness.behavior.emitThreadEvent("thread.archived", {
     thread: { ...w.threads.get("t1")!, archivedAt: Date.now() },
   } as never);

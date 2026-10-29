@@ -33,11 +33,11 @@ async function mount({
         snooze: (raw: unknown) => {
           const until = (raw as { until: number | null }).until;
           currentSnoozes.t1 = { until, attentionAt: 0, at: 0 };
-          return { snooze: currentSnoozes.t1 };
+          return { snoozes: { t1: currentSnoozes.t1 } };
         },
         unsnooze: () => {
           delete currentSnoozes.t1;
-          return { woke: true };
+          return { woke: ["t1"] };
         },
       },
     },

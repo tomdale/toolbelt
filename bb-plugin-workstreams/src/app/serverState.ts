@@ -180,25 +180,30 @@ class ServerStore {
     return next;
   }
 
-  /** `until: null` waits for activity; `wake` removes the snooze at once. */
-  setSnooze = async (
-    thread: { id: string; latestAttentionAt?: number },
+  /**
+   * Snoozes these threads together, or wakes them: `until: null` waits for
+   * each one's next activity; `wake` removes their snoozes at once.
+   */
+  setSnoozes = async (
+    threads: readonly { id: string; latestAttentionAt?: number }[],
     until: number | null | "wake",
   ): Promise<void> => {
+    if (!threads.length) return;
     this.beginMutation();
     const snoozes = { ...this.value.snoozes };
-    if (until === "wake") delete snoozes[thread.id];
-    else
-      snoozes[thread.id] = {
-        until,
-        attentionAt: thread.latestAttentionAt ?? Date.now(),
-        at: Date.now(),
-      };
+    for (const thread of threads)
+      if (until === "wake") delete snoozes[thread.id];
+      else
+        snoozes[thread.id] = {
+          until,
+          attentionAt: thread.latestAttentionAt ?? Date.now(),
+          at: Date.now(),
+        };
     this.publish({ ...this.value, snoozes });
+    const threadIds = threads.map((thread) => thread.id);
     try {
-      if (until === "wake")
-        await this.rpc.call("unsnooze", { threadId: thread.id });
-      else await this.rpc.call("snooze", { threadId: thread.id, until });
+      if (until === "wake") await this.rpc.call("unsnooze", { threadIds });
+      else await this.rpc.call("snooze", { threadIds, until });
     } catch (cause) {
       this.mutationNeedsReconcile = true;
       throw cause;
@@ -294,7 +299,7 @@ export function useSharedServerState() {
     server,
     refresh: store.refresh,
     reorder: store.reorder,
-    setSnooze: store.setSnooze,
+    setSnoozes: store.setSnoozes,
     saveSnoozePrefs: store.saveSnoozePrefs,
   };
 }

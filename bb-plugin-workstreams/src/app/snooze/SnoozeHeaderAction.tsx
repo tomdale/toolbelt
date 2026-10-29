@@ -21,7 +21,7 @@ import {
   wakeTime,
 } from "../../domain/snooze.ts";
 import { useNow, useServerState } from "../useWorkstreams.ts";
-import { snoozeThread, wakeThread } from "./actions.ts";
+import { snoozeThreads, wakeThreads } from "./actions.ts";
 import { CustomSnoozeDialog } from "./CustomSnoozeDialog.tsx";
 import { SnoozeIcon } from "./icons.tsx";
 import { SnoozeMenuItems, snoozeMenuContentClass } from "./SnoozeMenuItems.tsx";
@@ -40,7 +40,7 @@ export function SnoozeHeaderAction({
   threadId,
   isCompactViewport,
 }: PluginThreadHeaderActionProps) {
-  const { server, setSnooze } = useServerState();
+  const { server, setSnoozes } = useServerState();
   const { threads } = experimental_useSidebarThreads({
     experimental_lifecycles: ["active"],
   });
@@ -54,12 +54,13 @@ export function SnoozeHeaderAction({
   const snooze = thread && isSnoozed(stored, thread, now) ? stored : undefined;
 
   const snoozeUntil = (until: number | null) => {
-    if (thread) snoozeThread(setSnooze, thread, until, snooze);
+    if (thread)
+      snoozeThreads(setSnoozes, [thread], until, { previous: () => snooze });
   };
   const snoozeDefault = () =>
     snoozeUntil(wakeTime(preset, Date.now(), prefs.morningHour));
   const wake = () => {
-    if (thread) wakeThread(setSnooze, thread);
+    if (thread) wakeThreads(setSnoozes, [thread]);
   };
 
   useEffect(() => {

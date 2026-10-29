@@ -56,11 +56,14 @@ export function HoverMenuButton({
   label,
   onClick,
   menu,
+  className,
   children,
 }: {
   label: string;
   onClick: () => void;
   menu: ReactNode;
+  /** Restyles the button, as a workstream header's quieter one does. */
+  className?: string;
   children: ReactNode;
 }) {
   const portalScope = usePortalScopeProps();
@@ -89,6 +92,7 @@ export function HoverMenuButton({
         <HoverButton
           ref={button}
           label={label}
+          className={className}
           aria-haspopup="menu"
           aria-expanded={open}
           data-state={open ? "open" : "closed"}

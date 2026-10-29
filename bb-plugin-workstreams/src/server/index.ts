@@ -39,7 +39,12 @@ import {
   recapToolSince,
   saveRecapPrefs,
 } from "./recapPrefs.ts";
-import { ThreadSnoozes, loadSnoozePrefs, saveSnoozePrefs } from "./snooze.ts";
+import {
+  ThreadSnoozes,
+  loadSnoozePrefs,
+  saveSnoozePrefs,
+  type StoredSnoozes,
+} from "./snooze.ts";
 import { hasPrefs, loadPrefs, savePrefs, seedPrefs } from "./prefs.ts";
 import { gatewayModel, type ModelChoice } from "../domain/prefs.ts";
 import { runWorker as completeWithWorker } from "./inference/worker.ts";
@@ -888,25 +893,35 @@ export default async function plugin(bb: BbPluginApi) {
       notify();
       return { prefs };
     },
-    snooze: ({ threadId, until }) =>
+    snooze: ({ threadIds, until }) =>
       userFacing(async () => {
         const now = Date.now();
         if (until !== null && (until <= now || until > now + MAX_SNOOZE_MS))
           throw new UserError("Pick a time in the next year.");
-        const thread = await bb.sdk.threads.get({ threadId });
-        if (thread.archivedAt !== null)
-          throw new UserError("Archived threads can't be snoozed.");
-        const snooze = snoozes.set(threadId, {
-          until,
-          attentionAt: thread.latestAttentionAt ?? thread.updatedAt,
-          at: now,
-        });
+        // A batch comes from a sidebar row, which can list a thread that was
+        // archived or deleted a moment ago; that one is left out.
+        const threads = await Promise.all(
+          [...new Set(threadIds)].map((threadId) =>
+            bb.sdk.threads.get({ threadId }).catch(() => null),
+          ),
+        );
+        const stored: StoredSnoozes = {};
+        for (const thread of threads)
+          if (thread && thread.archivedAt === null)
+            stored[thread.id] = {
+              until,
+              attentionAt: thread.latestAttentionAt ?? thread.updatedAt,
+              at: now,
+            };
+        if (!Object.keys(stored).length)
+          throw new UserError("Only active threads can be snoozed.");
+        snoozes.set(stored);
         notify();
-        return { snooze };
+        return { snoozes: stored };
       }),
-    unsnooze: async ({ threadId }) => {
-      const woke = snoozes.clear(threadId);
-      if (woke) notify();
+    unsnooze: async ({ threadIds }) => {
+      const woke = snoozes.clearAll(threadIds);
+      if (woke.length) notify();
       return { woke };
     },
     reorder: async (change) => {

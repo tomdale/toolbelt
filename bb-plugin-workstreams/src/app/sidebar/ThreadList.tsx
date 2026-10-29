@@ -45,6 +45,7 @@ import {
 import {
   arrangeGroups,
   focusedSections,
+  groupRoots,
   type WorkstreamNode,
 } from "../../domain/groups.ts";
 import {
@@ -75,9 +76,10 @@ import {
 import { planDrop } from "./drop.ts";
 import { setComposerPreset } from "../composer/preset.ts";
 import { describeWake, shortWake, wakeTime } from "../../domain/snooze.ts";
-import { snoozeThread, wakeThread } from "../snooze/actions.ts";
+import { snoozeThreads, wakeThreads } from "../snooze/actions.ts";
 import { CustomSnoozeDialog } from "../snooze/CustomSnoozeDialog.tsx";
 import { SnoozeMenuItems, plainMenuKit } from "../snooze/SnoozeMenuItems.tsx";
+import { SnoozeIcon } from "../snooze/icons.tsx";
 import { WorkstreamName } from "../WorkstreamName.tsx";
 import {
   presenceProps,
@@ -86,6 +88,7 @@ import {
   type PresenceEntry,
 } from "./motion.ts";
 import { FocusIcon } from "./FocusIcon.tsx";
+import { HoverMenuButton } from "./HoverActions.tsx";
 import { Hint } from "../Hint.tsx";
 import { usePrefs } from "../prefs.ts";
 
@@ -94,6 +97,16 @@ type ThreadNode = WorkstreamNode<PluginSidebarThread>;
 type ThreadRow = RowModel<PluginSidebarThread>;
 /** Where a row is drawn: its workstream group, or one of the overlays. */
 type Placement = "group" | "needs-you" | "recent" | "snoozed" | "archived";
+/**
+ * Threads to snooze together, from a thread row or a workstream row.
+ * `subject` names them in the toast ("4 threads in Alpha").
+ */
+type SnoozeRequest = {
+  readonly threads: readonly PluginSidebarThread[];
+  readonly subject?: string;
+};
+/** A workstream row's snooze button (see `WorkstreamGroup`). */
+type GroupSnooze = { title: string; run: () => void; menu: ReactNode };
 
 const groupKey = (id: string) => `ws:${id}`;
 const treeKey = (id: string) => `t:${id}`;
@@ -197,9 +210,7 @@ export function WorkstreamsThreadList({
   const [inspecting, setInspecting] = useState<PluginSidebarThread | null>(
     null,
   );
-  const [customSnooze, setCustomSnooze] = useState<PluginSidebarThread | null>(
-    null,
-  );
+  const [customSnooze, setCustomSnooze] = useState<SnoozeRequest | null>(null);
   const { projection, sections, now } = ws;
   const nameOf = new Map(sections.map((s) => [s.id, s.name]));
   const prioritizedIds = ws.server.order.prioritized;
@@ -358,6 +369,11 @@ export function WorkstreamsThreadList({
     onDrop,
   });
 
+  const applySnooze = (request: SnoozeRequest, until: number | null) =>
+    snoozeThreads(ws.setSnoozes, request.threads, until, {
+      previous: ws.snoozeOf,
+      subject: request.subject,
+    });
   const handlers: RowMenuHandlers = {
     rename: (thread) =>
       setNameRequest({
@@ -373,13 +389,50 @@ export function WorkstreamsThreadList({
       }
     },
     inspect: (thread) => setInspecting(thread),
-    snooze: (thread, until) =>
-      snoozeThread(ws.setSnooze, thread, until, ws.snoozeOf(thread)),
-    customSnooze: (thread) => setCustomSnooze(thread),
-    wake: (thread) => wakeThread(ws.setSnooze, thread),
+    snooze: (thread, until) => applySnooze({ threads: [thread] }, until),
+    customSnooze: (thread) => setCustomSnooze({ threads: [thread] }),
+    wake: (thread) => wakeThreads(ws.setSnoozes, [thread]),
   };
   const snoozePrefs = ws.snoozePrefs;
-  const defaultSnoozeTitle = `Snooze ${describeWake(wakeTime(snoozePrefs.default, now, snoozePrefs.morningHour), now)}`;
+  const defaultWakeText = describeWake(
+    wakeTime(snoozePrefs.default, now, snoozePrefs.morningHour),
+    now,
+  );
+  const defaultSnoozeTitle = `Snooze ${defaultWakeText}`;
+  /** The default choice's wake time, from the moment of the click. */
+  const defaultWake = () =>
+    wakeTime(snoozePrefs.default, Date.now(), snoozePrefs.morningHour);
+  /**
+   * A workstream row's snooze button, while the row lists threads: it
+   * snoozes every one of them (see `groupRoots`) with the default choice,
+   * and its menu offers the quick choices and the date picker.
+   */
+  const groupSnoozeOf = (
+    group: ThreadGroup | ThreadNode,
+  ): GroupSnooze | undefined => {
+    if (group.total === 0) return undefined;
+    const count = `${group.total} ${group.total === 1 ? "thread" : "threads"}`;
+    const request: SnoozeRequest = {
+      threads: groupRoots(group),
+      subject: `${count} in ${group.name}`,
+    };
+    return {
+      title: `Snooze ${request.subject} ${defaultWakeText}`,
+      run: () => applySnooze(request, defaultWake()),
+      menu: (
+        <SnoozeMenuItems
+          kit={plainMenuKit}
+          heading={`Snooze ${count}`}
+          now={now}
+          preset={snoozePrefs.default}
+          morningHour={snoozePrefs.morningHour}
+          only={snoozePrefs.quick}
+          onSnooze={(until) => applySnooze(request, until)}
+          onPick={() => setCustomSnooze(request)}
+        />
+      ),
+    };
+  };
 
   /** An unfiled row has no workstream to name, so it shows its age instead. */
   const workstreamName = (row: ThreadRow) =>
@@ -431,11 +484,7 @@ export function WorkstreamsThreadList({
       return {
         kind: "snooze" as const,
         title: defaultSnoozeTitle,
-        run: () =>
-          handlers.snooze(
-            row.thread,
-            wakeTime(snoozePrefs.default, Date.now(), snoozePrefs.morningHour),
-          ),
+        run: () => handlers.snooze(row.thread, defaultWake()),
         menu,
       };
     return {
@@ -650,6 +699,7 @@ export function WorkstreamsThreadList({
           collapsed={groupCollapsed(sub.id, false, sub.topicId)}
           toggle={() => toggleGroup(sub.id, false, sub.topicId)}
           onNewThread={newThreadIn(sub)}
+          snooze={groupSnoozeOf(sub)}
           quietCount={focus.active && !sub.prioritized}
         >
           {renderGroupBody(sub)}
@@ -684,6 +734,7 @@ export function WorkstreamsThreadList({
         <WorkstreamGroup
           {...props}
           group={group}
+          snooze={groupSnoozeOf(group)}
           quietCount={focus.active && !group.prioritized}
           sectionRef={ref}
           style={style}
@@ -845,6 +896,7 @@ export function WorkstreamsThreadList({
                 sectionRef={ref}
                 collapsed={lowerCollapsed(projection.unsorted.id)}
                 toggle={() => lowerToggle(projection.unsorted.id)}
+                snooze={groupSnoozeOf(projection.unsorted)}
                 quietCount={focus.active}
                 muted
               >
@@ -1128,7 +1180,7 @@ export function WorkstreamsThreadList({
           open={customSnooze !== null}
           onClose={() => setCustomSnooze(null)}
           onSubmit={(until) => {
-            if (customSnooze) handlers.snooze(customSnooze, until);
+            if (customSnooze) applySnooze(customSnooze, until);
           }}
           morningHour={snoozePrefs.morningHour}
         />
@@ -1415,6 +1467,8 @@ type GroupProps = {
   toggle: () => void;
   onNewThread?: () => void;
   onToggleFocus?: () => void;
+  /** Snoozes every thread the group lists; absent while it lists none. */
+  snooze?: GroupSnooze;
   muted?: boolean;
   /** Up Next is focused elsewhere, so the waiting count recedes. */
   quietCount?: boolean;
@@ -1433,6 +1487,7 @@ function WorkstreamGroup({
   toggle,
   onNewThread,
   onToggleFocus,
+  snooze,
   muted,
   quietCount,
   sectionRef,
@@ -1477,6 +1532,19 @@ function WorkstreamGroup({
             }
           />
         </button>
+        {snooze ? (
+          // Appears on hover like New work; resting on it opens its menu.
+          // Left out on touch screens, which have no hover to reveal it, so
+          // a stray tap can't snooze a whole workstream.
+          <HoverMenuButton
+            label={snooze.title}
+            onClick={snooze.run}
+            menu={snooze.menu}
+            className="h-auto w-auto rounded p-0.5 opacity-0 hover:bg-transparent focus-visible:opacity-100 group-hover/head:opacity-100 data-[state=open]:bg-transparent data-[state=open]:opacity-100 pointer-coarse:hidden"
+          >
+            <SnoozeIcon className="size-3.5" />
+          </HoverMenuButton>
+        ) : null}
         {onToggleFocus ? (
           // Always shown on a focused workstream, where it is also the focus
           // mark; elsewhere it appears on hover like New work.

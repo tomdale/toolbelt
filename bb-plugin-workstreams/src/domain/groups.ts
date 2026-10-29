@@ -247,6 +247,22 @@ export function nestGroups<T extends WorkstreamThread>(
   );
 }
 
+/**
+ * The threads that snoozing a workstream row snoozes: the root of every
+ * thread tree the row lists, its subgroups' included, whether or not the row
+ * or its trees are collapsed. A snoozed root takes its child threads along
+ * (see `projectWorkstreams`), so every thread the row counts leaves it, and
+ * each tree wakes whole, just as if each root had been snoozed by itself.
+ */
+export function groupRoots<T extends WorkstreamThread>(
+  group: Group<T> & { readonly subgroups?: readonly WorkstreamNode<T>[] },
+): T[] {
+  return [
+    ...group.rows.filter((row) => row.depth === 0).map((row) => row.thread),
+    ...(group.subgroups ?? []).flatMap((sub) => groupRoots(sub)),
+  ];
+}
+
 export type GroupArrangement<T extends WorkstreamThread> = {
   /** Focused workstreams, which pin below Up Next. */
   readonly pinned: readonly WorkstreamNode<T>[];

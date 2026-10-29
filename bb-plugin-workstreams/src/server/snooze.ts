@@ -65,18 +65,24 @@ export class ThreadSnoozes {
     return this.all()[threadId];
   }
 
-  set(threadId: string, snooze: ThreadSnooze): ThreadSnooze {
-    this.save({ ...this.all(), [threadId]: snooze });
-    return snooze;
+  /** Stores these snoozes, each replacing its thread's earlier one. */
+  set(snoozes: StoredSnoozes): void {
+    this.save({ ...this.all(), ...snoozes });
   }
 
   /** Ends a thread's snooze; returns whether it had one. */
   clear(threadId: string): boolean {
+    return this.clearAll([threadId]).length > 0;
+  }
+
+  /** Ends these threads' snoozes; returns the threads that had one. */
+  clearAll(threadIds: readonly string[]): string[] {
     const all = this.all();
-    if (!(threadId in all)) return false;
-    delete all[threadId];
+    const woke = [...new Set(threadIds)].filter((id) => id in all);
+    if (!woke.length) return [];
+    for (const id of woke) delete all[id];
     this.save(all);
-    return true;
+    return woke;
   }
 
   /**

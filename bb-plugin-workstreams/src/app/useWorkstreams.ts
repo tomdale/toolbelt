@@ -71,7 +71,7 @@ export function useWorkstreams() {
     experimental_useSidebarThreads();
   const { prefs } = usePrefs();
   const now = useNow();
-  const { rpc, server, refresh, reorder, setSnooze } = useServerState();
+  const { rpc, server, refresh, reorder, setSnoozes } = useServerState();
 
   const { analysis, recaps, order, snoozes, catalog } = server;
   /** What nests the workstreams (see `nestGroups`). */
@@ -122,7 +122,7 @@ export function useWorkstreams() {
     rpc,
     refresh,
     reorder,
-    setSnooze,
+    setSnoozes,
     snoozeOf: (thread: PluginSidebarThread) => {
       const snooze = snoozes[thread.id];
       return isSnoozed(snooze, thread, now) ? snooze : undefined;

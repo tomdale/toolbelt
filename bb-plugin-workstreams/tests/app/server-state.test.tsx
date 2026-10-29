@@ -70,12 +70,10 @@ function deferred<T>() {
 function mount({
   read = vi.fn(async () => state()),
   reorder = vi.fn(async () => ({ order: state().order })),
-  snooze = vi.fn(
-    async (): Promise<{ snooze: ServerState["snoozes"][string] }> => ({
-      snooze: { until: null, attentionAt: 1, at: 1 },
-    }),
-  ),
-  unsnooze = vi.fn(async () => ({ woke: true })),
+  snooze = vi.fn(async (): Promise<{ snoozes: ServerState["snoozes"] }> => ({
+    snoozes: { t1: { until: null, attentionAt: 1, at: 1 } },
+  })),
+  unsnooze = vi.fn(async () => ({ woke: ["t1"] })),
   setSnoozePrefs = vi.fn(async (input: unknown) => {
     const { patch } = input as { patch: Partial<ServerState["snoozePrefs"]> };
     return { prefs: { ...state().snoozePrefs, ...patch } };
@@ -561,8 +559,8 @@ describe("shared server state", () => {
 
   it("shares optimistic order, snooze and wake updates", async () => {
     const reordered = deferred<{ order: ServerState["order"] }>();
-    const snoozed = deferred<{ snooze: ServerState["snoozes"][string] }>();
-    const woken = deferred<{ woke: boolean }>();
+    const snoozed = deferred<{ snoozes: ServerState["snoozes"] }>();
+    const woken = deferred<{ woke: string[] }>();
     let committedOrder = state().order;
     const read = vi.fn(async () => ({ ...state(), order: committedOrder }));
     const { consumers, assertRevision } = mount({
@@ -596,26 +594,37 @@ describe("shared server state", () => {
     for (const value of consumers.values())
       expect(value.server.order).toEqual(order);
     act(() => {
-      pending = consumers
-        .get(1)!
-        .setSnooze({ id: "t1", latestAttentionAt: 42 }, null);
+      pending = consumers.get(1)!.setSnoozes(
+        [
+          { id: "t1", latestAttentionAt: 42 },
+          { id: "t2", latestAttentionAt: 43 },
+        ],
+        null,
+      );
     });
     for (const value of consumers.values())
-      expect(value.server.snoozes.t1).toMatchObject({
-        until: null,
-        attentionAt: 42,
+      expect(value.server.snoozes).toMatchObject({
+        t1: { until: null, attentionAt: 42 },
+        t2: { until: null, attentionAt: 43 },
       });
     await act(async () => {
-      snoozed.resolve({ snooze: { until: null, attentionAt: 42, at: 1 } });
+      snoozed.resolve({
+        snoozes: {
+          t1: { until: null, attentionAt: 42, at: 1 },
+          t2: { until: null, attentionAt: 43, at: 1 },
+        },
+      });
       await pending;
     });
     act(() => {
-      pending = consumers.get(2)!.setSnooze({ id: "t1" }, "wake");
+      pending = consumers
+        .get(2)!
+        .setSnoozes([{ id: "t1" }, { id: "t2" }], "wake");
     });
     for (const value of consumers.values())
-      expect(value.server.snoozes.t1).toBeUndefined();
+      expect(value.server.snoozes).toEqual({});
     await act(async () => {
-      woken.resolve({ woke: true });
+      woken.resolve({ woke: ["t1", "t2"] });
       await pending;
     });
   });
@@ -636,8 +645,8 @@ describe("shared server state", () => {
         const result =
           method === "reorder"
             ? value.reorder({ kind: "workstreams", ids: ["a"] })
-            : value.setSnooze(
-                { id: "t1" },
+            : value.setSnoozes(
+                [{ id: "t1" }],
                 method === "snooze" ? 1000 : "wake",
               );
         await expect(result).rejects.toBe(cause);

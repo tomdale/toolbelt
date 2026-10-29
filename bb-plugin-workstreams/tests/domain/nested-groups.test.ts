@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   arrangeGroups,
   focusedSections,
+  groupRoots,
   nestGroups,
   sharedTopicId,
   type WorkstreamNode,
@@ -283,6 +284,45 @@ describe("arrangeGroups with topics", () => {
       "  CLI (1)",
       "  Alert Investigations (1)",
     ]);
+  });
+});
+
+describe("groupRoots", () => {
+  it("lists the roots of a group and its subgroups, not their children", () => {
+    const projection = projectWorkstreams(
+      [
+        thread("a1", { sectionId: "sec_auto", latestAttentionAt: now }),
+        thread("a1-kid", { parentThreadId: "a1", latestAttentionAt: now }),
+        thread("i1", { sectionId: "sec_alerts", latestAttentionAt: now - 1 }),
+        thread("i2", { sectionId: "sec_alerts", latestAttentionAt: now - 2 }),
+        thread("nap", { sectionId: "sec_alerts", latestAttentionAt: now }),
+        thread("w1", { sectionId: "sec_ws", latestAttentionAt: now }),
+      ],
+      [
+        { id: "sec_auto", name: "Beacon: Automations" },
+        {
+          id: "sec_alerts",
+          name: "Beacon: Automations: Alert Investigations",
+        },
+        { id: "sec_ws", name: "Workstreams" },
+      ],
+      {
+        now,
+        snoozedUntil: (t) => (t.id === "nap" ? now + DAY_MS : undefined),
+      },
+    );
+    const [beacon] = arrangeGroups(
+      projection,
+      "alphabetical",
+      topics({ sec_auto: "auto", sec_alerts: "alerts", sec_ws: "ws" }),
+    ).populated;
+    expect(beacon!.total).toBe(4);
+    expect(groupRoots(beacon!).map((t) => t.id)).toEqual(["a1", "i1", "i2"]);
+    expect(groupRoots(beacon!.subgroups[0]!).map((t) => t.id)).toEqual([
+      "i1",
+      "i2",
+    ]);
+    expect(groupRoots(projection.unsorted)).toEqual([]);
   });
 });
 

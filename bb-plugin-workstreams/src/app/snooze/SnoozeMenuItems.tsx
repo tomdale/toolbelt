@@ -10,10 +10,11 @@ import {
 /**
  * The snooze choices in a dropdown: every preset with when it would wake,
  * the date-and-time picker, and, for a snoozed thread, its wake time and
- * Wake now. Shared by the thread header's dropdown and the sidebar row's
- * hover menu, which draw items with different primitives (`kit`).
+ * Wake now. Shared by the thread header's dropdown and the sidebar's hover
+ * menus, which draw items with different primitives (`kit`).
  */
 export function SnoozeMenuItems({
+  heading,
   now,
   preset,
   morningHour,
@@ -25,21 +26,25 @@ export function SnoozeMenuItems({
   kit = dropdownMenuKit,
 }: {
   kit?: MenuKit;
+  /** Names what the choices snooze, above them ("Snooze 4 threads"). */
+  heading?: string;
   now: number;
   /** The one-click default, labeled as such while the thread isn't snoozed. */
   preset: SnoozePresetId;
   morningHour: number;
   /** Limits the list to these choices (the sidebar's quick choices). */
   only?: readonly SnoozePresetId[];
+  /** The thread's current snooze; Wake now (`onWake`) ends it. */
   snooze?: ThreadSnooze;
   onSnooze: (until: number | null) => void;
-  onWake: () => void;
+  onWake?: () => void;
   onPick: () => void;
 }) {
   const { Item: MenuItem, Label, Separator } = kit;
   return (
     <>
-      {snooze ? (
+      {heading ? <Label>{heading}</Label> : null}
+      {snooze && onWake ? (
         <>
           <Label>Snoozed {describeWake(snooze.until, now)}</Label>
           <MenuItem onSelect={onWake}>Wake now</MenuItem>
