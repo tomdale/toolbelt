@@ -1128,7 +1128,7 @@ describe("thread list", () => {
     slot.lifecycle.unmount();
   });
 
-  it("puts read threads not blocked on you after the ones that are, newest first", async () => {
+  it("puts read threads not blocked on you after the ones that are, and Waiting ones last", async () => {
     const at = Date.now();
     const recap = (state: string) => ({
       id: `r-${state}`,
@@ -1188,8 +1188,8 @@ describe("thread list", () => {
     ).toEqual([
       "Unread ask",
       "Read complete, Complete",
-      "Read waiting, Waiting",
       "Read without recap",
+      "Read waiting, Waiting",
     ]);
     slot.lifecycle.unmount();
   });

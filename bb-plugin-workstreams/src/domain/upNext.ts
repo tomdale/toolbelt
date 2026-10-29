@@ -17,9 +17,13 @@
  *
  * 1. unread questions  2. unread reviews  3. read questions
  * 4. read reviews      5. other unread    6. other read
+ * 7. unread waiting    8. read waiting
+ *
+ * "Waiting" threads are still waiting on something else (a subagent, a
+ * timer), so they come after every other thread, even read ones.
  *
  * The list then trims from the least urgent end: threads not blocked on the
- * user leave, read before unread, until {@link UP_NEXT_LIMIT} remain; read
+ * user leave, bottom first, until {@link UP_NEXT_LIMIT} remain; read
  * blocked threads leave until {@link UP_NEXT_MAX} remain; and past that,
  * only the most recently active {@link UP_NEXT_MAX} stay, whatever their
  * tier. So Up Next always holds a few threads, grows only for threads
@@ -81,6 +85,11 @@ export type UpNextOptions<T extends UpNextThread> = {
   readonly prioritized?: ReadonlySet<string>;
 };
 
+/** A question or review: the thread is blocked on the user. */
+export function isBlockedOnUser(kind: UpNextKind): boolean {
+  return kind === "question" || kind === "review";
+}
+
 /**
  * `kind` once age is counted: a review or needed decision whose turn ended
  * (its latest attention) more than {@link UP_NEXT_STALE_AFTER_MS} before
@@ -93,7 +102,7 @@ export function agedKind(
   kind: UpNextKind,
   now: number,
 ): UpNextKind {
-  return kind !== "other" &&
+  return isBlockedOnUser(kind) &&
     !thread.hasPendingInteraction &&
     now - thread.latestAttentionAt > UP_NEXT_STALE_AFTER_MS
     ? "other"
@@ -118,6 +127,7 @@ export type UpNextSelection<T extends WorkstreamThread> = {
 /** Tier rank, 0 most urgent; see the module comment. */
 function tierOf(kind: UpNextKind, unread: boolean): number {
   if (kind === "other") return unread ? 4 : 5;
+  if (kind === "waiting") return unread ? 6 : 7;
   return (unread ? 0 : 2) + (kind === "review" ? 1 : 0);
 }
 
@@ -152,7 +162,7 @@ export function selectUpNext<T extends UpNextThread>(
       );
       return {
         row,
-        onYou: kind !== "other",
+        onYou: isBlockedOnUser(kind),
         unread: row.thread.isUnread,
         tier: tierOf(kind, row.thread.isUnread),
         prioritized:
@@ -179,7 +189,6 @@ export function selectUpNext<T extends UpNextThread>(
     }
     shown = kept.reverse();
   };
-  trim(UP_NEXT_LIMIT, (entry) => !entry.onYou && !entry.unread);
   trim(UP_NEXT_LIMIT, (entry) => !entry.onYou);
   trim(UP_NEXT_MAX, (entry) => entry.onYou && !entry.unread);
   if (shown.length > UP_NEXT_MAX) {

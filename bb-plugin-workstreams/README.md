@@ -189,25 +189,29 @@ Select **Workstreams** as your sidebar thread list to organize threads into:
    on you_; anything else (complete, waiting, failed) is not. A review or
    decision whose turn ended more than `7` days ago ages out and counts as not
    blocked; a pending question card or approval never ages out. Candidates rank
-   in six tiers, each newest first by latest turn end:
+   in eight tiers, each newest first by latest turn end:
    1. Unread questions
    2. Unread reviews
    3. Read questions
    4. Read reviews
    5. Other unread threads
    6. Other read threads
+   7. Unread **Waiting** threads
+   8. Read **Waiting** threads
 
-   Up Next then trims from the bottom: threads not blocked on you leave (read
-   before unread) until `5` remain; read blocked threads leave until `10`
-   remain; past that, only the `10` most recently active stay, whatever their
-   tier. So Up Next always shows a few threads, grows only for threads blocked
-   on you, and lists at most `10` on its own. **Show N more** lists the trimmed
-   threads that are unread or blocked on you below the rest, and **Show less**
-   collapses them; trimmed read threads not blocked on you stay in Recent and
-   their workstreams. It re-ranks as recaps, read state, and activity change.
-   The thread you have open keeps its row and place until you open another
-   thread. Nested delegates do not appear as separate Up Next entries; find them
-   in their workstream's thread tree.
+   Waiting threads (the agent reported Waiting on a subagent or timer, or
+   analysis found the work still in progress) rank after every other thread,
+   even read ones. Up Next then trims from the bottom: threads not blocked on
+   you leave, least urgent first, until `5` remain; read blocked threads leave
+   until `10` remain; past that, only the `10` most recently active stay,
+   whatever their tier. So Up Next always shows a few threads, grows only for
+   threads blocked on you, and lists at most `10` on its own. **Show N more**
+   lists the trimmed threads that are unread or blocked on you below the rest,
+   and **Show less** collapses them; trimmed read threads not blocked on you
+   stay in Recent and their workstreams. It re-ranks as recaps, read state, and
+   activity change. The thread you have open keeps its row and place until you
+   open another thread. Nested delegates do not appear as separate Up Next
+   entries; find them in their workstream's thread tree.
    - **Focus:** While a focused workstream has a thread blocked on you, Up Next
      applies these rules to focused workstreams' threads only, marks its header
      with the focus icon, and counts the threads blocked on you elsewhere on the

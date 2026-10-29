@@ -136,13 +136,19 @@ describe("upNextKind", () => {
     );
   });
 
-  it("is other for done, working, blocked, stale, and failed turns", () => {
+  it("is waiting for a reported Waiting or inferred in-progress turn", () => {
+    expect(upNextKind(quiet, workView(idle, undefined, recap("waiting")))).toBe(
+      "waiting",
+    );
+    expect(upNextKind(quiet, workView(idle, analysis("in_progress")))).toBe(
+      "waiting",
+    );
+  });
+
+  it("is other for done, blocked, stale, and failed turns", () => {
     expect(
       upNextKind(quiet, workView(idle, undefined, recap("complete"))),
     ).toBe("other");
-    expect(upNextKind(quiet, workView(idle, undefined, recap("waiting")))).toBe(
-      "other",
-    );
     expect(upNextKind(quiet, workView(idle, analysis("blocked")))).toBe(
       "other",
     );

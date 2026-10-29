@@ -26,8 +26,9 @@ const ids = (rows: readonly { thread: { id: string } }[]) =>
   rows.map((row) => row.thread.id);
 
 /**
- * A thread named for its tier: `q`uestion, `r`eview, or `o`ther, then `u`nread
- * or `r`ead, then a suffix, e.g. `qu1`. `at` is its latest attention.
+ * A thread named for its tier: `q`uestion, `r`eview, `w`aiting, or `o`ther,
+ * then `u`nread or `r`ead, then a suffix, e.g. `qu1`. `at` is its latest
+ * attention.
  */
 function t(id: string, at: number, overrides: Partial<TestThread> = {}) {
   return thread(id, {
@@ -37,8 +38,13 @@ function t(id: string, at: number, overrides: Partial<TestThread> = {}) {
     ...overrides,
   });
 }
+const KINDS: Record<string, UpNextKind> = {
+  q: "question",
+  r: "review",
+  w: "waiting",
+};
 const kindOf = (thread: { id: string }): UpNextKind =>
-  thread.id[0] === "q" ? "question" : thread.id[0] === "r" ? "review" : "other";
+  KINDS[thread.id[0]!] ?? "other";
 
 function upNext(
   threads: readonly TestThread[],
@@ -76,6 +82,43 @@ describe("selectUpNext", () => {
       "rr1",
       "ou1",
       "or1",
+    ]);
+  });
+
+  it("ranks Waiting threads after every other thread, even read ones", () => {
+    expect(
+      upNext([t("wu1", 900), t("wr1", 800), t("or1", 1), t("ou1", 2)]),
+    ).toEqual(["ou1", "or1", "wu1", "wr1"]);
+  });
+
+  it("trims Waiting threads first, then the rest from the bottom", () => {
+    expect(
+      upNext([
+        t("qu1", 1),
+        t("wu1", 900),
+        t("wr1", 800),
+        t("ou1", 3),
+        t("or1", 5),
+        t("or2", 4),
+        t("or3", 2),
+      ]),
+    ).toEqual(["qu1", "ou1", "or1", "or2", "or3"]);
+    expect(
+      upNext([
+        ...[1, 2, 3, 4, 5].map((n) => t(`ou${n}`, 10 - n)),
+        t("or1", 99),
+      ]),
+    ).toEqual(["ou1", "ou2", "ou3", "ou4", "ou5"]);
+  });
+
+  it("keeps a trimmed unread Waiting thread behind Show more", () => {
+    const projection = projectWorkstreams(
+      [...[1, 2, 3, 4, 5].map((n) => t(`or${n}`, 10 - n)), t("wu1", 99)],
+      sections,
+      { now },
+    );
+    expect(ids(selectUpNext(projection, { kindOf, now: clock }).more)).toEqual([
+      "wu1",
     ]);
   });
 

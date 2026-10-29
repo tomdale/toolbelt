@@ -86,21 +86,23 @@ export function needsAttention(
 }
 
 /**
- * What a thread is waiting on the user for, as Up Next ranks it: an answer
- * (a pending question or approval, or a turn that ended needing a decision),
- * a review of its latest turn, or nothing. A thread asking a question is a
+ * How a thread's latest turn left things, as Up Next ranks it: waiting on
+ * the user for an answer (a pending question or approval, or a turn that
+ * ended needing a decision) or a review; still waiting on something else
+ * (the agent reported Waiting, or analysis found the work in progress); or
+ * anything else, such as complete. A thread asking a question is a
  * `question` even when its latest turn is also ready for review.
  */
-export type UpNextKind = "question" | "review" | "other";
+export type UpNextKind = "question" | "review" | "waiting" | "other";
 
 export function upNextKind(
   thread: { readonly hasPendingInteraction: boolean },
   work: WorkView,
 ): UpNextKind {
   if (needsYou(thread, work)) return "question";
-  return work.kind === "current" && work.analysis.state === "review"
-    ? "review"
-    : "other";
+  if (work.kind !== "current") return "other";
+  if (work.analysis.state === "review") return "review";
+  return work.analysis.state === "in_progress" ? "waiting" : "other";
 }
 
 /**

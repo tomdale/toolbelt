@@ -1,6 +1,7 @@
 import type { Projection, Row, WorkstreamThread } from "./project.ts";
 import {
   agedKind,
+  isBlockedOnUser,
   selectUpNext,
   type UpNextOptions,
   type UpNextThread,
@@ -23,7 +24,8 @@ export function nextUpNextThreadAfterArchive<T extends UpNextThread>(
   }).rows[0]?.thread;
   if (!top) return null;
   const wanted =
-    top.isUnread || agedKind(top, options.kindOf(top), options.now) !== "other";
+    top.isUnread ||
+    isBlockedOnUser(agedKind(top, options.kindOf(top), options.now));
   return wanted ? top.id : null;
 }
 
