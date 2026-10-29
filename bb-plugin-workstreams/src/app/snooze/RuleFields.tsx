@@ -4,6 +4,7 @@
  * preset. The form edits a draft that keeps every kind's fields, so
  * switching kinds and back loses nothing, and validates it only when read.
  */
+import { useEffect, useId, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import {
   MAX_SNOOZE_AMOUNT,
@@ -134,16 +135,63 @@ export function SnoozeRuleFields({
   draft,
   onChange,
   kinds,
+  picker = "segmented",
   autoFocus = false,
 }: {
   draft: SnoozeDraft;
   onChange: (draft: SnoozeDraft) => void;
   /** The kinds offered, in order. */
   kinds: readonly SnoozeDraftKind[];
+  /**
+   * How the kinds are chosen: a segmented control above the chosen kind's
+   * fields, or a radio list that shows the chosen kind's fields inline
+   * under its radio and hides the rest.
+   */
+  picker?: "segmented" | "radios";
+  /**
+   * Focuses the chosen kind's fields. With radios, only on mount: fields
+   * that appear when the kind changes leave focus on the radio, so arrow
+   * keys keep moving between kinds.
+   */
   autoFocus?: boolean;
 }) {
+  const name = useId();
+  const focusOnMount = useRef(autoFocus);
+  useEffect(() => {
+    focusOnMount.current = false;
+  }, []);
   const set = (change: Partial<SnoozeDraft>) =>
     onChange({ ...draft, ...change });
+  const fields = (
+    <KindFields
+      draft={draft}
+      set={set}
+      autoFocus={picker === "radios" ? focusOnMount.current : autoFocus}
+    />
+  );
+  if (picker === "radios")
+    return (
+      <div role="radiogroup" aria-label="Snooze kind" className="space-y-2">
+        {kinds.map((kind) => (
+          <div key={kind} className="space-y-1.5">
+            <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name={name}
+                value={kind}
+                checked={draft.kind === kind}
+                onChange={() => set({ kind })}
+                className="cursor-pointer accent-foreground"
+              />
+              {KIND_LABELS[kind]}
+            </label>
+            {draft.kind === kind && kind !== "activity" ? (
+              <div className="pl-6">{fields}</div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    );
   return (
     <div className="space-y-2">
       {kinds.length > 1 ? (
@@ -157,76 +205,87 @@ export function SnoozeRuleFields({
           onChange={(kind) => set({ kind })}
         />
       ) : null}
-      {draft.kind === "duration" ? (
-        <div className="flex items-center gap-2">
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={MAX_SNOOZE_AMOUNT[draft.unit]}
-            step={1}
-            autoFocus={autoFocus}
-            value={draft.amount}
-            onChange={(event) => set({ amount: event.target.value })}
-            aria-label="Amount"
-            className="h-8 w-20 text-sm"
-          />
-          <select
-            value={draft.unit}
-            onChange={(event) =>
-              set({ unit: event.target.value as SnoozeUnit })
-            }
-            aria-label="Unit"
-            className={selectClass}
-          >
-            {SNOOZE_UNITS.map((unit) => (
-              <option key={unit} value={unit}>
-                {UNIT_LABELS[unit].toLowerCase()}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : draft.kind === "time" ? (
-        <div className="flex items-center gap-2">
-          <select
-            autoFocus={autoFocus}
-            value={draft.day}
-            onChange={(event) => set({ day: event.target.value as SnoozeDay })}
-            aria-label="Day"
-            className={selectClass}
-          >
-            {(["today", "tomorrow", "workday"] as const).map((day) => (
-              <option key={day} value={day}>
-                {dayLabel(day)}
-              </option>
-            ))}
-            {WEEK_ORDER.map((day) => (
-              <option key={day} value={day}>
-                {dayLabel(day)}
-              </option>
-            ))}
-          </select>
-          <span className="text-sm text-muted-foreground">at</span>
-          <Input
-            type="time"
-            value={draft.time}
-            onChange={(event) => set({ time: event.target.value })}
-            aria-label="Time of day"
-            className="h-8 w-32 text-sm"
-          />
-        </div>
-      ) : draft.kind === "date" ? (
-        <Input
-          type="datetime-local"
-          autoFocus={autoFocus}
-          value={draft.date}
-          min={toLocalInput(Date.now())}
-          max={toLocalInput(Date.now() + MAX_SNOOZE_MS)}
-          onChange={(event) => set({ date: event.target.value })}
-          aria-label="Wake time"
-          className="h-8 text-sm"
-        />
-      ) : null}
+      {fields}
     </div>
   );
+}
+
+/** The chosen kind's own fields; Until it updates has none. */
+function KindFields({
+  draft,
+  set,
+  autoFocus,
+}: {
+  draft: SnoozeDraft;
+  set: (change: Partial<SnoozeDraft>) => void;
+  autoFocus: boolean;
+}) {
+  return draft.kind === "duration" ? (
+    <div className="flex items-center gap-2">
+      <Input
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={MAX_SNOOZE_AMOUNT[draft.unit]}
+        step={1}
+        autoFocus={autoFocus}
+        value={draft.amount}
+        onChange={(event) => set({ amount: event.target.value })}
+        aria-label="Amount"
+        className="h-8 w-20 text-sm"
+      />
+      <select
+        value={draft.unit}
+        onChange={(event) => set({ unit: event.target.value as SnoozeUnit })}
+        aria-label="Unit"
+        className={selectClass}
+      >
+        {SNOOZE_UNITS.map((unit) => (
+          <option key={unit} value={unit}>
+            {UNIT_LABELS[unit].toLowerCase()}
+          </option>
+        ))}
+      </select>
+    </div>
+  ) : draft.kind === "time" ? (
+    <div className="flex items-center gap-2">
+      <select
+        autoFocus={autoFocus}
+        value={draft.day}
+        onChange={(event) => set({ day: event.target.value as SnoozeDay })}
+        aria-label="Day"
+        className={selectClass}
+      >
+        {(["today", "tomorrow", "workday"] as const).map((day) => (
+          <option key={day} value={day}>
+            {dayLabel(day)}
+          </option>
+        ))}
+        {WEEK_ORDER.map((day) => (
+          <option key={day} value={day}>
+            {dayLabel(day)}
+          </option>
+        ))}
+      </select>
+      <span className="text-sm text-muted-foreground">at</span>
+      <Input
+        type="time"
+        value={draft.time}
+        onChange={(event) => set({ time: event.target.value })}
+        aria-label="Time of day"
+        className="h-8 w-32 text-sm"
+      />
+    </div>
+  ) : draft.kind === "date" ? (
+    <Input
+      type="datetime-local"
+      autoFocus={autoFocus}
+      value={draft.date}
+      min={toLocalInput(Date.now())}
+      max={toLocalInput(Date.now() + MAX_SNOOZE_MS)}
+      onChange={(event) => set({ date: event.target.value })}
+      aria-label="Wake time"
+      className="h-8 text-sm"
+    />
+  ) : null;
 }

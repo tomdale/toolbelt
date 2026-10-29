@@ -66,6 +66,7 @@ export function CustomSnoozeDialog({
             draft={draft}
             onChange={setDraft}
             kinds={CUSTOM_SNOOZE_KINDS}
+            picker="radios"
             autoFocus
           />
           <p className="text-xs text-muted-foreground" aria-live="polite">

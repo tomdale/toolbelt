@@ -427,10 +427,11 @@ rule, which resolves to a wake time at the moment you choose it:
 The defaults are **1 hour**, **Tomorrow morning** (tomorrow at `9 AM`, the
 default), **Next week** (Monday at `9 AM`), and **Until it updates**.
 
-**Custom…** opens a dialog for a one-off snooze. It offers the same rules
-(**Duration**, **Time**, **On update**) plus **Date**, which it opens on and
-which picks any date and time up to `366` days out. Editing a preset never moves
-a thread that is already snoozed: a snooze stores only its wake time.
+**Custom…** opens a dialog for a one-off snooze. It lists the same rules
+(**Duration**, **Time**, **On update**) plus **Date** as radio buttons, and the
+chosen one shows its fields just beneath it. It opens on **Date**, which picks
+any date and time up to `366` days out. Editing a preset never moves a thread
+that is already snoozed: a snooze stores only its wake time.
 
 - Snoozing a root removes the root and its entire delegate subtree from its
   workstream and from **Up Next** / **Recent**, placing them in the **Snoozed**

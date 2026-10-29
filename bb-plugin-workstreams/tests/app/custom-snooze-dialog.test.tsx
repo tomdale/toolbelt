@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { installTestPluginRuntime } from "@get-bb/plugin-sdk/testing/app";
 import { CustomSnoozeDialog } from "../../src/app/snooze/CustomSnoozeDialog.tsx";
 
@@ -28,6 +34,44 @@ describe("CustomSnoozeDialog", () => {
     expect((screen.getByLabelText("Wake time") as HTMLInputElement).value).toBe(
       "2025-01-16T09:00",
     );
+  });
+
+  it("shows only the chosen kind's fields, inline under its radio", () => {
+    render(
+      <CustomSnoozeDialog
+        open
+        onClose={() => undefined}
+        onSubmit={() => undefined}
+      />,
+    );
+    const kinds = screen.getByRole("radiogroup", { name: "Snooze kind" });
+    expect(
+      within(kinds)
+        .getAllByRole("radio")
+        .map((radio) => radio.closest("label")!.textContent),
+    ).toEqual(["Duration", "Time", "Date", "On update"]);
+    const fieldsUnder = (kind: string) =>
+      screen.getByRole("radio", { name: kind }).closest("label")!
+        .nextElementSibling;
+    // Date is chosen on open, its field under it and focused.
+    const wake = screen.getByLabelText("Wake time");
+    expect(fieldsUnder("Date")!.contains(wake)).toBe(true);
+    expect(document.activeElement).toBe(wake);
+    expect(screen.queryByLabelText("Amount")).toBeNull();
+
+    const duration = screen.getByRole("radio", { name: "Duration" });
+    duration.focus();
+    fireEvent.click(duration);
+    expect(
+      fieldsUnder("Duration")!.contains(screen.getByLabelText("Amount")),
+    ).toBe(true);
+    expect(screen.queryByLabelText("Wake time")).toBeNull();
+    // The new fields leave focus on the radio, for arrow keys.
+    expect(document.activeElement).toBe(duration);
+
+    fireEvent.click(screen.getByRole("radio", { name: "On update" }));
+    expect(fieldsUnder("On update")).toBeNull();
+    expect(screen.queryByLabelText("Amount")).toBeNull();
   });
 
   it("snoozes for a duration or until a time, judged on submit", () => {
