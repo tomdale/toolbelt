@@ -97,7 +97,10 @@ export function Row({
   depth: number;
   active: boolean;
   now: number;
-  /** Shown instead of the age in overlay bands: the row's workstream name. */
+  /**
+   * Shown after the title instead of the age in overlay bands: the row's
+   * workstream name, or when a snoozed row wakes.
+   */
   context?: string;
   /**
    * The row is in the Up Next section. Every row there needs Tom, so the
@@ -263,8 +266,24 @@ export function Row({
               : "text-muted-foreground group-hover/row:text-foreground",
         )}
       >
-        <span className="truncate leading-5">
-          <ThreadTitle threadId={thread.id} />
+        {/* The age, or the band's context, follows the title itself, so the
+            row's trailing end is left to its marks and hover buttons. */}
+        <span className="flex min-w-0 items-baseline gap-1.5 leading-5">
+          <span className="min-w-0 truncate">
+            <ThreadTitle threadId={thread.id} />
+          </span>
+          {context || timestamps !== "hide" ? (
+            <span
+              data-timestamp={context ? undefined : timestamps}
+              className="flex shrink-0 text-[11px] font-normal tabular-nums text-muted-foreground/70"
+            >
+              {context ? (
+                <span className="block max-w-24 truncate">{context}</span>
+              ) : (
+                relativeAge(thread.latestAttentionAt, now)
+              )}
+            </span>
+          ) : null}
         </span>
         {subtitle ? (
           <span className="truncate text-[12px] leading-4 text-muted-foreground/80">
@@ -292,7 +311,8 @@ export function Row({
           </span>
         ) : null}
       </span>
-      {/* Archive, then snooze (its menu opens on hover), left of the age. */}
+      {/* Archive, then snooze (its menu opens on hover), at the trailing
+          end, as on a workstream header. */}
       <RowActions className="ws-row-aside">
         {showArchive ? (
           <HoverAction
@@ -318,22 +338,13 @@ export function Row({
           )
         ) : null}
       </RowActions>
-      {/* A fixed-width column, so ages line up down the list; only a
-          four-digit age like "100w" widens it. */}
-      {shortcut || context || timestamps !== "hide" ? (
-        <span
-          data-timestamp={shortcut || context ? undefined : timestamps}
-          className="ws-row-aside pointer-events-none relative flex min-w-6 shrink-0 items-center justify-end text-right text-[11px] tabular-nums text-muted-foreground/70"
-        >
-          {shortcut ? (
-            <span className="rounded border border-border px-1 text-[10px]">
-              {shortcut.label}
-            </span>
-          ) : context ? (
-            <span className="block max-w-24 truncate">{context}</span>
-          ) : (
-            relativeAge(thread.latestAttentionAt, now)
-          )}
+      {shortcut ? (
+        // BB's jump key while its modifier is held, last so the keys line
+        // up down the list.
+        <span className="ws-row-aside pointer-events-none relative flex shrink-0 items-center text-[11px] tabular-nums text-muted-foreground/70">
+          <span className="rounded border border-border px-1 text-[10px]">
+            {shortcut.label}
+          </span>
         </span>
       ) : null}
     </div>

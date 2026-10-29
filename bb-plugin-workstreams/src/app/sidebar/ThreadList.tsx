@@ -1560,7 +1560,9 @@ function WorkstreamGroup({
       <div
         ref={handle?.ref}
         {...handle?.listeners}
-        className="group/row flex items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-sidebar-accent/60"
+        // The wider right padding lines its buttons' icons up with the
+        // thread rows' below.
+        className="group/row flex items-center gap-1.5 rounded-md py-0.5 pl-1.5 pr-2.5 hover:bg-sidebar-accent/60"
       >
         <button
           type="button"

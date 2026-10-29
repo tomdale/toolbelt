@@ -2267,7 +2267,7 @@ describe("row hover buttons", () => {
     slot.lifecycle.unmount();
   });
 
-  it("puts archive and snooze left of the age", async () => {
+  it("puts the age right after the title and archive and snooze at the end", async () => {
     const slot = await mount(undefined, { settings: { showRecent: false } });
     const row = await rowOf(slot);
     expect(
@@ -2276,12 +2276,15 @@ describe("row hover buttons", () => {
         .map((b) => b.getAttribute("aria-label"))
         .filter((label) => label === "Archive" || /^Snooze/.test(label ?? "")),
     ).toEqual(["Archive", expect.stringMatching(/^Snooze until/)]);
-    // The age is the row's last element and stays out of the hover group.
-    const age = row.lastElementChild!;
+    const age = row.querySelector("[data-timestamp]")!;
     expect(age.textContent).toBe("now");
+    expect(age.previousElementSibling!.textContent).toBe("Root task");
+    // The hover buttons are the row's last element, as on a header.
     expect(
-      age.contains(within(row).getByRole("button", { name: "Archive" })),
-    ).toBe(false);
+      row.lastElementChild!.contains(
+        within(row).getByRole("button", { name: /^Snooze until/ }),
+      ),
+    ).toBe(true);
     slot.lifecycle.unmount();
   });
 

@@ -260,13 +260,13 @@ Select **Workstreams** as your sidebar thread list to organize threads into:
 - **Hover actions:** **Archive** and **Snooze** (click to snooze with your
   default preset; rest the pointer for `350 ms` to open the snooze menu, or
   click **Wake now** on a snoozed row). Thread rows and workstream headers share
-  one set of buttons: they appear while the row is hovered, holds keyboard
-  focus, or has a menu open, take no room otherwise, and come in one order
-  everywhere: **Focus**, **New work**, **Archive**, then **Snooze** or **Wake
-  now** last. A focused workstream's **Focus** mark and an empty workstream's
-  `＋` always show. Touch screens, which can't hover, show only those two; a
-  thread row's actions stay in its long-press menu. Section **⋯** menus always
-  show, dimmed until used.
+  one set of buttons at the row's end: they appear while the row is hovered,
+  holds keyboard focus, or has a menu open, take no room otherwise, and come in
+  one order everywhere: **Focus**, **New work**, **Archive**, then **Snooze** or
+  **Wake now** last. A focused workstream's **Focus** mark and an empty
+  workstream's `＋` always show. Touch screens, which can't hover, show only
+  those two; a thread row's actions stay in its long-press menu. Section **⋯**
+  menus always show, dimmed until used.
 - **Right-click context menu:** **Open in split**, **Open parent** (for
   delegates), **Topic** (switch to **Automatic** or assign any topic in the
   tree), **Rename…**, **Pin / Unpin**, **Mark read / Mark unread**, **Inspect
@@ -450,7 +450,7 @@ Open **Settings → Workstreams** to configure:
 | **Sidebar**           | **Up Next**, **Recent**, **Snoozed**, **Archived** | All `On`                                    | Show or hide each band in the Workstreams sidebar.                                                                                                                             |
 | **Sidebar**           | **Threads shown** (under Recent)                   | `5` (`1–20`)                                | Maximum root threads shown in the Recent band.                                                                                                                                 |
 | **Sidebar**           | **Up next and workstreams on phones**              | `On`                                        | Replaces BB's flat Recent list on the compact phone Home screen.                                                                                                               |
-| **Sidebar**           | **Timestamp**                                      | `Always`                                    | Show row timestamps `Always`, `On hover`, or `Never`.                                                                                                                          |
+| **Sidebar**           | **Timestamp**                                      | `Always`                                    | Show each row's age, right after its title, `Always`, `On hover`, or `Never`.                                                                                                  |
 | **Sidebar**           | **Thread count** / **Waiting count**               | `When collapsed`                            | Show workstream counts `Always`, `When collapsed`, or `Never`.                                                                                                                 |
 | **Working indicator** | **Style**, **Color**, **Track**                    | `Spokes`, `Subtle gray`, `Faded color`      | Choose from `7` spinner shapes (`Spokes`, `Sunburst`, `Arc`, `Orbit`, `Ring`, `Braille`, `Dots`), named or custom `#rrggbb` colors, and track styles for `Arc`/`Orbit`/`Ring`. |
 | **Threads**           | **Full analysis model**                            | `openai/gpt-6-sol-fast`                     | Model used at turn end to settle goals, topics, and fallback status.                                                                                                           |
