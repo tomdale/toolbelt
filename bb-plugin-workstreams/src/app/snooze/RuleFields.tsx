@@ -130,6 +130,13 @@ const KIND_LABELS: Readonly<Record<SnoozeDraftKind, string>> = {
 /** Weekdays from Monday, the order a week reads in. */
 const WEEK_ORDER = [...WEEKDAYS.slice(1), WEEKDAYS[0]];
 
+/**
+ * Neutral radios, like BB's other controls: the registry item draws in
+ * `primary`, BB's blue accent.
+ */
+const radioClass =
+  "border-muted-foreground/60 data-[state=checked]:border-foreground [&_svg]:fill-foreground [&_svg]:text-foreground";
+
 /** Day choices before the weekdays, nearest first. */
 const RELATIVE_DAYS = ["today", "tomorrow", "workday"] as const;
 
@@ -185,7 +192,11 @@ export function SnoozeRuleFields({
         {kinds.map((kind) => (
           <div key={kind} className="space-y-1.5">
             <div className="flex items-center gap-2">
-              <RadioGroupItem id={`${name}-${kind}`} value={kind} />
+              <RadioGroupItem
+                id={`${name}-${kind}`}
+                value={kind}
+                className={radioClass}
+              />
               <label
                 htmlFor={`${name}-${kind}`}
                 className="cursor-pointer text-sm"
