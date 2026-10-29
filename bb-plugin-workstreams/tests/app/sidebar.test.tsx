@@ -893,7 +893,7 @@ describe("thread list", () => {
     marked.lifecycle.unmount();
   });
 
-  it("lists up to ten threads blocked on you, newest first, with nothing to expand", async () => {
+  it("lists up to ten threads blocked on you, newest first, with the rest behind Show more", async () => {
     const at = Date.now();
     const base = at - 60_000;
     const ids = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"];
@@ -925,11 +925,32 @@ describe("thread list", () => {
     );
     const band = await slot.findByRole("region", { name: "Up Next" });
     // Unread or not, past ten the least recently active leave.
-    expect(groupRows(slot, "Up Next")).toEqual(
-      ["l", "k", "j", "i", "h", "g", "f", "e", "d", "c"].map(
-        (id) => `Ask ${id}`,
-      ),
+    const top = ["l", "k", "j", "i", "h", "g", "f", "e", "d", "c"].map(
+      (id) => `Ask ${id}`,
     );
+    expect(groupRows(slot, "Up Next")).toEqual(top);
+    // Show more lists them below the rest, which stay where they were.
+    const more = within(band).getByRole("button", { name: "Show 2 more" });
+    expect(more.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(more);
+    expect(groupRows(slot, "Up Next")).toEqual([...top, "Ask b", "Ask a"]);
+    fireEvent.click(within(band).getByRole("button", { name: "Show less" }));
+    expect(groupRows(slot, "Up Next")).toEqual(top);
+    slot.lifecycle.unmount();
+  });
+
+  it("offers no Show more for trimmed read threads not blocked on you", async () => {
+    const slot = await mount(
+      [1, 2, 3, 4, 5, 6, 7].map((n) =>
+        sidebarThread(`t${n}`, {
+          title: `Thread ${n}`,
+          latestAttentionAt: Date.now() - n * 1_000,
+        }),
+      ),
+      { activeThreadId: null, settings: { showRecent: false } },
+    );
+    const band = await slot.findByRole("region", { name: "Up Next" });
+    await waitFor(() => expect(groupRows(slot, "Up Next")).toHaveLength(5));
     expect(within(band).queryByRole("button", { name: /^Show/ })).toBeNull();
     slot.lifecycle.unmount();
   });

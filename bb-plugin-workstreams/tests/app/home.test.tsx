@@ -165,11 +165,37 @@ describe("Home screen", () => {
         "Thread d",
         "Thread c",
       ]);
+      expect(
+        within(quietBand).queryByRole("button", { name: /^Show/ }),
+      ).toBeNull();
       quiet.lifecycle.unmount();
       const asking = await mountHome({ threads: make(true) });
       const band = await asking.findByRole("region", { name: "Up Next" });
       expect(within(band).getAllByRole("link")).toHaveLength(7);
       expect(within(band).queryByRole("button", { name: /^Show/ })).toBeNull();
+    });
+
+    it("lists trimmed unread threads behind Show more", async () => {
+      const slot = await mountHome({
+        threads: [1, 2, 3, 4, 5, 6, 7].map((n) =>
+          sidebarThread(`u${n}`, {
+            sectionId: "sec_a",
+            title: `Unread ${n}`,
+            isUnread: true,
+            latestAttentionAt: minutes(n),
+          }),
+        ),
+      });
+      const band = await slot.findByRole("region", { name: "Up Next" });
+      expect(links(band)).toHaveLength(5);
+      fireEvent.click(
+        within(band).getByRole("button", { name: "Show 2 more" }),
+      );
+      expect(links(band)).toEqual(
+        [1, 2, 3, 4, 5, 6, 7].map((n) => `Unread ${n}`),
+      );
+      fireEvent.click(within(band).getByRole("button", { name: "Show less" }));
+      expect(links(band)).toHaveLength(5);
     });
 
     it("leaves snoozed threads out of the block and every group", async () => {

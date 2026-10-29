@@ -420,6 +420,7 @@ describe("home.css", () => {
       ".ws-home-link",
       ".ws-home-group-head > button",
       ".ws-home-lower-toggle",
+      ".ws-home-more",
       ".ws-home-text-button",
     ])
       expect(declarations(selector), selector).toMatch(

@@ -149,6 +149,7 @@ function HomeScreen({ placement }: { placement: Exclude<Placement, "wide"> }) {
           {plan.upNext ? (
             <UpNextBlock
               rows={plan.upNext.rows}
+              more={plan.upNext.more}
               focused={plan.focus.active}
               work={ws.work}
               workstreamOf={(row) => {

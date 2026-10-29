@@ -22,7 +22,8 @@
  * blocked threads leave until {@link UP_NEXT_MAX} remain; and past that,
  * only the most recently active {@link UP_NEXT_MAX} stay, whatever their
  * tier. So Up Next always holds a few threads, grows only for threads
- * blocked on the user, and stays short enough to act on.
+ * blocked on the user, and stays short enough to act on. The trimmed
+ * threads that are unread or blocked on the user wait behind Show more.
  *
  * Nested threads never appear on their own (BB doesn't mark a delegate
  * unread when its turn ends); they show under their root's row. Parent
@@ -77,6 +78,12 @@ export function agedKind(
 export type UpNextSelection<T extends WorkstreamThread> = {
   /** Up Next's rows, most urgent first. */
   readonly rows: readonly Row<T>[];
+  /**
+   * What Show more reveals below `rows`: the trimmed threads that are
+   * unread or blocked on the user, most urgent first. Read threads not
+   * blocked on the user stay out; Recent and the groups list them.
+   */
+  readonly more: readonly Row<T>[];
   /** Up Next lists only focused workstreams' threads. */
   readonly focused: boolean;
   /** Threads blocked on the user that focus left out, most urgent first. */
@@ -128,7 +135,8 @@ export function selectUpNext<T extends UpNextThread>(
     .sort((a, b) => a.tier - b.tier || byAttention(a.row, b.row));
 
   const focused = ranked.some((entry) => entry.prioritized && entry.onYou);
-  let shown = focused ? ranked.filter((entry) => entry.prioritized) : ranked;
+  const pool = focused ? ranked.filter((entry) => entry.prioritized) : ranked;
+  let shown = pool;
   /** Drops `removable` entries from the least urgent end until `target`. */
   const trim = (
     target: number,
@@ -155,8 +163,12 @@ export function selectUpNext<T extends UpNextThread>(
     );
     shown = shown.filter((entry) => newest.has(entry.row));
   }
+  const inUpNext = new Set(shown);
   return {
     rows: shown.map((entry) => entry.row),
+    more: pool
+      .filter((entry) => !inUpNext.has(entry) && (entry.unread || entry.onYou))
+      .map((entry) => entry.row),
     focused,
     elsewhere: focused
       ? ranked

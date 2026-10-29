@@ -258,6 +258,53 @@ describe("selectUpNext", () => {
     expect(selection.elsewhere).toEqual([]);
   });
 
+  describe("Show more", () => {
+    const more = (threads: readonly TestThread[], prioritized?: string[]) =>
+      ids(
+        selectUpNext(projectWorkstreams(threads, sections, { now }), {
+          kindOf,
+          now: clock,
+          prioritized: prioritized && new Set(prioritized),
+        }).more,
+      );
+
+    it("holds the trimmed unread threads, but not the read ones not blocked on you", () => {
+      expect(
+        more([
+          t("qu1", 99),
+          ...[1, 2, 3, 4, 5].map((n) => t(`ou${n}`, 90 - n)),
+          t("or1", 98),
+          t("or2", 97),
+        ]),
+      ).toEqual(["ou5"]);
+    });
+
+    it("holds trimmed blocked threads, read or past the recency cut, most urgent first", () => {
+      expect(
+        more([
+          ...Array.from({ length: 12 }, (_, i) => t(`qu${i}`, 100 + i)),
+          t("rr1", 999),
+          t("or1", 998),
+        ]),
+      ).toEqual(["qu1", "qu0", "rr1"]);
+    });
+
+    it("stays within the focused workstreams", () => {
+      expect(
+        more(
+          [
+            ...Array.from({ length: 6 }, (_, i) =>
+              t(`ou${i}`, 50 - i, { sectionId: "sec_b" }),
+            ),
+            t("qu1", 99, { sectionId: "sec_b" }),
+            t("qu2", 98),
+          ],
+          ["sec_b"],
+        ),
+      ).toEqual(["ou4", "ou5"]);
+    });
+  });
+
   describe("aging out", () => {
     const stale = now - 8 * DAY_MS;
     const select = (
@@ -283,6 +330,16 @@ describe("selectUpNext", () => {
           ]).rows,
         ),
       ).toEqual(["rr2", "ou1", "ru1", "rr1", "qr1"]);
+    });
+
+    it("holds a stale unread review behind Show more, but not a stale read one", () => {
+      const selection = select([
+        ...[1, 2, 3, 4, 5].map((n) => t(`ou${n}`, now - n)),
+        t("ru1", stale),
+        t("rr1", stale),
+      ]);
+      expect(ids(selection.rows)).toEqual(["ou1", "ou2", "ou3", "ou4", "ou5"]);
+      expect(ids(selection.more)).toEqual(["ru1"]);
     });
 
     it("never ages a pending question card or approval", () => {

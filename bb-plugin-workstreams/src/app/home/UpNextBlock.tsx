@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import type { Row } from "../../domain/project.ts";
 import type { WorkView } from "../useWorkstreams.ts";
@@ -7,11 +8,12 @@ import { HomeRow } from "./HomeRow.tsx";
 
 /**
  * Up Next on Home: the rows `selectUpNext` chose, in the sidebar's amber
- * block, every one of them (the selection already keeps the list short).
- * Each row names its workstream in the workstream's hue.
+ * block, with Show more for the trimmed threads still unread or blocked on
+ * the user. Each row names its workstream in the workstream's hue.
  */
 export function UpNextBlock({
-  rows,
+  rows: kept,
+  more,
   focused,
   work,
   workstreamOf,
@@ -19,6 +21,8 @@ export function UpNextBlock({
   showAge,
 }: {
   rows: readonly Row<PluginSidebarThread>[];
+  /** What Show more reveals below `rows`. */
+  more: readonly Row<PluginSidebarThread>[];
   /** Focus left other workstreams' threads out. */
   focused: boolean;
   work: (thread: PluginSidebarThread) => WorkView;
@@ -28,6 +32,11 @@ export function UpNextBlock({
   now: number;
   showAge: boolean;
 }) {
+  const [showMore, setShowMore] = useState(false);
+  // With nothing left to reveal Show more closes, so the next reveal starts
+  // collapsed, as in the sidebar.
+  if (showMore && more.length === 0) setShowMore(false);
+  const rows = showMore ? [...kept, ...more] : kept;
   const marks = rows.some((row) =>
     hasStatusMark(row.thread, work(row.thread), true),
   );
@@ -71,6 +80,16 @@ export function UpNextBlock({
           );
         })}
       </ul>
+      {more.length > 0 ? (
+        <button
+          type="button"
+          className="ws-home-more ws-amber-text"
+          aria-expanded={showMore}
+          onClick={() => setShowMore(!showMore)}
+        >
+          {showMore ? "Show less" : `Show ${more.length} more`}
+        </button>
+      ) : null}
     </section>
   );
 }

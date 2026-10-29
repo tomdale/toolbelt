@@ -28,8 +28,14 @@ import {
 } from "../../domain/upNext.ts";
 
 export type HomePlan<T extends WorkstreamThread> = {
-  /** Up Next's rows (see `selectUpNext`); null when none. */
-  readonly upNext: { readonly rows: readonly Row<T>[] } | null;
+  /**
+   * Up Next's rows and what Show more reveals below them (see
+   * `selectUpNext`); null when there are no rows.
+   */
+  readonly upNext: {
+    readonly rows: readonly Row<T>[];
+    readonly more: readonly Row<T>[];
+  } | null;
   /**
    * Focus, which holds whether or not Up Next shows: while a focused
    * workstream has a thread blocked on the user, Up Next lists only focused
@@ -93,7 +99,7 @@ export function planHome<T extends UpNextThread>(
   });
   const upNext =
     options.showUpNext && selection.rows.length > 0
-      ? { rows: selection.rows }
+      ? { rows: selection.rows, more: selection.more }
       : null;
   const populated = (groups: readonly WorkstreamNode<T>[]) =>
     groups.filter((group) => group.total > 0);

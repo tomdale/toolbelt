@@ -214,6 +214,7 @@ export function WorkstreamsThreadList({
   const { bandOptions, updateBandOptions } = useBandOptions();
   const [nameRequest, setNameRequest] = useState<NameRequest | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showMore, setShowMore] = useState(false);
   const [showLower, setShowLower] = useState(false);
   // Other workstreams the user expanded since revealing them. Not
   // persisted: each reveal starts with every one collapsed.
@@ -255,11 +256,13 @@ export function WorkstreamsThreadList({
     ...ws.upNextOptions,
     prioritized,
   });
+  // Show more lists what the rules trimmed below the rest; with nothing
+  // left to reveal it closes, so the next reveal starts collapsed.
+  if (showMore && upNext.more.length === 0) setShowMore(false);
+  const listed = showMore ? [...upNext.rows, ...upNext.more] : upNext.rows;
   const shownBefore = useRef<readonly string[]>([]);
   const [hold, setHold] = useState({ threadId: activeThreadId, index: -1 });
-  const ranked = upNext.rows.findIndex(
-    (row) => row.thread.id === activeThreadId,
-  );
+  const ranked = listed.findIndex((row) => row.thread.id === activeThreadId);
   const held =
     hold.threadId !== activeThreadId
       ? {
@@ -277,7 +280,10 @@ export function WorkstreamsThreadList({
         .flatMap((group) => group.rows)
         .find((row) => row.thread.id === activeThreadId)
     : undefined;
-  const shownNeedsRows = holdInPlace(upNext.rows, openRow, settledHold.index);
+  const shownNeedsRows = holdInPlace(listed, openRow, settledHold.index);
+  const moreCount = upNext.more.filter(
+    (row) => !shownNeedsRows.includes(row),
+  ).length;
   useLayoutEffect(() => {
     shownBefore.current = shownNeedsRows.map((row) => row.thread.id);
   });
@@ -469,6 +475,10 @@ export function WorkstreamsThreadList({
   const showBand = ws.showForYou && shownNeedsRows.length > 0;
   const bandPresence = usePresence(showBand ? ["band"] : [], String);
   const needsPresence = usePresence(shownNeedsRows, rowKey);
+  const needsControls = usePresence(
+    showMore || moreCount > 0 ? ["more"] : [],
+    String,
+  );
   /**
    * The row's hover snooze button and the menu beside it. In Snoozed, a
    * thread with its own snooze wakes; a descendant that is only there with
@@ -835,6 +845,14 @@ export function WorkstreamsThreadList({
       <ul>{children}</ul>
     </li>
   );
+  // Left edge matches the row titles: 26px with the status slot, 14px when
+  // the rows fold it away (see styles.css).
+  const bandControlClass = (tone: string) =>
+    cn(
+      "w-full cursor-pointer rounded-md py-0.5 pr-2 text-left text-[12px] transition-[padding] duration-[180ms] ease-out hover:bg-sidebar-accent/60 motion-reduce:transition-none",
+      tone,
+      needsMarks ? "pl-[26px]" : "pl-[14px]",
+    );
   const recentBlock =
     ws.showRecent && recentRows.length > 0 ? (
       <Band
@@ -1004,6 +1022,23 @@ export function WorkstreamsThreadList({
                   present(
                     entry,
                     renderOverlayTree(entry.item, "needs-you", needsMarks),
+                  ),
+                )}
+                {needsControls.map((entry) =>
+                  present(
+                    entry,
+                    <li>
+                      <button
+                        type="button"
+                        aria-expanded={showMore}
+                        onClick={() => setShowMore((more) => !more)}
+                        className={bandControlClass("ws-amber-text")}
+                      >
+                        {showMore
+                          ? "Show less"
+                          : `Show ${Math.max(1, moreCount)} more`}
+                      </button>
+                    </li>,
                   ),
                 )}
               </Band>
