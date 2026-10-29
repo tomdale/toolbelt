@@ -132,11 +132,13 @@ export function RecapSettings() {
           {RECAP_LAYOUT_OPTIONS.map((option) => {
             const selected = option.value === prefs.layout;
             return (
+              // `relative` holds the hidden radio inside the label; see
+              // `SegmentedControl`.
               <label
                 key={option.value}
                 title={option.description}
                 className={cn(
-                  "flex min-w-28 cursor-pointer flex-col items-center gap-2 rounded-lg border px-4 py-3 text-sm transition-colors has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring",
+                  "relative flex min-w-28 cursor-pointer flex-col items-center gap-2 rounded-lg border px-4 py-3 text-sm transition-colors has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring",
                   selected
                     ? "border-primary/50 bg-accent text-foreground"
                     : "border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground",

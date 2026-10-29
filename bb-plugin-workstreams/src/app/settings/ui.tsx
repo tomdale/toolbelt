@@ -343,6 +343,11 @@ export function SectionRows({
 /**
  * A compact single choice among a few short options, drawn as one segmented
  * pill. Native radios give it arrow-key navigation and form semantics.
+ *
+ * Each label is `relative` so its visually hidden radio is positioned inside
+ * it. Otherwise the radio's containing block is BB's page frame, outside the
+ * settings scroller, and focusing it scrolls that `overflow: hidden` frame,
+ * pushing the whole page out of view.
  */
 export function SegmentedControl<V extends string>({
   label,
@@ -368,7 +373,7 @@ export function SegmentedControl<V extends string>({
           <label
             key={option.value}
             className={cn(
-              "flex h-full min-w-16 cursor-pointer items-center justify-center rounded px-2 text-xs transition-colors has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring",
+              "relative flex h-full min-w-16 cursor-pointer items-center justify-center rounded px-2 text-xs transition-colors has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring",
               selected
                 ? "bg-accent font-medium text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",

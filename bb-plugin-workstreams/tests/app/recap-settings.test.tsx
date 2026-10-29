@@ -34,6 +34,16 @@ it("saves a layout pick immediately", async () => {
   );
 });
 
+it("keeps each hidden layout radio inside its positioned label", async () => {
+  // An unpositioned label leaves the radio's containing block outside the
+  // settings scroller, and focusing it scrolls BB's page frame out of view.
+  const slot = await mount();
+  const radios = await slot.findAllByRole("radio");
+  expect(radios.length).toBeGreaterThan(0);
+  for (const radio of radios)
+    expect(radio.closest("label")?.className).toMatch(/(^|\s)relative(\s|$)/);
+});
+
 it("disables reminders when agents don't end turns with a recap", async () => {
   const slot = await mount();
   fireEvent.click(

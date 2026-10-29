@@ -156,6 +156,9 @@ it.each([
     const slot = await mount("sidebar");
     const details = await slot.findByRole("region", { name: "Details" });
     const group = within(details).getByRole("radiogroup", { name: label });
+    // Hidden radios stay inside positioned labels (see `SegmentedControl`).
+    for (const radio of within(group).getAllByRole("radio"))
+      expect(radio.closest("label")?.className).toMatch(/(^|\s)relative(\s|$)/);
     expect(within(details).queryByRole("switch")).toBeNull();
     expect(slot.queryByRole("searchbox")).toBeNull();
     expect(slot.queryByPlaceholderText(/search/i)).toBeNull();
