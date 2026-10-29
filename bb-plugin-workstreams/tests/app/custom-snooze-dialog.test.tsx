@@ -46,7 +46,7 @@ describe("CustomSnoozeDialog", () => {
     fireEvent.change(screen.getByLabelText("Unit"), {
       target: { value: "minutes" },
     });
-    expect(screen.getByText(/^Returns to the sidebar until 7:15/)).toBeTruthy();
+    expect(screen.getByText(/^Until 7:15/)).toBeTruthy();
     vi.setSystemTime(new Date("2025-01-15T18:40:00"));
     fireEvent.click(screen.getByRole("button", { name: "Snooze" }));
     expect(onSubmit).toHaveBeenLastCalledWith(
@@ -94,14 +94,14 @@ describe("CustomSnoozeDialog", () => {
     fireEvent.change(screen.getByLabelText("Amount"), {
       target: { value: "0" },
     });
-    expect(screen.getByText("Enter how long to snooze.")).toBeTruthy();
+    expect(screen.getByText("Enter an amount.")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Unit"), {
       target: { value: "days" },
     });
     fireEvent.change(screen.getByLabelText("Amount"), {
       target: { value: "400" },
     });
-    expect(screen.getByText("Snooze for at most 365 days.")).toBeTruthy();
+    expect(screen.getByText("At most 365 days.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Snooze" })).toHaveProperty(
       "disabled",
       true,

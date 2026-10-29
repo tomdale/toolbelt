@@ -10,10 +10,10 @@ import {
 import { Input } from "@/components/ui/input";
 import {
   MAX_PRESET_LABEL,
-  describeWake,
   ruleLabel,
   type SnoozePreset,
   type SnoozeRule,
+  wakeSentence,
 } from "../../domain/snooze.ts";
 import {
   SnoozeRuleFields,
@@ -72,9 +72,7 @@ export function PresetDialog({
       <DialogContent className="max-w-sm">
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
-            <DialogTitle>
-              {preset ? "Edit snooze preset" : "Add snooze preset"}
-            </DialogTitle>
+            <DialogTitle>{preset ? "Edit preset" : "Add preset"}</DialogTitle>
           </DialogHeader>
           <SnoozeRuleFields
             draft={draft}
@@ -96,15 +94,12 @@ export function PresetDialog({
                 className="mt-1 h-8 text-sm font-normal"
               />
             </label>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Leave it empty to name the preset by what it does.
-            </p>
           </div>
-          <p className="text-xs text-muted-foreground" aria-live="polite">
-            {result.ok
-              ? `Chosen now, it snoozes ${describeWake(result.until, now)}.`
-              : result.message}
-          </p>
+          {!result.ok || result.until !== null ? (
+            <p className="text-xs text-muted-foreground" aria-live="polite">
+              {result.ok ? wakeSentence(result.until, now) : result.message}
+            </p>
+          ) : null}
           <DialogFooter>
             <Button type="button" variant="ghost" size="sm" onClick={onClose}>
               Cancel

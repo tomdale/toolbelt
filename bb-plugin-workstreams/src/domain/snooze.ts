@@ -373,6 +373,12 @@ export function describeWake(until: number | null, now: number): string {
   return `until ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${timeOf(date)}`;
 }
 
+/** `describeWake` as a sentence start: "Until tomorrow, 9 AM". */
+export const wakeSentence = (until: number | null, now: number) => {
+  const text = describeWake(until, now);
+  return text[0]!.toUpperCase() + text.slice(1);
+};
+
 export type SnoozeChoice = {
   readonly id: string;
   readonly label: string;

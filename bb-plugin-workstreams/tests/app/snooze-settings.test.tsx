@@ -68,7 +68,9 @@ it("lists the presets in menu order with the default chosen", async () => {
   expect(
     slot.getByRole("radio", { name: "Default: Tomorrow morning" }),
   ).toHaveProperty("checked", true);
-  expect(slot.getByText("4 of 6")).toBeTruthy();
+  // Only the default row is labeled, and the cap stays quiet until reached.
+  expect(slot.getAllByText("Default")).toHaveLength(1);
+  expect(slot.queryByText(/Up to 6/)).toBeNull();
   fireEvent.click(slot.getByRole("radio", { name: "Default: Next week" }));
   await waitFor(() =>
     expect(lastPatch(slot)).toEqual({ default: "next-week" }),
@@ -155,9 +157,7 @@ it("reorders presets from the keyboard, keeping focus on the moved one", async (
 
 it("waits for the stored presets before offering edits", async () => {
   const slot = await mount(DEFAULT_SNOOZE_PREFS, { failRead: true });
-  expect(
-    await slot.findByText("Couldn't load your snooze presets."),
-  ).toBeTruthy();
+  expect(await slot.findByText("Couldn't load presets.")).toBeTruthy();
   expect(slot.getByRole("button", { name: "Try again" })).toBeTruthy();
   expect(slot.queryByRole("list", { name: "Snooze presets" })).toBeNull();
   expect(slot.queryByRole("button", { name: "Add preset" })).toBeNull();
@@ -208,9 +208,8 @@ it("keeps the last preset, and stops adding at six", async () => {
   };
   const full = await mount(six);
   const add = await full.findByRole("button", { name: "Add preset" });
-  expect(add.getAttribute("aria-disabled")).toBe("true");
-  fireEvent.click(add);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(add).toHaveProperty("disabled", true);
+  expect(full.getByText("Up to 6 presets")).toBeTruthy();
   expect(
     full
       .getByRole("button", { name: "Delete Preset 0" })

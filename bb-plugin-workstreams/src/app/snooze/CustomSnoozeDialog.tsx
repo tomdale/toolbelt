@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { describeWake } from "../../domain/snooze.ts";
+import { wakeSentence } from "../../domain/snooze.ts";
 import {
   SnoozeRuleFields,
   draftOf,
@@ -61,7 +61,7 @@ export function CustomSnoozeDialog({
       <DialogContent className="max-w-sm">
         <form onSubmit={submit} className="space-y-3">
           <DialogHeader>
-            <DialogTitle>Snooze…</DialogTitle>
+            <DialogTitle>Snooze</DialogTitle>
           </DialogHeader>
           <SnoozeRuleFields
             draft={draft}
@@ -71,7 +71,7 @@ export function CustomSnoozeDialog({
           />
           <p className="text-xs text-muted-foreground" aria-live="polite">
             {result.ok
-              ? `Returns to the sidebar ${describeWake(result.until, Date.now())}.`
+              ? wakeSentence(result.until, Date.now())
               : result.message}
           </p>
           <DialogFooter>

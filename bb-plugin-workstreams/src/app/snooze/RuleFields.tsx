@@ -4,7 +4,6 @@
  * preset. The form edits a draft that keeps every kind's fields, so
  * switching kinds and back loses nothing, and validates it only when read.
  */
-import { useId } from "react";
 import { Input } from "@/components/ui/input";
 import {
   MAX_SNOOZE_AMOUNT,
@@ -102,12 +101,11 @@ export function resolveDraft(draft: SnoozeDraft, now: number): DraftResult {
       ? Number(draft.amount)
       : NaN;
     const max = MAX_SNOOZE_AMOUNT[draft.unit];
-    if (!(amount >= 1))
-      return { ok: false, message: "Enter how long to snooze." };
+    if (!(amount >= 1)) return { ok: false, message: "Enter an amount." };
     if (amount > max)
       return {
         ok: false,
-        message: `Snooze for at most ${max} ${UNIT_LABELS[draft.unit].toLowerCase()}.`,
+        message: `At most ${max} ${UNIT_LABELS[draft.unit].toLowerCase()}.`,
       };
     candidate = { kind: "duration", amount, unit: draft.unit };
   } else {
@@ -129,15 +127,6 @@ const KIND_LABELS: Readonly<Record<SnoozeDraftKind, string>> = {
 /** Weekdays from Monday, the order a week reads in. */
 const WEEK_ORDER = [...WEEKDAYS.slice(1), WEEKDAYS[0]];
 
-/** What a day choice means, under the fields. */
-function dayHelp(day: SnoozeDay): string {
-  if (day === "today") return "Today, or tomorrow once that time has passed.";
-  if (day === "tomorrow") return "The next day.";
-  if (day === "workday")
-    return "The next weekday: Friday through Sunday wake on Monday.";
-  return `The coming ${dayLabel(day)}, never today.`;
-}
-
 const selectClass =
   "flex h-8 rounded-md border border-input bg-transparent px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
@@ -153,17 +142,8 @@ export function SnoozeRuleFields({
   kinds: readonly SnoozeDraftKind[];
   autoFocus?: boolean;
 }) {
-  const helpId = useId();
   const set = (change: Partial<SnoozeDraft>) =>
     onChange({ ...draft, ...change });
-  const help =
-    draft.kind === "time"
-      ? dayHelp(draft.day)
-      : draft.kind === "activity"
-        ? "Wakes on the thread's next activity, however long that takes."
-        : draft.kind === "duration" && draft.unit === "days"
-          ? "Wakes at this time of day, that many days from now."
-          : null;
   return (
     <div className="space-y-2">
       {kinds.length > 1 ? (
@@ -189,7 +169,6 @@ export function SnoozeRuleFields({
             value={draft.amount}
             onChange={(event) => set({ amount: event.target.value })}
             aria-label="Amount"
-            aria-describedby={help ? helpId : undefined}
             className="h-8 w-20 text-sm"
           />
           <select
@@ -214,7 +193,6 @@ export function SnoozeRuleFields({
             value={draft.day}
             onChange={(event) => set({ day: event.target.value as SnoozeDay })}
             aria-label="Day"
-            aria-describedby={helpId}
             className={selectClass}
           >
             {(["today", "tomorrow", "workday"] as const).map((day) => (
@@ -222,13 +200,11 @@ export function SnoozeRuleFields({
                 {dayLabel(day)}
               </option>
             ))}
-            <optgroup label="The coming">
-              {WEEK_ORDER.map((day) => (
-                <option key={day} value={day}>
-                  {dayLabel(day)}
-                </option>
-              ))}
-            </optgroup>
+            {WEEK_ORDER.map((day) => (
+              <option key={day} value={day}>
+                {dayLabel(day)}
+              </option>
+            ))}
           </select>
           <span className="text-sm text-muted-foreground">at</span>
           <Input
@@ -250,11 +226,6 @@ export function SnoozeRuleFields({
           aria-label="Wake time"
           className="h-8 text-sm"
         />
-      ) : null}
-      {help ? (
-        <p id={helpId} className="text-xs text-muted-foreground">
-          {help}
-        </p>
       ) : null}
     </div>
   );

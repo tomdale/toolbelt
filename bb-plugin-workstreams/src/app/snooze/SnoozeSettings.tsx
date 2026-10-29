@@ -30,15 +30,13 @@ import {
   newPresetId,
   presetLabel,
   ruleLabel,
-  wakeHint,
-  wakeTime,
   type SnoozePreset,
   type SnoozePrefsPatch,
   type SnoozeRule,
 } from "../../domain/snooze.ts";
 import { Hint } from "../Hint.tsx";
 import { SectionRows, SettingRow } from "../settings/ui.tsx";
-import { useNow, useServerState } from "../useWorkstreams.ts";
+import { useServerState } from "../useWorkstreams.ts";
 import { GripIcon, TrashIcon } from "./icons.tsx";
 import { PresetDialog } from "./PresetDialog.tsx";
 
@@ -58,7 +56,6 @@ export function SnoozeSettings() {
   const list = useRef<HTMLUListElement>(null);
   const instructionsId = useId();
   const defaultName = useId();
-  const now = useNow();
   const { presets, default: defaultId } = server.snoozePrefs;
   const full = presets.length >= MAX_SNOOZE_PRESETS;
 
@@ -152,11 +149,7 @@ export function SnoozeSettings() {
       <SectionRows>
         <SettingRow
           label="Presets"
-          description={
-            server.ready
-              ? "Couldn't load your snooze presets."
-              : "Loading your snooze presets…"
-          }
+          description={server.ready ? "Couldn't load presets." : "Loading…"}
           control={
             server.ready ? (
               <Button
@@ -178,7 +171,7 @@ export function SnoozeSettings() {
       <div>
         <SettingRow
           label="Presets"
-          description="Snooze menus list these in order, with Custom… last. Clicking a snooze button uses the default."
+          description="Shown in snooze menus, in this order."
         />
         <p id={instructionsId} className="sr-only">
           Drag to reorder, or press the up and down arrow keys.
@@ -202,7 +195,6 @@ export function SnoozeSettings() {
                 <PresetRow
                   key={preset.id}
                   preset={preset}
-                  hint={wakeHint(wakeTime(preset.rule, now), now)}
                   isDefault={preset.id === defaultId}
                   defaultName={defaultName}
                   instructionsId={instructionsId}
@@ -219,31 +211,22 @@ export function SnoozeSettings() {
             </ul>
           </SortableContext>
         </DndContext>
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <Hint
-            label={
-              full
-                ? `Delete a preset to add another; menus hold ${MAX_SNOOZE_PRESETS}.`
-                : "Add a preset"
-            }
+        <div className="mt-2 flex items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={full}
+            onClick={() => setDialog({ open: true })}
           >
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-disabled={full}
-              className={cn(full && "cursor-not-allowed opacity-50")}
-              onClick={() => {
-                if (!full) setDialog({ open: true });
-              }}
-            >
-              <Icon name="Plus" />
-              Add preset
-            </Button>
-          </Hint>
-          <span className="text-xs text-muted-foreground">
-            {presets.length} of {MAX_SNOOZE_PRESETS}
-          </span>
+            <Icon name="Plus" />
+            Add preset
+          </Button>
+          {full ? (
+            <span className="text-xs text-muted-foreground">
+              Up to {MAX_SNOOZE_PRESETS} presets
+            </span>
+          ) : null}
         </div>
         <p aria-live="polite" className="sr-only">
           {announcement}
@@ -274,7 +257,6 @@ const iconButtonClass =
  */
 function PresetRow({
   preset,
-  hint,
   isDefault,
   defaultName,
   instructionsId,
@@ -285,7 +267,6 @@ function PresetRow({
   onDelete,
 }: {
   preset: SnoozePreset;
-  hint: string;
   isDefault: boolean;
   /** The `name` shared by every row's default radio. */
   defaultName: string;
@@ -350,11 +331,6 @@ function PresetRow({
           </p>
         ) : null}
       </div>
-      {hint ? (
-        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {hint}
-        </span>
-      ) : null}
       <label className="ml-2 flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
         <input
           type="radio"
@@ -364,7 +340,7 @@ function PresetRow({
           aria-label={`Default: ${label}`}
           className="cursor-pointer accent-foreground"
         />
-        <span aria-hidden="true">Default</span>
+        {isDefault ? <span aria-hidden="true">Default</span> : null}
       </label>
       <Hint label={`Edit ${label}`}>
         <button
@@ -377,11 +353,7 @@ function PresetRow({
         </button>
       </Hint>
       <Hint
-        label={
-          canDelete
-            ? `Delete ${label}`
-            : "Add another preset before deleting this one"
-        }
+        label={canDelete ? `Delete ${label}` : "Can't delete the last preset"}
       >
         <button
           type="button"
