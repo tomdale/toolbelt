@@ -64,7 +64,7 @@ import {
 } from "./useBandOptions.ts";
 import { NameDialog, type NameRequest } from "./NameDialog.tsx";
 import { Row, hasStatusMark } from "./Row.tsx";
-import { RowMenu, type RowMenuHandlers } from "./RowMenu.tsx";
+import { HeaderMenu, RowMenu, type RowMenuHandlers } from "./RowMenu.tsx";
 import { TraceInspector } from "../debug/Inspector.tsx";
 import {
   DropTarget,
@@ -119,7 +119,19 @@ type SnoozeRequest = {
 /** A Custom… snooze in progress: whom it snoozes, and the kind it opened on. */
 type CustomSnoozeRequest = SnoozeRequest & { readonly kind: SnoozeDraftKind };
 /** A workstream row's snooze button (see `WorkstreamGroup`). */
-type GroupSnooze = { title: string; run: () => void; menu: ReactNode };
+type GroupSnooze = {
+  /** Names the batch: "Snooze 3 threads". */
+  label: string;
+  /** What a click does: "Snooze 3 threads in Alpha until …". */
+  title: string;
+  run: () => void;
+  /** The hover menu's choices. */
+  menu: ReactNode;
+  /** Snoozes the batch until a time, or (null) each until it updates. */
+  snooze: (until: number | null) => void;
+  /** Opens the Custom… snooze dialog on `kind` for the batch. */
+  custom: (kind: SnoozeDraftKind) => void;
+};
 
 const groupKey = (id: string) => `ws:${id}`;
 const treeKey = (id: string) => `t:${id}`;
@@ -435,19 +447,25 @@ export function WorkstreamsThreadList({
       threads: groupRoots(group),
       subject: `${count} in ${group.name}`,
     };
+    const snooze = (until: number | null) => applySnooze(request, until);
+    const custom = (kind: SnoozeDraftKind) =>
+      setCustomSnooze({ ...request, kind });
     return {
+      label: `Snooze ${count}`,
       title: `Snooze ${request.subject} ${defaultWakeText}`,
-      run: () => applySnooze(request, defaultWake()),
+      run: () => snooze(defaultWake()),
       menu: (
         <SnoozeMenuItems
           kit={plainMenuKit}
           heading={`Snooze ${count}`}
           now={now}
           prefs={snoozePrefs}
-          onSnooze={(until) => applySnooze(request, until)}
-          onCustom={(kind) => setCustomSnooze({ ...request, kind })}
+          onSnooze={snooze}
+          onCustom={custom}
         />
       ),
+      snooze,
+      custom,
     };
   };
 
@@ -1557,98 +1575,108 @@ function WorkstreamGroup({
       data-prioritized={group.prioritized ? "" : undefined}
       className={cn("rounded-md", !nested && "px-1")}
     >
-      <div
-        ref={handle?.ref}
-        {...handle?.listeners}
-        // The wider right padding lines its buttons' icons up with the
-        // thread rows' below.
-        className="group/row flex items-center gap-1.5 rounded-md py-0.5 pl-1.5 pr-2.5 hover:bg-sidebar-accent/60"
+      <HeaderMenu
+        focus={
+          onToggleFocus
+            ? { focused: group.prioritized, toggle: onToggleFocus }
+            : undefined
+        }
+        onNewWork={onNewThread}
+        snooze={snooze}
       >
-        <button
-          type="button"
-          aria-expanded={group.total > 0 ? !collapsed : undefined}
-          onClick={group.total > 0 ? toggle : undefined}
-          className="flex min-w-0 flex-1 items-center gap-1 text-left"
+        <div
+          ref={handle?.ref}
+          {...handle?.listeners}
+          // The wider right padding lines its buttons' icons up with the
+          // thread rows' below.
+          className="group/row flex items-center gap-1.5 rounded-md py-0.5 pl-1.5 pr-2.5 hover:bg-sidebar-accent/60"
         >
-          {group.total > 0 ? (
-            <Icon
-              name={collapsed ? "ChevronRight" : "ChevronDown"}
-              className="size-3 shrink-0 text-muted-foreground"
-            />
-          ) : null}
-          <WorkstreamName
-            name={"label" in group ? group.label : group.name}
-            muted={muted}
-            className={
-              nested ? "text-[12px] font-medium" : "text-[13px] font-semibold"
-            }
-          />
-        </button>
-        {/* The same actions, look, and order as a thread row's (see
-            `RowActions`): Focus, New work, then Snooze. */}
-        <RowActions>
-          {onToggleFocus ? (
-            // Also the focus mark, so a focused workstream always shows it.
-            <HoverAction
-              compact
-              revealed={group.prioritized}
-              pressed={group.prioritized}
-              label={
-                group.prioritized
-                  ? `Stop focusing on ${group.name}`
-                  : `Focus on ${group.name}`
+          <button
+            type="button"
+            aria-expanded={group.total > 0 ? !collapsed : undefined}
+            onClick={group.total > 0 ? toggle : undefined}
+            className="flex min-w-0 flex-1 items-center gap-1 text-left"
+          >
+            {group.total > 0 ? (
+              <Icon
+                name={collapsed ? "ChevronRight" : "ChevronDown"}
+                className="size-3 shrink-0 text-muted-foreground"
+              />
+            ) : null}
+            <WorkstreamName
+              name={"label" in group ? group.label : group.name}
+              muted={muted}
+              className={
+                nested ? "text-[12px] font-medium" : "text-[13px] font-semibold"
               }
-              hint={group.prioritized ? "Stop focusing" : "Focus"}
-              onClick={onToggleFocus}
-              className={group.prioritized ? "text-foreground/70" : undefined}
-            >
-              <FocusIcon filled={group.prioritized} className="size-3.5" />
-            </HoverAction>
-          ) : null}
-          {onNewThread ? (
-            // An empty workstream has nothing else to offer, so it shows.
-            <HoverAction
-              compact
-              revealed={group.total === 0}
-              label={`New work in ${group.name}`}
-              onClick={onNewThread}
-            >
-              <Icon name="Plus" className="size-3.5" />
-            </HoverAction>
-          ) : null}
-          {snooze ? (
-            <HoverMenuButton
-              compact
-              label={snooze.title}
-              onClick={snooze.run}
-              menu={snooze.menu}
-            >
-              <SnoozeIcon className="size-3.5" />
-            </HoverMenuButton>
-          ) : null}
-        </RowActions>
-        {/* The header's details, as a thread row's age. */}
-        <span className="flex shrink-0 items-center gap-1 empty:hidden">
-          {shows(prefs?.sidebar.waitingCount) && group.needsYou > 0 ? (
-            <span
-              className={cn(
-                "rounded-full px-1.5 text-[11px] font-medium tabular-nums transition-colors duration-300",
-                quietCount
-                  ? "bg-muted-foreground/15 text-muted-foreground"
-                  : "ws-amber-pill",
-              )}
-              title={`${group.needsYou} waiting on you`}
-            >
-              {group.needsYou}
-            </span>
-          ) : null}
-          {shows(prefs?.sidebar.threadCount) && group.total > 0 ? (
-            <span className="text-[11px] tabular-nums text-muted-foreground/70">
-              {group.total}
-            </span>
-          ) : null}
-        </span>
-      </div>
+            />
+          </button>
+          {/* The same actions, look, and order as a thread row's (see
+            `RowActions`): Focus, New work, then Snooze. */}
+          <RowActions>
+            {onToggleFocus ? (
+              // Also the focus mark, so a focused workstream always shows it.
+              <HoverAction
+                compact
+                revealed={group.prioritized}
+                pressed={group.prioritized}
+                label={
+                  group.prioritized
+                    ? `Stop focusing on ${group.name}`
+                    : `Focus on ${group.name}`
+                }
+                hint={group.prioritized ? "Stop focusing" : "Focus"}
+                onClick={onToggleFocus}
+                className={group.prioritized ? "text-foreground/70" : undefined}
+              >
+                <FocusIcon filled={group.prioritized} className="size-3.5" />
+              </HoverAction>
+            ) : null}
+            {onNewThread ? (
+              // An empty workstream has nothing else to offer, so it shows.
+              <HoverAction
+                compact
+                revealed={group.total === 0}
+                label={`New work in ${group.name}`}
+                onClick={onNewThread}
+              >
+                <Icon name="Plus" className="size-3.5" />
+              </HoverAction>
+            ) : null}
+            {snooze ? (
+              <HoverMenuButton
+                compact
+                label={snooze.title}
+                onClick={snooze.run}
+                menu={snooze.menu}
+              >
+                <SnoozeIcon className="size-3.5" />
+              </HoverMenuButton>
+            ) : null}
+          </RowActions>
+          {/* The header's details, as a thread row's age. */}
+          <span className="flex shrink-0 items-center gap-1 empty:hidden">
+            {shows(prefs?.sidebar.waitingCount) && group.needsYou > 0 ? (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 text-[11px] font-medium tabular-nums transition-colors duration-300",
+                  quietCount
+                    ? "bg-muted-foreground/15 text-muted-foreground"
+                    : "ws-amber-pill",
+                )}
+                title={`${group.needsYou} waiting on you`}
+              >
+                {group.needsYou}
+              </span>
+            ) : null}
+            {shows(prefs?.sidebar.threadCount) && group.total > 0 ? (
+              <span className="text-[11px] tabular-nums text-muted-foreground/70">
+                {group.total}
+              </span>
+            ) : null}
+          </span>
+        </div>
+      </HeaderMenu>
       {collapsed ? null : (
         <ul className={cn("mt-0.5", nested && "pl-4")}>{children}</ul>
       )}

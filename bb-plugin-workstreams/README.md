@@ -265,13 +265,15 @@ Select **Workstreams** as your sidebar thread list to organize threads into:
   one order everywhere: **Focus**, **New work**, **Archive**, then **Snooze** or
   **Wake now** last. A focused workstream's **Focus** mark and an empty
   workstream's `＋` always show. Touch screens, which can't hover, show only
-  those two; a thread row's actions stay in its long-press menu. Section **⋯**
-  menus always show, dimmed until used.
+  those two; the rest stay in the row's long-press menu. Section **⋯** menus
+  always show, dimmed until used.
 - **Right-click context menu:** **Open in split**, **Open parent** (for
   delegates), **Topic** (switch to **Automatic** or assign any topic in the
   tree), **Rename…**, **Pin / Unpin**, **Mark read / Mark unread**, **Inspect
   model calls…** (when Debug mode is on), **Snooze / Change snooze / Wake now**,
-  **Archive**, and **Delete…**.
+  **Archive**, and **Delete…**. A workstream header's menu holds its hover
+  actions in the same order: **Focus / Stop focusing**, **New work**, and
+  **Snooze \<N\> threads**. On touch screens, a long press opens either menu.
 
 ### Phone Home screen
 

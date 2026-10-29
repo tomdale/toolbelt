@@ -37,9 +37,10 @@ export type RowMenuHandlers = {
 };
 
 /**
- * The row's right-click menu. The SDK ships no menu component; every item is
- * a sidebar thread action or a Workstreams RPC, and Delete goes through BB's
- * own confirmation.
+ * A thread row's right-click menu, which a touch screen opens with a long
+ * press. The SDK ships no menu component; every item is a sidebar thread
+ * action or a Workstreams RPC, and Delete goes through BB's own
+ * confirmation.
  */
 export function RowMenu({
   thread,
@@ -77,7 +78,9 @@ export function RowMenu({
     : null;
   const displayTopicPath = (id: string) =>
     topicPath(id, entities).replace(/: /g, " › ");
-  const currentLabel = currentEntity ? displayTopicPath(currentEntity.id) : "No topic";
+  const currentLabel = currentEntity
+    ? displayTopicPath(currentEntity.id)
+    : "No topic";
   const isFork = Boolean(assignment?.inheritedFrom);
   const automatic = isAutomaticTopic(assignment);
   return (
@@ -140,7 +143,10 @@ export function RowMenu({
                       entities
                         .slice()
                         .sort((a, b) =>
-                          compareGroupNames(displayTopicPath(a.id), displayTopicPath(b.id)),
+                          compareGroupNames(
+                            displayTopicPath(a.id),
+                            displayTopicPath(b.id),
+                          ),
                         )
                         .map((entity) => {
                           const isChosen =
@@ -228,6 +234,74 @@ export function RowMenu({
           <Item destructive onSelect={() => actions.requestDelete(thread.id)}>
             Delete…
           </Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  );
+}
+
+/**
+ * A workstream header's right-click menu, which a touch screen opens with a
+ * long press, as a thread row's `RowMenu`: the header's hover actions, in
+ * their order (see `RowActions`), for when there is no pointer to reveal
+ * them. Without any action to offer, the header is drawn without a menu.
+ */
+export function HeaderMenu({
+  focus,
+  onNewWork,
+  snooze,
+  children,
+}: {
+  /** Focus on the workstream, or stop. */
+  focus?: { focused: boolean; toggle: () => void };
+  onNewWork?: () => void;
+  /** Snoozes every thread the header lists (see `groupRoots`). */
+  snooze?: {
+    /** Names the batch: "Snooze 3 threads". */
+    label: string;
+    snooze: (until: number | null) => void;
+    custom: (kind: SnoozeDraftKind) => void;
+  };
+  children: ReactNode;
+}) {
+  const portalScope = usePortalScopeProps();
+  const { server } = useSharedServerState();
+  if (!focus && !onNewWork && !snooze) return children;
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content
+          {...portalScope}
+          aria-label="Workstream actions"
+          className="z-50 min-w-48 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
+        >
+          {focus ? (
+            <Item onSelect={focus.toggle}>
+              {focus.focused ? "Stop focusing" : "Focus"}
+            </Item>
+          ) : null}
+          {onNewWork ? <Item onSelect={onNewWork}>New work</Item> : null}
+          {snooze && (focus || onNewWork) ? <Separator /> : null}
+          {snooze ? (
+            <ContextMenu.Sub>
+              <SubTrigger>{snooze.label}</SubTrigger>
+              <ContextMenu.Portal>
+                <ContextMenu.SubContent
+                  {...portalScope}
+                  className="z-50 min-w-56 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
+                >
+                  <SnoozeMenuItems
+                    kit={contextMenuKit}
+                    now={Date.now()}
+                    prefs={server.snoozePrefs}
+                    onSnooze={snooze.snooze}
+                    onCustom={snooze.custom}
+                  />
+                </ContextMenu.SubContent>
+              </ContextMenu.Portal>
+            </ContextMenu.Sub>
+          ) : null}
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>

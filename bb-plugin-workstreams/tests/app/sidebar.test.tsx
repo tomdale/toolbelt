@@ -2028,6 +2028,85 @@ describe("snoozing a workstream row", () => {
     );
     slot.lifecycle.unmount();
   });
+
+  /** Opens a header's right-click menu, as a long press does on touch. */
+  const headerMenu = async (
+    slot: Awaited<ReturnType<typeof mount>>,
+    name: string,
+  ) => {
+    const region = await waitFor(() => slot.getByRole("region", { name }));
+    fireEvent.contextMenu(region.querySelector(".group\\/row")!);
+    return screen.findByRole("menu", { name: "Workstream actions" });
+  };
+  const items = (menu: HTMLElement) =>
+    within(menu)
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent);
+
+  it("offers a header's hover actions in its right-click menu, in their order", async () => {
+    const slot = await mount(threads(), {
+      settings: { showRecent: false, showForYou: false },
+      snoozePrefs: snoozeSettings(threeHours, untilUpdate),
+    });
+    expect(items(await headerMenu(slot, "Alpha"))).toEqual([
+      "Focus",
+      "New work",
+      "Snooze 3 threads",
+    ]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Focus" }));
+    await waitFor(() =>
+      expect(
+        slot.getByRole("button", { name: "Stop focusing on Alpha" }),
+      ).toBeTruthy(),
+    );
+    expect(items(await headerMenu(slot, "Alpha"))[0]).toBe("Stop focusing");
+    fireEvent.click(screen.getByRole("menuitem", { name: "New work" }));
+    expect(slot.inspection.navigateCalls.at(-1)).toEqual({
+      method: "toCompose",
+      options: { focusPrompt: true },
+    });
+    slot.lifecycle.unmount();
+  });
+
+  it("snoozes a header's threads from its right-click Snooze menu", async () => {
+    const slot = await mount(threads(), {
+      settings: { showRecent: false, showForYou: false },
+      snoozePrefs: snoozeSettings(threeHours, untilUpdate),
+    });
+    await headerMenu(slot, "Alpha");
+    fireEvent.keyDown(
+      screen.getByRole("menuitem", { name: "Snooze 3 threads" }),
+      { key: "ArrowRight" },
+    );
+    const submenu = await waitFor(() => {
+      const menus = screen.getAllByRole("menu");
+      expect(menus.length).toBeGreaterThan(1);
+      return menus.at(-1)!;
+    });
+    expect(items(submenu)).toEqual([
+      expect.stringMatching(/^3 hours\(default\)/),
+      expect.stringMatching(/^Until it updates/),
+      "Custom…",
+    ]);
+    fireEvent.click(
+      within(submenu).getByRole("menuitem", { name: /^Until it updates/ }),
+    );
+    await waitFor(() => expect(snoozeCalls(slot)).toHaveLength(1));
+    expect(snoozeCalls(slot)[0]).toMatchObject({ until: null });
+    expect([...snoozeCalls(slot)[0]!.threadIds].sort()).toEqual(["ask", "nap"]);
+    slot.lifecycle.unmount();
+  });
+
+  it("offers only Snooze on Unfiled's header", async () => {
+    const slot = await mount(
+      [...threads(), sidebarThread("loose", { title: "Loose task" })],
+      { settings: { showRecent: false, showForYou: false } },
+    );
+    expect(items(await headerMenu(slot, "Unfiled"))).toEqual([
+      "Snooze 1 thread",
+    ]);
+    slot.lifecycle.unmount();
+  });
 });
 
 it("keeps a snoozed child moving with its parent", async () => {
