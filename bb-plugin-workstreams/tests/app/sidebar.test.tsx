@@ -596,7 +596,7 @@ describe("thread list", () => {
       { settings: { showForYou: false } },
     );
     const menuButton = await slot.findByRole("button", {
-      name: "Section options",
+      name: "Recent options",
     });
     fireEvent.pointerDown(menuButton, { button: 0, ctrlKey: false });
     const menu = await screen.findByRole("menu");
@@ -605,7 +605,7 @@ describe("thread list", () => {
     );
     expect(groupRows(slot, "Recent")).toEqual(["Alpha task", "Zulu task"]);
     fireEvent.pointerDown(
-      slot.getByRole("button", { name: "Section options" }),
+      slot.getByRole("button", { name: "Recent options" }),
       { button: 0, ctrlKey: false },
     );
     fireEvent.click(
@@ -2095,6 +2095,76 @@ describe("row hover buttons", () => {
     expect(
       age.contains(within(row).getByRole("button", { name: "Archive" })),
     ).toBe(false);
+    slot.lifecycle.unmount();
+  });
+
+  it("orders a workstream header's actions like a thread row's, Snooze last", async () => {
+    const slot = await mount(undefined, { settings: { showRecent: false } });
+    const header = (await rowOf(slot))
+      .closest("section")!
+      .querySelector(".group\\/row")!;
+    const actions = within(header as HTMLElement)
+      .getAllByRole("button")
+      .map((b) => b.getAttribute("aria-label"))
+      .slice(1);
+    expect(actions).toEqual([
+      "Focus on Alpha",
+      "New work in Alpha",
+      expect.stringMatching(/^Snooze 2 threads in Alpha until/),
+    ]);
+    slot.lifecycle.unmount();
+  });
+
+  it("keeps only a focused workstream's Focus and an empty one's New work in view", async () => {
+    const slot = await mount(undefined, {
+      settings: { showRecent: false, showForYou: false },
+      order: { workstreams: [], threads: {}, prioritized: ["sec_b"] },
+    });
+    const revealed = () =>
+      [...slot.container.querySelectorAll("button[data-revealed]")].map((b) =>
+        b.getAttribute("aria-label"),
+      );
+    await waitFor(() => expect(revealed()).toEqual(["Stop focusing on Beta"]));
+    fireEvent.click(
+      slot.getByRole("button", { name: "Show other workstreams" }),
+    );
+    await waitFor(() =>
+      expect(revealed()).toEqual(["Stop focusing on Beta", "New work in Zeta"]),
+    );
+    slot.lifecycle.unmount();
+  });
+
+  it("offers New work on a Dormant workstream, as on any other", async () => {
+    const long = Date.now() - 60 * 24 * 3_600_000;
+    const slot = await mount(
+      [
+        sidebarThread("old", {
+          sectionId: "sec_b",
+          title: "Old task",
+          latestAttentionAt: long,
+        }),
+      ],
+      { activeThreadId: null, settings: { showRecent: false } },
+    );
+    fireEvent.click(
+      await waitFor(() => slot.getByRole("button", { name: /^Dormant/ })),
+    );
+    const beta = within(slot.getByRole("region", { name: "Beta" }));
+    expect(beta.getByRole("button", { name: "Focus on Beta" })).toBeTruthy();
+    expect(beta.getByRole("button", { name: "New work in Beta" })).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
+  it.each([
+    ["Recent options", { showForYou: false }],
+    ["Sort workstreams", { showRecent: false }],
+  ] as const)("names the %s menu in a tooltip", async (name, settings) => {
+    const slot = await mount(undefined, { settings });
+    fireEvent.pointerMove(await slot.findByRole("button", { name }), {
+      pointerType: "mouse",
+    });
+    const tooltip = await screen.findByRole("tooltip", {}, { timeout: 2000 });
+    expect(tooltip.textContent).toBe(name);
     slot.lifecycle.unmount();
   });
 

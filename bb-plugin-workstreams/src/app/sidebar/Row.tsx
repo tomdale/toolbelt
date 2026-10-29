@@ -21,7 +21,7 @@ import type { WorkView } from "../useWorkstreams.ts";
 import { StatusMark } from "./StatusMark.tsx";
 import { usePrefs } from "../prefs.ts";
 import { SnoozeIcon, WakeIcon } from "../snooze/icons.tsx";
-import { HoverAction, HoverMenuButton } from "./HoverActions.tsx";
+import { HoverAction, HoverMenuButton, RowActions } from "./HoverActions.tsx";
 
 const INDENT_PX = 12;
 const MAX_INDENT = 4;
@@ -292,11 +292,8 @@ export function Row({
           </span>
         ) : null}
       </span>
-      {/* Archive, then snooze (its menu opens on hover), left of the age. Collapsed
-          rather than display:none, so keyboard focus can reach them;
-          focusing one opens the group, and so does an open menu. The
-          negative margin cancels the row's gap while collapsed. */}
-      <span className="ws-row-aside relative -ml-1.5 flex max-w-0 shrink-0 items-center overflow-hidden opacity-0 group-hover/row:ml-0 group-has-[:focus-visible]/row:ml-0 group-has-[[data-state=open]]/row:ml-0 group-hover/row:max-w-24 group-hover/row:opacity-100 group-has-[:focus-visible]/row:max-w-24 group-has-[:focus-visible]/row:opacity-100 group-has-[[data-state=open]]/row:max-w-24 group-has-[[data-state=open]]/row:opacity-100 pointer-coarse:hidden">
+      {/* Archive, then snooze (its menu opens on hover), left of the age. */}
+      <RowActions className="ws-row-aside">
         {showArchive ? (
           <HoverAction
             label="Archive"
@@ -320,7 +317,7 @@ export function Row({
             </HoverAction>
           )
         ) : null}
-      </span>
+      </RowActions>
       {/* A fixed-width column, so ages line up down the list; only a
           four-digit age like "100w" widens it. */}
       {shortcut || context || timestamps !== "hide" ? (

@@ -1,6 +1,8 @@
 /**
- * The buttons a sidebar row shows on hover: plain actions with a tooltip,
- * and a button whose menu opens when the pointer rests on it.
+ * The buttons a sidebar row shows on hover, shared by thread rows and
+ * workstream headers so that every row's actions look, behave, and line up
+ * alike: plain actions with a tooltip, and a button whose menu opens when
+ * the pointer rests on it, gathered in `RowActions`.
  */
 import {
   forwardRef,
@@ -21,19 +23,94 @@ export const MENU_OPEN_DELAY_MS = 350;
 /** How long the menu survives the pointer leaving it or its button. */
 export const MENU_CLOSE_DELAY_MS = 200;
 
-/** A row action with a tooltip naming it. */
-export function HoverAction({
-  label,
-  onClick,
+/**
+ * Keeps a row action out of sight, and out of the layout so the title keeps
+ * its width, until its row (marked `group/row`) is hovered, holds keyboard
+ * focus, or has a menu open. Touch screens can't hover, so there it stays
+ * hidden.
+ */
+const REVEAL_ON_ROW_HOVER =
+  "max-w-0 overflow-hidden opacity-0 group-hover/row:max-w-6 group-hover/row:opacity-100 group-has-[:focus-visible]/row:max-w-6 group-has-[:focus-visible]/row:opacity-100 group-has-[[data-state=open]]/row:max-w-6 group-has-[[data-state=open]]/row:opacity-100 pointer-coarse:hidden";
+
+/**
+ * The look of every sidebar row action, revealed or always shown, and of
+ * the section menus beside them: a muted 14px icon in a square that lights
+ * up under the pointer and while its menu is open.
+ */
+export const rowActionClass =
+  "flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground";
+
+/**
+ * A row's actions, at its trailing end just before its details (an age or
+ * counts). The row is a flex row with `gap-1.5` and the `group/row` class.
+ *
+ * Every row type orders its actions the same way: toggles (Focus), then
+ * creation (New work), then putting the row away (Archive, then Snooze or
+ * Wake, which is always last). Each action takes no room until the row is
+ * hovered (see `REVEAL_ON_ROW_HOVER`) unless it is `revealed`, as a focused
+ * workstream's Focus mark and an empty one's New work are. While nothing in
+ * it shows, the negative margin cancels the row's gap.
+ */
+export function RowActions({
+  className,
   children,
 }: {
-  label: string;
-  onClick: () => void;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <Hint label={label}>
-      <HoverButton label={label} onRun={onClick}>
+    <span
+      className={cn(
+        "relative -ml-1.5 flex shrink-0 items-center group-hover/row:ml-0 group-has-[:focus-visible]/row:ml-0 group-has-[[data-state=open]]/row:ml-0 has-[[data-revealed]]:ml-0",
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+type RowActionProps = {
+  /** Names the action and its target for assistive technology. */
+  label: string;
+  onClick: () => void;
+  /** Stays in view without hover, on touch screens too. */
+  revealed?: boolean;
+  /** Sized for a workstream header, whose row is shorter than a thread's. */
+  compact?: boolean;
+  /** Adjusts the button's look, as a pressed Focus button's color. */
+  className?: string;
+  children: ReactNode;
+};
+
+/**
+ * A row action with a tooltip naming it: `hint`, or the label when no
+ * shorter name suits ("Focus" for "Focus on Alpha").
+ */
+export function HoverAction({
+  label,
+  hint = label,
+  onClick,
+  revealed,
+  compact,
+  className,
+  pressed,
+  children,
+}: RowActionProps & {
+  hint?: string;
+  /** Makes the action a toggle, currently on or off. */
+  pressed?: boolean;
+}) {
+  return (
+    <Hint label={hint}>
+      <HoverButton
+        label={label}
+        revealed={revealed}
+        compact={compact}
+        className={className}
+        aria-pressed={pressed}
+        onRun={onClick}
+      >
         {children}
       </HoverButton>
     </Hint>
@@ -56,16 +133,11 @@ export function HoverMenuButton({
   label,
   onClick,
   menu,
+  revealed,
+  compact,
   className,
   children,
-}: {
-  label: string;
-  onClick: () => void;
-  menu: ReactNode;
-  /** Restyles the button, as a workstream header's quieter one does. */
-  className?: string;
-  children: ReactNode;
-}) {
+}: RowActionProps & { menu: ReactNode }) {
   const portalScope = usePortalScopeProps();
   const [open, setOpen] = useState(false);
   const byKeyboard = useRef(false);
@@ -92,6 +164,8 @@ export function HoverMenuButton({
         <HoverButton
           ref={button}
           label={label}
+          revealed={revealed}
+          compact={compact}
           className={className}
           aria-haspopup="menu"
           aria-expanded={open}
@@ -179,13 +253,29 @@ function moveFocus(event: KeyboardEvent<HTMLElement>) {
 
 /**
  * The button itself. It stops pointer and mouse downs so it never starts a
- * drag, and clicks so it never opens the row.
+ * drag (of the row, or of the workstream a header leads), and clicks so it
+ * never opens the row or folds the workstream.
  */
 const HoverButton = forwardRef<
   HTMLButtonElement,
-  ComponentPropsWithoutRef<"button"> & { label: string; onRun?: () => void }
+  ComponentPropsWithoutRef<"button"> & {
+    label: string;
+    revealed?: boolean;
+    compact?: boolean;
+    onRun?: () => void;
+  }
 >(function HoverButton(
-  { label, onRun, className, children, onPointerDown, onClick, ...rest },
+  {
+    label,
+    revealed,
+    compact,
+    onRun,
+    className,
+    children,
+    onPointerDown,
+    onClick,
+    ...rest
+  },
   ref,
 ) {
   return (
@@ -194,6 +284,7 @@ const HoverButton = forwardRef<
       ref={ref}
       type="button"
       aria-label={label}
+      data-revealed={revealed ? "" : undefined}
       onPointerDown={(event) => {
         event.stopPropagation();
         onPointerDown?.(event);
@@ -207,7 +298,9 @@ const HoverButton = forwardRef<
         onRun?.();
       }}
       className={cn(
-        "flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground",
+        rowActionClass,
+        compact && "size-5",
+        !revealed && REVEAL_ON_ROW_HOVER,
         className,
       )}
     >

@@ -88,7 +88,12 @@ import {
   type PresenceEntry,
 } from "./motion.ts";
 import { FocusIcon } from "./FocusIcon.tsx";
-import { HoverMenuButton } from "./HoverActions.tsx";
+import {
+  HoverAction,
+  HoverMenuButton,
+  RowActions,
+  rowActionClass,
+} from "./HoverActions.tsx";
 import { Hint } from "../Hint.tsx";
 import { usePrefs } from "../prefs.ts";
 
@@ -931,6 +936,7 @@ export function WorkstreamsThreadList({
                     collapsed: groupCollapsed(group.id, true, group.topicId),
                     toggle: () => toggleGroup(group.id, true, group.topicId),
                     onToggleFocus: () => toggleFocus(group),
+                    onNewThread: newThreadIn(group),
                     muted: true,
                   })}
                 </li>
@@ -1308,6 +1314,31 @@ function Band({
   );
 }
 
+/**
+ * The ⋯ button that opens a section's options, such as its sort. It looks
+ * like a row action (`rowActionClass`), but stays in view, dimmed until used,
+ * because it is the only way to those options, on touch screens too.
+ */
+function SectionMenuTrigger({ label }: { label: string }) {
+  return (
+    <DropdownMenu.Trigger asChild>
+      <Hint label={label}>
+        <button
+          type="button"
+          aria-label={label}
+          onClick={(event) => event.stopPropagation()}
+          className={cn(
+            rowActionClass,
+            "opacity-50 hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
+          )}
+        >
+          <Icon name="MoreHorizontal" className="size-3.5" />
+        </button>
+      </Hint>
+    </DropdownMenu.Trigger>
+  );
+}
+
 function SidebarViewOptionsMenu({
   sort,
   onChange,
@@ -1322,17 +1353,7 @@ function SidebarViewOptionsMenu({
   ] as const;
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button
-          type="button"
-          aria-label="Sort workstreams"
-          title="Sort workstreams"
-          onClick={(event) => event.stopPropagation()}
-          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-50 hover:bg-sidebar-accent hover:text-foreground hover:opacity-100 focus-visible:opacity-100"
-        >
-          <Icon name="MoreHorizontal" className="size-3.5" />
-        </button>
-      </DropdownMenu.Trigger>
+      <SectionMenuTrigger label="Sort workstreams" />
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           align="end"
@@ -1399,17 +1420,7 @@ function BandOptionsMenu({
           ];
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button
-          type="button"
-          aria-label="Section options"
-          title={`${label} options`}
-          onClick={(event) => event.stopPropagation()}
-          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-40 hover:bg-sidebar-accent hover:text-foreground hover:opacity-100 focus-visible:opacity-100"
-        >
-          <Icon name="MoreHorizontal" className="size-3.5" />
-        </button>
-      </DropdownMenu.Trigger>
+      <SectionMenuTrigger label={`${label} options`} />
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           align="end"
@@ -1510,7 +1521,7 @@ function WorkstreamGroup({
       <div
         ref={handle?.ref}
         {...handle?.listeners}
-        className="group/head flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-sidebar-accent/60"
+        className="group/row flex items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-sidebar-accent/60"
       >
         <button
           type="button"
@@ -1532,76 +1543,70 @@ function WorkstreamGroup({
             }
           />
         </button>
-        {snooze ? (
-          // Appears on hover like New work; resting on it opens its menu.
-          // Left out on touch screens, which have no hover to reveal it, so
-          // a stray tap can't snooze a whole workstream.
-          <HoverMenuButton
-            label={snooze.title}
-            onClick={snooze.run}
-            menu={snooze.menu}
-            className="h-auto w-auto rounded p-0.5 opacity-0 hover:bg-transparent focus-visible:opacity-100 group-hover/head:opacity-100 data-[state=open]:bg-transparent data-[state=open]:opacity-100 pointer-coarse:hidden"
-          >
-            <SnoozeIcon className="size-3.5" />
-          </HoverMenuButton>
-        ) : null}
-        {onToggleFocus ? (
-          // Always shown on a focused workstream, where it is also the focus
-          // mark; elsewhere it appears on hover like New work.
-          <Hint label={group.prioritized ? "Stop focusing" : "Focus"}>
-            <button
-              type="button"
-              aria-pressed={group.prioritized}
-              aria-label={
+        {/* The same actions, look, and order as a thread row's (see
+            `RowActions`): Focus, New work, then Snooze. */}
+        <RowActions>
+          {onToggleFocus ? (
+            // Also the focus mark, so a focused workstream always shows it.
+            <HoverAction
+              compact
+              revealed={group.prioritized}
+              pressed={group.prioritized}
+              label={
                 group.prioritized
                   ? `Stop focusing on ${group.name}`
                   : `Focus on ${group.name}`
               }
+              hint={group.prioritized ? "Stop focusing" : "Focus"}
               onClick={onToggleFocus}
-              className={cn(
-                "rounded p-0.5 hover:text-foreground focus-visible:opacity-100",
-                group.prioritized
-                  ? "text-foreground/70"
-                  : "text-muted-foreground opacity-0 group-hover/head:opacity-100",
-              )}
+              className={group.prioritized ? "text-foreground/70" : undefined}
             >
               <FocusIcon filled={group.prioritized} className="size-3.5" />
-            </button>
-          </Hint>
-        ) : null}
-        {onNewThread ? (
-          <Hint label={`New work in ${group.name}`}>
-            <button
-              type="button"
-              aria-label={`New work in ${group.name}`}
+            </HoverAction>
+          ) : null}
+          {onNewThread ? (
+            // An empty workstream has nothing else to offer, so it shows.
+            <HoverAction
+              compact
+              revealed={group.total === 0}
+              label={`New work in ${group.name}`}
               onClick={onNewThread}
-              className={cn(
-                "rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:opacity-100 group-hover/head:opacity-100",
-                group.total > 0 && "opacity-0",
-              )}
             >
               <Icon name="Plus" className="size-3.5" />
-            </button>
-          </Hint>
-        ) : null}
-        {shows(prefs?.sidebar.waitingCount) && group.needsYou > 0 ? (
-          <span
-            className={cn(
-              "rounded-full px-1.5 text-[11px] font-medium tabular-nums transition-colors duration-300",
-              quietCount
-                ? "bg-muted-foreground/15 text-muted-foreground"
-                : "ws-amber-pill",
-            )}
-            title={`${group.needsYou} waiting on you`}
-          >
-            {group.needsYou}
-          </span>
-        ) : null}
-        {shows(prefs?.sidebar.threadCount) && group.total > 0 ? (
-          <span className="text-[11px] tabular-nums text-muted-foreground/70">
-            {group.total}
-          </span>
-        ) : null}
+            </HoverAction>
+          ) : null}
+          {snooze ? (
+            <HoverMenuButton
+              compact
+              label={snooze.title}
+              onClick={snooze.run}
+              menu={snooze.menu}
+            >
+              <SnoozeIcon className="size-3.5" />
+            </HoverMenuButton>
+          ) : null}
+        </RowActions>
+        {/* The header's details, as a thread row's age. */}
+        <span className="flex shrink-0 items-center gap-1 empty:hidden">
+          {shows(prefs?.sidebar.waitingCount) && group.needsYou > 0 ? (
+            <span
+              className={cn(
+                "rounded-full px-1.5 text-[11px] font-medium tabular-nums transition-colors duration-300",
+                quietCount
+                  ? "bg-muted-foreground/15 text-muted-foreground"
+                  : "ws-amber-pill",
+              )}
+              title={`${group.needsYou} waiting on you`}
+            >
+              {group.needsYou}
+            </span>
+          ) : null}
+          {shows(prefs?.sidebar.threadCount) && group.total > 0 ? (
+            <span className="text-[11px] tabular-nums text-muted-foreground/70">
+              {group.total}
+            </span>
+          ) : null}
+        </span>
       </div>
       {collapsed ? null : (
         <ul className={cn("mt-0.5", nested && "pl-4")}>{children}</ul>
