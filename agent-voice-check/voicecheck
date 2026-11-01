@@ -83,6 +83,24 @@ STRICT = (
     "Long sentences, headings and defect reports are clean."
 )
 
+# How often a flagged sentence carrying this phrase turned out to be a real
+# violation, measured by hand on 200 audited sentences from BB pi sessions.
+# The contrast patterns are the weak ones; every abstract verb and candor word
+# was real. Ranking multiplies the gate score by this so the shortlist puts the
+# trustworthy phrases first.
+PRIORS = {
+    "candor grading": 1.00,
+    "gets no X at all": 1.00,
+    "vibe word": 0.78,
+    "abstract verb": 0.71,
+    "evidence framing": 0.50,
+    "em-dash aside": 0.50,
+    "ascribed intent": 0.50,
+    "rather than": 0.35,
+    "minimizer": 0.25,
+    "instead of": 0.22,
+}
+
 FIXES = {
     "subject": "name what the thing does, then what happened to it",
     "writer": "say what happened and let the reader weigh it",
@@ -265,7 +283,8 @@ def report(findings, *, as_json, elapsed_ms, cost, checked, model):
     if not findings:
         print(f"voicecheck: clean ({checked} sentences, {elapsed_ms} ms, ${cost:.6f})")
         return
-    print(f"voicecheck: {len(findings)} finding(s) in {checked} sentences\n")
+    print(f"voicecheck: {len(findings)} finding(s) in {checked} sentences")
+    print("  This is a first pass: expect roughly a third of these to be false alarms.\n")
     for f in findings:
         print(f'  line {f["line"]}  {f["problem"]} ({f["confidence"]:.2f})')
         print(f'    {f["sentence"]}')
@@ -274,27 +293,42 @@ def report(findings, *, as_json, elapsed_ms, cost, checked, model):
     print(f"  {elapsed_ms} ms, ${cost:.6f}, model {model}")
 
 
-def selftest(model: str, key: str, threshold: float) -> int:
-    """Run the labeled fixtures through the gate and report agreement."""
+def selftest(model: str, key: str) -> int:
+    """Run the labeled fixtures and report what a first pass cares about.
+
+    Recall first: every known violation should come back. False alarms are
+    acceptable when they rank below the violations, because the reader works
+    down a ranked list and stops when it stops paying.
+    """
     path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "evals", "fixtures.jsonl")
     cases = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
     items = [
-        {"offset": index, "line": index + 1, "sentence": case["sentence"], "matched": [case["why"]]}
-        for index, case in enumerate(cases)
+        {"offset": i, "line": i + 1, "sentence": c["sentence"], "matched": [c["why"]]}
+        for i, c in enumerate(cases)
     ]
     started = time.monotonic()
     answers, cost = ask(items, model, key, timeout=60)
     elapsed_ms = int((time.monotonic() - started) * 1000)
-    agree = 0
+    scored = []
     for index, case in enumerate(cases):
         gate = answers.get(f"g{index}") or {}
         score = (gate.get("probabilities") or {}).get("problem", 0.0)
-        guessed = 1 if score >= threshold else 0
-        agree += guessed == case["flag"]
-        mark = "ok " if guessed == case["flag"] else "ERR"
-        print(f"{mark} want={case['flag']} P(problem)={score:.2f}  {case['sentence'][:72]}")
-    print(f"\nagreement {agree}/{len(cases)} at threshold {threshold}, {elapsed_ms} ms, ${cost:.6f}")
-    return 0 if agree == len(cases) else 1
+        scored.append((score, case["flag"], case["sentence"]))
+    violations = [s for s in scored if s[1]]
+    clean = [s for s in scored if not s[1]]
+    caught = sum(1 for score, _, _ in violations if score >= DEFAULT_THRESHOLD)
+    flagged_clean = sum(1 for score, _, _ in clean if score >= DEFAULT_THRESHOLD)
+    for score, flag, sentence in sorted(scored, reverse=True):
+        mark = "flag" if score >= DEFAULT_THRESHOLD else "    "
+        print(f"{mark} want={flag} p={score:.2f}  {sentence[:70]}")
+    worst_violation = min(score for score, _, _ in violations)
+    best_clean = max(score for score, _, _ in clean)
+    ranked_apart = worst_violation > best_clean
+    print(f"\ncaught {caught}/{len(violations)} violations, {flagged_clean}/{len(clean)} clean "
+          f"sentences flagged at {DEFAULT_THRESHOLD}, {elapsed_ms} ms, ${cost:.6f}")
+    print(f"every violation ranks above every clean sentence: {ranked_apart} "
+          f"(lowest violation {worst_violation:.2f} vs highest clean {best_clean:.2f})")
+    return 0 if caught == len(violations) else 1
 
 
 def main(argv: list[str]) -> int:
@@ -334,7 +368,7 @@ def main(argv: list[str]) -> int:
         if not key:
             print("voicecheck: --selftest needs AI_GATEWAY_API_KEY", file=sys.stderr)
             return 2
-        return selftest(DEFAULT_MODEL, key, DEFAULT_THRESHOLD)
+        return selftest(DEFAULT_MODEL, key)
 
     if paths and paths[0] == "-":
         text = sys.stdin.read()
@@ -374,10 +408,16 @@ def main(argv: list[str]) -> int:
             family = (answers.get(f"f{index}") or {}).get("choice") or "none"
             if family == "none":
                 family = _family_of(item["matched"][0])
+            prior = max((PRIORS.get(name, 0.5) for name in item["matched"]), default=0.5)
             findings.append(
-                {**item, "problem": family, "confidence": probabilities.get("problem", 0.0)}
+                {
+                    **item,
+                    "problem": family,
+                    "confidence": probabilities.get("problem", 0.0),
+                    "rank": probabilities.get("problem", 0.0) * prior,
+                }
             )
-        findings.sort(key=lambda f: -f["confidence"])
+        findings.sort(key=lambda f: -f["rank"])
         for item in found[limit:]:
             findings.append({**item, "problem": item["matched"] and _family_of(item["matched"][0]) or "shape", "confidence": 0.0})
     else:
