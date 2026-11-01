@@ -1,0 +1,19 @@
+{
+  "package": "bb-app",
+  "version": "0.48.1",
+  "registryMetadata": "https://registry.npmjs.org/bb-app/0.48.1",
+  "tarball": "https://registry.npmjs.org/bb-app/-/bb-app-0.48.1.tgz",
+  "integrity": "sha512-9y1ixbNYoffrLDUT+g4ALjkI8DLgzpCdvpreM23WxzdEiOxvvkGEzyTqqKPhV5zWJsGrJeeBCh+J8Xf9TenHTg==",
+  "unpackedBytes": 97804856,
+  "attestation": "https://registry.npmjs.org/-/npm/v1/attestations/bb-app@0.48.1",
+  "reportedSourceCommit": "https://github.com/get-bb/bb/commit/e003e9510cbfd3bb6c26a28630b46ffb1c242a44",
+  "reportedBuildInvocation": "https://github.com/get-bb/bb/actions/runs/40981326765/attempts/1",
+  "reportedWorkflow": ".github/workflows/publish-bb-app.yml",
+  "verification": "npm ci verifies lockfile integrity; upstream attestation payload inspected, not independently signature-verified",
+  "alternativeLinuxDesktopRelease": {
+    "url": "https://github.com/get-bb/bb/releases/download/desktop-latest/bb-0.48.1-x86_64.AppImage",
+    "bytes": 188254688,
+    "sha256": "df04e14d4735ed0b0922bb6b16a833bece5f45356a63de7d4d847bf7b1d2ced1",
+    "used": false
+  }
+}

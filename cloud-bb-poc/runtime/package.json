@@ -1,0 +1,10 @@
+{
+  "name": "cloud-bb-poc-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "^22.19.0 || ^24.0.0 || ^26.0.0" },
+  "scripts": { "test": "node --test runtime.test.mjs" },
+  "dependencies": { "bb-app": "0.48.1" },
+  "allowScripts": { "better-sqlite3": true, "node-pty": true, "@parcel/watcher": true }
+}

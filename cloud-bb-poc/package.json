@@ -1,0 +1,12 @@
+{
+  "name": "cloud-bb-poc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24 <25 || >=26 <27" },
+  "scripts": {
+    "test": "node --test provisioning/*.test.mjs gateway/*.test.mjs runtime/*.test.mjs && python3 -m unittest discover -s worker",
+    "cloud": "node provisioning/cloud.mjs"
+  },
+  "dependencies": { "@vercel/sandbox": "3.5.1" }
+}

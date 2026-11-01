@@ -1,0 +1,7 @@
+{
+  "name": "cloud-bb-poc-gateway",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node gateway.mjs", "test": "node --test gateway.test.mjs" }
+}

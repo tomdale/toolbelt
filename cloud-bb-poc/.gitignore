@@ -1,0 +1,8 @@
+node_modules/
+.env*
+*.env
+*.private*
+bootstrap.json
+__pycache__/
+*.pyc
+state/

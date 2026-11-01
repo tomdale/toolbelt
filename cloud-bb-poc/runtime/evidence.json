@@ -1,0 +1,45 @@
+{
+  "scope": "Local disposable Docker container; no cloud deployment or published ports",
+  "package": "bb-app@0.48.1",
+  "platform": "linux",
+  "architecture": "x64",
+  "toolchainImage": "node:24-bookworm",
+  "localImageId": "sha256:abb4ee76bb0b4a2be8801bafdeeaa0d491a16bba3f3e775da0062ed1eef022e9",
+  "node": "v24.18.0",
+  "npm": "11.16.0",
+  "install": {
+    "status": "passed",
+    "command": "node /runtime/install.mjs /proof/install-final2",
+    "dependenciesAdded": 52,
+    "nativeScriptsRun": ["@parcel/watcher", "better-sqlite3", "node-pty"],
+    "log": "/tmp/cloud-bb-linux-final2.log"
+  },
+  "unitTests": { "passed": 4, "failed": 0, "command": "npm test" },
+  "smoke": {
+    "status": "passed",
+    "command": "node /runtime/smoke.mjs /proof/install-final2 /proof/state-safety2",
+    "log": "/tmp/cloud-bb-linux-safety2.log",
+    "checks": [
+      "fresh health endpoint",
+      "occupied core port rejected before state mutation",
+      "actual released BB 0.48.1",
+      "bundled UI HTML and referenced JS served",
+      "no local agent host registered",
+      "bundled skill files: bb-cli, bb-plugin-authoring, skill-creator, submit-a-plugin",
+      "public Host/Origin accepted only for configured hostname",
+      "realtime /ws upgrade",
+      "Linux kernel confirms core bound only to IPv4 loopback",
+      "graceful shutdown releases core listener",
+      "existing state refused after shutdown"
+    ]
+  },
+  "notTested": [
+    "Browser UI interaction",
+    "Agent use of bundled skills",
+    "Remote agent enrollment and execution",
+    "Gateway authentication or authorization",
+    "Linux arm64 or macOS boot",
+    "Cloud deployment",
+    "Persistence or restart of existing state"
+  ]
+}
