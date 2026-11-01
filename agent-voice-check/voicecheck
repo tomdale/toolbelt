@@ -33,7 +33,7 @@ import urllib.request
 
 EVALUATE_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
 DEFAULT_MODEL = "openai/gpt-6-luna-decisions"
-DEFAULT_THRESHOLD = 0.45
+DEFAULT_THRESHOLD = 0.5
 DEFAULT_TOP = 10
 MAX_CANDIDATES = 24
 
@@ -60,8 +60,8 @@ PATTERNS: list[tuple[str, str, str]] = [
 ]
 
 DEVICES = (
-    "1. it contrasts its claim with an alternative the reader never proposed "
-    "('X rather than Y', 'instead of Y', 'not X but Y'); "
+    "1. it contrasts its claim against a reading nobody offered, saying what a thing is not in order to "
+    "preempt a complaint ('the shape is a rail rather than a bullet list', 'not a drawing, a change'); "
     "2. it minimises what it describes ('gets no X at all, only Y', 'nothing but', 'just', 'simply'); "
     "3. it gives a layout or component an intention ('deliberately', 'on purpose'); "
     "4. it reports the writer's own certainty or candor ('evidence', 'finding', 'observed', "
@@ -70,14 +70,17 @@ DEVICES = (
     "'the whole point'); "
     "6. it talks about the document instead of the subject ('this page shows', 'listed below'); "
     "7. it uses an abstract verb where a plain one exists ('carries a title', 'names the field', "
-    "'becomes a panel')"
+    "'becomes a panel'). "
+    "CLEAN, however: a contrast between two behaviours that both exist or existed, where each side names "
+    "something real ('wrapped rather than rethrown bare', 'throws straight away instead of sleeping one "
+    "more time', 'a compliance gap rather than a broken renderer'); 'nothing' or 'no' stating a fact the "
+    "reader needs ('wraps them in space-y-4 and nothing else', 'no in-repo evidence'); an em dash around a "
+    "list of facts; 'just', 'only' or 'deliberately' naming a real default or a real decision."
 )
 
 STRICT = (
-    "Flag the sentence ONLY if it uses one of those seven devices. These are clean: "
-    "a long sentence with subordinate clauses; a fact containing 'always', 'never', 'the one' "
-    "or 'nothing' in its ordinary sense; an em dash around a short aside; a list of items; "
-    "a sentence explaining a defect; a heading."
+    "Flag it only for a device listed above, not for the clean cases listed there. "
+    "Long sentences, headings and defect reports are clean."
 )
 
 FIXES = {
@@ -273,7 +276,7 @@ def report(findings, *, as_json, elapsed_ms, cost, checked, model):
 
 def selftest(model: str, key: str, threshold: float) -> int:
     """Run the labeled fixtures through the gate and report agreement."""
-    path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures.jsonl")
+    path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "evals", "fixtures.jsonl")
     cases = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
     items = [
         {"offset": index, "line": index + 1, "sentence": case["sentence"], "matched": [case["why"]]}

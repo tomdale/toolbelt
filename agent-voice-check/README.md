@@ -28,21 +28,22 @@ The gate exists because a regex cannot tell "the chip carries a label" from
 "the finding carries its certainty in an icon", and the model costs about
 $0.00004 per sentence.
 
-Measured on this machine: 15/15 on `fixtures.jsonl` at threshold 0.45
-(flagged sentences score 0.61–1.00, clean ones 0.01–0.24), 339 ms and $0.0010
-for the fixture run, 232 ms and $0.0004 for a ten-sentence document.
+Measured on this machine at the shipped threshold of 0.50: 15/15 on the curated
+fixtures, and on 45 sentences pulled from real BB pi sessions (25 violations,
+20 clean, in `evals/corpus.jsonl`) precision 0.78, recall 1.00, F1 0.88,
+accuracy 0.84 in 1.3 s. Run `evals/run.py` to reproduce the sweep.
 
 ## Options
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--json` | off | Findings as JSON, with line, sentence, problem, confidence, matched phrase, fix, cost and duration |
-| `--threshold` | 0.45 | Probability of "problem" a sentence needs to be reported |
+| `--threshold` | 0.5 | Probability of "problem" a sentence needs to be reported |
 | `--top` | 10 | Findings printed; `--all` lifts the cap |
 | `--max-candidates` | 24 | Sentences sent to the model in one call; the rest fall back to the phrase pass |
 | `--no-model` | off | Phrase pass only, free and instant, noisier |
 | `--quiet` | off | No output, exit code only |
-| `--selftest` | off | Run the fixtures through the gate and report agreement |
+| `--selftest` | off | Run the curated fixtures through the gate and report agreement |
 | `--model` | `openai/gpt-6-luna-decisions` | Any AI Gateway decision model |
 
 Needs `AI_GATEWAY_API_KEY`. Without it the phrase pass still runs and says so
@@ -55,6 +56,19 @@ than the work), `writer` (the sentence is about the writer's confidence or
 candor), `claim` (it corrects an objection nobody raised), `reader` (it
 asserts importance or tours the document), `shape` (padding whose rhythm
 carries it).
+
+## The eval
+
+`evals/corpus.jsonl` holds 45 sentences taken from recent BB pi sessions, read
+against the `agent-voice` skill and labeled. `evals/run.py` sweeps the
+threshold and reports precision, recall, F1 and every mistake, which is how 0.50
+was chosen. The corpus is where the tool's real weakness shows: the phrase pass
+reaches every violation it is asked about, and the gate is what costs precision,
+mostly on legitimate contrasts ("wrapped rather than rethrown bare") that look
+like the manufactured ones.
+
+Add a sentence to the corpus whenever the tool is wrong in the wild. A mistake
+that stays in the corpus keeps the threshold honest.
 
 ## Known limits
 
