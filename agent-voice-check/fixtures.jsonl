@@ -1,0 +1,15 @@
+{"sentence":"The tray gets no border at all, only a little space around its contents.","flag":1,"why":"gets no X at all, only Y"}
+{"sentence":"The route is the point, so the map is a line rather than a list.","flag":1,"why":"rather than"}
+{"sentence":"It is deliberately quieter than the header.","flag":1,"why":"ascribed intent"}
+{"sentence":"Three honest caveats, because the draft is not yet a finished guide.","flag":1,"why":"candor grading"}
+{"sentence":"Somewhere in the whole process, and I cannot yet name the cause.","flag":1,"why":"performed doubt"}
+{"sentence":"Showing the results instead of hiding them in a table.","flag":1,"why":"instead of"}
+{"sentence":"The editor marked the section as optional rather than required, so reading it is the reader's decision.","flag":1,"why":"rather than"}
+{"sentence":"The diagram is exactly that and nothing else, so you can see the split.","flag":1,"why":"nothing else"}
+{"sentence":"A colored frame would draw attention to the heading, which is the one thing the layout reserves for warnings.","flag":1,"why":"the one thing"}
+{"sentence":"Two items are not decisions but have to be settled before the work starts.","flag":1,"why":"not X but Y"}
+{"sentence":"The heading is 16px and the body text is 13px.","flag":0,"why":"plain measurement"}
+{"sentence":"The queue holds two messages and drops the rest.","flag":0,"why":"plain behavior"}
+{"sentence":"I ran the tests; eight passed and one was skipped.","flag":0,"why":"plain status"}
+{"sentence":"The renderer prints each result on a separate row.","flag":0,"why":"plain description"}
+{"sentence":"The listener reads the current position from a shared reference.","flag":0,"why":"plain explanation"}
