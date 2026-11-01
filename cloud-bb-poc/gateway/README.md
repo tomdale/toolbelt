@@ -15,7 +15,7 @@ The isolated core must bind **only** `127.0.0.1:38886`, serve its actual bundled
 
 ## Owner admission
 
-Open `https://<gateway-host>/_gateway/login` and submit the temporary password through the form. The POST requires the exact configured `Origin`. A successful login issues a random, one-hour `__Host-bb-owner` cookie with `Secure; HttpOnly; SameSite=Strict; Path=/`, then redirects to `/`. Sessions live only in memory; restart revokes them. Login allows ten attempts per minute globally and at most 32 concurrent sessions. `POST /_gateway/logout` with the cookie and exact origin revokes that session, including its open sockets.
+Open `https://<gateway-host>/_gateway/login` and submit the temporary password through the form. Native desktop can add the origin directly: an unauthenticated exact-root GET with HTML Accept, `Sec-Fetch-Mode: navigate`, and `Sec-Fetch-Dest: document` receives a fixed 303 redirect to the login page, without upstream dispatch. Raw root requests, API requests, assets, and WebSockets are not redirected or authenticated by this rule. The POST requires the exact configured `Origin`. A successful login issues a random, one-hour `__Host-bb-owner` cookie with `Secure; HttpOnly; SameSite=Strict; Path=/`, then redirects to `/`. Sessions live only in memory; restart revokes them. Login allows ten attempts per minute globally and at most 32 concurrent sessions. `POST /_gateway/logout` with the cookie and exact origin revokes that session, including its open sockets.
 
 Owner UI/assets/API requests require the cookie. Mutations and every browser WebSocket require the exact origin; cross-site fetch metadata and foreign origins are rejected even for GET. Browser WebSocket routes are `/ws`, `/ws/terminals/:terminalId`, and `/api/v1/plugins/:pluginId/http[/...]`. Plugin RPC may pass its header token only after owner admission; credential-bearing query parameters are rejected.
 
@@ -39,7 +39,7 @@ These are the complete native route/method pairs. They do not accept browser coo
 
 Hashes/digests must be 64 lowercase hex characters. Plugin IDs are restricted to letters, digits, `.`, `_`, and `-`. Other native methods, suffixes, enrollment-key minting, and server-move routes are denied. Session identifiers are not a substitute for the Bearer credential.
 
-A separate bootstrap lane permits only **GET `/install.sh` with `X-BB-Enrollment`**, no cookie, origin, or Authorization. The actual core validates the pending enrollment credential before producing the bootstrap. Missing/invalid credentials do not grant bootstrap access. `/install/version` and `/install/bb-app.tgz` remain owner-cookie-only; a native preinstalled worker must install the pinned public npm package separately rather than use the unmodified shell installer's artifact downloads.
+A separate bootstrap lane permits only **GET `/install.sh` with `X-BB-Enrollment`**, no cookie, origin, or Authorization. The actual core validates the pending enrollment credential before producing the bootstrap. Missing/invalid credentials do not grant bootstrap access. `/install/version` and `/install/bb-app.tgz` remain owner-cookie-only; a native worker must preinstall the pinned public npm package separately. The unmodified vendor installer can then use its existing-`bb-app` fallback after a denied artifact download; verify the executable's matching release before invoking it.
 
 ## Proxy boundary and verification
 

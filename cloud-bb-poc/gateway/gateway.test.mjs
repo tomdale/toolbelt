@@ -12,6 +12,18 @@ test('temporary human password policy and form Origin policy', async () => {
   assert.equal(page.headers['referrer-policy'], 'same-origin');
 });
 
+test('native desktop root navigation reaches login without exposing owner APIs', async () => {
+  const before = calls.length;
+  const page = await request('/', { headers: { accept: 'text/html,application/xhtml+xml', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' } });
+  assert.equal(page.status, 303);
+  assert.equal(page.headers.location, '/_gateway/login');
+  assert.equal((await request('/')).status, 401);
+  assert.equal((await request('/', { headers: { accept: 'text/html' } })).status, 401);
+  assert.equal((await request('/api/v1/system/config', { headers: { accept: 'text/html' } })).status, 401);
+  assert.equal((await request('/api/v1/hosts', { headers: { accept: 'text/html' } })).status, 401);
+  assert.equal(calls.length, before);
+});
+
 const origin = 'https://bb.example.test';
 const password = 'test-only-not-a-real-secret-'.repeat(2);
 let core, gateway, port, corePort, cookie;

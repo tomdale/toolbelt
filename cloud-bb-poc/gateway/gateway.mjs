@@ -119,7 +119,10 @@ export function createGateway(config) {
     }
     if (req.headers.authorization !== undefined) return { status: 403 };
     const session = sessionFor(req);
-    if (!session) return { status: 401 };
+    if (!session) return {
+      status: 401,
+      loginRedirect: !upgrade && req.method === 'GET' && url.pathname === '/' && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document' && /\btext\/html\b/i.test(req.headers.accept ?? ''),
+    };
     if (!browserAllowed(req, upgrade || !SAFE.has(req.method))) return { status: 403 };
     if (url.pathname.startsWith('/internal/') && !(req.method === 'POST' && url.pathname === '/internal/hosts/enroll-key' && !upgrade)) return { status: 403 };
     if (upgrade && !(url.pathname === '/ws' || /^\/ws\/terminals\/[a-zA-Z0-9_-]+$/.test(url.pathname) || /^\/api\/v1\/plugins\/[^/]+\/http(?:\/|$)/.test(url.pathname))) return { status: 403 };
@@ -194,6 +197,10 @@ export function createGateway(config) {
   server.on('request', async (req, res) => {
     try {
       const decision = classify(req, false);
+      if (decision.loginRedirect) {
+        res.writeHead(303, { location: '/_gateway/login', 'cache-control': 'no-store', 'referrer-policy': 'same-origin' });
+        return res.end();
+      }
       if (decision.status) return reply(res, decision.status);
       if (decision.local) return await local(req, res, decision.url);
       const upstream = http.request({ hostname: '127.0.0.1', port: config.corePort, method: req.method, path: req.url, headers: requestHeaders(req, decision.role, false) }, incoming => {
