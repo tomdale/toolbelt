@@ -1,0 +1,15 @@
+{"sentence": "A group of peers gets no box at all, only a little more space between the parts.", "flag": 1, "why": "gets no X at all, only Y"}
+{"sentence": "The order is the point, so the shape is a rail rather than a bullet list.", "flag": 1, "why": "rather than"}
+{"sentence": "It is deliberately quieter than the card.", "flag": 1, "why": "ascribed intent"}
+{"sentence": "Three honest caveats, because \"works with BB\" is not yet \"works well as a personal cloud\".", "flag": 1, "why": "candor grading, not yet"}
+{"sentence": "So the trigger sits somewhere in the worker session's whole context and I cannot yet name the sentence.", "flag": 1, "why": "performed doubt"}
+{"sentence": "Drawing reply parts instead of flattening them to paragraphs", "flag": 1, "why": "instead of"}
+{"sentence": "The agent marked the part as supporting rather than essential, so opening it is the reader's decision.", "flag": 1, "why": "rather than"}
+{"sentence": "The prototype's middle rendering is exactly that and nothing else, so you can see the split.", "flag": 1, "why": "nothing else"}
+{"sentence": "Rebuilding the card in the transcript would put a second bordered, state-tinted object on screen, which is the one thing the design reserves for the live card.", "flag": 1, "why": "the one thing"}
+{"sentence": "Two things are not decisions but have to be settled before anyone builds this.", "flag": 1, "why": "not X but Y"}
+{"sentence": "Today's rendering has a sizing bug (labels at 16px over 13px text) that is easy to fix and accounts for much of the improvement.", "flag": 0, "why": "plain defect report"}
+{"sentence": "Held keys are capped at two cards ahead, and a burst longer than that is dropped.", "flag": 0, "why": "plain behavior"}
+{"sentence": "I ran vitest in the task worktree; eight checks passed and one needs a display.", "flag": 0, "why": "plain status"}
+{"sentence": "The renderer prints each check as its own row, with the status word on the right.", "flag": 0, "why": "plain description"}
+{"sentence": "The queue listener reads the card position from a ref, so a burst of repeats shares one handler.", "flag": 0, "why": "plain explanation"}
