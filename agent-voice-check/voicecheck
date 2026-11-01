@@ -273,7 +273,7 @@ def report(findings, *, as_json, elapsed_ms, cost, checked, model):
 
 def selftest(model: str, key: str, threshold: float) -> int:
     """Run the labeled fixtures through the gate and report agreement."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures.jsonl")
+    path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures.jsonl")
     cases = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
     items = [
         {"offset": index, "line": index + 1, "sentence": case["sentence"], "matched": [case["why"]]}
