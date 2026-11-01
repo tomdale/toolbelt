@@ -28,7 +28,7 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 TOOL = os.path.join(os.path.dirname(HERE), "voicecheck")
 vc = SourceFileLoader("voicecheck_tool", TOOL).load_module()
 
-SWEEP = (0.2, 0.3, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8)
+SWEEP = (0.2, 0.3, 0.4, 0.5, 0.6, 0.7)
 CHUNK = 20
 
 
@@ -130,12 +130,25 @@ def main(argv):
     print(f"{len(scored)} sentences: {len(positives)} violations, {len(negatives)} clean")
     print(f"phrase pass reaches {candidate_recall:.0%} of the violations; gate mean score "
           f"{mean_pos:.2f} on violations and {mean_neg:.2f} on clean ({elapsed} ms)\n")
+    print("A first pass wants recall, so read the curve at a low threshold and")
+    print("check that the shortlist stays trustworthy as you go down it.\n")
     print(f"{'thr':>5} {'prec':>6} {'rec':>6} {'F1':>6} {'acc':>6}   tp fp fn tn")
     for result in results:
         mark = " <-" if result["threshold"] == best else ""
         print(f"{result['threshold']:5.2f} {result['precision']:6.2f} {result['recall']:6.2f} "
               f"{result['f1']:6.2f} {result['accuracy']:6.2f}  {result['tp']:3} {result['fp']:2} "
               f"{result['fn']:2} {result['tn']:2}{mark}")
+
+    ranked = sorted(scored, key=lambda r: -(r["score"] * max(
+        (vc.PRIORS.get(name, 0.5) for name in (r["matched"] or ["none"])), default=0.5)))
+    total_positives = sum(1 for r in ranked if r["label"])
+    print("\nshortlist, ranked by score x phrase reliability:")
+    for k in (5, 8, 12, 16):
+        if k > len(ranked):
+            break
+        top = ranked[:k]
+        hits = sum(1 for r in top if r["label"])
+        print(f"  top {k:2}: {hits:2} of {total_positives} violations, precision {hits / k:.2f}")
 
     chosen = [r for r in results if r["threshold"] == (threshold if threshold else best)][0]
     _, wrong = confusion(scored, chosen["threshold"])

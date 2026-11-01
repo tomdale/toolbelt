@@ -28,10 +28,22 @@ The gate exists because a regex cannot tell "the chip carries a label" from
 "the finding carries its certainty in an icon", and the model costs about
 $0.00004 per sentence.
 
-Measured on this machine at the shipped threshold of 0.50: 15/15 on the curated
-fixtures, and on 45 sentences pulled from real BB pi sessions (25 violations,
-20 clean, in `evals/corpus.jsonl`) precision 0.78, recall 1.00, F1 0.88,
-accuracy 0.84 in 1.3 s. Run `evals/run.py` to reproduce the sweep.
+Measured on this machine at the shipped threshold of 0.50, on 70 sentences from
+real BB pi sessions (30 violations, 40 clean, in `evals/corpus.jsonl`): recall
+1.00, precision 0.61, F1 0.76. On the curated fixtures it catches 10 of 10
+violations and ranks every one above every clean sentence.
+
+The number that matters for a first pass is the shortlist, ranked by gate score
+times phrase reliability:
+
+| shortlist | violations found | precision |
+| --- | --- | --- |
+| top 5 | 5 of 30 | 1.00 |
+| top 8 | 7 of 30 | 0.88 |
+| top 16 | 14 of 30 | 0.88 |
+
+Read the list from the top and stop when the lines stop being real. The corpus is
+deliberately violation-dense, so live prose will show a lower hit rate than 0.61.
 
 ## Options
 
@@ -56,6 +68,23 @@ than the work), `writer` (the sentence is about the writer's confidence or
 candor), `claim` (it corrects an objection nobody raised), `reader` (it
 asserts importance or tours the document), `shape` (padding whose rhythm
 carries it).
+
+## What was tried and did not help
+
+Each was measured on the cross-validated corpus, and each is a technique the
+literature recommends for small models:
+
+| Technique | Result |
+| --- | --- |
+| kNN few-shot: retrieve the nearest labeled violations and clean sentences per candidate | a wash once the query sentence was excluded from the retrieval pool; an earlier perfect score was leakage |
+| Escalate the 0.30-0.70 band to a language model as adjudicator | a wash under 3-fold cross-validation, and 2-3x the cost |
+| One binary question per device instead of one gate question | clearly worse: recall@8 fell from 0.40 to 0.33, because each narrow question lost the context the gate question carries |
+| Self-consistency by resampling | the decision model is deterministic, so repeats return the same probabilities |
+
+What did help was writing the clean cases into the criteria sheet (mean score on
+clean sentences 0.77 to 0.47) and ranking by measured phrase reliability, since
+the patterns differ wildly: every abstract-verb and candor word audited was a
+real violation, while `instead of` was right 22% of the time.
 
 ## The eval
 
