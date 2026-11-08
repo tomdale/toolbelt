@@ -142,9 +142,9 @@ subject can silence it by punctuation is worth less than a noisy one.
 
 ## Known limits
 
-Sentences quoting a tic without a `Wrong:` prefix are reported, so a document
-that lists the devices trips the checker. Prefilter patterns decide which
-sentences the model ever sees, so a device with no pattern (a turned-down
-closer, a paragraph of hedge sentences) is reported only when its sentence
-happens to trip another pattern. Long documents are capped at
+A document that lists the devices trips the checker on its own examples, and a
+document that quotes one reports it. Prefilter patterns decide which sentences
+the model ever sees, so a device with no pattern (a turned-down closer, a
+paragraph of hedge sentences) is reported only when its sentence happens to trip
+another pattern. Long documents are capped at
 `--max-candidates` model questions; raise it for a full pass.
