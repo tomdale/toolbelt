@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """Score voicecheck against real agent prose.
 
-`corpus.jsonl` holds sentences pulled from BB pi sessions, read by hand against
-the `agent-voice` skill and labeled 1 (violates the standard) or 0 (clean,
-including sentences the tool wrongly flags). The predictions are the tool's own
-two layers, so this measures what an agent actually gets: a sentence is reported
-only when a phrase pattern matches it and the decision gate scores it at or
-above the threshold.
+Supply a labeled JSONL corpus with --corpus. Each row needs a sentence and a
+label: 1 for a violation, 0 for clean. The tool sends sentences to AI Gateway,
+so use only material you are authorized to share with that service. A sentence
+is reported when a phrase pattern matches it and the decision gate scores it at
+or above the threshold.
 
-    ./run.py                # sweep thresholds, report the best
-    ./run.py --threshold 0.5
-    ./run.py --json
+    ./run.py --corpus /path/to/corpus.jsonl
+    ./run.py --corpus /path/to/corpus.jsonl --threshold 0.5
+    ./run.py --corpus /path/to/corpus.jsonl --json
 
 The sweep is the point. The shipped threshold is a guess until a labeled corpus
 says which value separates the two classes with the fewest mistakes.
@@ -91,10 +90,16 @@ def main(argv):
     threshold = None
     if "--threshold" in argv:
         threshold = float(argv[argv.index("--threshold") + 1])
-    path = os.path.join(HERE, "corpus.jsonl")
-    if "--corpus" in argv:
-        path = argv[argv.index("--corpus") + 1]
-    rows = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
+    if ("--corpus" not in argv or argv.index("--corpus") + 1 >= len(argv)
+            or argv[argv.index("--corpus") + 1].startswith("--")):
+        print("run.py: provide a labeled JSONL file with --corpus PATH", file=sys.stderr)
+        return 2
+    path = argv[argv.index("--corpus") + 1]
+    with open(path, encoding="utf-8") as corpus:
+        rows = [json.loads(line) for line in corpus if line.strip()]
+    if not rows:
+        print("run.py: corpus must contain at least one row", file=sys.stderr)
+        return 2
     strata = sorted({r.get("stratum", "all") for r in rows})
     key = os.environ.get("AI_GATEWAY_API_KEY", "").strip()
     if not key:
@@ -156,7 +161,7 @@ def main(argv):
               f"| precision {result['precision']:.2f} recall {result['recall']:.2f}")
 
     ranked = sorted(scored, key=lambda r: -(r["score"] * max(
-        (vc.PRIORS.get(name, 0.5) for name in (r["matched"] or ["none"])), default=0.5)))
+        (vc.PRIORS.get(name, 0.5) for name in (r.get("matched") or ["none"])), default=0.5)))
     total_positives = sum(1 for r in ranked if r["label"])
     print("\nshortlist, ranked by score x phrase reliability:")
     for k in (5, 8, 12, 16):
