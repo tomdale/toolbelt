@@ -121,6 +121,20 @@ CRITERIA = {
 
 FENCE = re.compile(r"^\s*(```|~~~)")
 ABBREVIATIONS = ("e.g.", "i.e.", "vs.", "etc.", "cf.", "no.", "fig.", "approx.")
+QUOTED = re.compile(r'"[^"]*"|\u201c[^\u201d]*\u201d|`[^`]*`|\u2018[^\u2019]*\u2019')
+
+
+def unquoted(sentence: str) -> str:
+    """The sentence with quoted strings removed.
+
+    A banned phrase inside quotation marks is a label the reader will see on
+    screen or in code, not the writer's own framing. Matching against the
+    unquoted text keeps that distinction out of the model's judgement, where an
+    added allowance measurably softened the gate on labeled prose.
+    """
+    return QUOTED.sub(" ", sentence)
+
+
 INLINE = [
     (re.compile(r"`([^`]*)`"), r"\1"),
     (re.compile(r"\*\*([^*]*)\*\*"), r"\1"),
@@ -194,8 +208,13 @@ def units(text: str):
                 yield start, piece
 
 
-def candidates(text: str):
-    """Candidate sentences, and how many sentences were examined at all."""
+def candidates(text: str, vocabulary: tuple[str, ...] = ()):
+    """Candidate sentences, and how many sentences were examined at all.
+
+    `vocabulary` holds words that name components in the document's own schema.
+    A project whose parts are called finding, evidence or checks declares them
+    so the phrase pass stops reading its identifiers as evidence framing.
+    """
     found = []
     examined = 0
     for index, (line, sentence) in enumerate(units(text)):
@@ -205,7 +224,10 @@ def candidates(text: str):
         # ways prose marks a sentence as something other than its own voice.
         if sentence.startswith(("Wrong:", "Bad:", "Instead:", "\u2717")):
             continue
-        hits = [name for name, _, pattern in PATTERNS if re.search(pattern, sentence)]
+        bare = unquoted(sentence)
+        for word in vocabulary:
+            bare = re.sub(rf"\b{re.escape(word)}\b", " ", bare, flags=re.IGNORECASE)
+        hits = [name for name, _, pattern in PATTERNS if re.search(pattern, bare)]
         if not hits:
             continue
         found.append({"offset": index, "line": line, "sentence": sentence, "matched": hits})
@@ -344,13 +366,18 @@ def main(argv: list[str]) -> int:
     top = DEFAULT_TOP
     model = DEFAULT_MODEL
     limit = MAX_CANDIDATES
+    vocabulary: tuple[str, ...] = ()
     paths = []
     skip_next = False
     for index, arg in enumerate(args):
         if skip_next:
             skip_next = False
             continue
-        if arg in ("--threshold", "--model", "--max-candidates", "--top"):
+        if arg == "--vocabulary":
+            value = args[index + 1] if index + 1 < len(args) else ""
+            skip_next = True
+            vocabulary = tuple(w.strip().lower() for w in value.split(",") if w.strip())
+        elif arg in ("--threshold", "--model", "--max-candidates", "--top"):
             value = args[index + 1] if index + 1 < len(args) else ""
             skip_next = True
             if arg == "--threshold":
@@ -391,7 +418,7 @@ def main(argv: list[str]) -> int:
         text = sys.stdin.read()
         source = "<stdin>"
 
-    found, examined = candidates(text)
+    found, examined = candidates(text, vocabulary)
     started = time.monotonic()
     checked, cost, notes = examined, 0.0, []
     key = os.environ.get("AI_GATEWAY_API_KEY", "").strip()

@@ -76,6 +76,7 @@ written without it.
 | `--top` | 10 | Findings printed; `--all` lifts the cap |
 | `--max-candidates` | 24 | Sentences sent to the model in one call; the rest fall back to the phrase pass |
 | `--no-model` | off | Phrase pass only, free and instant, noisier |
+| `--vocabulary` | none | Words that name components in the document's own schema, so the phrase pass stops reading identifiers as tics: `--vocabulary finding,evidence,checks,delivery` |
 | `--quiet` | off | No output, exit code only |
 | `--selftest` | off | Run the curated fixtures through the gate and report agreement |
 | `--model` | `openai/gpt-6-luna-decisions` | Any AI Gateway decision model |
@@ -120,6 +121,23 @@ like the manufactured ones.
 
 Add a sentence to the corpus whenever the tool is wrong in the wild. A mistake
 that stays in the corpus keeps the threshold grounded in real prose.
+
+## Mentions
+
+A banned phrase can appear as something other than the writer's own framing: a
+label the reader sees on screen (`the line labelled "evidence"`), or a component
+name from the document's schema (`evidence`, `checks`, `delivery`).
+
+Quoted strings are stripped before the phrase pass runs, which removes the
+first kind for free. The second kind needs to be declared: pass
+`--vocabulary` with the schema's words. On the reply-block design document that
+takes it from 15 findings to 12, all three of the difference being its part
+names.
+
+Both mechanisms live in the phrase pass. Teaching the decision gate to allow
+these cases in its criteria sheet was tried and rejected: it dropped recall from
+0.95 to 0.90 and precision from 0.42 to 0.38 across the labeled corpus, because
+an allowance in the prompt gets used on real violations too.
 
 ## Known limits
 
