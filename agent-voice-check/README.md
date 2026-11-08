@@ -24,9 +24,8 @@ One AI Gateway decision call then asks `openai/gpt-6-luna-decisions` two
 closed-set questions per candidate: whether the sentence uses one of the seven
 devices at all, and which of the five voice problems it has. A sentence is
 reported when the gate puts at least `--threshold` probability on "problem".
-The gate exists because a regex cannot tell "the chip carries a label" from
-"the finding carries its certainty in an icon", and the model costs about
-$0.00004 per sentence.
+The gate exists because a regex cannot tell a component's label from a finding's
+certainty icon, and the model costs about $0.00004 per sentence.
 
 Measured on this machine on 518 sentences from recent BB pi sessions, read by
 hand. Four strata, because the sampling decides the answer:
@@ -51,8 +50,8 @@ is where the enriched row applies and where the tool earns its keep.
 
 The post-skill rate is not lower than the pre-skill rate. Two samples of 150
 sentences cannot separate 2.0% from 2.7%, and that week's prose included this
-project's own vocabulary, so the honest reading is that the standard and the
-checker have not measurably changed ordinary replies.
+project's own vocabulary, so the standard and the checker have not measurably
+changed ordinary replies.
 
 Ranking by gate score times phrase reliability is what makes the short list usable:
 
@@ -120,7 +119,7 @@ mostly on legitimate contrasts ("wrapped rather than rethrown bare") that look
 like the manufactured ones.
 
 Add a sentence to the corpus whenever the tool is wrong in the wild. A mistake
-that stays in the corpus keeps the threshold honest.
+that stays in the corpus keeps the threshold grounded in real prose.
 
 ## Known limits
 

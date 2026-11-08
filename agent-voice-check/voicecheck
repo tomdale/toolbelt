@@ -256,7 +256,7 @@ def ask(items, model: str, key: str, timeout: float):
     return answers, cost
 
 
-def report(findings, *, as_json, elapsed_ms, cost, checked, model):
+def report(findings, *, as_json, elapsed_ms, cost, checked, model, total):
     if as_json:
         print(
             json.dumps(
@@ -284,7 +284,9 @@ def report(findings, *, as_json, elapsed_ms, cost, checked, model):
     if not findings:
         print(f"voicecheck: clean ({checked} sentences, {elapsed_ms} ms, ${cost:.6f})")
         return
-    print(f"voicecheck: {len(findings)} finding(s) in {checked} sentences")
+    print(f"voicecheck: {total} finding(s) in {checked} sentences")
+    if total > len(findings):
+        print(f"  showing the top {len(findings)}")
     print("  This is a first pass: expect roughly a third of these to be false alarms.\n")
     for f in findings:
         print(f'  line {f["line"]}  {f["problem"]} ({f["confidence"]:.2f})')
@@ -432,6 +434,7 @@ def main(argv: list[str]) -> int:
     for note in notes:
         print(f"voicecheck: {note}", file=sys.stderr)
 
+    total = len(findings)
     hidden = 0
     if findings and not show_all and len(findings) > top:
         hidden = len(findings) - top
@@ -439,7 +442,7 @@ def main(argv: list[str]) -> int:
 
     if quiet:
         return 1 if findings else 0
-    report(findings, as_json=as_json, elapsed_ms=elapsed_ms, cost=cost, checked=checked, model=model)
+    report(findings, as_json=as_json, elapsed_ms=elapsed_ms, cost=cost, checked=checked, model=model, total=total)
     if not as_json:
         if hidden:
             print(f"  {hidden} more above the threshold; pass --all to list them")
