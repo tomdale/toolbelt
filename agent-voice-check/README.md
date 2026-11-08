@@ -141,6 +141,19 @@ Three of the 26 sentences reach the phrase pass at all, because a passive has no
 keyword to match. On a 300-line document an exhaustive run costs about $0.004
 and two seconds.
 
+Those labels were checked again by their author against the standard rather than
+against a taxonomy of acceptable passives, and 14 of 26 held up as violations:
+54%, against the 10-28% an earlier looser reading gave. A sentence whose actor
+the writer could name is a violation in a document that argues, and categories
+like "copular" and "actor inferable" were doing the same work as the exclusions
+this tool no longer has.
+
+A passive pattern in the phrase pass was measured and rejected. It brought 5 of
+14 proposal violations to the gate for 0.45 precision there, while ordinary prose
+fell from 0.22 precision to 0.14, and it caught less than `--exhaustive` does on
+the same document (8 of 14). Knowing which construction is at fault is the gate's
+job, not the pattern list's.
+
 ## No exclusions
 
 The checker reports every device it can find. A quoted label, a component name
