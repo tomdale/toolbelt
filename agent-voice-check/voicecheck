@@ -412,7 +412,10 @@ def main(argv: list[str]) -> int:
                 answers[f"f{start + number}"] = chunk_answers.get(f"f{number}", {})
             cost += chunk_cost
         findings = []
-        for index, item in enumerate(found[:limit]):
+        # Every sentence that was scored is eligible to be reported. Slicing to
+        # `limit` here made an exhaustive run pay for the whole document and
+        # report the first 24 sentences of it.
+        for index, item in enumerate(pending):
             gate = answers.get(f"g{index}") or {}
             probabilities = gate.get("probabilities") or {}
             if probabilities.get("problem", 0.0) < threshold:

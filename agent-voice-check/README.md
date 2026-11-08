@@ -138,7 +138,9 @@ the `proposal` stratum):
 | `--exhaustive` | 8 of 14 | 0.57 |
 
 Three of the 26 sentences reach the phrase pass at all, because a passive has no
-keyword to match. On a 300-line proposal document an exhaustive run reports 13
+keyword to match. An exhaustive run scores every sentence, and until this
+release it reported findings only from the first 24 of them, so an earlier
+measurement of this document described its opening only. On a 300-line proposal document an exhaustive run reports 13
 findings of which 5 were real after the author's pass, four of those on
 sentences the phrase pass cannot see, for $0.011 and 3.1 seconds.
 
