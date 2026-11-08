@@ -28,19 +28,31 @@ The gate exists because a regex cannot tell "the chip carries a label" from
 "the finding carries its certainty in an icon", and the model costs about
 $0.00004 per sentence.
 
-Measured on this machine at the shipped threshold of 0.50, on 218 sentences
-pulled from recent BB pi sessions and read by hand. The corpus has two strata,
-because the sampling changes the answer:
+Measured on this machine on 518 sentences from recent BB pi sessions, read by
+hand. Four strata, because the sampling decides the answer:
 
-| stratum | sentences | violations | flagged | precision | recall |
+| stratum | sentences | violations | reach the gate | precision | recall |
 | --- | --- | --- | --- | --- | --- |
-| natural (random sample) | 148 | 2 (1.4%) | 5 | 0.40 | 1.00 |
-| enriched (candidates only) | 70 | 30 (43%) | 49 | 0.61 | 1.00 |
+| enriched (phrase candidates) | 70 | 30 (43%) | 99% | 0.61 | 1.00 |
+| natural (random, mixed dates) | 148 | 2 (1.4%) | 8% | 0.40 | 1.00 |
+| pre-skill (random, before this standard) | 150 | 3 (2.0%) | 11% | 0.20 | 0.67 |
+| post-skill (random, the week after) | 150 | 4 (2.7%) | 19% | 0.12 | 0.75 |
 
-The natural row is the one to plan around. It flags five sentences in 148, finds
-both real violations, and asks you to read about two and a half lines per hit.
-The enriched row exists to measure the gate where violations are common enough
-for the numbers to mean something.
+The two random strata decide how much to trust everything else. Ordinary agent
+replies run at 2-3% violations with or without the standard, and at that
+prevalence the tool flags five to eight sentences for every real one. It is a
+prompt to look, not a verdict, and on a long document the review it asks for is
+real work.
+
+The tics concentrate in one register: explaining a design, justifying a choice,
+reporting a review. Status reports and enumerations, which are most of what
+agents write, are nearly free of them. A document in that explanatory register
+is where the enriched row applies and where the tool earns its keep.
+
+The post-skill rate is not lower than the pre-skill rate. Two samples of 150
+sentences cannot separate 2.0% from 2.7%, and that week's prose included this
+project's own vocabulary, so the honest reading is that the standard and the
+checker have not measurably changed ordinary replies.
 
 Ranking by gate score times phrase reliability is what makes the short list usable:
 
