@@ -82,7 +82,8 @@ written without it.
 | `--model` | `openai/gpt-6-luna-decisions` | Any AI Gateway decision model |
 
 Needs `AI_GATEWAY_API_KEY`. Without it the phrase pass still runs and says so
-on stderr.
+on stderr. Model-backed checks send text to AI Gateway; use them only with
+material you are authorized to share with that service.
 
 ## The five problems
 
@@ -111,16 +112,13 @@ real violation, while `instead of` was right 22% of the time.
 
 ## The eval
 
-`evals/corpus.jsonl` holds 45 sentences taken from recent BB pi sessions, read
-against the `agent-voice` skill and labeled. `evals/run.py` sweeps the
-threshold and reports precision, recall, F1 and every mistake, which is how 0.50
-was chosen. The corpus is where the tool's real weakness shows: the phrase pass
-reaches every violation it is asked about, and the gate is what costs precision,
-mostly on legitimate contrasts ("wrapped rather than rethrown bare") that look
-like the manufactured ones.
-
-Add a sentence to the corpus whenever the tool is wrong in the wild. A mistake
-that stays in the corpus keeps the threshold grounded in real prose.
+`evals/run.py --corpus /path/to/corpus.jsonl` sweeps the threshold and reports
+precision, recall, F1 and every mistake. The JSONL file needs a `sentence` and a
+`label` (1 for a violation, 0 for clean) on each row. The evaluator sends every
+sentence to AI Gateway and can print mistakes, so supply material you are
+authorized to share and keep private corpora outside public repositories.
+The measurements in this README describe the original labeled sample; that
+sample is not included here.
 
 ## Two modes
 
