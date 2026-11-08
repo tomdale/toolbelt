@@ -32,9 +32,9 @@ hand. Four strata, because the sampling decides the answer:
 
 | stratum | sentences | violations | reach the gate | precision | recall |
 | --- | --- | --- | --- | --- | --- |
-| enriched (phrase candidates) | 70 | 30 (43%) | 99% | 0.61 | 1.00 |
-| natural (random, mixed dates) | 148 | 2 (1.4%) | 8% | 0.40 | 1.00 |
-| pre-skill (random, before this standard) | 150 | 3 (2.0%) | 11% | 0.20 | 0.67 |
+| enriched (phrase candidates) | 70 | 30 (43%) | 99% | 0.46 | 1.00 |
+| natural (random, mixed dates) | 148 | 2 (1.4%) | 8% | 0.22 | 1.00 |
+| pre-skill (random, before this standard) | 150 | 3 (2.0%) | 11% | 0.15 | 0.67 |
 | post-skill (random, the week after) | 150 | 4 (2.7%) | 19% | 0.12 | 0.75 |
 
 The two random strata decide how much to trust everything else. Ordinary agent
@@ -76,7 +76,6 @@ written without it.
 | `--top` | 10 | Findings printed; `--all` lifts the cap |
 | `--max-candidates` | 24 | Sentences sent to the model in one call; the rest fall back to the phrase pass |
 | `--no-model` | off | Phrase pass only, free and instant, noisier |
-| `--vocabulary` | none | Words that name components in the document's own schema, so the phrase pass stops reading identifiers as tics: `--vocabulary finding,evidence,checks,delivery` |
 | `--quiet` | off | No output, exit code only |
 | `--selftest` | off | Run the curated fixtures through the gate and report agreement |
 | `--model` | `openai/gpt-6-luna-decisions` | Any AI Gateway decision model |
@@ -104,8 +103,8 @@ literature recommends for small models:
 | One binary question per device instead of one gate question | clearly worse: recall@8 fell from 0.40 to 0.33, because each narrow question lost the context the gate question carries |
 | Self-consistency by resampling | the decision model is deterministic, so repeats return the same probabilities |
 
-What did help was writing the clean cases into the criteria sheet (mean score on
-clean sentences 0.77 to 0.47) and ranking by measured phrase reliability, since
+What did help was writing the clean cases into the criteria sheet, a gain the
+tool no longer claims because those allowances are gone and ranking by measured phrase reliability, since
 the patterns differ wildly: every abstract-verb and candor word audited was a
 real violation, while `instead of` was right 22% of the time.
 
@@ -122,22 +121,24 @@ like the manufactured ones.
 Add a sentence to the corpus whenever the tool is wrong in the wild. A mistake
 that stays in the corpus keeps the threshold grounded in real prose.
 
-## Mentions
+## No exclusions
 
-A banned phrase can appear as something other than the writer's own framing: a
-label the reader sees on screen (`the line labelled "evidence"`), or a component
-name from the document's schema (`evidence`, `checks`, `delivery`).
+The checker reports every device it can find. A quoted label, a component name
+from the document's schema, a blockquote, and a line the document marks as a bad
+example all still reach the gate, and the reader of the report decides which
+lines were justified uses.
 
-Quoted strings are stripped before the phrase pass runs, which removes the
-first kind for free. The second kind needs to be declared: pass
-`--vocabulary` with the schema's words. On the reply-block design document that
-takes it from 15 findings to 12, all three of the difference being its part
-names.
+That choice costs precision and buys honesty. Measured on the 518-sentence
+corpus, excluding quoted spans and declared identifiers read as precision 0.42
+with no measurable recall gain; without any exclusion it is precision 0.33,
+recall 0.95. The excluded cases were worth two to three findings on the
+reply-block design document and every one of them was a judgement its author was
+better placed to make than the checker.
 
-Both mechanisms live in the phrase pass. Teaching the decision gate to allow
-these cases in its criteria sheet was tried and rejected: it dropped recall from
-0.95 to 0.90 and precision from 0.42 to 0.38 across the labeled corpus, because
-an allowance in the prompt gets used on real violations too.
+It also removes the escape hatch. With quoted strings stripped, `the shape is a
+rail "rather than" a bullet list` came back clean, and so did `It is
+"deliberately" quieter` and `Three "honest" caveats`. A required check whose
+subject can silence it by punctuation is worth less than a noisy one.
 
 ## Known limits
 

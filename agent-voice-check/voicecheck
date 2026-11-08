@@ -71,17 +71,12 @@ DEVICES = (
     "'the whole point'); "
     "6. it talks about the document instead of the subject ('this page shows', 'listed below'); "
     "7. it uses an abstract verb where a plain one exists ('carries a title', 'names the field', "
-    "'becomes a panel'). "
-    "CLEAN, however: a contrast between two behaviours that both exist or existed, where each side names "
-    "something real ('wrapped rather than rethrown bare', 'throws straight away instead of sleeping one "
-    "more time', 'a compliance gap rather than a broken renderer'); 'nothing' or 'no' stating a fact the "
-    "reader needs ('wraps them in space-y-4 and nothing else', 'no in-repo evidence'); an em dash around a "
-    "list of facts; 'just', 'only' or 'deliberately' naming a real default or a real decision."
+    "'becomes a panel')."
 )
 
 STRICT = (
-    "Flag it only for a device listed above, not for the clean cases listed there. "
-    "Long sentences, headings and defect reports are clean."
+    "Flag the sentence when it uses one of the devices listed above. Say which one, and leave the "
+    "question of whether that use was justified to the reader of the report."
 )
 
 # How often a flagged sentence carrying this phrase turned out to be a real
@@ -121,20 +116,6 @@ CRITERIA = {
 
 FENCE = re.compile(r"^\s*(```|~~~)")
 ABBREVIATIONS = ("e.g.", "i.e.", "vs.", "etc.", "cf.", "no.", "fig.", "approx.")
-QUOTED = re.compile(r'"[^"]*"|\u201c[^\u201d]*\u201d|`[^`]*`|\u2018[^\u2019]*\u2019')
-
-
-def unquoted(sentence: str) -> str:
-    """The sentence with quoted strings removed.
-
-    A banned phrase inside quotation marks is a label the reader will see on
-    screen or in code, not the writer's own framing. Matching against the
-    unquoted text keeps that distinction out of the model's judgement, where an
-    added allowance measurably softened the gate on labeled prose.
-    """
-    return QUOTED.sub(" ", sentence)
-
-
 INLINE = [
     (re.compile(r"`([^`]*)`"), r"\1"),
     (re.compile(r"\*\*([^*]*)\*\*"), r"\1"),
@@ -172,8 +153,6 @@ def blocks(text: str):
         if in_fence:
             continue
         stripped = raw.strip()
-        if stripped.startswith(">"):
-            continue
         starts_block = bool(re.match(r"^(#{1,6}\s|[-*+]\s|\d+[.)]\s)", stripped))
         if not stripped or starts_block:
             if current:
@@ -208,26 +187,19 @@ def units(text: str):
                 yield start, piece
 
 
-def candidates(text: str, vocabulary: tuple[str, ...] = ()):
+def candidates(text: str):
     """Candidate sentences, and how many sentences were examined at all.
 
-    `vocabulary` holds words that name components in the document's own schema.
-    A project whose parts are called finding, evidence or checks declares them
-    so the phrase pass stops reading its identifiers as evidence framing.
+    Nothing is excluded. A quoted label, a component name and a sentence the
+    document marks as a bad example all still reach the gate, because the reader
+    of the report decides what to keep and a checker that hides cases takes that
+    decision away from them.
     """
     found = []
     examined = 0
     for index, (line, sentence) in enumerate(units(text)):
         examined += 1
-        # A document that quotes the tics it warns against would otherwise
-        # report every example. `Wrong:` lines and blockquotes are the two
-        # ways prose marks a sentence as something other than its own voice.
-        if sentence.startswith(("Wrong:", "Bad:", "Instead:", "\u2717")):
-            continue
-        bare = unquoted(sentence)
-        for word in vocabulary:
-            bare = re.sub(rf"\b{re.escape(word)}\b", " ", bare, flags=re.IGNORECASE)
-        hits = [name for name, _, pattern in PATTERNS if re.search(pattern, bare)]
+        hits = [name for name, _, pattern in PATTERNS if re.search(pattern, sentence)]
         if not hits:
             continue
         found.append({"offset": index, "line": line, "sentence": sentence, "matched": hits})
@@ -366,18 +338,13 @@ def main(argv: list[str]) -> int:
     top = DEFAULT_TOP
     model = DEFAULT_MODEL
     limit = MAX_CANDIDATES
-    vocabulary: tuple[str, ...] = ()
     paths = []
     skip_next = False
     for index, arg in enumerate(args):
         if skip_next:
             skip_next = False
             continue
-        if arg == "--vocabulary":
-            value = args[index + 1] if index + 1 < len(args) else ""
-            skip_next = True
-            vocabulary = tuple(w.strip().lower() for w in value.split(",") if w.strip())
-        elif arg in ("--threshold", "--model", "--max-candidates", "--top"):
+        if arg in ("--threshold", "--model", "--max-candidates", "--top"):
             value = args[index + 1] if index + 1 < len(args) else ""
             skip_next = True
             if arg == "--threshold":
@@ -418,7 +385,7 @@ def main(argv: list[str]) -> int:
         text = sys.stdin.read()
         source = "<stdin>"
 
-    found, examined = candidates(text, vocabulary)
+    found, examined = candidates(text)
     started = time.monotonic()
     checked, cost, notes = examined, 0.0, []
     key = os.environ.get("AI_GATEWAY_API_KEY", "").strip()
