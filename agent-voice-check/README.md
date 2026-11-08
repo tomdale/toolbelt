@@ -138,8 +138,14 @@ the `proposal` stratum):
 | `--exhaustive` | 8 of 14 | 0.57 |
 
 Three of the 26 sentences reach the phrase pass at all, because a passive has no
-keyword to match. On a 300-line document an exhaustive run costs about $0.004
-and two seconds.
+keyword to match. On a 300-line proposal document an exhaustive run reports 13
+findings of which 5 were real after the author's pass, four of those on
+sentences the phrase pass cannot see, for $0.011 and 3.1 seconds.
+
+Use `--exhaustive` on a document that argues for a change, which is where
+actorless sentences accumulate, and leave a corpus on the phrase pass. The mode
+costs about $0.000065 per sentence, so a book-length input is the wrong shape for
+it.
 
 Those labels were checked again by their author against the standard rather than
 against a taxonomy of acceptable passives, and 14 of 26 held up as violations:
