@@ -76,6 +76,7 @@ written without it.
 | `--top` | 10 | Findings printed; `--all` lifts the cap |
 | `--max-candidates` | 24 | Sentences sent to the model in one call; the rest fall back to the phrase pass |
 | `--no-model` | off | Phrase pass only, free and instant, noisier |
+| `--exhaustive` | off | Send every sentence to the gate, not only the ones carrying a phrase. Use on a document where a construction with no keyword matters; costs about $0.0002 per sentence |
 | `--quiet` | off | No output, exit code only |
 | `--selftest` | off | Run the curated fixtures through the gate and report agreement |
 | `--model` | `openai/gpt-6-luna-decisions` | Any AI Gateway decision model |
@@ -120,6 +121,25 @@ like the manufactured ones.
 
 Add a sentence to the corpus whenever the tool is wrong in the wild. A mistake
 that stays in the corpus keeps the threshold grounded in real prose.
+
+## Two modes
+
+By default the phrase pass picks the sentences the model sees, which keeps a
+large corpus cheap and misses constructions that carry no keyword. `--exhaustive`
+sends every sentence instead.
+
+The difference is measured on a proposal document whose passive and actorless
+sentences were labeled by hand (26 sentences, 14 violations, in the corpus as
+the `proposal` stratum):
+
+| mode | violations caught | precision |
+| --- | --- | --- |
+| phrase pass, then gate | 1 of 14 | — |
+| `--exhaustive` | 8 of 14 | 0.57 |
+
+Three of the 26 sentences reach the phrase pass at all, because a passive has no
+keyword to match. On a 300-line document an exhaustive run costs about $0.004
+and two seconds.
 
 ## No exclusions
 

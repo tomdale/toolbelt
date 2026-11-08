@@ -187,7 +187,7 @@ def units(text: str):
                 yield start, piece
 
 
-def candidates(text: str):
+def candidates(text: str, exhaustive: bool = False):
     """Candidate sentences, and how many sentences were examined at all.
 
     Nothing is excluded. A quoted label, a component name and a sentence the
@@ -200,8 +200,13 @@ def candidates(text: str):
     for index, (line, sentence) in enumerate(units(text)):
         examined += 1
         hits = [name for name, _, pattern in PATTERNS if re.search(pattern, sentence)]
-        if not hits:
+        if not hits and not exhaustive:
             continue
+        if exhaustive and not hits:
+            # No phrase to report, so the sentence goes to the gate on its own
+            # merits. This is how a construction with no keyword — a passive or
+            # actorless sentence — gets judged at all.
+            hits = ["no phrase"]
         found.append({"offset": index, "line": line, "sentence": sentence, "matched": hits})
     return found, examined
 
@@ -334,6 +339,7 @@ def main(argv: list[str]) -> int:
     no_model = "--no-model" in args
     quiet = "--quiet" in args
     show_all = "--all" in args
+    exhaustive = "--exhaustive" in args
     threshold = DEFAULT_THRESHOLD
     top = DEFAULT_TOP
     model = DEFAULT_MODEL
@@ -385,17 +391,26 @@ def main(argv: list[str]) -> int:
         text = sys.stdin.read()
         source = "<stdin>"
 
-    found, examined = candidates(text)
+    found, examined = candidates(text, exhaustive)
     started = time.monotonic()
     checked, cost, notes = examined, 0.0, []
     key = os.environ.get("AI_GATEWAY_API_KEY", "").strip()
 
     if found and not no_model and key:
-        try:
-            answers, cost = ask(found[:limit], model, key, timeout=30)
-        except (urllib.error.URLError, TimeoutError, ValueError) as error:
-            notes.append(f"model pass failed ({error}); phrase pass only")
-            answers = {}
+        answers: dict = {}
+        cost = 0.0
+        pending = found if exhaustive else found[:limit]
+        for start in range(0, len(pending), MAX_CANDIDATES):
+            chunk = pending[start : start + MAX_CANDIDATES]
+            try:
+                chunk_answers, chunk_cost = ask(chunk, model, key, timeout=60)
+            except (urllib.error.URLError, TimeoutError, ValueError) as error:
+                notes.append(f"model pass failed ({error}); phrase pass only")
+                break
+            for number in range(len(chunk)):
+                answers[f"g{start + number}"] = chunk_answers.get(f"g{number}", {})
+                answers[f"f{start + number}"] = chunk_answers.get(f"f{number}", {})
+            cost += chunk_cost
         findings = []
         for index, item in enumerate(found[:limit]):
             gate = answers.get(f"g{index}") or {}
@@ -415,7 +430,7 @@ def main(argv: list[str]) -> int:
                 }
             )
         findings.sort(key=lambda f: -f["rank"])
-        for item in found[limit:]:
+        for item in ([] if exhaustive else found[limit:]):
             findings.append({**item, "problem": item["matched"] and _family_of(item["matched"][0]) or "shape", "confidence": 0.0})
     else:
         if not no_model and not key:
