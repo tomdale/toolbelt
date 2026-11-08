@@ -95,6 +95,7 @@ def main(argv):
     if "--corpus" in argv:
         path = argv[argv.index("--corpus") + 1]
     rows = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
+    strata = sorted({r.get("stratum", "all") for r in rows})
     key = os.environ.get("AI_GATEWAY_API_KEY", "").strip()
     if not key:
         print("run.py: needs AI_GATEWAY_API_KEY", file=sys.stderr)
@@ -127,7 +128,15 @@ def main(argv):
         }, indent=2))
         return 0
 
-    print(f"{len(scored)} sentences: {len(positives)} violations, {len(negatives)} clean")
+    print(f"{len(scored)} sentences: {len(positives)} violations ({len(positives)/len(scored):.1%}), {len(negatives)} clean")
+    for stratum in strata:
+        group = [r for r in scored if r.get("stratum", "all") == stratum]
+        if not group:
+            continue
+        hits = sum(1 for r in group if r["label"])
+        reached = sum(1 for r in group if r["candidate"])
+        print(f"  {stratum:9} {len(group):3} sentences, {hits:2} violations ({hits/len(group):.1%}), "
+              f"{reached:2} reach the gate ({reached/len(group):.0%})")
     print(f"phrase pass reaches {candidate_recall:.0%} of the violations; gate mean score "
           f"{mean_pos:.2f} on violations and {mean_neg:.2f} on clean ({elapsed} ms)\n")
     print("A first pass wants recall, so read the curve at a low threshold and")
@@ -138,6 +147,13 @@ def main(argv):
         print(f"{result['threshold']:5.2f} {result['precision']:6.2f} {result['recall']:6.2f} "
               f"{result['f1']:6.2f} {result['accuracy']:6.2f}  {result['tp']:3} {result['fp']:2} "
               f"{result['fn']:2} {result['tn']:2}{mark}")
+
+    print(f"\nat the shipped threshold {vc.DEFAULT_THRESHOLD}, per stratum:")
+    for stratum in strata:
+        group = [r for r in scored if r.get("stratum", "all") == stratum]
+        result, _ = confusion(group, vc.DEFAULT_THRESHOLD)
+        print(f"  {stratum:9} tp {result['tp']:2} fp {result['fp']:2} fn {result['fn']:2} "
+              f"| precision {result['precision']:.2f} recall {result['recall']:.2f}")
 
     ranked = sorted(scored, key=lambda r: -(r["score"] * max(
         (vc.PRIORS.get(name, 0.5) for name in (r["matched"] or ["none"])), default=0.5)))

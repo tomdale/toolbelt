@@ -28,22 +28,33 @@ The gate exists because a regex cannot tell "the chip carries a label" from
 "the finding carries its certainty in an icon", and the model costs about
 $0.00004 per sentence.
 
-Measured on this machine at the shipped threshold of 0.50, on 70 sentences from
-real BB pi sessions (30 violations, 40 clean, in `evals/corpus.jsonl`): recall
-1.00, precision 0.61, F1 0.76. On the curated fixtures it catches 10 of 10
-violations and ranks every one above every clean sentence.
+Measured on this machine at the shipped threshold of 0.50, on 218 sentences
+pulled from recent BB pi sessions and read by hand. The corpus has two strata,
+because the sampling changes the answer:
 
-The number that matters for a first pass is the shortlist, ranked by gate score
-times phrase reliability:
+| stratum | sentences | violations | flagged | precision | recall |
+| --- | --- | --- | --- | --- | --- |
+| natural (random sample) | 148 | 2 (1.4%) | 5 | 0.40 | 1.00 |
+| enriched (candidates only) | 70 | 30 (43%) | 49 | 0.61 | 1.00 |
+
+The natural row is the one to plan around. It flags five sentences in 148, finds
+both real violations, and asks you to read about two and a half lines per hit.
+The enriched row exists to measure the gate where violations are common enough
+for the numbers to mean something.
+
+Ranking by gate score times phrase reliability is what makes the short list usable:
 
 | shortlist | violations found | precision |
 | --- | --- | --- |
-| top 5 | 5 of 30 | 1.00 |
-| top 8 | 7 of 30 | 0.88 |
-| top 16 | 14 of 30 | 0.88 |
+| top 5 | 5 of 32 | 1.00 |
+| top 8 | 7 of 32 | 0.88 |
+| top 16 | 14 of 32 | 0.88 |
 
-Read the list from the top and stop when the lines stop being real. The corpus is
-deliberately violation-dense, so live prose will show a lower hit rate than 0.61.
+Read the list from the top and stop when the lines stop being real.
+
+The natural sample came from sessions recorded while this standard was being
+written and applied, so it very likely understates the violation rate in prose
+written without it.
 
 ## Options
 

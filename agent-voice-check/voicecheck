@@ -43,6 +43,7 @@ PATTERNS: list[tuple[str, str, str]] = [
     ("rather than", "claim", r"\brather than\b"),
     ("instead of", "claim", r"\binstead of\b"),
     ("not X but Y", "claim", r"\bnot\s+\w+[,;]?\s+but\b"),
+    ("X, not Y", "claim", r",\s+not\s+(?:a|an|the|its|their|what|how)\b"),
     ("bold fragment", "claim", r"(?m)^\s*\*\*[^*\n]{3,80}[.:]\*\*\s*$"),
     ("gets no X at all", "subject", r"\bgets?\s+(?:no|nothing)\b[^.!?\n]{0,60}\bat all\b"),
     ("nothing but", "subject", r"\bnothing\s+but\b|\bnothing\s+(?:tying|marking|holding|linking)\b"),
