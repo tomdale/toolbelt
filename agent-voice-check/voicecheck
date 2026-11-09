@@ -5,7 +5,7 @@ Two layers, so the expensive one stays small. A deterministic pass finds
 sentences carrying a known phrase and reports which phrase fired. One AI
 Gateway decision call then asks a small decision model, per candidate, which
 of the five voice problems the sentence has; a sentence is reported when the
-model puts less than the threshold probability on "none". The gate exists
+model puts less than the threshold probability on "none". The decision call exists
 because a regex cannot tell "the effect carries a stale index" from "the chip
 carries a label", and the model is cheap enough (about 40 microseconds of a
 dollar per sentence) to ask every time.
@@ -38,8 +38,8 @@ DEFAULT_TOP = 10
 MAX_CANDIDATES = 24
 
 # One row per phrase worth naming: (name, family, pattern, target). `family` is
-# the problem the gate is asked to confirm; the regex only has to be generous,
-# because the gate decides. `target` is "sentence" for the rendered words or
+# the problem the decision call is asked to confirm; the regex only has to be
+# generous, because the decision call decides. `target` is "sentence" for the rendered words or
 # "block" for the markdown they came from, which is where emphasis survives.
 # Block patterns are read for a block's opening sentence, the one a lead-in
 # belongs to.
@@ -91,7 +91,7 @@ STRICT = (
 # How often a flagged sentence carrying this phrase turned out to be a real
 # violation, measured by hand on 200 audited sentences from BB pi sessions.
 # The contrast patterns are the weak ones; every abstract verb and candor word
-# was real. Ranking multiplies the gate score by this so the shortlist puts the
+# was real. Ranking multiplies the decision score by this so the shortlist puts the
 # trustworthy phrases first.
 PRIORS = {
     "candor grading": 1.00,
@@ -205,7 +205,8 @@ def candidates(text: str, exhaustive: bool = False):
     """Candidate sentences, and how many sentences were examined at all.
 
     Nothing is excluded. A quoted label, a component name and a sentence the
-    document marks as a bad example all still reach the gate, because the reader
+    document marks as a bad example all still reach the decision call, because the
+    reader
     of the report decides what to keep and a checker that hides cases takes that
     decision away from them.
     """
@@ -226,7 +227,7 @@ def candidates(text: str, exhaustive: bool = False):
         if not hits and not exhaustive:
             continue
         if exhaustive and not hits:
-            # No phrase to report, so the sentence goes to the gate on its own
+            # No phrase to report, so the sentence goes to the decision call on its own
             # merits. This is how a construction with no keyword — a passive or
             # actorless sentence — gets judged at all.
             hits = ["no phrase"]
@@ -235,7 +236,7 @@ def candidates(text: str, exhaustive: bool = False):
 
 
 def ask(items, model: str, key: str, timeout: float):
-    """One request: a strict problem/clean gate and a problem family per sentence."""
+    """One request: a strict problem/clean decision and a problem family per sentence."""
     questions = {}
     for index, item in enumerate(items):
         questions[f"g{index}"] = {
@@ -336,8 +337,8 @@ def selftest(model: str, key: str) -> int:
     elapsed_ms = int((time.monotonic() - started) * 1000)
     scored = []
     for index, case in enumerate(cases):
-        gate = answers.get(f"g{index}") or {}
-        score = (gate.get("probabilities") or {}).get("problem", 0.0)
+        answer = answers.get(f"g{index}") or {}
+        score = (answer.get("probabilities") or {}).get("problem", 0.0)
         scored.append((score, case["flag"], case["sentence"]))
     violations = [s for s in scored if s[1]]
     clean = [s for s in scored if not s[1]]
@@ -439,8 +440,8 @@ def main(argv: list[str]) -> int:
         # `limit` here made an exhaustive run pay for the whole document and
         # report the first 24 sentences of it.
         for index, item in enumerate(pending):
-            gate = answers.get(f"g{index}") or {}
-            probabilities = gate.get("probabilities") or {}
+            answer = answers.get(f"g{index}") or {}
+            probabilities = answer.get("probabilities") or {}
             if probabilities.get("problem", 0.0) < threshold:
                 continue
             family = (answers.get(f"f{index}") or {}).get("choice") or "none"

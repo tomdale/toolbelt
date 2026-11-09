@@ -4,7 +4,7 @@
 Supply a labeled JSONL corpus with --corpus. Each row needs a sentence and a
 label: 1 for a violation, 0 for clean. The tool sends sentences to AI Gateway,
 so use only material you are authorized to share with that service. A sentence
-is reported when a phrase pattern matches it and the decision gate scores it at
+is reported when a phrase pattern matches it and the decision call scores it at
 or above the threshold.
 
     ./run.py --corpus /path/to/corpus.jsonl
@@ -41,7 +41,7 @@ def score_corpus(rows, key):
         ]
         answers, _ = vc.ask(items, vc.DEFAULT_MODEL, key, timeout=90)
         for index, row in enumerate(chunk):
-            gate = answers.get(f"g{index}") or {}
+            answer = answers.get(f"g{index}") or {}
             family = (answers.get(f"f{index}") or {}).get("choice") or "none"
             # The corpus holds single sentences lifted out of session prose, so
             # only the patterns that read a sentence can be scored here. The two
@@ -55,7 +55,7 @@ def score_corpus(rows, key):
                 {
                     **row,
                     "candidate": candidate,
-                    "score": (gate.get("probabilities") or {}).get("problem", 0.0),
+                    "score": (answer.get("probabilities") or {}).get("problem", 0.0),
                     "family": family,
                 }
             )
@@ -145,8 +145,8 @@ def main(argv):
         hits = sum(1 for r in group if r["label"])
         reached = sum(1 for r in group if r["candidate"])
         print(f"  {stratum:9} {len(group):3} sentences, {hits:2} violations ({hits/len(group):.1%}), "
-              f"{reached:2} reach the gate ({reached/len(group):.0%})")
-    print(f"phrase pass reaches {candidate_recall:.0%} of the violations; gate mean score "
+              f"{reached:2} reach the decision call ({reached/len(group):.0%})")
+    print(f"phrase pass reaches {candidate_recall:.0%} of the violations; decision mean score "
           f"{mean_pos:.2f} on violations and {mean_neg:.2f} on clean ({elapsed} ms)\n")
     print("A first pass wants recall, so read the curve at a low threshold and")
     print("check that the shortlist stays trustworthy as you go down it.\n")
