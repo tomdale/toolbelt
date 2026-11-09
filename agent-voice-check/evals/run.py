@@ -43,9 +43,13 @@ def score_corpus(rows, key):
         for index, row in enumerate(chunk):
             gate = answers.get(f"g{index}") or {}
             family = (answers.get(f"f{index}") or {}).get("choice") or "none"
+            # The corpus holds single sentences lifted out of session prose, so
+            # only the patterns that read a sentence can be scored here. The two
+            # block patterns need the markdown a sentence came from.
             candidate = any(
                 __import__("re").search(pattern, row["sentence"])
-                for _, _, pattern in vc.PATTERNS
+                for _, _, pattern, target in vc.PATTERNS
+                if target == "sentence"
             )
             scored.append(
                 {

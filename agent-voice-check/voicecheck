@@ -37,28 +37,34 @@ DEFAULT_THRESHOLD = 0.5
 DEFAULT_TOP = 10
 MAX_CANDIDATES = 24
 
-# One row per phrase worth naming. `family` is the problem the gate is asked
-# to confirm; the regex only has to be generous, because the gate decides.
-PATTERNS: list[tuple[str, str, str]] = [
-    ("rather than", "claim", r"\brather than\b"),
-    ("instead of", "claim", r"\binstead of\b"),
-    ("not X but Y", "claim", r"\bnot\s+\w+[,;]?\s+but\b"),
-    ("X, not Y", "claim", r",\s+not\s+(?:a|an|the|its|their|what|how)\b"),
-    ("bold fragment", "claim", r"(?m)^\s*\*\*[^*\n]{3,80}[.:]\*\*\s*$"),
-    ("gets no X at all", "subject", r"\bgets?\s+(?:no|nothing)\b[^.!?\n]{0,60}\bat all\b"),
-    ("nothing but", "subject", r"\bnothing\s+but\b|\bnothing\s+(?:tying|marking|holding|linking)\b"),
-    ("minimizer", "subject", r"\b(?:just|simply|merely|little more than|nothing else)\b"),
-    ("abstract verb", "subject", r"\b(?:carries?|carrying|names|becomes|surfaces|exposes|leverages|utilises|utilizes)\s+(?:a|an|the|one|its)\b"),
-    ("gating word", "subject", r"\bgat(?:e|es|ed|ing)\b"),
-    ("ascribed intent", "subject", r"\b(?:deliberately|on purpose|by design|intentionally)\b"),
-    ("evidence framing", "writer", r"\b(?:evidence|findings?|observations?|observed|inferred|proves?|proven|certainty|corroborat\w+)\b"),
-    ("candor grading", "writer", r"\b(?:honest\w*|candid\w*|frankly|transparent\w*)\b"),
-    ("performed doubt", "writer", r"\b(?:somewhere in|hard to say|not 100% sure|cannot yet|can'?t yet|not sure exactly)\b"),
-    ("vibe word", "writer", r"\b(?:reads as|feels like|actually|genuinely)\b"),
-    ("em-dash aside", "writer", r"—[^—\n]{40,}—"),
-    ("absolute", "reader", r"\bthe only\s+\w+\s+that\b|\bthe most important\b|\bthe whole point\b|\bthe one (?:real|thing|row|question|place|part)\b"),
-    ("document tour", "reader", r"\b(?:this page|this section|this document|the section below|listed below|at the top|as follows|the rest of this)\b"),
-    ("importance opener", "shape", r"\b(?:it'?s worth noting|importantly|crucially|needless to say)\b"),
+# One row per phrase worth naming: (name, family, pattern, target). `family` is
+# the problem the gate is asked to confirm; the regex only has to be generous,
+# because the gate decides. `target` is "sentence" for the rendered words or
+# "block" for the markdown they came from, which is where emphasis survives.
+# Block patterns are read for a block's opening sentence, the one a lead-in
+# belongs to.
+PATTERNS: list[tuple[str, str, str, str]] = [
+    ("rather than", "claim", r"\brather than\b", "sentence"),
+    ("instead of", "claim", r"\binstead of\b", "sentence"),
+    ("not X but Y", "claim", r"\bnot\s+\w+[,;]?\s+but\b", "sentence"),
+    ("X, not Y", "claim", r",\s+not\s+(?:a|an|the|its|their|what|how)\b", "sentence"),
+    ("bold fragment", "claim", r"(?m)^\s*\*\*[^*\n]{3,80}[.:]", "block"),
+    ("emphasis lead-in", "claim", r"(?m)(?:^|\s)(?:\*\*|__|\*|_)[^\n*_]{3,80}(?:\*\*|__|\*|_)\s*:", "block"),
+    ("gets no X at all", "subject", r"\bgets?\s+(?:no|nothing)\b[^.!?\n]{0,60}\bat all\b", "sentence"),
+    ("nothing but", "subject", r"\bnothing\s+but\b|\bnothing\s+(?:tying|marking|holding|linking)\b", "sentence"),
+    ("minimizer", "subject", r"\b(?:just|simply|merely|little more than|nothing else)\b", "sentence"),
+    ("abstract verb", "subject", r"\b(?:carries?|carrying|names|becomes|surfaces|exposes|leverages|utilises|utilizes)\s+(?:a|an|the|one|its)\b", "sentence"),
+    ("gating word", "subject", r"\bgat(?:e|es|ed|ing)\b", "sentence"),
+    ("verdict verb", "subject", r"\b(?:survives?|survived|surviving|(?:still )?holds|(?:still )?stands)\b[^.!?\n]{0,60}:", "sentence"),
+    ("ascribed intent", "subject", r"\b(?:deliberately|on purpose|by design|intentionally)\b", "sentence"),
+    ("evidence framing", "writer", r"\b(?:evidence|findings?|observations?|observed|inferred|proves?|proven|certainty|corroborat\w+)\b", "sentence"),
+    ("candor grading", "writer", r"\b(?:honest\w*|candid\w*|frankly|transparent\w*)\b", "sentence"),
+    ("performed doubt", "writer", r"\b(?:somewhere in|hard to say|not 100% sure|cannot yet|can'?t yet|not sure exactly)\b", "sentence"),
+    ("vibe word", "writer", r"\b(?:reads as|feels like|actually|genuinely)\b", "sentence"),
+    ("em-dash aside", "writer", r"—[^—\n]{40,}—", "sentence"),
+    ("absolute", "reader", r"\bthe only\s+\w+\s+that\b|\bthe most important\b|\bthe whole point\b|\bthe one (?:real|thing|row|question|place|part)\b", "sentence"),
+    ("document tour", "reader", r"\b(?:this page|this section|this document|the section below|listed below|at the top|as follows|the rest of this)\b", "sentence"),
+    ("importance opener", "shape", r"\b(?:it'?s worth noting|importantly|crucially|needless to say)\b", "sentence"),
 ]
 
 DEVICES = (
@@ -72,7 +78,9 @@ DEVICES = (
     "'the whole point'); "
     "6. it talks about the document instead of the subject ('this page shows', 'listed below'); "
     "7. it uses an abstract verb where a plain one exists ('carries a title', 'names the field', "
-    "'becomes a panel', 'gated on a review')."
+    "'becomes a panel', 'gated on a review'); "
+    "8. it states a verdict in a short clause and hands the evidence to a colon ('the plain sense "
+    "survives: the model cleared one', 'the rule holds: eight tests pass')."
 )
 
 STRICT = (
@@ -109,7 +117,7 @@ FIXES = {
 CRITERIA = {
     "subject": "the subject is something other than the work: it minimises ('gets no X at all, only Y'), describes what is absent, gives a layout an intention ('deliberately'), or uses an abstract verb for plain data ('carries', 'names', 'becomes', 'gated on')",
     "writer": "the sentence is about the writer's own confidence, candor or standing ('evidence', 'finding', 'observed', 'honest caveats', 'I cannot yet name it', 'reads as')",
-    "claim": "the sentence corrects an objection nobody raised by contrasting its claim with an alternative ('X rather than Y'), or dresses a fragment as a heading",
+    "claim": "the sentence corrects an objection nobody raised by contrasting its claim with an alternative ('X rather than Y'), dresses a fragment as a heading ('The one question.'), or states a verdict and stops at a colon before the support ('the rule holds: eight tests pass')",
     "reader": "the sentence asserts importance or absolutes ('the only', 'the most important thing') or tours the document ('this page shows') instead of saying what changed for the reader",
     "shape": "the sentence is padding whose rhythm carries it: a turned-down closer, an importance opener, a clause that explains a fact nobody questioned",
     "none": "none of these; the sentence states a fact about the work plainly",
@@ -179,13 +187,18 @@ def sentences(paragraph: str):
 
 
 def units(text: str):
-    """Yield (line, sentence) for prose only, one unit per sentence."""
+    """Yield (line, sentence, block, first) for prose only, one unit per sentence.
+
+    `block` is the markdown the sentence came from, so a pattern can read the
+    emphasis a heading-shaped phrase relies on. `first` marks the block's
+    opening sentence, which is the one a lead-in belongs to.
+    """
     for start, block in blocks(text):
         heading = block.lstrip().startswith("#")
         pieces = [plain(block)] if heading else sentences(block)
-        for piece in pieces:
+        for position, piece in enumerate(pieces):
             if piece:
-                yield start, piece
+                yield start, piece, block, position == 0
 
 
 def candidates(text: str, exhaustive: bool = False):
@@ -198,9 +211,18 @@ def candidates(text: str, exhaustive: bool = False):
     """
     found = []
     examined = 0
-    for index, (line, sentence) in enumerate(units(text)):
+    for index, (line, sentence, block, first) in enumerate(units(text)):
         examined += 1
-        hits = [name for name, _, pattern in PATTERNS if re.search(pattern, sentence)]
+        hits = []
+        for name, _, pattern, target in PATTERNS:
+            if target == "block":
+                if not first:
+                    continue
+                haystack = block
+            else:
+                haystack = sentence
+            if re.search(pattern, haystack):
+                hits.append(name)
         if not hits and not exhaustive:
             continue
         if exhaustive and not hits:
@@ -223,7 +245,7 @@ def ask(items, model: str, key: str, timeout: float):
                 f"{item['sentence']!r}. Does it use one of the listed devices? {STRICT}"
             ),
             "criteria": {
-                "problem": "the sentence uses at least one of the seven listed devices",
+                "problem": "the sentence uses at least one of the eight listed devices",
                 "clean": "the sentence states its facts plainly, or uses the words in their ordinary sense",
             },
         }
@@ -465,7 +487,7 @@ def main(argv: list[str]) -> int:
 
 
 def _family_of(name: str) -> str:
-    for pattern_name, family, _ in PATTERNS:
+    for pattern_name, family, *_ in PATTERNS:
         if pattern_name == name:
             return family
     return "shape"
