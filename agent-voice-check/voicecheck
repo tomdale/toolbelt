@@ -49,6 +49,7 @@ PATTERNS: list[tuple[str, str, str]] = [
     ("nothing but", "subject", r"\bnothing\s+but\b|\bnothing\s+(?:tying|marking|holding|linking)\b"),
     ("minimizer", "subject", r"\b(?:just|simply|merely|little more than|nothing else)\b"),
     ("abstract verb", "subject", r"\b(?:carries?|carrying|names|becomes|surfaces|exposes|leverages|utilises|utilizes)\s+(?:a|an|the|one|its)\b"),
+    ("gating word", "subject", r"\bgat(?:e|es|ed|ing)\b"),
     ("ascribed intent", "subject", r"\b(?:deliberately|on purpose|by design|intentionally)\b"),
     ("evidence framing", "writer", r"\b(?:evidence|findings?|observations?|observed|inferred|proves?|proven|certainty|corroborat\w+)\b"),
     ("candor grading", "writer", r"\b(?:honest\w*|candid\w*|frankly|transparent\w*)\b"),
@@ -71,7 +72,7 @@ DEVICES = (
     "'the whole point'); "
     "6. it talks about the document instead of the subject ('this page shows', 'listed below'); "
     "7. it uses an abstract verb where a plain one exists ('carries a title', 'names the field', "
-    "'becomes a panel')."
+    "'becomes a panel', 'gated on a review')."
 )
 
 STRICT = (
@@ -106,7 +107,7 @@ FIXES = {
 }
 
 CRITERIA = {
-    "subject": "the subject is something other than the work: it minimises ('gets no X at all, only Y'), describes what is absent, gives a layout an intention ('deliberately'), or uses an abstract verb for plain data ('carries', 'names', 'becomes')",
+    "subject": "the subject is something other than the work: it minimises ('gets no X at all, only Y'), describes what is absent, gives a layout an intention ('deliberately'), or uses an abstract verb for plain data ('carries', 'names', 'becomes', 'gated on')",
     "writer": "the sentence is about the writer's own confidence, candor or standing ('evidence', 'finding', 'observed', 'honest caveats', 'I cannot yet name it', 'reads as')",
     "claim": "the sentence corrects an objection nobody raised by contrasting its claim with an alternative ('X rather than Y'), or dresses a fragment as a heading",
     "reader": "the sentence asserts importance or absolutes ('the only', 'the most important thing') or tours the document ('this page shows') instead of saying what changed for the reader",

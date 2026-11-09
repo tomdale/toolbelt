@@ -13,3 +13,5 @@
 {"sentence":"I ran the tests; eight passed and one was skipped.","flag":0,"why":"plain status"}
 {"sentence":"The renderer prints each result on a separate row.","flag":0,"why":"plain description"}
 {"sentence":"The listener reads the current position from a shared reference.","flag":0,"why":"plain explanation"}
+{"sentence":"Include it in handoffs so publication stays gated on user review.","flag":1,"why":"gating word"}
+{"sentence":"Close the garden gate before the dog gets out.","flag":0,"why":"literal gate"}
