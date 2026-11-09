@@ -18,10 +18,12 @@ prints nothing and returns the code, which is what a pre-commit hook wants.
 A deterministic pass splits the text into sentences and keeps the ones
 carrying a known phrase (`rather than`, `gets no X at all`, `carries the`,
 `deliberately`, `evidence`, `honest`, `this page`, and the rest). That pass is
-free and names which phrase fired.
+free and names which phrase fired. Two patterns read the markdown instead of the
+rendered words, so a bold phrase that stands as a heading is found before the
+emphasis is stripped.
 
 One AI Gateway decision call then asks `openai/gpt-6-luna-decisions` two
-closed-set questions per candidate: whether the sentence uses one of the seven
+closed-set questions per candidate: whether the sentence uses one of the eight
 devices at all, and which of the five voice problems it has. A sentence is
 reported when the gate puts at least `--threshold` probability on "problem".
 The gate exists because a regex cannot tell a component's label from a finding's
@@ -105,10 +107,9 @@ literature recommends for small models:
 | One binary question per device instead of one gate question | clearly worse: recall@8 fell from 0.40 to 0.33, because each narrow question lost the context the gate question carries |
 | Self-consistency by resampling | the decision model is deterministic, so repeats return the same probabilities |
 
-What did help was writing the clean cases into the criteria sheet, a gain the
-tool no longer claims because those allowances are gone and ranking by measured phrase reliability, since
-the patterns differ wildly: every abstract-verb and candor word audited was a
-real violation, while `instead of` was right 22% of the time.
+Ranking by measured phrase reliability helps, since the patterns differ wildly:
+every abstract-verb and candor word audited was a real violation, while
+`instead of` was right 22% of the time.
 
 ## The eval
 
@@ -136,11 +137,11 @@ the `proposal` stratum):
 | `--exhaustive` | 8 of 14 | 0.57 |
 
 Three of the 26 sentences reach the phrase pass at all, because a passive has no
-keyword to match. An exhaustive run scores every sentence, and until this
-release it reported findings only from the first 24 of them, so an earlier
-measurement of this document described its opening only. On a 300-line proposal document an exhaustive run reports 13
-findings of which 5 were real after the author's pass, four of those on
-sentences the phrase pass cannot see, for $0.011 and 3.1 seconds.
+keyword to match. An exhaustive run scores and reports every sentence, so the
+whole document is measured rather than its opening. On a 300-line proposal
+document an exhaustive run reports 13 findings of which 5 were real after the
+author's pass, four of those on sentences the phrase pass cannot see, for
+$0.011 and 3.1 seconds.
 
 Use `--exhaustive` on a document that argues for a change, which is where
 actorless sentences accumulate, and leave a corpus on the phrase pass. The mode
