@@ -65,6 +65,8 @@ PATTERNS: list[tuple[str, str, str, str]] = [
     ("absolute", "reader", r"\bthe only\s+\w+\s+that\b|\bthe most important\b|\bthe whole point\b|\bthe one (?:real|thing|row|question|place|part)\b", "sentence"),
     ("document tour", "reader", r"\b(?:this page|this section|this document|the section below|listed below|at the top|as follows|the rest of this)\b", "sentence"),
     ("importance opener", "shape", r"\b(?:it'?s worth noting|importantly|crucially|needless to say)\b", "sentence"),
+    ("mid-dot chain", "reader", r"[·•]", "sentence"),
+    ("draft byline", "reader", r"(?mi)^(?:status|draft|version|author|owner|last updated|date|revision)\s*:", "sentence"),
 ]
 
 DEVICES = (
@@ -76,11 +78,13 @@ DEVICES = (
     "'honest caveats', 'I cannot yet name it'); "
     "5. it asserts unearned importance or uniqueness ('the most important thing', 'the only row that', "
     "'the whole point'); "
-    "6. it talks about the document instead of the subject ('this page shows', 'listed below'); "
+    "6. it talks about the document instead of the subject ('this page shows', 'listed below'), or dresses "
+    "the draft in furniture: a line about the draft itself (status, date, author, owner, version, "
+    "revision), items chained between middle dots ('Status: first draft · 2026-11-09'); "
     "7. it uses an abstract verb where a plain one exists ('carries a title', 'names the field', "
     "'becomes a panel', 'gated on a review'); "
-    "8. it states a verdict in a short clause and hands the evidence to a colon ('the plain sense "
-    "survives: the model cleared one', 'the rule holds: eight tests pass')."
+    "8. it states a verdict in a short clause and hands the support to a colon ('the plain sense "
+    "survives: the model cleared one')."
 )
 
 STRICT = (
@@ -118,7 +122,7 @@ CRITERIA = {
     "subject": "the subject is something other than the work: it minimises ('gets no X at all, only Y'), describes what is absent, gives a layout an intention ('deliberately'), or uses an abstract verb for plain data ('carries', 'names', 'becomes', 'gated on')",
     "writer": "the sentence is about the writer's own confidence, candor or standing ('evidence', 'finding', 'observed', 'honest caveats', 'I cannot yet name it', 'reads as')",
     "claim": "the sentence corrects an objection nobody raised by contrasting its claim with an alternative ('X rather than Y'), dresses a fragment as a heading ('The one question.'), or states a verdict and stops at a colon before the support ('the rule holds: eight tests pass')",
-    "reader": "the sentence asserts importance or absolutes ('the only', 'the most important thing') or tours the document ('this page shows') instead of saying what changed for the reader",
+    "reader": "the sentence asserts importance or absolutes ('the only', 'the most important thing'), tours the document ('this page shows'), opens with a line about the draft itself (status, date, author, owner, version, revision), or chains items between middle dots instead of saying what changed for the reader",
     "shape": "the sentence is padding whose rhythm carries it: a turned-down closer, an importance opener, a clause that explains a fact nobody questioned",
     "none": "none of these; the sentence states a fact about the work plainly",
 }

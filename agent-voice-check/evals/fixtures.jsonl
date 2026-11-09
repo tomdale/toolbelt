@@ -18,3 +18,6 @@
 {"sentence":"The literal sense survives: the model pass cleared one sentence and flagged the other.","flag":1,"why":"verdict verb"}
 {"sentence":"The model pass cleared the closing sentence at 0.03 and flagged the review sentence at 0.99.","flag":0,"why":"plain measurement"}
 {"sentence":"The rule holds: eight tests pass and one is skipped.","flag":1,"why":"colon lead-in"}
+{"sentence":"Status: first draft · 2026-11-09","flag":1,"why":"draft byline"}
+{"sentence":"The scope covers Code Reviews · Security Reviews · Investigations.","flag":1,"why":"mid-dot chain"}
+{"sentence":"The scope covers Code Reviews, Security Reviews and Investigations.","flag":0,"why":"plain list"}
