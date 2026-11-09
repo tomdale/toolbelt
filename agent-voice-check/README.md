@@ -7,7 +7,7 @@ for about a fortieth of a cent.
 voicecheck draft.md          # a file
 git log -1 --format=%B | voicecheck   # a commit message
 cat reply.md | voicecheck --json      # for a script
-voicecheck --selftest        # prove the gate still agrees with the fixtures
+voicecheck --selftest        # prove the decision call still agrees with the fixtures
 ```
 
 Exit codes: `0` clean, `1` findings, `2` the check could not run. `--quiet`
@@ -25,14 +25,14 @@ emphasis is stripped.
 One AI Gateway decision call then asks `openai/gpt-6-luna-decisions` two
 closed-set questions per candidate: whether the sentence uses one of the eight
 devices at all, and which of the five voice problems it has. A sentence is
-reported when the gate puts at least `--threshold` probability on "problem".
-The gate exists because a regex cannot tell a component's label from a finding's
+reported when the decision call puts at least `--threshold` probability on "problem".
+The decision call exists because a regex cannot tell a component's label from a finding's
 certainty icon, and the model costs about $0.00004 per sentence.
 
 Measured on this machine on 518 sentences from recent BB pi sessions, read by
 hand. Four strata, because the sampling decides the answer:
 
-| stratum | sentences | violations | reach the gate | precision | recall |
+| stratum | sentences | violations | reach the decision call | precision | recall |
 | --- | --- | --- | --- | --- | --- |
 | enriched (phrase candidates) | 70 | 30 (43%) | 99% | 0.46 | 1.00 |
 | natural (random, mixed dates) | 148 | 2 (1.4%) | 8% | 0.22 | 1.00 |
@@ -55,7 +55,7 @@ sentences cannot separate 2.0% from 2.7%, and that week's prose included this
 project's own vocabulary, so the standard and the checker have not measurably
 changed ordinary replies.
 
-Ranking by gate score times phrase reliability is what makes the short list usable:
+Ranking by decision score times phrase reliability is what makes the short list usable:
 
 | shortlist | violations found | precision |
 | --- | --- | --- |
@@ -78,9 +78,9 @@ written without it.
 | `--top` | 10 | Findings printed; `--all` lifts the cap |
 | `--max-candidates` | 24 | Sentences sent to the model in one call; the rest fall back to the phrase pass |
 | `--no-model` | off | Phrase pass only, free and instant, noisier |
-| `--exhaustive` | off | Send every sentence to the gate, not only the ones carrying a phrase. Use on a document where a construction with no keyword matters; costs about $0.0002 per sentence |
+| `--exhaustive` | off | Send every sentence to the decision call, not only the ones carrying a phrase. Use on a document where a construction with no keyword matters; costs about $0.0002 per sentence |
 | `--quiet` | off | No output, exit code only |
-| `--selftest` | off | Run the curated fixtures through the gate and report agreement |
+| `--selftest` | off | Run the curated fixtures through the decision call and report agreement |
 | `--model` | `openai/gpt-6-luna-decisions` | Any AI Gateway decision model |
 
 Needs `AI_GATEWAY_API_KEY`. Without it the phrase pass still runs and says so
@@ -104,7 +104,7 @@ literature recommends for small models:
 | --- | --- |
 | kNN few-shot: retrieve the nearest labeled violations and clean sentences per candidate | a wash once the query sentence was excluded from the retrieval pool; an earlier perfect score was leakage |
 | Escalate the 0.30-0.70 band to a language model as adjudicator | a wash under 3-fold cross-validation, and 2-3x the cost |
-| One binary question per device instead of one gate question | clearly worse: recall@8 fell from 0.40 to 0.33, because each narrow question lost the context the gate question carries |
+| One binary question per device instead of one decision question | clearly worse: recall@8 fell from 0.40 to 0.33, because each narrow question lost the context a single decision question has |
 | Self-consistency by resampling | the decision model is deterministic, so repeats return the same probabilities |
 
 Ranking by measured phrase reliability helps, since the patterns differ wildly:
@@ -133,7 +133,7 @@ the `proposal` stratum):
 
 | mode | violations caught | precision |
 | --- | --- | --- |
-| phrase pass, then gate | 1 of 14 | — |
+| phrase pass, then decision call | 1 of 14 | — |
 | `--exhaustive` | 8 of 14 | 0.57 |
 
 Three of the 26 sentences reach the phrase pass at all, because a passive has no
@@ -156,16 +156,16 @@ like "copular" and "actor inferable" were doing the same work as the exclusions
 this tool no longer has.
 
 A passive pattern in the phrase pass was measured and rejected. It brought 5 of
-14 proposal violations to the gate for 0.45 precision there, while ordinary prose
+14 proposal violations to the decision call for 0.45 precision there, while ordinary prose
 fell from 0.22 precision to 0.14, and it caught less than `--exhaustive` does on
-the same document (8 of 14). Knowing which construction is at fault is the gate's
+the same document (8 of 14). Knowing which construction is at fault is the decision call's
 job, not the pattern list's.
 
 ## No exclusions
 
 The checker reports every device it can find. A quoted label, a component name
 from the document's schema, a blockquote, and a line the document marks as a bad
-example all still reach the gate, and the reader of the report decides which
+example all still reach the decision call, and the reader of the report decides which
 lines were justified uses.
 
 That choice costs precision and buys honesty. Measured on the 518-sentence
