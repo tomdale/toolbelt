@@ -25,9 +25,9 @@ emphasis is stripped.
 One AI Gateway decision call then asks `openai/gpt-6-luna-decisions` two
 closed-set questions per candidate: whether the sentence uses one of the eight
 devices at all, and which of the five voice problems it has. A sentence is
-reported when the decision call puts at least `--threshold` probability on "problem".
-The decision call exists because a regex cannot tell a component's label from a finding's
-certainty icon, and the model costs about $0.00004 per sentence.
+reported when the decision call puts at least `--threshold` probability on
+"problem". The call exists because a regex cannot tell a component's label from a
+finding's certainty icon, and the model costs about $0.00004 per sentence.
 
 Measured on this machine on 518 sentences from recent BB pi sessions, read by
 hand. Four strata, because the sampling decides the answer:
@@ -156,10 +156,10 @@ like "copular" and "actor inferable" were doing the same work as the exclusions
 this tool no longer has.
 
 A passive pattern in the phrase pass was measured and rejected. It brought 5 of
-14 proposal violations to the decision call for 0.45 precision there, while ordinary prose
-fell from 0.22 precision to 0.14, and it caught less than `--exhaustive` does on
-the same document (8 of 14). Knowing which construction is at fault is the decision call's
-job, not the pattern list's.
+14 proposal violations to the decision call for 0.45 precision there, while
+ordinary prose fell from 0.22 precision to 0.14, and it caught less than
+`--exhaustive` does on the same document (8 of 14). Knowing which construction is
+at fault is the decision call's job, not the pattern list's.
 
 ## No exclusions
 
